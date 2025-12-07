@@ -1,0 +1,2 @@
+# Test: command failure handling
+: bad.c |> gcc -c %f -o %o |> bad.o

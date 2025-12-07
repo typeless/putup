@@ -184,6 +184,85 @@ TEST_CASE("Topological sort", "[graph]")
     }
 }
 
+TEST_CASE("BuildGraph node types", "[graph]")
+{
+    auto graph = BuildGraph{};
+
+    SECTION("Group node type")
+    {
+        auto node = Node{.type = NodeType::Group, .path = "{objs}"};
+        auto id = graph.add_node(node);
+
+        REQUIRE(id.has_value());
+        auto const* n = graph.get_node(*id);
+        REQUIRE(n != nullptr);
+        REQUIRE(n->type == NodeType::Group);
+    }
+
+    SECTION("all node types")
+    {
+        auto file_id = graph.add_node(Node{.type = NodeType::File, .path = "a.c"});
+        auto cmd_id = graph.add_node(Node{.type = NodeType::Command, .command = "gcc"});
+        auto gen_id = graph.add_node(Node{.type = NodeType::Generated, .path = "a.o"});
+        auto dir_id = graph.add_node(Node{.type = NodeType::Directory, .path = "src"});
+        auto var_id = graph.add_node(Node{.type = NodeType::Variable, .path = "CC"});
+        auto group_id = graph.add_node(Node{.type = NodeType::Group, .path = "{objs}"});
+        auto gen_dir_id = graph.add_node(Node{.type = NodeType::GeneratedDir, .path = "build"});
+
+        REQUIRE(file_id.has_value());
+        REQUIRE(cmd_id.has_value());
+        REQUIRE(gen_id.has_value());
+        REQUIRE(dir_id.has_value());
+        REQUIRE(var_id.has_value());
+        REQUIRE(group_id.has_value());
+        REQUIRE(gen_dir_id.has_value());
+
+        REQUIRE(graph.node_count() == 7);
+        REQUIRE(graph.nodes_of_type(NodeType::File).size() == 1);
+        REQUIRE(graph.nodes_of_type(NodeType::Command).size() == 1);
+        REQUIRE(graph.nodes_of_type(NodeType::Generated).size() == 1);
+        REQUIRE(graph.nodes_of_type(NodeType::Group).size() == 1);
+    }
+}
+
+TEST_CASE("BuildGraph edge types", "[graph]")
+{
+    auto graph = BuildGraph{};
+
+    SECTION("order-only edges")
+    {
+        auto id1 = graph.add_node(Node{.type = NodeType::File, .path = "header.h"});
+        auto id2 = graph.add_node(Node{.type = NodeType::Command, .command = "gcc"});
+
+        REQUIRE(id1.has_value());
+        REQUIRE(id2.has_value());
+
+        auto e = graph.add_order_only_edge(*id1, *id2);
+        REQUIRE(e.has_value());
+
+        auto order_inputs = graph.get_order_only(*id2);
+        REQUIRE(order_inputs.size() == 1);
+        REQUIRE(order_inputs[0] == *id1);
+    }
+
+    SECTION("group edges")
+    {
+        // Group edge: command -> group (command produces outputs in group)
+        auto cmd_id = graph.add_node(Node{.type = NodeType::Command, .command = "gcc"});
+        auto out_id = graph.add_node(Node{.type = NodeType::Generated, .path = "a.o"});
+        auto group_id = graph.add_node(Node{.type = NodeType::Group, .path = "{objs}"});
+
+        REQUIRE(cmd_id.has_value());
+        REQUIRE(out_id.has_value());
+        REQUIRE(group_id.has_value());
+
+        (void)graph.add_edge(*cmd_id, *out_id);
+
+        auto edge_result = graph.add_edge(*out_id, *group_id, pup::LinkType::Group);
+        REQUIRE(edge_result.has_value());
+    }
+}
+
 TEST_CASE("Graph traversal", "[graph]")
 {
     auto graph = BuildGraph{};

@@ -56,6 +56,11 @@ run_fixture() {
     # Copy fixture to temp directory
     cp -r "$fixture_dir"/* "$work_dir/"
 
+    # Rename Tupfile.fixture to Tupfile (avoids tup scanning fixtures)
+    if [[ -f "$work_dir/Tupfile.fixture" ]]; then
+        mv "$work_dir/Tupfile.fixture" "$work_dir/Tupfile"
+    fi
+
     # Change to work directory
     pushd "$work_dir" > /dev/null
 

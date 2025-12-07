@@ -1,0 +1,26 @@
+# Test conditionals: ifdef, ifndef, ifeq, ifneq
+
+CC = gcc
+CFLAGS = -Wall
+
+# Test ifdef
+ifdef USE_GREETING
+CFLAGS += -DUSE_GREETING
+endif
+
+# Test ifndef
+ifndef NO_EXTRA
+CFLAGS += -DUSE_EXTRA
+endif
+
+# Test ifeq
+ifeq ($(CC),gcc)
+CFLAGS += -Wextra
+endif
+
+# Test ifneq
+ifneq ($(CC),clang)
+CFLAGS += -Wpedantic
+endif
+
+: main.c |> $(CC) $(CFLAGS) -o %o %f |> program

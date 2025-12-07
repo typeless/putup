@@ -292,7 +292,7 @@ CFLAGS = -Wall
 : {objs} |> ar rcs %o %f |> libfoo.a
 )";
 
-    auto parser = Parser{source, "test.tup"};
+    auto parser = Parser { source, "test.tup" };
     auto result = parser.parse();
 
     REQUIRE(result.has_value());
@@ -302,4 +302,74 @@ CFLAGS = -Wall
     REQUIRE(result->statements[2]->is<BangMacro>());
     REQUIRE(result->statements[3]->is<Rule>());
     REQUIRE(result->statements[4]->is<Rule>());
+}
+
+TEST_CASE("Parser nested conditionals", "[parser]")
+{
+    auto source = R"(
+DEBUG = y
+VERBOSE = y
+
+ifdef DEBUG
+    CFLAGS = -g
+    ifdef VERBOSE
+        CFLAGS += -DVERBOSE
+    endif
+endif
+)";
+
+    auto parser = Parser { source, "test.tup" };
+    auto result = parser.parse();
+
+    REQUIRE(result.has_value());
+    // Should have: DEBUG assignment, VERBOSE assignment, outer ifdef (containing nested)
+    REQUIRE(result->statements.size() == 3);
+
+    // Check that the outer conditional contains nested statements
+    auto const* outer_cond = result->statements[2]->as<Conditional>();
+    REQUIRE(outer_cond != nullptr);
+    REQUIRE(outer_cond->kind == Conditional::Kind::Ifdef);
+    REQUIRE(outer_cond->var_name == "DEBUG");
+    // Then body should have: CFLAGS assignment, nested ifdef
+    REQUIRE(outer_cond->then_body.size() == 2);
+    REQUIRE(outer_cond->then_body[0]->is<Assignment>());
+    REQUIRE(outer_cond->then_body[1]->is<Conditional>());
+
+    // Check the nested conditional
+    auto const* inner_cond = outer_cond->then_body[1]->as<Conditional>();
+    REQUIRE(inner_cond != nullptr);
+    REQUIRE(inner_cond->kind == Conditional::Kind::Ifdef);
+    REQUIRE(inner_cond->var_name == "VERBOSE");
+    REQUIRE(inner_cond->then_body.size() == 1);
+    REQUIRE(inner_cond->then_body[0]->is<Assignment>());
+}
+
+TEST_CASE("Parser error recovery", "[parser]")
+{
+    SECTION("unterminated variable reference")
+    {
+        auto parser = Parser { "FOO = $(BAR", "test.tup" };
+        auto result = parser.parse();
+
+        // Should fail with error
+        REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("missing endif")
+    {
+        auto parser = Parser { "ifdef FOO\nBAR = 1\n", "test.tup" };
+        auto result = parser.parse();
+
+        // Should fail with missing endif
+        REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("unexpected else")
+    {
+        auto parser = Parser { "else\n", "test.tup" };
+        auto result = parser.parse();
+
+        // Should fail with unexpected else
+        REQUIRE_FALSE(result.has_value());
+    }
 }

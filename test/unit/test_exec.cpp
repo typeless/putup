@@ -249,3 +249,180 @@ TEST_CASE("Scheduler basic operation", "[exec]")
         REQUIRE(result->completed_jobs == 1);
     }
 }
+
+TEST_CASE("Scheduler parallel dependencies", "[exec]")
+{
+    SECTION("independent commands can run in parallel")
+    {
+        // Two independent compile commands that share no dependencies
+        //   a.c -> cmd1 -> a.o
+        //   b.c -> cmd2 -> b.o
+        auto graph = graph::BuildGraph{};
+
+        auto a_c = graph.add_node(graph::Node{.type = NodeType::File, .path = "a.c"});
+        auto b_c = graph.add_node(graph::Node{.type = NodeType::File, .path = "b.c"});
+
+        auto cmd1 = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc -c a.c -o a.o",
+        });
+        auto cmd2 = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc -c b.c -o b.o",
+        });
+
+        auto a_o = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "a.o"});
+        auto b_o = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "b.o"});
+
+        (void)graph.add_edge(*a_c, *cmd1);
+        (void)graph.add_edge(*cmd1, *a_o);
+        (void)graph.add_edge(*b_c, *cmd2);
+        (void)graph.add_edge(*cmd2, *b_o);
+
+        auto opts = SchedulerOptions{.jobs = 4, .dry_run = true};
+        auto scheduler = Scheduler{opts};
+        auto result = scheduler.build(graph);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->total_jobs == 2);
+        REQUIRE(result->completed_jobs == 2);
+    }
+
+    SECTION("dependent commands run sequentially")
+    {
+        // a.c -> compile -> a.o -> link -> a.out
+        auto graph = graph::BuildGraph{};
+
+        auto a_c = graph.add_node(graph::Node{.type = NodeType::File, .path = "a.c"});
+        auto compile_cmd = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc -c a.c -o a.o",
+        });
+        auto a_o = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "a.o"});
+        auto link_cmd = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc a.o -o a.out",
+        });
+        auto a_out = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "a.out"});
+
+        (void)graph.add_edge(*a_c, *compile_cmd);
+        (void)graph.add_edge(*compile_cmd, *a_o);
+        (void)graph.add_edge(*a_o, *link_cmd);
+        (void)graph.add_edge(*link_cmd, *a_out);
+
+        auto opts = SchedulerOptions{.jobs = 4, .dry_run = true};
+        auto scheduler = Scheduler{opts};
+        auto result = scheduler.build(graph);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->total_jobs == 2);
+        REQUIRE(result->completed_jobs == 2);
+    }
+
+    SECTION("diamond dependency pattern")
+    {
+        // Classic diamond pattern:
+        //       a.c
+        //      /   \
+        //   cmd1   cmd2  (can run in parallel)
+        //      \   /
+        //       link     (waits for both)
+        auto graph = graph::BuildGraph{};
+
+        auto a_c = graph.add_node(graph::Node{.type = NodeType::File, .path = "main.c"});
+        auto cmd1 = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc -c main.c -o main.o",
+        });
+        auto cmd2 = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc -c main.c -o main_opt.o",
+        });
+        auto main_o = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "main.o"});
+        auto main_opt_o = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "main_opt.o"});
+        auto link_cmd = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc main.o main_opt.o -o app",
+        });
+        auto app = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "app"});
+
+        (void)graph.add_edge(*a_c, *cmd1);
+        (void)graph.add_edge(*a_c, *cmd2);
+        (void)graph.add_edge(*cmd1, *main_o);
+        (void)graph.add_edge(*cmd2, *main_opt_o);
+        (void)graph.add_edge(*main_o, *link_cmd);
+        (void)graph.add_edge(*main_opt_o, *link_cmd);
+        (void)graph.add_edge(*link_cmd, *app);
+
+        auto opts = SchedulerOptions{.jobs = 4, .dry_run = true};
+        auto scheduler = Scheduler{opts};
+        auto result = scheduler.build(graph);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->total_jobs == 3);
+        REQUIRE(result->completed_jobs == 3);
+    }
+
+    SECTION("fan-out pattern")
+    {
+        // One input, multiple independent outputs
+        //        src
+        //       / | \
+        //      c1 c2 c3  (all can run in parallel)
+        auto graph = graph::BuildGraph{};
+
+        auto src = graph.add_node(graph::Node{.type = NodeType::File, .path = "lib.c"});
+        auto cmd1 = graph.add_node(graph::Node{.type = NodeType::Command, .command = "gcc -c -O0 lib.c -o lib_debug.o"});
+        auto cmd2 = graph.add_node(graph::Node{.type = NodeType::Command, .command = "gcc -c -O2 lib.c -o lib_opt.o"});
+        auto cmd3 = graph.add_node(graph::Node{.type = NodeType::Command, .command = "gcc -c -Os lib.c -o lib_size.o"});
+        auto out1 = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "lib_debug.o"});
+        auto out2 = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "lib_opt.o"});
+        auto out3 = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "lib_size.o"});
+
+        (void)graph.add_edge(*src, *cmd1);
+        (void)graph.add_edge(*src, *cmd2);
+        (void)graph.add_edge(*src, *cmd3);
+        (void)graph.add_edge(*cmd1, *out1);
+        (void)graph.add_edge(*cmd2, *out2);
+        (void)graph.add_edge(*cmd3, *out3);
+
+        auto opts = SchedulerOptions{.jobs = 4, .dry_run = true};
+        auto scheduler = Scheduler{opts};
+        auto result = scheduler.build(graph);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->total_jobs == 3);
+        REQUIRE(result->completed_jobs == 3);
+    }
+
+    SECTION("fan-in pattern")
+    {
+        // Multiple inputs combine into one output
+        //    a.o  b.o  c.o
+        //      \  |  /
+        //       link    (must wait for all)
+        auto graph = graph::BuildGraph{};
+
+        auto a_o = graph.add_node(graph::Node{.type = NodeType::File, .path = "a.o"});
+        auto b_o = graph.add_node(graph::Node{.type = NodeType::File, .path = "b.o"});
+        auto c_o = graph.add_node(graph::Node{.type = NodeType::File, .path = "c.o"});
+        auto link_cmd = graph.add_node(graph::Node{
+            .type = NodeType::Command,
+            .command = "gcc a.o b.o c.o -o program",
+        });
+        auto program = graph.add_node(graph::Node{.type = NodeType::Generated, .path = "program"});
+
+        (void)graph.add_edge(*a_o, *link_cmd);
+        (void)graph.add_edge(*b_o, *link_cmd);
+        (void)graph.add_edge(*c_o, *link_cmd);
+        (void)graph.add_edge(*link_cmd, *program);
+
+        auto opts = SchedulerOptions{.jobs = 4, .dry_run = true};
+        auto scheduler = Scheduler{opts};
+        auto result = scheduler.build(graph);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->total_jobs == 1);
+        REQUIRE(result->completed_jobs == 1);
+    }
+}

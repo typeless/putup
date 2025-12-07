@@ -1,0 +1,10 @@
+# Test output groups: {objs} collects outputs from foreach rule
+
+CC = gcc
+CFLAGS = -Wall
+
+# Compile all .c files, collect into {objs} group
+: foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o {objs}
+
+# Link using the group
+: {objs} |> $(CC) %f -o %o |> calculator
