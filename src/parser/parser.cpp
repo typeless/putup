@@ -1,0 +1,956 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 pup authors
+
+#include "pup/parser/parser.hpp"
+
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+
+namespace pup::parser {
+
+// =============================================================================
+// DefaultFileResolver
+// =============================================================================
+
+DefaultFileResolver::DefaultFileResolver(std::string_view root_dir)
+    : root_dir_(root_dir)
+{
+}
+
+auto DefaultFileResolver::resolve(std::string_view path, std::string_view relative_to)
+    -> Result<std::string>
+{
+    namespace fs = std::filesystem;
+
+    auto const rel_path = fs::path{relative_to}.parent_path() / path;
+    if (fs::exists(rel_path))
+        return rel_path.string();
+
+    auto const abs_path = fs::path{root_dir_} / path;
+    if (fs::exists(abs_path))
+        return abs_path.string();
+
+    return make_error<std::string>(ErrorCode::IncludeNotFound, "Include file not found: " + std::string{path});
+}
+
+auto DefaultFileResolver::read_file(std::string_view path) -> Result<std::string>
+{
+    auto file = std::ifstream{std::string{path}};
+    if (!file)
+        return make_error<std::string>(ErrorCode::IoError, "Cannot open file: " + std::string{path});
+
+    auto ss = std::stringstream{};
+    ss << file.rdbuf();
+    return ss.str();
+}
+
+auto DefaultFileResolver::find_tuprules(std::string_view from_dir) -> Result<std::string>
+{
+    namespace fs = std::filesystem;
+
+    auto dir = fs::path{from_dir};
+    auto const root = fs::path{root_dir_};
+
+    while (dir >= root) {
+        auto const tuprules = dir / "Tuprules.tup";
+        if (fs::exists(tuprules))
+            return tuprules.string();
+        if (dir == root)
+            break;
+        dir = dir.parent_path();
+    }
+
+    return make_error<std::string>(ErrorCode::IncludeNotFound, "Tuprules.tup not found");
+}
+
+// =============================================================================
+// Parser
+// =============================================================================
+
+Parser::Parser(std::string_view source, std::string_view filename,
+    std::shared_ptr<FileResolver> resolver, Options options)
+    : lexer_(source, filename)
+    , resolver_(std::move(resolver))
+    , options_(options)
+{
+    advance(); // Prime the parser with first token
+}
+
+auto Parser::parse() -> Result<Tupfile>
+{
+    auto tupfile = Tupfile{};
+    tupfile.filename = std::string{lexer_.filename()};
+
+    while (!check(TokenType::Eof)) {
+        // Skip empty lines and comments
+        if (match(TokenType::Newline))
+            continue;
+        if (match(TokenType::Hash)) {
+            if (!check(TokenType::Newline) && !check(TokenType::Eof))
+                advance(); // Skip to next line
+            continue;
+        }
+
+        auto stmt = parse_line();
+        if (!stmt) {
+            report_error(stmt.error().message);
+            skip_to_next_statement();
+            continue;
+        }
+
+        if (*stmt) {
+            // Handle gitignore flag
+            if ((*stmt)->is<Gitignore>())
+                tupfile.has_gitignore = true;
+
+            tupfile.statements.push_back(std::move(*stmt));
+        }
+    }
+
+    if (!errors_.empty()) {
+        return make_error<Tupfile>(ErrorCode::ParseError,
+            "Parse failed with " + std::to_string(errors_.size()) + " error(s)");
+    }
+
+    return tupfile;
+}
+
+auto Parser::parse_statement() -> Result<std::unique_ptr<Statement>>
+{
+    while (match(TokenType::Newline) || match(TokenType::Hash))
+        continue;
+
+    if (check(TokenType::Eof))
+        return nullptr;
+
+    return parse_line();
+}
+
+auto Parser::advance() -> Token
+{
+    previous_ = current_;
+    current_ = lexer_.next();
+    return previous_;
+}
+
+auto Parser::check(TokenType type) const -> bool
+{
+    return current_.type == type;
+}
+
+auto Parser::match(TokenType type) -> bool
+{
+    if (check(type)) {
+        advance();
+        return true;
+    }
+    return false;
+}
+
+auto Parser::expect(TokenType type, std::string_view message) -> Result<Token>
+{
+    if (check(type))
+        return advance();
+    return make_error<Token>(ErrorCode::UnexpectedToken,
+        std::string{message} + ", got " + std::string{token_type_name(current_.type)});
+}
+
+auto Parser::skip_to_next_statement() -> void
+{
+    while (!check(TokenType::Eof) && !check(TokenType::Newline))
+        advance();
+    if (check(TokenType::Newline))
+        advance();
+}
+
+auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
+{
+    auto const& tok = current_;
+    auto const start_loc = tok.location;
+
+    // Rule: starts with ':'
+    if (check(TokenType::Colon)) {
+        advance();
+        auto rule = parse_rule();
+        if (!rule)
+            return pup::unexpected<Error>(rule.error());
+
+        auto stmt = std::make_unique<Statement>();
+        stmt->location = start_loc;
+        stmt->content = std::move(*rule);
+        return stmt;
+    }
+
+    // Bang-macro: starts with '!'
+    if (check(TokenType::Bang)) {
+        advance();
+        auto macro = parse_bang_macro();
+        if (!macro)
+            return pup::unexpected<Error>(macro.error());
+
+        auto stmt = std::make_unique<Statement>();
+        stmt->location = start_loc;
+        stmt->content = std::move(*macro);
+        return stmt;
+    }
+
+    // Keywords
+    if (tok.is_keyword()) {
+        switch (tok.type) {
+        case TokenType::KwForeach:
+            // foreach is only valid inside a rule
+            return make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
+                "'foreach' must appear after ':' in a rule");
+
+        case TokenType::KwIncludeRules: {
+            advance();
+            auto inc = parse_include(true);
+            if (!inc)
+                return pup::unexpected<Error>(inc.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*inc);
+            return stmt;
+        }
+
+        case TokenType::KwInclude: {
+            advance();
+            auto inc = parse_include(false);
+            if (!inc)
+                return pup::unexpected<Error>(inc.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*inc);
+            return stmt;
+        }
+
+        case TokenType::KwIfdef: {
+            advance();
+            auto cond = parse_conditional(Conditional::Kind::Ifdef);
+            if (!cond)
+                return pup::unexpected<Error>(cond.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*cond);
+            return stmt;
+        }
+
+        case TokenType::KwIfndef: {
+            advance();
+            auto cond = parse_conditional(Conditional::Kind::Ifndef);
+            if (!cond)
+                return pup::unexpected<Error>(cond.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*cond);
+            return stmt;
+        }
+
+        case TokenType::KwIfeq: {
+            advance();
+            auto cond = parse_conditional(Conditional::Kind::Ifeq);
+            if (!cond)
+                return pup::unexpected<Error>(cond.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*cond);
+            return stmt;
+        }
+
+        case TokenType::KwIfneq: {
+            advance();
+            auto cond = parse_conditional(Conditional::Kind::Ifneq);
+            if (!cond)
+                return pup::unexpected<Error>(cond.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*cond);
+            return stmt;
+        }
+
+        case TokenType::KwElse:
+        case TokenType::KwEndif:
+            // These should be handled by parse_conditional
+            return make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
+                "Unexpected '" + std::string{tok.text} + "' without matching if");
+
+        case TokenType::KwExport: {
+            advance();
+            auto exp = parse_export();
+            if (!exp)
+                return pup::unexpected<Error>(exp.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*exp);
+            return stmt;
+        }
+
+        case TokenType::KwImport: {
+            advance();
+            auto imp = parse_import();
+            if (!imp)
+                return pup::unexpected<Error>(imp.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*imp);
+            return stmt;
+        }
+
+        case TokenType::KwPreload: {
+            advance();
+            auto pre = parse_preload();
+            if (!pre)
+                return pup::unexpected<Error>(pre.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*pre);
+            return stmt;
+        }
+
+        case TokenType::KwError: {
+            advance();
+            auto err = parse_error_directive();
+            if (!err)
+                return pup::unexpected<Error>(err.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*err);
+            return stmt;
+        }
+
+        case TokenType::KwRun: {
+            advance();
+            auto run = parse_run();
+            if (!run)
+                return pup::unexpected<Error>(run.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*run);
+            return stmt;
+        }
+
+        case TokenType::KwGitignore: {
+            advance();
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = Gitignore{};
+            return stmt;
+        }
+
+        default:
+            break;
+        }
+    }
+
+    // Assignment: IDENTIFIER (= | += | :=) value
+    if (check(TokenType::Identifier)) {
+        auto const name = std::string{current_.text};
+        advance();
+
+        if (current_.is_assignment_op()) {
+            auto assign = parse_assignment(name);
+            if (!assign)
+                return pup::unexpected<Error>(assign.error());
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*assign);
+            return stmt;
+        }
+
+        // Not an assignment - this is an error at line start
+        return make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
+            "Expected '=', '+=', or ':=' after identifier");
+    }
+
+    // Node variable assignment: &name = value
+    if (check(TokenType::Ampersand)) {
+        advance();
+        auto name_tok = expect(TokenType::Identifier, "Expected identifier after '&'");
+        if (!name_tok)
+            return pup::unexpected<Error>(name_tok.error());
+
+        auto assign = parse_assignment(std::string{name_tok->text});
+        if (!assign)
+            return pup::unexpected<Error>(assign.error());
+
+        assign->var_kind = VarRef::Kind::Node;
+        auto stmt = std::make_unique<Statement>();
+        stmt->location = start_loc;
+        stmt->content = std::move(*assign);
+        return stmt;
+    }
+
+    return make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
+        "Unexpected token: " + std::string{token_type_name(tok.type)});
+}
+
+auto Parser::parse_rule() -> Result<Rule>
+{
+    auto rule = Rule{};
+    rule.location = previous_.location;
+
+    // Check for foreach
+    if (match(TokenType::KwForeach))
+        rule.foreach_ = true;
+
+    // Set context for input parsing
+    lexer_.set_context(Lexer::Context::Inputs);
+
+    // Parse inputs until | or |>
+    while (!check(TokenType::Pipe) && !check(TokenType::PipeArrow) && !check(TokenType::Newline) &&
+           !check(TokenType::Eof)) {
+        auto pattern = parse_path_pattern();
+        if (!pattern)
+            return pup::unexpected<Error>(pattern.error());
+        rule.inputs.push_back(std::move(*pattern));
+    }
+
+    // Parse order-only inputs if present
+    if (match(TokenType::Pipe)) {
+        while (!check(TokenType::PipeArrow) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+            auto pattern = parse_path_pattern();
+            if (!pattern)
+                return pup::unexpected<Error>(pattern.error());
+            rule.order_only_inputs.push_back(std::move(*pattern));
+        }
+    }
+
+    // Expect |> before command
+    auto arrow1 = expect(TokenType::PipeArrow, "Expected '|>' before command");
+    if (!arrow1)
+        return pup::unexpected<Error>(arrow1.error());
+
+    // Parse command
+    lexer_.set_context(Lexer::Context::Command);
+    auto cmd = parse_command();
+    if (!cmd)
+        return pup::unexpected<Error>(cmd.error());
+    rule.command = std::move(*cmd);
+
+    // Switch context before expect so advance() reads Outputs context token
+    lexer_.set_context(Lexer::Context::Outputs);
+
+    // Expect |> before outputs
+    auto arrow2 = expect(TokenType::PipeArrow, "Expected '|>' after command");
+    if (!arrow2)
+        return pup::unexpected<Error>(arrow2.error());
+
+    // Parse outputs
+    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::Newline) &&
+           !check(TokenType::Eof)) {
+        auto pattern = parse_path_pattern();
+        if (!pattern)
+            return pup::unexpected<Error>(pattern.error());
+        rule.outputs.push_back(std::move(*pattern));
+    }
+
+    // Parse extra outputs if present
+    if (match(TokenType::Pipe)) {
+        while (!check(TokenType::OpenBrace) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+            auto pattern = parse_path_pattern();
+            if (!pattern)
+                return pup::unexpected<Error>(pattern.error());
+            rule.extra_outputs.push_back(std::move(*pattern));
+        }
+    }
+
+    // Parse output group if present
+    if (match(TokenType::OpenBrace)) {
+        if (check(TokenType::Identifier) || check(TokenType::Text)) {
+            rule.output_group = std::string{current_.text};
+            advance();
+        }
+        auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
+        if (!close)
+            return pup::unexpected<Error>(close.error());
+    }
+
+    lexer_.set_context(Lexer::Context::LineStart);
+    return rule;
+}
+
+auto Parser::parse_bang_macro() -> Result<BangMacro>
+{
+    auto macro = BangMacro{};
+    macro.location = previous_.location;
+
+    // Expect macro name
+    if (!check(TokenType::Identifier) && !check(TokenType::Text))
+        return make_error<BangMacro>(ErrorCode::ParseError, "Expected macro name after '!'");
+
+    macro.name = std::string{current_.text};
+    advance();
+
+    // Expect =
+    auto eq = expect(TokenType::Equals, "Expected '=' after macro name");
+    if (!eq)
+        return pup::unexpected<Error>(eq.error());
+
+    // Optional order-only inputs before |>
+    if (match(TokenType::Pipe)) {
+        while (!check(TokenType::PipeArrow) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+            if (match(TokenType::KwForeach)) {
+                macro.foreach_ = true;
+                continue;
+            }
+            auto pattern = parse_path_pattern();
+            if (!pattern)
+                return pup::unexpected<Error>(pattern.error());
+            macro.order_only_inputs.push_back(std::move(*pattern));
+        }
+    }
+
+    // Expect |> before command
+    auto arrow1 = expect(TokenType::PipeArrow, "Expected '|>' before command");
+    if (!arrow1)
+        return pup::unexpected<Error>(arrow1.error());
+
+    // Parse command
+    lexer_.set_context(Lexer::Context::Command);
+    auto cmd = parse_command();
+    if (!cmd)
+        return pup::unexpected<Error>(cmd.error());
+    macro.command = std::move(*cmd);
+
+    // Switch context before expect so advance() reads Outputs context token
+    lexer_.set_context(Lexer::Context::Outputs);
+
+    // Expect |> before outputs
+    auto arrow2 = expect(TokenType::PipeArrow, "Expected '|>' after command");
+    if (!arrow2)
+        return pup::unexpected<Error>(arrow2.error());
+
+    // Parse outputs
+    while (!check(TokenType::Pipe) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+        auto pattern = parse_path_pattern();
+        if (!pattern)
+            return pup::unexpected<Error>(pattern.error());
+        macro.outputs.push_back(std::move(*pattern));
+    }
+
+    // Parse extra outputs if present
+    if (match(TokenType::Pipe)) {
+        while (!check(TokenType::Newline) && !check(TokenType::Eof)) {
+            auto pattern = parse_path_pattern();
+            if (!pattern)
+                return pup::unexpected<Error>(pattern.error());
+            macro.extra_outputs.push_back(std::move(*pattern));
+        }
+    }
+
+    lexer_.set_context(Lexer::Context::LineStart);
+    return macro;
+}
+
+auto Parser::parse_assignment(std::string name) -> Result<Assignment>
+{
+    auto assign = Assignment{};
+    assign.location = previous_.location;
+    assign.name = std::move(name);
+
+    // Determine operation type
+    if (match(TokenType::Equals))
+        assign.op = Assignment::Op::Set;
+    else if (match(TokenType::PlusEquals))
+        assign.op = Assignment::Op::Append;
+    else if (match(TokenType::ColonEquals))
+        assign.op = Assignment::Op::Define;
+    else
+        return make_error<Assignment>(ErrorCode::ParseError, "Expected assignment operator");
+
+    // Parse value (rest of line)
+    auto value = parse_expression();
+    if (!value)
+        return pup::unexpected<Error>(value.error());
+    assign.value = std::move(*value);
+
+    return assign;
+}
+
+auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
+{
+    auto cond = Conditional{};
+    cond.location = previous_.location;
+    cond.kind = kind;
+
+    if (kind == Conditional::Kind::Ifdef || kind == Conditional::Kind::Ifndef) {
+        // ifdef/ifndef VAR
+        if (!check(TokenType::Identifier) && !check(TokenType::Text))
+            return make_error<Conditional>(ErrorCode::ParseError,
+                "Expected variable name after ifdef/ifndef");
+        cond.var_name = std::string{current_.text};
+        advance();
+    } else {
+        // ifeq/ifneq (lhs, rhs)
+        auto open = expect(TokenType::OpenParen, "Expected '(' after ifeq/ifneq");
+        if (!open)
+            return pup::unexpected<Error>(open.error());
+
+        lexer_.set_context(Lexer::Context::Conditional);
+
+        // Parse LHS until comma
+        auto lhs = parse_expression_until([](Token const& t) {
+            return t.is(TokenType::Comma);
+        });
+        if (!lhs)
+            return pup::unexpected<Error>(lhs.error());
+        cond.lhs = std::move(*lhs);
+
+        auto comma = expect(TokenType::Comma, "Expected ',' in ifeq/ifneq");
+        if (!comma)
+            return pup::unexpected<Error>(comma.error());
+
+        // Parse RHS until close paren
+        auto rhs = parse_expression_until([](Token const& t) {
+            return t.is(TokenType::CloseParen);
+        });
+        if (!rhs)
+            return pup::unexpected<Error>(rhs.error());
+        cond.rhs = std::move(*rhs);
+
+        auto close = expect(TokenType::CloseParen, "Expected ')' in ifeq/ifneq");
+        if (!close)
+            return pup::unexpected<Error>(close.error());
+
+        lexer_.set_context(Lexer::Context::LineStart);
+    }
+
+    // Skip to end of line
+    while (!check(TokenType::Newline) && !check(TokenType::Eof))
+        advance();
+    if (check(TokenType::Newline))
+        advance();
+
+    // Parse then body until else or endif
+    while (!check(TokenType::KwElse) && !check(TokenType::KwEndif) && !check(TokenType::Eof)) {
+        if (match(TokenType::Newline) || match(TokenType::Hash))
+            continue;
+
+        auto stmt = parse_line();
+        if (!stmt) {
+            report_error(stmt.error().message);
+            skip_to_next_statement();
+            continue;
+        }
+        if (*stmt)
+            cond.then_body.push_back(std::move(*stmt));
+    }
+
+    // Parse else body if present
+    if (match(TokenType::KwElse)) {
+        while (!check(TokenType::Newline) && !check(TokenType::Eof))
+            advance();
+        if (check(TokenType::Newline))
+            advance();
+
+        while (!check(TokenType::KwEndif) && !check(TokenType::Eof)) {
+            if (match(TokenType::Newline) || match(TokenType::Hash))
+                continue;
+
+            auto stmt = parse_line();
+            if (!stmt) {
+                report_error(stmt.error().message);
+                skip_to_next_statement();
+                continue;
+            }
+            if (*stmt)
+                cond.else_body.push_back(std::move(*stmt));
+        }
+    }
+
+    // Expect endif
+    if (!match(TokenType::KwEndif))
+        return make_error<Conditional>(ErrorCode::ParseError, "Expected 'endif'");
+
+    return cond;
+}
+
+auto Parser::parse_include(bool is_rules) -> Result<Include>
+{
+    auto inc = Include{};
+    inc.location = previous_.location;
+    inc.is_rules = is_rules;
+
+    if (!is_rules) {
+        auto path = parse_expression();
+        if (!path)
+            return pup::unexpected<Error>(path.error());
+        inc.path = std::move(*path);
+    }
+
+    return inc;
+}
+
+auto Parser::parse_export() -> Result<Export>
+{
+    auto exp = Export{};
+    exp.location = previous_.location;
+
+    if (!check(TokenType::Identifier) && !check(TokenType::Text))
+        return make_error<Export>(ErrorCode::ParseError, "Expected variable name after 'export'");
+
+    exp.var_name = std::string{current_.text};
+    advance();
+
+    return exp;
+}
+
+auto Parser::parse_import() -> Result<Import>
+{
+    auto imp = Import{};
+    imp.location = previous_.location;
+
+    if (!check(TokenType::Identifier) && !check(TokenType::Text))
+        return make_error<Import>(ErrorCode::ParseError, "Expected variable name after 'import'");
+
+    imp.var_name = std::string{current_.text};
+    advance();
+
+    // Optional default value
+    if (match(TokenType::Equals)) {
+        auto value = parse_expression();
+        if (!value)
+            return pup::unexpected<Error>(value.error());
+        imp.default_value = std::move(*value);
+    }
+
+    return imp;
+}
+
+auto Parser::parse_preload() -> Result<Preload>
+{
+    auto pre = Preload{};
+    pre.location = previous_.location;
+
+    auto path = parse_expression();
+    if (!path)
+        return pup::unexpected<Error>(path.error());
+    pre.path = std::move(*path);
+
+    return pre;
+}
+
+auto Parser::parse_error_directive() -> Result<ErrorDirective>
+{
+    auto err = ErrorDirective{};
+    err.location = previous_.location;
+
+    auto msg = parse_expression();
+    if (!msg)
+        return pup::unexpected<Error>(msg.error());
+    err.message = std::move(*msg);
+
+    return err;
+}
+
+auto Parser::parse_run() -> Result<Run>
+{
+    auto run = Run{};
+    run.location = previous_.location;
+
+    auto script = parse_expression();
+    if (!script)
+        return pup::unexpected<Error>(script.error());
+    run.script = std::move(*script);
+
+    return run;
+}
+
+auto Parser::parse_expression() -> Result<Expression>
+{
+    return parse_expression_until([](Token const& t) {
+        return t.is_end_of_statement();
+    });
+}
+
+auto Parser::parse_expression_until(std::function<bool(Token const&)> const& stop) -> Result<Expression>
+{
+    auto expr = Expression{};
+    auto current_text = std::string{};
+
+    auto flush_text = [&] {
+        if (!current_text.empty()) {
+            expr.parts.push_back(Expression::Literal{std::move(current_text)});
+            current_text.clear();
+        }
+    };
+
+    while (!check(TokenType::Eof) && !stop(current_)) {
+        // Variable reference: $(VAR)
+        if (check(TokenType::Dollar)) {
+            flush_text();
+            advance();
+            if (!match(TokenType::OpenParen))
+                return make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '$'");
+
+            auto name = std::string{};
+            while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+                name += current_.text;
+                advance();
+            }
+
+            if (!match(TokenType::CloseParen))
+                return make_error<Expression>(ErrorCode::ParseError, "Unterminated variable reference");
+
+            auto var = VarRef{VarRef::Kind::Regular, std::move(name), previous_.location};
+            expr.parts.push_back(Expression::Variable{std::move(var)});
+            continue;
+        }
+
+        // Config variable: @(VAR)
+        if (check(TokenType::At)) {
+            flush_text();
+            advance();
+            if (!match(TokenType::OpenParen))
+                return make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '@'");
+
+            auto name = std::string{};
+            while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+                name += current_.text;
+                advance();
+            }
+
+            if (!match(TokenType::CloseParen))
+                return make_error<Expression>(ErrorCode::ParseError, "Unterminated config variable reference");
+
+            auto var = VarRef{VarRef::Kind::Config, std::move(name), previous_.location};
+            expr.parts.push_back(Expression::Variable{std::move(var)});
+            continue;
+        }
+
+        // Node variable: &(VAR)
+        if (check(TokenType::Ampersand)) {
+            flush_text();
+            advance();
+            if (!match(TokenType::OpenParen))
+                return make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '&'");
+
+            auto name = std::string{};
+            while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+                name += current_.text;
+                advance();
+            }
+
+            if (!match(TokenType::CloseParen))
+                return make_error<Expression>(ErrorCode::ParseError, "Unterminated node variable reference");
+
+            auto var = VarRef{VarRef::Kind::Node, std::move(name), previous_.location};
+            expr.parts.push_back(Expression::Variable{std::move(var)});
+            continue;
+        }
+
+        // Any other token becomes text
+        current_text += current_.text;
+        advance();
+    }
+
+    flush_text();
+    return expr;
+}
+
+auto Parser::parse_path_pattern() -> Result<PathPattern>
+{
+    auto pattern = PathPattern{};
+    pattern.location = current_.location;
+
+    // Check for exclusion prefix
+    if (match(TokenType::Bang))
+        pattern.is_exclusion = true;
+
+    // Check for group reference: {name} or <name>
+    if (match(TokenType::OpenBrace)) {
+        pattern.is_group = true;
+        if (check(TokenType::Identifier) || check(TokenType::Text)) {
+            pattern.group_name = std::string{current_.text};
+            advance();
+        }
+        if (!match(TokenType::CloseBrace))
+            return make_error<PathPattern>(ErrorCode::ParseError, "Expected '}' after group name");
+        return pattern;
+    }
+
+    if (match(TokenType::OpenAngle)) {
+        pattern.is_group = true;
+        if (check(TokenType::Identifier) || check(TokenType::Text)) {
+            pattern.group_name = std::string{current_.text};
+            advance();
+        }
+        if (!match(TokenType::CloseAngle))
+            return make_error<PathPattern>(ErrorCode::ParseError, "Expected '>' after group name");
+        return pattern;
+    }
+
+    // Parse path expression (until whitespace or delimiter)
+    auto path = parse_expression_until([](Token const& t) {
+        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow,
+            TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
+    });
+    if (!path)
+        return pup::unexpected<Error>(path.error());
+    pattern.path = std::move(*path);
+
+    // Skip whitespace
+    lexer_.skip_whitespace();
+
+    return pattern;
+}
+
+auto Parser::parse_command() -> Result<Expression>
+{
+    auto expr = Expression{};
+    auto tok = lexer_.next();
+
+    // Handle display text: ^ text ^
+    std::optional<Expression> display;
+    if (tok.is(TokenType::Caret)) {
+        auto display_text = std::string{};
+        tok = lexer_.next();
+        while (!tok.is(TokenType::Caret) && !tok.is(TokenType::PipeArrow) &&
+               !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
+            display_text += tok.text;
+            tok = lexer_.next();
+        }
+        if (tok.is(TokenType::Caret)) {
+            // Store display separately - for now just skip it
+            tok = lexer_.next();
+        }
+    }
+
+    // Collect command text until |>
+    auto cmd_text = std::string{};
+    while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
+        cmd_text += tok.text;
+        tok = lexer_.next();
+    }
+
+    // Trim trailing whitespace
+    while (!cmd_text.empty() && (cmd_text.back() == ' ' || cmd_text.back() == '\t'))
+        cmd_text.pop_back();
+
+    if (!cmd_text.empty())
+        expr.parts.push_back(Expression::Literal{std::move(cmd_text)});
+
+    // Put back the |> token
+    // Note: This is a simplification - proper implementation would handle this better
+    current_ = tok;
+
+    return expr;
+}
+
+auto Parser::make_error(std::string message) -> Error
+{
+    return Error::make(ErrorCode::ParseError,
+        std::string{lexer_.filename()} + ":" + std::to_string(current_.location.line) + ":" +
+            std::to_string(current_.location.column) + ": " + message);
+}
+
+auto Parser::report_error(std::string message) -> void
+{
+    errors_.push_back(ParseError{
+        .location = current_.location,
+        .message = std::move(message),
+    });
+}
+
+} // namespace pup::parser

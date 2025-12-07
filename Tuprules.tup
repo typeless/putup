@@ -1,0 +1,31 @@
+# Tuprules.tup - Shared build rules for pup
+
+ROOT = $(TUP_CWD)
+
+CXX = clang++
+AR = ar
+
+CXXFLAGS = -std=c++23
+CXXFLAGS += -Wall -Wextra -Werror -Wpedantic
+CXXFLAGS += -I$(ROOT)/include
+CXXFLAGS += -I$(ROOT)/third_party
+CXXFLAGS += -fPIC
+
+# OpenSSL for SHA-256
+LDFLAGS += -lssl -lcrypto
+
+ifdef DEBUG
+CXXFLAGS += -g -O0 -fsanitize=address,undefined
+LDFLAGS += -fsanitize=address,undefined
+else
+CXXFLAGS += -O2 -DNDEBUG
+endif
+
+# Compile C++ source to object
+!cxx = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
+
+# Link executable
+!link = |> ^ LINK %o^ $(CXX) $(LDFLAGS) %f -o %o |>
+
+# Create static library
+!ar = |> ^ AR %o^ $(AR) rcs %o %f |>

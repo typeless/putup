@@ -1,0 +1,37 @@
+---
+# clang-format configuration for uld_cpp
+# Based on SerenityOS .clang-format (C++ portion only)
+# https://github.com/SerenityOS/serenity/blob/master/.clang-format
+
+BasedOnStyle: WebKit
+
+AlignEscapedNewlines: Left
+AlignTrailingComments:
+    Kind: Always
+    OverEmptyLines: 0
+
+BraceWrapping:
+    AfterFunction: true
+BreakBeforeBraces: Custom
+
+BreakBeforeInheritanceComma: true
+BreakConstructorInitializers: BeforeComma
+
+IndentPPDirectives: AfterHash
+
+InsertNewlineAtEOF: true
+LineEnding: LF
+
+NamespaceIndentation: None
+
+QualifierAlignment: Right
+
+RemoveSemicolon: true
+
+SpaceAfterTemplateKeyword: false
+
+# C++11 project - these options are kept but won't affect code
+# (requires clauses are C++20 only)
+IndentRequiresClause: false
+RequiresClausePosition: WithFollowing
+RequiresExpressionIndentation: OuterScope

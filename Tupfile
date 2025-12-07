@@ -1,0 +1,11 @@
+include_rules
+
+# Core library sources
+: foreach src/core/*.cpp |> !cxx |> %B.o {core_objs}
+
+# Parser library sources
+: foreach src/parser/*.cpp |> !cxx |> %B.o {parser_objs}
+
+# Build pup executable (placeholder main for now)
+: foreach src/*.cpp |> !cxx |> %B.o {main_objs}
+: {core_objs} {parser_objs} {main_objs} |> !link |> pup
