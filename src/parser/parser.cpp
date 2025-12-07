@@ -870,9 +870,11 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
     auto pattern = PathPattern {};
     pattern.location = current_.location;
 
-    // Check for exclusion prefix
+    // Check for exclusion prefix (! for inputs, ^ for outputs)
     if (match(TokenType::Bang))
         pattern.is_exclusion = true;
+    else if (match(TokenType::Caret))
+        pattern.is_output_exclusion = true;
 
     // Check for group reference: {name} or <name>
     if (match(TokenType::OpenBrace)) {

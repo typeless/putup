@@ -77,10 +77,11 @@ struct Expression : AstNode {
 /// Input/output path pattern (may include globs, groups, exclusions)
 struct PathPattern : AstNode {
     Expression path;
-    bool is_foreach = false;   ///< Part of foreach expansion
-    bool is_exclusion = false; ///< Starts with ! for exclusion
-    bool is_group = false;     ///< References a group like {groupname} or <groupname>
-    std::string group_name;    ///< Group name if is_group
+    bool is_foreach = false;          ///< Part of foreach expansion
+    bool is_exclusion = false;        ///< Starts with ! for input exclusion
+    bool is_output_exclusion = false; ///< Starts with ^ for output exclusion (regex pattern)
+    bool is_group = false;            ///< References a group like {groupname} or <groupname>
+    std::string group_name;           ///< Group name if is_group
 };
 
 /// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}]

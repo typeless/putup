@@ -64,6 +64,19 @@ auto GraphBuilder::add_tupfile(
         .current_file = tupfile.filename,
     };
 
+    // Set up resolve_group callback for %<group> pattern expansion
+    eval.resolve_group = [&ctx](std::string_view name) -> std::vector<std::string> {
+        auto it = ctx.groups.find(std::string { name });
+        if (it == ctx.groups.end())
+            return {};
+        auto paths = std::vector<std::string> {};
+        for (auto id : it->second) {
+            if (auto const* node = ctx.graph->get_node(id))
+                paths.push_back(node->path);
+        }
+        return paths;
+    };
+
     for (auto const& stmt : tupfile.statements) {
         auto result = Result<void>{process_statement(ctx, *stmt)};
         if (!result) {
@@ -501,6 +514,8 @@ auto GraphBuilder::expand_outputs(
     for (auto const& pattern : patterns) {
         if (pattern.is_group)
             continue; // Groups are not valid in outputs
+        if (pattern.is_output_exclusion)
+            continue; // Exclusion patterns are markers, not actual outputs
 
         auto paths = Result<std::vector<std::string>>{evaluator.expand_path(pattern)};
         if (!paths)

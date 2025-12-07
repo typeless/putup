@@ -199,6 +199,29 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
             continue;
         }
 
+        // Check for %<group> pattern
+        if (flag == '<') {
+            auto end = text.find('>', pos);
+            if (end == std::string_view::npos) {
+                // No closing '>', output as-is
+                result += "%<";
+                continue;
+            }
+            auto group_name = std::string { text.substr(pos, end - pos) };
+            pos = end + 1;
+
+            // Resolve group to paths via callback
+            if (ctx_.resolve_group) {
+                auto paths = ctx_.resolve_group(group_name);
+                for (std::size_t i = 0; i < paths.size(); ++i) {
+                    if (i > 0)
+                        result += ' ';
+                    result += paths[i];
+                }
+            }
+            continue;
+        }
+
         // Standard pattern flags
         switch (flag) {
         case 'f':
