@@ -50,9 +50,11 @@ struct EvalContext {
     VarDb* config_vars = nullptr; ///< Config variables @(VAR) from tup.config
     VarDb* node_vars = nullptr;   ///< Node variables &(VAR)
 
-    std::string tup_cwd = {};      ///< Current directory (TUP_CWD)
-    std::string tup_platform = {}; ///< Platform name (TUP_PLATFORM)
-    std::string tup_arch = {};     ///< Architecture (TUP_ARCH)
+    std::string tup_cwd = {};              ///< Current directory (TUP_CWD)
+    std::string tup_platform = {};         ///< Platform name (TUP_PLATFORM)
+    std::string tup_arch = {};             ///< Architecture (TUP_ARCH)
+    std::string tup_variantdir = {};       ///< Relative path to variant output (TUP_VARIANTDIR)
+    std::string tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
 
     /// Callback for resolving group references like {groupname}
     std::function<std::vector<std::string>(std::string_view)> resolve_group = {};
@@ -109,6 +111,7 @@ constexpr auto TUP_CWD = "TUP_CWD";
 constexpr auto TUP_PLATFORM = "TUP_PLATFORM";
 constexpr auto TUP_ARCH = "TUP_ARCH";
 constexpr auto TUP_VARIANTDIR = "TUP_VARIANTDIR";
+constexpr auto TUP_VARIANT_OUTPUTDIR = "TUP_VARIANT_OUTPUTDIR";
 constexpr auto CONFIG_ = "CONFIG_"; // Prefix for @() variables
 } // namespace builtin_vars
 

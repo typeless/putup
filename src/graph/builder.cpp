@@ -8,6 +8,24 @@
 
 namespace pup::graph {
 
+namespace {
+
+/// Map an output path to the variant directory
+/// e.g., "foo.o" in "src/lib" with variant "build" -> "build/src/lib/foo.o"
+auto map_to_variant(
+    std::string const& path,
+    std::filesystem::path const& current_dir,
+    std::filesystem::path const& variant_dir) -> std::string
+{
+    if (variant_dir.empty())
+        return path;
+
+    auto full_path = std::filesystem::path{variant_dir / current_dir / path};
+    return full_path.lexically_normal().string();
+}
+
+} // namespace
+
 GraphBuilder::GraphBuilder(BuilderOptions options)
     : options_(std::move(options))
 {
@@ -28,11 +46,17 @@ auto GraphBuilder::add_tupfile(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval) -> Result<void>
 {
+    // Compute current_dir relative to root_dir
+    auto tupfile_parent = std::filesystem::path{tupfile.filename}.parent_path();
+    auto relative_dir = std::filesystem::relative(tupfile_parent, options_.root_dir);
+    if (relative_dir == ".")
+        relative_dir = "";
+
     auto ctx = BuilderContext {
         .graph = &graph,
         .eval = &eval,
         .options = options_,
-        .current_dir = std::filesystem::path { tupfile.filename }.parent_path(),
+        .current_dir = relative_dir,
         .current_file = tupfile.filename,
     };
 
@@ -330,7 +354,9 @@ auto GraphBuilder::expand_inputs(
                         result.push_back(std::move(p));
                 } else {
                     // No files on disk - look for matching Generated nodes in graph
-                    auto glob = parser::Glob { path };
+                    // Map the pattern to variant path for matching
+                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
+                    auto glob = parser::Glob { variant_path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         if (auto const* node = ctx.graph->get_node(id)) {
                             if (glob.matches(node->path))
@@ -339,7 +365,20 @@ auto GraphBuilder::expand_inputs(
                     }
                 }
             } else {
-                result.push_back(std::move(path));
+                // Non-glob path: check if file exists on disk, or find in graph
+                auto full_path = std::filesystem::path{ctx.options.root_dir / ctx.current_dir / path};
+                if (std::filesystem::exists(full_path)) {
+                    result.push_back(std::move(path));
+                } else {
+                    // Not on disk - check for generated file in variant
+                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
+                    if (ctx.graph->find_by_path(variant_path)) {
+                        result.push_back(variant_path);
+                    } else {
+                        // Fall back to original path
+                        result.push_back(std::move(path));
+                    }
+                }
             }
         }
     }
@@ -391,10 +430,12 @@ auto GraphBuilder::expand_outputs(
         for (auto& path : *paths) {
             // Expand pattern flags (%B, %f, etc.)
             auto expanded = Result<std::string>{evaluator.expand_pattern(path, flags)};
-            if (expanded)
-                result.push_back(*expanded);
-            else
-                result.push_back(std::move(path));
+            auto output_path = expanded ? *expanded : std::move(path);
+
+            // Map to variant directory if configured
+            output_path = map_to_variant(output_path, ctx.current_dir, ctx.options.variant_dir);
+
+            result.push_back(std::move(output_path));
         }
     }
 

@@ -11,6 +11,7 @@
 #include "pup/graph/dag.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
+#include "pup/parser/config.hpp"
 #include "pup/parser/parser.hpp"
 
 #include <chrono>
@@ -35,6 +36,7 @@ struct Options {
     bool version = false;
     bool help = false;
     std::string command = {};
+    std::string variant = {};              ///< Variant directory (empty = auto-detect)
     std::vector<std::string> targets = {};
 };
 
@@ -48,12 +50,13 @@ auto print_usage() -> void
     std::cout << "  build    Execute build (default)\n";
     std::cout << "  graph    Print dependency graph\n";
     std::cout << "\nOptions:\n";
-    std::cout << "  -j, --jobs N     Run N jobs in parallel\n";
-    std::cout << "  -k, --keep-going Continue after failures\n";
-    std::cout << "  -n, --dry-run    Print commands without executing\n";
-    std::cout << "  -v, --verbose    Verbose output\n";
-    std::cout << "  --version        Print version\n";
-    std::cout << "  -h, --help       Print this help\n";
+    std::cout << "  -j, --jobs N       Run N jobs in parallel\n";
+    std::cout << "  -k, --keep-going   Continue after failures\n";
+    std::cout << "  -n, --dry-run      Print commands without executing\n";
+    std::cout << "  -v, --verbose      Verbose output\n";
+    std::cout << "  --variant=DIR      Use DIR as variant output directory\n";
+    std::cout << "  --version          Print version\n";
+    std::cout << "  -h, --help         Print this help\n";
 }
 
 auto print_version() -> void
@@ -86,6 +89,8 @@ auto parse_args(int argc, char** argv) -> Options
             }
         } else if (arg.starts_with("-j")) {
             opts.jobs = static_cast<std::size_t>(std::stoi(std::string { arg.substr(2) }));
+        } else if (arg.starts_with("--variant=")) {
+            opts.variant = std::string { arg.substr(10) };
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty())
                 opts.command = std::string { arg };
@@ -114,6 +119,44 @@ auto find_project_root() -> std::optional<std::filesystem::path>
             return std::nullopt;
         current = parent;
     }
+}
+
+/// Find variant directory by looking for tup.config in subdirectories
+auto find_variant_dir(std::filesystem::path const& root) -> std::optional<std::filesystem::path>
+{
+    // Look for common variant directory names with tup.config
+    for (auto const& name : { "build", "out", "variant" }) {
+        auto dir = std::filesystem::path{root / name};
+        if (std::filesystem::exists(dir / "tup.config"))
+            return dir;
+    }
+
+    // Scan all immediate subdirectories for tup.config
+    if (std::filesystem::is_directory(root)) {
+        for (auto const& entry : std::filesystem::directory_iterator(root)) {
+            if (entry.is_directory()) {
+                auto config_path = std::filesystem::path{entry.path() / "tup.config"};
+                if (std::filesystem::exists(config_path))
+                    return entry.path();
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+/// Compute TUP_VARIANTDIR relative path from source dir to variant output dir
+auto compute_variantdir(
+    std::filesystem::path const& source_dir,
+    std::filesystem::path const& variant_dir) -> std::string
+{
+    if (variant_dir.empty())
+        return ".";
+
+    // Variant output for this source dir is: variant_dir / source_dir
+    auto output_dir = std::filesystem::path{variant_dir / source_dir};
+    auto rel = std::filesystem::relative(output_dir, source_dir);
+    return rel.string();
 }
 
 auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
@@ -222,12 +265,13 @@ auto cmd_graph(Options const& opts) -> int
         .tup_arch = std::string { pup::ARCH },
     };
 
-    auto builder_opts = pup::graph::BuilderOptions {
+    auto builder_opts = pup::graph::BuilderOptions{
         .root_dir = *root,
+        .variant_dir = {},
         .expand_globs = true,
     };
 
-    auto builder = pup::graph::GraphBuilder { builder_opts };
+    auto builder = pup::graph::GraphBuilder{builder_opts};
     auto graph_result = pup::Result<pup::graph::BuildGraph>{builder.build(*parse_result, eval_ctx)};
 
     if (!graph_result) {
@@ -279,17 +323,46 @@ auto cmd_build(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
+    // Discover or use specified variant (always relative to root)
+    auto variant_dir = std::filesystem::path{};
+    if (!opts.variant.empty()) {
+        variant_dir = std::filesystem::path{opts.variant};
+    } else {
+        auto discovered = std::optional<std::filesystem::path>{find_variant_dir(*root)};
+        if (discovered)
+            variant_dir = std::filesystem::relative(*discovered, *root);
+    }
+
+    // Load config variables from tup.config if present
+    auto config_vars = pup::parser::VarDb{};
+    if (!variant_dir.empty()) {
+        auto config_path = std::filesystem::path{*root / variant_dir / "tup.config"};
+        if (std::filesystem::exists(config_path)) {
+            auto config_result = pup::Result<pup::parser::VarDb>{pup::parser::parse_config(config_path)};
+            if (config_result) {
+                config_vars = std::move(*config_result);
+                if (opts.verbose)
+                    std::cout << "Loaded config from " << config_path << "\n";
+            }
+        }
+    }
+
     // Build graph
-    auto vars = pup::parser::VarDb {};
-    auto eval_ctx = pup::parser::EvalContext {
+    auto vars = pup::parser::VarDb{};
+    auto tup_variantdir = compute_variantdir(std::filesystem::path{}, variant_dir);
+    auto eval_ctx = pup::parser::EvalContext{
         .vars = &vars,
+        .config_vars = &config_vars,
         .tup_cwd = std::string{root->string()},
-        .tup_platform = std::string { pup::PLATFORM },
-        .tup_arch = std::string { pup::ARCH },
+        .tup_platform = std::string{pup::PLATFORM},
+        .tup_arch = std::string{pup::ARCH},
+        .tup_variantdir = tup_variantdir,
+        .tup_variant_outputdir = variant_dir.empty() ? "." : variant_dir.string(),
     };
 
-    auto builder_opts = pup::graph::BuilderOptions {
+    auto builder_opts = pup::graph::BuilderOptions{
         .root_dir = *root,
+        .variant_dir = variant_dir,
         .expand_globs = true,
     };
 

@@ -348,6 +348,10 @@ auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::
         return ctx_.tup_platform;
     if (name == builtin_vars::TUP_ARCH)
         return ctx_.tup_arch;
+    if (name == builtin_vars::TUP_VARIANTDIR)
+        return ctx_.tup_variantdir;
+    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR)
+        return ctx_.tup_variant_outputdir;
 
     return std::nullopt;
 }

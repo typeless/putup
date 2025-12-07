@@ -18,10 +18,11 @@ namespace pup::graph {
 
 /// Options for graph building
 struct BuilderOptions {
-    std::filesystem::path root_dir; ///< Project root directory
-    bool expand_globs = true;       ///< Expand glob patterns
-    bool validate_inputs = true;    ///< Check that input files exist
-    bool verbose = false;           ///< Print verbose output
+    std::filesystem::path root_dir;    ///< Project root directory
+    std::filesystem::path variant_dir; ///< Variant output directory (empty = in-tree)
+    bool expand_globs = true;          ///< Expand glob patterns
+    bool validate_inputs = true;       ///< Check that input files exist
+    bool verbose = false;              ///< Print verbose output
 };
 
 /// Bang macro definition

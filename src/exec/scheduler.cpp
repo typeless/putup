@@ -256,6 +256,16 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
         return result;
     }
 
+    // Ensure output directories exist
+    for (auto const& output : job.outputs) {
+        auto output_path = std::filesystem::path{options_.root_dir / output};
+        auto parent = std::filesystem::path{output_path.parent_path()};
+        if (!parent.empty() && !std::filesystem::exists(parent)) {
+            std::error_code ec;
+            std::filesystem::create_directories(parent, ec);
+        }
+    }
+
     auto run_opts = RunOptions {};
     if (!job.working_dir.empty())
         run_opts.working_dir = job.working_dir;
