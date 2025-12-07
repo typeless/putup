@@ -50,6 +50,7 @@ auto print_usage() -> void
                "  parse    Parse and validate Tupfiles\n"
                "  build    Execute build (default)\n"
                "  graph    Print dependency graph\n"
+               "  clean    Remove generated files\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
                "  -k, --keep-going   Continue after failures\n"
@@ -296,6 +297,74 @@ auto cmd_graph(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
+auto cmd_clean(Options const& opts) -> int
+{
+    auto root = std::optional<std::filesystem::path>{find_project_root()};
+    if (!root) {
+        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        return EXIT_FAILURE;
+    }
+
+    // Find variant directory
+    auto variant_dir = std::optional<std::filesystem::path>{};
+    if (!opts.variant.empty())
+        variant_dir = *root / opts.variant;
+    else
+        variant_dir = find_variant_dir(*root);
+
+    if (!variant_dir || !std::filesystem::exists(*variant_dir)) {
+        fmt::print(stderr, "Error: No variant directory found (nothing to clean)\n");
+        return EXIT_FAILURE;
+    }
+
+    auto removed_count = std::size_t { 0 };
+    auto error_count = std::size_t { 0 };
+
+    // Remove all files in variant directory except tup.config
+    for (auto const& entry : std::filesystem::directory_iterator(*variant_dir)) {
+        auto filename = std::string{entry.path().filename().string()};
+
+        // Preserve tup.config and .gitignore
+        if (filename == "tup.config" || filename == ".gitignore")
+            continue;
+
+        if (opts.dry_run) {
+            fmt::print("Would remove: {}\n", entry.path().string());
+            ++removed_count;
+            continue;
+        }
+
+        auto ec = std::error_code {};
+        if (entry.is_directory()) {
+            auto count = std::filesystem::remove_all(entry.path(), ec);
+            if (ec) {
+                fmt::print(stderr, "Error removing {}: {}\n", entry.path().string(), ec.message());
+                ++error_count;
+            } else {
+                removed_count += count;
+                if (opts.verbose)
+                    fmt::print("Removed: {} ({} files)\n", entry.path().string(), count);
+            }
+        } else {
+            if (std::filesystem::remove(entry.path(), ec)) {
+                ++removed_count;
+                if (opts.verbose)
+                    fmt::print("Removed: {}\n", entry.path().string());
+            } else if (ec) {
+                fmt::print(stderr, "Error removing {}: {}\n", entry.path().string(), ec.message());
+                ++error_count;
+            }
+        }
+    }
+
+    if (opts.dry_run)
+        fmt::print("Would remove {} items\n", removed_count);
+    else
+        fmt::print("Removed {} items\n", removed_count);
+
+    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
 auto cmd_build(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path>{find_project_root()};
@@ -454,6 +523,8 @@ auto main(int argc, char** argv) -> int
         return cmd_graph(opts);
     if (opts.command == "build")
         return cmd_build(opts);
+    if (opts.command == "clean")
+        return cmd_clean(opts);
 
     fmt::print(stderr, "Unknown command: {}\n", opts.command);
     print_usage();
