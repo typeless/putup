@@ -56,7 +56,7 @@ public:
     /// Run a command with real-time output callback
     [[nodiscard]] auto run_with_output(
         std::string_view command,
-        OutputCallback callback,
+        OutputCallback const& callback,
         RunOptions const& options = {}) -> Result<CommandResult>;
 
     /// Set the default working directory

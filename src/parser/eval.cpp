@@ -180,9 +180,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
             while (end < text.size() && text[end] >= '0' && text[end] <= '9')
                 ++end;
 
-            auto num = int{0};
-            auto start_ptr = text.data() + percent + 1;
-            auto end_ptr = text.data() + end;
+            auto num = 0;
+            auto const* start_ptr = text.data() + percent + 1;
+            auto const* end_ptr = text.data() + end;
             std::from_chars(start_ptr, end_ptr, num);
 
             if (end < text.size() && text[end] == 'f') {

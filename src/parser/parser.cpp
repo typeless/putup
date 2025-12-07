@@ -776,7 +776,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
     auto flush_text = [&] {
         if (!current_text.empty()) {
-            expr.parts.push_back(Expression::Literal{std::move(current_text)});
+            expr.parts.emplace_back(Expression::Literal{std::move(current_text)});
             current_text.clear();
         }
     };
@@ -803,7 +803,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
                 return make_error<Expression>(ErrorCode::ParseError, "Unterminated variable reference");
 
             auto var = VarRef{VarRef::Kind::Regular, std::move(name), previous_.location};
-            expr.parts.push_back(Expression::Variable{std::move(var)});
+            expr.parts.emplace_back(Expression::Variable{std::move(var)});
             last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
@@ -825,7 +825,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
                 return make_error<Expression>(ErrorCode::ParseError, "Unterminated config variable reference");
 
             auto var = VarRef{VarRef::Kind::Config, std::move(name), previous_.location};
-            expr.parts.push_back(Expression::Variable{std::move(var)});
+            expr.parts.emplace_back(Expression::Variable{std::move(var)});
             last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
@@ -847,7 +847,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
                 return make_error<Expression>(ErrorCode::ParseError, "Unterminated node variable reference");
 
             auto var = VarRef{VarRef::Kind::Node, std::move(name), previous_.location};
-            expr.parts.push_back(Expression::Variable{std::move(var)});
+            expr.parts.emplace_back(Expression::Variable{std::move(var)});
             last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
@@ -944,7 +944,7 @@ auto Parser::parse_command() -> Result<Expression>
         cmd_text.pop_back();
 
     if (!cmd_text.empty())
-        expr.parts.push_back(Expression::Literal{std::move(cmd_text)});
+        expr.parts.emplace_back(Expression::Literal{std::move(cmd_text)});
 
     // Put back the |> token
     current_ = tok;
@@ -952,18 +952,18 @@ auto Parser::parse_command() -> Result<Expression>
     return expr;
 }
 
-auto Parser::make_error(std::string message) -> Error
+auto Parser::make_error(std::string const& message) -> Error
 {
     return Error::make(ErrorCode::ParseError,
         std::string{lexer_.filename()} + ":" + std::to_string(current_.location.line) + ":" +
             std::to_string(current_.location.column) + ": " + message);
 }
 
-auto Parser::report_error(std::string message) -> void
+auto Parser::report_error(std::string const& message) -> void
 {
     errors_.push_back(ParseError{
         .location = current_.location,
-        .message = std::move(message),
+        .message = message,
     });
 }
 

@@ -13,8 +13,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-extern char** environ;
-
 namespace pup::exec {
 
 CommandRunner::CommandRunner(RunOptions default_options)
@@ -35,7 +33,7 @@ auto CommandRunner::run(std::string_view command, RunOptions const& options)
 
 auto CommandRunner::run_with_output(
     std::string_view command,
-    OutputCallback callback,
+    OutputCallback const& callback,
     RunOptions const& options) -> Result<CommandResult>
 {
     auto merged = merge_options(options);
@@ -255,7 +253,7 @@ auto CommandRunner::run_with_output(
     }
 
     // Wait for child
-    int status = 0;
+    auto status = 0;
     ::waitpid(pid, &status, 0);
 
     if (WIFEXITED(status)) {

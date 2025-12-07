@@ -117,8 +117,8 @@ private:
     [[nodiscard]] auto parse_command() -> Result<Expression>;
 
     // Helper to create error
-    [[nodiscard]] auto make_error(std::string message) -> Error;
-    auto report_error(std::string message) -> void;
+    [[nodiscard]] auto make_error(std::string const& message) -> Error;
+    auto report_error(std::string const& message) -> void;
 };
 
 } // namespace pup::parser
