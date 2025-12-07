@@ -12,6 +12,9 @@ include_rules
 # Index library sources
 : foreach src/index/*.cpp |> !cxx |> %B.o {index_objs}
 
-# Build pup executable (placeholder main for now)
+# Exec library sources
+: foreach src/exec/*.cpp |> !cxx |> %B.o {exec_objs}
+
+# Build pup executable
 : foreach src/*.cpp |> !cxx |> %B.o {main_objs}
-: {core_objs} {parser_objs} {graph_objs} {index_objs} {main_objs} |> !link |> pup
+: {core_objs} {parser_objs} {graph_objs} {index_objs} {exec_objs} {main_objs} |> !link |> pup
