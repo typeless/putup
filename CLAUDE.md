@@ -11,20 +11,35 @@ A modern C++23 reimplementation of the [Tup build system](https://gittup.org/tup
 5. **No FUSE** - Compute changes from index comparison
 6. **No Lua** - Traditional Tupfile syntax only
 
-## Building
+## Building & Testing
+
+A Makefile wraps tup for common workflows:
 
 ```bash
-tup init   # First time only
-tup        # Build
-./pup      # Run
+make              # Build (quiet mode)
+make V=1          # Build with verbose output
+make test         # Run unit tests + E2E tests
+make tidy         # Run clang-tidy
+make format       # Format with clang-format
+make check        # Full CI: format-check + tidy + test
+make clean        # Clean and reinitialize tup
+```
+
+Or use tup directly:
+
+```bash
+tup init          # First time only
+tup               # Build
+./pup             # Run
 ```
 
 ## Testing
 
 ```bash
-tup                      # Build including tests
-./test/unit/pup_test     # Run all tests
-./test/unit/pup_test -s  # Run with verbose output
+make test                     # Run all tests
+./test/unit/pup_test          # Unit tests only
+./test/unit/pup_test -s       # Unit tests with verbose output
+./test/e2e/run_tests.sh       # E2E tests only
 ```
 
 ## Code Style
@@ -32,9 +47,11 @@ tup                      # Build including tests
 ### AAA (Almost Always Auto)
 Use `auto` for all declarations:
 ```cpp
-auto x = int{42};                    // Not: int x = 42;
+auto x = 42;                         // Literal type is clear
 auto ptr = std::make_unique<Foo>();  // Not: std::unique_ptr<Foo> ptr = ...
 auto const& ref = container;         // Const references too
+auto result = std::string{};         // Empty init with explicit type
+auto vec = std::vector<int>{1,2,3};  // Type not obvious from RHS
 ```
 
 ### Trailing Return Types
@@ -66,8 +83,13 @@ pup/
 │   ├── index/          # Binary index format, reader/writer
 │   └── exec/           # Scheduler, command runner
 ├── src/                # Implementation files
-├── test/unit/          # Catch2 unit tests
+├── test/
+│   ├── unit/           # Catch2 unit tests
+│   └── e2e/            # End-to-end tests
+│       ├── run_tests.sh
+│       └── fixtures/   # Test fixtures (simple_c, multi_file, etc.)
 ├── third_party/        # expected-lite, Catch2 amalgamated
+├── Makefile            # Workflow wrapper (make test, make tidy, etc.)
 ├── Tupfile             # Build configuration
 └── Tuprules.tup        # Shared build rules
 ```
@@ -137,7 +159,8 @@ Binary file at `.pup/index`:
 ## Implementation Phases
 
 1. ✅ **Foundation** - Core types, hash, result, platform
-2. 🔄 **Parser** - Lexer, AST, parser, evaluator
-3. ⏳ **Graph** - DAG, builder, topological sort
-4. ⏳ **Index** - Binary format, reader/writer
-5. ⏳ **Execution** - Scheduler, command runner
+2. ✅ **Parser** - Lexer, AST, parser, evaluator
+3. ✅ **Graph** - DAG, builder, topological sort
+4. ✅ **Index** - Binary format, reader/writer
+5. ✅ **Execution** - Scheduler, command runner
+6. 🔄 **Polish** - Edge cases, error handling, performance
