@@ -14,10 +14,10 @@ namespace pup {
 using NodeId = std::uint64_t;
 
 /// Invalid node ID sentinel
-inline constexpr auto INVALID_NODE_ID = NodeId{0};
+inline constexpr auto INVALID_NODE_ID = NodeId { 0 };
 
 /// Root node ID (parent of all top-level entries)
-inline constexpr auto ROOT_NODE_ID = NodeId{1};
+inline constexpr auto ROOT_NODE_ID = NodeId { 1 };
 
 /// SHA-256 hash (32 bytes)
 using Hash256 = std::array<std::byte, 32>;
@@ -32,7 +32,7 @@ struct FileTime {
     /// Create from timespec
     [[nodiscard]] static auto from_timespec(struct timespec const& ts) -> FileTime
     {
-        return FileTime{
+        return FileTime {
             .seconds = ts.tv_sec,
             .nanoseconds = static_cast<std::int32_t>(ts.tv_nsec),
         };

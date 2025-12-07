@@ -60,7 +60,7 @@ auto Sha256::update(std::string_view data) -> void
 
 auto Sha256::finalize() -> Hash256
 {
-    auto result = Hash256{};
+    auto result = Hash256 {};
     auto len = static_cast<unsigned int>(result.size());
     EVP_DigestFinal_ex(impl_->ctx, reinterpret_cast<unsigned char*>(result.data()), &len);
     return result;
@@ -73,30 +73,30 @@ auto Sha256::reset() -> void
 
 auto sha256(std::span<std::byte const> data) -> Hash256
 {
-    auto hasher = Sha256{};
+    auto hasher = Sha256 {};
     hasher.update(data);
     return hasher.finalize();
 }
 
 auto sha256(std::string_view data) -> Hash256
 {
-    auto hasher = Sha256{};
+    auto hasher = Sha256 {};
     hasher.update(data);
     return hasher.finalize();
 }
 
 auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
 {
-    auto file = std::ifstream{path, std::ios::binary};
+    auto file = std::ifstream { path, std::ios::binary };
     if (!file)
         return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path.string());
 
-    auto hasher = Sha256{};
-    auto buffer = std::array<char, 8192>{};
+    auto hasher = Sha256 {};
+    auto buffer = std::array<char, 8192> {};
 
     while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
         auto const bytes_read = static_cast<std::size_t>(file.gcount());
-        hasher.update(std::string_view{buffer.data(), bytes_read});
+        hasher.update(std::string_view { buffer.data(), bytes_read });
     }
 
     if (file.bad())
@@ -107,8 +107,8 @@ auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
 
 auto hash_to_hex(Hash256 const& hash) -> std::string
 {
-    static constexpr auto hex_chars = std::string_view{"0123456789abcdef"};
-    auto result = std::string{};
+    static constexpr auto hex_chars = std::string_view { "0123456789abcdef" };
+    auto result = std::string {};
     result.reserve(hash.size() * 2);
 
     for (auto const byte : hash) {
@@ -125,9 +125,9 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>
     if (hex.size() != 64)
         return make_error<Hash256>(ErrorCode::InvalidArgument, "Hex string must be 64 characters");
 
-    auto result = Hash256{};
+    auto result = Hash256 {};
 
-    for (auto i = std::size_t{0}; i < 32; ++i) {
+    for (auto i = std::size_t { 0 }; i < 32; ++i) {
         auto const hi = hex[i * 2];
         auto const lo = hex[i * 2 + 1];
 

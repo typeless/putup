@@ -46,13 +46,13 @@ private:
 
 /// Context for evaluating expressions
 struct EvalContext {
-    VarDb* vars = nullptr;           ///< Regular variables $(VAR)
-    VarDb* config_vars = nullptr;    ///< Config variables @(VAR) from tup.config
-    VarDb* node_vars = nullptr;      ///< Node variables &(VAR)
+    VarDb* vars = nullptr;        ///< Regular variables $(VAR)
+    VarDb* config_vars = nullptr; ///< Config variables @(VAR) from tup.config
+    VarDb* node_vars = nullptr;   ///< Node variables &(VAR)
 
-    std::string tup_cwd = {};        ///< Current directory (TUP_CWD)
-    std::string tup_platform = {};   ///< Platform name (TUP_PLATFORM)
-    std::string tup_arch = {};       ///< Architecture (TUP_ARCH)
+    std::string tup_cwd = {};      ///< Current directory (TUP_CWD)
+    std::string tup_platform = {}; ///< Platform name (TUP_PLATFORM)
+    std::string tup_arch = {};     ///< Architecture (TUP_ARCH)
 
     /// Callback for resolving group references like {groupname}
     std::function<std::vector<std::string>(std::string_view)> resolve_group = {};
@@ -63,14 +63,14 @@ struct EvalContext {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    std::string input = {};      ///< %f - input filename
-    std::string input_base = {}; ///< %b - input basename (no path)
-    std::string input_noext = {};///< %B - input basename without extension
-    std::string input_ext = {};  ///< %e - input extension
-    std::string output = {};     ///< %o - output filename
-    std::string output_base = {};///< %O - output basename (no path)
-    std::string input_dir = {};  ///< %d - input directory
-    int input_index = 0;    ///< For %Nf patterns (1-indexed)
+    std::string input = {};                   ///< %f - input filename
+    std::string input_base = {};              ///< %b - input basename (no path)
+    std::string input_noext = {};             ///< %B - input basename without extension
+    std::string input_ext = {};               ///< %e - input extension
+    std::string output = {};                  ///< %o - output filename
+    std::string output_base = {};             ///< %O - output basename (no path)
+    std::string input_dir = {};               ///< %d - input directory
+    int input_index = 0;                      ///< For %Nf patterns (1-indexed)
     std::vector<std::string> all_inputs = {}; ///< All inputs for %f expansion
 };
 

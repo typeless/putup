@@ -77,50 +77,94 @@ enum class TokenType : std::uint8_t {
 [[nodiscard]] constexpr auto token_type_name(TokenType type) -> std::string_view
 {
     switch (type) {
-    case TokenType::Eof: return "Eof";
-    case TokenType::Newline: return "Newline";
-    case TokenType::Whitespace: return "Whitespace";
-    case TokenType::Colon: return "Colon";
-    case TokenType::Pipe: return "Pipe";
-    case TokenType::PipeArrow: return "PipeArrow";
-    case TokenType::OpenParen: return "OpenParen";
-    case TokenType::CloseParen: return "CloseParen";
-    case TokenType::OpenBrace: return "OpenBrace";
-    case TokenType::CloseBrace: return "CloseBrace";
-    case TokenType::OpenBracket: return "OpenBracket";
-    case TokenType::CloseBracket: return "CloseBracket";
-    case TokenType::OpenAngle: return "OpenAngle";
-    case TokenType::CloseAngle: return "CloseAngle";
-    case TokenType::Comma: return "Comma";
-    case TokenType::Equals: return "Equals";
-    case TokenType::ColonEquals: return "ColonEquals";
-    case TokenType::PlusEquals: return "PlusEquals";
-    case TokenType::Bang: return "Bang";
-    case TokenType::At: return "At";
-    case TokenType::Ampersand: return "Ampersand";
-    case TokenType::Dollar: return "Dollar";
-    case TokenType::Percent: return "Percent";
-    case TokenType::Caret: return "Caret";
-    case TokenType::Hash: return "Hash";
-    case TokenType::Identifier: return "Identifier";
-    case TokenType::String: return "String";
-    case TokenType::Text: return "Text";
-    case TokenType::KwForeach: return "KwForeach";
-    case TokenType::KwInclude: return "KwInclude";
-    case TokenType::KwIncludeRules: return "KwIncludeRules";
-    case TokenType::KwIfdef: return "KwIfdef";
-    case TokenType::KwIfndef: return "KwIfndef";
-    case TokenType::KwIfeq: return "KwIfeq";
-    case TokenType::KwIfneq: return "KwIfneq";
-    case TokenType::KwElse: return "KwElse";
-    case TokenType::KwEndif: return "KwEndif";
-    case TokenType::KwExport: return "KwExport";
-    case TokenType::KwImport: return "KwImport";
-    case TokenType::KwPreload: return "KwPreload";
-    case TokenType::KwError: return "KwError";
-    case TokenType::KwRun: return "KwRun";
-    case TokenType::KwGitignore: return "KwGitignore";
-    case TokenType::Invalid: return "Invalid";
+    case TokenType::Eof:
+        return "Eof";
+    case TokenType::Newline:
+        return "Newline";
+    case TokenType::Whitespace:
+        return "Whitespace";
+    case TokenType::Colon:
+        return "Colon";
+    case TokenType::Pipe:
+        return "Pipe";
+    case TokenType::PipeArrow:
+        return "PipeArrow";
+    case TokenType::OpenParen:
+        return "OpenParen";
+    case TokenType::CloseParen:
+        return "CloseParen";
+    case TokenType::OpenBrace:
+        return "OpenBrace";
+    case TokenType::CloseBrace:
+        return "CloseBrace";
+    case TokenType::OpenBracket:
+        return "OpenBracket";
+    case TokenType::CloseBracket:
+        return "CloseBracket";
+    case TokenType::OpenAngle:
+        return "OpenAngle";
+    case TokenType::CloseAngle:
+        return "CloseAngle";
+    case TokenType::Comma:
+        return "Comma";
+    case TokenType::Equals:
+        return "Equals";
+    case TokenType::ColonEquals:
+        return "ColonEquals";
+    case TokenType::PlusEquals:
+        return "PlusEquals";
+    case TokenType::Bang:
+        return "Bang";
+    case TokenType::At:
+        return "At";
+    case TokenType::Ampersand:
+        return "Ampersand";
+    case TokenType::Dollar:
+        return "Dollar";
+    case TokenType::Percent:
+        return "Percent";
+    case TokenType::Caret:
+        return "Caret";
+    case TokenType::Hash:
+        return "Hash";
+    case TokenType::Identifier:
+        return "Identifier";
+    case TokenType::String:
+        return "String";
+    case TokenType::Text:
+        return "Text";
+    case TokenType::KwForeach:
+        return "KwForeach";
+    case TokenType::KwInclude:
+        return "KwInclude";
+    case TokenType::KwIncludeRules:
+        return "KwIncludeRules";
+    case TokenType::KwIfdef:
+        return "KwIfdef";
+    case TokenType::KwIfndef:
+        return "KwIfndef";
+    case TokenType::KwIfeq:
+        return "KwIfeq";
+    case TokenType::KwIfneq:
+        return "KwIfneq";
+    case TokenType::KwElse:
+        return "KwElse";
+    case TokenType::KwEndif:
+        return "KwEndif";
+    case TokenType::KwExport:
+        return "KwExport";
+    case TokenType::KwImport:
+        return "KwImport";
+    case TokenType::KwPreload:
+        return "KwPreload";
+    case TokenType::KwError:
+        return "KwError";
+    case TokenType::KwRun:
+        return "KwRun";
+    case TokenType::KwGitignore:
+        return "KwGitignore";
+    case TokenType::Invalid:
+        return "Invalid";
     }
     return "Unknown";
 }

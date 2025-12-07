@@ -9,7 +9,7 @@ namespace pup::parser {
 
 Lexer::Lexer(std::string_view source, std::string_view filename)
     : source_(source)
-    , filename_(filename)  // Copies into owned std::string
+    , filename_(filename) // Copies into owned std::string
 {
 }
 
@@ -37,7 +37,7 @@ auto Lexer::at_end() const -> bool
 
 auto Lexer::location() const -> SourceLocation
 {
-    return SourceLocation{
+    return SourceLocation {
         .filename = filename_,
         .line = line_,
         .column = column_,
@@ -152,7 +152,7 @@ auto Lexer::scan_token() -> Token
         // Check if this is .gitignore
         if (source_.substr(pos_ - 1).starts_with(".gitignore")) {
             // Consume the rest
-            for (auto i = std::size_t{1}; i < 10; ++i)
+            for (auto i = std::size_t { 1 }; i < 10; ++i)
                 advance();
             return make_token(TokenType::KwGitignore, start);
         }
@@ -164,21 +164,36 @@ auto Lexer::scan_token() -> Token
 
     // Single-character tokens
     switch (c) {
-    case '(': return make_token(TokenType::OpenParen, start);
-    case ')': return make_token(TokenType::CloseParen, start);
-    case '{': return make_token(TokenType::OpenBrace, start);
-    case '}': return make_token(TokenType::CloseBrace, start);
-    case '[': return make_token(TokenType::OpenBracket, start);
-    case ']': return make_token(TokenType::CloseBracket, start);
-    case '<': return make_token(TokenType::OpenAngle, start);
-    case '>': return make_token(TokenType::CloseAngle, start);
-    case ',': return make_token(TokenType::Comma, start);
-    case '@': return make_token(TokenType::At, start);
-    case '&': return make_token(TokenType::Ampersand, start);
-    case '$': return make_token(TokenType::Dollar, start);
-    case '^': return make_token(TokenType::Caret, start);
-    case '!': return make_token(TokenType::Bang, start);
-    default: break;
+    case '(':
+        return make_token(TokenType::OpenParen, start);
+    case ')':
+        return make_token(TokenType::CloseParen, start);
+    case '{':
+        return make_token(TokenType::OpenBrace, start);
+    case '}':
+        return make_token(TokenType::CloseBrace, start);
+    case '[':
+        return make_token(TokenType::OpenBracket, start);
+    case ']':
+        return make_token(TokenType::CloseBracket, start);
+    case '<':
+        return make_token(TokenType::OpenAngle, start);
+    case '>':
+        return make_token(TokenType::CloseAngle, start);
+    case ',':
+        return make_token(TokenType::Comma, start);
+    case '@':
+        return make_token(TokenType::At, start);
+    case '&':
+        return make_token(TokenType::Ampersand, start);
+    case '$':
+        return make_token(TokenType::Dollar, start);
+    case '^':
+        return make_token(TokenType::Caret, start);
+    case '!':
+        return make_token(TokenType::Bang, start);
+    default:
+        break;
     }
 
     // % is special - could be standalone or part of pattern flag (%f, %B, etc.)
@@ -314,8 +329,7 @@ auto Lexer::scan_text() -> Token
         auto const c = peek_char();
 
         // Stop at delimiters
-        if (c == ' ' || c == '\t' || c == '\n' || c == '#' || c == '|' || c == ':' || c == '=' ||
-            c == '(' || c == ')' || c == '{' || c == '}' || c == '<' || c == '>')
+        if (c == ' ' || c == '\t' || c == '\n' || c == '#' || c == '|' || c == ':' || c == '=' || c == '(' || c == ')' || c == '{' || c == '}' || c == '<' || c == '>')
             break;
 
         // Handle variable references as part of text
@@ -376,16 +390,15 @@ auto Lexer::scan_command_text() -> Token
 
 auto Lexer::make_token(TokenType type, std::size_t start) const -> Token
 {
-    return Token{
+    return Token {
         .type = type,
         .text = source_.substr(start, pos_ - start),
-        .location =
-            SourceLocation{
-                .filename = filename_,
-                .line = line_,
-                .column = column_ - static_cast<std::uint32_t>(pos_ - start),
-                .offset = static_cast<std::uint32_t>(start),
-            },
+        .location = SourceLocation {
+            .filename = filename_,
+            .line = line_,
+            .column = column_ - static_cast<std::uint32_t>(pos_ - start),
+            .offset = static_cast<std::uint32_t>(start),
+        },
     };
 }
 
@@ -402,8 +415,7 @@ auto Lexer::is_identifier_char(char c) -> bool
 auto Lexer::is_text_char(char c) -> bool
 {
     // Characters that can appear in paths, filenames, patterns
-    return is_identifier_char(c) || c == '.' || c == '/' || c == '*' || c == '?' || c == '+' ||
-           c == '-' || c == '%';
+    return is_identifier_char(c) || c == '.' || c == '/' || c == '*' || c == '?' || c == '+' || c == '-' || c == '%';
 }
 
 auto Lexer::is_path_char(char c) -> bool

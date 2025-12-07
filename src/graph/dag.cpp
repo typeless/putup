@@ -32,7 +32,7 @@ auto BuildGraph::add_edge(NodeId from, NodeId to, LinkType type) -> Result<void>
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
 
     // Add edge
-    edges_.push_back(Edge{
+    edges_.push_back(Edge {
         .from = from,
         .to = to,
         .type = type,
@@ -84,7 +84,7 @@ auto BuildGraph::get_node(NodeId id) const -> Node const*
 
 auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
 {
-    auto it = path_index_.find(std::string{path});
+    auto it = path_index_.find(std::string { path });
     if (it != path_index_.end())
         return it->second;
     return std::nullopt;
@@ -92,7 +92,7 @@ auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<Node
 
 auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
 {
-    auto it = command_index_.find(std::string{cmd});
+    auto it = command_index_.find(std::string { cmd });
     if (it != command_index_.end())
         return it->second;
     return std::nullopt;
@@ -100,7 +100,7 @@ auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<No
 
 auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>
 {
-    auto result = std::vector<NodeId>{};
+    auto result = std::vector<NodeId> {};
     for (auto const& node : nodes_) {
         if (node.type == type)
             result.push_back(node.id);
@@ -143,7 +143,7 @@ auto BuildGraph::clear() -> void
 
 auto BuildGraph::all_nodes() const -> std::vector<NodeId>
 {
-    auto result = std::vector<NodeId>{};
+    auto result = std::vector<NodeId> {};
     result.reserve(nodes_.size());
     for (auto const& node : nodes_)
         result.push_back(node.id);
@@ -152,7 +152,7 @@ auto BuildGraph::all_nodes() const -> std::vector<NodeId>
 
 auto BuildGraph::root_nodes() const -> std::vector<NodeId>
 {
-    auto result = std::vector<NodeId>{};
+    auto result = std::vector<NodeId> {};
     for (auto const& node : nodes_) {
         if (node.inputs.empty() && node.order_only.empty())
             result.push_back(node.id);
@@ -162,7 +162,7 @@ auto BuildGraph::root_nodes() const -> std::vector<NodeId>
 
 auto BuildGraph::leaf_nodes() const -> std::vector<NodeId>
 {
-    auto result = std::vector<NodeId>{};
+    auto result = std::vector<NodeId> {};
     for (auto const& node : nodes_) {
         if (node.outputs.empty())
             result.push_back(node.id);

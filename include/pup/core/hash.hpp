@@ -60,6 +60,6 @@ private:
 [[nodiscard]] auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool;
 
 /// Zero hash constant
-inline constexpr auto ZERO_HASH = Hash256{};
+inline constexpr auto ZERO_HASH = Hash256 {};
 
 } // namespace pup

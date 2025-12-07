@@ -43,9 +43,9 @@ auto IndexWriter::write(
     auto temp_path = path;
     temp_path += ".tmp.";
 
-    auto rd = std::random_device{};
-    auto gen = std::mt19937{rd()};
-    auto dist = std::uniform_int_distribution<>{0, 15};
+    auto rd = std::random_device {};
+    auto gen = std::mt19937 { rd() };
+    auto dist = std::uniform_int_distribution<> { 0, 15 };
     auto const hex = "0123456789abcdef";
     for (auto i = 0; i < 8; ++i)
         temp_path += hex[dist(gen)];
@@ -79,10 +79,10 @@ auto IndexWriter::write(
 
 auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>>
 {
-    auto strings = StringTable{};
+    auto strings = StringTable {};
 
     // Build file entries and collect strings
-    auto file_entries = std::vector<RawFileEntry>{};
+    auto file_entries = std::vector<RawFileEntry> {};
     file_entries.reserve(index.files().size());
 
     for (auto const& file : index.files()) {
@@ -91,7 +91,7 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     }
 
     // Build command entries and collect strings
-    auto command_entries = std::vector<RawCommandEntry>{};
+    auto command_entries = std::vector<RawCommandEntry> {};
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
@@ -102,7 +102,7 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     }
 
     // Build edge entries
-    auto edge_entries = std::vector<RawEdge>{};
+    auto edge_entries = std::vector<RawEdge> {};
     edge_entries.reserve(index.edges().size());
 
     for (auto const& edge : index.edges())
@@ -159,9 +159,9 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     }
 
     // Compute and write checksum
-    auto content_span = std::span<std::byte const>{result.data(), footer_offset};
+    auto content_span = std::span<std::byte const> { result.data(), footer_offset };
     auto checksum = sha256(content_span);
-    auto footer = RawFooter{.checksum = checksum};
+    auto footer = RawFooter { .checksum = checksum };
     std::memcpy(ptr, &footer, sizeof(footer));
 
     return result;
@@ -175,7 +175,7 @@ auto IndexWriter::build_header(
     std::uint64_t edge_offset,
     std::uint64_t string_offset) -> RawHeader
 {
-    return RawHeader{
+    return RawHeader {
         .magic = INDEX_MAGIC,
         .version = INDEX_VERSION,
         .flags = 0,

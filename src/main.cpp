@@ -65,10 +65,10 @@ auto print_version() -> void
 
 auto parse_args(int argc, char** argv) -> Options
 {
-    auto opts = Options{};
+    auto opts = Options {};
 
     for (auto i = 1; i < argc; ++i) {
-        auto arg = std::string_view{argv[i]};
+        auto arg = std::string_view { argv[i] };
 
         if (arg == "-h" || arg == "--help") {
             opts.help = true;
@@ -85,10 +85,10 @@ auto parse_args(int argc, char** argv) -> Options
                 opts.jobs = static_cast<std::size_t>(std::stoi(argv[++i]));
             }
         } else if (arg.starts_with("-j")) {
-            opts.jobs = static_cast<std::size_t>(std::stoi(std::string{arg.substr(2)}));
+            opts.jobs = static_cast<std::size_t>(std::stoi(std::string { arg.substr(2) }));
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty())
-                opts.command = std::string{arg};
+                opts.command = std::string { arg };
             else
                 opts.targets.emplace_back(arg);
         }
@@ -105,9 +105,7 @@ auto find_project_root() -> std::optional<std::filesystem::path>
     auto current = std::filesystem::current_path();
 
     while (true) {
-        if (std::filesystem::exists(current / "Tupfile") ||
-            std::filesystem::exists(current / "Tuprules.tup") ||
-            std::filesystem::exists(current / PUP_DIR)) {
+        if (std::filesystem::exists(current / "Tupfile") || std::filesystem::exists(current / "Tuprules.tup") || std::filesystem::exists(current / PUP_DIR)) {
             return current;
         }
 
@@ -120,11 +118,11 @@ auto find_project_root() -> std::optional<std::filesystem::path>
 
 auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
 {
-    auto file = std::ifstream{path};
+    auto file = std::ifstream { path };
     if (!file)
         return std::nullopt;
 
-    auto ss = std::stringstream{};
+    auto ss = std::stringstream {};
     ss << file.rdbuf();
     return ss.str();
 }
@@ -167,7 +165,7 @@ auto cmd_parse(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    auto parser = pup::parser::Parser{*source, tupfile_path.string()};
+    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
     auto result = parser.parse();
 
     if (!result) {
@@ -209,27 +207,27 @@ auto cmd_graph(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    auto parser = pup::parser::Parser{*source, tupfile_path.string()};
+    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
     auto parse_result = parser.parse();
     if (!parse_result) {
         std::cerr << "Parse error: " << parse_result.error().message << "\n";
         return EXIT_FAILURE;
     }
 
-    auto vars = pup::parser::VarDb{};
-    auto eval_ctx = pup::parser::EvalContext{
+    auto vars = pup::parser::VarDb {};
+    auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
         .tup_cwd = root->string(),
-        .tup_platform = std::string{pup::PLATFORM},
-        .tup_arch = std::string{pup::ARCH},
+        .tup_platform = std::string { pup::PLATFORM },
+        .tup_arch = std::string { pup::ARCH },
     };
 
-    auto builder_opts = pup::graph::BuilderOptions{
+    auto builder_opts = pup::graph::BuilderOptions {
         .root_dir = *root,
         .expand_globs = true,
     };
 
-    auto builder = pup::graph::GraphBuilder{builder_opts};
+    auto builder = pup::graph::GraphBuilder { builder_opts };
     auto graph_result = builder.build(*parse_result, eval_ctx);
 
     if (!graph_result) {
@@ -271,7 +269,7 @@ auto cmd_build(Options const& opts) -> int
     }
 
     // Parse
-    auto parser = pup::parser::Parser{*source, tupfile_path.string()};
+    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
     auto parse_result = parser.parse();
     if (!parse_result) {
         std::cerr << "Parse error: " << parse_result.error().message << "\n";
@@ -279,20 +277,20 @@ auto cmd_build(Options const& opts) -> int
     }
 
     // Build graph
-    auto vars = pup::parser::VarDb{};
-    auto eval_ctx = pup::parser::EvalContext{
+    auto vars = pup::parser::VarDb {};
+    auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
         .tup_cwd = root->string(),
-        .tup_platform = std::string{pup::PLATFORM},
-        .tup_arch = std::string{pup::ARCH},
+        .tup_platform = std::string { pup::PLATFORM },
+        .tup_arch = std::string { pup::ARCH },
     };
 
-    auto builder_opts = pup::graph::BuilderOptions{
+    auto builder_opts = pup::graph::BuilderOptions {
         .root_dir = *root,
         .expand_globs = true,
     };
 
-    auto builder = pup::graph::GraphBuilder{builder_opts};
+    auto builder = pup::graph::GraphBuilder { builder_opts };
     auto graph_result = builder.build(*parse_result, eval_ctx);
 
     if (!graph_result) {
@@ -309,7 +307,7 @@ auto cmd_build(Options const& opts) -> int
     }
 
     // Set up scheduler
-    auto sched_opts = pup::exec::SchedulerOptions{
+    auto sched_opts = pup::exec::SchedulerOptions {
         .jobs = opts.jobs,
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
@@ -317,7 +315,7 @@ auto cmd_build(Options const& opts) -> int
         .root_dir = *root,
     };
 
-    auto scheduler = pup::exec::Scheduler{sched_opts};
+    auto scheduler = pup::exec::Scheduler { sched_opts };
 
     // Progress display
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
@@ -334,7 +332,7 @@ auto cmd_build(Options const& opts) -> int
         }
     });
 
-    auto completed = std::size_t{0};
+    auto completed = std::size_t { 0 };
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         completed = done;
         if (!opts.verbose) {

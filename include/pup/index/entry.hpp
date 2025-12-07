@@ -17,7 +17,7 @@ namespace pup::index {
 struct FileEntry {
     NodeId id = 0;
     NodeId parent_id = 0;
-    NodeId src_id = 0;                    ///< For generated: command that creates it
+    NodeId src_id = 0; ///< For generated: command that creates it
 
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
@@ -38,11 +38,11 @@ struct FileEntry {
 /// In-memory command entry
 struct CommandEntry {
     NodeId id = 0;
-    NodeId dir_id = 0;                    ///< Directory where command runs
+    NodeId dir_id = 0; ///< Directory where command runs
 
-    std::string command = {};             ///< Full command string
-    std::string display = {};             ///< Display text (from ^ ^ markers)
-    std::string env = {};                 ///< Environment variables
+    std::string command = {}; ///< Full command string
+    std::string display = {}; ///< Display text (from ^ ^ markers)
+    std::string env = {};     ///< Environment variables
 
     std::uint8_t flags = 0;
 
@@ -65,7 +65,7 @@ struct EdgeEntry {
     NodeId from = 0;
     NodeId to = 0;
     LinkType type = LinkType::Normal;
-    NodeId group_cmd_id = 0;              ///< For group edges
+    NodeId group_cmd_id = 0; ///< For group edges
 
     /// Convert to raw format
     [[nodiscard]] auto to_raw() const -> RawEdge;

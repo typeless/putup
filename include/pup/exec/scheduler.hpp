@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include "runner.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
+#include "runner.hpp"
 
 #include <atomic>
 #include <filesystem>
@@ -47,11 +47,11 @@ using ProgressCallback = std::function<void(std::size_t completed, std::size_t t
 
 /// Scheduler options
 struct SchedulerOptions {
-    std::size_t jobs = 0;                        ///< Parallel jobs (0 = auto-detect)
-    bool keep_going = false;                     ///< Continue after failures
-    bool dry_run = false;                        ///< Print commands without executing
-    bool verbose = false;                        ///< Print commands as they run
-    std::filesystem::path root_dir = {};         ///< Project root directory
+    std::size_t jobs = 0;                             ///< Parallel jobs (0 = auto-detect)
+    bool keep_going = false;                          ///< Continue after failures
+    bool dry_run = false;                             ///< Print commands without executing
+    bool verbose = false;                             ///< Print commands as they run
+    std::filesystem::path root_dir = {};              ///< Project root directory
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 
@@ -62,7 +62,7 @@ struct BuildStats {
     std::size_t failed_jobs = 0;
     std::size_t skipped_jobs = 0;
     std::chrono::milliseconds total_time = {};
-    std::chrono::milliseconds build_time = {};   ///< Time spent in commands
+    std::chrono::milliseconds build_time = {}; ///< Time spent in commands
 };
 
 /// Build scheduler - executes commands in topological order

@@ -23,24 +23,24 @@ auto DefaultFileResolver::resolve(std::string_view path, std::string_view relati
 {
     namespace fs = std::filesystem;
 
-    auto const rel_path = fs::path{relative_to}.parent_path() / path;
+    auto const rel_path = fs::path { relative_to }.parent_path() / path;
     if (fs::exists(rel_path))
         return rel_path.string();
 
-    auto const abs_path = fs::path{root_dir_} / path;
+    auto const abs_path = fs::path { root_dir_ } / path;
     if (fs::exists(abs_path))
         return abs_path.string();
 
-    return make_error<std::string>(ErrorCode::IncludeNotFound, "Include file not found: " + std::string{path});
+    return make_error<std::string>(ErrorCode::IncludeNotFound, "Include file not found: " + std::string { path });
 }
 
 auto DefaultFileResolver::read_file(std::string_view path) -> Result<std::string>
 {
-    auto file = std::ifstream{std::string{path}};
+    auto file = std::ifstream { std::string { path } };
     if (!file)
-        return make_error<std::string>(ErrorCode::IoError, "Cannot open file: " + std::string{path});
+        return make_error<std::string>(ErrorCode::IoError, "Cannot open file: " + std::string { path });
 
-    auto ss = std::stringstream{};
+    auto ss = std::stringstream {};
     ss << file.rdbuf();
     return ss.str();
 }
@@ -49,8 +49,8 @@ auto DefaultFileResolver::find_tuprules(std::string_view from_dir) -> Result<std
 {
     namespace fs = std::filesystem;
 
-    auto dir = fs::path{from_dir};
-    auto const root = fs::path{root_dir_};
+    auto dir = fs::path { from_dir };
+    auto const root = fs::path { root_dir_ };
 
     while (dir >= root) {
         auto const tuprules = dir / "Tuprules.tup";
@@ -79,8 +79,8 @@ Parser::Parser(std::string_view source, std::string_view filename,
 
 auto Parser::parse() -> Result<Tupfile>
 {
-    auto tupfile = Tupfile{};
-    tupfile.filename = std::string{lexer_.filename()};
+    auto tupfile = Tupfile {};
+    tupfile.filename = std::string { lexer_.filename() };
 
     while (!check(TokenType::Eof)) {
         // Skip empty lines and comments
@@ -153,7 +153,7 @@ auto Parser::expect(TokenType type, std::string_view message) -> Result<Token>
     if (check(type))
         return advance();
     return make_error<Token>(ErrorCode::UnexpectedToken,
-        std::string{message} + ", got " + std::string{token_type_name(current_.type)});
+        std::string { message } + ", got " + std::string { token_type_name(current_.type) });
 }
 
 auto Parser::skip_to_next_statement() -> void
@@ -273,7 +273,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         case TokenType::KwEndif:
             // These should be handled by parse_conditional
             return make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
-                "Unexpected '" + std::string{tok.text} + "' without matching if");
+                "Unexpected '" + std::string { tok.text } + "' without matching if");
 
         case TokenType::KwExport: {
             advance();
@@ -334,7 +334,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             advance();
             auto stmt = std::make_unique<Statement>();
             stmt->location = start_loc;
-            stmt->content = Gitignore{};
+            stmt->content = Gitignore {};
             return stmt;
         }
 
@@ -345,7 +345,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
 
     // Assignment: IDENTIFIER (= | += | :=) value
     if (check(TokenType::Identifier)) {
-        auto const name = std::string{current_.text};
+        auto const name = std::string { current_.text };
         advance();
 
         if (current_.is_assignment_op()) {
@@ -370,7 +370,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         if (!name_tok)
             return pup::unexpected<Error>(name_tok.error());
 
-        auto assign = parse_assignment(std::string{name_tok->text});
+        auto assign = parse_assignment(std::string { name_tok->text });
         if (!assign)
             return pup::unexpected<Error>(assign.error());
 
@@ -382,12 +382,12 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
     }
 
     return make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
-        "Unexpected token: " + std::string{token_type_name(tok.type)});
+        "Unexpected token: " + std::string { token_type_name(tok.type) });
 }
 
 auto Parser::parse_rule() -> Result<Rule>
 {
-    auto rule = Rule{};
+    auto rule = Rule {};
     rule.location = previous_.location;
 
     // Check for foreach
@@ -398,8 +398,7 @@ auto Parser::parse_rule() -> Result<Rule>
     lexer_.set_context(Lexer::Context::Inputs);
 
     // Parse inputs until | or |>
-    while (!check(TokenType::Pipe) && !check(TokenType::PipeArrow) && !check(TokenType::Newline) &&
-           !check(TokenType::Eof)) {
+    while (!check(TokenType::Pipe) && !check(TokenType::PipeArrow) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
         auto pattern = parse_path_pattern();
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
@@ -422,7 +421,7 @@ auto Parser::parse_rule() -> Result<Rule>
 
     // Set context BEFORE advancing so next token is read in Command context
     lexer_.set_context(Lexer::Context::Command);
-    advance();  // Consume |> and read command token in Command context
+    advance(); // Consume |> and read command token in Command context
 
     // Parse command
     auto cmd = parse_command();
@@ -439,8 +438,7 @@ auto Parser::parse_rule() -> Result<Rule>
         return pup::unexpected<Error>(arrow2.error());
 
     // Parse outputs
-    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::Newline) &&
-           !check(TokenType::Eof)) {
+    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
         auto pattern = parse_path_pattern();
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
@@ -460,7 +458,7 @@ auto Parser::parse_rule() -> Result<Rule>
     // Parse output group if present
     if (match(TokenType::OpenBrace)) {
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            rule.output_group = std::string{current_.text};
+            rule.output_group = std::string { current_.text };
             advance();
         }
         auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
@@ -474,14 +472,14 @@ auto Parser::parse_rule() -> Result<Rule>
 
 auto Parser::parse_bang_macro() -> Result<BangMacro>
 {
-    auto macro = BangMacro{};
+    auto macro = BangMacro {};
     macro.location = previous_.location;
 
     // Expect macro name
     if (!check(TokenType::Identifier) && !check(TokenType::Text))
         return make_error<BangMacro>(ErrorCode::ParseError, "Expected macro name after '!'");
 
-    macro.name = std::string{current_.text};
+    macro.name = std::string { current_.text };
     advance();
 
     // Expect =
@@ -509,7 +507,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
 
     // Set context BEFORE advancing so next token is read in Command context
     lexer_.set_context(Lexer::Context::Command);
-    advance();  // Consume |> and read command token in Command context
+    advance(); // Consume |> and read command token in Command context
 
     // Parse command
     auto cmd = parse_command();
@@ -549,7 +547,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
 
 auto Parser::parse_assignment(std::string name) -> Result<Assignment>
 {
-    auto assign = Assignment{};
+    auto assign = Assignment {};
     assign.location = previous_.location;
     assign.name = std::move(name);
 
@@ -574,7 +572,7 @@ auto Parser::parse_assignment(std::string name) -> Result<Assignment>
 
 auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
 {
-    auto cond = Conditional{};
+    auto cond = Conditional {};
     cond.location = previous_.location;
     cond.kind = kind;
 
@@ -583,7 +581,7 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
         if (!check(TokenType::Identifier) && !check(TokenType::Text))
             return make_error<Conditional>(ErrorCode::ParseError,
                 "Expected variable name after ifdef/ifndef");
-        cond.var_name = std::string{current_.text};
+        cond.var_name = std::string { current_.text };
         advance();
     } else {
         // ifeq/ifneq (lhs, rhs)
@@ -672,7 +670,7 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
 
 auto Parser::parse_include(bool is_rules) -> Result<Include>
 {
-    auto inc = Include{};
+    auto inc = Include {};
     inc.location = previous_.location;
     inc.is_rules = is_rules;
 
@@ -688,13 +686,13 @@ auto Parser::parse_include(bool is_rules) -> Result<Include>
 
 auto Parser::parse_export() -> Result<Export>
 {
-    auto exp = Export{};
+    auto exp = Export {};
     exp.location = previous_.location;
 
     if (!check(TokenType::Identifier) && !check(TokenType::Text))
         return make_error<Export>(ErrorCode::ParseError, "Expected variable name after 'export'");
 
-    exp.var_name = std::string{current_.text};
+    exp.var_name = std::string { current_.text };
     advance();
 
     return exp;
@@ -702,13 +700,13 @@ auto Parser::parse_export() -> Result<Export>
 
 auto Parser::parse_import() -> Result<Import>
 {
-    auto imp = Import{};
+    auto imp = Import {};
     imp.location = previous_.location;
 
     if (!check(TokenType::Identifier) && !check(TokenType::Text))
         return make_error<Import>(ErrorCode::ParseError, "Expected variable name after 'import'");
 
-    imp.var_name = std::string{current_.text};
+    imp.var_name = std::string { current_.text };
     advance();
 
     // Optional default value
@@ -724,7 +722,7 @@ auto Parser::parse_import() -> Result<Import>
 
 auto Parser::parse_preload() -> Result<Preload>
 {
-    auto pre = Preload{};
+    auto pre = Preload {};
     pre.location = previous_.location;
 
     auto path = parse_expression();
@@ -737,7 +735,7 @@ auto Parser::parse_preload() -> Result<Preload>
 
 auto Parser::parse_error_directive() -> Result<ErrorDirective>
 {
-    auto err = ErrorDirective{};
+    auto err = ErrorDirective {};
     err.location = previous_.location;
 
     auto msg = parse_expression();
@@ -750,7 +748,7 @@ auto Parser::parse_error_directive() -> Result<ErrorDirective>
 
 auto Parser::parse_run() -> Result<Run>
 {
-    auto run = Run{};
+    auto run = Run {};
     run.location = previous_.location;
 
     auto script = parse_expression();
@@ -770,13 +768,13 @@ auto Parser::parse_expression() -> Result<Expression>
 
 auto Parser::parse_expression_until(std::function<bool(Token const&)> const& stop) -> Result<Expression>
 {
-    auto expr = Expression{};
-    auto current_text = std::string{};
-    auto last_end_offset = current_.location.offset;  // Track where last token ended
+    auto expr = Expression {};
+    auto current_text = std::string {};
+    auto last_end_offset = current_.location.offset; // Track where last token ended
 
     auto flush_text = [&] {
         if (!current_text.empty()) {
-            expr.parts.emplace_back(Expression::Literal{std::move(current_text)});
+            expr.parts.emplace_back(Expression::Literal { std::move(current_text) });
             current_text.clear();
         }
     };
@@ -793,7 +791,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
             if (!match(TokenType::OpenParen))
                 return make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '$'");
 
-            auto name = std::string{};
+            auto name = std::string {};
             while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
                 name += current_.text;
                 advance();
@@ -802,8 +800,8 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
             if (!match(TokenType::CloseParen))
                 return make_error<Expression>(ErrorCode::ParseError, "Unterminated variable reference");
 
-            auto var = VarRef{VarRef::Kind::Regular, std::move(name), previous_.location};
-            expr.parts.emplace_back(Expression::Variable{std::move(var)});
+            auto var = VarRef { VarRef::Kind::Regular, std::move(name), previous_.location };
+            expr.parts.emplace_back(Expression::Variable { std::move(var) });
             last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
@@ -815,7 +813,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
             if (!match(TokenType::OpenParen))
                 return make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '@'");
 
-            auto name = std::string{};
+            auto name = std::string {};
             while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
                 name += current_.text;
                 advance();
@@ -824,8 +822,8 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
             if (!match(TokenType::CloseParen))
                 return make_error<Expression>(ErrorCode::ParseError, "Unterminated config variable reference");
 
-            auto var = VarRef{VarRef::Kind::Config, std::move(name), previous_.location};
-            expr.parts.emplace_back(Expression::Variable{std::move(var)});
+            auto var = VarRef { VarRef::Kind::Config, std::move(name), previous_.location };
+            expr.parts.emplace_back(Expression::Variable { std::move(var) });
             last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
@@ -837,7 +835,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
             if (!match(TokenType::OpenParen))
                 return make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '&'");
 
-            auto name = std::string{};
+            auto name = std::string {};
             while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
                 name += current_.text;
                 advance();
@@ -846,8 +844,8 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
             if (!match(TokenType::CloseParen))
                 return make_error<Expression>(ErrorCode::ParseError, "Unterminated node variable reference");
 
-            auto var = VarRef{VarRef::Kind::Node, std::move(name), previous_.location};
-            expr.parts.emplace_back(Expression::Variable{std::move(var)});
+            auto var = VarRef { VarRef::Kind::Node, std::move(name), previous_.location };
+            expr.parts.emplace_back(Expression::Variable { std::move(var) });
             last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
@@ -864,7 +862,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
 auto Parser::parse_path_pattern() -> Result<PathPattern>
 {
-    auto pattern = PathPattern{};
+    auto pattern = PathPattern {};
     pattern.location = current_.location;
 
     // Check for exclusion prefix
@@ -875,7 +873,7 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
     if (match(TokenType::OpenBrace)) {
         pattern.is_group = true;
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            pattern.group_name = std::string{current_.text};
+            pattern.group_name = std::string { current_.text };
             advance();
         }
         if (!match(TokenType::CloseBrace))
@@ -886,7 +884,7 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
     if (match(TokenType::OpenAngle)) {
         pattern.is_group = true;
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            pattern.group_name = std::string{current_.text};
+            pattern.group_name = std::string { current_.text };
             advance();
         }
         if (!match(TokenType::CloseAngle))
@@ -911,11 +909,11 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
 
 auto Parser::parse_command() -> Result<Expression>
 {
-    auto expr = Expression{};
-    auto tok = current_;  // Start with current token (already advanced past |>)
+    auto expr = Expression {};
+    auto tok = current_; // Start with current token (already advanced past |>)
 
     // Collect command text until |>
-    auto cmd_text = std::string{};
+    auto cmd_text = std::string {};
     while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
         cmd_text += tok.text;
         tok = lexer_.next();
@@ -944,7 +942,7 @@ auto Parser::parse_command() -> Result<Expression>
         cmd_text.pop_back();
 
     if (!cmd_text.empty())
-        expr.parts.emplace_back(Expression::Literal{std::move(cmd_text)});
+        expr.parts.emplace_back(Expression::Literal { std::move(cmd_text) });
 
     // Put back the |> token
     current_ = tok;
@@ -955,13 +953,12 @@ auto Parser::parse_command() -> Result<Expression>
 auto Parser::make_error(std::string const& message) -> Error
 {
     return Error::make(ErrorCode::ParseError,
-        std::string{lexer_.filename()} + ":" + std::to_string(current_.location.line) + ":" +
-            std::to_string(current_.location.column) + ": " + message);
+        std::string { lexer_.filename() } + ":" + std::to_string(current_.location.line) + ":" + std::to_string(current_.location.column) + ": " + message);
 }
 
 auto Parser::report_error(std::string const& message) -> void
 {
-    errors_.push_back(ParseError{
+    errors_.push_back(ParseError {
         .location = current_.location,
         .message = message,
     });

@@ -29,12 +29,12 @@ struct CommandResult {
 /// Options for running a command
 struct RunOptions {
     std::filesystem::path working_dir = {};
-    std::vector<std::string> env = {};           ///< Additional environment variables
-    bool inherit_env = true;                      ///< Inherit parent environment
+    std::vector<std::string> env = {};                ///< Additional environment variables
+    bool inherit_env = true;                          ///< Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;
     bool capture_stderr = true;
-    std::optional<std::string> stdin_data = {};  ///< Data to pipe to stdin
+    std::optional<std::string> stdin_data = {}; ///< Data to pipe to stdin
 };
 
 /// Callback for command output

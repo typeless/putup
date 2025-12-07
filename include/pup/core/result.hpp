@@ -68,13 +68,13 @@ struct Error {
     /// Create an error with a message
     [[nodiscard]] static auto make(ErrorCode c, std::string msg) -> Error
     {
-        return Error{.code = c, .message = std::move(msg)};
+        return Error { .code = c, .message = std::move(msg) };
     }
 
     /// Create an error with a string_view message
     [[nodiscard]] static auto make(ErrorCode c, std::string_view msg) -> Error
     {
-        return Error{.code = c, .message = std::string{msg}};
+        return Error { .code = c, .message = std::string { msg } };
     }
 };
 
@@ -83,17 +83,17 @@ template<typename T>
 using Result = pup::expected<T, Error>;
 
 /// Unit type for Result<void> equivalent
-struct Unit {};
+struct Unit { };
 
 /// Success value for Result<Unit>
-inline constexpr auto unit = Unit{};
+inline constexpr auto unit = Unit {};
 
 /// Helper to create an error result
 template<typename T, typename Msg>
-    requires std::is_convertible_v<Msg, std::string_view>
+requires std::is_convertible_v<Msg, std::string_view>
 [[nodiscard]] auto make_error(ErrorCode code, Msg&& msg) -> Result<T>
 {
-    return pup::unexpected<Error>(Error::make(code, std::string{std::forward<Msg>(msg)}));
+    return pup::unexpected<Error>(Error::make(code, std::string { std::forward<Msg>(msg) }));
 }
 
 } // namespace pup

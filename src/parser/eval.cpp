@@ -14,15 +14,15 @@ namespace pup::parser {
 
 auto VarDb::set(std::string_view name, std::string value) -> void
 {
-    vars_[std::string{name}] = std::move(value);
+    vars_[std::string { name }] = std::move(value);
 }
 
 auto VarDb::append(std::string_view name, std::string_view value) -> void
 {
-    auto key = std::string{name};
+    auto key = std::string { name };
     auto it = vars_.find(key);
     if (it == vars_.end()) {
-        vars_[key] = std::string{value};
+        vars_[key] = std::string { value };
     } else {
         if (!it->second.empty())
             it->second += ' ';
@@ -32,7 +32,7 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
 
 auto VarDb::get(std::string_view name) const -> std::string_view
 {
-    auto it = vars_.find(std::string{name});
+    auto it = vars_.find(std::string { name });
     if (it != vars_.end())
         return it->second;
     return {};
@@ -40,17 +40,17 @@ auto VarDb::get(std::string_view name) const -> std::string_view
 
 auto VarDb::contains(std::string_view name) const -> bool
 {
-    return vars_.find(std::string{name}) != vars_.end();
+    return vars_.find(std::string { name }) != vars_.end();
 }
 
 auto VarDb::remove(std::string_view name) -> void
 {
-    vars_.erase(std::string{name});
+    vars_.erase(std::string { name });
 }
 
 auto VarDb::names() const -> std::vector<std::string_view>
 {
-    auto result = std::vector<std::string_view>{};
+    auto result = std::vector<std::string_view> {};
     result.reserve(vars_.size());
     for (auto const& [name, _] : vars_)
         result.push_back(name);
@@ -73,7 +73,7 @@ Evaluator::Evaluator(EvalContext& ctx)
 
 auto Evaluator::expand(Expression const& expr) -> Result<std::string>
 {
-    auto result = std::string{};
+    auto result = std::string {};
 
     for (auto const& part : expr.parts) {
         if (std::holds_alternative<Expression::Literal>(part)) {
@@ -92,8 +92,8 @@ auto Evaluator::expand(Expression const& expr) -> Result<std::string>
 
 auto Evaluator::expand(std::string_view text) -> Result<std::string>
 {
-    auto result = std::string{};
-    auto pos = std::size_t{0};
+    auto result = std::string {};
+    auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
         // Look for variable references
@@ -102,7 +102,7 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
         auto amp = text.find('&', pos);
 
         // Find the earliest variable reference
-        auto next = std::min({dollar, at, amp});
+        auto next = std::min({ dollar, at, amp });
 
         if (next == std::string_view::npos) {
             // No more variable references
@@ -125,7 +125,7 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
                 else if (text[next] == '&')
                     kind = VarRef::Kind::Node;
 
-                auto ref = VarRef{kind, std::string{name}, {}};
+                auto ref = VarRef { kind, std::string { name }, {} };
                 auto expanded = expand_var(ref);
                 if (!expanded)
                     return pup::unexpected<Error>(expanded.error());
@@ -146,8 +146,8 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
 auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
     -> Result<std::string>
 {
-    auto result = std::string{};
-    auto pos = std::size_t{0};
+    auto result = std::string {};
+    auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
         auto percent = text.find('%', pos);
@@ -252,7 +252,7 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
 auto Evaluator::expand_path(PathPattern const& pattern)
     -> Result<std::vector<std::string>>
 {
-    auto result = std::vector<std::string>{};
+    auto result = std::vector<std::string> {};
 
     if (pattern.is_group) {
         // Group reference - use callback to resolve
@@ -333,11 +333,11 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 
     if (db) {
         auto value = db->get(ref.name);
-        return std::string{value};
+        return std::string { value };
     }
 
     // Variable not found - return empty string (tup behavior)
-    return std::string{};
+    return std::string {};
 }
 
 auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::string>

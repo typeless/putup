@@ -13,7 +13,9 @@ namespace pup::graph {
 
 namespace {
 
-enum class Color { White, Gray, Black };
+enum class Color { White,
+    Gray,
+    Black };
 
 struct DfsState {
     std::unordered_map<NodeId, Color> color;
@@ -58,7 +60,7 @@ auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void
 
 auto topological_sort(BuildGraph const& graph) -> TopoSortResult
 {
-    auto state = DfsState{};
+    auto state = DfsState {};
 
     // Initialize all nodes as white (unvisited)
     for (auto id : graph.all_nodes())
@@ -75,7 +77,7 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
     // Reverse for topological order (dependencies first)
     std::reverse(state.order.begin(), state.order.end());
 
-    return TopoSortResult{
+    return TopoSortResult {
         .order = std::move(state.order),
         .has_cycle = state.has_cycle,
         .cycle = std::move(state.cycle),
@@ -102,9 +104,9 @@ auto is_dag(BuildGraph const& graph) -> bool
 
 auto reachable_from(BuildGraph const& graph, NodeId start) -> std::vector<NodeId>
 {
-    auto visited = std::unordered_set<NodeId>{};
-    auto result = std::vector<NodeId>{};
-    auto stack = std::stack<NodeId>{};
+    auto visited = std::unordered_set<NodeId> {};
+    auto result = std::vector<NodeId> {};
+    auto stack = std::stack<NodeId> {};
 
     stack.push(start);
 
@@ -129,9 +131,9 @@ auto reachable_from(BuildGraph const& graph, NodeId start) -> std::vector<NodeId
 
 auto can_reach(BuildGraph const& graph, NodeId target) -> std::vector<NodeId>
 {
-    auto visited = std::unordered_set<NodeId>{};
-    auto result = std::vector<NodeId>{};
-    auto stack = std::stack<NodeId>{};
+    auto visited = std::unordered_set<NodeId> {};
+    auto result = std::vector<NodeId> {};
+    auto stack = std::stack<NodeId> {};
 
     stack.push(target);
 
@@ -159,8 +161,8 @@ auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
     if (source == target)
         return true;
 
-    auto visited = std::unordered_set<NodeId>{};
-    auto stack = std::stack<NodeId>{};
+    auto visited = std::unordered_set<NodeId> {};
+    auto stack = std::stack<NodeId> {};
 
     stack.push(source);
 
@@ -187,15 +189,15 @@ auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
 
 auto nodes_at_depth(BuildGraph const& graph, std::size_t depth) -> std::vector<NodeId>
 {
-    auto result = std::vector<NodeId>{};
+    auto result = std::vector<NodeId> {};
 
     // BFS from roots
-    auto visited = std::unordered_set<NodeId>{};
-    auto queue = std::queue<std::pair<NodeId, std::size_t>>{};
+    auto visited = std::unordered_set<NodeId> {};
+    auto queue = std::queue<std::pair<NodeId, std::size_t>> {};
 
     // Start from root nodes
     for (auto id : graph.root_nodes()) {
-        queue.push({id, 0});
+        queue.push({ id, 0 });
         visited.insert(id);
     }
 
@@ -210,7 +212,7 @@ auto nodes_at_depth(BuildGraph const& graph, std::size_t depth) -> std::vector<N
             for (auto v : graph.get_outputs(u)) {
                 if (!visited.contains(v)) {
                     visited.insert(v);
-                    queue.push({v, d + 1});
+                    queue.push({ v, d + 1 });
                 }
             }
         }
@@ -222,7 +224,7 @@ auto nodes_at_depth(BuildGraph const& graph, std::size_t depth) -> std::vector<N
 auto node_depth(BuildGraph const& graph, NodeId id) -> std::size_t
 {
     // Find longest path from any root to this node
-    auto depths = std::unordered_map<NodeId, std::size_t>{};
+    auto depths = std::unordered_map<NodeId, std::size_t> {};
 
     // Topological sort first
     auto sorted = topological_sort(graph);
@@ -252,12 +254,12 @@ auto max_depth(BuildGraph const& graph) -> std::size_t
     if (sorted.has_cycle)
         return 0;
 
-    auto depths = std::unordered_map<NodeId, std::size_t>{};
+    auto depths = std::unordered_map<NodeId, std::size_t> {};
 
     for (auto root : graph.root_nodes())
         depths[root] = 0;
 
-    auto max_d = std::size_t{0};
+    auto max_d = std::size_t { 0 };
 
     for (auto u : sorted.order) {
         if (!depths.contains(u))
@@ -279,8 +281,8 @@ auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
         return {};
 
     // Forward pass: compute longest path to each node
-    auto dist = std::unordered_map<NodeId, std::size_t>{};
-    auto pred = std::unordered_map<NodeId, NodeId>{};
+    auto dist = std::unordered_map<NodeId, std::size_t> {};
+    auto pred = std::unordered_map<NodeId, NodeId> {};
 
     for (auto root : graph.root_nodes())
         dist[root] = 0;
@@ -298,8 +300,8 @@ auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
     }
 
     // Find the node with maximum distance (end of critical path)
-    auto max_dist = std::size_t{0};
-    auto end_node = NodeId{0};
+    auto max_dist = std::size_t { 0 };
+    auto end_node = NodeId { 0 };
     for (auto const& [id, d] : dist) {
         if (d >= max_dist) {
             max_dist = d;
@@ -311,7 +313,7 @@ auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
         return {};
 
     // Backtrack to find the path
-    auto path = std::vector<NodeId>{};
+    auto path = std::vector<NodeId> {};
     auto curr = end_node;
     while (curr != 0) {
         path.push_back(curr);

@@ -9,7 +9,7 @@ namespace pup::index {
 
 auto FileEntry::to_raw(std::uint32_t path_offset) const -> RawFileEntry
 {
-    auto raw = RawFileEntry{};
+    auto raw = RawFileEntry {};
     raw.id = id;
     raw.parent_id = parent_id;
     raw.src_id = src_id;
@@ -25,13 +25,13 @@ auto FileEntry::to_raw(std::uint32_t path_offset) const -> RawFileEntry
 
 auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view path_str) -> FileEntry
 {
-    return FileEntry{
+    return FileEntry {
         .id = raw.id,
         .parent_id = raw.parent_id,
         .src_id = raw.src_id,
         .type = static_cast<NodeType>(raw.type),
         .flags = get_node_flags(raw),
-        .path = std::string{path_str},
+        .path = std::string { path_str },
         .size = raw.size,
         .mtime = get_mtime(raw),
         .content_hash = raw.content_hash,
@@ -43,7 +43,7 @@ auto CommandEntry::to_raw(
     std::uint32_t display_offset,
     std::uint32_t env_offset) const -> RawCommandEntry
 {
-    auto raw = RawCommandEntry{};
+    auto raw = RawCommandEntry {};
     raw.id = id;
     raw.dir_id = dir_id;
     raw.cmd_offset = cmd_offset;
@@ -62,19 +62,19 @@ auto CommandEntry::from_raw(
     std::string_view display_str,
     std::string_view env_str) -> CommandEntry
 {
-    return CommandEntry{
+    return CommandEntry {
         .id = raw.id,
         .dir_id = raw.dir_id,
-        .command = std::string{cmd_str},
-        .display = std::string{display_str},
-        .env = std::string{env_str},
+        .command = std::string { cmd_str },
+        .display = std::string { display_str },
+        .env = std::string { env_str },
         .flags = raw.flags,
     };
 }
 
 auto EdgeEntry::to_raw() const -> RawEdge
 {
-    return RawEdge{
+    return RawEdge {
         .from_id = from,
         .to_id = to,
         .type = static_cast<std::uint8_t>(type),
@@ -86,7 +86,7 @@ auto EdgeEntry::to_raw() const -> RawEdge
 
 auto EdgeEntry::from_raw(RawEdge const& raw) -> EdgeEntry
 {
-    return EdgeEntry{
+    return EdgeEntry {
         .from = raw.from_id,
         .to = raw.to_id,
         .type = static_cast<LinkType>(raw.type),
@@ -117,7 +117,7 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 
 auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
 {
-    auto result = std::vector<EdgeEntry const*>{};
+    auto result = std::vector<EdgeEntry const*> {};
     for (auto const& edge : edges_) {
         if (edge.from == id)
             result.push_back(&edge);
@@ -127,7 +127,7 @@ auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
 
 auto Index::edges_to(NodeId id) const -> std::vector<EdgeEntry const*>
 {
-    auto result = std::vector<EdgeEntry const*>{};
+    auto result = std::vector<EdgeEntry const*> {};
     for (auto const& edge : edges_) {
         if (edge.to == id)
             result.push_back(&edge);

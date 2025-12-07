@@ -40,9 +40,9 @@ auto CommandRunner::run_with_output(
     auto start_time = std::chrono::steady_clock::now();
 
     // Create pipes for stdout and stderr
-    int stdout_pipe[2] = {-1, -1};
-    int stderr_pipe[2] = {-1, -1};
-    int stdin_pipe[2] = {-1, -1};
+    int stdout_pipe[2] = { -1, -1 };
+    int stderr_pipe[2] = { -1, -1 };
+    int stdin_pipe[2] = { -1, -1 };
 
     if (merged.capture_stdout && ::pipe(stdout_pipe) < 0)
         return make_error<CommandResult>(ErrorCode::IoError, "Failed to create stdout pipe");
@@ -113,14 +113,14 @@ auto CommandRunner::run_with_output(
 
         // Build environment
         auto env_strings = build_env(merged);
-        auto env_ptrs = std::vector<char*>{};
+        auto env_ptrs = std::vector<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
         for (auto& s : env_strings)
             env_ptrs.push_back(s.data());
         env_ptrs.push_back(nullptr);
 
         // Execute via shell
-        auto cmd_str = std::string{command};
+        auto cmd_str = std::string { command };
         char* const argv[] = {
             const_cast<char*>("/bin/sh"),
             const_cast<char*>("-c"),
@@ -160,20 +160,20 @@ auto CommandRunner::run_with_output(
     if (stderr_pipe[0] >= 0)
         ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK);
 
-    auto result = CommandResult{};
+    auto result = CommandResult {};
     auto timed_out = false;
 
     // Read output with optional timeout
     auto deadline = merged.timeout
-        ? std::optional{std::chrono::steady_clock::now() + *merged.timeout}
+        ? std::optional { std::chrono::steady_clock::now() + *merged.timeout }
         : std::nullopt;
 
-    auto buffer = std::array<char, 4096>{};
+    auto buffer = std::array<char, 4096> {};
     auto stdout_open = stdout_pipe[0] >= 0;
     auto stderr_open = stderr_pipe[0] >= 0;
 
     while (stdout_open || stderr_open) {
-        auto fds = std::array<pollfd, 2>{};
+        auto fds = std::array<pollfd, 2> {};
         auto nfds = 0;
 
         if (stdout_open) {
@@ -214,7 +214,7 @@ auto CommandRunner::run_with_output(
             if (fds[i].revents & (POLLIN | POLLHUP)) {
                 auto n = ::read(fds[i].fd, buffer.data(), buffer.size());
                 if (n > 0) {
-                    auto data = std::string_view{buffer.data(), static_cast<std::size_t>(n)};
+                    auto data = std::string_view { buffer.data(), static_cast<std::size_t>(n) };
                     auto is_stderr = (fds[i].fd == stderr_pipe[0]);
 
                     if (callback)
@@ -291,7 +291,7 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
 
 auto CommandRunner::build_env(RunOptions const& options) const -> std::vector<std::string>
 {
-    auto result = std::vector<std::string>{};
+    auto result = std::vector<std::string> {};
 
     if (options.inherit_env) {
         for (auto** e = environ; *e != nullptr; ++e)
@@ -306,8 +306,8 @@ auto CommandRunner::build_env(RunOptions const& options) const -> std::vector<st
 
 auto parse_command(std::string_view command) -> std::vector<std::string>
 {
-    auto result = std::vector<std::string>{};
-    auto current = std::string{};
+    auto result = std::vector<std::string> {};
+    auto current = std::string {};
     auto in_single_quote = false;
     auto in_double_quote = false;
     auto escape_next = false;
@@ -355,17 +355,16 @@ auto shell_quote(std::string_view str) -> std::string
 {
     auto needs_quoting = false;
     for (auto c : str) {
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-' &&
-            c != '.' && c != '/' && c != ':' && c != '@') {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-' && c != '.' && c != '/' && c != ':' && c != '@') {
             needs_quoting = true;
             break;
         }
     }
 
     if (!needs_quoting)
-        return std::string{str};
+        return std::string { str };
 
-    auto result = std::string{"'"};
+    auto result = std::string { "'" };
     for (auto c : str) {
         if (c == '\'')
             result += "'\"'\"'";

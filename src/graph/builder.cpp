@@ -16,7 +16,7 @@ GraphBuilder::GraphBuilder(BuilderOptions options)
 auto GraphBuilder::build(parser::Tupfile const& tupfile, parser::EvalContext& eval)
     -> Result<BuildGraph>
 {
-    auto graph = BuildGraph{};
+    auto graph = BuildGraph {};
     auto result = add_tupfile(graph, tupfile, eval);
     if (!result)
         return pup::unexpected<Error>(result.error());
@@ -28,11 +28,11 @@ auto GraphBuilder::add_tupfile(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval) -> Result<void>
 {
-    auto ctx = BuilderContext{
+    auto ctx = BuilderContext {
         .graph = &graph,
         .eval = &eval,
         .options = options_,
-        .current_dir = std::filesystem::path{tupfile.filename}.parent_path(),
+        .current_dir = std::filesystem::path { tupfile.filename }.parent_path(),
         .current_file = tupfile.filename,
     };
 
@@ -86,7 +86,7 @@ auto GraphBuilder::process_rule(
     if (rule.foreach_) {
         // Foreach rule: create one command per input
         for (auto const& input : *inputs) {
-            auto result = expand_rule(ctx, rule, {input});
+            auto result = expand_rule(ctx, rule, { input });
             if (!result)
                 return pup::unexpected<Error>(result.error());
         }
@@ -105,7 +105,7 @@ auto GraphBuilder::process_bang_macro(
     parser::BangMacro const& macro) -> Result<void>
 {
     // Store macro definition for later use
-    ctx.macros[macro.name] = BangMacroDef{
+    ctx.macros[macro.name] = BangMacroDef {
         .name = macro.name,
         .foreach_ = macro.foreach_,
         .order_only_inputs = macro.order_only_inputs,
@@ -122,7 +122,7 @@ auto GraphBuilder::process_assignment(
     BuilderContext& ctx,
     parser::Assignment const& assign) -> Result<void>
 {
-    auto evaluator = parser::Evaluator{*ctx.eval};
+    auto evaluator = parser::Evaluator { *ctx.eval };
     auto value = evaluator.expand(assign.value);
     if (!value)
         return pup::unexpected<Error>(value.error());
@@ -156,7 +156,7 @@ auto GraphBuilder::process_conditional(
     BuilderContext& ctx,
     parser::Conditional const& cond) -> Result<void>
 {
-    auto evaluator = parser::Evaluator{*ctx.eval};
+    auto evaluator = parser::Evaluator { *ctx.eval };
     auto condition_true = evaluator.evaluate_condition(cond);
 
     auto const& body = condition_true ? cond.then_body : cond.else_body;
@@ -176,13 +176,13 @@ auto GraphBuilder::expand_rule(
     std::vector<std::string> const& inputs) -> Result<void>
 {
     // Get the primary input for pattern expansion
-    auto primary_input = inputs.empty() ? std::string{} : inputs[0];
+    auto primary_input = inputs.empty() ? std::string {} : inputs[0];
 
     // Check if command is a bang macro reference
-    auto cmd_text = std::string{};
-    auto display = std::string{};
+    auto cmd_text = std::string {};
+    auto display = std::string {};
     auto outputs_patterns = rule.outputs;
-    auto macro_name = std::string{};
+    auto macro_name = std::string {};
     BangMacroDef const* macro_ptr = nullptr;
 
     // First expand the command to see if it's a macro reference
@@ -275,7 +275,7 @@ auto GraphBuilder::expand_rule(
 
     // Handle order-only inputs
     for (auto const& pattern : rule.order_only_inputs) {
-        auto order_inputs = expand_inputs(ctx, {pattern});
+        auto order_inputs = expand_inputs(ctx, { pattern });
         if (!order_inputs)
             continue;
 
@@ -293,8 +293,8 @@ auto GraphBuilder::expand_inputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns) -> Result<std::vector<std::string>>
 {
-    auto result = std::vector<std::string>{};
-    auto evaluator = parser::Evaluator{*ctx.eval};
+    auto result = std::vector<std::string> {};
+    auto evaluator = parser::Evaluator { *ctx.eval };
 
     for (auto const& pattern : patterns) {
         if (pattern.is_exclusion)
@@ -330,7 +330,7 @@ auto GraphBuilder::expand_inputs(
                         result.push_back(std::move(p));
                 } else {
                     // No files on disk - look for matching Generated nodes in graph
-                    auto glob = parser::Glob{path};
+                    auto glob = parser::Glob { path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         if (auto const* node = ctx.graph->get_node(id)) {
                             if (glob.matches(node->path))
@@ -368,16 +368,16 @@ auto GraphBuilder::expand_outputs(
     std::vector<parser::PathPattern> const& patterns,
     std::string const& input) -> Result<std::vector<std::string>>
 {
-    auto result = std::vector<std::string>{};
-    auto evaluator = parser::Evaluator{*ctx.eval};
+    auto result = std::vector<std::string> {};
+    auto evaluator = parser::Evaluator { *ctx.eval };
 
     // Build pattern flags from input
-    auto flags = parser::PatternFlags{
+    auto flags = parser::PatternFlags {
         .input = input,
-        .input_base = std::string{parser::path_basename(input)},
-        .input_noext = std::string{parser::path_stem(input)},
-        .input_ext = std::string{parser::path_extension(input)},
-        .input_dir = std::string{parser::path_directory(input)},
+        .input_base = std::string { parser::path_basename(input) },
+        .input_noext = std::string { parser::path_stem(input) },
+        .input_ext = std::string { parser::path_extension(input) },
+        .input_dir = std::string { parser::path_directory(input) },
     };
 
     for (auto const& pattern : patterns) {
@@ -407,7 +407,7 @@ auto GraphBuilder::expand_command(
     std::vector<std::string> const& inputs,
     std::vector<std::string> const& outputs) -> Result<std::string>
 {
-    auto evaluator = parser::Evaluator{*ctx.eval};
+    auto evaluator = parser::Evaluator { *ctx.eval };
 
     // First get literal text from expression
     auto literal = evaluator.expand(cmd);
@@ -415,22 +415,22 @@ auto GraphBuilder::expand_command(
         return pup::unexpected<Error>(literal.error());
 
     // Now expand variables in the literal text (handles $(VAR) references)
-    auto expanded = evaluator.expand(std::string_view{*literal});
+    auto expanded = evaluator.expand(std::string_view { *literal });
     if (!expanded)
         return pup::unexpected<Error>(expanded.error());
 
     // Build pattern flags
-    auto primary_input = inputs.empty() ? std::string{} : inputs[0];
-    auto primary_output = outputs.empty() ? std::string{} : outputs[0];
+    auto primary_input = inputs.empty() ? std::string {} : inputs[0];
+    auto primary_output = outputs.empty() ? std::string {} : outputs[0];
 
-    auto flags = parser::PatternFlags{
+    auto flags = parser::PatternFlags {
         .input = primary_input,
-        .input_base = std::string{parser::path_basename(primary_input)},
-        .input_noext = std::string{parser::path_stem(primary_input)},
-        .input_ext = std::string{parser::path_extension(primary_input)},
+        .input_base = std::string { parser::path_basename(primary_input) },
+        .input_noext = std::string { parser::path_stem(primary_input) },
+        .input_ext = std::string { parser::path_extension(primary_input) },
         .output = primary_output,
-        .output_base = std::string{parser::path_basename(primary_output)},
-        .input_dir = std::string{parser::path_directory(primary_input)},
+        .output_base = std::string { parser::path_basename(primary_output) },
+        .input_dir = std::string { parser::path_directory(primary_input) },
         .all_inputs = inputs,
     };
 
@@ -448,7 +448,7 @@ auto GraphBuilder::get_or_create_file_node(
         return *existing;
 
     // Create new node
-    auto node = Node{
+    auto node = Node {
         .type = type,
         .path = path,
     };
@@ -461,7 +461,7 @@ auto GraphBuilder::create_command_node(
     std::string const& command,
     std::string const& display) -> Result<NodeId>
 {
-    auto node = Node{
+    auto node = Node {
         .type = NodeType::Command,
         .command = command,
         .display = display,

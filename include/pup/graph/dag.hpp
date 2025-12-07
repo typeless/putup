@@ -30,17 +30,17 @@ struct Node {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string path = {};           ///< For files: relative path from tup root
-    std::string command = {};        ///< For commands: the command string
-    std::string display = {};        ///< For commands: display text (from ^ ^ markers)
+    std::string path = {};    ///< For files: relative path from tup root
+    std::string command = {}; ///< For commands: the command string
+    std::string display = {}; ///< For commands: display text (from ^ ^ markers)
 
-    NodeId parent_dir = 0;      ///< Parent directory node
-    Hash256 content_hash = {};  ///< Content hash for files
-    FileTime mtime = {};        ///< Modification time
+    NodeId parent_dir = 0;     ///< Parent directory node
+    Hash256 content_hash = {}; ///< Content hash for files
+    FileTime mtime = {};       ///< Modification time
 
-    std::vector<NodeId> inputs = {};       ///< Input edges (dependencies)
-    std::vector<NodeId> outputs = {};      ///< Output edges (dependents)
-    std::vector<NodeId> order_only = {};   ///< Order-only dependencies
+    std::vector<NodeId> inputs = {};     ///< Input edges (dependencies)
+    std::vector<NodeId> outputs = {};    ///< Output edges (dependents)
+    std::vector<NodeId> order_only = {}; ///< Order-only dependencies
 };
 
 /// Build graph - DAG of nodes and edges

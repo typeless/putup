@@ -7,16 +7,16 @@
 // otherwise use expected-lite from Martin Moene
 
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
-#  include <expected>
+#    include <expected>
 namespace pup {
 using std::expected;
 using std::unexpected;
 } // namespace pup
 #else
 // Force expected-lite to use nonstd implementation
-#  define nsel_CONFIG_SELECT_EXPECTED nsel_EXPECTED_NONSTD
+#    define nsel_CONFIG_SELECT_EXPECTED nsel_EXPECTED_NONSTD
 // Use expected-lite (https://github.com/martinmoene/expected-lite)
-#  include "../../../third_party/expected.hpp"
+#    include "../../../third_party/expected.hpp"
 namespace pup {
 using nonstd::expected;
 using nonstd::unexpected;

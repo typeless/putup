@@ -32,7 +32,9 @@ struct AstNode {
 
 /// Variable reference: $(VAR), @(CONFIG), &(NODE)
 struct VarRef : AstNode {
-    enum class Kind { Regular, Config, Node };
+    enum class Kind { Regular,
+        Config,
+        Node };
 
     Kind kind = Kind::Regular;
     std::string name;
@@ -106,7 +108,9 @@ struct BangMacro : AstNode {
 
 /// Variable assignment: VAR = value, VAR += value, VAR := value
 struct Assignment : AstNode {
-    enum class Op { Set, Append, Define };
+    enum class Op { Set,
+        Append,
+        Define };
 
     std::string name;
     Op op = Op::Set;
@@ -119,12 +123,15 @@ struct Statement;
 
 /// Conditional: ifdef, ifndef, ifeq, ifneq
 struct Conditional : AstNode {
-    enum class Kind { Ifdef, Ifndef, Ifeq, Ifneq };
+    enum class Kind { Ifdef,
+        Ifndef,
+        Ifeq,
+        Ifneq };
 
     Kind kind = Kind::Ifdef;
-    std::string var_name;    ///< For ifdef/ifndef
-    Expression lhs;          ///< For ifeq/ifneq
-    Expression rhs;          ///< For ifeq/ifneq
+    std::string var_name; ///< For ifdef/ifndef
+    Expression lhs;       ///< For ifeq/ifneq
+    Expression rhs;       ///< For ifeq/ifneq
     std::vector<std::unique_ptr<Statement>> then_body;
     std::vector<std::unique_ptr<Statement>> else_body;
 
@@ -167,7 +174,7 @@ struct Run : AstNode {
 };
 
 /// .gitignore directive
-struct Gitignore : AstNode {};
+struct Gitignore : AstNode { };
 
 /// Union of all statement types
 struct Statement : AstNode {

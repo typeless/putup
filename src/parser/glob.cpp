@@ -43,8 +43,8 @@ auto Glob::match_impl(std::string_view pattern, std::string_view text) const -> 
 
 auto Glob::match_recursive(std::string_view pattern, std::string_view text) const -> bool
 {
-    auto pi = std::size_t{0};
-    auto ti = std::size_t{0};
+    auto pi = std::size_t { 0 };
+    auto ti = std::size_t { 0 };
 
     while (pi < pattern.size() && ti < text.size()) {
         auto const pc = pattern[pi];
@@ -138,7 +138,7 @@ auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
         return false;
 
     auto negate = false;
-    auto pos = std::size_t{1};
+    auto pos = std::size_t { 1 };
 
     if (pos < pattern.size() && (pattern[pos] == '!' || pattern[pos] == '^')) {
         negate = true;
@@ -146,7 +146,7 @@ auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
     }
 
     auto matched = false;
-    auto prev = char{0};
+    auto prev = char { 0 };
 
     while (pos < pattern.size() && pattern[pos] != ']') {
         auto const pc = pattern[pos];
@@ -186,14 +186,14 @@ auto glob_expand(
 {
     namespace fs = std::filesystem;
 
-    auto results = std::vector<std::string>{};
+    auto results = std::vector<std::string> {};
 
     // Check if pattern has wildcards
     if (!has_glob_chars(pattern)) {
         // Literal path - just check if it exists
         auto path = base_dir / pattern;
         if (fs::exists(path))
-            results.push_back(std::string{pattern});
+            results.push_back(std::string { pattern });
         return results;
     }
 
@@ -204,7 +204,7 @@ auto glob_expand(
     if (!fs::exists(search_dir) || !fs::is_directory(search_dir))
         return results;
 
-    auto glob = Glob{file_pattern};
+    auto glob = Glob { file_pattern };
 
     // Check if we need recursive search
     auto const is_recursive = glob.is_recursive() && options.recursive;
@@ -221,13 +221,13 @@ auto glob_expand(
         if (is_recursive) {
             auto rel = fs::relative(path, search_dir);
             if (glob.matches(rel.string())) {
-                auto result_path = dir_part.empty() ? rel.string() : std::string{dir_part} + "/" + rel.string();
+                auto result_path = dir_part.empty() ? rel.string() : std::string { dir_part } + "/" + rel.string();
                 results.push_back(result_path);
             }
         } else {
             // Match just the filename
             if (glob.matches(filename)) {
-                auto result_path = dir_part.empty() ? filename : std::string{dir_part} + "/" + filename;
+                auto result_path = dir_part.empty() ? filename : std::string { dir_part } + "/" + filename;
                 results.push_back(result_path);
             }
         }
@@ -258,7 +258,7 @@ auto glob_expand_all(
     std::filesystem::path const& base_dir,
     GlobOptions const& options) -> Result<GlobResult>
 {
-    auto result = GlobResult{};
+    auto result = GlobResult {};
 
     for (auto const& pattern : patterns) {
         if (pattern.empty())
@@ -308,16 +308,16 @@ auto glob_split_path(std::string_view pattern)
         // No globs - find last /
         auto last_slash = pattern.rfind('/');
         if (last_slash == std::string_view::npos)
-            return {{}, pattern};
-        return {pattern.substr(0, last_slash), pattern.substr(last_slash + 1)};
+            return { {}, pattern };
+        return { pattern.substr(0, last_slash), pattern.substr(last_slash + 1) };
     }
 
     // Find / before the first glob
     auto slash_before_glob = pattern.substr(0, glob_pos).rfind('/');
     if (slash_before_glob == std::string_view::npos)
-        return {{}, pattern};
+        return { {}, pattern };
 
-    return {pattern.substr(0, slash_before_glob), pattern.substr(slash_before_glob + 1)};
+    return { pattern.substr(0, slash_before_glob), pattern.substr(slash_before_glob + 1) };
 }
 
 auto has_glob_chars(std::string_view pattern) -> bool

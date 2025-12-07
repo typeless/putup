@@ -44,7 +44,7 @@ auto IndexReader::operator=(IndexReader&& other) noexcept -> IndexReader&
 
 auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 {
-    auto reader = IndexReader{};
+    auto reader = IndexReader {};
 
     reader.fd_ = ::open(path.c_str(), O_RDONLY);
     if (reader.fd_ < 0)
@@ -72,9 +72,7 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 
     // Validate header
     auto const* hdr = reader.header();
-    if (!hdr ||
-        std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0 ||
-        hdr->version != INDEX_VERSION) {
+    if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0 || hdr->version != INDEX_VERSION) {
         reader.close();
         return make_error<IndexReader>(ErrorCode::InvalidFormat, "Invalid index file header");
     }
@@ -88,15 +86,14 @@ auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
     if (fd < 0)
         return false;
 
-    auto header = RawHeader{};
+    auto header = RawHeader {};
     auto n = ::read(fd, &header, sizeof(header));
     ::close(fd);
 
     if (n != sizeof(header))
         return false;
 
-    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 &&
-           header.version == INDEX_VERSION;
+    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 && header.version == INDEX_VERSION;
 }
 
 auto IndexReader::read() const -> Result<Index>
@@ -104,7 +101,7 @@ auto IndexReader::read() const -> Result<Index>
     if (!is_open())
         return make_error<Index>(ErrorCode::InvalidState, "Reader not open");
 
-    auto index = Index{};
+    auto index = Index {};
 
     // Read file entries
     auto files = raw_files();
@@ -145,7 +142,7 @@ auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
 
     auto const* base = static_cast<std::byte const*>(data_);
     auto const* files = reinterpret_cast<RawFileEntry const*>(base + hdr->file_offset);
-    return {files, hdr->file_count};
+    return { files, hdr->file_count };
 }
 
 auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
@@ -156,7 +153,7 @@ auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
 
     auto const* base = static_cast<std::byte const*>(data_);
     auto const* commands = reinterpret_cast<RawCommandEntry const*>(base + hdr->command_offset);
-    return {commands, hdr->command_count};
+    return { commands, hdr->command_count };
 }
 
 auto IndexReader::raw_edges() const -> std::span<RawEdge const>
@@ -167,7 +164,7 @@ auto IndexReader::raw_edges() const -> std::span<RawEdge const>
 
     auto const* base = static_cast<std::byte const*>(data_);
     auto const* edges = reinterpret_cast<RawEdge const*>(base + hdr->edge_offset);
-    return {edges, hdr->edge_count};
+    return { edges, hdr->edge_count };
 }
 
 auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -> std::string_view
@@ -182,7 +179,7 @@ auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -
     if (string_start + length > size_)
         return {};
 
-    return {base + string_start, length};
+    return { base + string_start, length };
 }
 
 auto IndexReader::verify_checksum() const -> bool
@@ -193,7 +190,7 @@ auto IndexReader::verify_checksum() const -> bool
     auto const content_size = size_ - sizeof(RawFooter);
     auto const* base = static_cast<std::byte const*>(data_);
 
-    auto content_span = std::span<std::byte const>{base, content_size};
+    auto content_span = std::span<std::byte const> { base, content_size };
     auto computed = sha256(content_span);
 
     auto const* footer = reinterpret_cast<RawFooter const*>(base + content_size);

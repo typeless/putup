@@ -63,7 +63,7 @@ public:
     using Options = ParserOptions;
 
     Parser(std::string_view source, std::string_view filename,
-        std::shared_ptr<FileResolver> resolver = nullptr, Options options = Options{});
+        std::shared_ptr<FileResolver> resolver = nullptr, Options options = Options {});
 
     /// Parse complete Tupfile
     [[nodiscard]] auto parse() -> Result<Tupfile>;

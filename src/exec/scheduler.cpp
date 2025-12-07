@@ -25,7 +25,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::now();
     cancelled_.store(false);
-    stats_ = BuildStats{};
+    stats_ = BuildStats {};
 
     // Build job list in topological order
     auto jobs_result = build_job_list(graph);
@@ -61,7 +61,7 @@ auto Scheduler::build_incremental(
     std::vector<std::string> const& changed_files) -> Result<BuildStats>
 {
     // Find all nodes affected by changes
-    auto affected = std::set<NodeId>{};
+    auto affected = std::set<NodeId> {};
 
     for (auto const& path : changed_files) {
         if (auto id = graph.find_by_path(path))
@@ -103,7 +103,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 {
     if (options_.jobs == 1 || jobs.size() == 1) {
         // Sequential execution
-        auto runner = CommandRunner{};
+        auto runner = CommandRunner {};
         if (!options_.root_dir.empty())
             runner.set_working_dir(options_.root_dir);
         if (options_.timeout)
@@ -137,38 +137,37 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     }
 
     // Parallel execution with worker threads
-    auto mutex = std::mutex{};
-    auto cv = std::condition_variable{};
-    auto job_queue = std::queue<std::size_t>{};
-    auto completed = std::size_t{0};
-    auto failed = std::atomic<bool>{false};
+    auto mutex = std::mutex {};
+    auto cv = std::condition_variable {};
+    auto job_queue = std::queue<std::size_t> {};
+    auto completed = std::size_t { 0 };
+    auto failed = std::atomic<bool> { false };
 
     // Initialize queue with all job indices
-    for (auto i = std::size_t{0}; i < jobs.size(); ++i)
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i)
         job_queue.push(i);
 
     auto worker = [&]() {
-        auto runner = CommandRunner{};
+        auto runner = CommandRunner {};
         if (!options_.root_dir.empty())
             runner.set_working_dir(options_.root_dir);
         if (options_.timeout)
             runner.set_timeout(*options_.timeout);
 
         while (true) {
-            auto job_idx = std::size_t{0};
+            auto job_idx = std::size_t { 0 };
             {
-                auto lock = std::unique_lock{mutex};
+                auto lock = std::unique_lock { mutex };
                 cv.wait(lock, [&] {
                     // Wake up when: queue has jobs, OR cancelled, OR failed (and not keep-going)
-                    return !job_queue.empty() || cancelled_.load() ||
-                           (failed.load() && !options_.keep_going);
+                    return !job_queue.empty() || cancelled_.load() || (failed.load() && !options_.keep_going);
                 });
 
                 if (cancelled_.load() || (failed.load() && !options_.keep_going))
                     return;
 
                 if (job_queue.empty())
-                    return;  // No more jobs
+                    return; // No more jobs
 
                 job_idx = job_queue.front();
                 job_queue.pop();
@@ -177,14 +176,14 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
             auto const& job = jobs[job_idx];
 
             if (on_start_) {
-                auto lock = std::lock_guard{mutex};
+                auto lock = std::lock_guard { mutex };
                 on_start_(job);
             }
 
             auto result = execute_job(job, runner);
 
             {
-                auto lock = std::lock_guard{mutex};
+                auto lock = std::lock_guard { mutex };
 
                 if (on_complete_)
                     on_complete_(job, result);
@@ -208,11 +207,11 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     };
 
     // Start worker threads
-    auto threads = std::vector<std::thread>{};
+    auto threads = std::vector<std::thread> {};
     auto num_workers = std::min(options_.jobs, jobs.size());
     threads.reserve(num_workers);
 
-    for (auto i = std::size_t{0}; i < num_workers; ++i)
+    for (auto i = std::size_t { 0 }; i < num_workers; ++i)
         threads.emplace_back(worker);
 
     // Notify workers to start
@@ -220,10 +219,9 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 
     // Wait for completion
     {
-        auto lock = std::unique_lock{mutex};
+        auto lock = std::unique_lock { mutex };
         cv.wait(lock, [&] {
-            return completed >= jobs.size() || cancelled_.load() ||
-                   (failed.load() && !options_.keep_going);
+            return completed >= jobs.size() || cancelled_.load() || (failed.load() && !options_.keep_going);
         });
     }
 
@@ -245,7 +243,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 
 auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobResult
 {
-    auto result = JobResult{
+    auto result = JobResult {
         .id = job.id,
         .success = false,
         .exit_code = 0,
@@ -258,7 +256,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
         return result;
     }
 
-    auto run_opts = RunOptions{};
+    auto run_opts = RunOptions {};
     if (!job.working_dir.empty())
         run_opts.working_dir = job.working_dir;
 
@@ -292,14 +290,14 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         return make_error<std::vector<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected");
 
-    auto jobs = std::vector<BuildJob>{};
+    auto jobs = std::vector<BuildJob> {};
 
     for (auto id : topo_result.order) {
         auto const* node = graph.get_node(id);
         if (!node || node->type != NodeType::Command)
             continue;
 
-        auto job = BuildJob{
+        auto job = BuildJob {
             .id = id,
             .command = node->command,
             .display = node->display.empty() ? node->command : node->display,
@@ -334,7 +332,7 @@ auto Scheduler::filter_jobs(
     std::vector<BuildJob> const& all_jobs,
     std::set<NodeId> const& affected_nodes) -> std::vector<BuildJob>
 {
-    auto result = std::vector<BuildJob>{};
+    auto result = std::vector<BuildJob> {};
     result.reserve(all_jobs.size());
 
     for (auto const& job : all_jobs) {
@@ -355,7 +353,7 @@ auto find_changed_files(
     std::filesystem::path const& root,
     index::Index const& old_index) -> std::vector<std::string>
 {
-    auto changed = std::vector<std::string>{};
+    auto changed = std::vector<std::string> {};
 
     for (auto const& file : old_index.files()) {
         if (file.type != NodeType::File)
@@ -370,7 +368,7 @@ auto find_changed_files(
             continue;
         }
 
-        auto current_mtime = FileTime{
+        auto current_mtime = FileTime {
             .seconds = st.st_mtim.tv_sec,
             .nanoseconds = static_cast<std::int32_t>(st.st_mtim.tv_nsec),
         };
