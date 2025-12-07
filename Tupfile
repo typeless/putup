@@ -1,5 +1,8 @@
 include_rules
 
+# Third-party C sources
+: third_party/sha256/sha256.c |> !cc |> sha256.o {third_party_objs}
+
 # Core library sources
 : foreach src/core/*.cpp |> !cxx |> %B.o {core_objs}
 
@@ -17,4 +20,4 @@ include_rules
 
 # Build pup executable
 : foreach src/*.cpp |> !cxx |> %B.o {main_objs}
-: {core_objs} {parser_objs} {graph_objs} {index_objs} {exec_objs} {main_objs} |> !link |> pup
+: {third_party_objs} {core_objs} {parser_objs} {graph_objs} {index_objs} {exec_objs} {main_objs} |> !link |> pup

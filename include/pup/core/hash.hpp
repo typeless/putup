@@ -13,7 +13,7 @@
 
 namespace pup {
 
-/// SHA-256 hasher using OpenSSL
+/// SHA-256 hasher (Git's block implementation)
 class Sha256 {
 public:
     Sha256();

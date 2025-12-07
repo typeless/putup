@@ -3,7 +3,9 @@
 
 #include "pup/core/hash.hpp"
 
-#include <openssl/evp.h>
+extern "C" {
+#include "sha256/sha256.h"
+}
 
 #include <cstring>
 #include <fstream>
@@ -11,22 +13,18 @@
 namespace pup {
 
 struct Sha256::Impl {
-    EVP_MD_CTX* ctx = nullptr;
+    sha256_ctx ctx;
 };
 
 Sha256::Sha256()
     : impl_(new Impl)
 {
-    impl_->ctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(impl_->ctx, EVP_sha256(), nullptr);
+    sha256_init(&impl_->ctx);
 }
 
 Sha256::~Sha256()
 {
-    if (impl_) {
-        EVP_MD_CTX_free(impl_->ctx);
-        delete impl_;
-    }
+    delete impl_;
 }
 
 Sha256::Sha256(Sha256&& other) noexcept
@@ -38,10 +36,7 @@ Sha256::Sha256(Sha256&& other) noexcept
 auto Sha256::operator=(Sha256&& other) noexcept -> Sha256&
 {
     if (this != &other) {
-        if (impl_) {
-            EVP_MD_CTX_free(impl_->ctx);
-            delete impl_;
-        }
+        delete impl_;
         impl_ = other.impl_;
         other.impl_ = nullptr;
     }
@@ -50,25 +45,24 @@ auto Sha256::operator=(Sha256&& other) noexcept -> Sha256&
 
 auto Sha256::update(std::span<std::byte const> data) -> void
 {
-    EVP_DigestUpdate(impl_->ctx, data.data(), data.size());
+    sha256_update(&impl_->ctx, data.data(), data.size());
 }
 
 auto Sha256::update(std::string_view data) -> void
 {
-    EVP_DigestUpdate(impl_->ctx, data.data(), data.size());
+    sha256_update(&impl_->ctx, data.data(), data.size());
 }
 
 auto Sha256::finalize() -> Hash256
 {
     auto result = Hash256 {};
-    auto len = static_cast<unsigned int>(result.size());
-    EVP_DigestFinal_ex(impl_->ctx, reinterpret_cast<unsigned char*>(result.data()), &len);
+    sha256_final(&impl_->ctx, reinterpret_cast<uint8_t*>(result.data()));
     return result;
 }
 
 auto Sha256::reset() -> void
 {
-    EVP_DigestInit_ex(impl_->ctx, EVP_sha256(), nullptr);
+    sha256_init(&impl_->ctx);
 }
 
 auto sha256(std::span<std::byte const> data) -> Hash256
