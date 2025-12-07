@@ -5,7 +5,7 @@ A modern C++23 reimplementation of the [Tup build system](https://gittup.org/tup
 ## Project Goals
 
 1. **Compatibility** - Parse existing Tupfile/Tuprules.tup with zero modifications
-2. **Modern C++23** - Minimal third-party dependencies (expected-lite, Catch2)
+2. **Modern C++20** - Minimal third-party dependencies (fmt, Catch2)
 3. **Git-inspired index** - Custom binary format instead of SQLite
 4. **Content hashing** - SHA-256 for precise change detection
 5. **No FUSE** - Compute changes from index comparison
@@ -30,16 +30,18 @@ Or use tup directly:
 ```bash
 tup init          # First time only
 tup               # Build
-./pup             # Run
+./build/pup       # Run
 ```
+
+Build artifacts go to `build/` using tup's variant system.
 
 ## Testing
 
 ```bash
-make test                     # Run all tests
-./test/unit/pup_test          # Unit tests only
-./test/unit/pup_test -s       # Unit tests with verbose output
-./test/e2e/run_tests.sh       # E2E tests only
+make test                          # Run all tests
+./build/test/unit/pup_test         # Unit tests only
+./build/test/unit/pup_test -s      # Unit tests with verbose output
+./test/e2e/run_tests.sh            # E2E tests only
 ```
 
 ## Code Style
@@ -94,6 +96,10 @@ int const* ptr;            // Not: const int* ptr
 
 ```
 pup/
+├── build/              # Build output (tup variant directory)
+│   ├── tup.config      # Variant configuration
+│   ├── pup             # Main binary
+│   └── test/unit/pup_test
 ├── include/pup/
 │   ├── core/           # Core types, hash, result, platform
 │   ├── parser/         # Lexer, parser, AST, evaluator
@@ -106,7 +112,7 @@ pup/
 │   └── e2e/            # End-to-end tests
 │       ├── run_tests.sh
 │       └── fixtures/   # Test fixtures (simple_c, multi_file, etc.)
-├── third_party/        # expected-lite, Catch2 amalgamated
+├── third_party/        # fmt, Catch2 amalgamated
 ├── Makefile            # Workflow wrapper (make test, make tidy, etc.)
 ├── Tupfile             # Build configuration
 └── Tuprules.tup        # Shared build rules

@@ -29,7 +29,7 @@ build:
 	tup $(TUP_OPTIONS)
 
 test: build
-	./test/unit/pup_test
+	./build/test/unit/pup_test
 	./test/e2e/run_tests.sh
 
 # Run clang-tidy on all source files

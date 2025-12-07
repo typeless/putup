@@ -8,7 +8,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PUP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PUP_BIN="$PUP_ROOT/pup"
+PUP_BIN="$PUP_ROOT/build/pup"
 FIXTURES_DIR="$SCRIPT_DIR/fixtures"
 
 # Colors for output

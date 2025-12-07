@@ -4,9 +4,9 @@
 *.so
 *.dylib
 
-# Executables
-/pup
-/test/unit/pup_test
+# Build output (variant directory)
+/build/*
+!/build/tup.config
 
 # Tup database
 .tup/
