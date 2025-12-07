@@ -6,6 +6,7 @@
 #include <array>
 #include <compare>
 #include <cstdint>
+#include <ctime>
 
 namespace pup {
 

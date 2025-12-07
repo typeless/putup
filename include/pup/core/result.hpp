@@ -43,6 +43,10 @@ enum class ErrorCode {
     InvalidNodeId,
     InvalidEdge,
 
+    // Index errors
+    InvalidFormat,
+    InvalidState,
+
     // Execution errors
     CommandFailed,
     MissingInput,
