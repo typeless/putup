@@ -45,14 +45,32 @@ make test                     # Run all tests
 ## Code Style
 
 ### AAA (Almost Always Auto)
-Use `auto` for all declarations:
+Use `auto` with explicit type initialization for all declarations:
 ```cpp
-auto x = 42;                         // Literal type is clear
-auto ptr = std::make_unique<Foo>();  // Not: std::unique_ptr<Foo> ptr = ...
-auto const& ref = container;         // Const references too
-auto result = std::string{};         // Empty init with explicit type
-auto vec = std::vector<int>{1,2,3};  // Type not obvious from RHS
+// Literals - type is clear from value
+auto x = 42;
+auto pi = 3.14;
+auto name = "hello";
+
+// Function calls - wrap return value in explicit type
+auto result = Result{compute()};     // Not: auto result = compute();
+auto node = Node{get_node()};        // Not: auto node = get_node();
+auto count = std::size_t{vec.size()};
+
+// Factory functions that return the type are OK as-is
+auto ptr = std::make_unique<Foo>();  // make_unique<Foo> is explicit
+auto opt = std::make_optional(42);   // make_optional is explicit
+
+// References and pointers
+auto const& ref = container;
+auto* ptr = get_pointer();
+
+// Explicit type when not obvious from RHS
+auto result = std::string{};         // Empty init
+auto vec = std::vector<int>{1,2,3};  // Initializer list
 ```
+
+**Rationale**: The explicit type wrapper makes the type visible at the declaration site, improving readability while maintaining the benefits of `auto` (no redundant type on LHS).
 
 ### Trailing Return Types
 ```cpp
