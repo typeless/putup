@@ -323,9 +323,9 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
     {
         // Classic diamond pattern:
         //       a.c
-        //      /   \
+        //      /   |
         //   cmd1   cmd2  (can run in parallel)
-        //      \   /
+        //      |   /
         //       link     (waits for both)
         auto graph = graph::BuildGraph{};
 
@@ -367,7 +367,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
     {
         // One input, multiple independent outputs
         //        src
-        //       / | \
+        //       / | |
         //      c1 c2 c3  (all can run in parallel)
         auto graph = graph::BuildGraph{};
 

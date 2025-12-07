@@ -2,14 +2,15 @@
 
 ROOT = $(TUP_CWD)
 
-CXX = clang++
+CXX = g++
 AR = ar
 
-CXXFLAGS = -std=c++23
+CXXFLAGS = -std=c++20
 CXXFLAGS += -Wall -Wextra -Werror -Wpedantic
 CXXFLAGS += -I$(ROOT)/include
 CXXFLAGS += -I$(ROOT)/third_party
 CXXFLAGS += -fPIC
+CXXFLAGS += -DFMT_HEADER_ONLY
 
 # OpenSSL for SHA-256
 LDFLAGS += -lssl -lcrypto
@@ -25,7 +26,7 @@ endif
 !cxx = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
 
 # Link executable
-!link = |> ^ LINK %o^ $(CXX) $(LDFLAGS) %f -o %o |>
+!link = |> ^ LINK %o^ $(CXX) %f -o %o $(LDFLAGS) |>
 
 # Create static library
 !ar = |> ^ AR %o^ $(AR) rcs %o %f |>

@@ -132,9 +132,9 @@ TEST_CASE("Topological sort", "[graph]")
     SECTION("diamond graph")
     {
         //     a
-        //    / \
+        //    / |
         //   b   c
-        //    \ /
+        //    | /
         //     d
         auto id_a = graph.add_node(Node{.path = "a"});
         auto id_b = graph.add_node(Node{.path = "b"});
@@ -268,7 +268,7 @@ TEST_CASE("Graph traversal", "[graph]")
     auto graph = BuildGraph{};
 
     //     a
-    //    / \
+    //    / |
     //   b   c
     //   |   |
     //   d   e

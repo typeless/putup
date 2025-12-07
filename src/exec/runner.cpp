@@ -147,7 +147,7 @@ auto CommandRunner::run_with_output(
     // Write stdin data if provided
     if (merged.stdin_data && stdin_pipe[1] >= 0) {
         auto const& data = *merged.stdin_data;
-        ::write(stdin_pipe[1], data.data(), data.size());
+        [[maybe_unused]] auto written = ::write(stdin_pipe[1], data.data(), data.size());
         ::close(stdin_pipe[1]);
         stdin_pipe[1] = -1;
     } else if (stdin_pipe[1] >= 0) {

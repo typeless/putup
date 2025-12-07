@@ -1,10 +1,10 @@
 include_rules
 
-# Catch2 amalgamated (compile once)
-: $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx |> catch_amalgamated.o {catch}
+# Catch2 amalgamated (compile once, disable -Werror for third-party code)
+: $(ROOT)/third_party/catch_amalgamated.cpp |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-error -c %f -o %o |> catch_amalgamated.o {catch}
 
-# Test sources
-: foreach test_*.cpp |> !cxx |> %B.o {test_objs}
+# Test sources (disable spurious maybe-uninitialized warnings from std::variant)
+: foreach test_*.cpp |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-maybe-uninitialized -c %f -o %o |> %B.o {test_objs}
 
 # Link test runner (reference all library objects)
 : {test_objs} {catch} $(ROOT)/hash.o $(ROOT)/lexer.o $(ROOT)/parser.o $(ROOT)/ast.o $(ROOT)/eval.o $(ROOT)/glob.o $(ROOT)/dag.o $(ROOT)/topo.o $(ROOT)/builder.o $(ROOT)/entry.o $(ROOT)/reader.o $(ROOT)/writer.o $(ROOT)/runner.o $(ROOT)/scheduler.o |> !link |> pup_test

@@ -15,18 +15,19 @@
 #include "pup/parser/parser.hpp"
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 #include <string_view>
+
+#include <fmt/core.h>
 
 namespace {
 
 auto const VERSION = "0.1.0";
 auto const PUP_DIR = ".pup";
-// auto const INDEX_FILE = ".pup/index";  // For future incremental builds
 
 struct Options {
     std::size_t jobs = 0;
@@ -36,34 +37,34 @@ struct Options {
     bool version = false;
     bool help = false;
     std::string command = {};
-    std::string variant = {};              ///< Variant directory (empty = auto-detect)
+    std::string variant = {};
     std::vector<std::string> targets = {};
 };
 
 auto print_usage() -> void
 {
-    std::cout << "pup - Tup build system reimplementation\n\n";
-    std::cout << "Usage: pup [OPTIONS] [COMMAND]\n\n";
-    std::cout << "Commands:\n";
-    std::cout << "  init     Initialize .pup directory\n";
-    std::cout << "  parse    Parse and validate Tupfiles\n";
-    std::cout << "  build    Execute build (default)\n";
-    std::cout << "  graph    Print dependency graph\n";
-    std::cout << "\nOptions:\n";
-    std::cout << "  -j, --jobs N       Run N jobs in parallel\n";
-    std::cout << "  -k, --keep-going   Continue after failures\n";
-    std::cout << "  -n, --dry-run      Print commands without executing\n";
-    std::cout << "  -v, --verbose      Verbose output\n";
-    std::cout << "  --variant=DIR      Use DIR as variant output directory\n";
-    std::cout << "  --version          Print version\n";
-    std::cout << "  -h, --help         Print this help\n";
+    fmt::print("pup - Tup build system reimplementation\n\n"
+               "Usage: pup [OPTIONS] [COMMAND]\n\n"
+               "Commands:\n"
+               "  init     Initialize .pup directory\n"
+               "  parse    Parse and validate Tupfiles\n"
+               "  build    Execute build (default)\n"
+               "  graph    Print dependency graph\n"
+               "\nOptions:\n"
+               "  -j, --jobs N       Run N jobs in parallel\n"
+               "  -k, --keep-going   Continue after failures\n"
+               "  -n, --dry-run      Print commands without executing\n"
+               "  -v, --verbose      Verbose output\n"
+               "  --variant=DIR      Use DIR as variant output directory\n"
+               "  --version          Print version\n"
+               "  -h, --help         Print this help\n");
 }
 
 auto print_version() -> void
 {
-    std::cout << "pup " << VERSION << "\n";
-    std::cout << "Platform: " << pup::PLATFORM << "\n";
-    std::cout << "Architecture: " << pup::ARCH << "\n";
+    fmt::print("pup {}\n", VERSION);
+    fmt::print("Platform: {}\n", pup::PLATFORM);
+    fmt::print("Architecture: {}\n", pup::ARCH);
 }
 
 auto parse_args(int argc, char** argv) -> Options
@@ -121,17 +122,14 @@ auto find_project_root() -> std::optional<std::filesystem::path>
     }
 }
 
-/// Find variant directory by looking for tup.config in subdirectories
 auto find_variant_dir(std::filesystem::path const& root) -> std::optional<std::filesystem::path>
 {
-    // Look for common variant directory names with tup.config
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path{root / name};
         if (std::filesystem::exists(dir / "tup.config"))
             return dir;
     }
 
-    // Scan all immediate subdirectories for tup.config
     if (std::filesystem::is_directory(root)) {
         for (auto const& entry : std::filesystem::directory_iterator(root)) {
             if (entry.is_directory()) {
@@ -145,7 +143,6 @@ auto find_variant_dir(std::filesystem::path const& root) -> std::optional<std::f
     return std::nullopt;
 }
 
-/// Compute TUP_VARIANTDIR relative path from source dir to variant output dir
 auto compute_variantdir(
     std::filesystem::path const& source_dir,
     std::filesystem::path const& variant_dir) -> std::string
@@ -153,7 +150,6 @@ auto compute_variantdir(
     if (variant_dir.empty())
         return ".";
 
-    // Variant output for this source dir is: variant_dir / source_dir
     auto output_dir = std::filesystem::path{variant_dir / source_dir};
     auto rel = std::filesystem::relative(output_dir, source_dir);
     return rel.string();
@@ -176,12 +172,12 @@ auto cmd_init(Options const& /*opts*/) -> int
 
     auto pup_dir = std::filesystem::path{root / PUP_DIR};
     if (std::filesystem::exists(pup_dir)) {
-        std::cout << "Already initialized in " << root << "\n";
+        fmt::print("Already initialized in \"{}\"\n", root.string());
         return EXIT_SUCCESS;
     }
 
     std::filesystem::create_directory(pup_dir);
-    std::cout << "Initialized pup in " << root << "\n";
+    fmt::print("Initialized pup in \"{}\"\n", root.string());
     return EXIT_SUCCESS;
 }
 
@@ -189,22 +185,22 @@ auto cmd_parse(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path>{find_project_root()};
     if (!root) {
-        std::cerr << "Error: Not in a pup/tup project (no Tupfile found)\n";
+        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile found)\n");
         return EXIT_FAILURE;
     }
 
     if (opts.verbose)
-        std::cout << "Project root: " << *root << "\n";
+        fmt::print("Project root: \"{}\"\n", root->string());
 
     auto tupfile_path = std::filesystem::path{*root / "Tupfile"};
     if (!std::filesystem::exists(tupfile_path)) {
-        std::cerr << "Error: No Tupfile found in " << *root << "\n";
+        fmt::print(stderr, "Error: No Tupfile found in \"{}\"\n", root->string());
         return EXIT_FAILURE;
     }
 
     auto source = std::optional<std::string>{read_file(tupfile_path)};
     if (!source) {
-        std::cerr << "Error: Failed to read Tupfile\n";
+        fmt::print(stderr, "Error: Failed to read Tupfile\n");
         return EXIT_FAILURE;
     }
 
@@ -212,22 +208,22 @@ auto cmd_parse(Options const& opts) -> int
     auto result = pup::Result<pup::parser::Tupfile>{parser.parse()};
 
     if (!result) {
-        std::cerr << "Parse error: " << result.error().message << "\n";
+        fmt::print(stderr, "Parse error: {}\n", result.error().message);
         return EXIT_FAILURE;
     }
 
     auto const& tupfile = *result;
-    std::cout << "Parsed " << tupfile.statements.size() << " statements from Tupfile\n";
+    fmt::print("Parsed {} statements from Tupfile\n", tupfile.statements.size());
 
     if (opts.verbose) {
         for (auto const& stmt : tupfile.statements) {
             if (auto const* rule = stmt->as<pup::parser::Rule>()) {
-                std::cout << "  Rule: " << rule->inputs.size() << " inputs -> "
-                          << rule->outputs.size() << " outputs\n";
+                fmt::print("  Rule: {} inputs -> {} outputs\n",
+                    rule->inputs.size(), rule->outputs.size());
             } else if (auto const* assign = stmt->as<pup::parser::Assignment>()) {
-                std::cout << "  Assignment: " << assign->name << "\n";
+                fmt::print("  Assignment: {}\n", assign->name);
             } else if (auto const* macro = stmt->as<pup::parser::BangMacro>()) {
-                std::cout << "  Macro: !" << macro->name << "\n";
+                fmt::print("  Macro: !{}\n", macro->name);
             }
         }
     }
@@ -239,21 +235,21 @@ auto cmd_graph(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path>{find_project_root()};
     if (!root) {
-        std::cerr << "Error: Not in a pup/tup project\n";
+        fmt::print(stderr, "Error: Not in a pup/tup project\n");
         return EXIT_FAILURE;
     }
 
     auto tupfile_path = std::filesystem::path{*root / "Tupfile"};
     auto source = std::optional<std::string>{read_file(tupfile_path)};
     if (!source) {
-        std::cerr << "Error: Failed to read Tupfile\n";
+        fmt::print(stderr, "Error: Failed to read Tupfile\n");
         return EXIT_FAILURE;
     }
 
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
     auto parse_result = pup::Result<pup::parser::Tupfile>{parser.parse()};
     if (!parse_result) {
-        std::cerr << "Parse error: " << parse_result.error().message << "\n";
+        fmt::print(stderr, "Parse error: {}\n", parse_result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -275,7 +271,7 @@ auto cmd_graph(Options const& opts) -> int
     auto graph_result = pup::Result<pup::graph::BuildGraph>{builder.build(*parse_result, eval_ctx)};
 
     if (!graph_result) {
-        std::cerr << "Graph build error: " << graph_result.error().message << "\n";
+        fmt::print(stderr, "Graph build error: {}\n", graph_result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -283,16 +279,16 @@ auto cmd_graph(Options const& opts) -> int
     auto num_nodes = std::size_t{graph.node_count()};
     auto num_edges = std::size_t{graph.edge_count()};
     auto commands = std::vector<pup::NodeId>{graph.nodes_of_type(pup::NodeType::Command)};
-    std::cout << "Nodes: " << num_nodes << "\n";
-    std::cout << "Edges: " << num_edges << "\n";
-    std::cout << "Commands: " << commands.size() << "\n";
+    fmt::print("Nodes: {}\n", num_nodes);
+    fmt::print("Edges: {}\n", num_edges);
+    fmt::print("Commands: {}\n", commands.size());
 
     if (opts.verbose) {
-        std::cout << "\nCommands:\n";
+        fmt::print("\nCommands:\n");
         for (auto id : commands) {
             if (auto const* node = graph.get_node(id)) {
                 auto display = std::string{node->display.empty() ? node->command : node->display};
-                std::cout << "  " << display << "\n";
+                fmt::print("  {}\n", display);
             }
         }
     }
@@ -304,26 +300,24 @@ auto cmd_build(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path>{find_project_root()};
     if (!root) {
-        std::cerr << "Error: Not in a pup/tup project\n";
+        fmt::print(stderr, "Error: Not in a pup/tup project\n");
         return EXIT_FAILURE;
     }
 
     auto tupfile_path = std::filesystem::path{*root / "Tupfile"};
     auto source = std::optional<std::string>{read_file(tupfile_path)};
     if (!source) {
-        std::cerr << "Error: Failed to read Tupfile\n";
+        fmt::print(stderr, "Error: Failed to read Tupfile\n");
         return EXIT_FAILURE;
     }
 
-    // Parse
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
     auto parse_result = pup::Result<pup::parser::Tupfile>{parser.parse()};
     if (!parse_result) {
-        std::cerr << "Parse error: " << parse_result.error().message << "\n";
+        fmt::print(stderr, "Parse error: {}\n", parse_result.error().message);
         return EXIT_FAILURE;
     }
 
-    // Discover or use specified variant (always relative to root)
     auto variant_dir = std::filesystem::path{};
     if (!opts.variant.empty()) {
         variant_dir = std::filesystem::path{opts.variant};
@@ -333,7 +327,6 @@ auto cmd_build(Options const& opts) -> int
             variant_dir = std::filesystem::relative(*discovered, *root);
     }
 
-    // Load config variables from tup.config if present
     auto config_vars = pup::parser::VarDb{};
     if (!variant_dir.empty()) {
         auto config_path = std::filesystem::path{*root / variant_dir / "tup.config"};
@@ -342,12 +335,11 @@ auto cmd_build(Options const& opts) -> int
             if (config_result) {
                 config_vars = std::move(*config_result);
                 if (opts.verbose)
-                    std::cout << "Loaded config from " << config_path << "\n";
+                    fmt::print("Loaded config from {}\n", config_path.string());
             }
         }
     }
 
-    // Build graph
     auto vars = pup::parser::VarDb{};
     auto tup_variantdir = compute_variantdir(std::filesystem::path{}, variant_dir);
     auto eval_ctx = pup::parser::EvalContext{
@@ -370,7 +362,7 @@ auto cmd_build(Options const& opts) -> int
     auto graph_result = pup::Result<pup::graph::BuildGraph>{builder.build(*parse_result, eval_ctx)};
 
     if (!graph_result) {
-        std::cerr << "Graph error: " << graph_result.error().message << "\n";
+        fmt::print(stderr, "Graph error: {}\n", graph_result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -378,11 +370,10 @@ auto cmd_build(Options const& opts) -> int
     auto num_commands = std::size_t{graph.nodes_of_type(pup::NodeType::Command).size()};
 
     if (num_commands == 0) {
-        std::cout << "Nothing to do.\n";
+        fmt::print("Nothing to do.\n");
         return EXIT_SUCCESS;
     }
 
-    // Set up scheduler
     auto sched_opts = pup::exec::SchedulerOptions {
         .jobs = opts.jobs,
         .keep_going = opts.keep_going,
@@ -393,18 +384,16 @@ auto cmd_build(Options const& opts) -> int
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
 
-    // Progress display
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
-        if (opts.verbose || opts.dry_run) {
-            std::cout << job.display << "\n";
-        }
+        if (opts.verbose || opts.dry_run)
+            fmt::print("{}\n", job.display);
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& result) {
         if (!result.success) {
-            std::cerr << "FAILED: " << job.display << "\n";
+            fmt::print(stderr, "FAILED: {}\n", job.display);
             if (!result.output.empty())
-                std::cerr << result.output << "\n";
+                fmt::print(stderr, "{}\n", result.output);
         }
     });
 
@@ -412,29 +401,31 @@ auto cmd_build(Options const& opts) -> int
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         completed = done;
         if (!opts.verbose) {
-            std::cout << "\r[" << done << "/" << total << "] " << std::flush;
+            fmt::print("\r[{}/{}] ", done, total);
+            std::fflush(stdout);
         }
     });
 
-    // Execute build
     auto start = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
     auto build_result = pup::Result<pup::exec::BuildStats>{scheduler.build(graph)};
     auto end = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
     auto duration = std::chrono::milliseconds{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
 
     if (!opts.verbose)
-        std::cout << "\n";
+        fmt::print("\n");
 
     if (!build_result) {
-        std::cerr << "Build failed: " << build_result.error().message << "\n";
+        fmt::print(stderr, "Build failed: {}\n", build_result.error().message);
         return EXIT_FAILURE;
     }
 
     auto const& stats = *build_result;
-    std::cout << "Build completed: " << stats.completed_jobs << " commands";
     if (stats.failed_jobs > 0)
-        std::cout << " (" << stats.failed_jobs << " failed)";
-    std::cout << " in " << duration.count() << "ms\n";
+        fmt::print("Build completed: {} commands ({} failed) in {}ms\n",
+            stats.completed_jobs, stats.failed_jobs, duration.count());
+    else
+        fmt::print("Build completed: {} commands in {}ms\n",
+            stats.completed_jobs, duration.count());
 
     return stats.failed_jobs > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
@@ -464,7 +455,7 @@ auto main(int argc, char** argv) -> int
     if (opts.command == "build")
         return cmd_build(opts);
 
-    std::cerr << "Unknown command: " << opts.command << "\n";
+    fmt::print(stderr, "Unknown command: {}\n", opts.command);
     print_usage();
     return EXIT_FAILURE;
 }
