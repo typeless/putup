@@ -12,8 +12,8 @@ echo "CONFIG_VARIANT=build" >> build/tup.config
 # Initialize pup
 $PUP init
 
-# Build with --variant=build (use -j1 due to scheduler dependency bug)
-$PUP build --variant=build -j1
+# Build with --variant=build
+$PUP build --variant=build
 
 # Verify outputs are in build/ directory
 if [[ ! -f "build/hello.o" ]]; then

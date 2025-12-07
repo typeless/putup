@@ -11,8 +11,55 @@
 #include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
 
 namespace pup::exec {
+
+namespace {
+
+/// Build dependency map between jobs based on input/output relationships.
+/// Returns: in_degree[j] = number of jobs that j depends on
+///          dependents[i] = list of jobs that depend on job i
+auto build_dependency_map(std::vector<BuildJob> const& jobs)
+    -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
+{
+    auto in_degree = std::vector<std::size_t>(jobs.size(), 0);
+    auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
+
+    // Build map from output path -> job index that produces it
+    auto output_to_job = std::unordered_map<std::string, std::size_t>{};
+    for (auto i = std::size_t{0}; i < jobs.size(); ++i) {
+        for (auto const& output : jobs[i].outputs)
+            output_to_job[output] = i;
+    }
+
+    // For each job, find which earlier jobs produce its inputs
+    for (auto j = std::size_t{0}; j < jobs.size(); ++j) {
+        auto dependencies = std::set<std::size_t>{};
+
+        // Check regular inputs
+        for (auto const& input : jobs[j].inputs) {
+            auto it = output_to_job.find(input);
+            if (it != output_to_job.end() && it->second != j)
+                dependencies.insert(it->second);
+        }
+
+        // Check order-only inputs
+        for (auto const& input : jobs[j].order_only_inputs) {
+            auto it = output_to_job.find(input);
+            if (it != output_to_job.end() && it->second != j)
+                dependencies.insert(it->second);
+        }
+
+        in_degree[j] = dependencies.size();
+        for (auto dep : dependencies)
+            dependents[dep].push_back(j);
+    }
+
+    return {std::move(in_degree), std::move(dependents)};
+}
+
+} // namespace
 
 Scheduler::Scheduler(SchedulerOptions options)
     : options_(std::move(options))
@@ -136,54 +183,64 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
         return {};
     }
 
-    // Parallel execution with worker threads
-    auto mutex = std::mutex {};
-    auto cv = std::condition_variable {};
-    auto job_queue = std::queue<std::size_t> {};
-    auto completed = std::size_t { 0 };
-    auto failed = std::atomic<bool> { false };
+    // Parallel execution with dependency-aware ready queue
+    auto mutex = std::mutex{};
+    auto cv = std::condition_variable{};
+    auto ready_queue = std::queue<std::size_t>{};
+    auto completed_count = std::size_t{0};
+    auto failed = std::atomic<bool>{false};
+    auto all_done = std::atomic<bool>{false};
 
-    // Initialize queue with all job indices
-    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i)
-        job_queue.push(i);
+    // Build dependency map
+    auto [in_degree, dependents] = build_dependency_map(jobs);
+
+    // Initialize ready queue with jobs that have no dependencies
+    for (auto i = std::size_t{0}; i < jobs.size(); ++i) {
+        if (in_degree[i] == 0)
+            ready_queue.push(i);
+    }
 
     auto worker = [&]() {
-        auto runner = CommandRunner {};
+        auto runner = CommandRunner{};
         if (!options_.root_dir.empty())
             runner.set_working_dir(options_.root_dir);
         if (options_.timeout)
             runner.set_timeout(*options_.timeout);
 
         while (true) {
-            auto job_idx = std::size_t { 0 };
+            auto job_idx = std::size_t{0};
             {
-                auto lock = std::unique_lock { mutex };
+                auto lock = std::unique_lock{mutex};
                 cv.wait(lock, [&] {
-                    // Wake up when: queue has jobs, OR cancelled, OR failed (and not keep-going)
-                    return !job_queue.empty() || cancelled_.load() || (failed.load() && !options_.keep_going);
+                    // Wake up when: queue has ready jobs, OR all done, OR cancelled, OR failed
+                    return !ready_queue.empty() || all_done.load() ||
+                           cancelled_.load() || (failed.load() && !options_.keep_going);
                 });
 
                 if (cancelled_.load() || (failed.load() && !options_.keep_going))
                     return;
 
-                if (job_queue.empty())
-                    return; // No more jobs
+                if (ready_queue.empty()) {
+                    if (all_done.load())
+                        return;
+                    continue; // Spurious wakeup, wait again
+                }
 
-                job_idx = job_queue.front();
-                job_queue.pop();
+                job_idx = ready_queue.front();
+                ready_queue.pop();
             }
 
             auto const& job = jobs[job_idx];
 
             if (on_start_) {
-                auto lock = std::lock_guard { mutex };
+                auto lock = std::lock_guard{mutex};
                 on_start_(job);
             }
 
             auto result = JobResult{execute_job(job, runner)};
 
             {
-                auto lock = std::lock_guard { mutex };
+                auto lock = std::lock_guard{mutex};
 
                 if (on_complete_)
                     on_complete_(job, result);
@@ -195,11 +252,22 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
                     failed.store(true);
                 }
 
-                ++completed;
+                ++completed_count;
                 stats_.build_time += result.duration;
 
                 if (on_progress_)
-                    on_progress_(completed, stats_.total_jobs);
+                    on_progress_(completed_count, stats_.total_jobs);
+
+                // Queue dependents whose dependencies are now satisfied
+                for (auto dependent_idx : dependents[job_idx]) {
+                    --in_degree[dependent_idx];
+                    if (in_degree[dependent_idx] == 0)
+                        ready_queue.push(dependent_idx);
+                }
+
+                // Check if all jobs are done
+                if (completed_count >= jobs.size())
+                    all_done.store(true);
             }
 
             cv.notify_all();
@@ -207,11 +275,11 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     };
 
     // Start worker threads
-    auto threads = std::vector<std::thread> {};
+    auto threads = std::vector<std::thread>{};
     auto num_workers = std::min(options_.jobs, jobs.size());
     threads.reserve(num_workers);
 
-    for (auto i = std::size_t { 0 }; i < num_workers; ++i)
+    for (auto i = std::size_t{0}; i < num_workers; ++i)
         threads.emplace_back(worker);
 
     // Notify workers to start
@@ -219,14 +287,14 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 
     // Wait for completion
     {
-        auto lock = std::unique_lock { mutex };
+        auto lock = std::unique_lock{mutex};
         cv.wait(lock, [&] {
-            return completed >= jobs.size() || cancelled_.load() || (failed.load() && !options_.keep_going);
+            return all_done.load() || cancelled_.load() || (failed.load() && !options_.keep_going);
         });
     }
 
     // Signal workers to exit
-    cancelled_.store(true);
+    all_done.store(true);
     cv.notify_all();
 
     // Join threads

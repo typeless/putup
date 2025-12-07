@@ -3,8 +3,12 @@
 
 #include "pup/graph/builder.hpp"
 #include "pup/parser/glob.hpp"
+#include "pup/parser/parser.hpp"
 
 #include <algorithm>
+#include <fstream>
+#include <set>
+#include <sstream>
 
 namespace pup::graph {
 
@@ -94,7 +98,10 @@ auto GraphBuilder::process_statement(
     if (auto const* cond = stmt.as<parser::Conditional>())
         return process_conditional(ctx, *cond);
 
-    // Other directives (include, export, etc.) are handled during parsing
+    if (auto const* inc = stmt.as<parser::Include>())
+        return process_include(ctx, *inc);
+
+    // Other directives (export, etc.) don't affect the graph
     return {};
 }
 
@@ -186,6 +193,78 @@ auto GraphBuilder::process_conditional(
     auto const& body = condition_true ? cond.then_body : cond.else_body;
 
     for (auto const& stmt : body) {
+        auto result = Result<void>{process_statement(ctx, *stmt)};
+        if (!result)
+            return pup::unexpected<Error>(result.error());
+    }
+
+    return {};
+}
+
+auto GraphBuilder::process_include(
+    BuilderContext& ctx,
+    parser::Include const& inc) -> Result<void>
+{
+    namespace fs = std::filesystem;
+
+    // Find the include file path
+    auto include_path = std::string{};
+
+    if (inc.is_rules) {
+        // include_rules: search up directory tree for Tuprules.tup
+        auto search_dir = fs::path{ctx.options.root_dir / ctx.current_dir};
+        auto root = fs::path{ctx.options.root_dir};
+
+        while (search_dir >= root) {
+            auto tuprules = fs::path{search_dir / "Tuprules.tup"};
+            if (fs::exists(tuprules)) {
+                include_path = tuprules.string();
+                break;
+            }
+            if (search_dir == root)
+                break;
+            search_dir = search_dir.parent_path();
+        }
+
+        if (include_path.empty())
+            return {}; // No Tuprules.tup found, silently continue
+    } else {
+        // include path: expand and resolve the path
+        auto evaluator = parser::Evaluator{*ctx.eval};
+        auto path_result = Result<std::string>{evaluator.expand(inc.path)};
+        if (!path_result)
+            return pup::unexpected<Error>(path_result.error());
+
+        auto resolved = fs::path{ctx.options.root_dir / ctx.current_dir / *path_result};
+        if (!fs::exists(resolved))
+            return make_error<void>(ErrorCode::IncludeNotFound,
+                "Include file not found: " + *path_result);
+        include_path = resolved.string();
+    }
+
+    // Prevent infinite recursion
+    if (ctx.included_files.contains(include_path))
+        return {};
+    ctx.included_files.insert(include_path);
+
+    // Read the include file
+    auto file = std::ifstream{include_path};
+    if (!file)
+        return make_error<void>(ErrorCode::IoError,
+            "Cannot open include file: " + include_path);
+
+    auto ss = std::stringstream{};
+    ss << file.rdbuf();
+    auto source = std::string{ss.str()};
+
+    // Parse the include file
+    auto parser = parser::Parser{source, include_path};
+    auto parse_result = Result<parser::Tupfile>{parser.parse()};
+    if (!parse_result)
+        return pup::unexpected<Error>(parse_result.error());
+
+    // Process statements from the included file
+    for (auto const& stmt : parse_result->statements) {
         auto result = Result<void>{process_statement(ctx, *stmt)};
         if (!result)
             return pup::unexpected<Error>(result.error());

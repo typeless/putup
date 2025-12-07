@@ -766,7 +766,7 @@ auto Parser::parse_expression() -> Result<Expression>
     });
 }
 
-auto Parser::parse_expression_until(std::function<bool(Token const&)> const& stop) -> Result<Expression>
+auto Parser::parse_expression_until(std::function<bool(Token const&)> const& stop, bool stop_at_gap) -> Result<Expression>
 {
     auto expr = Expression {};
     auto current_text = std::string {};
@@ -781,8 +781,13 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
     while (!check(TokenType::Eof) && !stop(current_)) {
         // Check if there was whitespace between tokens (gap in offsets)
-        if (!current_text.empty() && current_.location.offset > last_end_offset)
+        if (!current_text.empty() && current_.location.offset > last_end_offset) {
+            if (stop_at_gap) {
+                flush_text();
+                break; // Stop at whitespace gap (for path patterns)
+            }
             current_text += ' ';
+        }
 
         // Variable reference: $(VAR)
         if (check(TokenType::Dollar)) {
@@ -893,10 +898,11 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
     }
 
     // Parse path expression (until whitespace or delimiter)
+    // stop_at_gap=true ensures we stop at whitespace boundaries between paths
     auto path = parse_expression_until([](Token const& t) {
         return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow,
             TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
-    });
+    }, true);
     if (!path)
         return pup::unexpected<Error>(path.error());
     pattern.path = std::move(*path);

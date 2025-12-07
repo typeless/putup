@@ -108,7 +108,8 @@ private:
     // Expression parsing
     [[nodiscard]] auto parse_expression() -> Result<Expression>;
     [[nodiscard]] auto parse_expression_until(
-        std::function<bool(Token const&)> const& stop) -> Result<Expression>;
+        std::function<bool(Token const&)> const& stop,
+        bool stop_at_gap = false) -> Result<Expression>;
     [[nodiscard]] auto parse_path_pattern() -> Result<PathPattern>;
     [[nodiscard]] auto parse_path_list() -> Result<std::vector<PathPattern>>;
     [[nodiscard]] auto parse_path_list_until(TokenType stop) -> Result<std::vector<PathPattern>>;

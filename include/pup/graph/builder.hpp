@@ -12,6 +12,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pup::graph {
@@ -44,6 +45,7 @@ struct BuilderContext {
 
     std::unordered_map<std::string, BangMacroDef> macros = {};
     std::unordered_map<std::string, std::vector<NodeId>> groups = {};
+    std::unordered_set<std::string> included_files = {};
 
     std::filesystem::path current_dir = {};
     std::string current_file = {};
@@ -97,6 +99,10 @@ private:
     auto process_conditional(
         BuilderContext& ctx,
         parser::Conditional const& cond) -> Result<void>;
+
+    auto process_include(
+        BuilderContext& ctx,
+        parser::Include const& inc) -> Result<void>;
 
     auto expand_rule(
         BuilderContext& ctx,
