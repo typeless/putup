@@ -340,3 +340,78 @@ TEST_CASE("Graph traversal", "[graph]")
         REQUIRE(path[0] == *id_a);
     }
 }
+
+TEST_CASE("Order-only dependencies in topological sort", "[graph]")
+{
+    auto graph = BuildGraph{};
+
+    // Build a graph where:
+    // - header.h is an order-only dependency of cmd
+    // - input.c is a normal input to cmd
+    // - cmd produces output.o
+    //
+    // header.h ---(order-only)---> cmd ---> output.o
+    //                               ^
+    // input.c ----------------------+
+
+    auto header_id = graph.add_node(Node{.type = NodeType::File, .path = "header.h"});
+    auto input_id = graph.add_node(Node{.type = NodeType::File, .path = "input.c"});
+    auto cmd_id = graph.add_node(Node{.type = NodeType::Command, .command = "gcc"});
+    auto output_id = graph.add_node(Node{.type = NodeType::Generated, .path = "output.o"});
+
+    REQUIRE(header_id.has_value());
+    REQUIRE(input_id.has_value());
+    REQUIRE(cmd_id.has_value());
+    REQUIRE(output_id.has_value());
+
+    // Normal edge: input.c -> cmd
+    (void)graph.add_edge(*input_id, *cmd_id);
+    // Normal edge: cmd -> output.o
+    (void)graph.add_edge(*cmd_id, *output_id);
+    // Order-only edge: header.h -> cmd
+    (void)graph.add_order_only_edge(*header_id, *cmd_id);
+
+    SECTION("get_order_only_dependents returns correct nodes")
+    {
+        auto dependents = graph.get_order_only_dependents(*header_id);
+        REQUIRE(dependents.size() == 1);
+        REQUIRE(dependents[0] == *cmd_id);
+    }
+
+    SECTION("topological sort respects order-only dependencies")
+    {
+        auto result = topological_sort(graph);
+        REQUIRE_FALSE(result.has_cycle);
+
+        // Find positions in the sorted order
+        auto find_pos = [&](pup::NodeId id) -> std::size_t {
+            for (std::size_t i = 0; i < result.order.size(); ++i) {
+                if (result.order[i] == id)
+                    return i;
+            }
+            return result.order.size();
+        };
+
+        auto header_pos = find_pos(*header_id);
+        auto input_pos = find_pos(*input_id);
+        auto cmd_pos = find_pos(*cmd_id);
+        auto output_pos = find_pos(*output_id);
+
+        // header.h must come before cmd (order-only constraint)
+        REQUIRE(header_pos < cmd_pos);
+        // input.c must come before cmd (normal dependency)
+        REQUIRE(input_pos < cmd_pos);
+        // cmd must come before output.o (normal dependency)
+        REQUIRE(cmd_pos < output_pos);
+    }
+
+    SECTION("cycle detection includes order-only edges")
+    {
+        // Create a cycle via order-only: output.o --order-only--> header.h
+        // This creates: header.h -> cmd -> output.o -> header.h (cycle)
+        (void)graph.add_order_only_edge(*output_id, *header_id);
+
+        auto result = topological_sort(graph);
+        REQUIRE(result.has_cycle);
+    }
+}

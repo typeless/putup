@@ -29,6 +29,7 @@ struct BuildJob {
     std::filesystem::path working_dir = {};
     std::vector<std::string> inputs = {};
     std::vector<std::string> outputs = {};
+    std::vector<std::string> order_only_inputs = {}; ///< Order-only dependencies
 };
 
 /// Result of executing a build job

@@ -80,6 +80,9 @@ public:
     /// Get order-only dependencies
     [[nodiscard]] auto get_order_only(NodeId id) const -> std::vector<NodeId>;
 
+    /// Get nodes that have this node as an order-only dependency
+    [[nodiscard]] auto get_order_only_dependents(NodeId id) const -> std::vector<NodeId>;
+
     /// Get all edges
     [[nodiscard]] auto edges() const -> std::vector<Edge> const& { return edges_; }
 

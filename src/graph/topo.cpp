@@ -32,12 +32,35 @@ auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void
 
     state.color[u] = Color::Gray;
 
+    // Process normal output edges
     for (auto v : graph.get_outputs(u)) {
         if (state.color[v] == Color::White) {
             state.parent[v] = u;
             dfs_visit(graph, v, state);
         } else if (state.color[v] == Color::Gray) {
             // Back edge - cycle detected
+            state.has_cycle = true;
+            state.cycle.clear();
+            state.cycle.push_back(v);
+            auto curr = u;
+            while (curr != v) {
+                state.cycle.push_back(curr);
+                curr = state.parent[curr];
+            }
+            state.cycle.push_back(v);
+            std::reverse(state.cycle.begin(), state.cycle.end());
+            return;
+        }
+    }
+
+    // Process order-only dependents (nodes that have u as an order-only dependency)
+    // These must execute after u, just like normal outputs
+    for (auto v : graph.get_order_only_dependents(u)) {
+        if (state.color[v] == Color::White) {
+            state.parent[v] = u;
+            dfs_visit(graph, v, state);
+        } else if (state.color[v] == Color::Gray) {
+            // Back edge via order-only - cycle detected
             state.has_cycle = true;
             state.cycle.clear();
             state.cycle.push_back(v);

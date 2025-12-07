@@ -322,6 +322,14 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
             }
         }
 
+        // Collect order-only input paths
+        for (auto oi_id : graph.get_order_only(id)) {
+            if (auto const* oi_node = graph.get_node(oi_id)) {
+                if (!oi_node->path.empty())
+                    job.order_only_inputs.push_back(oi_node->path);
+            }
+        }
+
         jobs.push_back(std::move(job));
     }
 

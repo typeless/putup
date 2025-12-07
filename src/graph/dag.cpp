@@ -132,6 +132,20 @@ auto BuildGraph::get_order_only(NodeId id) const -> std::vector<NodeId>
     return node->order_only;
 }
 
+auto BuildGraph::get_order_only_dependents(NodeId id) const -> std::vector<NodeId>
+{
+    auto result = std::vector<NodeId> {};
+    for (auto const& node : nodes_) {
+        for (auto oo_id : node.order_only) {
+            if (oo_id == id) {
+                result.push_back(node.id);
+                break;
+            }
+        }
+    }
+    return result;
+}
+
 auto BuildGraph::clear() -> void
 {
     nodes_.clear();
