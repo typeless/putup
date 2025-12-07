@@ -82,15 +82,15 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 
 auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
 {
-    auto fd = ::open(path.c_str(), O_RDONLY);
+    auto fd = int{::open(path.c_str(), O_RDONLY)};
     if (fd < 0)
         return false;
 
     auto header = RawHeader {};
-    auto n = ::read(fd, &header, sizeof(header));
+    auto n = ssize_t{::read(fd, &header, sizeof(header))};
     ::close(fd);
 
-    if (n != sizeof(header))
+    if (n != static_cast<ssize_t>(sizeof(header)))
         return false;
 
     return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 && header.version == INDEX_VERSION;

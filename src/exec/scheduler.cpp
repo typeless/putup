@@ -23,12 +23,12 @@ Scheduler::Scheduler(SchedulerOptions options)
 
 auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 {
-    auto start_time = std::chrono::steady_clock::now();
+    auto start_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
     cancelled_.store(false);
     stats_ = BuildStats {};
 
     // Build job list in topological order
-    auto jobs_result = build_job_list(graph);
+    auto jobs_result = Result<std::vector<BuildJob>>{build_job_list(graph)};
     if (!jobs_result)
         return pup::unexpected<Error>(jobs_result.error());
 
@@ -36,16 +36,16 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     stats_.total_jobs = jobs.size();
 
     if (jobs.empty()) {
-        auto end_time = std::chrono::steady_clock::now();
+        auto end_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
         stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time);
         return stats_;
     }
 
     // Execute jobs
-    auto exec_result = execute_parallel(jobs);
+    auto exec_result = Result<void>{execute_parallel(jobs)};
 
-    auto end_time = std::chrono::steady_clock::now();
+    auto end_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
     stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time);
 
@@ -71,7 +71,7 @@ auto Scheduler::build_incremental(
     // Expand to include all dependent commands
     auto to_process = std::vector<NodeId>(affected.begin(), affected.end());
     while (!to_process.empty()) {
-        auto id = to_process.back();
+        auto id = NodeId{to_process.back()};
         to_process.pop_back();
 
         for (auto dep_id : graph.get_outputs(id)) {
@@ -81,18 +81,18 @@ auto Scheduler::build_incremental(
     }
 
     // Build all jobs, then filter
-    auto all_jobs = build_job_list(graph);
+    auto all_jobs = Result<std::vector<BuildJob>>{build_job_list(graph)};
     if (!all_jobs)
         return pup::unexpected<Error>(all_jobs.error());
 
-    auto jobs = filter_jobs(*all_jobs, affected);
+    auto jobs = std::vector<BuildJob>{filter_jobs(*all_jobs, affected)};
     stats_.total_jobs = jobs.size();
     stats_.skipped_jobs = all_jobs->size() - jobs.size();
 
     if (jobs.empty())
         return stats_;
 
-    auto exec_result = execute_parallel(jobs);
+    auto exec_result = Result<void>{execute_parallel(jobs)};
     if (!exec_result && !options_.keep_going)
         return pup::unexpected<Error>(exec_result.error());
 
@@ -116,7 +116,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
             if (on_start_)
                 on_start_(job);
 
-            auto result = execute_job(job, runner);
+            auto result = JobResult{execute_job(job, runner)};
 
             if (on_complete_)
                 on_complete_(job, result);
@@ -180,7 +180,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
                 on_start_(job);
             }
 
-            auto result = execute_job(job, runner);
+            auto result = JobResult{execute_job(job, runner)};
 
             {
                 auto lock = std::lock_guard { mutex };
@@ -285,7 +285,7 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
     -> Result<std::vector<BuildJob>>
 {
     // Get topological order
-    auto topo_result = graph::topological_sort(graph);
+    auto topo_result = graph::TopoSortResult{graph::topological_sort(graph)};
     if (topo_result.has_cycle)
         return make_error<std::vector<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected");
@@ -345,7 +345,7 @@ auto Scheduler::filter_jobs(
 
 auto detect_parallelism() -> std::size_t
 {
-    auto hw = std::thread::hardware_concurrency();
+    auto hw = std::size_t{std::thread::hardware_concurrency()};
     return hw > 0 ? hw : 1;
 }
 
@@ -359,7 +359,7 @@ auto find_changed_files(
         if (file.type != NodeType::File)
             continue;
 
-        auto path = root / file.path;
+        auto path = std::filesystem::path{root / file.path};
         struct stat st;
 
         if (::stat(path.c_str(), &st) < 0) {

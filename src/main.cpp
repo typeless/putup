@@ -102,14 +102,14 @@ auto parse_args(int argc, char** argv) -> Options
 
 auto find_project_root() -> std::optional<std::filesystem::path>
 {
-    auto current = std::filesystem::current_path();
+    auto current = std::filesystem::path{std::filesystem::current_path()};
 
     while (true) {
         if (std::filesystem::exists(current / "Tupfile") || std::filesystem::exists(current / "Tuprules.tup") || std::filesystem::exists(current / PUP_DIR)) {
             return current;
         }
 
-        auto parent = current.parent_path();
+        auto parent = std::filesystem::path{current.parent_path()};
         if (parent == current)
             return std::nullopt;
         current = parent;
@@ -129,9 +129,9 @@ auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
 
 auto cmd_init(Options const& /*opts*/) -> int
 {
-    auto root = std::filesystem::current_path();
+    auto root = std::filesystem::path{std::filesystem::current_path()};
 
-    auto pup_dir = root / PUP_DIR;
+    auto pup_dir = std::filesystem::path{root / PUP_DIR};
     if (std::filesystem::exists(pup_dir)) {
         std::cout << "Already initialized in " << root << "\n";
         return EXIT_SUCCESS;
@@ -144,7 +144,7 @@ auto cmd_init(Options const& /*opts*/) -> int
 
 auto cmd_parse(Options const& opts) -> int
 {
-    auto root = find_project_root();
+    auto root = std::optional<std::filesystem::path>{find_project_root()};
     if (!root) {
         std::cerr << "Error: Not in a pup/tup project (no Tupfile found)\n";
         return EXIT_FAILURE;
@@ -153,20 +153,20 @@ auto cmd_parse(Options const& opts) -> int
     if (opts.verbose)
         std::cout << "Project root: " << *root << "\n";
 
-    auto tupfile_path = *root / "Tupfile";
+    auto tupfile_path = std::filesystem::path{*root / "Tupfile"};
     if (!std::filesystem::exists(tupfile_path)) {
         std::cerr << "Error: No Tupfile found in " << *root << "\n";
         return EXIT_FAILURE;
     }
 
-    auto source = read_file(tupfile_path);
+    auto source = std::optional<std::string>{read_file(tupfile_path)};
     if (!source) {
         std::cerr << "Error: Failed to read Tupfile\n";
         return EXIT_FAILURE;
     }
 
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto result = parser.parse();
+    auto result = pup::Result<pup::parser::Tupfile>{parser.parse()};
 
     if (!result) {
         std::cerr << "Parse error: " << result.error().message << "\n";
@@ -194,21 +194,21 @@ auto cmd_parse(Options const& opts) -> int
 
 auto cmd_graph(Options const& opts) -> int
 {
-    auto root = find_project_root();
+    auto root = std::optional<std::filesystem::path>{find_project_root()};
     if (!root) {
         std::cerr << "Error: Not in a pup/tup project\n";
         return EXIT_FAILURE;
     }
 
-    auto tupfile_path = *root / "Tupfile";
-    auto source = read_file(tupfile_path);
+    auto tupfile_path = std::filesystem::path{*root / "Tupfile"};
+    auto source = std::optional<std::string>{read_file(tupfile_path)};
     if (!source) {
         std::cerr << "Error: Failed to read Tupfile\n";
         return EXIT_FAILURE;
     }
 
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto parse_result = parser.parse();
+    auto parse_result = pup::Result<pup::parser::Tupfile>{parser.parse()};
     if (!parse_result) {
         std::cerr << "Parse error: " << parse_result.error().message << "\n";
         return EXIT_FAILURE;
@@ -217,7 +217,7 @@ auto cmd_graph(Options const& opts) -> int
     auto vars = pup::parser::VarDb {};
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
-        .tup_cwd = root->string(),
+        .tup_cwd = std::string{root->string()},
         .tup_platform = std::string { pup::PLATFORM },
         .tup_arch = std::string { pup::ARCH },
     };
@@ -228,7 +228,7 @@ auto cmd_graph(Options const& opts) -> int
     };
 
     auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph_result = builder.build(*parse_result, eval_ctx);
+    auto graph_result = pup::Result<pup::graph::BuildGraph>{builder.build(*parse_result, eval_ctx)};
 
     if (!graph_result) {
         std::cerr << "Graph build error: " << graph_result.error().message << "\n";
@@ -236,15 +236,18 @@ auto cmd_graph(Options const& opts) -> int
     }
 
     auto const& graph = *graph_result;
-    std::cout << "Nodes: " << graph.node_count() << "\n";
-    std::cout << "Edges: " << graph.edge_count() << "\n";
-    std::cout << "Commands: " << graph.nodes_of_type(pup::NodeType::Command).size() << "\n";
+    auto num_nodes = std::size_t{graph.node_count()};
+    auto num_edges = std::size_t{graph.edge_count()};
+    auto commands = std::vector<pup::NodeId>{graph.nodes_of_type(pup::NodeType::Command)};
+    std::cout << "Nodes: " << num_nodes << "\n";
+    std::cout << "Edges: " << num_edges << "\n";
+    std::cout << "Commands: " << commands.size() << "\n";
 
     if (opts.verbose) {
         std::cout << "\nCommands:\n";
-        for (auto id : graph.nodes_of_type(pup::NodeType::Command)) {
+        for (auto id : commands) {
             if (auto const* node = graph.get_node(id)) {
-                auto display = node->display.empty() ? node->command : node->display;
+                auto display = std::string{node->display.empty() ? node->command : node->display};
                 std::cout << "  " << display << "\n";
             }
         }
@@ -255,14 +258,14 @@ auto cmd_graph(Options const& opts) -> int
 
 auto cmd_build(Options const& opts) -> int
 {
-    auto root = find_project_root();
+    auto root = std::optional<std::filesystem::path>{find_project_root()};
     if (!root) {
         std::cerr << "Error: Not in a pup/tup project\n";
         return EXIT_FAILURE;
     }
 
-    auto tupfile_path = *root / "Tupfile";
-    auto source = read_file(tupfile_path);
+    auto tupfile_path = std::filesystem::path{*root / "Tupfile"};
+    auto source = std::optional<std::string>{read_file(tupfile_path)};
     if (!source) {
         std::cerr << "Error: Failed to read Tupfile\n";
         return EXIT_FAILURE;
@@ -270,7 +273,7 @@ auto cmd_build(Options const& opts) -> int
 
     // Parse
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto parse_result = parser.parse();
+    auto parse_result = pup::Result<pup::parser::Tupfile>{parser.parse()};
     if (!parse_result) {
         std::cerr << "Parse error: " << parse_result.error().message << "\n";
         return EXIT_FAILURE;
@@ -280,7 +283,7 @@ auto cmd_build(Options const& opts) -> int
     auto vars = pup::parser::VarDb {};
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
-        .tup_cwd = root->string(),
+        .tup_cwd = std::string{root->string()},
         .tup_platform = std::string { pup::PLATFORM },
         .tup_arch = std::string { pup::ARCH },
     };
@@ -291,7 +294,7 @@ auto cmd_build(Options const& opts) -> int
     };
 
     auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph_result = builder.build(*parse_result, eval_ctx);
+    auto graph_result = pup::Result<pup::graph::BuildGraph>{builder.build(*parse_result, eval_ctx)};
 
     if (!graph_result) {
         std::cerr << "Graph error: " << graph_result.error().message << "\n";
@@ -299,7 +302,7 @@ auto cmd_build(Options const& opts) -> int
     }
 
     auto const& graph = *graph_result;
-    auto num_commands = graph.nodes_of_type(pup::NodeType::Command).size();
+    auto num_commands = std::size_t{graph.nodes_of_type(pup::NodeType::Command).size()};
 
     if (num_commands == 0) {
         std::cout << "Nothing to do.\n";
@@ -341,10 +344,10 @@ auto cmd_build(Options const& opts) -> int
     });
 
     // Execute build
-    auto start = std::chrono::steady_clock::now();
-    auto build_result = scheduler.build(graph);
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto start = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+    auto build_result = pup::Result<pup::exec::BuildStats>{scheduler.build(graph)};
+    auto end = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+    auto duration = std::chrono::milliseconds{std::chrono::duration_cast<std::chrono::milliseconds>(end - start)};
 
     if (!opts.verbose)
         std::cout << "\n";
@@ -367,7 +370,7 @@ auto cmd_build(Options const& opts) -> int
 
 auto main(int argc, char** argv) -> int
 {
-    auto opts = parse_args(argc, argv);
+    auto opts = Options{parse_args(argc, argv)};
 
     if (opts.help) {
         print_usage();

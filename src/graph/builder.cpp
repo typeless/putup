@@ -17,7 +17,7 @@ auto GraphBuilder::build(parser::Tupfile const& tupfile, parser::EvalContext& ev
     -> Result<BuildGraph>
 {
     auto graph = BuildGraph {};
-    auto result = add_tupfile(graph, tupfile, eval);
+    auto result = Result<void>{add_tupfile(graph, tupfile, eval)};
     if (!result)
         return pup::unexpected<Error>(result.error());
     return graph;
@@ -37,7 +37,7 @@ auto GraphBuilder::add_tupfile(
     };
 
     for (auto const& stmt : tupfile.statements) {
-        auto result = process_statement(ctx, *stmt);
+        auto result = Result<void>{process_statement(ctx, *stmt)};
         if (!result) {
             errors_.push_back(result.error().message);
             if (!options_.verbose)
@@ -79,20 +79,20 @@ auto GraphBuilder::process_rule(
     parser::Rule const& rule) -> Result<void>
 {
     // Expand input patterns
-    auto inputs = expand_inputs(ctx, rule.inputs);
+    auto inputs = Result<std::vector<std::string>>{expand_inputs(ctx, rule.inputs)};
     if (!inputs)
         return pup::unexpected<Error>(inputs.error());
 
     if (rule.foreach_) {
         // Foreach rule: create one command per input
         for (auto const& input : *inputs) {
-            auto result = expand_rule(ctx, rule, { input });
+            auto result = Result<void>{expand_rule(ctx, rule, { input })};
             if (!result)
                 return pup::unexpected<Error>(result.error());
         }
     } else {
         // Normal rule: single command for all inputs
-        auto result = expand_rule(ctx, rule, *inputs);
+        auto result = Result<void>{expand_rule(ctx, rule, *inputs)};
         if (!result)
             return pup::unexpected<Error>(result.error());
     }
@@ -123,7 +123,7 @@ auto GraphBuilder::process_assignment(
     parser::Assignment const& assign) -> Result<void>
 {
     auto evaluator = parser::Evaluator { *ctx.eval };
-    auto value = evaluator.expand(assign.value);
+    auto value = Result<std::string>{evaluator.expand(assign.value)};
     if (!value)
         return pup::unexpected<Error>(value.error());
 
@@ -162,7 +162,7 @@ auto GraphBuilder::process_conditional(
     auto const& body = condition_true ? cond.then_body : cond.else_body;
 
     for (auto const& stmt : body) {
-        auto result = process_statement(ctx, *stmt);
+        auto result = Result<void>{process_statement(ctx, *stmt)};
         if (!result)
             return pup::unexpected<Error>(result.error());
     }
@@ -186,11 +186,11 @@ auto GraphBuilder::expand_rule(
     BangMacroDef const* macro_ptr = nullptr;
 
     // First expand the command to see if it's a macro reference
-    auto expanded_cmd = expand_command(ctx, rule.command, inputs, {});
+    auto expanded_cmd = Result<std::string>{expand_command(ctx, rule.command, inputs, {})};
     if (!expanded_cmd)
         return pup::unexpected<Error>(expanded_cmd.error());
 
-    auto cmd_str = *expanded_cmd;
+    auto cmd_str = std::string{*expanded_cmd};
     // Trim whitespace
     while (!cmd_str.empty() && (cmd_str.front() == ' ' || cmd_str.front() == '\t'))
         cmd_str.erase(0, 1);
@@ -202,7 +202,7 @@ auto GraphBuilder::expand_rule(
         while (!macro_name.empty() && (macro_name.back() == ' ' || macro_name.back() == '\t'))
             macro_name.pop_back();
 
-        auto it = ctx.macros.find(macro_name);
+        auto it = decltype(ctx.macros)::iterator{ctx.macros.find(macro_name)};
         if (it == ctx.macros.end())
             return make_error<void>(ErrorCode::UnknownMacro,
                 "Unknown bang macro: !" + macro_name);
@@ -215,56 +215,56 @@ auto GraphBuilder::expand_rule(
     }
 
     // Expand outputs
-    auto outputs = expand_outputs(ctx, outputs_patterns, primary_input);
+    auto outputs = Result<std::vector<std::string>>{expand_outputs(ctx, outputs_patterns, primary_input)};
     if (!outputs)
         return pup::unexpected<Error>(outputs.error());
 
     // Now expand command with actual outputs for %o substitution
     if (macro_ptr) {
-        auto macro_cmd = expand_command(ctx, macro_ptr->command, inputs, *outputs);
+        auto macro_cmd = Result<std::string>{expand_command(ctx, macro_ptr->command, inputs, *outputs)};
         if (!macro_cmd)
             return pup::unexpected<Error>(macro_cmd.error());
         cmd_text = *macro_cmd;
 
         if (macro_ptr->display) {
-            auto disp_result = expand_command(ctx, *macro_ptr->display, inputs, *outputs);
+            auto disp_result = Result<std::string>{expand_command(ctx, *macro_ptr->display, inputs, *outputs)};
             if (disp_result)
                 display = *disp_result;
         }
     } else {
-        auto full_cmd = expand_command(ctx, rule.command, inputs, *outputs);
+        auto full_cmd = Result<std::string>{expand_command(ctx, rule.command, inputs, *outputs)};
         if (!full_cmd)
             return pup::unexpected<Error>(full_cmd.error());
         cmd_text = *full_cmd;
 
         if (rule.display) {
-            auto disp_result = expand_command(ctx, *rule.display, inputs, *outputs);
+            auto disp_result = Result<std::string>{expand_command(ctx, *rule.display, inputs, *outputs)};
             if (disp_result)
                 display = *disp_result;
         }
     }
 
     // Create command node
-    auto cmd_id = create_command_node(ctx, cmd_text, display);
+    auto cmd_id = Result<NodeId>{create_command_node(ctx, cmd_text, display)};
     if (!cmd_id)
         return pup::unexpected<Error>(cmd_id.error());
 
     // Create edges from inputs to command
     for (auto const& input : inputs) {
-        auto input_id = get_or_create_file_node(ctx, input, NodeType::File);
+        auto input_id = Result<NodeId>{get_or_create_file_node(ctx, input, NodeType::File)};
         if (!input_id)
             return pup::unexpected<Error>(input_id.error());
-        auto edge_result = ctx.graph->add_edge(*input_id, *cmd_id);
+        auto edge_result = Result<void>{ctx.graph->add_edge(*input_id, *cmd_id)};
         if (!edge_result)
             return pup::unexpected<Error>(edge_result.error());
     }
 
     // Create edges from command to outputs
     for (auto const& output : *outputs) {
-        auto output_id = get_or_create_file_node(ctx, output, NodeType::Generated);
+        auto output_id = Result<NodeId>{get_or_create_file_node(ctx, output, NodeType::Generated)};
         if (!output_id)
             return pup::unexpected<Error>(output_id.error());
-        auto edge_result = ctx.graph->add_edge(*cmd_id, *output_id);
+        auto edge_result = Result<void>{ctx.graph->add_edge(*cmd_id, *output_id)};
         if (!edge_result)
             return pup::unexpected<Error>(edge_result.error());
 
@@ -275,12 +275,12 @@ auto GraphBuilder::expand_rule(
 
     // Handle order-only inputs
     for (auto const& pattern : rule.order_only_inputs) {
-        auto order_inputs = expand_inputs(ctx, { pattern });
+        auto order_inputs = Result<std::vector<std::string>>{expand_inputs(ctx, { pattern })};
         if (!order_inputs)
             continue;
 
         for (auto const& oi : *order_inputs) {
-            auto oi_id = get_or_create_file_node(ctx, oi, NodeType::File);
+            auto oi_id = Result<NodeId>{get_or_create_file_node(ctx, oi, NodeType::File)};
             if (oi_id)
                 (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
         }
@@ -302,7 +302,7 @@ auto GraphBuilder::expand_inputs(
 
         if (pattern.is_group) {
             // Group reference
-            auto it = ctx.groups.find(pattern.group_name);
+            auto it = decltype(ctx.groups)::iterator{ctx.groups.find(pattern.group_name)};
             if (it != ctx.groups.end()) {
                 for (auto id : it->second) {
                     if (auto const* node = ctx.graph->get_node(id))
@@ -313,18 +313,18 @@ auto GraphBuilder::expand_inputs(
         }
 
         // Expand path expression
-        auto paths = evaluator.expand_path(pattern);
+        auto paths = Result<std::vector<std::string>>{evaluator.expand_path(pattern)};
         if (!paths)
             return pup::unexpected<Error>(paths.error());
 
         for (auto& path : *paths) {
             // Expand globs if enabled
             if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
-                auto base = ctx.current_dir.empty() ? ctx.options.root_dir
-                                                    : ctx.options.root_dir / ctx.current_dir;
+                auto base = std::filesystem::path{ctx.current_dir.empty() ? ctx.options.root_dir
+                                                    : ctx.options.root_dir / ctx.current_dir};
 
                 // First try expanding against filesystem
-                auto expanded = parser::glob_expand(path, base);
+                auto expanded = Result<std::vector<std::string>>{parser::glob_expand(path, base)};
                 if (expanded && !expanded->empty()) {
                     for (auto& p : *expanded)
                         result.push_back(std::move(p));
@@ -349,7 +349,7 @@ auto GraphBuilder::expand_inputs(
         if (!pattern.is_exclusion)
             continue;
 
-        auto paths = evaluator.expand_path(pattern);
+        auto paths = Result<std::vector<std::string>>{evaluator.expand_path(pattern)};
         if (!paths)
             continue;
 
@@ -384,13 +384,13 @@ auto GraphBuilder::expand_outputs(
         if (pattern.is_group)
             continue; // Groups are not valid in outputs
 
-        auto paths = evaluator.expand_path(pattern);
+        auto paths = Result<std::vector<std::string>>{evaluator.expand_path(pattern)};
         if (!paths)
             return pup::unexpected<Error>(paths.error());
 
         for (auto& path : *paths) {
             // Expand pattern flags (%B, %f, etc.)
-            auto expanded = evaluator.expand_pattern(path, flags);
+            auto expanded = Result<std::string>{evaluator.expand_pattern(path, flags)};
             if (expanded)
                 result.push_back(*expanded);
             else
@@ -410,12 +410,12 @@ auto GraphBuilder::expand_command(
     auto evaluator = parser::Evaluator { *ctx.eval };
 
     // First get literal text from expression
-    auto literal = evaluator.expand(cmd);
+    auto literal = Result<std::string>{evaluator.expand(cmd)};
     if (!literal)
         return pup::unexpected<Error>(literal.error());
 
     // Now expand variables in the literal text (handles $(VAR) references)
-    auto expanded = evaluator.expand(std::string_view { *literal });
+    auto expanded = Result<std::string>{evaluator.expand(std::string_view { *literal })};
     if (!expanded)
         return pup::unexpected<Error>(expanded.error());
 
@@ -444,7 +444,7 @@ auto GraphBuilder::get_or_create_file_node(
     NodeType type) -> Result<NodeId>
 {
     // Check if node already exists
-    if (auto existing = ctx.graph->find_by_path(path))
+    if (auto existing = std::optional<NodeId>{ctx.graph->find_by_path(path)})
         return *existing;
 
     // Create new node

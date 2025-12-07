@@ -86,14 +86,14 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
 
 auto reverse_topological_sort(BuildGraph const& graph) -> TopoSortResult
 {
-    auto result = topological_sort(graph);
+    auto result = TopoSortResult{topological_sort(graph)};
     std::reverse(result.order.begin(), result.order.end());
     return result;
 }
 
 auto detect_cycles(BuildGraph const& graph) -> std::vector<NodeId>
 {
-    auto result = topological_sort(graph);
+    auto result = TopoSortResult{topological_sort(graph)};
     return result.cycle;
 }
 
@@ -111,7 +111,7 @@ auto reachable_from(BuildGraph const& graph, NodeId start) -> std::vector<NodeId
     stack.push(start);
 
     while (!stack.empty()) {
-        auto u = stack.top();
+        auto u = NodeId{stack.top()};
         stack.pop();
 
         if (visited.contains(u))
@@ -138,7 +138,7 @@ auto can_reach(BuildGraph const& graph, NodeId target) -> std::vector<NodeId>
     stack.push(target);
 
     while (!stack.empty()) {
-        auto u = stack.top();
+        auto u = NodeId{stack.top()};
         stack.pop();
 
         if (visited.contains(u))
@@ -167,7 +167,7 @@ auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
     stack.push(source);
 
     while (!stack.empty()) {
-        auto u = stack.top();
+        auto u = NodeId{stack.top()};
         stack.pop();
 
         if (u == target)
@@ -227,7 +227,7 @@ auto node_depth(BuildGraph const& graph, NodeId id) -> std::size_t
     auto depths = std::unordered_map<NodeId, std::size_t> {};
 
     // Topological sort first
-    auto sorted = topological_sort(graph);
+    auto sorted = TopoSortResult{topological_sort(graph)};
     if (sorted.has_cycle)
         return 0;
 
@@ -250,7 +250,7 @@ auto node_depth(BuildGraph const& graph, NodeId id) -> std::size_t
 
 auto max_depth(BuildGraph const& graph) -> std::size_t
 {
-    auto sorted = topological_sort(graph);
+    auto sorted = TopoSortResult{topological_sort(graph)};
     if (sorted.has_cycle)
         return 0;
 
@@ -276,7 +276,7 @@ auto max_depth(BuildGraph const& graph) -> std::size_t
 
 auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
 {
-    auto sorted = topological_sort(graph);
+    auto sorted = TopoSortResult{topological_sort(graph)};
     if (sorted.has_cycle)
         return {};
 

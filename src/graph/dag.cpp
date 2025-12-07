@@ -84,7 +84,7 @@ auto BuildGraph::get_node(NodeId id) const -> Node const*
 
 auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
 {
-    auto it = path_index_.find(std::string { path });
+    auto it = decltype(path_index_)::const_iterator{path_index_.find(std::string { path })};
     if (it != path_index_.end())
         return it->second;
     return std::nullopt;
@@ -92,7 +92,7 @@ auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<Node
 
 auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
 {
-    auto it = command_index_.find(std::string { cmd });
+    auto it = decltype(command_index_)::const_iterator{command_index_.find(std::string { cmd })};
     if (it != command_index_.end())
         return it->second;
     return std::nullopt;

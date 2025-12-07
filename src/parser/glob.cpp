@@ -22,7 +22,7 @@ Glob::Glob(std::string_view pattern)
     }
 
     // Check for **
-    auto pos = pattern.find("**");
+    auto pos = std::size_t{pattern.find("**")};
     has_double_star_ = (pos != std::string_view::npos);
 }
 
@@ -191,7 +191,7 @@ auto glob_expand(
     // Check if pattern has wildcards
     if (!has_glob_chars(pattern)) {
         // Literal path - just check if it exists
-        auto path = base_dir / pattern;
+        auto path = fs::path{base_dir / pattern};
         if (fs::exists(path))
             results.push_back(std::string { pattern });
         return results;
@@ -199,7 +199,7 @@ auto glob_expand(
 
     // Split into directory and pattern parts
     auto [dir_part, file_pattern] = glob_split_path(pattern);
-    auto search_dir = dir_part.empty() ? base_dir : base_dir / dir_part;
+    auto search_dir = fs::path{dir_part.empty() ? base_dir : base_dir / dir_part};
 
     if (!fs::exists(search_dir) || !fs::is_directory(search_dir))
         return results;
