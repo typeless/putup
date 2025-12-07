@@ -1,11 +1,11 @@
 # Pup - Tup Build System Reimplementation
 
-A modern C++23 reimplementation of the [Tup build system](https://gittup.org/tup/).
+A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup/).
 
 ## Project Goals
 
 1. **Compatibility** - Parse existing Tupfile/Tuprules.tup with zero modifications
-2. **Modern C++20** - Minimal third-party dependencies (fmt, Catch2)
+2. **Modern C++20** - Minimal third-party dependencies (expected-lite, fmt, Catch2)
 3. **Git-inspired index** - Custom binary format instead of SQLite
 4. **Content hashing** - SHA-256 for precise change detection
 5. **No FUSE** - Compute changes from index comparison
@@ -112,7 +112,7 @@ pup/
 │   └── e2e/            # End-to-end tests
 │       ├── run_tests.sh
 │       └── fixtures/   # Test fixtures (simple_c, multi_file, etc.)
-├── third_party/        # fmt, Catch2 amalgamated
+├── third_party/        # expected-lite, fmt, sha256, Catch2
 ├── Makefile            # Workflow wrapper (make test, make tidy, etc.)
 ├── Tupfile             # Build configuration
 └── Tuprules.tup        # Shared build rules
