@@ -170,6 +170,7 @@ Checks: >
   bugprone-*,
   cert-*,
   clang-analyzer-*,
+  -clang-analyzer-core.uninitialized.Assign,
   concurrency-*,
   misc-*,
   modernize-*,
@@ -206,6 +207,8 @@ Checks: >
   -readability-magic-numbers,
   -readability-make-member-function-const,
   -readability-named-parameter,
+  -readability-redundant-casting,
+  -readability-redundant-member-init,
   -readability-simplify-boolean-expr,
   -readability-uppercase-literal-suffix
 

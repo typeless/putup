@@ -26,7 +26,7 @@ auto IndexWriter::write(
     std::filesystem::path const& path,
     Index const& index) -> Result<void>
 {
-    auto data = Result<std::vector<std::byte>>{serialize(index)};
+    auto data = Result<std::vector<std::byte>> { serialize(index) };
     if (!data)
         return pup::unexpected<Error>(data.error());
 
@@ -40,22 +40,22 @@ auto IndexWriter::write(
     }
 
     // Generate temporary filename
-    auto temp_path = std::filesystem::path{path};
+    auto temp_path = std::filesystem::path { path };
     temp_path += ".tmp.";
 
     auto rd = std::random_device {};
-    auto gen = std::mt19937 { std::random_device::result_type{rd()} };
+    auto gen = std::mt19937 { std::random_device::result_type { rd() } };
     auto dist = std::uniform_int_distribution<> { 0, 15 };
-    auto const hex = "0123456789abcdef";
+    auto const* const hex = "0123456789abcdef";
     for (auto i = 0; i < 8; ++i)
         temp_path += hex[dist(gen)];
 
     // Write to temporary file
-    auto fd = int{::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644)};
+    auto fd = int { ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644) };
     if (fd < 0)
         return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
 
-    auto bytes_written = ssize_t{::write(fd, data->data(), data->size())};
+    auto bytes_written = ssize_t { ::write(fd, data->data(), data->size()) };
     auto write_error = (bytes_written != static_cast<ssize_t>(data->size()));
 
     if (::fsync(fd) < 0)

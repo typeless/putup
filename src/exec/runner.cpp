@@ -36,8 +36,8 @@ auto CommandRunner::run_with_output(
     OutputCallback const& callback,
     RunOptions const& options) -> Result<CommandResult>
 {
-    auto merged = RunOptions{merge_options(options)};
-    auto start_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+    auto merged = RunOptions { merge_options(options) };
+    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
 
     // Create pipes for stdout and stderr
     int stdout_pipe[2] = { -1, -1 };
@@ -67,7 +67,7 @@ auto CommandRunner::run_with_output(
         return make_error<CommandResult>(ErrorCode::IoError, "Failed to create stdin pipe");
     }
 
-    auto pid = pid_t{::fork()};
+    auto pid = pid_t { ::fork() };
     if (pid < 0) {
         // Fork failed
         if (stdout_pipe[0] >= 0) {
@@ -112,7 +112,7 @@ auto CommandRunner::run_with_output(
         }
 
         // Build environment
-        auto env_strings = std::vector<std::string>{build_env(merged)};
+        auto env_strings = std::vector<std::string> { build_env(merged) };
         auto env_ptrs = std::vector<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
         for (auto& s : env_strings)
@@ -198,7 +198,7 @@ auto CommandRunner::run_with_output(
                 std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
         }
 
-        auto poll_result = int{::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms)};
+        auto poll_result = int { ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms) };
         if (poll_result < 0) {
             if (errno == EINTR)
                 continue;
@@ -253,7 +253,7 @@ auto CommandRunner::run_with_output(
     }
 
     // Wait for child
-    auto status = int{0};
+    auto status = int { 0 };
     ::waitpid(pid, &status, 0);
 
     if (WIFEXITED(status)) {
@@ -264,7 +264,7 @@ auto CommandRunner::run_with_output(
         result.exit_code = 128 + result.signal;
     }
 
-    auto end_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time);
 
@@ -273,7 +273,7 @@ auto CommandRunner::run_with_output(
 
 auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
 {
-    auto merged = RunOptions{options};
+    auto merged = RunOptions { options };
 
     if (merged.working_dir.empty())
         merged.working_dir = default_options_.working_dir;

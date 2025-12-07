@@ -16,7 +16,7 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
 auto Lexer::next() -> Token
 {
     if (peeked_) {
-        auto tok = Token{*peeked_};
+        auto tok = Token { *peeked_ };
         peeked_.reset();
         return tok;
     }
@@ -293,10 +293,10 @@ auto Lexer::scan_identifier_or_keyword() -> Token
         return make_token(TokenType::Text, start);
     }
 
-    auto const text = std::string_view{source_.substr(start, pos_ - start)};
+    auto const text = std::string_view { source_.substr(start, pos_ - start) };
 
     // Check for keywords
-    if (auto kw = std::optional<TokenType>{keyword_type(text)})
+    if (auto kw = std::optional<TokenType> { keyword_type(text) })
         return make_token(*kw, start);
 
     return make_token(TokenType::Identifier, start);
@@ -383,7 +383,7 @@ auto Lexer::scan_command_text() -> Token
     while (end > start && (source_[end - 1] == ' ' || source_[end - 1] == '\t'))
         --end;
 
-    auto tok = Token{make_token(TokenType::Text, start)};
+    auto tok = Token { make_token(TokenType::Text, start) };
     tok.text = source_.substr(start, end - start);
     return tok;
 }

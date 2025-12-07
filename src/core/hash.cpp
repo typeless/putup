@@ -122,8 +122,8 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>
     auto result = Hash256 {};
 
     for (auto i = std::size_t { 0 }; i < 32; ++i) {
-        auto const hi = char{hex[i * 2]};
-        auto const lo = char{hex[i * 2 + 1]};
+        auto const hi = char { hex[i * 2] };
+        auto const lo = char { hex[i * 2 + 1] };
 
         auto parse_nibble = [](char c) -> int {
             if (c >= '0' && c <= '9')
@@ -135,8 +135,8 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>
             return -1;
         };
 
-        auto const hi_val = int{parse_nibble(hi)};
-        auto const lo_val = int{parse_nibble(lo)};
+        auto const hi_val = int { parse_nibble(hi) };
+        auto const lo_val = int { parse_nibble(lo) };
 
         if (hi_val < 0 || lo_val < 0)
             return make_error<Hash256>(ErrorCode::InvalidArgument, "Invalid hex character");

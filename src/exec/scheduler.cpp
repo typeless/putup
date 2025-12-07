@@ -27,15 +27,15 @@ auto build_dependency_map(std::vector<BuildJob> const& jobs)
     auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
 
     // Build map from output path -> job index that produces it
-    auto output_to_job = std::unordered_map<std::string, std::size_t>{};
-    for (auto i = std::size_t{0}; i < jobs.size(); ++i) {
+    auto output_to_job = std::unordered_map<std::string, std::size_t> {};
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         for (auto const& output : jobs[i].outputs)
             output_to_job[output] = i;
     }
 
     // For each job, find which earlier jobs produce its inputs
-    for (auto j = std::size_t{0}; j < jobs.size(); ++j) {
-        auto dependencies = std::set<std::size_t>{};
+    for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
+        auto dependencies = std::set<std::size_t> {};
 
         // Check regular inputs
         for (auto const& input : jobs[j].inputs) {
@@ -56,7 +56,7 @@ auto build_dependency_map(std::vector<BuildJob> const& jobs)
             dependents[dep].push_back(j);
     }
 
-    return {std::move(in_degree), std::move(dependents)};
+    return { std::move(in_degree), std::move(dependents) };
 }
 
 } // namespace
@@ -70,12 +70,12 @@ Scheduler::Scheduler(SchedulerOptions options)
 
 auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 {
-    auto start_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     cancelled_.store(false);
     stats_ = BuildStats {};
 
     // Build job list in topological order
-    auto jobs_result = Result<std::vector<BuildJob>>{build_job_list(graph)};
+    auto jobs_result = Result<std::vector<BuildJob>> { build_job_list(graph) };
     if (!jobs_result)
         return pup::unexpected<Error>(jobs_result.error());
 
@@ -83,16 +83,16 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     stats_.total_jobs = jobs.size();
 
     if (jobs.empty()) {
-        auto end_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+        auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
         stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time);
         return stats_;
     }
 
     // Execute jobs
-    auto exec_result = Result<void>{execute_parallel(jobs)};
+    auto exec_result = Result<void> { execute_parallel(jobs) };
 
-    auto end_time = std::chrono::steady_clock::time_point{std::chrono::steady_clock::now()};
+    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time);
 
@@ -118,7 +118,7 @@ auto Scheduler::build_incremental(
     // Expand to include all dependent commands
     auto to_process = std::vector<NodeId>(affected.begin(), affected.end());
     while (!to_process.empty()) {
-        auto id = NodeId{to_process.back()};
+        auto id = NodeId { to_process.back() };
         to_process.pop_back();
 
         for (auto dep_id : graph.get_outputs(id)) {
@@ -128,18 +128,18 @@ auto Scheduler::build_incremental(
     }
 
     // Build all jobs, then filter
-    auto all_jobs = Result<std::vector<BuildJob>>{build_job_list(graph)};
+    auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
     if (!all_jobs)
         return pup::unexpected<Error>(all_jobs.error());
 
-    auto jobs = std::vector<BuildJob>{filter_jobs(*all_jobs, affected)};
+    auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected) };
     stats_.total_jobs = jobs.size();
     stats_.skipped_jobs = all_jobs->size() - jobs.size();
 
     if (jobs.empty())
         return stats_;
 
-    auto exec_result = Result<void>{execute_parallel(jobs)};
+    auto exec_result = Result<void> { execute_parallel(jobs) };
     if (!exec_result && !options_.keep_going)
         return pup::unexpected<Error>(exec_result.error());
 
@@ -163,7 +163,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
             if (on_start_)
                 on_start_(job);
 
-            auto result = JobResult{execute_job(job, runner)};
+            auto result = JobResult { execute_job(job, runner) };
 
             if (on_complete_)
                 on_complete_(job, result);
@@ -184,37 +184,36 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     }
 
     // Parallel execution with dependency-aware ready queue
-    auto mutex = std::mutex{};
-    auto cv = std::condition_variable{};
-    auto ready_queue = std::queue<std::size_t>{};
-    auto completed_count = std::size_t{0};
-    auto failed = std::atomic<bool>{false};
-    auto all_done = std::atomic<bool>{false};
+    auto mutex = std::mutex {};
+    auto cv = std::condition_variable {};
+    auto ready_queue = std::queue<std::size_t> {};
+    auto completed_count = std::size_t { 0 };
+    auto failed = std::atomic<bool> { false };
+    auto all_done = std::atomic<bool> { false };
 
     // Build dependency map
     auto [in_degree, dependents] = build_dependency_map(jobs);
 
     // Initialize ready queue with jobs that have no dependencies
-    for (auto i = std::size_t{0}; i < jobs.size(); ++i) {
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         if (in_degree[i] == 0)
             ready_queue.push(i);
     }
 
     auto worker = [&]() {
-        auto runner = CommandRunner{};
+        auto runner = CommandRunner {};
         if (!options_.root_dir.empty())
             runner.set_working_dir(options_.root_dir);
         if (options_.timeout)
             runner.set_timeout(*options_.timeout);
 
         while (true) {
-            auto job_idx = std::size_t{0};
+            auto job_idx = std::size_t { 0 };
             {
-                auto lock = std::unique_lock{mutex};
+                auto lock = std::unique_lock { mutex };
                 cv.wait(lock, [&] {
                     // Wake up when: queue has ready jobs, OR all done, OR cancelled, OR failed
-                    return !ready_queue.empty() || all_done.load() ||
-                           cancelled_.load() || (failed.load() && !options_.keep_going);
+                    return !ready_queue.empty() || all_done.load() || cancelled_.load() || (failed.load() && !options_.keep_going);
                 });
 
                 if (cancelled_.load() || (failed.load() && !options_.keep_going))
@@ -233,14 +232,14 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
             auto const& job = jobs[job_idx];
 
             if (on_start_) {
-                auto lock = std::lock_guard{mutex};
+                auto lock = std::lock_guard { mutex };
                 on_start_(job);
             }
 
-            auto result = JobResult{execute_job(job, runner)};
+            auto result = JobResult { execute_job(job, runner) };
 
             {
-                auto lock = std::lock_guard{mutex};
+                auto lock = std::lock_guard { mutex };
 
                 if (on_complete_)
                     on_complete_(job, result);
@@ -275,11 +274,11 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     };
 
     // Start worker threads
-    auto threads = std::vector<std::thread>{};
+    auto threads = std::vector<std::thread> {};
     auto num_workers = std::min(options_.jobs, jobs.size());
     threads.reserve(num_workers);
 
-    for (auto i = std::size_t{0}; i < num_workers; ++i)
+    for (auto i = std::size_t { 0 }; i < num_workers; ++i)
         threads.emplace_back(worker);
 
     // Notify workers to start
@@ -287,7 +286,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 
     // Wait for completion
     {
-        auto lock = std::unique_lock{mutex};
+        auto lock = std::unique_lock { mutex };
         cv.wait(lock, [&] {
             return all_done.load() || cancelled_.load() || (failed.load() && !options_.keep_going);
         });
@@ -326,8 +325,8 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
 
     // Ensure output directories exist
     for (auto const& output : job.outputs) {
-        auto output_path = std::filesystem::path{options_.root_dir / output};
-        auto parent = std::filesystem::path{output_path.parent_path()};
+        auto output_path = std::filesystem::path { options_.root_dir / output };
+        auto parent = std::filesystem::path { output_path.parent_path() };
         if (!parent.empty() && !std::filesystem::exists(parent)) {
             std::error_code ec;
             std::filesystem::create_directories(parent, ec);
@@ -363,7 +362,7 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
     -> Result<std::vector<BuildJob>>
 {
     // Get topological order
-    auto topo_result = graph::TopoSortResult{graph::topological_sort(graph)};
+    auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
     if (topo_result.has_cycle)
         return make_error<std::vector<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected");
@@ -422,7 +421,7 @@ auto Scheduler::filter_jobs(
     result.reserve(all_jobs.size());
 
     for (auto const& job : all_jobs) {
-        if (affected_nodes.count(job.id) > 0)
+        if (affected_nodes.contains(job.id))
             result.push_back(job);
     }
 
@@ -431,7 +430,7 @@ auto Scheduler::filter_jobs(
 
 auto detect_parallelism() -> std::size_t
 {
-    auto hw = std::size_t{std::thread::hardware_concurrency()};
+    auto hw = std::size_t { std::thread::hardware_concurrency() };
     return hw > 0 ? hw : 1;
 }
 
@@ -445,7 +444,7 @@ auto find_changed_files(
         if (file.type != NodeType::File)
             continue;
 
-        auto path = std::filesystem::path{root / file.path};
+        auto path = std::filesystem::path { root / file.path };
         struct stat st;
 
         if (::stat(path.c_str(), &st) < 0) {

@@ -50,10 +50,10 @@ struct EvalContext {
     VarDb* config_vars = nullptr; ///< Config variables @(VAR) from tup.config
     VarDb* node_vars = nullptr;   ///< Node variables &(VAR)
 
-    std::string tup_cwd = {};              ///< Current directory (TUP_CWD)
-    std::string tup_platform = {};         ///< Platform name (TUP_PLATFORM)
-    std::string tup_arch = {};             ///< Architecture (TUP_ARCH)
-    std::string tup_variantdir = {};       ///< Relative path to variant output (TUP_VARIANTDIR)
+    std::string tup_cwd = {};               ///< Current directory (TUP_CWD)
+    std::string tup_platform = {};          ///< Platform name (TUP_PLATFORM)
+    std::string tup_arch = {};              ///< Architecture (TUP_ARCH)
+    std::string tup_variantdir = {};        ///< Relative path to variant output (TUP_VARIANTDIR)
     std::string tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
 
     /// Callback for resolving group references like {groupname}

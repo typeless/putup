@@ -23,11 +23,11 @@ auto DefaultFileResolver::resolve(std::string_view path, std::string_view relati
 {
     namespace fs = std::filesystem;
 
-    auto const rel_path = fs::path{fs::path { relative_to }.parent_path() / path};
+    auto const rel_path = fs::path { fs::path { relative_to }.parent_path() / path };
     if (fs::exists(rel_path))
         return rel_path.string();
 
-    auto const abs_path = fs::path{fs::path { root_dir_ } / path};
+    auto const abs_path = fs::path { fs::path { root_dir_ } / path };
     if (fs::exists(abs_path))
         return abs_path.string();
 
@@ -49,11 +49,11 @@ auto DefaultFileResolver::find_tuprules(std::string_view from_dir) -> Result<std
 {
     namespace fs = std::filesystem;
 
-    auto dir = fs::path{fs::path { from_dir }};
-    auto const root = fs::path{fs::path { root_dir_ }};
+    auto dir = fs::path { fs::path { from_dir } };
+    auto const root = fs::path { fs::path { root_dir_ } };
 
     while (dir >= root) {
-        auto const tuprules = fs::path{dir / "Tuprules.tup"};
+        auto const tuprules = fs::path { dir / "Tuprules.tup" };
         if (fs::exists(tuprules))
             return tuprules.string();
         if (dir == root)
@@ -904,7 +904,8 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
     auto path = parse_expression_until([](Token const& t) {
         return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow,
             TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
-    }, true);
+    },
+        true);
     if (!path)
         return pup::unexpected<Error>(path.error());
     pattern.path = std::move(*path);
@@ -918,13 +919,13 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
 auto Parser::parse_command() -> Result<Expression>
 {
     auto expr = Expression {};
-    auto tok = Token{current_}; // Start with current token (already advanced past |>)
+    auto tok = Token { current_ }; // Start with current token (already advanced past |>)
 
     // Collect command text until |>
     auto cmd_text = std::string {};
     while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
         cmd_text += tok.text;
-        tok = Token{lexer_.next()};
+        tok = Token { lexer_.next() };
     }
 
     // Trim leading whitespace first
@@ -935,7 +936,7 @@ auto Parser::parse_command() -> Result<Expression>
     // This handles the case where the entire command is one Text token
     if (!cmd_text.empty() && cmd_text[0] == '^') {
         // Find the second caret
-        auto second_caret = std::size_t{cmd_text.find('^', 1)};
+        auto second_caret = std::size_t { cmd_text.find('^', 1) };
         if (second_caret != std::string::npos) {
             // Skip past the display text (including the second caret)
             cmd_text = cmd_text.substr(second_caret + 1);

@@ -14,7 +14,7 @@ else
 endif
 
 # Compiler flags for clang-tidy (must match Tuprules.tup)
-CXXFLAGS := -std=c++23 -I include -I third_party
+CXXFLAGS := -std=c++20 -I include -I third_party
 
 # Source files
 CXX_SOURCES := $(shell find src -name '*.cpp')

@@ -19,15 +19,15 @@ auto trim(std::string_view s) -> std::string_view
     return s;
 }
 
-constexpr auto CONFIG_PREFIX = std::string_view{"CONFIG_"};
+constexpr auto CONFIG_PREFIX = std::string_view { "CONFIG_" };
 
 } // namespace
 
 auto parse_config_string(std::string_view content) -> Result<VarDb>
 {
-    auto db = VarDb{};
+    auto db = VarDb {};
 
-    auto pos = std::size_t{0};
+    auto pos = std::size_t { 0 };
     while (pos < content.size()) {
 
         auto end = content.find('\n', pos);
@@ -50,8 +50,8 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
         if (!name.starts_with(CONFIG_PREFIX))
             continue;
 
-        auto var_name = std::string{name.substr(CONFIG_PREFIX.size())};
-        db.set(var_name, std::string{value});
+        auto var_name = std::string { name.substr(CONFIG_PREFIX.size()) };
+        db.set(var_name, std::string { value });
     }
 
     return db;
@@ -59,11 +59,11 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
 
 auto parse_config(std::filesystem::path const& path) -> Result<VarDb>
 {
-    auto file = std::ifstream{path};
+    auto file = std::ifstream { path };
     if (!file)
         return make_error<VarDb>(ErrorCode::NotFound, "Cannot open config file: " + path.string());
 
-    auto ss = std::ostringstream{};
+    auto ss = std::ostringstream {};
     ss << file.rdbuf();
 
     return parse_config_string(ss.str());

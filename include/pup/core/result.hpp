@@ -59,6 +59,13 @@ struct Error {
     ErrorCode code = ErrorCode::None;
     std::string message;
 
+    Error() = default;
+    Error(ErrorCode c, std::string msg)
+        : code(c)
+        , message(std::move(msg))
+    {
+    }
+
     /// Check if this represents no error
     [[nodiscard]] auto ok() const -> bool { return code == ErrorCode::None; }
 
@@ -68,13 +75,13 @@ struct Error {
     /// Create an error with a message
     [[nodiscard]] static auto make(ErrorCode c, std::string msg) -> Error
     {
-        return Error { .code = c, .message = std::move(msg) };
+        return Error { c, std::move(msg) };
     }
 
     /// Create an error with a string_view message
     [[nodiscard]] static auto make(ErrorCode c, std::string_view msg) -> Error
     {
-        return Error { .code = c, .message = std::string { msg } };
+        return Error { c, std::string { msg } };
     }
 };
 
