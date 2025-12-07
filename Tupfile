@@ -6,6 +6,9 @@ include_rules
 # Parser library sources
 : foreach src/parser/*.cpp |> !cxx |> %B.o {parser_objs}
 
+# Graph library sources
+: foreach src/graph/*.cpp |> !cxx |> %B.o {graph_objs}
+
 # Build pup executable (placeholder main for now)
 : foreach src/*.cpp |> !cxx |> %B.o {main_objs}
-: {core_objs} {parser_objs} {main_objs} |> !link |> pup
+: {core_objs} {parser_objs} {graph_objs} {main_objs} |> !link |> pup

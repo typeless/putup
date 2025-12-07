@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 pup authors
+
+#pragma once
+
+#include "pup/core/result.hpp"
+#include "pup/core/types.hpp"
+
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+namespace pup::graph {
+
+/// Edge between nodes in the build graph
+struct Edge {
+    NodeId from = 0;
+    NodeId to = 0;
+    LinkType type = LinkType::Normal;
+    NodeId group_cmd_id = 0; ///< For group edges, the command that produced the group
+};
+
+/// Node in the build graph
+struct Node {
+    NodeId id = 0;
+    NodeType type = NodeType::File;
+    NodeFlags flags = NodeFlags::None;
+
+    std::string path = {};           ///< For files: relative path from tup root
+    std::string command = {};        ///< For commands: the command string
+    std::string display = {};        ///< For commands: display text (from ^ ^ markers)
+
+    NodeId parent_dir = 0;      ///< Parent directory node
+    Hash256 content_hash = {};  ///< Content hash for files
+    FileTime mtime = {};        ///< Modification time
+
+    std::vector<NodeId> inputs = {};       ///< Input edges (dependencies)
+    std::vector<NodeId> outputs = {};      ///< Output edges (dependents)
+    std::vector<NodeId> order_only = {};   ///< Order-only dependencies
+};
+
+/// Build graph - DAG of nodes and edges
+class BuildGraph {
+public:
+    BuildGraph() = default;
+
+    /// Add a node to the graph
+    [[nodiscard]] auto add_node(Node node) -> Result<NodeId>;
+
+    /// Add an edge between nodes
+    [[nodiscard]] auto add_edge(NodeId from, NodeId to, LinkType type = LinkType::Normal)
+        -> Result<void>;
+
+    /// Add an order-only edge (dependency that doesn't trigger rebuild)
+    [[nodiscard]] auto add_order_only_edge(NodeId from, NodeId to) -> Result<void>;
+
+    /// Get a node by ID
+    [[nodiscard]] auto get_node(NodeId id) -> Node*;
+    [[nodiscard]] auto get_node(NodeId id) const -> Node const*;
+
+    /// Find a node by path
+    [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
+
+    /// Find a node by command string
+    [[nodiscard]] auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
+
+    /// Get all nodes of a given type
+    [[nodiscard]] auto nodes_of_type(NodeType type) const -> std::vector<NodeId>;
+
+    /// Get direct dependencies of a node
+    [[nodiscard]] auto get_inputs(NodeId id) const -> std::vector<NodeId>;
+
+    /// Get direct dependents of a node
+    [[nodiscard]] auto get_outputs(NodeId id) const -> std::vector<NodeId>;
+
+    /// Get order-only dependencies
+    [[nodiscard]] auto get_order_only(NodeId id) const -> std::vector<NodeId>;
+
+    /// Get all edges
+    [[nodiscard]] auto edges() const -> std::vector<Edge> const& { return edges_; }
+
+    /// Get total number of nodes
+    [[nodiscard]] auto node_count() const -> std::size_t { return nodes_.size(); }
+
+    /// Get total number of edges
+    [[nodiscard]] auto edge_count() const -> std::size_t { return edges_.size(); }
+
+    /// Check if graph is empty
+    [[nodiscard]] auto empty() const -> bool { return nodes_.empty(); }
+
+    /// Clear the graph
+    auto clear() -> void;
+
+    /// Get all node IDs
+    [[nodiscard]] auto all_nodes() const -> std::vector<NodeId>;
+
+    /// Get root nodes (nodes with no inputs)
+    [[nodiscard]] auto root_nodes() const -> std::vector<NodeId>;
+
+    /// Get leaf nodes (nodes with no outputs)
+    [[nodiscard]] auto leaf_nodes() const -> std::vector<NodeId>;
+
+    /// Iterator support
+    [[nodiscard]] auto begin() { return nodes_.begin(); }
+    [[nodiscard]] auto end() { return nodes_.end(); }
+    [[nodiscard]] auto begin() const { return nodes_.begin(); }
+    [[nodiscard]] auto end() const { return nodes_.end(); }
+
+private:
+    std::vector<Node> nodes_;
+    std::vector<Edge> edges_;
+    std::unordered_map<std::string, NodeId> path_index_;
+    std::unordered_map<std::string, NodeId> command_index_;
+    NodeId next_id_ = 1;
+
+    [[nodiscard]] auto validate_node_id(NodeId id) const -> bool;
+};
+
+} // namespace pup::graph
