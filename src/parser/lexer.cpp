@@ -9,7 +9,7 @@ namespace pup::parser {
 
 Lexer::Lexer(std::string_view source, std::string_view filename)
     : source_(source)
-    , filename_(filename)
+    , filename_(filename)  // Copies into owned std::string
 {
 }
 

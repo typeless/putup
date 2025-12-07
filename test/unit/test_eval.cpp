@@ -204,6 +204,7 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
     auto ctx = EvalContext{.vars = &vars};
     auto eval = Evaluator{ctx};
 
+    // For foreach rules, all_inputs has just one element (the current input)
     auto flags = PatternFlags{
         .input = "src/foo.c",
         .input_base = "foo.c",
@@ -212,7 +213,7 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
         .output = "build/foo.o",
         .output_base = "foo.o",
         .input_dir = "src",
-        .all_inputs = {"a.c", "b.c", "c.c"},
+        .all_inputs = {"src/foo.c"},
     };
 
     SECTION("%f - input filename")
@@ -236,6 +237,41 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
         REQUIRE(*result == "100%");
     }
 
+    SECTION("%Nf - N-th input (single)")
+    {
+        auto result = eval.expand_pattern("%1f", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "src/foo.c");
+    }
+
+    // Note: %i is for order-only inputs, not yet implemented
+}
+
+TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
+{
+    auto vars = VarDb{};
+    auto ctx = EvalContext{.vars = &vars};
+    auto eval = Evaluator{ctx};
+
+    // For non-foreach rules, all_inputs has all input files
+    auto flags = PatternFlags{
+        .input = "a.c",
+        .input_base = "a.c",
+        .input_noext = "a",
+        .input_ext = "c",
+        .output = "out.o",
+        .output_base = "out.o",
+        .input_dir = "",
+        .all_inputs = {"a.c", "b.c", "c.c"},
+    };
+
+    SECTION("%f - all inputs")
+    {
+        auto result = eval.expand_pattern("gcc -c %f -o %o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "gcc -c a.c b.c c.c -o out.o");
+    }
+
     SECTION("%Nf - N-th input")
     {
         auto result = eval.expand_pattern("%1f %2f %3f", flags);
@@ -243,12 +279,7 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
         REQUIRE(*result == "a.c b.c c.c");
     }
 
-    SECTION("%i - all inputs")
-    {
-        auto result = eval.expand_pattern("files: %i", flags);
-        REQUIRE(result.has_value());
-        REQUIRE(*result == "files: a.c b.c c.c");
-    }
+    // Note: %i is for order-only inputs, not yet implemented
 }
 
 TEST_CASE("Evaluator conditionals", "[eval]")

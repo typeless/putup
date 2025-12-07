@@ -417,18 +417,20 @@ auto Parser::parse_rule() -> Result<Rule>
     }
 
     // Expect |> before command
-    auto arrow1 = expect(TokenType::PipeArrow, "Expected '|>' before command");
-    if (!arrow1)
-        return pup::unexpected<Error>(arrow1.error());
+    if (!check(TokenType::PipeArrow))
+        return make_error<Rule>(ErrorCode::ParseError, "Expected '|>' before command");
+
+    // Set context BEFORE advancing so next token is read in Command context
+    lexer_.set_context(Lexer::Context::Command);
+    advance();  // Consume |> and read command token in Command context
 
     // Parse command
-    lexer_.set_context(Lexer::Context::Command);
     auto cmd = parse_command();
     if (!cmd)
         return pup::unexpected<Error>(cmd.error());
     rule.command = std::move(*cmd);
 
-    // Switch context before expect so advance() reads Outputs context token
+    // Switch context before advancing so advance() reads Outputs context token
     lexer_.set_context(Lexer::Context::Outputs);
 
     // Expect |> before outputs
@@ -502,18 +504,20 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     }
 
     // Expect |> before command
-    auto arrow1 = expect(TokenType::PipeArrow, "Expected '|>' before command");
-    if (!arrow1)
-        return pup::unexpected<Error>(arrow1.error());
+    if (!check(TokenType::PipeArrow))
+        return make_error<BangMacro>(ErrorCode::ParseError, "Expected '|>' before command");
+
+    // Set context BEFORE advancing so next token is read in Command context
+    lexer_.set_context(Lexer::Context::Command);
+    advance();  // Consume |> and read command token in Command context
 
     // Parse command
-    lexer_.set_context(Lexer::Context::Command);
     auto cmd = parse_command();
     if (!cmd)
         return pup::unexpected<Error>(cmd.error());
     macro.command = std::move(*cmd);
 
-    // Switch context before expect so advance() reads Outputs context token
+    // Switch context before advancing so advance() reads Outputs context token
     lexer_.set_context(Lexer::Context::Outputs);
 
     // Expect |> before outputs
@@ -768,6 +772,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 {
     auto expr = Expression{};
     auto current_text = std::string{};
+    auto last_end_offset = current_.location.offset;  // Track where last token ended
 
     auto flush_text = [&] {
         if (!current_text.empty()) {
@@ -777,6 +782,10 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
     };
 
     while (!check(TokenType::Eof) && !stop(current_)) {
+        // Check if there was whitespace between tokens (gap in offsets)
+        if (!current_text.empty() && current_.location.offset > last_end_offset)
+            current_text += ' ';
+
         // Variable reference: $(VAR)
         if (check(TokenType::Dollar)) {
             flush_text();
@@ -795,6 +804,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
             auto var = VarRef{VarRef::Kind::Regular, std::move(name), previous_.location};
             expr.parts.push_back(Expression::Variable{std::move(var)});
+            last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
 
@@ -816,6 +826,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
             auto var = VarRef{VarRef::Kind::Config, std::move(name), previous_.location};
             expr.parts.push_back(Expression::Variable{std::move(var)});
+            last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
 
@@ -837,11 +848,13 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
             auto var = VarRef{VarRef::Kind::Node, std::move(name), previous_.location};
             expr.parts.push_back(Expression::Variable{std::move(var)});
+            last_end_offset = previous_.location.offset + static_cast<std::uint32_t>(previous_.text.size());
             continue;
         }
 
         // Any other token becomes text
         current_text += current_.text;
+        last_end_offset = current_.location.offset + static_cast<std::uint32_t>(current_.text.size());
         advance();
     }
 
@@ -899,29 +912,31 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
 auto Parser::parse_command() -> Result<Expression>
 {
     auto expr = Expression{};
-    auto tok = lexer_.next();
-
-    // Handle display text: ^ text ^
-    std::optional<Expression> display;
-    if (tok.is(TokenType::Caret)) {
-        auto display_text = std::string{};
-        tok = lexer_.next();
-        while (!tok.is(TokenType::Caret) && !tok.is(TokenType::PipeArrow) &&
-               !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
-            display_text += tok.text;
-            tok = lexer_.next();
-        }
-        if (tok.is(TokenType::Caret)) {
-            // Store display separately - for now just skip it
-            tok = lexer_.next();
-        }
-    }
+    auto tok = current_;  // Start with current token (already advanced past |>)
 
     // Collect command text until |>
     auto cmd_text = std::string{};
     while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
         cmd_text += tok.text;
         tok = lexer_.next();
+    }
+
+    // Trim leading whitespace first
+    while (!cmd_text.empty() && (cmd_text.front() == ' ' || cmd_text.front() == '\t'))
+        cmd_text.erase(0, 1);
+
+    // Handle display text: ^ text ^ at start of command
+    // This handles the case where the entire command is one Text token
+    if (!cmd_text.empty() && cmd_text[0] == '^') {
+        // Find the second caret
+        auto second_caret = cmd_text.find('^', 1);
+        if (second_caret != std::string::npos) {
+            // Skip past the display text (including the second caret)
+            cmd_text = cmd_text.substr(second_caret + 1);
+            // Trim leading whitespace from actual command
+            while (!cmd_text.empty() && (cmd_text.front() == ' ' || cmd_text.front() == '\t'))
+                cmd_text.erase(0, 1);
+        }
     }
 
     // Trim trailing whitespace
@@ -932,7 +947,6 @@ auto Parser::parse_command() -> Result<Expression>
         expr.parts.push_back(Expression::Literal{std::move(cmd_text)});
 
     // Put back the |> token
-    // Note: This is a simplification - proper implementation would handle this better
     current_ = tok;
 
     return expr;

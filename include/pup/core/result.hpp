@@ -42,6 +42,7 @@ enum class ErrorCode {
     DuplicateNode,
     InvalidNodeId,
     InvalidEdge,
+    UnknownMacro,
 
     // Index errors
     InvalidFormat,

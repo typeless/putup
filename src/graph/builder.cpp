@@ -178,26 +178,74 @@ auto GraphBuilder::expand_rule(
     // Get the primary input for pattern expansion
     auto primary_input = inputs.empty() ? std::string{} : inputs[0];
 
+    // Check if command is a bang macro reference
+    auto cmd_text = std::string{};
+    auto display = std::string{};
+    auto outputs_patterns = rule.outputs;
+    auto macro_name = std::string{};
+    BangMacroDef const* macro_ptr = nullptr;
+
+    // First expand the command to see if it's a macro reference
+    auto expanded_cmd = expand_command(ctx, rule.command, inputs, {});
+    if (!expanded_cmd)
+        return pup::unexpected<Error>(expanded_cmd.error());
+
+    auto cmd_str = *expanded_cmd;
+    // Trim whitespace
+    while (!cmd_str.empty() && (cmd_str.front() == ' ' || cmd_str.front() == '\t'))
+        cmd_str.erase(0, 1);
+
+    if (!cmd_str.empty() && cmd_str[0] == '!') {
+        // Bang macro reference - look up the macro
+        macro_name = cmd_str.substr(1);
+        // Trim trailing whitespace from macro name
+        while (!macro_name.empty() && (macro_name.back() == ' ' || macro_name.back() == '\t'))
+            macro_name.pop_back();
+
+        auto it = ctx.macros.find(macro_name);
+        if (it == ctx.macros.end())
+            return make_error<void>(ErrorCode::UnknownMacro,
+                "Unknown bang macro: !" + macro_name);
+
+        macro_ptr = &it->second;
+
+        // Use macro's outputs if rule doesn't specify any
+        if (outputs_patterns.empty())
+            outputs_patterns = macro_ptr->outputs;
+    }
+
     // Expand outputs
-    auto outputs = expand_outputs(ctx, rule.outputs, primary_input);
+    auto outputs = expand_outputs(ctx, outputs_patterns, primary_input);
     if (!outputs)
         return pup::unexpected<Error>(outputs.error());
 
-    // Expand command
-    auto command = expand_command(ctx, rule.command, inputs, *outputs);
-    if (!command)
-        return pup::unexpected<Error>(command.error());
+    // Now expand command with actual outputs for %o substitution
+    if (macro_ptr) {
+        auto macro_cmd = expand_command(ctx, macro_ptr->command, inputs, *outputs);
+        if (!macro_cmd)
+            return pup::unexpected<Error>(macro_cmd.error());
+        cmd_text = *macro_cmd;
 
-    // Expand display if present
-    auto display = std::string{};
-    if (rule.display) {
-        auto disp_result = expand_command(ctx, *rule.display, inputs, *outputs);
-        if (disp_result)
-            display = *disp_result;
+        if (macro_ptr->display) {
+            auto disp_result = expand_command(ctx, *macro_ptr->display, inputs, *outputs);
+            if (disp_result)
+                display = *disp_result;
+        }
+    } else {
+        auto full_cmd = expand_command(ctx, rule.command, inputs, *outputs);
+        if (!full_cmd)
+            return pup::unexpected<Error>(full_cmd.error());
+        cmd_text = *full_cmd;
+
+        if (rule.display) {
+            auto disp_result = expand_command(ctx, *rule.display, inputs, *outputs);
+            if (disp_result)
+                display = *disp_result;
+        }
     }
 
     // Create command node
-    auto cmd_id = create_command_node(ctx, *command, display);
+    auto cmd_id = create_command_node(ctx, cmd_text, display);
     if (!cmd_id)
         return pup::unexpected<Error>(cmd_id.error());
 
@@ -274,10 +322,21 @@ auto GraphBuilder::expand_inputs(
             if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
                 auto base = ctx.current_dir.empty() ? ctx.options.root_dir
                                                     : ctx.options.root_dir / ctx.current_dir;
+
+                // First try expanding against filesystem
                 auto expanded = parser::glob_expand(path, base);
-                if (expanded) {
+                if (expanded && !expanded->empty()) {
                     for (auto& p : *expanded)
                         result.push_back(std::move(p));
+                } else {
+                    // No files on disk - look for matching Generated nodes in graph
+                    auto glob = parser::Glob{path};
+                    for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
+                        if (auto const* node = ctx.graph->get_node(id)) {
+                            if (glob.matches(node->path))
+                                result.push_back(node->path);
+                        }
+                    }
                 }
             } else {
                 result.push_back(std::move(path));
@@ -350,8 +409,13 @@ auto GraphBuilder::expand_command(
 {
     auto evaluator = parser::Evaluator{*ctx.eval};
 
-    // First expand variables
-    auto expanded = evaluator.expand(cmd);
+    // First get literal text from expression
+    auto literal = evaluator.expand(cmd);
+    if (!literal)
+        return pup::unexpected<Error>(literal.error());
+
+    // Now expand variables in the literal text (handles $(VAR) references)
+    auto expanded = evaluator.expand(std::string_view{*literal});
     if (!expanded)
         return pup::unexpected<Error>(expanded.error());
 

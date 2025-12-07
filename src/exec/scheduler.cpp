@@ -159,13 +159,16 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
             {
                 auto lock = std::unique_lock{mutex};
                 cv.wait(lock, [&] {
-                    return job_queue.empty() || cancelled_.load() ||
+                    // Wake up when: queue has jobs, OR cancelled, OR failed (and not keep-going)
+                    return !job_queue.empty() || cancelled_.load() ||
                            (failed.load() && !options_.keep_going);
                 });
 
-                if (job_queue.empty() || cancelled_.load() ||
-                    (failed.load() && !options_.keep_going))
+                if (cancelled_.load() || (failed.load() && !options_.keep_going))
                     return;
+
+                if (job_queue.empty())
+                    return;  // No more jobs
 
                 job_idx = job_queue.front();
                 job_queue.pop();

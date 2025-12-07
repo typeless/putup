@@ -1,0 +1,9 @@
+# Define macros inline (include_rules support pending)
+CC = gcc
+CFLAGS = -Wall -O2
+
+!cc = |> ^ CC %f^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+!link = |> ^ LINK %o^ $(CC) %f -o %o |>
+
+: foreach *.c |> !cc |>
+: *.o |> !link |> greeter

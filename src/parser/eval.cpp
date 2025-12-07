@@ -202,7 +202,12 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
         // Standard pattern flags
         switch (flag) {
         case 'f':
-            result += flags.input;
+            // %f - all inputs space-separated
+            for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
+                if (i > 0)
+                    result += ' ';
+                result += flags.all_inputs[i];
+            }
             break;
         case 'b':
             result += flags.input_base;
