@@ -13,7 +13,42 @@
 
 namespace pup::graph {
 
+namespace fs = std::filesystem;
+
 namespace {
+
+/// Strip trailing slashes from a path string
+auto strip_trailing_slashes(std::string str) -> std::string
+{
+    while (!str.empty() && (str.back() == '/' || str.back() == '\\'))
+        str.pop_back();
+    return str;
+}
+
+/// Normalize a directory path for group key lookup
+/// - Strips trailing slashes
+/// - Converts absolute paths to project-relative
+/// - Resolves parent references (..) against current_dir
+auto normalize_group_dir(
+    std::string const& path_str,
+    fs::path const& current_dir,
+    fs::path const& root_dir) -> std::string
+{
+    auto cleaned = strip_trailing_slashes(path_str);
+    auto path = fs::path { cleaned }.lexically_normal();
+
+    if (path.is_absolute())
+        path = fs::relative(path, root_dir);
+    else if (!current_dir.empty() && !path.empty()) {
+        // Only combine with current_dir if path needs parent resolution (starts with ..)
+        // Paths like $(ROOT)/foo expand to root-relative and should NOT be combined
+        auto first = *path.begin();
+        if (first == "..")
+            path = (current_dir / path).lexically_normal();
+    }
+
+    return path.empty() ? "." : path.string();
+}
 
 /// Map an output path to the variant directory (or current_dir if no variant)
 /// e.g., "foo.o" in "src/lib" with variant "build" -> "build/src/lib/foo.o"
@@ -249,8 +284,6 @@ auto GraphBuilder::process_include(
     BuilderContext& ctx,
     parser::Include const& inc) -> Result<void>
 {
-    namespace fs = std::filesystem;
-
     // Find the include file path
     auto include_path = std::string {};
 
@@ -516,7 +549,6 @@ auto GraphBuilder::expand_inputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns) -> Result<std::vector<std::string>>
 {
-    namespace fs = std::filesystem;
     auto result = std::vector<std::string> {};
     auto evaluator = parser::Evaluator { *ctx.eval };
 
@@ -539,24 +571,19 @@ auto GraphBuilder::expand_inputs(
         if (pattern.is_order_only_group) {
             // Order-only group reference <name> - cross-directory
             // The pattern.path contains the directory prefix (e.g., $(ROOT)/include/generated/)
-            // Expand it to get the actual directory
             auto group_dir = std::string {};
+            auto dir_path = fs::path {};
+
             if (!pattern.path.empty()) {
                 auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
                 if (expanded) {
-                    auto path = fs::path { *expanded }.lexically_normal();
-                    // Make path relative to root if absolute within project
-                    if (path.is_absolute())
-                        path = fs::relative(path, ctx.options.root_dir);
-                    // Combine with current_dir if relative
-                    else if (!ctx.current_dir.empty())
-                        path = (ctx.current_dir / path).lexically_normal();
-                    group_dir = path.empty() ? "." : path.string();
+                    group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.root_dir);
+                    dir_path = fs::path { group_dir };
 
                     // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                        if (ctx.eval->available_tupfile_dirs->contains(path)) {
-                            auto req_result = Result<void> { ctx.eval->request_directory(path) };
+                        if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
+                            auto req_result = Result<void> { ctx.eval->request_directory(dir_path) };
                             if (!req_result)
                                 return pup::unexpected<Error>(req_result.error());
                         }
@@ -583,6 +610,39 @@ auto GraphBuilder::expand_inputs(
             return pup::unexpected<Error>(paths.error());
 
         for (auto& path : *paths) {
+            // Check for path/<group> pattern (order-only group reference with directory prefix)
+            // The expanded path will contain literal <groupname> suffix
+            auto lt_pos = path.rfind('<');
+            auto gt_pos = path.rfind('>');
+            if (lt_pos != std::string::npos && gt_pos != std::string::npos && gt_pos == path.size() - 1 && gt_pos > lt_pos) {
+                auto group_name = path.substr(lt_pos + 1, gt_pos - lt_pos - 1);
+                if (group_name.empty())
+                    continue; // Invalid empty group name
+
+                auto dir_part = path.substr(0, lt_pos);
+                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.root_dir);
+                auto dir_path = fs::path { group_dir };
+
+                // Demand-driven parsing: request the directory's Tupfile if not yet parsed
+                if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                    if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
+                        auto req_result = Result<void> { ctx.eval->request_directory(dir_path) };
+                        if (!req_result)
+                            return pup::unexpected<Error>(req_result.error());
+                    }
+                }
+
+                // Look up the group
+                auto key = GroupKey { group_dir, group_name };
+                auto it = order_only_groups_.find(key);
+                if (it != order_only_groups_.end()) {
+                    for (auto id : it->second) {
+                        if (auto const* node = ctx.graph->get_node(id))
+                            result.push_back(node->path);
+                    }
+                }
+                continue;
+            }
             // Expand globs if enabled
             if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
                 auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.root_dir
