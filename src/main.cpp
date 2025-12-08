@@ -464,13 +464,14 @@ auto cmd_parse(Options const& opts) -> int
 
     auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
     if (!std::filesystem::exists(tupfile_path)) {
-        fmt::print(stderr, "Error: No Tupfile found in \"{}\"\n", root->string());
+        fmt::print(stderr, "Error: No Tupfile at project root \"{}\"\n", root->string());
+        fmt::print(stderr, "Note: Multi-directory projects (Tupfiles in subdirectories) not yet supported\n");
         return EXIT_FAILURE;
     }
 
     auto source = std::optional<std::string> { read_file(tupfile_path) };
     if (!source) {
-        fmt::print(stderr, "Error: Failed to read Tupfile\n");
+        fmt::print(stderr, "Error: Failed to read Tupfile at \"{}\"\n", tupfile_path.string());
         return EXIT_FAILURE;
     }
 
@@ -512,7 +513,8 @@ auto cmd_graph(Options const& opts) -> int
     auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
     auto source = std::optional<std::string> { read_file(tupfile_path) };
     if (!source) {
-        fmt::print(stderr, "Error: Failed to read Tupfile\n");
+        fmt::print(stderr, "Error: No Tupfile at project root \"{}\"\n", root->string());
+        fmt::print(stderr, "Note: Multi-directory projects (Tupfiles in subdirectories) not yet supported\n");
         return EXIT_FAILURE;
     }
 
@@ -648,7 +650,8 @@ auto cmd_build(Options const& opts) -> int
     auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
     auto source = std::optional<std::string> { read_file(tupfile_path) };
     if (!source) {
-        fmt::print(stderr, "Error: Failed to read Tupfile\n");
+        fmt::print(stderr, "Error: No Tupfile at project root \"{}\"\n", root->string());
+        fmt::print(stderr, "Note: Multi-directory projects (Tupfiles in subdirectories) not yet supported\n");
         return EXIT_FAILURE;
     }
 
