@@ -11,6 +11,9 @@
 # Tup database
 .tup/
 
+# Pup index
+.pup/
+
 # IDE files
 .vscode/
 .idea/
