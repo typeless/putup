@@ -542,7 +542,7 @@ auto GraphBuilder::expand_inputs(
             // Expand it to get the actual directory
             auto group_dir = std::string {};
             if (!pattern.path.empty()) {
-                auto expanded = evaluator.expand(pattern.path);
+                auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
                 if (expanded) {
                     auto path = fs::path { *expanded }.lexically_normal();
                     // Make path relative to root if absolute within project
@@ -556,7 +556,7 @@ auto GraphBuilder::expand_inputs(
                     // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(path)) {
-                            auto req_result = ctx.eval->request_directory(path);
+                            auto req_result = Result<void> { ctx.eval->request_directory(path) };
                             if (!req_result)
                                 return pup::unexpected<Error>(req_result.error());
                         }
@@ -602,10 +602,10 @@ auto GraphBuilder::expand_inputs(
                     // No files on disk - look for matching Generated nodes in graph
                     // First, try demand-driven parsing of the directory containing the glob pattern
                     auto pattern_dir = fs::path { path }.parent_path();
-                    auto abs_pattern_dir = (ctx.current_dir / pattern_dir).lexically_normal();
+                    auto abs_pattern_dir = fs::path { (ctx.current_dir / pattern_dir).lexically_normal() };
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(abs_pattern_dir)) {
-                            auto req_result = ctx.eval->request_directory(abs_pattern_dir);
+                            auto req_result = Result<void> { ctx.eval->request_directory(abs_pattern_dir) };
                             if (!req_result)
                                 return pup::unexpected<Error>(req_result.error());
                         }
@@ -633,10 +633,10 @@ auto GraphBuilder::expand_inputs(
                 } else {
                     // Not on disk - try demand-driven parsing of the file's directory
                     auto file_dir = fs::path { path }.parent_path();
-                    auto abs_file_dir = (ctx.current_dir / file_dir).lexically_normal();
+                    auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(abs_file_dir)) {
-                            auto req_result = ctx.eval->request_directory(abs_file_dir);
+                            auto req_result = Result<void> { ctx.eval->request_directory(abs_file_dir) };
                             if (!req_result)
                                 return pup::unexpected<Error>(req_result.error());
                         }
