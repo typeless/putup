@@ -152,26 +152,53 @@ TEST_CASE("CommandEntry conversion", "[index]")
 
 TEST_CASE("EdgeEntry conversion", "[index]")
 {
-    auto edge = EdgeEntry{
-        .from = 10,
-        .to = 20,
-        .type = LinkType::Sticky,
-        .group_cmd_id = 5,
-    };
+    SECTION("Sticky edge")
+    {
+        auto edge = EdgeEntry{
+            .from = 10,
+            .to = 20,
+            .type = LinkType::Sticky,
+            .group_cmd_id = 5,
+        };
 
-    auto raw = edge.to_raw();
+        auto raw = edge.to_raw();
 
-    REQUIRE(raw.from_id == 10);
-    REQUIRE(raw.to_id == 20);
-    REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Sticky));
-    REQUIRE(raw.group_cmd_id == 5);
+        REQUIRE(raw.from_id == 10);
+        REQUIRE(raw.to_id == 20);
+        REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Sticky));
+        REQUIRE(raw.group_cmd_id == 5);
 
-    auto restored = EdgeEntry::from_raw(raw);
+        auto restored = EdgeEntry::from_raw(raw);
 
-    REQUIRE(restored.from == edge.from);
-    REQUIRE(restored.to == edge.to);
-    REQUIRE(restored.type == edge.type);
-    REQUIRE(restored.group_cmd_id == edge.group_cmd_id);
+        REQUIRE(restored.from == edge.from);
+        REQUIRE(restored.to == edge.to);
+        REQUIRE(restored.type == edge.type);
+        REQUIRE(restored.group_cmd_id == edge.group_cmd_id);
+    }
+
+    SECTION("Implicit edge (header dependency)")
+    {
+        auto edge = EdgeEntry{
+            .from = 100,
+            .to = 200,
+            .type = LinkType::Implicit,
+            .group_cmd_id = 0,
+        };
+
+        auto raw = edge.to_raw();
+
+        REQUIRE(raw.from_id == 100);
+        REQUIRE(raw.to_id == 200);
+        REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Implicit));
+        REQUIRE(raw.group_cmd_id == 0);
+
+        auto restored = EdgeEntry::from_raw(raw);
+
+        REQUIRE(restored.from == edge.from);
+        REQUIRE(restored.to == edge.to);
+        REQUIRE(restored.type == LinkType::Implicit);
+        REQUIRE(restored.group_cmd_id == edge.group_cmd_id);
+    }
 }
 
 TEST_CASE("Index in-memory operations", "[index]")
@@ -279,9 +306,19 @@ TEST_CASE("Index serialization roundtrip", "[index]")
         .display = "CXX main.cpp",
     });
 
-    // Add edges
+    // Add a header file (implicit dependency)
+    index.add_file(FileEntry{
+        .id = 3,
+        .parent_id = 0,
+        .type = NodeType::File,
+        .path = "/usr/include/stdio.h",
+        .size = 8192,
+    });
+
+    // Add edges (including implicit header dependency)
     index.add_edge(EdgeEntry{.from = 1, .to = 10, .type = LinkType::Normal});
     index.add_edge(EdgeEntry{.from = 10, .to = 2, .type = LinkType::Normal});
+    index.add_edge(EdgeEntry{.from = 3, .to = 10, .type = LinkType::Implicit});
 
     // Serialize
     auto writer = IndexWriter{};
@@ -310,9 +347,9 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(hdr != nullptr);
     REQUIRE(std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) == 0);
     REQUIRE(hdr->version == INDEX_VERSION);
-    REQUIRE(hdr->file_count == 2);
+    REQUIRE(hdr->file_count == 3);
     REQUIRE(hdr->command_count == 1);
-    REQUIRE(hdr->edge_count == 2);
+    REQUIRE(hdr->edge_count == 3);
 
     // Verify checksum
     REQUIRE(reader.verify_checksum());
@@ -322,9 +359,9 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(read_result.has_value());
 
     auto& restored = *read_result;
-    REQUIRE(restored.file_count() == 2);
+    REQUIRE(restored.file_count() == 3);
     REQUIRE(restored.command_count() == 1);
-    REQUIRE(restored.edge_count() == 2);
+    REQUIRE(restored.edge_count() == 3);
 
     // Verify file content
     auto* file1 = restored.find_file("src/main.cpp");
@@ -342,6 +379,24 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->command == "g++ -c src/main.cpp -o build/main.o");
     REQUIRE(cmd->display == "CXX main.cpp");
+
+    // Verify header file (implicit dependency)
+    auto* header = restored.find_file("/usr/include/stdio.h");
+    REQUIRE(header != nullptr);
+    REQUIRE(header->id == 3);
+    REQUIRE(header->size == 8192);
+
+    // Verify implicit edge
+    auto edges_to_cmd = restored.edges_to(10);
+    REQUIRE(edges_to_cmd.size() == 2);
+    auto found_implicit = false;
+    for (auto const* edge : edges_to_cmd) {
+        if (edge->type == LinkType::Implicit) {
+            REQUIRE(edge->from == 3);
+            found_implicit = true;
+        }
+    }
+    REQUIRE(found_implicit);
 
     // Cleanup
     std::filesystem::remove(temp_path);

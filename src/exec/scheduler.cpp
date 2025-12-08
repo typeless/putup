@@ -116,13 +116,18 @@ auto Scheduler::build_incremental(
             affected.insert(*id);
     }
 
-    // Expand to include all dependent commands
+    // Expand to include all dependent commands (including order-only)
     auto to_process = std::vector<NodeId>(affected.begin(), affected.end());
     while (!to_process.empty()) {
         auto id = NodeId { to_process.back() };
         to_process.pop_back();
 
         for (auto dep_id : graph.get_outputs(id)) {
+            if (affected.insert(dep_id).second)
+                to_process.push_back(dep_id);
+        }
+
+        for (auto dep_id : graph.get_order_only_dependents(id)) {
             if (affected.insert(dep_id).second)
                 to_process.push_back(dep_id);
         }
@@ -359,12 +364,16 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
     // Discover implicit dependencies from .d files (if command succeeded)
     if (result.success) {
         for (auto const& output : job.outputs) {
-            // Only check .o files for corresponding .d files
-            if (output.size() < 2 || output.substr(output.size() - 2) != ".o")
+            auto output_path = std::filesystem::path { output };
+            auto ext = output_path.extension().string();
+
+            // Support common object file extensions (.o on Unix, .obj on Windows)
+            if (ext != ".o" && ext != ".obj")
                 continue;
 
-            auto depfile_name = output.substr(0, output.size() - 2) + ".d";
-            auto depfile_path = std::filesystem::path { options_.root_dir / depfile_name };
+            auto depfile_path = std::filesystem::path {
+                options_.root_dir / output_path.parent_path() / (output_path.stem().string() + ".d")
+            };
 
             if (!std::filesystem::exists(depfile_path))
                 continue;
@@ -454,39 +463,6 @@ auto detect_parallelism() -> std::size_t
 {
     auto hw = std::size_t { std::thread::hardware_concurrency() };
     return hw > 0 ? hw : 1;
-}
-
-auto find_changed_files(
-    std::filesystem::path const& root,
-    index::Index const& old_index) -> std::vector<std::string>
-{
-    auto changed = std::vector<std::string> {};
-
-    for (auto const& file : old_index.files()) {
-        if (file.type != NodeType::File)
-            continue;
-
-        auto path = std::filesystem::path { root / file.path };
-        struct stat st;
-
-        if (::stat(path.c_str(), &st) < 0) {
-            // File was deleted
-            changed.push_back(file.path);
-            continue;
-        }
-
-        auto current_mtime = FileTime {
-            .seconds = st.st_mtim.tv_sec,
-            .nanoseconds = static_cast<std::int32_t>(st.st_mtim.tv_nsec),
-        };
-
-        if (current_mtime != file.mtime) {
-            // File was modified
-            changed.push_back(file.path);
-        }
-    }
-
-    return changed;
 }
 
 } // namespace pup::exec

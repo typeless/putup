@@ -136,9 +136,4 @@ private:
 /// Detect number of available CPUs
 [[nodiscard]] auto detect_parallelism() -> std::size_t;
 
-/// Find all files that have changed since last build
-[[nodiscard]] auto find_changed_files(
-    std::filesystem::path const& root,
-    index::Index const& old_index) -> std::vector<std::string>;
-
 } // namespace pup::exec
