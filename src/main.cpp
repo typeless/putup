@@ -116,7 +116,13 @@ auto find_project_root() -> std::optional<std::filesystem::path>
     auto current = std::filesystem::path { std::filesystem::current_path() };
 
     while (true) {
-        if (std::filesystem::exists(current / "Tupfile") || std::filesystem::exists(current / "Tuprules.tup") || std::filesystem::exists(current / PUP_DIR)) {
+        // Check for project markers (aligned with tup behavior):
+        // - Tupfile.ini: explicit project root marker (triggers auto-init)
+        // - Tupfile: build file in current directory
+        // - .pup/: already initialized pup project
+        if (std::filesystem::exists(current / "Tupfile.ini")
+            || std::filesystem::exists(current / "Tupfile")
+            || std::filesystem::exists(current / PUP_DIR)) {
             return current;
         }
 
@@ -125,6 +131,22 @@ auto find_project_root() -> std::optional<std::filesystem::path>
             return std::nullopt;
         current = parent;
     }
+}
+
+auto ensure_initialized(std::filesystem::path const& root) -> bool
+{
+    auto pup_dir = std::filesystem::path { root / PUP_DIR };
+    if (std::filesystem::exists(pup_dir))
+        return true;
+
+    // Auto-initialize if Tupfile.ini exists (like tup does)
+    if (std::filesystem::exists(root / "Tupfile.ini")) {
+        std::filesystem::create_directory(pup_dir);
+        fmt::print("Initialized pup in \"{}\"\n", root.string());
+        return true;
+    }
+
+    return false;
 }
 
 auto find_variant_dir(std::filesystem::path const& root) -> std::optional<std::filesystem::path>
@@ -433,7 +455,7 @@ auto cmd_parse(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path> { find_project_root() };
     if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile found)\n");
+        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
     }
 
@@ -483,7 +505,7 @@ auto cmd_graph(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path> { find_project_root() };
     if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
     }
 
@@ -548,7 +570,7 @@ auto cmd_clean(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path> { find_project_root() };
     if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
     }
 
@@ -616,9 +638,12 @@ auto cmd_build(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path> { find_project_root() };
     if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
     }
+
+    // Auto-initialize if Tupfile.ini exists but .pup/ doesn't
+    ensure_initialized(*root);
 
     auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
     auto source = std::optional<std::string> { read_file(tupfile_path) };
