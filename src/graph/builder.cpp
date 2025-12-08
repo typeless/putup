@@ -15,15 +15,20 @@ namespace pup::graph {
 
 namespace {
 
-/// Map an output path to the variant directory
+/// Map an output path to the variant directory (or current_dir if no variant)
 /// e.g., "foo.o" in "src/lib" with variant "build" -> "build/src/lib/foo.o"
+/// e.g., "foo.o" in "src/lib" with no variant -> "src/lib/foo.o"
 auto map_to_variant(
     std::string const& path,
     std::filesystem::path const& current_dir,
     std::filesystem::path const& variant_dir) -> std::string
 {
-    if (variant_dir.empty())
-        return path;
+    if (variant_dir.empty()) {
+        // No variant - still prefix with current_dir for proper project-relative path
+        if (current_dir.empty())
+            return path;
+        return (current_dir / path).lexically_normal().string();
+    }
 
     auto full_path = std::filesystem::path { variant_dir / current_dir / path };
     return full_path.lexically_normal().string();
@@ -299,12 +304,31 @@ auto GraphBuilder::process_include(
     if (!parse_result)
         return pup::unexpected<Error>(parse_result.error());
 
+    // For include_rules, temporarily set TUP_CWD to the relative path from
+    // the Tupfile directory back to the Tuprules.tup directory. This allows
+    // patterns like ROOT = $(TUP_CWD) to work correctly.
+    auto old_tup_cwd = std::string {};
+    if (inc.is_rules && ctx.eval) {
+        old_tup_cwd = ctx.eval->tup_cwd;
+        // Compute relative path from Tupfile directory to include file's directory
+        auto include_dir = fs::path { include_path }.parent_path();
+        auto rel_path = fs::relative(include_dir, ctx.options.root_dir / ctx.current_dir);
+        ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.string();
+    }
+
     // Process statements from the included file
     for (auto const& stmt : parse_result->statements) {
         auto result = Result<void> { process_statement(ctx, *stmt) };
-        if (!result)
+        if (!result) {
+            if (inc.is_rules && ctx.eval)
+                ctx.eval->tup_cwd = old_tup_cwd;
             return pup::unexpected<Error>(result.error());
+        }
     }
+
+    // Restore original TUP_CWD
+    if (inc.is_rules && ctx.eval)
+        ctx.eval->tup_cwd = old_tup_cwd;
 
     return {};
 }
@@ -531,10 +555,18 @@ auto GraphBuilder::expand_inputs(
                 // First try expanding against filesystem
                 auto expanded = Result<std::vector<std::string>> { parser::glob_expand(path, base) };
                 if (expanded && !expanded->empty()) {
-                    for (auto& p : *expanded)
-                        result.push_back(std::move(p));
+                    for (auto& p : *expanded) {
+                        // Prefix with current_dir to make path relative to project root
+                        if (!ctx.current_dir.empty())
+                            result.push_back((ctx.current_dir / p).string());
+                        else
+                            result.push_back(std::move(p));
+                    }
                 } else {
                     // No files on disk - look for matching Generated nodes in graph
+                    // TODO: Re-enable cross-directory dependency requests after fixing path computation
+                    // The request_directory callback was causing path doubling issues
+
                     // Map the pattern to variant path for matching
                     auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
                     auto glob = parser::Glob { variant_path };
@@ -549,7 +581,11 @@ auto GraphBuilder::expand_inputs(
                 // Non-glob path: check if file exists on disk, or find in graph
                 auto full_path = std::filesystem::path { ctx.options.root_dir / ctx.current_dir / path };
                 if (std::filesystem::exists(full_path)) {
-                    result.push_back(std::move(path));
+                    // Prefix with current_dir to make path relative to project root
+                    if (!ctx.current_dir.empty())
+                        result.push_back((ctx.current_dir / path).string());
+                    else
+                        result.push_back(std::move(path));
                 } else {
                     // Not on disk - check for generated file in variant
                     auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);

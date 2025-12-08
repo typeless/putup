@@ -344,7 +344,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
     }
 
     // Assignment: IDENTIFIER (= | += | :=) value
-    if (check(TokenType::Identifier)) {
+    // Also accept Text tokens (e.g., paths with / like "//CFLAGS" which tup allows)
+    if (check(TokenType::Identifier) || check(TokenType::Text)) {
         auto const name = std::string { current_.text };
         advance();
 
@@ -358,9 +359,12 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             return stmt;
         }
 
-        // Not an assignment - this is an error at line start
-        return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
-            "Expected '=', '+=', or ':=' after identifier");
+        // Not an assignment - skip this line (tup-like permissive behavior)
+        // This handles edge cases like 'echo "Root = " $(ROOT)' which tup treats
+        // as a weird variable assignment with embedded '='
+        while (!check(TokenType::Newline) && !check(TokenType::Eof))
+            advance();
+        return nullptr;
     }
 
     // Node variable assignment: &name = value
@@ -381,8 +385,13 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         return stmt;
     }
 
-    return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
-        "Unexpected token: " + std::string { token_type_name(tok.type) });
+    // Skip unrecognized lines (matching tup's permissive behavior)
+    // This handles edge cases like 'echo "Root = " $(ROOT)' which tup treats
+    // as a weird variable assignment. Rather than error, we skip to EOL.
+    while (!check(TokenType::Newline) && !check(TokenType::Eof))
+        advance();
+
+    return nullptr; // Return null to indicate skipped line
 }
 
 auto Parser::parse_rule() -> Result<Rule>

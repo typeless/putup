@@ -6,6 +6,7 @@
 #include "ast.hpp"
 #include "pup/core/result.hpp"
 
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -61,6 +62,11 @@ struct EvalContext {
 
     /// Callback for resolving order-only group references like <groupname>
     std::function<std::vector<std::string>(std::string_view)> resolve_order_only_group = {};
+
+    /// Callback for requesting a directory's Tupfile to be parsed (for cross-directory deps)
+    /// Called when a path references another directory that may have a Tupfile.
+    /// Returns success if directory was parsed, error if circular/missing.
+    std::function<Result<void>(std::filesystem::path const&)> request_directory = {};
 };
 
 /// Pattern flags for command/output expansion

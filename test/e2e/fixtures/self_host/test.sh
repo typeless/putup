@@ -2,7 +2,8 @@
 # Test: pup can parse its own Tupfile
 set -e
 
-PUP_ROOT="$(cd "$(dirname "$PUP")" && pwd)"
+# Get the pup source root (one level up from build directory)
+PUP_ROOT="$(cd "$(dirname "$PUP")/.." && pwd)"
 
 # Parse pup's own Tupfile
 cd "$PUP_ROOT"

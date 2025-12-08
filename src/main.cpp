@@ -222,6 +222,144 @@ auto is_path_under_root(
     return path_str.starts_with(root_str) || path == root;
 }
 
+// =============================================================================
+// Multi-directory Tupfile parsing
+// =============================================================================
+
+/// State for tracking Tupfile parsing across multiple directories
+struct TupfileParseState {
+    std::set<std::filesystem::path> available; ///< Dirs with Tupfiles
+    std::set<std::filesystem::path> parsed;    ///< Already processed
+    std::set<std::filesystem::path> parsing;   ///< Currently processing (for cycle detection)
+};
+
+/// Discover all directories containing Tupfiles
+auto discover_tupfile_dirs(std::filesystem::path const& root)
+    -> std::set<std::filesystem::path>
+{
+    auto dirs = std::set<std::filesystem::path> {};
+    auto ec = std::error_code {};
+
+    for (auto const& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+        if (ec)
+            break;
+        if (!entry.is_regular_file())
+            continue;
+        if (entry.path().filename() != "Tupfile")
+            continue;
+
+        auto dir = std::filesystem::path { entry.path().parent_path() };
+
+        // Skip variant directories (contain tup.config)
+        if (std::filesystem::exists(dir / "tup.config"))
+            continue;
+
+        // Store relative path from root
+        auto rel = std::filesystem::relative(dir, root);
+        dirs.insert(rel.empty() || rel == "." ? std::filesystem::path { "." } : rel);
+    }
+
+    return dirs;
+}
+
+/// Recursive directory parsing function with cycle detection
+auto parse_directory(
+    std::filesystem::path const& rel_dir,
+    TupfileParseState& state,
+    pup::graph::GraphBuilder& builder,
+    pup::graph::BuildGraph& graph,
+    std::filesystem::path const& root,
+    pup::parser::VarDb& vars,
+    pup::parser::VarDb const& config_vars,
+    std::filesystem::path const& variant_dir,
+    bool verbose) -> pup::Result<void>;
+
+/// Implementation of parse_directory (declared above for recursive callback)
+auto parse_directory(
+    std::filesystem::path const& rel_dir,
+    TupfileParseState& state,
+    pup::graph::GraphBuilder& builder,
+    pup::graph::BuildGraph& graph,
+    std::filesystem::path const& root,
+    pup::parser::VarDb& vars,
+    pup::parser::VarDb const& config_vars,
+    std::filesystem::path const& variant_dir,
+    bool verbose) -> pup::Result<void>
+{
+    // Normalize directory path
+    auto normalized_dir = std::filesystem::path {
+        rel_dir.empty() || rel_dir == "." ? std::filesystem::path { "." } : rel_dir
+    };
+
+    // Skip if already parsed
+    if (state.parsed.contains(normalized_dir))
+        return {};
+
+    // Circular dependency check
+    if (state.parsing.contains(normalized_dir)) {
+        return pup::make_error<void>(
+            pup::ErrorCode::CyclicDependency,
+            fmt::format("Circular Tupfile dependency: {}", normalized_dir.string()));
+    }
+
+    // Mark as currently parsing
+    state.parsing.insert(normalized_dir);
+
+    // Build the Tupfile path
+    auto tupfile_path = std::filesystem::path {
+        normalized_dir == "." ? root / "Tupfile" : root / rel_dir / "Tupfile"
+    };
+
+    if (verbose)
+        fmt::print("Parsing: {}\n", tupfile_path.string());
+
+    auto source = read_file(tupfile_path);
+    if (!source) {
+        state.parsing.erase(normalized_dir);
+        return pup::make_error<void>(
+            pup::ErrorCode::IoError,
+            fmt::format("Failed to read {}", tupfile_path.string()));
+    }
+
+    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
+    auto parse_result = pup::Result<pup::parser::Tupfile> { parser.parse() };
+    if (!parse_result) {
+        state.parsing.erase(normalized_dir);
+        return pup::unexpected<pup::Error>(parse_result.error());
+    }
+
+    // Create per-directory eval context
+    auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
+    auto tup_variantdir = compute_variantdir(
+        normalized_dir == "." ? std::filesystem::path {} : rel_dir,
+        variant_dir);
+
+    // Create recursive callback for demand-driven parsing
+    auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
+        return parse_directory(dir, state, builder, graph, root, vars, config_vars, variant_dir, verbose);
+    };
+
+    auto eval_ctx = pup::parser::EvalContext {
+        .vars = &vars,
+        .config_vars = const_cast<pup::parser::VarDb*>(&config_vars),
+        .tup_cwd = tup_cwd,
+        .tup_platform = std::string { pup::PLATFORM },
+        .tup_arch = std::string { pup::ARCH },
+        .tup_variantdir = tup_variantdir,
+        .tup_variant_outputdir = variant_dir.empty() ? "." : variant_dir.string(),
+        .request_directory = request_directory,
+    };
+
+    // Process this Tupfile - callback may be invoked during expansion
+    auto result = pup::Result<void> { builder.add_tupfile(graph, *parse_result, eval_ctx) };
+
+    // Mark as parsed (not parsing anymore)
+    state.parsing.erase(normalized_dir);
+    state.parsed.insert(normalized_dir);
+
+    return result;
+}
+
 auto find_changed_files_with_implicit(
     std::filesystem::path const& root,
     pup::index::Index const& old_index) -> std::vector<std::string>
@@ -462,42 +600,59 @@ auto cmd_parse(Options const& opts) -> int
     if (opts.verbose)
         fmt::print("Project root: \"{}\"\n", root->string());
 
-    auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
-    if (!std::filesystem::exists(tupfile_path)) {
-        fmt::print(stderr, "Error: No Tupfile at project root \"{}\"\n", root->string());
-        fmt::print(stderr, "Note: Multi-directory projects (Tupfiles in subdirectories) not yet supported\n");
+    // Discover all Tupfiles
+    auto tupfile_dirs = std::set<std::filesystem::path> { discover_tupfile_dirs(*root) };
+    if (tupfile_dirs.empty()) {
+        fmt::print(stderr, "Error: No Tupfiles found in project\n");
         return EXIT_FAILURE;
     }
 
-    auto source = std::optional<std::string> { read_file(tupfile_path) };
-    if (!source) {
-        fmt::print(stderr, "Error: Failed to read Tupfile at \"{}\"\n", tupfile_path.string());
-        return EXIT_FAILURE;
-    }
+    auto total_statements = std::size_t { 0 };
+    auto total_rules = std::size_t { 0 };
+    auto total_macros = std::size_t { 0 };
+    auto total_assignments = std::size_t { 0 };
 
-    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto result = pup::Result<pup::parser::Tupfile> { parser.parse() };
+    for (auto const& dir : tupfile_dirs) {
+        auto tupfile_path = std::filesystem::path {
+            dir == "." ? *root / "Tupfile" : *root / dir / "Tupfile"
+        };
 
-    if (!result) {
-        fmt::print(stderr, "Parse error: {}\n", result.error().message);
-        return EXIT_FAILURE;
-    }
+        auto source = std::optional<std::string> { read_file(tupfile_path) };
+        if (!source) {
+            fmt::print(stderr, "Error: Failed to read Tupfile at \"{}\"\n", tupfile_path.string());
+            continue;
+        }
 
-    auto const& tupfile = *result;
-    fmt::print("Parsed {} statements from Tupfile\n", tupfile.statements.size());
+        auto parser = pup::parser::Parser { *source, tupfile_path.string() };
+        auto result = pup::Result<pup::parser::Tupfile> { parser.parse() };
 
-    if (opts.verbose) {
-        for (auto const& stmt : tupfile.statements) {
-            if (auto const* rule = stmt->as<pup::parser::Rule>()) {
-                fmt::print("  Rule: {} inputs -> {} outputs\n",
-                    rule->inputs.size(), rule->outputs.size());
-            } else if (auto const* assign = stmt->as<pup::parser::Assignment>()) {
-                fmt::print("  Assignment: {}\n", assign->name);
-            } else if (auto const* macro = stmt->as<pup::parser::BangMacro>()) {
-                fmt::print("  Macro: !{}\n", macro->name);
+        if (!result) {
+            fmt::print(stderr, "Parse error in {}: {}\n", tupfile_path.string(), result.error().message);
+            return EXIT_FAILURE;
+        }
+
+        auto const& tupfile = *result;
+        total_statements += tupfile.statements.size();
+
+        if (opts.verbose) {
+            fmt::print("{}:\n", tupfile_path.string());
+            for (auto const& stmt : tupfile.statements) {
+                if (auto const* rule = stmt->as<pup::parser::Rule>()) {
+                    fmt::print("  Rule: {} inputs -> {} outputs\n",
+                        rule->inputs.size(), rule->outputs.size());
+                    ++total_rules;
+                } else if (auto const* assign = stmt->as<pup::parser::Assignment>()) {
+                    fmt::print("  Assignment: {}\n", assign->name);
+                    ++total_assignments;
+                } else if (auto const* macro = stmt->as<pup::parser::BangMacro>()) {
+                    fmt::print("  Macro: !{}\n", macro->name);
+                    ++total_macros;
+                }
             }
         }
     }
+
+    fmt::print("Parsed {} statements from {} Tupfile(s)\n", total_statements, tupfile_dirs.size());
 
     return EXIT_SUCCESS;
 }
@@ -510,47 +665,57 @@ auto cmd_graph(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
-    auto source = std::optional<std::string> { read_file(tupfile_path) };
-    if (!source) {
-        fmt::print(stderr, "Error: No Tupfile at project root \"{}\"\n", root->string());
-        fmt::print(stderr, "Note: Multi-directory projects (Tupfiles in subdirectories) not yet supported\n");
-        return EXIT_FAILURE;
-    }
+    // Discover all Tupfiles
+    auto state = TupfileParseState {};
+    state.available = discover_tupfile_dirs(*root);
 
-    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto parse_result = pup::Result<pup::parser::Tupfile> { parser.parse() };
-    if (!parse_result) {
-        fmt::print(stderr, "Parse error: {}\n", parse_result.error().message);
+    if (state.available.empty()) {
+        fmt::print(stderr, "Error: No Tupfiles found in project\n");
         return EXIT_FAILURE;
     }
 
     auto vars = pup::parser::VarDb {};
-    auto eval_ctx = pup::parser::EvalContext {
-        .vars = &vars,
-        .tup_cwd = std::string { root->string() },
-        .tup_platform = std::string { pup::PLATFORM },
-        .tup_arch = std::string { pup::ARCH },
-    };
+    auto config_vars = pup::parser::VarDb {};
+    auto variant_dir = std::filesystem::path {};
 
     auto builder_opts = pup::graph::BuilderOptions {
         .root_dir = *root,
-        .variant_dir = {},
+        .variant_dir = variant_dir,
         .expand_globs = true,
     };
 
     auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph_result = pup::Result<pup::graph::BuildGraph> { builder.build(*parse_result, eval_ctx) };
+    auto graph = pup::graph::BuildGraph {};
 
-    if (!graph_result) {
-        fmt::print(stderr, "Graph build error: {}\n", graph_result.error().message);
-        return EXIT_FAILURE;
+    // Start with root Tupfile if it exists
+    auto root_rel = std::filesystem::path { "." };
+    if (state.available.contains(root_rel)) {
+        auto result = pup::Result<void> {
+            parse_directory(root_rel, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
+        };
+        if (!result) {
+            fmt::print(stderr, "Error: {}\n", result.error().message);
+            return EXIT_FAILURE;
+        }
     }
 
-    auto const& graph = *graph_result;
+    // Parse remaining directories
+    for (auto const& dir : state.available) {
+        if (state.parsed.contains(dir))
+            continue;
+        auto result = pup::Result<void> {
+            parse_directory(dir, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
+        };
+        if (!result) {
+            fmt::print(stderr, "Error: {}\n", result.error().message);
+            return EXIT_FAILURE;
+        }
+    }
+
     auto num_nodes = std::size_t { graph.node_count() };
     auto num_edges = std::size_t { graph.edge_count() };
     auto commands = std::vector<pup::NodeId> { graph.nodes_of_type(pup::NodeType::Command) };
+    fmt::print("Tupfiles: {}\n", state.parsed.size());
     fmt::print("Nodes: {}\n", num_nodes);
     fmt::print("Edges: {}\n", num_edges);
     fmt::print("Commands: {}\n", commands.size());
@@ -647,21 +812,19 @@ auto cmd_build(Options const& opts) -> int
     // Auto-initialize if Tupfile.ini exists but .pup/ doesn't
     ensure_initialized(*root);
 
-    auto tupfile_path = std::filesystem::path { *root / "Tupfile" };
-    auto source = std::optional<std::string> { read_file(tupfile_path) };
-    if (!source) {
-        fmt::print(stderr, "Error: No Tupfile at project root \"{}\"\n", root->string());
-        fmt::print(stderr, "Note: Multi-directory projects (Tupfiles in subdirectories) not yet supported\n");
+    // Discover all directories containing Tupfiles
+    auto state = TupfileParseState {};
+    state.available = discover_tupfile_dirs(*root);
+
+    if (state.available.empty()) {
+        fmt::print(stderr, "Error: No Tupfiles found in project\n");
         return EXIT_FAILURE;
     }
 
-    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto parse_result = pup::Result<pup::parser::Tupfile> { parser.parse() };
-    if (!parse_result) {
-        fmt::print(stderr, "Parse error: {}\n", parse_result.error().message);
-        return EXIT_FAILURE;
-    }
+    if (opts.verbose)
+        fmt::print("Found {} directories with Tupfiles\n", state.available.size());
 
+    // Find variant directory
     auto variant_dir = std::filesystem::path {};
     if (!opts.variant.empty()) {
         variant_dir = std::filesystem::path { opts.variant };
@@ -671,6 +834,7 @@ auto cmd_build(Options const& opts) -> int
             variant_dir = std::filesystem::relative(*discovered, *root);
     }
 
+    // Load config variables from tup.config
     auto config_vars = pup::parser::VarDb {};
     if (!variant_dir.empty()) {
         auto config_path = std::filesystem::path { *root / variant_dir / "tup.config" };
@@ -685,16 +849,6 @@ auto cmd_build(Options const& opts) -> int
     }
 
     auto vars = pup::parser::VarDb {};
-    auto tup_variantdir = compute_variantdir(std::filesystem::path {}, variant_dir);
-    auto eval_ctx = pup::parser::EvalContext {
-        .vars = &vars,
-        .config_vars = &config_vars,
-        .tup_cwd = std::string { root->string() },
-        .tup_platform = std::string { pup::PLATFORM },
-        .tup_arch = std::string { pup::ARCH },
-        .tup_variantdir = tup_variantdir,
-        .tup_variant_outputdir = variant_dir.empty() ? "." : variant_dir.string(),
-    };
 
     auto builder_opts = pup::graph::BuilderOptions {
         .root_dir = *root,
@@ -703,14 +857,35 @@ auto cmd_build(Options const& opts) -> int
     };
 
     auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph_result = pup::Result<pup::graph::BuildGraph> { builder.build(*parse_result, eval_ctx) };
+    auto graph = pup::graph::BuildGraph {};
 
-    if (!graph_result) {
-        fmt::print(stderr, "Graph error: {}\n", graph_result.error().message);
-        return EXIT_FAILURE;
+    // Start with root Tupfile if it exists
+    auto root_rel = std::filesystem::path { "." };
+    if (state.available.contains(root_rel)) {
+        auto result = pup::Result<void> {
+            parse_directory(root_rel, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
+        };
+        if (!result && !opts.keep_going) {
+            fmt::print(stderr, "Error: {}\n", result.error().message);
+            return EXIT_FAILURE;
+        }
     }
 
-    auto const& graph = *graph_result;
+    // Parse any remaining unparsed directories (orphan Tupfiles)
+    for (auto const& dir : state.available) {
+        if (state.parsed.contains(dir))
+            continue;
+        auto result = pup::Result<void> {
+            parse_directory(dir, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
+        };
+        if (!result && !opts.keep_going) {
+            fmt::print(stderr, "Error: {}\n", result.error().message);
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (opts.verbose)
+        fmt::print("Parsed {} Tupfiles\n", state.parsed.size());
     auto num_commands = std::size_t { graph.nodes_of_type(pup::NodeType::Command).size() };
 
     if (num_commands == 0) {

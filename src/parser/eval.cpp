@@ -300,9 +300,23 @@ auto Evaluator::expand_path(PathPattern const& pattern)
     if (!path_result)
         return pup::unexpected<Error>(path_result.error());
 
-    // For now, just return the expanded path
-    // Glob expansion will be handled by the glob module
-    result.push_back(*path_result);
+    // Split result by whitespace - variables may contain multiple files
+    auto const& expanded = *path_result;
+    auto start = std::size_t { 0 };
+    while (start < expanded.size()) {
+        // Skip whitespace
+        while (start < expanded.size() && (expanded[start] == ' ' || expanded[start] == '\t'))
+            ++start;
+        if (start >= expanded.size())
+            break;
+        // Find end of token
+        auto end = start;
+        while (end < expanded.size() && expanded[end] != ' ' && expanded[end] != '\t')
+            ++end;
+        if (end > start)
+            result.push_back(expanded.substr(start, end - start));
+        start = end;
+    }
 
     return result;
 }
