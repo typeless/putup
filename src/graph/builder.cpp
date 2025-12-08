@@ -84,9 +84,12 @@ auto GraphBuilder::add_tupfile(
         return paths;
     };
 
-    // Set up resolve_order_only_group callback for <group> pattern expansion
+    // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
+    // This is for local group references (no directory prefix) - uses current directory
     eval.resolve_order_only_group = [this, &ctx](std::string_view name) -> std::vector<std::string> {
-        auto it = order_only_groups_.find(std::string { name });
+        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+        auto key = GroupKey { dir, std::string { name } };
+        auto it = order_only_groups_.find(key);
         if (it == order_only_groups_.end())
             return {};
         auto paths = std::vector<std::string> {};
@@ -479,8 +482,11 @@ auto GraphBuilder::expand_rule(
         auto output_oo_group = rule.output_order_only_group;
         if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group)
             output_oo_group = macro_ptr->output_order_only_group;
-        if (output_oo_group)
-            order_only_groups_[*output_oo_group].push_back(*output_id);
+        if (output_oo_group) {
+            auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+            auto key = GroupKey { dir, *output_oo_group };
+            order_only_groups_[key].push_back(*output_id);
+        }
     }
 
     // Handle order-only inputs (merge rule + macro if applicable)
@@ -510,6 +516,7 @@ auto GraphBuilder::expand_inputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns) -> Result<std::vector<std::string>>
 {
+    namespace fs = std::filesystem;
     auto result = std::vector<std::string> {};
     auto evaluator = parser::Evaluator { *ctx.eval };
 
@@ -531,7 +538,27 @@ auto GraphBuilder::expand_inputs(
 
         if (pattern.is_order_only_group) {
             // Order-only group reference <name> - cross-directory
-            auto it = order_only_groups_.find(pattern.group_name);
+            // The pattern.path contains the directory prefix (e.g., $(ROOT)/include/generated/)
+            // Expand it to get the actual directory
+            auto group_dir = std::string {};
+            if (!pattern.path.empty()) {
+                auto expanded = evaluator.expand(pattern.path);
+                if (expanded) {
+                    auto path = fs::path { *expanded }.lexically_normal();
+                    // Make path relative to root if absolute within project
+                    if (path.is_absolute())
+                        path = fs::relative(path, ctx.options.root_dir);
+                    // Combine with current_dir if relative
+                    else if (!ctx.current_dir.empty())
+                        path = (ctx.current_dir / path).lexically_normal();
+                    group_dir = path.empty() ? "." : path.string();
+                }
+            } else {
+                group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+            }
+
+            auto key = GroupKey { group_dir, pattern.group_name };
+            auto it = order_only_groups_.find(key);
             if (it != order_only_groups_.end()) {
                 for (auto id : it->second) {
                     if (auto const* node = ctx.graph->get_node(id))
@@ -564,8 +591,9 @@ auto GraphBuilder::expand_inputs(
                     }
                 } else {
                     // No files on disk - look for matching Generated nodes in graph
-                    // TODO: Re-enable cross-directory dependency requests after fixing path computation
-                    // The request_directory callback was causing path doubling issues
+                    // Note: cross-directory request_directory callback is now available but not yet
+                    // invoked here since we use eager parsing (all directories parsed upfront).
+                    // Could enable demand-driven parsing in the future if needed.
 
                     // Map the pattern to variant path for matching
                     auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);

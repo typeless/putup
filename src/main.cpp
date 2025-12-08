@@ -263,13 +263,14 @@ auto discover_tupfile_dirs(std::filesystem::path const& root)
 }
 
 /// Recursive directory parsing function with cycle detection
+/// Each directory gets its own copy of base_vars so variable changes don't leak between Tupfiles
 auto parse_directory(
     std::filesystem::path const& rel_dir,
     TupfileParseState& state,
     pup::graph::GraphBuilder& builder,
     pup::graph::BuildGraph& graph,
     std::filesystem::path const& root,
-    pup::parser::VarDb& vars,
+    pup::parser::VarDb const& base_vars,
     pup::parser::VarDb const& config_vars,
     std::filesystem::path const& variant_dir,
     bool verbose) -> pup::Result<void>;
@@ -281,11 +282,13 @@ auto parse_directory(
     pup::graph::GraphBuilder& builder,
     pup::graph::BuildGraph& graph,
     std::filesystem::path const& root,
-    pup::parser::VarDb& vars,
+    pup::parser::VarDb const& base_vars,
     pup::parser::VarDb const& config_vars,
     std::filesystem::path const& variant_dir,
     bool verbose) -> pup::Result<void>
 {
+    // Each directory gets its own isolated variable scope
+    auto vars = pup::parser::VarDb { base_vars };
     // Normalize directory path
     auto normalized_dir = std::filesystem::path {
         rel_dir.empty() || rel_dir == "." ? std::filesystem::path { "." } : rel_dir
@@ -335,8 +338,9 @@ auto parse_directory(
         variant_dir);
 
     // Create recursive callback for demand-driven parsing
+    // Pass base_vars (not the local vars copy) so each directory starts fresh
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, root, vars, config_vars, variant_dir, verbose);
+        return parse_directory(dir, state, builder, graph, root, base_vars, config_vars, variant_dir, verbose);
     };
 
     auto eval_ctx = pup::parser::EvalContext {

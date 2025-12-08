@@ -85,8 +85,25 @@ private:
     std::vector<std::string> errors_;
     std::vector<std::string> warnings_;
 
-    /// Order-only groups <name> - global across all Tupfiles
-    std::unordered_map<std::string, std::vector<NodeId>> order_only_groups_;
+    /// Key for order-only groups: (directory relative to root, group name)
+    struct GroupKey {
+        std::string directory;
+        std::string name;
+
+        auto operator==(GroupKey const& other) const -> bool = default;
+    };
+
+    struct GroupKeyHash {
+        auto operator()(GroupKey const& k) const -> std::size_t
+        {
+            auto h1 = std::hash<std::string> {}(k.directory);
+            auto h2 = std::hash<std::string> {}(k.name);
+            return h1 ^ (h2 << 1);
+        }
+    };
+
+    /// Order-only groups <name> - keyed by (directory, name) for cross-directory support
+    std::unordered_map<GroupKey, std::vector<NodeId>, GroupKeyHash> order_only_groups_;
 
     auto process_statement(
         BuilderContext& ctx,
