@@ -140,6 +140,70 @@ pup/
 
 - `/home/mural/src/tup/` - Original tup source (C)
 - `/home/mural/src/castlestech.com/megahunt/PPC_Linux/spos/` - Real-world tup usage
+- `/home/mural/src/castlestech.com/megahunt/PPC_Linux/ctos/` - Multi-directory tup project (ARM cross-compile)
+
+## Testing with ctos (Multi-Directory Project)
+
+The ctos project is a real-world multi-directory tup project for ARM cross-compilation.
+Use this to test multi-directory support once implemented.
+
+### Prerequisites
+
+```bash
+# Source the Yocto SDK environment (sets CC, CXX, CFLAGS, etc.)
+source ~/src/castlestech.com/megahunt/sdk/environment-setup-cortexa5t2hf-neon-oe-linux-gnueabi
+```
+
+### Project Structure
+
+```
+ctos/
+├── Tupfile.ini          # Project root marker (empty)
+├── .tup/                # Tup database
+├── Tuprules.tup         # Shared rules with import/export
+├── build-ppc/           # Variant output directory
+│   └── tup.config       # Variant configuration
+└── system/              # Subdirectories with Tupfiles
+    ├── powerd/Tupfile
+    ├── sensord/Tupfile
+    └── ...
+```
+
+### Key Features Used
+
+```tup
+# Tuprules.tup imports from SDK environment
+import TARGET_PREFIX
+import CC
+import CXX
+import CFLAGS
+import LDFLAGS
+
+# Exports for pkg-config subprocess calls
+export PKG_CONFIG_SYSROOT_DIR
+export PKG_CONFIG_PATH
+
+# Bang macros for cross-compilation
+!cc = |> ^ CC %o^ $(CC) $(CFLAGS) -c -o %o %f |>
+```
+
+### Testing Commands
+
+```bash
+# Once multi-directory support is implemented:
+cd ~/src/castlestech.com/megahunt/PPC_Linux/ctos
+~/src/pup/build/pup build
+
+# Compare with tup:
+tup
+```
+
+### Current Status
+
+- ❌ Multi-directory Tupfile scanning not implemented
+- ✅ `import` directive implemented
+- ✅ `export` directive implemented
+- ✅ Bang macros implemented
 
 ## Tupfile Syntax Features to Support
 
