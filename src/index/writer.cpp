@@ -33,7 +33,7 @@ auto IndexWriter::write(
     // Create parent directories if needed
     auto parent = path.parent_path();
     if (!parent.empty()) {
-        std::error_code ec;
+        auto ec = std::error_code {};
         std::filesystem::create_directories(parent, ec);
         if (ec)
             return make_error<void>(ErrorCode::IoError, "Failed to create directory");

@@ -314,7 +314,7 @@ auto build_index(
                 if (hash_result)
                     content_hash = *hash_result;
 
-                std::error_code ec;
+                auto ec = std::error_code {};
                 file_size = std::filesystem::file_size(file_path, ec);
             }
 
@@ -380,7 +380,7 @@ auto build_index(
                     if (hash_result)
                         content_hash = *hash_result;
 
-                    std::error_code ec;
+                    auto ec = std::error_code {};
                     file_size = std::filesystem::file_size(abs_path, ec);
                 }
 

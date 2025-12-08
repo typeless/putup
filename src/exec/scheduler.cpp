@@ -335,7 +335,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
         auto output_path = std::filesystem::path { options_.root_dir / output };
         auto parent = std::filesystem::path { output_path.parent_path() };
         if (!parent.empty() && !std::filesystem::exists(parent)) {
-            std::error_code ec;
+            auto ec = std::error_code {};
             std::filesystem::create_directories(parent, ec);
         }
     }

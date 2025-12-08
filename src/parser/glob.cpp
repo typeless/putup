@@ -233,7 +233,7 @@ auto glob_expand(
         }
     };
 
-    std::error_code ec;
+    auto ec = std::error_code {};
     if (is_recursive) {
         for (auto const& entry : fs::recursive_directory_iterator(search_dir, ec)) {
             if (ec)
