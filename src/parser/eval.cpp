@@ -210,9 +210,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
             auto group_name = std::string { text.substr(pos, end - pos) };
             pos = end + 1;
 
-            // Resolve group to paths via callback
-            if (ctx_.resolve_group) {
-                auto paths = ctx_.resolve_group(group_name);
+            // Resolve order-only group to paths via callback
+            if (ctx_.resolve_order_only_group) {
+                auto paths = ctx_.resolve_order_only_group(group_name);
                 for (std::size_t i = 0; i < paths.size(); ++i) {
                     if (i > 0)
                         result += ' ';
@@ -277,8 +277,17 @@ auto Evaluator::expand_path(PathPattern const& pattern)
 {
     auto result = std::vector<std::string> {};
 
+    if (pattern.is_order_only_group) {
+        // Order-only group reference <groupname> - use callback to resolve
+        if (ctx_.resolve_order_only_group) {
+            auto paths = ctx_.resolve_order_only_group(pattern.group_name);
+            result.insert(result.end(), paths.begin(), paths.end());
+        }
+        return result;
+    }
+
     if (pattern.is_group) {
-        // Group reference - use callback to resolve
+        // Group reference {groupname} - use callback to resolve
         if (ctx_.resolve_group) {
             auto paths = ctx_.resolve_group(pattern.group_name);
             result.insert(result.end(), paths.begin(), paths.end());

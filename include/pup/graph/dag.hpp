@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -38,9 +39,10 @@ struct Node {
     Hash256 content_hash = {}; ///< Content hash for files
     FileTime mtime = {};       ///< Modification time
 
-    std::vector<NodeId> inputs = {};     ///< Input edges (dependencies)
-    std::vector<NodeId> outputs = {};    ///< Output edges (dependents)
-    std::vector<NodeId> order_only = {}; ///< Order-only dependencies
+    std::vector<NodeId> inputs = {};          ///< Input edges (dependencies)
+    std::vector<NodeId> outputs = {};         ///< Output edges (dependents)
+    std::vector<NodeId> order_only = {};      ///< Order-only dependencies
+    std::set<std::string> exported_vars = {}; ///< Env vars to export to command
 };
 
 /// Build graph - DAG of nodes and edges

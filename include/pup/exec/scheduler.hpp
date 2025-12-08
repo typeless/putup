@@ -30,6 +30,7 @@ struct BuildJob {
     std::vector<std::string> inputs = {};
     std::vector<std::string> outputs = {};
     std::vector<std::string> order_only_inputs = {}; ///< Order-only dependencies
+    std::set<std::string> exported_vars = {};        ///< Env vars to export to command
 };
 
 /// Result of executing a build job

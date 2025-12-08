@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -35,17 +36,21 @@ struct BangMacroDef {
     std::optional<parser::Expression> display;
     std::vector<parser::PathPattern> outputs;
     std::vector<parser::PathPattern> extra_outputs;
+    std::optional<std::string> output_group;            ///< {binname} at end
+    std::optional<std::string> output_order_only_group; ///< <groupname> at end
 };
 
 /// Context for building the graph
 struct BuilderContext {
     BuildGraph* graph = nullptr;
     parser::EvalContext* eval = nullptr;
+    parser::VarDb* vars = nullptr; ///< Variable database for import
     BuilderOptions options = {};
 
     std::unordered_map<std::string, BangMacroDef> macros = {};
     std::unordered_map<std::string, std::vector<NodeId>> groups = {};
     std::unordered_set<std::string> included_files = {};
+    std::set<std::string> exported_vars = {}; ///< Environment variables to export to commands
 
     std::filesystem::path current_dir = {};
     std::string current_file = {};
@@ -80,6 +85,9 @@ private:
     std::vector<std::string> errors_;
     std::vector<std::string> warnings_;
 
+    /// Order-only groups <name> - global across all Tupfiles
+    std::unordered_map<std::string, std::vector<NodeId>> order_only_groups_;
+
     auto process_statement(
         BuilderContext& ctx,
         parser::Statement const& stmt) -> Result<void>;
@@ -103,6 +111,14 @@ private:
     auto process_include(
         BuilderContext& ctx,
         parser::Include const& inc) -> Result<void>;
+
+    auto process_import(
+        BuilderContext& ctx,
+        parser::Import const& imp) -> Result<void>;
+
+    auto process_export(
+        BuilderContext& ctx,
+        parser::Export const& exp) -> Result<void>;
 
     auto expand_rule(
         BuilderContext& ctx,

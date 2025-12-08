@@ -6,6 +6,7 @@
 #include "pup/parser/parser.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -59,15 +60,29 @@ auto GraphBuilder::add_tupfile(
     auto ctx = BuilderContext {
         .graph = &graph,
         .eval = &eval,
+        .vars = eval.vars,
         .options = options_,
         .current_dir = relative_dir,
         .current_file = tupfile.filename,
     };
 
-    // Set up resolve_group callback for %<group> pattern expansion
+    // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name) -> std::vector<std::string> {
         auto it = ctx.groups.find(std::string { name });
         if (it == ctx.groups.end())
+            return {};
+        auto paths = std::vector<std::string> {};
+        for (auto id : it->second) {
+            if (auto const* node = ctx.graph->get_node(id))
+                paths.push_back(node->path);
+        }
+        return paths;
+    };
+
+    // Set up resolve_order_only_group callback for <group> pattern expansion
+    eval.resolve_order_only_group = [this, &ctx](std::string_view name) -> std::vector<std::string> {
+        auto it = order_only_groups_.find(std::string { name });
+        if (it == order_only_groups_.end())
             return {};
         auto paths = std::vector<std::string> {};
         for (auto id : it->second) {
@@ -114,7 +129,13 @@ auto GraphBuilder::process_statement(
     if (auto const* inc = stmt.as<parser::Include>())
         return process_include(ctx, *inc);
 
-    // Other directives (export, etc.) don't affect the graph
+    if (auto const* imp = stmt.as<parser::Import>())
+        return process_import(ctx, *imp);
+
+    if (auto const* exp = stmt.as<parser::Export>())
+        return process_export(ctx, *exp);
+
+    // Other directives (preload, run, error) not yet implemented
     return {};
 }
 
@@ -157,6 +178,8 @@ auto GraphBuilder::process_bang_macro(
         .display = macro.display,
         .outputs = macro.outputs,
         .extra_outputs = macro.extra_outputs,
+        .output_group = macro.output_group,
+        .output_order_only_group = macro.output_order_only_group,
     };
 
     return {};
@@ -286,6 +309,43 @@ auto GraphBuilder::process_include(
     return {};
 }
 
+auto GraphBuilder::process_import(
+    BuilderContext& ctx,
+    parser::Import const& imp) -> Result<void>
+{
+    // Per tup manual: "sets a variable inside the Tupfile that has the value
+    // of the environment variable"
+    auto value = std::string {};
+
+    // Try environment first
+    if (auto const* env_val = std::getenv(imp.var_name.c_str()))
+        value = env_val;
+    else if (imp.default_value) {
+        // Expand default value expression
+        auto evaluator = parser::Evaluator { *ctx.eval };
+        auto expanded = Result<std::string> { evaluator.expand(*imp.default_value) };
+        if (!expanded)
+            return pup::unexpected<Error>(expanded.error());
+        value = *expanded;
+    }
+    // If no env and no default, variable remains empty (tup behavior)
+
+    if (ctx.vars)
+        ctx.vars->set(imp.var_name, value);
+
+    return {};
+}
+
+auto GraphBuilder::process_export(
+    BuilderContext& ctx,
+    parser::Export const& exp) -> Result<void>
+{
+    // Per tup manual: "adds the environment variable VARIABLE to the export
+    // list for future :-rules"
+    ctx.exported_vars.insert(exp.var_name);
+    return {};
+}
+
 auto GraphBuilder::expand_rule(
     BuilderContext& ctx,
     parser::Rule const& rule,
@@ -384,13 +444,30 @@ auto GraphBuilder::expand_rule(
         if (!edge_result)
             return pup::unexpected<Error>(edge_result.error());
 
-        // Add to output group if specified
-        if (rule.output_group)
-            ctx.groups[*rule.output_group].push_back(*output_id);
+        // Add to output group {name} if specified
+        auto output_group = rule.output_group;
+        if (!output_group && macro_ptr && macro_ptr->output_group)
+            output_group = macro_ptr->output_group;
+        if (output_group)
+            ctx.groups[*output_group].push_back(*output_id);
+
+        // Add to order-only group <name> if specified
+        auto output_oo_group = rule.output_order_only_group;
+        if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group)
+            output_oo_group = macro_ptr->output_order_only_group;
+        if (output_oo_group)
+            order_only_groups_[*output_oo_group].push_back(*output_id);
     }
 
-    // Handle order-only inputs
-    for (auto const& pattern : rule.order_only_inputs) {
+    // Handle order-only inputs (merge rule + macro if applicable)
+    auto all_order_only = rule.order_only_inputs;
+    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
+        all_order_only.insert(all_order_only.end(),
+            macro_ptr->order_only_inputs.begin(),
+            macro_ptr->order_only_inputs.end());
+    }
+
+    for (auto const& pattern : all_order_only) {
         auto order_inputs = Result<std::vector<std::string>> { expand_inputs(ctx, { pattern }) };
         if (!order_inputs)
             continue;
@@ -417,9 +494,21 @@ auto GraphBuilder::expand_inputs(
             continue; // Handle exclusions later
 
         if (pattern.is_group) {
-            // Group reference
+            // Bin reference {name} - local to Tupfile
             auto it = decltype(ctx.groups)::iterator { ctx.groups.find(pattern.group_name) };
             if (it != ctx.groups.end()) {
+                for (auto id : it->second) {
+                    if (auto const* node = ctx.graph->get_node(id))
+                        result.push_back(node->path);
+                }
+            }
+            continue;
+        }
+
+        if (pattern.is_order_only_group) {
+            // Order-only group reference <name> - cross-directory
+            auto it = order_only_groups_.find(pattern.group_name);
+            if (it != order_only_groups_.end()) {
                 for (auto id : it->second) {
                     if (auto const* node = ctx.graph->get_node(id))
                         result.push_back(node->path);
@@ -600,6 +689,7 @@ auto GraphBuilder::create_command_node(
         .type = NodeType::Command,
         .command = command,
         .display = display,
+        .exported_vars = ctx.exported_vars,
     };
 
     return ctx.graph->add_node(std::move(node));

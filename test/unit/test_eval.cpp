@@ -354,3 +354,93 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         REQUIRE(eval.evaluate_condition(cond));
     }
 }
+
+TEST_CASE("Evaluator group resolution", "[eval]")
+{
+    auto vars = VarDb{};
+    auto ctx = EvalContext{.vars = &vars};
+    auto eval = Evaluator{ctx};
+
+    SECTION("resolve_group callback for {name}")
+    {
+        ctx.resolve_group = [](std::string_view name) -> std::vector<std::string> {
+            if (name == "objs")
+                return {"a.o", "b.o", "c.o"};
+            return {};
+        };
+
+        auto pattern = PathPattern{};
+        pattern.is_group = true;
+        pattern.group_name = "objs";
+
+        auto result = eval.expand_path(pattern);
+        REQUIRE(result.has_value());
+        REQUIRE(result->size() == 3);
+        REQUIRE((*result)[0] == "a.o");
+        REQUIRE((*result)[1] == "b.o");
+        REQUIRE((*result)[2] == "c.o");
+    }
+
+    SECTION("resolve_order_only_group callback for <name>")
+    {
+        ctx.resolve_order_only_group = [](std::string_view name) -> std::vector<std::string> {
+            if (name == "gen-headers")
+                return {"generated/config.h", "generated/version.h"};
+            return {};
+        };
+
+        auto pattern = PathPattern{};
+        pattern.is_order_only_group = true;
+        pattern.group_name = "gen-headers";
+
+        auto result = eval.expand_path(pattern);
+        REQUIRE(result.has_value());
+        REQUIRE(result->size() == 2);
+        REQUIRE((*result)[0] == "generated/config.h");
+        REQUIRE((*result)[1] == "generated/version.h");
+    }
+
+    SECTION("unresolved group returns empty")
+    {
+        auto pattern = PathPattern{};
+        pattern.is_order_only_group = true;
+        pattern.group_name = "nonexistent";
+
+        auto result = eval.expand_path(pattern);
+        REQUIRE(result.has_value());
+        REQUIRE(result->empty());
+    }
+}
+
+TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
+{
+    auto vars = VarDb{};
+    auto ctx = EvalContext{.vars = &vars};
+    auto eval = Evaluator{ctx};
+
+    ctx.resolve_order_only_group = [](std::string_view name) -> std::vector<std::string> {
+        if (name == "headers")
+            return {"inc/a.h", "inc/b.h"};
+        return {};
+    };
+
+    auto flags = PatternFlags{
+        .input = "foo.c",
+        .output = "foo.o",
+        .all_inputs = {"foo.c"},
+    };
+
+    SECTION("%<group> expands to group paths")
+    {
+        auto result = eval.expand_pattern("echo %<headers>", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "echo inc/a.h inc/b.h");
+    }
+
+    SECTION("%<nonexistent> expands to empty")
+    {
+        auto result = eval.expand_pattern("echo %<nonexistent>", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "echo ");
+    }
+}

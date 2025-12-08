@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <condition_variable>
+#include <cstdlib>
 #include <queue>
 #include <sys/stat.h>
 #include <thread>
@@ -343,6 +344,13 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
     if (!job.working_dir.empty())
         run_opts.working_dir = job.working_dir;
 
+    // Pass exported environment variables to command
+    // Per tup manual: "value for the variable comes from tup's environment"
+    for (auto const& var_name : job.exported_vars) {
+        if (auto const* env_val = std::getenv(var_name.c_str()))
+            run_opts.env.push_back(var_name + "=" + env_val);
+    }
+
     auto cmd_result = runner.run(job.command, run_opts);
     if (!cmd_result) {
         result.output = "Failed to execute command";
@@ -412,6 +420,8 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
             .working_dir = options_.root_dir,
             .inputs = {},
             .outputs = {},
+            .order_only_inputs = {},
+            .exported_vars = node->exported_vars,
         };
 
         // Collect input paths

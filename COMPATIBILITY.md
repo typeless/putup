@@ -105,8 +105,8 @@ This document details pup's compatibility with tup, including supported features
 | `include path` | Include file | ✅ |
 | `include_rules` | Include Tuprules.tup chain | ✅ |
 | `.gitignore` | Generate .gitignore for outputs | ✅ |
-| `export VAR` | Export to command environment | 🔶 Parsed only |
-| `import VAR[=default]` | Import from environment | 🔶 Parsed only |
+| `export VAR` | Export to command environment | ✅ |
+| `import VAR[=default]` | Import from environment | ✅ |
 | `run ./script` | Execute script for rules | 🔶 Parsed only |
 | `preload dir` | Allow wildcards in subdir | 🔶 Parsed only |
 | `error message` | Halt with error | 🔶 Parsed only |
@@ -115,16 +115,16 @@ This document details pup's compatibility with tup, including supported features
 
 | Feature | Syntax | Status |
 |---------|--------|--------|
-| Groups | `{groupname}` | ✅ |
-| Bins | `<binname>` | ❌ Not implemented |
+| Groups (bins) | `{groupname}` | ✅ |
+| Order-only groups | `<groupname>` | ✅ |
 
-**Groups** collect outputs for use as inputs in other rules:
+**Groups** (tup calls these "bins") collect outputs for use as inputs in other rules:
 ```tup
 : foreach *.c |> $(CC) -c %f -o %o |> %B.o {objs}
 : {objs} |> $(CC) -o %o %f |> program
 ```
 
-**Bins** are similar but for order-only dependencies:
+**Order-only groups** are for cross-directory order-only dependencies:
 ```tup
 : gen-headers.sh |> ./gen-headers.sh |> headers.h <gen>
 : foo.c | <gen> |> $(CC) -c %f -o %o |> foo.o
@@ -186,19 +186,6 @@ Pup tracks **all headers** including system headers (`/usr/include/*`).
 
 ### Feature Workarounds
 
-#### `import` / `export`
-
-Tup:
-```tup
-import CC=gcc
-export PATH
-```
-
-Workaround: Set variables in the Tupfile or use a wrapper script:
-```tup
-CC = gcc  # Hardcode or use @(CC) from tup.config
-```
-
 #### `run` directive
 
 Tup:
@@ -209,20 +196,6 @@ run ./generate-sources.sh
 Workaround: Run the script manually before building, or use a rule:
 ```tup
 : generate-sources.sh |> ./generate-sources.sh |> generated.c
-```
-
-#### Bins `<name>`
-
-Tup:
-```tup
-: gen.sh |> ./gen.sh |> header.h <headers>
-: foo.c | <headers> |> $(CC) -c %f -o %o |> foo.o
-```
-
-Workaround: Use explicit paths:
-```tup
-: gen.sh |> ./gen.sh |> header.h
-: foo.c | header.h |> $(CC) -c %f -o %o |> foo.o
 ```
 
 ## Testing Compatibility

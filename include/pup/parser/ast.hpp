@@ -80,11 +80,12 @@ struct PathPattern : AstNode {
     bool is_foreach = false;          ///< Part of foreach expansion
     bool is_exclusion = false;        ///< Starts with ! for input exclusion
     bool is_output_exclusion = false; ///< Starts with ^ for output exclusion (regex pattern)
-    bool is_group = false;            ///< References a group like {groupname} or <groupname>
-    std::string group_name;           ///< Group name if is_group
+    bool is_group = false;            ///< References a bin {binname} (tup calls these "bins")
+    bool is_order_only_group = false; ///< References an order-only group <groupname>
+    std::string group_name;           ///< Group or bin name
 };
 
-/// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}]
+/// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}] [<group>]
 struct Rule : AstNode {
     bool foreach_ = false;
     std::vector<PathPattern> inputs;
@@ -93,7 +94,8 @@ struct Rule : AstNode {
     std::optional<Expression> display; ///< Display text between ^ ^ in command
     std::vector<PathPattern> outputs;
     std::vector<PathPattern> extra_outputs;
-    std::optional<std::string> output_group; ///< {groupname} at end
+    std::optional<std::string> output_group;            ///< {binname} at end
+    std::optional<std::string> output_order_only_group; ///< <groupname> at end
 };
 
 /// Bang-macro definition: !name = |> command |> outputs
@@ -105,6 +107,8 @@ struct BangMacro : AstNode {
     std::optional<Expression> display;
     std::vector<PathPattern> outputs;
     std::vector<PathPattern> extra_outputs;
+    std::optional<std::string> output_group;            ///< {binname} at end
+    std::optional<std::string> output_order_only_group; ///< <groupname> at end
 };
 
 /// Variable assignment: VAR = value, VAR += value, VAR := value

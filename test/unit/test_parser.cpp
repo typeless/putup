@@ -255,6 +255,44 @@ TEST_CASE("Parser rule with group input", "[parser]")
     REQUIRE(rule->inputs[0].group_name == "objs");
 }
 
+TEST_CASE("Parser order-only group input", "[parser]")
+{
+    auto parser = Parser{": foo.c | <gen-headers> |> gcc -c %f -o %o |> foo.o", "test.tup"};
+    auto result = parser.parse();
+
+    REQUIRE(result.has_value());
+    auto const* rule = result->statements[0]->as<Rule>();
+    REQUIRE(rule->inputs.size() == 1);
+    REQUIRE(rule->order_only_inputs.size() == 1);
+    REQUIRE(rule->order_only_inputs[0].is_order_only_group);
+    REQUIRE(rule->order_only_inputs[0].group_name == "gen-headers");
+}
+
+TEST_CASE("Parser order-only output group", "[parser]")
+{
+    auto parser = Parser{": gen.sh |> ./gen.sh |> header.h <gen-headers>", "test.tup"};
+    auto result = parser.parse();
+
+    REQUIRE(result.has_value());
+    auto const* rule = result->statements[0]->as<Rule>();
+    REQUIRE(rule->outputs.size() == 1);
+    REQUIRE(rule->output_order_only_group.has_value());
+    REQUIRE(*rule->output_order_only_group == "gen-headers");
+}
+
+TEST_CASE("Parser rule with both group types", "[parser]")
+{
+    auto parser = Parser{": foreach *.c |> gcc -c %f -o %o |> %B.o {objs} <compiled>", "test.tup"};
+    auto result = parser.parse();
+
+    REQUIRE(result.has_value());
+    auto const* rule = result->statements[0]->as<Rule>();
+    REQUIRE(rule->output_group.has_value());
+    REQUIRE(*rule->output_group == "objs");
+    REQUIRE(rule->output_order_only_group.has_value());
+    REQUIRE(*rule->output_order_only_group == "compiled");
+}
+
 TEST_CASE("Parser bang macro", "[parser]")
 {
     auto parser = Parser{"!cc = |> gcc -c %f -o %o |> %B.o", "test.tup"};

@@ -437,8 +437,8 @@ auto Parser::parse_rule() -> Result<Rule>
     if (!arrow2)
         return pup::unexpected<Error>(arrow2.error());
 
-    // Parse outputs
-    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+    // Parse outputs (stop before {group} or <group> at end)
+    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
         auto pattern = parse_path_pattern();
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
@@ -447,7 +447,7 @@ auto Parser::parse_rule() -> Result<Rule>
 
     // Parse extra outputs if present
     if (match(TokenType::Pipe)) {
-        while (!check(TokenType::OpenBrace) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+        while (!check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
             auto pattern = parse_path_pattern();
             if (!pattern)
                 return pup::unexpected<Error>(pattern.error());
@@ -455,13 +455,24 @@ auto Parser::parse_rule() -> Result<Rule>
         }
     }
 
-    // Parse output group if present
+    // Parse output group {name} if present
     if (match(TokenType::OpenBrace)) {
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
             rule.output_group = std::string { current_.text };
             advance();
         }
         auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
+        if (!close)
+            return pup::unexpected<Error>(close.error());
+    }
+
+    // Parse order-only output group <name> if present
+    if (match(TokenType::OpenAngle)) {
+        if (check(TokenType::Identifier) || check(TokenType::Text)) {
+            rule.output_order_only_group = std::string { current_.text };
+            advance();
+        }
+        auto close = expect(TokenType::CloseAngle, "Expected '>' after group name");
         if (!close)
             return pup::unexpected<Error>(close.error());
     }
@@ -524,7 +535,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
         return pup::unexpected<Error>(arrow2.error());
 
     // Parse outputs
-    while (!check(TokenType::Pipe) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
+    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
         auto pattern = parse_path_pattern();
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
@@ -533,12 +544,34 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
 
     // Parse extra outputs if present
     if (match(TokenType::Pipe)) {
-        while (!check(TokenType::Newline) && !check(TokenType::Eof)) {
+        while (!check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
             auto pattern = parse_path_pattern();
             if (!pattern)
                 return pup::unexpected<Error>(pattern.error());
             macro.extra_outputs.push_back(std::move(*pattern));
         }
+    }
+
+    // Parse output group {name} if present
+    if (match(TokenType::OpenBrace)) {
+        if (check(TokenType::Identifier) || check(TokenType::Text)) {
+            macro.output_group = std::string { current_.text };
+            advance();
+        }
+        auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
+        if (!close)
+            return pup::unexpected<Error>(close.error());
+    }
+
+    // Parse order-only output group <name> if present
+    if (match(TokenType::OpenAngle)) {
+        if (check(TokenType::Identifier) || check(TokenType::Text)) {
+            macro.output_order_only_group = std::string { current_.text };
+            advance();
+        }
+        auto close = expect(TokenType::CloseAngle, "Expected '>' after group name");
+        if (!close)
+            return pup::unexpected<Error>(close.error());
     }
 
     lexer_.set_context(Lexer::Context::LineStart);
@@ -889,7 +922,7 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
     }
 
     if (match(TokenType::OpenAngle)) {
-        pattern.is_group = true;
+        pattern.is_order_only_group = true;
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
             pattern.group_name = std::string { current_.text };
             advance();

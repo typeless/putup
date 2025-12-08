@@ -56,11 +56,11 @@ struct EvalContext {
     std::string tup_variantdir = {};        ///< Relative path to variant output (TUP_VARIANTDIR)
     std::string tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
 
-    /// Callback for resolving group references like {groupname}
+    /// Callback for resolving group references like {groupname} (tup calls these "bins")
     std::function<std::vector<std::string>(std::string_view)> resolve_group = {};
 
-    /// Callback for resolving bin references like <binname>
-    std::function<std::vector<std::string>(std::string_view)> resolve_bin = {};
+    /// Callback for resolving order-only group references like <groupname>
+    std::function<std::vector<std::string>(std::string_view)> resolve_order_only_group = {};
 };
 
 /// Pattern flags for command/output expansion
