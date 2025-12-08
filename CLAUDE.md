@@ -86,6 +86,24 @@ auto const& ref = value;   // Not: const auto& ref
 int const* ptr;            // Not: const int* ptr
 ```
 
+### Internal Linkage
+Use anonymous namespaces instead of `static` for internal linkage:
+```cpp
+// Good - anonymous namespace
+namespace {
+auto helper_function() -> void { ... }
+auto const MAGIC_VALUE = 42;
+}
+
+// Avoid - static for internal linkage
+static auto helper_function() -> void { ... }  // Don't do this
+static auto const MAGIC_VALUE = 42;            // Don't do this
+```
+
+**Exception**: `static` is fine for:
+- `static constexpr` compile-time constants inside functions
+- `static` class/struct member functions
+
 ### Other Guidelines
 - WebKit-based formatting (see `.clang-format`)
 - No braces required around single statements
