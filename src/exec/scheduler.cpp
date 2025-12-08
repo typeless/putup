@@ -4,6 +4,7 @@
 #include "pup/exec/scheduler.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/graph/topo.hpp"
+#include "pup/parser/depfile.hpp"
 
 #include <algorithm>
 #include <condition_variable>
@@ -353,6 +354,27 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
         if (!result.output.empty())
             result.output += '\n';
         result.output += cmd_result->stderr_output;
+    }
+
+    // Discover implicit dependencies from .d files (if command succeeded)
+    if (result.success) {
+        for (auto const& output : job.outputs) {
+            // Only check .o files for corresponding .d files
+            if (output.size() < 2 || output.substr(output.size() - 2) != ".o")
+                continue;
+
+            auto depfile_name = output.substr(0, output.size() - 2) + ".d";
+            auto depfile_path = std::filesystem::path { options_.root_dir / depfile_name };
+
+            if (!std::filesystem::exists(depfile_path))
+                continue;
+
+            auto depfile_result = parser::parse_depfile(depfile_path);
+            if (depfile_result) {
+                for (auto& dep : depfile_result->dependencies)
+                    result.discovered_deps.push_back(std::move(dep));
+            }
+        }
     }
 
     return result;

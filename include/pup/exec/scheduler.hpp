@@ -39,6 +39,7 @@ struct JobResult {
     int exit_code = 0;
     std::string output = {};
     std::chrono::milliseconds duration = {};
+    std::vector<std::string> discovered_deps = {}; ///< Implicit deps from .d files
 };
 
 /// Callback types for scheduler events
