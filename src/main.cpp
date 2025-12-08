@@ -352,6 +352,7 @@ auto parse_directory(
         .tup_variantdir = tup_variantdir,
         .tup_variant_outputdir = variant_dir.empty() ? "." : variant_dir.string(),
         .request_directory = request_directory,
+        .available_tupfile_dirs = &state.available,
     };
 
     // Process this Tupfile - callback may be invoked during expansion

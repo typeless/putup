@@ -552,6 +552,15 @@ auto GraphBuilder::expand_inputs(
                     else if (!ctx.current_dir.empty())
                         path = (ctx.current_dir / path).lexically_normal();
                     group_dir = path.empty() ? "." : path.string();
+
+                    // Demand-driven parsing: request the directory's Tupfile if not yet parsed
+                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                        if (ctx.eval->available_tupfile_dirs->contains(path)) {
+                            auto req_result = ctx.eval->request_directory(path);
+                            if (!req_result)
+                                return pup::unexpected<Error>(req_result.error());
+                        }
+                    }
                 }
             } else {
                 group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
@@ -591,9 +600,16 @@ auto GraphBuilder::expand_inputs(
                     }
                 } else {
                     // No files on disk - look for matching Generated nodes in graph
-                    // Note: cross-directory request_directory callback is now available but not yet
-                    // invoked here since we use eager parsing (all directories parsed upfront).
-                    // Could enable demand-driven parsing in the future if needed.
+                    // First, try demand-driven parsing of the directory containing the glob pattern
+                    auto pattern_dir = fs::path { path }.parent_path();
+                    auto abs_pattern_dir = (ctx.current_dir / pattern_dir).lexically_normal();
+                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                        if (ctx.eval->available_tupfile_dirs->contains(abs_pattern_dir)) {
+                            auto req_result = ctx.eval->request_directory(abs_pattern_dir);
+                            if (!req_result)
+                                return pup::unexpected<Error>(req_result.error());
+                        }
+                    }
 
                     // Map the pattern to variant path for matching
                     auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
@@ -615,7 +631,18 @@ auto GraphBuilder::expand_inputs(
                     else
                         result.push_back(std::move(path));
                 } else {
-                    // Not on disk - check for generated file in variant
+                    // Not on disk - try demand-driven parsing of the file's directory
+                    auto file_dir = fs::path { path }.parent_path();
+                    auto abs_file_dir = (ctx.current_dir / file_dir).lexically_normal();
+                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                        if (ctx.eval->available_tupfile_dirs->contains(abs_file_dir)) {
+                            auto req_result = ctx.eval->request_directory(abs_file_dir);
+                            if (!req_result)
+                                return pup::unexpected<Error>(req_result.error());
+                        }
+                    }
+
+                    // Check for generated file in variant
                     auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
                     if (ctx.graph->find_by_path(variant_path)) {
                         result.push_back(variant_path);

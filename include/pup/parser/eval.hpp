@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -67,6 +68,10 @@ struct EvalContext {
     /// Called when a path references another directory that may have a Tupfile.
     /// Returns success if directory was parsed, error if circular/missing.
     std::function<Result<void>(std::filesystem::path const&)> request_directory = {};
+
+    /// Set of directories that have Tupfiles (relative to root)
+    /// Used to determine when to invoke request_directory callback
+    std::set<std::filesystem::path> const* available_tupfile_dirs = nullptr;
 };
 
 /// Pattern flags for command/output expansion
