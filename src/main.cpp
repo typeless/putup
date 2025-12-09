@@ -553,6 +553,24 @@ auto create_variant(
     auto variant_name = std::string {};
     if (output_dir) {
         variant_name = *output_dir;
+
+        if (variant_name.empty())
+            return pup::make_error<void>(
+                pup::ErrorCode::InvalidArgument,
+                "Output directory cannot be empty");
+
+        auto test_path = std::filesystem::path { variant_name };
+        if (test_path.is_absolute())
+            return pup::make_error<void>(
+                pup::ErrorCode::InvalidArgument,
+                "Output directory must be relative to project root");
+
+        for (auto const& part : test_path) {
+            if (part == "..")
+                return pup::make_error<void>(
+                    pup::ErrorCode::InvalidArgument,
+                    "Output directory cannot contain '..' components");
+        }
     } else {
         auto stem = std::string { config_path.stem().string() };
         if (stem.empty())
@@ -565,7 +583,7 @@ auto create_variant(
 
     if (!std::filesystem::exists(variant_dir)) {
         auto ec = std::error_code {};
-        std::filesystem::create_directory(variant_dir, ec);
+        std::filesystem::create_directories(variant_dir, ec);
         if (ec)
             return pup::make_error<void>(
                 pup::ErrorCode::IoError,
@@ -573,32 +591,45 @@ auto create_variant(
     }
 
     auto tup_config = std::filesystem::path { variant_dir / "tup.config" };
-    auto rel_config = std::filesystem::path { "../" + config_path.string() };
 
     if (std::filesystem::exists(tup_config)) {
         auto ec = std::error_code {};
         std::filesystem::remove(tup_config, ec);
     }
 
+    auto display_target = std::filesystem::path {};
+
 #ifdef _WIN32
-    auto ec = std::error_code {};
-    std::filesystem::copy_file(abs_config, tup_config, ec);
-    if (ec)
-        return pup::make_error<void>(
-            pup::ErrorCode::IoError,
-            fmt::format("Failed to copy config: {}", ec.message()));
+    {
+        auto ec = std::error_code {};
+        std::filesystem::copy_file(abs_config, tup_config, ec);
+        if (ec)
+            return pup::make_error<void>(
+                pup::ErrorCode::IoError,
+                fmt::format("Failed to copy config: {}", ec.message()));
+        display_target = abs_config;
+    }
 #else
-    auto ec = std::error_code {};
-    std::filesystem::create_symlink(rel_config, tup_config, ec);
-    if (ec)
-        return pup::make_error<void>(
-            pup::ErrorCode::IoError,
-            fmt::format("Failed to create symlink: {}", ec.message()));
+    {
+        auto ec = std::error_code {};
+        auto rel_config = std::filesystem::relative(abs_config, variant_dir, ec);
+        if (ec)
+            return pup::make_error<void>(
+                pup::ErrorCode::IoError,
+                fmt::format("Failed to compute relative path: {}", ec.message()));
+
+        std::filesystem::create_symlink(rel_config, tup_config, ec);
+        if (ec)
+            return pup::make_error<void>(
+                pup::ErrorCode::IoError,
+                fmt::format("Failed to create symlink: {}", ec.message()));
+        display_target = rel_config;
+    }
 #endif
 
     fmt::print("Created variant '{}'\n", variant_name);
     if (verbose)
-        fmt::print("  {} -> {}\n", tup_config.string(), rel_config.string());
+        fmt::print("  {} -> {}\n", tup_config.string(), display_target.string());
 
     return {};
 }
