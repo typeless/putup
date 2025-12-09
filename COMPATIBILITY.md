@@ -107,9 +107,9 @@ This document details pup's compatibility with tup, including supported features
 | `.gitignore` | Generate .gitignore for outputs | ✅ |
 | `export VAR` | Export to command environment | ✅ |
 | `import VAR[=default]` | Import from environment | ✅ |
-| `run ./script` | Execute script for rules | 🔶 Parsed only |
-| `preload dir` | Allow wildcards in subdir | 🔶 Parsed only |
-| `error message` | Halt with error | 🔶 Parsed only |
+| `run ./script` | Execute script for rules | ❌ Not implemented |
+| `preload dir` | Allow wildcards in subdir | ❌ Not implemented |
+| `error message` | Halt with error | ❌ Not implemented |
 
 ### Groups and Bins
 

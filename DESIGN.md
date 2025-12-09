@@ -1,6 +1,6 @@
 # Pup Design Document
 
-A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup/).
+A reimplementation of the [Tup build system](https://gittup.org/tup/).
 
 ## Table of Contents
 
@@ -23,7 +23,6 @@ A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup
 Pup reimplements tup with these goals:
 
 - **Compatibility** - Parse existing Tupfiles without modification
-- **Modern C++20** - Minimal dependencies, clean abstractions
 - **Content hashing** - SHA-256 for precise change detection
 - **Custom index format** - Binary format instead of SQLite
 - **No FUSE** - Compute changes from index comparison
