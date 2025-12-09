@@ -94,6 +94,14 @@ auto EdgeEntry::from_raw(RawEdge const& raw) -> EdgeEntry
     };
 }
 
+auto Index::add_edge(EdgeEntry entry) -> void
+{
+    auto const idx = edges_.size();
+    edges_.push_back(entry);
+    edges_from_index_[edges_[idx].from].push_back(idx);
+    edges_to_index_[edges_[idx].to].push_back(idx);
+}
+
 auto Index::find_file(std::string_view path) const -> FileEntry const*
 {
     auto it = std::find_if(files_.begin(), files_.end(),
@@ -118,9 +126,11 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
 {
     auto result = std::vector<EdgeEntry const*> {};
-    for (auto const& edge : edges_) {
-        if (edge.from == id)
-            result.push_back(&edge);
+    auto it = edges_from_index_.find(id);
+    if (it != edges_from_index_.end()) {
+        result.reserve(it->second.size());
+        for (auto idx : it->second)
+            result.push_back(&edges_[idx]);
     }
     return result;
 }
@@ -128,11 +138,24 @@ auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
 auto Index::edges_to(NodeId id) const -> std::vector<EdgeEntry const*>
 {
     auto result = std::vector<EdgeEntry const*> {};
-    for (auto const& edge : edges_) {
-        if (edge.to == id)
-            result.push_back(&edge);
+    auto it = edges_to_index_.find(id);
+    if (it != edges_to_index_.end()) {
+        result.reserve(it->second.size());
+        for (auto idx : it->second)
+            result.push_back(&edges_[idx]);
     }
     return result;
+}
+
+auto Index::build_edge_indices() -> void
+{
+    edges_from_index_.clear();
+    edges_to_index_.clear();
+
+    for (auto i = std::size_t { 0 }; i < edges_.size(); ++i) {
+        edges_from_index_[edges_[i].from].push_back(i);
+        edges_to_index_[edges_[i].to].push_back(i);
+    }
 }
 
 auto Index::clear() -> void
@@ -140,6 +163,8 @@ auto Index::clear() -> void
     files_.clear();
     commands_.clear();
     edges_.clear();
+    edges_from_index_.clear();
+    edges_to_index_.clear();
 }
 
 } // namespace pup::index

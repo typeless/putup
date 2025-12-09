@@ -90,7 +90,7 @@ public:
     [[nodiscard]] auto edges() const -> std::vector<Edge> const& { return edges_; }
 
     /// Get total number of nodes
-    [[nodiscard]] auto node_count() const -> std::size_t { return nodes_.size(); }
+    [[nodiscard]] auto node_count() const -> std::size_t { return nodes_.empty() ? 0 : nodes_.size() - 1; }
 
     /// Get total number of edges
     [[nodiscard]] auto edge_count() const -> std::size_t { return edges_.size(); }
@@ -121,6 +121,7 @@ private:
     std::vector<Edge> edges_;
     std::unordered_map<std::string, NodeId> path_index_;
     std::unordered_map<std::string, NodeId> command_index_;
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents_;
     NodeId next_id_ = 1;
 
     [[nodiscard]] auto validate_node_id(NodeId id) const -> bool;

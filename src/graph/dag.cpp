@@ -20,7 +20,11 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
     if (node.type == NodeType::Command && !node.command.empty())
         command_index_[node.command] = id;
 
-    nodes_.push_back(std::move(node));
+    // Use NodeId as vector index for O(1) lookup
+    if (id >= nodes_.size())
+        nodes_.resize(id + 1);
+    nodes_[id] = std::move(node);
+
     return id;
 }
 
@@ -61,25 +65,26 @@ auto BuildGraph::add_order_only_edge(NodeId from, NodeId to) -> Result<void>
     if (to_node)
         to_node->order_only.push_back(from);
 
+    // Track reverse mapping for O(1) get_order_only_dependents()
+    order_only_dependents_[from].push_back(to);
+
     return {};
 }
 
 auto BuildGraph::get_node(NodeId id) -> Node*
 {
-    for (auto& node : nodes_) {
-        if (node.id == id)
-            return &node;
-    }
-    return nullptr;
+    if (id == 0 || id >= nodes_.size())
+        return nullptr;
+    auto& node = nodes_[id];
+    return node.id == id ? &node : nullptr;
 }
 
 auto BuildGraph::get_node(NodeId id) const -> Node const*
 {
-    for (auto const& node : nodes_) {
-        if (node.id == id)
-            return &node;
-    }
-    return nullptr;
+    if (id == 0 || id >= nodes_.size())
+        return nullptr;
+    auto const& node = nodes_[id];
+    return node.id == id ? &node : nullptr;
 }
 
 auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
@@ -101,9 +106,9 @@ auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<No
 auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto const& node : nodes_) {
-        if (node.type == type)
-            result.push_back(node.id);
+    for (auto i = NodeId { 1 }; i < nodes_.size(); ++i) {
+        if (nodes_[i].id == i && nodes_[i].type == type)
+            result.push_back(i);
     }
     return result;
 }
@@ -134,16 +139,10 @@ auto BuildGraph::get_order_only(NodeId id) const -> std::vector<NodeId>
 
 auto BuildGraph::get_order_only_dependents(NodeId id) const -> std::vector<NodeId>
 {
-    auto result = std::vector<NodeId> {};
-    for (auto const& node : nodes_) {
-        for (auto oo_id : node.order_only) {
-            if (oo_id == id) {
-                result.push_back(node.id);
-                break;
-            }
-        }
-    }
-    return result;
+    auto it = order_only_dependents_.find(id);
+    if (it != order_only_dependents_.end())
+        return it->second;
+    return {};
 }
 
 auto BuildGraph::clear() -> void
@@ -152,24 +151,28 @@ auto BuildGraph::clear() -> void
     edges_.clear();
     path_index_.clear();
     command_index_.clear();
+    order_only_dependents_.clear();
     next_id_ = 1;
 }
 
 auto BuildGraph::all_nodes() const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    result.reserve(nodes_.size());
-    for (auto const& node : nodes_)
-        result.push_back(node.id);
+    result.reserve(!nodes_.empty() ? nodes_.size() - 1 : 0);
+    for (auto i = NodeId { 1 }; i < nodes_.size(); ++i) {
+        if (nodes_[i].id == i)
+            result.push_back(i);
+    }
     return result;
 }
 
 auto BuildGraph::root_nodes() const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto const& node : nodes_) {
-        if (node.inputs.empty() && node.order_only.empty())
-            result.push_back(node.id);
+    for (auto i = NodeId { 1 }; i < nodes_.size(); ++i) {
+        auto const& node = nodes_[i];
+        if (node.id == i && node.inputs.empty() && node.order_only.empty())
+            result.push_back(i);
     }
     return result;
 }
@@ -177,16 +180,19 @@ auto BuildGraph::root_nodes() const -> std::vector<NodeId>
 auto BuildGraph::leaf_nodes() const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto const& node : nodes_) {
-        if (node.outputs.empty())
-            result.push_back(node.id);
+    for (auto i = NodeId { 1 }; i < nodes_.size(); ++i) {
+        auto const& node = nodes_[i];
+        if (node.id == i && node.outputs.empty())
+            result.push_back(i);
     }
     return result;
 }
 
 auto BuildGraph::validate_node_id(NodeId id) const -> bool
 {
-    return get_node(id) != nullptr;
+    if (id == 0 || id >= nodes_.size())
+        return false;
+    return nodes_[id].id == id;
 }
 
 } // namespace pup::graph

@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace pup::index {
@@ -85,8 +86,8 @@ public:
     /// Add a command entry
     auto add_command(CommandEntry entry) -> void { commands_.push_back(std::move(entry)); }
 
-    /// Add an edge
-    auto add_edge(EdgeEntry entry) -> void { edges_.push_back(std::move(entry)); }
+    /// Add an edge (also updates edge indices)
+    auto add_edge(EdgeEntry entry) -> void;
 
     /// Get all file entries
     [[nodiscard]] auto files() const -> std::vector<FileEntry> const& { return files_; }
@@ -109,11 +110,14 @@ public:
     /// Find command by ID
     [[nodiscard]] auto find_command_by_id(NodeId id) const -> CommandEntry const*;
 
-    /// Get edges from a node
+    /// Get edges from a node (O(1) after build_edge_indices)
     [[nodiscard]] auto edges_from(NodeId id) const -> std::vector<EdgeEntry const*>;
 
-    /// Get edges to a node
+    /// Get edges to a node (O(1) after build_edge_indices)
     [[nodiscard]] auto edges_to(NodeId id) const -> std::vector<EdgeEntry const*>;
+
+    /// Build edge indices for O(1) lookup (call after loading all edges)
+    auto build_edge_indices() -> void;
 
     /// Clear all entries
     auto clear() -> void;
@@ -133,6 +137,10 @@ private:
     std::vector<FileEntry> files_ = {};
     std::vector<CommandEntry> commands_ = {};
     std::vector<EdgeEntry> edges_ = {};
+
+    // Edge indices for O(1) lookup (indices into edges_ vector)
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index_ = {};
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index_ = {};
 };
 
 } // namespace pup::index

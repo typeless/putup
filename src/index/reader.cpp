@@ -124,6 +124,9 @@ auto IndexReader::read() const -> Result<Index>
     for (auto const& raw : edges)
         index.add_edge(EdgeEntry::from_raw(raw));
 
+    // Build edge indices for O(1) lookup
+    index.build_edge_indices();
+
     return index;
 }
 
