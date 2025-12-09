@@ -113,8 +113,16 @@ auto Scheduler::build_incremental(
     auto affected = std::set<NodeId> {};
 
     for (auto const& path : changed_files) {
-        if (auto id = graph.find_by_path(path))
+        if (auto id = graph.find_by_path(path)) {
             affected.insert(*id);
+
+            // For generated files that are missing/changed, also mark the producing command
+            auto const* node = graph.get_node(*id);
+            if (node && node->type == NodeType::Generated) {
+                for (auto input_id : graph.get_inputs(*id))
+                    affected.insert(input_id);
+            }
+        }
     }
 
     // Expand to include all dependent commands (including order-only)
