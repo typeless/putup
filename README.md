@@ -1,16 +1,14 @@
 # Pup
 
-A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup/).
+A modern reimplementation of the [Tup build system](https://gittup.org/tup/).
 
 ## Overview
 
-Pup aims to be a drop-in replacement for tup with these design goals:
+Pup aims to be a drop-in replacement for tup:
 
 - **Compatibility** - Parse existing Tupfiles without modification
-- **Modern C++20** - Clean codebase with minimal dependencies
 - **Content hashing** - SHA-256 for precise change detection
-- **Custom index** - Git-inspired binary format instead of SQLite
-- **No FUSE** - Filesystem changes detected via index comparison
+- **No FUSE required** - Filesystem changes detected via index comparison
 - **No Lua** - Traditional Tupfile syntax only
 
 ## Installation
@@ -22,7 +20,7 @@ Pup uses tup to build itself:
 ```bash
 git clone https://github.com/user/pup.git
 cd pup
-tup init
+pup variant default.config build
 tup
 ```
 
@@ -36,13 +34,9 @@ make install  # Install to /usr/local/bin
 
 ### Dependencies
 
+Build requirements:
 - C++20 compiler (GCC 11+, Clang 14+)
-- tup (for building)
-
-Third-party libraries are vendored in `third_party/`:
-- [expected-lite](https://github.com/martinmoene/expected-lite)
-- [fmt](https://github.com/fmtlib/fmt)
-- [Catch2](https://github.com/catchorg/Catch2) (tests only)
+- tup (for bootstrapping)
 
 ## Usage
 
@@ -50,20 +44,22 @@ Third-party libraries are vendored in `third_party/`:
 pup [OPTIONS] [COMMAND]
 
 Commands:
-  init     Initialize .pup directory
-  build    Execute build (default)
-  parse    Parse and validate Tupfiles
-  graph    Print dependency graph (graphviz format)
-  clean    Remove generated files
+  init              Initialize .pup directory
+  build             Execute build (default)
+  parse             Parse and validate Tupfiles
+  graph             Print dependency graph (graphviz format)
+  clean             Remove generated files
+  variant <config> [dir]  Create variant build directory
 
 Options:
-  -j, --jobs N       Run N jobs in parallel (default: auto-detect)
-  -k, --keep-going   Continue building after failures
-  -n, --dry-run      Print commands without executing
-  -v, --verbose      Show commands as they execute
-  --variant=DIR      Use DIR as variant output directory
-  --version          Print version information
-  -h, --help         Show help
+  -S, --source-dir DIR  Source directory (default: auto-detect)
+  -B, --build-dir DIR   Build/output directory
+  -j, --jobs N          Run N jobs in parallel (default: auto-detect)
+  -k, --keep-going      Continue building after failures
+  -n, --dry-run         Print commands without executing
+  -v, --verbose         Show commands as they execute
+  --version             Print version information
+  -h, --help            Show help
 ```
 
 ### Quick Start
@@ -83,6 +79,9 @@ pup -n
 
 # Generate dependency graph
 pup graph | dot -Tpng > deps.png
+
+# Create a variant build directory
+pup variant default.config build
 ```
 
 ### Tupfile Syntax
@@ -107,6 +106,10 @@ ifdef DEBUG
   CFLAGS += -g
 endif
 
+# Environment variables
+import CC
+export PKG_CONFIG_PATH
+
 # Include shared rules
 include_rules
 ```
@@ -124,17 +127,28 @@ The compiler generates `.d` files listing included headers. Pup parses these and
 
 ### Variant Builds
 
-Out-of-tree builds via variant directories:
+Create variant builds for different configurations:
 
 ```bash
-mkdir build && cd build
-echo "CONFIG_DEBUG=y" > tup.config
-pup --variant=.
+# Create a config file
+echo "CONFIG_DEBUG=y" > debug.config
+
+# Create variant directory with symlinked config
+pup variant debug.config build-debug
+
+# Build in the variant directory
+cd build-debug && pup
+```
+
+Or use separate source and build directories:
+
+```bash
+pup -S /path/to/source -B /path/to/build
 ```
 
 ## Tup Compatibility
 
-### Fully Supported
+### Supported
 
 | Feature | Status |
 |---------|--------|
@@ -149,88 +163,38 @@ pup --variant=.
 | Display text `^ text ^` | ✅ |
 | Conditionals (`ifdef`, `ifeq`, etc.) | ✅ |
 | `include` / `include_rules` | ✅ |
+| `import` / `export` | ✅ |
 | `.gitignore` generation | ✅ |
 | Parallel execution | ✅ |
 | Incremental builds | ✅ |
 | Header dependency tracking | ✅ |
-
-### Parsed but Not Evaluated
-
-These directives are recognized by the parser but have no effect at build time:
-
-| Feature | Notes |
-|---------|-------|
-| `import VAR[=default]` | Environment variable import not implemented |
-| `export VAR` | Environment export not implemented |
-| `run ./script` | Script execution for dynamic rules not implemented |
-| `preload dir` | Subdirectory preloading not implemented |
-| `error message` | Error directive not implemented |
+| Variant builds | ✅ |
 
 ### Not Implemented
 
 | Feature | Notes |
 |---------|-------|
+| `run ./script` | Dynamic rule generation from scripts |
+| `preload dir` | Subdirectory preloading |
 | Bins `<name>` | Output bins (different from groups) |
-| `tup monitor` | File watching (by design - no FUSE) |
-| `tup scan` | Filesystem scanning |
-| `tup variant` | Variant directory creation |
+| `tup monitor` | File watching (no FUSE by design) |
 | `tup generate` | Makefile/script export |
 | `tup compiledb` | compile_commands.json generation |
-| `tup todo` | Show pending build steps |
-| `tup varsed` | @-variable substitution in files |
 | Lua Tupfiles | Lua scripting support |
 
 ### Behavioral Differences
 
 | Aspect | Tup | Pup |
 |--------|-----|-----|
-| Database | SQLite | Custom binary index |
 | Change detection | FUSE + mtime | mtime → size → SHA-256 |
 | Directory | `.tup/` | `.pup/` |
 | Implicit deps | FUSE interception | `.d` file parsing |
 
-## Project Status
+## Known Limitations
 
-Pup is under active development. Current phase: **Polish**
-
-- ✅ Foundation - Core types, hashing, error handling
-- ✅ Parser - Lexer, AST, parser, evaluator
-- ✅ Graph - Dependency DAG, topological sort
-- ✅ Index - Binary format, reader/writer
-- ✅ Execution - Scheduler, parallel builds, incremental
-- 🔄 Polish - Edge cases, compatibility, performance
-
-### Known Limitations
-
-1. **No `import`/`export`** - Can't read environment variables or pass them to commands
-2. **No `run` directive** - Dynamic rule generation from scripts not supported
-3. **No bins** - The `<binname>` syntax for output bins is not implemented
-4. **No FUSE** - Implicit dependencies only via `.d` files, not filesystem interception
-
-### Roadmap
-
-Priority features for full tup compatibility:
-
-1. `import` / `export` - Environment variable handling
-2. `compiledb` - IDE/LSP integration
-3. Bins `<name>` - Output bin support
-4. `run` directive - Dynamic rule generation
-5. Target filtering - Build specific outputs
-
-## Contributing
-
-Contributions welcome! The codebase follows modern C++20 conventions:
-
-- Almost Always Auto (AAA) with explicit type wrappers
-- Trailing return types
-- `Result<T>` for error handling (no exceptions)
-- WebKit-based formatting
-
-Run the test suite before submitting:
-
-```bash
-make check   # Format check + clang-tidy + tests
-```
+1. **No `run` directive** - Dynamic rule generation from scripts not supported
+2. **No bins** - The `<binname>` syntax for output bins is not implemented
+3. **No FUSE** - Implicit dependencies only via `.d` files, not filesystem interception
 
 ## License
 
@@ -239,4 +203,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Acknowledgments
 
 - [Tup](https://gittup.org/tup/) by Mike Shal - the original build system
-- Design inspired by Git's index format and content-addressable storage
