@@ -58,7 +58,7 @@ auto print_usage() -> void
                "  build             Execute build (default)\n"
                "  graph             Print dependency graph\n"
                "  clean             Remove generated files\n"
-               "  variant <config>  Create variant build directory\n"
+               "  variant <config> [dir]  Create variant build directory\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
                "  -k, --keep-going   Continue after failures\n"
@@ -538,6 +538,7 @@ auto build_index(
 auto create_variant(
     std::filesystem::path const& root,
     std::string const& config_arg,
+    std::optional<std::string> const& output_dir,
     bool verbose) -> pup::Result<void>
 {
     auto config_path = std::filesystem::path { config_arg };
@@ -548,13 +549,18 @@ auto create_variant(
             pup::ErrorCode::IoError,
             fmt::format("Config file not found: {}", config_arg));
 
-    auto stem = std::string { config_path.stem().string() };
-    if (stem.empty())
-        return pup::make_error<void>(
-            pup::ErrorCode::ParseError,
-            fmt::format("Invalid config filename: {}", config_arg));
-
-    auto variant_name = std::string { "build-" + stem };
+    // Use custom output_dir if provided, else "build-{stem}"
+    auto variant_name = std::string {};
+    if (output_dir) {
+        variant_name = *output_dir;
+    } else {
+        auto stem = std::string { config_path.stem().string() };
+        if (stem.empty())
+            return pup::make_error<void>(
+                pup::ErrorCode::ParseError,
+                fmt::format("Invalid config filename: {}", config_arg));
+        variant_name = "build-" + stem;
+    }
     auto variant_dir = std::filesystem::path { root / variant_name };
 
     if (!std::filesystem::exists(variant_dir)) {
@@ -823,8 +829,8 @@ auto cmd_clean(Options const& opts) -> int
 auto cmd_variant(Options const& opts) -> int
 {
     if (opts.targets.empty()) {
-        fmt::print(stderr, "Error: No config files specified\n");
-        fmt::print(stderr, "Usage: pup variant <config_file>...\n");
+        fmt::print(stderr, "Error: No config file specified\n");
+        fmt::print(stderr, "Usage: pup variant <config> [output_dir]\n");
         return EXIT_FAILURE;
     }
 
@@ -835,16 +841,19 @@ auto cmd_variant(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    auto error_count = 0;
-    for (auto const& config_path : opts.targets) {
-        auto result = pup::Result<void> { create_variant(*root, config_path, opts.verbose) };
-        if (!result) {
-            fmt::print(stderr, "Error: {}\n", result.error().message);
-            ++error_count;
-        }
+    // First argument is config file, optional second is output directory
+    auto config_path = opts.targets[0];
+    auto output_dir = std::optional<std::string> {};
+    if (opts.targets.size() > 1)
+        output_dir = opts.targets[1];
+
+    auto result = pup::Result<void> { create_variant(*root, config_path, output_dir, opts.verbose) };
+    if (!result) {
+        fmt::print(stderr, "Error: {}\n", result.error().message);
+        return EXIT_FAILURE;
     }
 
-    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    return EXIT_SUCCESS;
 }
 
 auto cmd_build(Options const& opts) -> int

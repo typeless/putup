@@ -5,8 +5,7 @@
 *.dylib
 
 # Build output (variant directory)
-/build/*
-!/build/tup.config
+/build/
 
 # Tup database
 .tup/
