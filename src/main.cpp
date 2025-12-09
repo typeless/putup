@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/core/hash.hpp"
+#include "pup/core/layout.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
@@ -42,6 +43,8 @@ struct Options {
     bool help = false;
     std::string command = {};
     std::string variant = {};
+    std::string source_dir = {}; ///< -S: source directory
+    std::string build_dir = {};  ///< -B: build/output directory
     std::vector<std::string> targets = {};
 };
 
@@ -61,9 +64,14 @@ auto print_usage() -> void
                "  -k, --keep-going   Continue after failures\n"
                "  -n, --dry-run      Print commands without executing\n"
                "  -v, --verbose      Verbose output\n"
-               "  --variant=DIR      Use DIR as variant output directory\n"
+               "  -S DIR             Source directory (default: auto-detect)\n"
+               "  -B DIR             Build/output directory (default: source)\n"
+               "  --variant=DIR      Use DIR as variant subdirectory\n"
                "  --version          Print version\n"
-               "  -h, --help         Print this help\n");
+               "  -h, --help         Print this help\n"
+               "\nEnvironment:\n"
+               "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
+               "  PUP_BUILD_DIR      Build directory (overridden by -B)\n");
 }
 
 auto print_version() -> void
@@ -98,6 +106,12 @@ auto parse_args(int argc, char** argv) -> Options
             opts.jobs = static_cast<std::size_t>(std::stoi(std::string { arg.substr(2) }));
         } else if (arg.starts_with("--variant=")) {
             opts.variant = std::string { arg.substr(10) };
+        } else if (arg == "-S") {
+            if (i + 1 < argc)
+                opts.source_dir = std::string { argv[++i] };
+        } else if (arg == "-B") {
+            if (i + 1 < argc)
+                opts.build_dir = std::string { argv[++i] };
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty())
                 opts.command = std::string { arg };
@@ -110,65 +124,6 @@ auto parse_args(int argc, char** argv) -> Options
         opts.command = "build";
 
     return opts;
-}
-
-auto find_project_root() -> std::optional<std::filesystem::path>
-{
-    auto current = std::filesystem::path { std::filesystem::current_path() };
-
-    while (true) {
-        // Check for project markers (aligned with tup behavior):
-        // - Tupfile.ini: explicit project root marker (triggers auto-init)
-        // - Tupfile: build file in current directory
-        // - .pup/: already initialized pup project
-        if (std::filesystem::exists(current / "Tupfile.ini")
-            || std::filesystem::exists(current / "Tupfile")
-            || std::filesystem::exists(current / PUP_DIR)) {
-            return current;
-        }
-
-        auto parent = std::filesystem::path { current.parent_path() };
-        if (parent == current)
-            return std::nullopt;
-        current = parent;
-    }
-}
-
-auto ensure_initialized(std::filesystem::path const& root) -> bool
-{
-    auto pup_dir = std::filesystem::path { root / PUP_DIR };
-    if (std::filesystem::exists(pup_dir))
-        return true;
-
-    // Auto-initialize if Tupfile.ini exists (like tup does)
-    if (std::filesystem::exists(root / "Tupfile.ini")) {
-        std::filesystem::create_directory(pup_dir);
-        fmt::print("Initialized pup in \"{}\"\n", root.string());
-        return true;
-    }
-
-    return false;
-}
-
-auto find_variant_dir(std::filesystem::path const& root) -> std::optional<std::filesystem::path>
-{
-    for (auto const& name : { "build", "out", "variant" }) {
-        auto dir = std::filesystem::path { root / name };
-        if (std::filesystem::exists(dir / "tup.config"))
-            return dir;
-    }
-
-    if (std::filesystem::is_directory(root)) {
-        for (auto const& entry : std::filesystem::directory_iterator(root)) {
-            if (entry.is_directory()) {
-                auto config_path = std::filesystem::path { entry.path() / "tup.config" };
-                if (std::filesystem::exists(config_path))
-                    return entry.path();
-            }
-        }
-    }
-
-    return std::nullopt;
 }
 
 auto compute_variantdir(
@@ -659,7 +614,7 @@ auto cmd_init(Options const& /*opts*/) -> int
 
 auto cmd_parse(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { find_project_root() };
+    auto root = pup::find_project_root(std::filesystem::current_path());
     if (!root) {
         fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
@@ -727,7 +682,7 @@ auto cmd_parse(Options const& opts) -> int
 
 auto cmd_graph(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { find_project_root() };
+    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
     if (!root) {
         fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
@@ -747,7 +702,8 @@ auto cmd_graph(Options const& opts) -> int
     auto variant_dir = std::filesystem::path {};
 
     auto builder_opts = pup::graph::BuilderOptions {
-        .root_dir = *root,
+        .source_root = *root,
+        .output_root = *root,
         .variant_dir = variant_dir,
         .expand_globs = true,
     };
@@ -758,10 +714,7 @@ auto cmd_graph(Options const& opts) -> int
     // Start with root Tupfile if it exists
     auto root_rel = std::filesystem::path { "." };
     if (state.available.contains(root_rel)) {
-        auto result = pup::Result<void> {
-            parse_directory(root_rel, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
-        };
-        if (!result) {
+        if (auto result = parse_directory(root_rel, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
             return EXIT_FAILURE;
         }
@@ -771,10 +724,7 @@ auto cmd_graph(Options const& opts) -> int
     for (auto const& dir : state.available) {
         if (state.parsed.contains(dir))
             continue;
-        auto result = pup::Result<void> {
-            parse_directory(dir, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
-        };
-        if (!result) {
+        if (auto result = parse_directory(dir, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
             return EXIT_FAILURE;
         }
@@ -803,7 +753,7 @@ auto cmd_graph(Options const& opts) -> int
 
 auto cmd_clean(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { find_project_root() };
+    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
     if (!root) {
         fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
@@ -811,10 +761,11 @@ auto cmd_clean(Options const& opts) -> int
 
     // Find variant directory
     auto variant_dir = std::optional<std::filesystem::path> {};
-    if (!opts.variant.empty())
+    if (!opts.variant.empty()) {
         variant_dir = *root / opts.variant;
-    else
-        variant_dir = find_variant_dir(*root);
+    } else if (auto var_name = pup::find_variant_dir(*root)) {
+        variant_dir = *root / *var_name;
+    }
 
     if (!variant_dir || !std::filesystem::exists(*variant_dir)) {
         fmt::print(stderr, "Error: No variant directory found (nothing to clean)\n");
@@ -877,7 +828,7 @@ auto cmd_variant(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    auto root = std::optional<std::filesystem::path> { find_project_root() };
+    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
     if (!root) {
         fmt::print(stderr, "Error: Not in a pup/tup project\n");
         fmt::print(stderr, "Run 'pup init' first\n");
@@ -898,18 +849,36 @@ auto cmd_variant(Options const& opts) -> int
 
 auto cmd_build(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { find_project_root() };
-    if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
+    // Discover project layout (source/output directories)
+    auto layout_opts = pup::LayoutOptions {};
+    if (!opts.source_dir.empty())
+        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
+    if (!opts.build_dir.empty())
+        layout_opts.build_dir = std::filesystem::path { opts.build_dir };
+
+    auto layout_result = pup::Result<pup::ProjectLayout> { pup::discover_layout(layout_opts) };
+    if (!layout_result) {
+        fmt::print(stderr, "Error: {}\n", layout_result.error().message);
         return EXIT_FAILURE;
     }
+    auto layout = pup::ProjectLayout { std::move(*layout_result) };
+
+    // Override variant_dir from --variant if specified
+    if (!opts.variant.empty())
+        layout.variant_dir = std::filesystem::path { opts.variant };
 
     // Auto-initialize if Tupfile.ini exists but .pup/ doesn't
-    ensure_initialized(*root);
+    auto pup_dir = layout.pup_dir();
+    if (!std::filesystem::exists(pup_dir)) {
+        if (std::filesystem::exists(layout.source_root / "Tupfile.ini")) {
+            std::filesystem::create_directories(pup_dir);
+            fmt::print("Initialized pup in \"{}\"\n", pup_dir.string());
+        }
+    }
 
     // Discover all directories containing Tupfiles
     auto state = TupfileParseState {};
-    state.available = discover_tupfile_dirs(*root);
+    state.available = discover_tupfile_dirs(layout.source_root);
 
     if (state.available.empty()) {
         fmt::print(stderr, "Error: No Tupfiles found in project\n");
@@ -919,20 +888,12 @@ auto cmd_build(Options const& opts) -> int
     if (opts.verbose)
         fmt::print("Found {} directories with Tupfiles\n", state.available.size());
 
-    // Find variant directory
-    auto variant_dir = std::filesystem::path {};
-    if (!opts.variant.empty()) {
-        variant_dir = std::filesystem::path { opts.variant };
-    } else {
-        auto discovered = std::optional<std::filesystem::path> { find_variant_dir(*root) };
-        if (discovered)
-            variant_dir = std::filesystem::relative(*discovered, *root);
-    }
+    auto variant_dir = layout.variant_dir;
 
     // Load config variables from tup.config
     auto config_vars = pup::parser::VarDb {};
     if (!variant_dir.empty()) {
-        auto config_path = std::filesystem::path { *root / variant_dir / "tup.config" };
+        auto config_path = std::filesystem::path { layout.output_root / variant_dir / "tup.config" };
         if (std::filesystem::exists(config_path)) {
             auto config_result = pup::Result<pup::parser::VarDb> { pup::parser::parse_config(config_path) };
             if (config_result) {
@@ -946,7 +907,8 @@ auto cmd_build(Options const& opts) -> int
     auto vars = pup::parser::VarDb {};
 
     auto builder_opts = pup::graph::BuilderOptions {
-        .root_dir = *root,
+        .source_root = layout.source_root,
+        .output_root = layout.output_root,
         .variant_dir = variant_dir,
         .expand_globs = true,
     };
@@ -958,7 +920,7 @@ auto cmd_build(Options const& opts) -> int
     auto root_rel = std::filesystem::path { "." };
     if (state.available.contains(root_rel)) {
         auto result = pup::Result<void> {
-            parse_directory(root_rel, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
+            parse_directory(root_rel, state, builder, graph, layout.source_root, vars, config_vars, variant_dir, opts.verbose)
         };
         if (!result && !opts.keep_going) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
@@ -971,7 +933,7 @@ auto cmd_build(Options const& opts) -> int
         if (state.parsed.contains(dir))
             continue;
         auto result = pup::Result<void> {
-            parse_directory(dir, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose)
+            parse_directory(dir, state, builder, graph, layout.source_root, vars, config_vars, variant_dir, opts.verbose)
         };
         if (!result && !opts.keep_going) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
@@ -988,7 +950,7 @@ auto cmd_build(Options const& opts) -> int
         return EXIT_SUCCESS;
     }
 
-    auto index_path = std::filesystem::path { *root / PUP_DIR / "index" };
+    auto index_path = layout.index_path();
     auto old_index = std::optional<pup::index::Index> {};
     auto use_incremental = false;
     auto changed_files = std::vector<std::string> {};
@@ -999,7 +961,7 @@ auto cmd_build(Options const& opts) -> int
             auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
             if (index_result) {
                 old_index = std::move(*index_result);
-                changed_files = find_changed_files_with_implicit(*root, *old_index);
+                changed_files = find_changed_files_with_implicit(layout.source_root, *old_index);
                 changed_files = expand_implicit_deps(changed_files, *old_index, graph);
 
                 if (changed_files.empty()) {
@@ -1019,7 +981,8 @@ auto cmd_build(Options const& opts) -> int
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
-        .root_dir = *root,
+        .source_root = layout.source_root,
+        .output_root = layout.output_root,
         .variant_dir = variant_dir,
     };
 
@@ -1079,8 +1042,7 @@ auto cmd_build(Options const& opts) -> int
             stats.completed_jobs, duration.count());
 
     if (stats.failed_jobs == 0 && !opts.dry_run) {
-        auto index = pup::index::Index { build_index(graph, discovered_deps, *root) };
-        auto index_path = std::filesystem::path { *root / PUP_DIR / "index" };
+        auto index = pup::index::Index { build_index(graph, discovered_deps, layout.source_root) };
         auto writer = pup::index::IndexWriter {};
         auto write_result = pup::Result<void> { writer.write(index_path, index) };
         if (!write_result) {

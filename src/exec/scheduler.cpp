@@ -166,8 +166,8 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     if (options_.jobs == 1 || jobs.size() == 1) {
         // Sequential execution
         auto runner = CommandRunner {};
-        if (!options_.root_dir.empty())
-            runner.set_working_dir(options_.root_dir);
+        if (!options_.source_root.empty())
+            runner.set_working_dir(options_.source_root);
         if (options_.timeout)
             runner.set_timeout(*options_.timeout);
 
@@ -217,8 +217,8 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 
     auto worker = [&]() {
         auto runner = CommandRunner {};
-        if (!options_.root_dir.empty())
-            runner.set_working_dir(options_.root_dir);
+        if (!options_.source_root.empty())
+            runner.set_working_dir(options_.source_root);
         if (options_.timeout)
             runner.set_timeout(*options_.timeout);
 
@@ -340,7 +340,10 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
 
     // Ensure output directories exist
     for (auto const& output : job.outputs) {
-        auto output_path = std::filesystem::path { options_.root_dir / output };
+        auto output_path = std::filesystem::path { output };
+        // For relative paths, prefix with output_root; absolute paths used as-is
+        if (!output_path.is_absolute())
+            output_path = options_.output_root / output;
         auto parent = std::filesystem::path { output_path.parent_path() };
         if (!parent.empty() && !std::filesystem::exists(parent)) {
             auto ec = std::error_code {};
@@ -388,7 +391,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
                 continue;
 
             auto depfile_path = std::filesystem::path {
-                options_.root_dir / output_path.parent_path() / (output_path.stem().string() + ".d")
+                options_.output_root / output_path.parent_path() / (output_path.stem().string() + ".d")
             };
 
             if (!std::filesystem::exists(depfile_path))
@@ -425,7 +428,7 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // prefixed with variant_dir by the builder.
-        auto working_dir = std::filesystem::path { options_.root_dir };
+        auto working_dir = std::filesystem::path { options_.source_root };
         if (!node->source_dir.empty())
             working_dir /= node->source_dir;
 

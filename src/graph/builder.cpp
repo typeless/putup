@@ -32,13 +32,13 @@ auto strip_trailing_slashes(std::string str) -> std::string
 auto normalize_group_dir(
     std::string const& path_str,
     fs::path const& current_dir,
-    fs::path const& root_dir) -> std::string
+    fs::path const& source_root) -> std::string
 {
     auto cleaned = strip_trailing_slashes(path_str);
     auto path = fs::path { cleaned }.lexically_normal();
 
     if (path.is_absolute())
-        path = fs::relative(path, root_dir);
+        path = fs::relative(path, source_root);
     else if (!current_dir.empty() && !path.empty()) {
         // Only combine with current_dir if path needs parent resolution (starts with ..)
         // Paths like $(ROOT)/foo expand to root-relative and should NOT be combined
@@ -50,16 +50,33 @@ auto normalize_group_dir(
     return path.empty() ? "." : path.string();
 }
 
-/// Map an output path to the variant directory (or current_dir if no variant)
-/// e.g., "foo.o" in "src/lib" with variant "build" -> "build/src/lib/foo.o"
-/// e.g., "foo.o" in "src/lib" with no variant -> "src/lib/foo.o"
+/// Map an output path to the output directory.
+/// For in-tree builds: variant_dir/current_dir/path (e.g., "build/src/lib/foo.o")
+/// For out-of-tree builds: absolute path under output_root (e.g., "/tmp/build/src/lib/foo.o")
 auto map_to_variant(
     std::string const& path,
     std::filesystem::path const& current_dir,
-    std::filesystem::path const& variant_dir) -> std::string
+    std::filesystem::path const& variant_dir,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& output_root) -> std::string
 {
+    // If path is already absolute, return as-is
+    auto p = std::filesystem::path { path };
+    if (p.is_absolute())
+        return p.lexically_normal().string();
+
+    // Out-of-tree build: use absolute paths under output_root
+    if (!output_root.empty() && source_root != output_root) {
+        if (variant_dir.empty()) {
+            if (current_dir.empty())
+                return (output_root / path).lexically_normal().string();
+            return (output_root / current_dir / path).lexically_normal().string();
+        }
+        return (output_root / variant_dir / current_dir / path).lexically_normal().string();
+    }
+
+    // In-tree build: paths are project-relative
     if (variant_dir.empty()) {
-        // No variant - still prefix with current_dir for proper project-relative path
         if (current_dir.empty())
             return path;
         return (current_dir / path).lexically_normal().string();
@@ -91,9 +108,9 @@ auto GraphBuilder::add_tupfile(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval) -> Result<void>
 {
-    // Compute current_dir relative to root_dir
+    // Compute current_dir relative to source_root
     auto tupfile_parent = std::filesystem::path { tupfile.filename }.parent_path();
-    auto relative_dir = std::filesystem::relative(tupfile_parent, options_.root_dir);
+    auto relative_dir = std::filesystem::relative(tupfile_parent, options_.source_root);
     if (relative_dir == ".")
         relative_dir = "";
 
@@ -289,8 +306,8 @@ auto GraphBuilder::process_include(
 
     if (inc.is_rules) {
         // include_rules: search up directory tree for Tuprules.tup
-        auto search_dir = fs::path { ctx.options.root_dir / ctx.current_dir };
-        auto root = fs::path { ctx.options.root_dir };
+        auto search_dir = fs::path { ctx.options.source_root / ctx.current_dir };
+        auto root = fs::path { ctx.options.source_root };
 
         while (search_dir >= root) {
             auto tuprules = fs::path { search_dir / "Tuprules.tup" };
@@ -312,7 +329,7 @@ auto GraphBuilder::process_include(
         if (!path_result)
             return pup::unexpected<Error>(path_result.error());
 
-        auto resolved = fs::path { ctx.options.root_dir / ctx.current_dir / *path_result };
+        auto resolved = fs::path { ctx.options.source_root / ctx.current_dir / *path_result };
         if (!fs::exists(resolved))
             return make_error<void>(ErrorCode::IncludeNotFound,
                 "Include file not found: " + *path_result);
@@ -348,7 +365,7 @@ auto GraphBuilder::process_include(
         old_tup_cwd = ctx.eval->tup_cwd;
         // Compute relative path from Tupfile directory to include file's directory
         auto include_dir = fs::path { include_path }.parent_path();
-        auto rel_path = fs::relative(include_dir, ctx.options.root_dir / ctx.current_dir);
+        auto rel_path = fs::relative(include_dir, ctx.options.source_root / ctx.current_dir);
         ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.string();
     }
 
@@ -577,7 +594,7 @@ auto GraphBuilder::expand_inputs(
             if (!pattern.path.empty()) {
                 auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
                 if (expanded) {
-                    group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.root_dir);
+                    group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
                     dir_path = fs::path { group_dir };
 
                     // Demand-driven parsing: request the directory's Tupfile if not yet parsed
@@ -620,7 +637,7 @@ auto GraphBuilder::expand_inputs(
                     continue; // Invalid empty group name
 
                 auto dir_part = path.substr(0, lt_pos);
-                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.root_dir);
+                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.source_root);
                 auto dir_path = fs::path { group_dir };
 
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
@@ -645,8 +662,8 @@ auto GraphBuilder::expand_inputs(
             }
             // Expand globs if enabled
             if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
-                auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.root_dir
-                                                                            : ctx.options.root_dir / ctx.current_dir };
+                auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.source_root
+                                                                            : ctx.options.source_root / ctx.current_dir };
 
                 // First try expanding against filesystem
                 auto expanded = Result<std::vector<std::string>> { parser::glob_expand(path, base) };
@@ -672,7 +689,8 @@ auto GraphBuilder::expand_inputs(
                     }
 
                     // Map the pattern to variant path for matching
-                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
+                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
+                        ctx.options.source_root, ctx.options.output_root);
                     auto glob = parser::Glob { variant_path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         if (auto const* node = ctx.graph->get_node(id)) {
@@ -683,7 +701,7 @@ auto GraphBuilder::expand_inputs(
                 }
             } else {
                 // Non-glob path: check if file exists on disk, or find in graph
-                auto full_path = std::filesystem::path { ctx.options.root_dir / ctx.current_dir / path };
+                auto full_path = std::filesystem::path { ctx.options.source_root / ctx.current_dir / path };
                 if (std::filesystem::exists(full_path)) {
                     // Prefix with current_dir to make path relative to project root
                     if (!ctx.current_dir.empty())
@@ -693,7 +711,7 @@ auto GraphBuilder::expand_inputs(
                 } else if (full_path.filename() == "tup.config" && !ctx.options.variant_dir.empty()) {
                     // Special case: tup.config lives in variant directory, not source root
                     auto variant_config = ctx.options.variant_dir / "tup.config";
-                    if (std::filesystem::exists(ctx.options.root_dir / variant_config))
+                    if (std::filesystem::exists(ctx.options.source_root / variant_config))
                         result.push_back(variant_config.string());
                     else
                         result.push_back(std::move(path));
@@ -710,7 +728,8 @@ auto GraphBuilder::expand_inputs(
                     }
 
                     // Check for generated file in variant
-                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir);
+                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
+                        ctx.options.source_root, ctx.options.output_root);
                     if (ctx.graph->find_by_path(variant_path)) {
                         result.push_back(variant_path);
                     } else {
@@ -773,8 +792,9 @@ auto GraphBuilder::expand_outputs(
             auto expanded = Result<std::string> { evaluator.expand_pattern(path, flags) };
             auto output_path = expanded ? *expanded : std::move(path);
 
-            // Map to variant directory if configured
-            output_path = map_to_variant(output_path, ctx.current_dir, ctx.options.variant_dir);
+            // Map to output directory
+            output_path = map_to_variant(output_path, ctx.current_dir, ctx.options.variant_dir,
+                ctx.options.source_root, ctx.options.output_root);
 
             result.push_back(std::move(output_path));
         }
@@ -813,10 +833,15 @@ auto GraphBuilder::expand_command(
     }
 
     auto make_source_relative = [&](std::string const& path) -> std::string {
-        if (path.empty() || source_to_root.empty())
+        if (path.empty())
+            return path;
+        // Absolute paths (from out-of-tree builds) stay absolute
+        if (!path.empty() && path[0] == '/')
             return path;
         // Don't transform paths that already start with ../
         if (path.size() >= 2 && path[0] == '.' && path[1] == '.')
+            return path;
+        if (source_to_root.empty())
             return path;
         return source_to_root + path;
     };
