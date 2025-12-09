@@ -12,7 +12,9 @@ A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup
 6. [Index Module](#index-module)
 7. [Execution Module](#execution-module)
 8. [Build Pipeline](#build-pipeline)
-9. [Design Decisions](#design-decisions)
+9. [Multi-Directory Builds](#multi-directory-builds)
+10. [Variant Builds](#variant-builds)
+11. [Design Decisions](#design-decisions)
 
 ---
 
@@ -715,6 +717,210 @@ main.o: main.c \
 **All headers tracked** including system headers (`/usr/include/*`), ensuring complete rebuild correctness.
 
 Only commands transitively depending on changed files are re-executed.
+
+---
+
+## Multi-Directory Builds
+
+Pup supports projects with Tupfiles in multiple subdirectories, enabling modular project organization.
+
+### Tupfile Discovery
+
+On startup, pup recursively scans for all directories containing `Tupfile`:
+
+```cpp
+auto discover_tupfile_dirs(root) -> std::set<std::filesystem::path>
+{
+    // Skip variant directories (contain tup.config)
+    // Return set of relative paths to Tupfile directories
+}
+```
+
+### Demand-Driven Parsing
+
+Instead of parsing all Tupfiles upfront, pup uses **demand-driven parsing**:
+
+```
+1. Start with root Tupfile
+2. When a rule references a path in another directory:
+   - Check if that directory has a Tupfile
+   - Parse it if not already parsed
+3. Repeat until all dependencies resolved
+4. Parse remaining "orphan" Tupfiles
+```
+
+This approach:
+- Handles cross-directory dependencies correctly
+- Detects circular Tupfile dependencies
+- Minimizes unnecessary parsing
+
+### Parse State Tracking
+
+```cpp
+struct TupfileParseState {
+    std::set<std::filesystem::path> available;  // Dirs with Tupfiles
+    std::set<std::filesystem::path> parsed;     // Already processed
+    std::set<std::filesystem::path> parsing;    // Currently processing (cycle detection)
+};
+```
+
+The `parsing` set detects circular dependencies - if a directory appears while still being parsed, it's a cycle.
+
+### Per-Directory Variable Scope
+
+Each Tupfile gets its own variable scope:
+
+```cpp
+struct BuilderContext {
+    std::filesystem::path current_dir;
+    parser::Variables local_vars;       // $(VAR) - local to this Tupfile
+    std::unordered_map<std::string, BangMacroDef> macros;  // !macros
+    std::unordered_map<std::string, std::vector<NodeId>> groups;  // {bins}
+};
+```
+
+Variables defined in one Tupfile don't leak to others. Bang macros are inherited through `include_rules` from parent `Tuprules.tup` files.
+
+### Cross-Directory Groups
+
+Groups can be referenced across directories using path prefixes:
+
+```tup
+# In include/generated/Tupfile
+: config.in |> gen-headers.sh |> headers.h <gen-headers>
+
+# In src/Tupfile
+: foo.c | $(ROOT)/include/generated/<gen-headers> |> $(CC) -c %f -o %o |> foo.o
+```
+
+Group keys are `(directory, name)` tuples:
+
+```cpp
+using GroupKey = std::pair<std::filesystem::path, std::string>;
+std::map<GroupKey, std::vector<NodeId>> order_only_groups_;
+```
+
+### TUP_CWD Computation
+
+`TUP_CWD` is the relative path from the current Tupfile back to the directory containing the root `Tuprules.tup`:
+
+```cpp
+// For include/generated/Tupfile:
+// TUP_CWD = "../.."
+
+// Common pattern:
+ROOT = $(TUP_CWD)
+CFLAGS += -I$(ROOT)/include
+```
+
+---
+
+## Variant Builds
+
+Variant builds allow out-of-tree compilation with different configurations.
+
+### Directory Structure
+
+```
+project/
+├── Tupfile.ini          # Project root marker
+├── Tuprules.tup         # Shared rules
+├── src/
+│   └── Tupfile
+└── build-debug/         # Variant directory
+    ├── tup.config       # Variant configuration
+    └── src/             # Output mirrors source structure
+        └── foo.o
+```
+
+### Key Variables
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `TUP_CWD` | Relative path to Tuprules.tup directory | Access shared files |
+| `TUP_VARIANTDIR` | `build-debug` | Variant directory name |
+| `TUP_VARIANT_OUTPUTDIR` | Relative path from source to variant output | Output paths |
+
+### Path Resolution
+
+**The fundamental challenge**: Commands run from their source directory, but outputs go to the variant directory.
+
+```
+Source:  src/Tupfile contains: : foo.c |> $(CC) -c %f -o %o |> foo.o
+Command runs from: project/src/
+Output goes to: project/build-debug/src/foo.o
+```
+
+### Path Transformation Pipeline
+
+1. **Input expansion** (`expand_inputs`):
+   - Glob patterns resolved against source directory
+   - Results stored as project-root-relative paths
+
+2. **Output expansion** (`expand_outputs`):
+   - Outputs prefixed with variant directory
+   - `foo.o` → `build-debug/src/foo.o`
+
+3. **Command generation** (`expand_command`):
+   - Pattern flags (`%f`, `%o`) substituted
+   - Paths transformed from project-root-relative to source-dir-relative:
+
+   ```cpp
+   // From src/ (depth=1), accessing build-debug/src/foo.o:
+   // Path: "build-debug/src/foo.o" → "../build-debug/src/foo.o"
+
+   auto make_source_relative = [&](std::string const& path) {
+       if (path.empty() || source_to_root.empty())
+           return path;
+       if (path starts with "../")  // Already relative
+           return path;
+       return source_to_root + path;  // e.g., "../" + path
+   };
+   ```
+
+### tup.config Handling
+
+The variant's `tup.config` exists only in the variant directory, not the source tree. When a Tupfile references `../../tup.config`, pup maps it to `<variant>/tup.config`:
+
+```cpp
+if (full_path.filename() == "tup.config" && !variant_dir.empty()) {
+    auto variant_config = variant_dir / "tup.config";
+    if (std::filesystem::exists(root_dir / variant_config))
+        return variant_config;
+}
+```
+
+### Working Directory
+
+Commands execute from their **source directory**, not the variant directory:
+
+```cpp
+// In scheduler.cpp
+auto working_dir = options_.root_dir;
+if (!node->source_dir.empty())
+    working_dir /= node->source_dir;  // e.g., "src"
+```
+
+This ensures:
+- Relative paths in commands (like `$(ROOT)/scripts/tool`) resolve correctly
+- `TUP_VARIANT_OUTPUTDIR` provides the path to variant outputs
+
+### Example Flow
+
+```
+Tupfile in src/:
+: foo.c |> $(CC) -c %f -o $(TUP_VARIANT_OUTPUTDIR)/foo.o |> $(TUP_VARIANT_OUTPUTDIR)/foo.o
+
+Variables:
+- TUP_CWD = ".."
+- TUP_VARIANT_OUTPUTDIR = "../build-debug/src"
+
+Generated command (runs from project/src/):
+gcc -c foo.c -o ../build-debug/src/foo.o
+
+Output path in graph:
+build-debug/src/foo.o  (project-root-relative)
+```
 
 ---
 

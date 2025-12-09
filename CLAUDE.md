@@ -145,7 +145,7 @@ pup/
 ## Testing with ctos (Multi-Directory Project)
 
 The ctos project is a real-world multi-directory tup project for ARM cross-compilation.
-Use this to test multi-directory support once implemented.
+Pup successfully builds this project (75 Tupfiles, 681 commands).
 
 ### Prerequisites
 
@@ -190,7 +190,6 @@ export PKG_CONFIG_PATH
 ### Testing Commands
 
 ```bash
-# Once multi-directory support is implemented:
 cd ~/src/castlestech.com/megahunt/PPC_Linux/ctos
 ~/src/pup/build/pup build
 
@@ -200,10 +199,13 @@ tup
 
 ### Current Status
 
-- ❌ Multi-directory Tupfile scanning not implemented
-- ✅ `import` directive implemented
-- ✅ `export` directive implemented
-- ✅ Bang macros implemented
+- ✅ Multi-directory Tupfile scanning
+- ✅ Demand-driven parsing with cycle detection
+- ✅ Cross-directory order-only groups
+- ✅ Variant build path resolution
+- ✅ `import` directive
+- ✅ `export` directive
+- ✅ Bang macros
 
 ## Tupfile Syntax Features to Support
 

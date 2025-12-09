@@ -117,6 +117,7 @@ This document details pup's compatibility with tup, including supported features
 |---------|--------|--------|
 | Groups (bins) | `{groupname}` | ✅ |
 | Order-only groups | `<groupname>` | ✅ |
+| Cross-directory groups | `dir/<groupname>` | ✅ |
 
 **Groups** (tup calls these "bins") collect outputs for use as inputs in other rules:
 ```tup
@@ -128,6 +129,33 @@ This document details pup's compatibility with tup, including supported features
 ```tup
 : gen-headers.sh |> ./gen-headers.sh |> headers.h <gen>
 : foo.c | <gen> |> $(CC) -c %f -o %o |> foo.o
+```
+
+**Cross-directory groups** reference groups defined in other Tupfiles:
+```tup
+# In src/Tupfile - reference group from include/generated/Tupfile
+: foo.c | $(ROOT)/include/generated/<gen-headers> |> $(CC) -c %f -o %o |> foo.o
+```
+
+### Multi-Directory Projects
+
+| Feature | Status |
+|---------|--------|
+| Subdirectory Tupfiles | ✅ |
+| Cross-directory dependencies | ✅ |
+| Demand-driven parsing | ✅ |
+| Per-Tupfile variable scope | ✅ |
+| `include_rules` inheritance | ✅ |
+| Circular dependency detection | ✅ |
+
+Pup fully supports projects with Tupfiles in multiple subdirectories:
+```
+project/
+├── Tuprules.tup        # Shared macros
+├── src/
+│   └── Tupfile         # Uses !cc from Tuprules.tup
+└── tests/
+    └── Tupfile         # Independent Tupfile
 ```
 
 ## Behavioral Differences
@@ -210,10 +238,11 @@ Test fixtures cover:
 - Simple C compilation
 - Multi-file projects
 - Bang macros
-- Groups
+- Groups (bins and order-only)
 - Conditionals
 - Incremental builds
 - Variant builds
+- Multi-directory projects (tested with ctos - 75 Tupfiles, 681 commands)
 
 ## Reporting Issues
 
