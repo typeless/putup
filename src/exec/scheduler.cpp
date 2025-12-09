@@ -413,11 +413,19 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         if (!node || node->type != NodeType::Command)
             continue;
 
+        // Compute working directory: source_dir for subdirectory Tupfiles.
+        // Commands run from the Tupfile's SOURCE directory so that relative paths
+        // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
+        // prefixed with variant_dir by the builder.
+        auto working_dir = std::filesystem::path { options_.root_dir };
+        if (!node->source_dir.empty())
+            working_dir /= node->source_dir;
+
         auto job = BuildJob {
             .id = id,
             .command = node->command,
             .display = node->display.empty() ? node->command : node->display,
-            .working_dir = options_.root_dir,
+            .working_dir = working_dir,
             .inputs = {},
             .outputs = {},
             .order_only_inputs = {},

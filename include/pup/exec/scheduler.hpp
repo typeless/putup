@@ -55,6 +55,7 @@ struct SchedulerOptions {
     bool dry_run = false;                             ///< Print commands without executing
     bool verbose = false;                             ///< Print commands as they run
     std::filesystem::path root_dir = {};              ///< Project root directory
+    std::filesystem::path variant_dir = {};           ///< Variant directory (relative to root)
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 

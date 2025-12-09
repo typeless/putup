@@ -690,6 +690,13 @@ auto GraphBuilder::expand_inputs(
                         result.push_back((ctx.current_dir / path).string());
                     else
                         result.push_back(std::move(path));
+                } else if (full_path.filename() == "tup.config" && !ctx.options.variant_dir.empty()) {
+                    // Special case: tup.config lives in variant directory, not source root
+                    auto variant_config = ctx.options.variant_dir / "tup.config";
+                    if (std::filesystem::exists(ctx.options.root_dir / variant_config))
+                        result.push_back(variant_config.string());
+                    else
+                        result.push_back(std::move(path));
                 } else {
                     // Not on disk - try demand-driven parsing of the file's directory
                     auto file_dir = fs::path { path }.parent_path();
@@ -794,9 +801,39 @@ auto GraphBuilder::expand_command(
     if (!expanded)
         return pup::unexpected<Error>(expanded.error());
 
+    // Transform paths to be relative to source directory (where command runs)
+    // Input/output paths are project-root-relative, but commands run from source_dir
+    auto source_to_root = std::string {};
+    if (!ctx.current_dir.empty()) {
+        for (auto const& comp : ctx.current_dir) {
+            auto s = comp.string();
+            if (s != "." && s != "/" && !s.empty())
+                source_to_root += "../";
+        }
+    }
+
+    auto make_source_relative = [&](std::string const& path) -> std::string {
+        if (path.empty() || source_to_root.empty())
+            return path;
+        // Don't transform paths that already start with ../
+        if (path.size() >= 2 && path[0] == '.' && path[1] == '.')
+            return path;
+        return source_to_root + path;
+    };
+
+    auto cmd_inputs = std::vector<std::string> {};
+    cmd_inputs.reserve(inputs.size());
+    for (auto const& inp : inputs)
+        cmd_inputs.push_back(make_source_relative(inp));
+
+    auto cmd_outputs = std::vector<std::string> {};
+    cmd_outputs.reserve(outputs.size());
+    for (auto const& out : outputs)
+        cmd_outputs.push_back(make_source_relative(out));
+
     // Build pattern flags
-    auto primary_input = inputs.empty() ? std::string {} : inputs[0];
-    auto primary_output = outputs.empty() ? std::string {} : outputs[0];
+    auto primary_input = cmd_inputs.empty() ? std::string {} : cmd_inputs[0];
+    auto primary_output = cmd_outputs.empty() ? std::string {} : cmd_outputs[0];
 
     auto flags = parser::PatternFlags {
         .input = primary_input,
@@ -806,10 +843,10 @@ auto GraphBuilder::expand_command(
         .output = primary_output,
         .output_base = std::string { parser::path_basename(primary_output) },
         .input_dir = std::string { parser::path_directory(primary_input) },
-        .all_inputs = inputs,
+        .all_inputs = cmd_inputs,
     };
 
-    // Expand pattern flags
+    // Expand pattern flags and return
     return evaluator.expand_pattern(*expanded, flags);
 }
 
@@ -840,6 +877,7 @@ auto GraphBuilder::create_command_node(
         .type = NodeType::Command,
         .command = command,
         .display = display,
+        .source_dir = ctx.current_dir.string(),
         .exported_vars = ctx.exported_vars,
     };
 

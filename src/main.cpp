@@ -350,7 +350,7 @@ auto parse_directory(
         .tup_platform = std::string { pup::PLATFORM },
         .tup_arch = std::string { pup::ARCH },
         .tup_variantdir = tup_variantdir,
-        .tup_variant_outputdir = variant_dir.empty() ? "." : variant_dir.string(),
+        .tup_variant_outputdir = tup_variantdir,
         .request_directory = request_directory,
         .available_tupfile_dirs = &state.available,
     };
@@ -930,6 +930,7 @@ auto cmd_build(Options const& opts) -> int
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
         .root_dir = *root,
+        .variant_dir = variant_dir,
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
