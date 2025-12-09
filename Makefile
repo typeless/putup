@@ -12,9 +12,12 @@
 # Installation prefix (default: ~, so pup installs to ~/bin)
 PREFIX ?= $(HOME)
 
+# Build output directory
+BUILD_DIR := build
+
 # Build tool selection: pup by default, tup with TUP=1
 # Priority: ./build/pup > pup in PATH > tup
-PUP_LOCAL := $(shell test -x ./build/pup && echo yes)
+PUP_LOCAL := $(shell test -x ./$(BUILD_DIR)/pup && echo yes)
 PUP_PATH := $(shell command -v pup 2>/dev/null)
 
 ifdef TUP
@@ -26,13 +29,13 @@ ifdef TUP
 	endif
 	INIT_CMD = tup init
 else ifeq ($(PUP_LOCAL),yes)
-	BUILD_CMD = ./build/pup build
+	BUILD_CMD = ./$(BUILD_DIR)/pup build -B $(BUILD_DIR)
 	ifeq ("$(V)", "1")
 		BUILD_OPTIONS = -v
 	endif
-	INIT_CMD = ./build/pup init
+	INIT_CMD = ./$(BUILD_DIR)/pup init
 else ifneq ($(PUP_PATH),)
-	BUILD_CMD = pup build
+	BUILD_CMD = pup build -B $(BUILD_DIR)
 	ifeq ("$(V)", "1")
 		BUILD_OPTIONS = -v
 	endif
@@ -64,21 +67,22 @@ build:
 ifdef TUP
 	@test -d .tup || tup init
 else ifeq ($(PUP_LOCAL),yes)
-	@test -d .pup || ./build/pup init
+	@test -d .pup || ./$(BUILD_DIR)/pup init
 else ifneq ($(PUP_PATH),)
 	@test -d .pup || pup init
 else
 	@test -d .tup || tup init
 endif
+	@mkdir -p $(BUILD_DIR)
 	$(BUILD_CMD) $(BUILD_OPTIONS)
 
 test: build
-	./build/test/unit/pup_test
+	./$(BUILD_DIR)/test/unit/pup_test
 	./test/e2e/run_tests.sh
 
 install: build
 	@mkdir -p $(PREFIX)/bin
-	install -m 755 build/pup $(PREFIX)/bin/pup
+	install -m 755 $(BUILD_DIR)/pup $(PREFIX)/bin/pup
 	@echo "Installed pup to $(PREFIX)/bin/pup"
 
 # Run clang-tidy on all source files
@@ -112,11 +116,11 @@ check: format-check tidy test
 
 clean:
 ifeq ($(PUP_LOCAL),yes)
-	./build/pup clean
+	./$(BUILD_DIR)/pup clean
 else ifneq ($(PUP_PATH),)
 	pup clean
 else
-	find build -mindepth 1 ! -name 'tup.config' -exec rm -rf {} + 2>/dev/null || true
+	find $(BUILD_DIR) -mindepth 1 ! -name 'tup.config' -exec rm -rf {} + 2>/dev/null || true
 	rm -f *.o test/unit/*.o pup test/unit/pup_test 2>/dev/null || true
 endif
 	rm -rf .tup .pup
