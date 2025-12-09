@@ -123,6 +123,12 @@ auto GraphBuilder::add_tupfile(
         .current_file = tupfile.filename,
     };
 
+    // Create Tupfile node and add to sticky_sources for dependency tracking
+    auto tupfile_rel = std::filesystem::relative(tupfile.filename, options_.source_root).string();
+    auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
+    if (tupfile_node_result)
+        ctx.sticky_sources.push_back(*tupfile_node_result);
+
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name) -> std::vector<std::string> {
         auto it = ctx.groups.find(std::string { name });
@@ -340,6 +346,12 @@ auto GraphBuilder::process_include(
     if (ctx.included_files.contains(include_path))
         return {};
     ctx.included_files.insert(include_path);
+
+    // Add included file to sticky_sources for dependency tracking
+    auto inc_rel = fs::relative(include_path, ctx.options.source_root).string();
+    auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
+    if (inc_node_result)
+        ctx.sticky_sources.push_back(*inc_node_result);
 
     // Read the include file
     auto file = std::ifstream { include_path };
@@ -906,7 +918,17 @@ auto GraphBuilder::create_command_node(
         .exported_vars = ctx.exported_vars,
     };
 
-    return ctx.graph->add_node(std::move(node));
+    auto cmd_id_result = ctx.graph->add_node(std::move(node));
+    if (!cmd_id_result)
+        return cmd_id_result;
+
+    auto cmd_id = *cmd_id_result;
+
+    // Add sticky edges from Tupfile and included files to this command
+    for (auto src_id : ctx.sticky_sources)
+        (void)ctx.graph->add_edge(src_id, cmd_id, LinkType::Sticky);
+
+    return cmd_id;
 }
 
 } // namespace pup::graph

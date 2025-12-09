@@ -55,6 +55,7 @@ struct BuilderContext {
 
     std::filesystem::path current_dir = {};
     std::string current_file = {};
+    std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     std::vector<std::string> errors = {};
     std::vector<std::string> warnings = {};

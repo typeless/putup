@@ -385,25 +385,47 @@ auto expand_implicit_deps(
         auto file_id = pup::NodeId { it->second->id };
 
         for (auto const& edge : index.edges()) {
-            if (edge.type != pup::LinkType::Implicit)
-                continue;
             if (edge.from != file_id)
                 continue;
 
-            auto cmd_id = pup::NodeId { edge.to };
-            auto const* cmd = index.find_command_by_id(cmd_id);
-            if (!cmd)
-                continue;
+            // Handle implicit deps (header -> command)
+            if (edge.type == pup::LinkType::Implicit) {
+                auto cmd_id = pup::NodeId { edge.to };
+                auto const* cmd = index.find_command_by_id(cmd_id);
+                if (!cmd)
+                    continue;
 
-            auto cmd_node_id = graph.find_by_command(cmd->command);
-            if (!cmd_node_id)
-                continue;
+                auto cmd_node_id = graph.find_by_command(cmd->command);
+                if (!cmd_node_id)
+                    continue;
 
-            for (auto input_id : graph.get_inputs(*cmd_node_id)) {
-                auto const* input_node = graph.get_node(input_id);
-                if (input_node && !input_node->path.empty()) {
-                    if (added.insert(input_node->path).second)
-                        result.push_back(input_node->path);
+                for (auto input_id : graph.get_inputs(*cmd_node_id)) {
+                    auto const* input_node = graph.get_node(input_id);
+                    if (input_node && !input_node->path.empty()) {
+                        if (added.insert(input_node->path).second)
+                            result.push_back(input_node->path);
+                    }
+                }
+            }
+
+            // Handle sticky deps (Tupfile/Tuprules -> command)
+            if (edge.type == pup::LinkType::Sticky) {
+                auto cmd_id = pup::NodeId { edge.to };
+                auto const* cmd = index.find_command_by_id(cmd_id);
+                if (!cmd)
+                    continue;
+
+                auto cmd_node_id = graph.find_by_command(cmd->command);
+                if (!cmd_node_id)
+                    continue;
+
+                // Mark command's outputs as changed to trigger rebuild
+                for (auto output_id : graph.get_outputs(*cmd_node_id)) {
+                    auto const* output_node = graph.get_node(output_id);
+                    if (output_node && !output_node->path.empty()) {
+                        if (added.insert(output_node->path).second)
+                            result.push_back(output_node->path);
+                    }
                 }
             }
         }
