@@ -14,7 +14,7 @@ This document details pup's compatibility with tup, including supported features
 | `tup monitor` | - | ❌ Not planned (no FUSE) |
 | `tup stop` | - | ❌ Not planned (no monitor) |
 | `tup scan` | - | ❌ Not implemented |
-| `tup variant` | - | ❌ Not implemented |
+| `tup variant` | `pup variant` | ✅ Implemented |
 | `tup generate` | - | ❌ Not implemented |
 | `tup compiledb` | - | ❌ Not implemented |
 | `tup commandline` | - | ❌ Not implemented |

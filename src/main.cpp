@@ -50,11 +50,12 @@ auto print_usage() -> void
     fmt::print("pup - Tup build system reimplementation\n\n"
                "Usage: pup [OPTIONS] [COMMAND]\n\n"
                "Commands:\n"
-               "  init     Initialize .pup directory\n"
-               "  parse    Parse and validate Tupfiles\n"
-               "  build    Execute build (default)\n"
-               "  graph    Print dependency graph\n"
-               "  clean    Remove generated files\n"
+               "  init              Initialize .pup directory\n"
+               "  parse             Parse and validate Tupfiles\n"
+               "  build             Execute build (default)\n"
+               "  graph             Print dependency graph\n"
+               "  clean             Remove generated files\n"
+               "  variant <config>  Create variant build directory\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
                "  -k, --keep-going   Continue after failures\n"
@@ -579,6 +580,68 @@ auto build_index(
     return index;
 }
 
+auto create_variant(
+    std::filesystem::path const& root,
+    std::string const& config_arg,
+    bool verbose) -> pup::Result<void>
+{
+    auto config_path = std::filesystem::path { config_arg };
+    auto abs_config = std::filesystem::path { root / config_path };
+
+    if (!std::filesystem::exists(abs_config))
+        return pup::make_error<void>(
+            pup::ErrorCode::IoError,
+            fmt::format("Config file not found: {}", config_arg));
+
+    auto stem = std::string { config_path.stem().string() };
+    if (stem.empty())
+        return pup::make_error<void>(
+            pup::ErrorCode::ParseError,
+            fmt::format("Invalid config filename: {}", config_arg));
+
+    auto variant_name = std::string { "build-" + stem };
+    auto variant_dir = std::filesystem::path { root / variant_name };
+
+    if (!std::filesystem::exists(variant_dir)) {
+        auto ec = std::error_code {};
+        std::filesystem::create_directory(variant_dir, ec);
+        if (ec)
+            return pup::make_error<void>(
+                pup::ErrorCode::IoError,
+                fmt::format("Failed to create {}: {}", variant_name, ec.message()));
+    }
+
+    auto tup_config = std::filesystem::path { variant_dir / "tup.config" };
+    auto rel_config = std::filesystem::path { "../" + config_path.string() };
+
+    if (std::filesystem::exists(tup_config)) {
+        auto ec = std::error_code {};
+        std::filesystem::remove(tup_config, ec);
+    }
+
+#ifdef _WIN32
+    auto ec = std::error_code {};
+    std::filesystem::copy_file(abs_config, tup_config, ec);
+    if (ec)
+        return pup::make_error<void>(
+            pup::ErrorCode::IoError,
+            fmt::format("Failed to copy config: {}", ec.message()));
+#else
+    auto ec = std::error_code {};
+    std::filesystem::create_symlink(rel_config, tup_config, ec);
+    if (ec)
+        return pup::make_error<void>(
+            pup::ErrorCode::IoError,
+            fmt::format("Failed to create symlink: {}", ec.message()));
+#endif
+
+    fmt::print("Created variant '{}'\n", variant_name);
+    if (verbose)
+        fmt::print("  {} -> {}\n", tup_config.string(), rel_config.string());
+
+    return {};
+}
+
 auto cmd_init(Options const& /*opts*/) -> int
 {
     auto root = std::filesystem::path { std::filesystem::current_path() };
@@ -802,6 +865,33 @@ auto cmd_clean(Options const& opts) -> int
         fmt::print("Would remove {} items\n", removed_count);
     else
         fmt::print("Removed {} items\n", removed_count);
+
+    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+auto cmd_variant(Options const& opts) -> int
+{
+    if (opts.targets.empty()) {
+        fmt::print(stderr, "Error: No config files specified\n");
+        fmt::print(stderr, "Usage: pup variant <config_file>...\n");
+        return EXIT_FAILURE;
+    }
+
+    auto root = std::optional<std::filesystem::path> { find_project_root() };
+    if (!root) {
+        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        fmt::print(stderr, "Run 'pup init' first\n");
+        return EXIT_FAILURE;
+    }
+
+    auto error_count = 0;
+    for (auto const& config_path : opts.targets) {
+        auto result = pup::Result<void> { create_variant(*root, config_path, opts.verbose) };
+        if (!result) {
+            fmt::print(stderr, "Error: {}\n", result.error().message);
+            ++error_count;
+        }
+    }
 
     return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
@@ -1030,6 +1120,8 @@ auto main(int argc, char** argv) -> int
         return cmd_build(opts);
     if (opts.command == "clean")
         return cmd_clean(opts);
+    if (opts.command == "variant")
+        return cmd_variant(opts);
 
     fmt::print(stderr, "Unknown command: {}\n", opts.command);
     print_usage();
