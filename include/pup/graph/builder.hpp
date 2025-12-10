@@ -39,8 +39,9 @@ struct BangMacroDef {
     std::optional<parser::Expression> display;
     std::vector<parser::PathPattern> outputs;
     std::vector<parser::PathPattern> extra_outputs;
-    std::optional<std::string> output_group;            ///< {binname} at end
-    std::optional<std::string> output_order_only_group; ///< <groupname> at end
+    std::optional<std::string> output_group;                ///< {binname} at end
+    std::optional<std::string> output_order_only_group;     ///< <groupname> at end
+    std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
 /// Context for building the graph

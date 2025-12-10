@@ -36,6 +36,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -60,6 +61,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "clang -c bar.cpp -o bar.o",
             .display = "CXX bar.o",
             .inputs = { "bar.cpp" },
+            .order_only_inputs = {},
             .outputs = { "bar.o" },
             .working_dir = "src",
         };
@@ -76,6 +78,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "g++ -std=c++20 -c main.cpp -o main.o",
             .display = "CXX main.o",
             .inputs = { "main.cpp" },
+            .order_only_inputs = {},
             .outputs = { "main.o" },
             .working_dir = ".",
         };
@@ -92,6 +95,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "ccache gcc -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -108,6 +112,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "distcc g++ -c bar.cpp -o bar.o",
             .display = "CXX bar.o",
             .inputs = { "bar.cpp" },
+            .order_only_inputs = {},
             .outputs = { "bar.o" },
             .working_dir = ".",
         };
@@ -124,6 +129,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "arm-linux-gnueabihf-gcc -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -140,6 +146,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "/usr/bin/gcc -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -156,6 +163,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -MD -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -171,6 +179,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -MMD -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -186,6 +195,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -MF deps.d -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -201,6 +211,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -M foo.c",
             .display = "DEP foo.c",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = {},
             .working_dir = ".",
         };
@@ -216,6 +227,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -c foo.c -M",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -231,6 +243,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc -DMYDEBUG -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -247,6 +260,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "g++ -I../../include -I../../third_party -c foo.cpp -o foo.o",
             .display = "CXX foo.o",
             .inputs = { "foo.cpp" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = "build/src",
         };
@@ -263,6 +277,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "g++ -std=c++20 -Wall -Wextra -I../include -DNDEBUG -O2 -c main.cpp -o main.o",
             .display = "CXX main.o",
             .inputs = { "main.cpp" },
+            .order_only_inputs = {},
             .outputs = { "main.o" },
             .working_dir = ".",
         };
@@ -280,6 +295,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "gcc foo.o bar.o -o app",
             .display = "LINK app",
             .inputs = { "foo.o", "bar.o" },
+            .order_only_inputs = {},
             .outputs = { "app" },
             .working_dir = ".",
         };
@@ -295,6 +311,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .command = "ar rcs libfoo.a foo.o bar.o",
             .display = "AR libfoo.a",
             .inputs = { "foo.o", "bar.o" },
+            .order_only_inputs = {},
             .outputs = { "libfoo.a" },
             .working_dir = ".",
         };
@@ -316,6 +333,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -c foo.c bar.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c", "bar.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -332,6 +350,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -isystem/usr/local/include -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -348,6 +367,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -iquote../include -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -364,6 +384,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -DFOO -UBAR -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -380,6 +401,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -include config.h -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -396,6 +418,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc --sysroot=/opt/sdk -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -412,6 +435,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "sccache gcc -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -428,6 +452,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "icecc g++ -c foo.cpp -o foo.o",
             .display = "CXX foo.o",
             .inputs = { "foo.cpp" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -444,6 +469,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -c main.c -o main.o",
             .display = "CC main.o",
             .inputs = { "main.c" },
+            .order_only_inputs = {},
             .outputs = { "main.o" },
             .working_dir = ".",
         };
@@ -460,6 +486,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -c /path/to/MYMODULE/foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "/path/to/MYMODULE/foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -475,6 +502,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -MP -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -490,6 +518,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .command = "gcc -MT foo.o -c foo.c -o foo.o",
             .display = "CC foo.o",
             .inputs = { "foo.c" },
+            .order_only_inputs = {},
             .outputs = { "foo.o" },
             .working_dir = ".",
         };
@@ -507,6 +536,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .command = "g++ -c foo.cc -o foo.o",
                 .display = "CXX foo.o",
                 .inputs = { "foo.cc" },
+                .order_only_inputs = {},
                 .outputs = { "foo.o" },
                 .working_dir = ".",
             };
@@ -523,6 +553,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .command = "g++ -c foo.cxx -o foo.o",
                 .display = "CXX foo.o",
                 .inputs = { "foo.cxx" },
+                .order_only_inputs = {},
                 .outputs = { "foo.o" },
                 .working_dir = ".",
             };
@@ -539,6 +570,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .command = "g++ -c foo.C -o foo.o",
                 .display = "CXX foo.o",
                 .inputs = { "foo.C" },
+                .order_only_inputs = {},
                 .outputs = { "foo.o" },
                 .working_dir = ".",
             };
@@ -555,6 +587,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .command = "g++ -c foo.c++ -o foo.o",
                 .display = "CXX foo.o",
                 .inputs = { "foo.c++" },
+                .order_only_inputs = {},
                 .outputs = { "foo.o" },
                 .working_dir = ".",
             };
@@ -563,6 +596,68 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             REQUIRE(generated.size() == 1);
             REQUIRE(generated[0].command == "g++ -M foo.c++");
         }
+    }
+}
+
+TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
+{
+    auto registry = RulePatternRegistry {};
+    registry.register_pattern(make_gcc_depfile_pattern());
+
+    SECTION("DEP rule inherits order-only inputs from parent compile command")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 900,
+            .command = "gcc -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = { "foo.c" },
+            .order_only_inputs = { "include/generated/autoconf.h", "include/generated/modules.def" },
+            .outputs = { "foo.o" },
+            .working_dir = "modules/test",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+
+        // The generated DEP rule should inherit the order-only inputs
+        REQUIRE(generated[0].order_only_inputs.size() == 2);
+        REQUIRE(generated[0].order_only_inputs[0] == "include/generated/autoconf.h");
+        REQUIRE(generated[0].order_only_inputs[1] == "include/generated/modules.def");
+    }
+
+    SECTION("DEP rule with empty order-only inputs")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 901,
+            .command = "gcc -c bar.c -o bar.o",
+            .display = "CC bar.o",
+            .inputs = { "bar.c" },
+            .order_only_inputs = {},
+            .outputs = { "bar.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        REQUIRE(generated[0].order_only_inputs.empty());
+    }
+
+    SECTION("DEP rule inherits single order-only input")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 902,
+            .command = "g++ -std=c++20 -c main.cpp -o main.o",
+            .display = "CXX main.o",
+            .inputs = { "main.cpp" },
+            .order_only_inputs = { "gen-headers/config.h" },
+            .outputs = { "main.o" },
+            .working_dir = "src",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        REQUIRE(generated[0].order_only_inputs.size() == 1);
+        REQUIRE(generated[0].order_only_inputs[0] == "gen-headers/config.h");
     }
 }
 

@@ -19,6 +19,7 @@ struct CommandInfo {
     std::string command;
     std::string display;
     std::vector<std::string> inputs;
+    std::vector<std::string> order_only_inputs;
     std::vector<std::string> outputs;
     std::string working_dir;
 };
@@ -44,6 +45,7 @@ enum class OutputAction : std::uint8_t {
 /// A generated rule (same structure as user-defined rules)
 struct GeneratedRule {
     std::vector<std::string> inputs;
+    std::vector<std::string> order_only_inputs; ///< Order-only deps (e.g., gen-headers)
     std::string command;
     std::string display;
     std::vector<GeneratedOutput> outputs;

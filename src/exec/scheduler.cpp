@@ -7,6 +7,8 @@
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <condition_variable>
 #include <cstdlib>
@@ -20,20 +22,40 @@ namespace pup::exec {
 
 namespace {
 
+/// Canonicalize a path to absolute form for consistent dependency matching.
+/// - Relative paths are resolved against working_dir
+/// - Result is lexically normalized
+auto canonicalize_path(
+    std::string const& path,
+    std::filesystem::path const& working_dir) -> std::string
+{
+    auto p = std::filesystem::path { path };
+    if (p.is_absolute())
+        return p.lexically_normal().string();
+
+    // Relative path - resolve against working directory
+    return (working_dir / p).lexically_normal().string();
+}
+
 /// Build dependency map between jobs based on input/output relationships.
 /// Returns: in_degree[j] = number of jobs that j depends on
 ///          dependents[i] = list of jobs that depend on job i
-auto build_dependency_map(std::vector<BuildJob> const& jobs)
+///
+/// Note: Paths in the graph are relative to source_root, not to individual
+/// command working directories. We canonicalize all paths against source_root.
+auto build_dependency_map(
+    std::vector<BuildJob> const& jobs,
+    std::filesystem::path const& source_root)
     -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
 {
     auto in_degree = std::vector<std::size_t>(jobs.size(), 0);
     auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
 
-    // Build map from output path -> job index that produces it
+    // Build map from canonicalized output path -> job index that produces it
     auto output_to_job = std::unordered_map<std::string, std::size_t> {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         for (auto const& output : jobs[i].outputs)
-            output_to_job[output] = i;
+            output_to_job[canonicalize_path(output, source_root)] = i;
     }
 
     // For each job, find which earlier jobs produce its inputs
@@ -42,14 +64,14 @@ auto build_dependency_map(std::vector<BuildJob> const& jobs)
 
         // Check regular inputs
         for (auto const& input : jobs[j].inputs) {
-            auto it = output_to_job.find(input);
+            auto it = output_to_job.find(canonicalize_path(input, source_root));
             if (it != output_to_job.end() && it->second != j)
                 dependencies.insert(it->second);
         }
 
         // Check order-only inputs
         for (auto const& input : jobs[j].order_only_inputs) {
-            auto it = output_to_job.find(input);
+            auto it = output_to_job.find(canonicalize_path(input, source_root));
             if (it != output_to_job.end() && it->second != j)
                 dependencies.insert(it->second);
         }
@@ -208,7 +230,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     auto all_done = std::atomic<bool> { false };
 
     // Build dependency map
-    auto [in_degree, dependents] = build_dependency_map(jobs);
+    auto [in_degree, dependents] = build_dependency_map(jobs, options_.source_root);
 
     // Initialize ready queue with jobs that have no dependencies
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {

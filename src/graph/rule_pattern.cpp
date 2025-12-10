@@ -208,6 +208,7 @@ auto make_gcc_depfile_pattern() -> RulePattern
 
             return GeneratedRule {
                 .inputs = cmd.inputs,
+                .order_only_inputs = cmd.order_only_inputs,
                 .command = build_dep_scan_command(cmd),
                 .display = display,
                 .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = {} } },

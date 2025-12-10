@@ -453,8 +453,9 @@ auto Parser::parse_rule() -> Result<Rule>
         return pup::unexpected<Error>(arrow2.error());
 
     // Parse outputs (stop before {group} or <group> at end)
+    // stop_at_angle=true so path/<group> splits the path from the group
     while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-        auto pattern = parse_path_pattern();
+        auto pattern = parse_path_pattern(true);
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
         rule.outputs.push_back(std::move(*pattern));
@@ -463,7 +464,7 @@ auto Parser::parse_rule() -> Result<Rule>
     // Parse extra outputs if present
     if (match(TokenType::Pipe)) {
         while (!check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-            auto pattern = parse_path_pattern();
+            auto pattern = parse_path_pattern(true);
             if (!pattern)
                 return pup::unexpected<Error>(pattern.error());
             rule.extra_outputs.push_back(std::move(*pattern));
@@ -482,7 +483,23 @@ auto Parser::parse_rule() -> Result<Rule>
     }
 
     // Parse order-only output group <name> if present
+    // Supports path/<group> syntax where path specifies the group's directory
     if (match(TokenType::OpenAngle)) {
+        // Check if last output is a directory prefix (ends with /)
+        // If so, use it as the group directory and remove from outputs
+        if (!rule.outputs.empty()) {
+            auto& last = rule.outputs.back();
+            if (!last.path.parts.empty()) {
+                // Check if last part is a literal ending with /
+                if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
+                    if (!lit->value.empty() && lit->value.back() == '/') {
+                        rule.output_order_only_group_dir = std::move(last.path);
+                        rule.outputs.pop_back();
+                    }
+                }
+            }
+        }
+
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
             rule.output_order_only_group = std::string { current_.text };
             advance();
@@ -549,9 +566,9 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     if (!arrow2)
         return pup::unexpected<Error>(arrow2.error());
 
-    // Parse outputs
+    // Parse outputs (stop_at_angle=true so path/<group> splits the path from the group)
     while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-        auto pattern = parse_path_pattern();
+        auto pattern = parse_path_pattern(true);
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
         macro.outputs.push_back(std::move(*pattern));
@@ -560,7 +577,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     // Parse extra outputs if present
     if (match(TokenType::Pipe)) {
         while (!check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-            auto pattern = parse_path_pattern();
+            auto pattern = parse_path_pattern(true);
             if (!pattern)
                 return pup::unexpected<Error>(pattern.error());
             macro.extra_outputs.push_back(std::move(*pattern));
@@ -579,7 +596,21 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     }
 
     // Parse order-only output group <name> if present
+    // Supports path/<group> syntax where path specifies the group's directory
     if (match(TokenType::OpenAngle)) {
+        // Check if last output is a directory prefix (ends with /)
+        if (!macro.outputs.empty()) {
+            auto& last = macro.outputs.back();
+            if (!last.path.parts.empty()) {
+                if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
+                    if (!lit->value.empty() && lit->value.back() == '/') {
+                        macro.output_order_only_group_dir = std::move(last.path);
+                        macro.outputs.pop_back();
+                    }
+                }
+            }
+        }
+
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
             macro.output_order_only_group = std::string { current_.text };
             advance();
@@ -916,7 +947,7 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
     return expr;
 }
 
-auto Parser::parse_path_pattern() -> Result<PathPattern>
+auto Parser::parse_path_pattern(bool stop_at_angle) -> Result<PathPattern>
 {
     auto pattern = PathPattern {};
     pattern.location = current_.location;
@@ -952,7 +983,10 @@ auto Parser::parse_path_pattern() -> Result<PathPattern>
 
     // Parse path expression (until whitespace or delimiter)
     // stop_at_gap=true ensures we stop at whitespace boundaries between paths
-    auto path = parse_expression_until([](Token const& t) {
+    // For outputs (stop_at_angle=true), also stop at < for path/<group> syntax
+    auto path = parse_expression_until([stop_at_angle](Token const& t) {
+        if (stop_at_angle && t.is(TokenType::OpenAngle))
+            return true;
         return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow,
             TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
     },

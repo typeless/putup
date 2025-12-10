@@ -94,8 +94,9 @@ struct Rule : AstNode {
     std::optional<Expression> display; ///< Display text between ^ ^ in command
     std::vector<PathPattern> outputs;
     std::vector<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;            ///< {binname} at end
-    std::optional<std::string> output_order_only_group; ///< <groupname> at end
+    std::optional<std::string> output_group;                ///< {binname} at end
+    std::optional<std::string> output_order_only_group;     ///< <groupname> at end
+    std::optional<Expression> output_order_only_group_dir;  ///< path/ prefix for <group>
 };
 
 /// Bang-macro definition: !name = |> command |> outputs
@@ -107,8 +108,9 @@ struct BangMacro : AstNode {
     std::optional<Expression> display;
     std::vector<PathPattern> outputs;
     std::vector<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;            ///< {binname} at end
-    std::optional<std::string> output_order_only_group; ///< <groupname> at end
+    std::optional<std::string> output_group;                ///< {binname} at end
+    std::optional<std::string> output_order_only_group;     ///< <groupname> at end
+    std::optional<Expression> output_order_only_group_dir;  ///< path/ prefix for <group>
 };
 
 /// Variable assignment: VAR = value, VAR += value, VAR := value

@@ -260,6 +260,7 @@ auto GraphBuilder::process_bang_macro(
         .extra_outputs = macro.extra_outputs,
         .output_group = macro.output_group,
         .output_order_only_group = macro.output_order_only_group,
+        .output_order_only_group_dir = macro.output_order_only_group_dir,
     };
 
     return {};
@@ -531,6 +532,22 @@ auto GraphBuilder::expand_rule(
         }
     }
 
+    // Expand order-only inputs early so we can pass them to generated rules
+    auto all_order_only = rule.order_only_inputs;
+    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
+        all_order_only.insert(all_order_only.end(),
+            macro_ptr->order_only_inputs.begin(),
+            macro_ptr->order_only_inputs.end());
+    }
+    auto order_only_paths = std::vector<std::string> {};
+    for (auto const& pattern : all_order_only) {
+        auto order_inputs = Result<std::vector<std::string>> { expand_inputs(ctx, { pattern }) };
+        if (order_inputs) {
+            order_only_paths.insert(order_only_paths.end(),
+                order_inputs->begin(), order_inputs->end());
+        }
+    }
+
     // Create command node
     auto cmd_id = Result<NodeId> { create_command_node(ctx, cmd_text, display) };
     if (!cmd_id)
@@ -543,6 +560,7 @@ auto GraphBuilder::expand_rule(
             .command = cmd_text,
             .display = display,
             .inputs = inputs,
+            .order_only_inputs = order_only_paths,
             .outputs = *outputs,
             .working_dir = ctx.current_dir.string(),
         };
@@ -557,6 +575,13 @@ auto GraphBuilder::expand_rule(
                 auto input_id = Result<NodeId> { get_or_create_file_node(ctx, input, NodeType::File) };
                 if (input_id)
                     (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
+            }
+
+            // Create order-only edges for generated command (e.g., gen-headers)
+            for (auto const& oi : gen_rule.order_only_inputs) {
+                auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
+                if (oi_id)
+                    (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
             }
 
             // Add edge from generated command to parent command (dep-scan runs before compile)
@@ -598,34 +623,48 @@ auto GraphBuilder::expand_rule(
             ctx.groups[*output_group].push_back(*output_id);
 
         // Add to order-only group <name> if specified
+        // Supports path/<group> syntax where path specifies the group's directory
         auto output_oo_group = rule.output_order_only_group;
         if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group)
             output_oo_group = macro_ptr->output_order_only_group;
         if (output_oo_group) {
-            auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+            auto dir = std::string {};
+
+            // Get directory from path prefix if specified
+            auto const* group_dir_expr = rule.output_order_only_group_dir
+                ? &*rule.output_order_only_group_dir
+                : (macro_ptr && macro_ptr->output_order_only_group_dir
+                    ? &*macro_ptr->output_order_only_group_dir
+                    : nullptr);
+
+            if (group_dir_expr) {
+                auto evaluator = parser::Evaluator { *ctx.eval };
+                auto expanded = evaluator.expand(*group_dir_expr);
+                if (expanded) {
+                    // Remove trailing slash and normalize
+                    auto dir_path = std::string { *expanded };
+                    while (!dir_path.empty() && dir_path.back() == '/')
+                        dir_path.pop_back();
+
+                    // Resolve relative to current_dir
+                    auto resolved = fs::path { ctx.current_dir } / dir_path;
+                    dir = resolved.lexically_normal().string();
+                }
+            }
+
+            if (dir.empty())
+                dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+
             auto key = GroupKey { dir, *output_oo_group };
             order_only_groups_[key].push_back(*output_id);
         }
     }
 
-    // Handle order-only inputs (merge rule + macro if applicable)
-    auto all_order_only = rule.order_only_inputs;
-    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
-        all_order_only.insert(all_order_only.end(),
-            macro_ptr->order_only_inputs.begin(),
-            macro_ptr->order_only_inputs.end());
-    }
-
-    for (auto const& pattern : all_order_only) {
-        auto order_inputs = Result<std::vector<std::string>> { expand_inputs(ctx, { pattern }) };
-        if (!order_inputs)
-            continue;
-
-        for (auto const& oi : *order_inputs) {
-            auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
-            if (oi_id)
-                (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
-        }
+    // Create order-only edges from the pre-expanded paths
+    for (auto const& oi : order_only_paths) {
+        auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
+        if (oi_id)
+            (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
     }
 
     return {};
