@@ -811,10 +811,11 @@ auto GraphBuilder::expand_inputs(
                     }
 
                     // Check for generated file in variant
-                    // First try the absolute path (handles paths with ../ that resolve correctly)
-                    auto abs_path = full_path.lexically_normal().string();
-                    if (ctx.graph->find_by_path(abs_path)) {
-                        result.push_back(abs_path);
+                    // Convert absolute path to project-relative for graph lookup
+                    auto abs_path = full_path.lexically_normal();
+                    auto rel_path = abs_path.lexically_relative(ctx.options.source_root).string();
+                    if (ctx.graph->find_by_path(rel_path)) {
+                        result.push_back(rel_path);
                     } else {
                         // Try mapping to variant (for simple paths like "foo.o")
                         auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
@@ -822,8 +823,8 @@ auto GraphBuilder::expand_inputs(
                         if (ctx.graph->find_by_path(variant_path)) {
                             result.push_back(variant_path);
                         } else {
-                            // Fall back to original path
-                            result.push_back(std::move(path));
+                            // Fall back to project-relative path for error messages
+                            result.push_back(rel_path);
                         }
                     }
                 }

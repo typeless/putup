@@ -1024,13 +1024,10 @@ auto cmd_build(Options const& opts) -> int
     }
     auto layout = pup::ProjectLayout { std::move(*layout_result) };
 
-    // Override variant_dir from --variant or -B if specified
-    // This is used for TUP_VARIANTDIR calculation
-    // Note: map_to_variant() in builder.cpp handles the out-of-tree case separately
+    // Override variant_dir from --variant if specified
+    // Note: -B is already handled by discover_layout() which sets output_root and clears variant_dir
     if (!opts.variant.empty())
         layout.variant_dir = std::filesystem::path { opts.variant };
-    else if (!opts.build_dir.empty())
-        layout.variant_dir = std::filesystem::path { opts.build_dir };
 
     // Auto-initialize if Tupfile.ini exists but .pup/ doesn't
     auto pup_dir = layout.pup_dir();
