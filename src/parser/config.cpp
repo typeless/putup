@@ -47,6 +47,10 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
         auto name = trim(line.substr(0, eq_pos));
         auto value = trim(line.substr(eq_pos + 1));
 
+        // Strip surrounding quotes if present (tup config files often quote string values)
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
+            value = value.substr(1, value.size() - 2);
+
         if (!name.starts_with(CONFIG_PREFIX))
             continue;
 

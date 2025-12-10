@@ -811,11 +811,15 @@ auto GraphBuilder::expand_inputs(
                 // Non-glob path: check if file exists on disk, or find in graph
                 auto full_path = std::filesystem::path { ctx.options.source_root / ctx.current_dir / path };
                 if (std::filesystem::exists(full_path)) {
-                    // Prefix with current_dir to make path relative to project root
-                    if (!ctx.current_dir.empty())
-                        result.push_back((ctx.current_dir / path).string());
-                    else
+                    // Resolve path relative to current_dir and normalize to project-root-relative
+                    // This handles paths like "../../include/foo.h" from "modules/kernel"
+                    // -> "modules/kernel/../../include/foo.h" -> "include/foo.h"
+                    if (!ctx.current_dir.empty()) {
+                        auto resolved = (ctx.current_dir / path).lexically_normal();
+                        result.push_back(resolved.string());
+                    } else {
                         result.push_back(std::move(path));
+                    }
                 } else if (full_path.filename() == "tup.config" &&
                            (!ctx.options.variant_dir.empty() || !ctx.options.output_root.empty())) {
                     // Special case: tup.config lives in variant/output directory, not source root
@@ -1014,6 +1018,12 @@ auto GraphBuilder::expand_command(
     auto primary_input = cmd_inputs.empty() ? std::string {} : cmd_inputs[0];
     auto primary_output = cmd_outputs.empty() ? std::string {} : cmd_outputs[0];
 
+    // %d is the current directory basename (where the Tupfile is),
+    // NOT the directory of the input file. This matches tup's behavior.
+    auto current_dir_name = ctx.current_dir.empty()
+        ? std::string { "." }
+        : ctx.current_dir.filename().string();
+
     auto flags = parser::PatternFlags {
         .input = primary_input,
         .input_base = std::string { parser::path_basename(primary_input) },
@@ -1021,7 +1031,7 @@ auto GraphBuilder::expand_command(
         .input_ext = std::string { parser::path_extension(primary_input) },
         .output = primary_output,
         .output_base = std::string { parser::path_basename(primary_output) },
-        .input_dir = std::string { parser::path_directory(primary_input) },
+        .input_dir = current_dir_name,
         .all_inputs = cmd_inputs,
     };
 
