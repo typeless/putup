@@ -6,7 +6,10 @@
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
 
+#include <fmt/core.h>
+
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <fstream>
 #include <set>
@@ -24,6 +27,17 @@ auto strip_trailing_slashes(std::string str) -> std::string
     while (!str.empty() && (str.back() == '/' || str.back() == '\\'))
         str.pop_back();
     return str;
+}
+
+/// Normalize a file path for consistent lookup
+/// - Removes double slashes
+/// - Resolves . and .. components using lexically_normal
+auto normalize_path(std::string const& path_str) -> std::string
+{
+    if (path_str.empty())
+        return path_str;
+    auto path = fs::path { path_str }.lexically_normal();
+    return path.string();
 }
 
 /// Normalize a directory path for group key lookup
@@ -67,13 +81,12 @@ auto map_to_variant(
         return p.lexically_normal().string();
 
     // Out-of-tree build: use absolute paths under output_root
+    // Note: When output_root != source_root, output_root already contains the variant
+    // So we don't add variant_dir again
     if (!output_root.empty() && source_root != output_root) {
-        if (variant_dir.empty()) {
-            if (current_dir.empty())
-                return (output_root / path).lexically_normal().string();
-            return (output_root / current_dir / path).lexically_normal().string();
-        }
-        return (output_root / variant_dir / current_dir / path).lexically_normal().string();
+        if (current_dir.empty())
+            return (output_root / path).lexically_normal().string();
+        return (output_root / current_dir / path).lexically_normal().string();
     }
 
     // In-tree build: paths are project-relative
@@ -775,22 +788,43 @@ auto GraphBuilder::expand_inputs(
                     // Not on disk - try demand-driven parsing of the file's directory
                     auto file_dir = fs::path { path }.parent_path();
                     auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
+
+                    // If path references the variant output, map back to source for Tupfile lookup
+                    // E.g., "../../build-s1f3/modules/kernel" -> "modules/kernel"
+                    auto source_dir = abs_file_dir;
+                    auto variant_prefix = ctx.options.variant_dir.string();
+                    if (!variant_prefix.empty()) {
+                        auto abs_dir_str = abs_file_dir.string();
+                        if (abs_dir_str.starts_with(variant_prefix + "/")) {
+                            source_dir = fs::path { abs_dir_str.substr(variant_prefix.size() + 1) };
+                        } else if (abs_dir_str == variant_prefix) {
+                            source_dir = fs::path { "." };
+                        }
+                    }
+
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                        if (ctx.eval->available_tupfile_dirs->contains(abs_file_dir)) {
-                            auto req_result = Result<void> { ctx.eval->request_directory(abs_file_dir) };
+                        if (ctx.eval->available_tupfile_dirs->contains(source_dir)) {
+                            auto req_result = Result<void> { ctx.eval->request_directory(source_dir) };
                             if (!req_result)
                                 return pup::unexpected<Error>(req_result.error());
                         }
                     }
 
                     // Check for generated file in variant
-                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
-                        ctx.options.source_root, ctx.options.output_root);
-                    if (ctx.graph->find_by_path(variant_path)) {
-                        result.push_back(variant_path);
+                    // First try the absolute path (handles paths with ../ that resolve correctly)
+                    auto abs_path = full_path.lexically_normal().string();
+                    if (ctx.graph->find_by_path(abs_path)) {
+                        result.push_back(abs_path);
                     } else {
-                        // Fall back to original path
-                        result.push_back(std::move(path));
+                        // Try mapping to variant (for simple paths like "foo.o")
+                        auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
+                            ctx.options.source_root, ctx.options.output_root);
+                        if (ctx.graph->find_by_path(variant_path)) {
+                            result.push_back(variant_path);
+                        } else {
+                            // Fall back to original path
+                            result.push_back(std::move(path));
+                        }
                     }
                 }
             }
@@ -825,12 +859,17 @@ auto GraphBuilder::expand_outputs(
     auto evaluator = parser::Evaluator { *ctx.eval };
 
     // Build pattern flags from input
+    // For outputs, %d is the current directory basename (where the Tupfile is),
+    // NOT the directory of the input file. This matches tup's behavior.
+    auto current_dir_name = ctx.current_dir.empty()
+        ? std::string { "." }
+        : ctx.current_dir.filename().string();
     auto flags = parser::PatternFlags {
         .input = input,
         .input_base = std::string { parser::path_basename(input) },
         .input_noext = std::string { parser::path_stem(input) },
         .input_ext = std::string { parser::path_extension(input) },
-        .input_dir = std::string { parser::path_directory(input) },
+        .input_dir = current_dir_name,
     };
 
     for (auto const& pattern : patterns) {
@@ -936,14 +975,17 @@ auto GraphBuilder::get_or_create_file_node(
     std::string const& path,
     NodeType type) -> Result<NodeId>
 {
+    // Normalize path for consistent lookup (handles //, ., ..)
+    auto normalized = normalize_path(path);
+
     // Check if node already exists
-    if (auto existing = std::optional<NodeId> { ctx.graph->find_by_path(path) })
+    if (auto existing = std::optional<NodeId> { ctx.graph->find_by_path(normalized) })
         return *existing;
 
-    // Create new node
+    // Create new node with normalized path
     auto node = Node {
         .type = type,
-        .path = path,
+        .path = normalized,
     };
 
     return ctx.graph->add_node(std::move(node));

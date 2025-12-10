@@ -294,7 +294,6 @@ auto parse_directory(
     auto tup_variantdir = compute_variantdir(
         normalized_dir == "." ? std::filesystem::path {} : rel_dir,
         variant_dir);
-
     // Create recursive callback for demand-driven parsing
     // Pass base_vars (not the local vars copy) so each directory starts fresh
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
@@ -1026,6 +1025,8 @@ auto cmd_build(Options const& opts) -> int
     auto layout = pup::ProjectLayout { std::move(*layout_result) };
 
     // Override variant_dir from --variant or -B if specified
+    // This is used for TUP_VARIANTDIR calculation
+    // Note: map_to_variant() in builder.cpp handles the out-of-tree case separately
     if (!opts.variant.empty())
         layout.variant_dir = std::filesystem::path { opts.variant };
     else if (!opts.build_dir.empty())

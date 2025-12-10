@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <filesystem>
 
 namespace pup::parser {
 
@@ -87,7 +88,9 @@ auto Evaluator::expand(Expression const& expr) -> Result<std::string>
         }
     }
 
-    return result;
+    // Recursively expand any variable references that were embedded in literals
+    // (e.g., from escaped quotes like \"$(VAR)\")
+    return expand(std::string_view { result });
 }
 
 auto Evaluator::expand(std::string_view text) -> Result<std::string>
@@ -313,8 +316,12 @@ auto Evaluator::expand_path(PathPattern const& pattern)
         auto end = start;
         while (end < expanded.size() && expanded[end] != ' ' && expanded[end] != '\t')
             ++end;
-        if (end > start)
-            result.push_back(expanded.substr(start, end - start));
+        if (end > start) {
+            // Normalize path to remove // and resolve . and .. components
+            auto path_str = expanded.substr(start, end - start);
+            auto normalized = std::filesystem::path { path_str }.lexically_normal().string();
+            result.push_back(std::move(normalized));
+        }
         start = end;
     }
 

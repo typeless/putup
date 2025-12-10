@@ -45,9 +45,19 @@ auto is_compiler_wrapper(std::string const& name) -> bool
     return name == "ccache" || name == "distcc" || name == "sccache" || name == "icecc";
 }
 
+/// Check if a flag contains shell special characters that would cause issues
+auto has_shell_special(std::string const& flag) -> bool
+{
+    return flag.find('`') != std::string::npos || flag.find("$(") != std::string::npos;
+}
+
 /// Check if a flag is relevant for dependency generation
 auto is_dep_relevant_flag(std::string const& flag) -> bool
 {
+    // Skip flags with shell command substitution (backticks or $())
+    if (has_shell_special(flag))
+        return false;
+
     // Include paths
     if (flag.starts_with("-I") || flag.starts_with("-isystem") || flag.starts_with("-iquote"))
         return true;
@@ -76,7 +86,8 @@ auto is_source_file(std::string const& word) -> bool
     if (dot_pos == std::string::npos)
         return false;
     auto ext = word.substr(dot_pos);
-    return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".C" || ext == ".c++";
+    return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".C" || ext == ".c++"
+        || ext == ".S" || ext == ".s" || ext == ".asm";
 }
 
 /// Build a dep-scan command from the original compile command

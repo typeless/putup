@@ -829,11 +829,14 @@ auto Parser::parse_expression_until(std::function<bool(Token const&)> const& sto
 
     while (!check(TokenType::Eof) && !stop(current_)) {
         // Check if there was whitespace between tokens (gap in offsets)
-        if (!current_text.empty() && current_.location.offset > last_end_offset) {
+        auto has_gap = current_.location.offset > last_end_offset;
+        if (has_gap) {
             if (stop_at_gap) {
                 flush_text();
                 break; // Stop at whitespace gap (for path patterns)
             }
+            // Add space to current_text for the gap
+            // This handles both "text var" and "var text" cases
             current_text += ' ';
         }
 
