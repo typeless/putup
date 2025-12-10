@@ -116,7 +116,11 @@ include_rules
 
 ### Implicit Header Dependencies
 
-Pup automatically tracks header dependencies when using `-MD`:
+Pup offers two methods for tracking header dependencies:
+
+#### Method 1: Compiler-generated `.d` files (recommended)
+
+Add `-MD` to your compile flags:
 
 ```tup
 CFLAGS += -MD
@@ -124,6 +128,26 @@ CFLAGS += -MD
 ```
 
 The compiler generates `.d` files listing included headers. Pup parses these and rebuilds affected objects when headers change.
+
+#### Method 2: Auto-generated dependency scanning
+
+Set `PUP_IMPLICIT_DEPS=1` to have pup automatically generate dependency scanning rules:
+
+```bash
+PUP_IMPLICIT_DEPS=1 pup build
+```
+
+When enabled, pup pattern-matches C/C++ compile commands and auto-generates `gcc -M` rules to discover header dependencies. This works without modifying your Tupfiles:
+
+```tup
+# Your Tupfile (no -MD needed):
+: main.c |> gcc -c %f -o %o |> main.o
+
+# Pup auto-generates:
+# : main.c |> gcc -M main.c |> <stdout → implicit deps for main.o>
+```
+
+The discovered headers become implicit edges in the dependency graph, triggering rebuilds when headers change.
 
 ### Variant Builds
 
@@ -188,7 +212,7 @@ pup -S /path/to/source -B /path/to/build
 |--------|-----|-----|
 | Change detection | FUSE + mtime | mtime → size → SHA-256 |
 | Directory | `.tup/` | `.pup/` |
-| Implicit deps | FUSE interception | `.d` file parsing |
+| Implicit deps | FUSE interception | `.d` files or auto-generated `gcc -M` |
 
 ## Known Limitations
 

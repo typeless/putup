@@ -3,6 +3,7 @@
 
 #include "pup/exec/scheduler.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
 
@@ -382,6 +383,17 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
 
     // Discover implicit dependencies from .d files (if command succeeded)
     if (result.success) {
+        // For generated rules with inject_implicit_deps, parse stdout as depfile
+        if (job.inject_implicit_deps && !cmd_result->stdout_output.empty()) {
+            auto depfile_result = parser::parse_depfile(std::string_view { cmd_result->stdout_output });
+            if (depfile_result) {
+                for (auto& dep : depfile_result->dependencies)
+                    result.discovered_deps.push_back(std::move(dep));
+                result.deps_for_command = job.parent_command;
+            }
+        }
+
+        // Traditional .d file discovery
         for (auto const& output : job.outputs) {
             auto output_path = std::filesystem::path { output };
             auto ext = output_path.extension().string();
@@ -432,6 +444,18 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         if (!node->source_dir.empty())
             working_dir /= node->source_dir;
 
+        // Check if this is a generated rule that captures stdout
+        auto capture_stdout = false;
+        auto inject_implicit = false;
+        auto parent_cmd = INVALID_NODE_ID;
+        if (node->generated_output && node->generated_output->type == graph::GeneratedOutput::Type::Stdout) {
+            capture_stdout = true;
+            if (node->output_action == graph::OutputAction::InjectImplicitDeps) {
+                inject_implicit = true;
+                parent_cmd = node->parent_command;
+            }
+        }
+
         auto job = BuildJob {
             .id = id,
             .command = node->command,
@@ -441,6 +465,9 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
             .outputs = {},
             .order_only_inputs = {},
             .exported_vars = node->exported_vars,
+            .capture_stdout = capture_stdout,
+            .inject_implicit_deps = inject_implicit,
+            .parent_command = parent_cmd,
         };
 
         // Collect input paths

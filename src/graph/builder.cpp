@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/graph/builder.hpp"
+#include "pup/graph/rule_pattern.hpp"
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
 
@@ -513,6 +514,41 @@ auto GraphBuilder::expand_rule(
     auto cmd_id = Result<NodeId> { create_command_node(ctx, cmd_text, display) };
     if (!cmd_id)
         return pup::unexpected<Error>(cmd_id.error());
+
+    // Check for pattern matches and generate additional rules
+    if (ctx.options.pattern_registry && !ctx.options.pattern_registry->empty()) {
+        auto cmd_info = CommandInfo {
+            .node_id = *cmd_id,
+            .command = cmd_text,
+            .display = display,
+            .inputs = inputs,
+            .outputs = *outputs,
+            .working_dir = ctx.current_dir.string(),
+        };
+        auto generated_rules = ctx.options.pattern_registry->match_and_generate(cmd_info);
+        for (auto const& gen_rule : generated_rules) {
+            auto gen_cmd_id = Result<NodeId> { create_command_node(ctx, gen_rule.command, gen_rule.display) };
+            if (!gen_cmd_id)
+                continue;
+
+            // Create edges from inputs to generated command
+            for (auto const& input : gen_rule.inputs) {
+                auto input_id = Result<NodeId> { get_or_create_file_node(ctx, input, NodeType::File) };
+                if (input_id)
+                    (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
+            }
+
+            // Add edge from generated command to parent command (dep-scan runs before compile)
+            (void)ctx.graph->add_edge(*gen_cmd_id, *cmd_id);
+
+            // Store generated rule info on the node for scheduler to handle
+            if (auto* node = ctx.graph->get_node_mut(*gen_cmd_id)) {
+                node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
+                node->output_action = gen_rule.action;
+                node->parent_command = gen_rule.parent_command;
+            }
+        }
+    }
 
     // Create edges from inputs to command
     for (auto const& input : inputs) {

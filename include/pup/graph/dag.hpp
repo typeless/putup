@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
+#include "pup/graph/rule_pattern.hpp"
 
 #include <memory>
 #include <optional>
@@ -44,6 +45,11 @@ struct Node {
     std::vector<NodeId> outputs = {};         ///< Output edges (dependents)
     std::vector<NodeId> order_only = {};      ///< Order-only dependencies
     std::set<std::string> exported_vars = {}; ///< Env vars to export to command
+
+    // For generated rules (auto-generated from pattern matching)
+    std::optional<GeneratedOutput> generated_output = {}; ///< Output specification
+    OutputAction output_action = {};                      ///< What to do with output
+    NodeId parent_command = INVALID_NODE_ID;              ///< Parent command for InjectImplicitDeps
 };
 
 /// Build graph - DAG of nodes and edges
@@ -64,6 +70,9 @@ public:
     /// Get a node by ID
     [[nodiscard]] auto get_node(NodeId id) -> Node*;
     [[nodiscard]] auto get_node(NodeId id) const -> Node const*;
+
+    /// Get mutable node by ID (alias for non-const get_node)
+    [[nodiscard]] auto get_node_mut(NodeId id) -> Node* { return get_node(id); }
 
     /// Find a node by path
     [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;

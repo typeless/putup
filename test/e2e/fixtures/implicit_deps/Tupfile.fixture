@@ -1,0 +1,4 @@
+# Test implicit header dependency discovery
+# Note: config.h is NOT listed as an input - pup should discover it automatically
+: main.c |> gcc -c %f -o %o |> main.o
+: main.o |> gcc %f -o %o |> program

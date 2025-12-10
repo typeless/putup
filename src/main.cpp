@@ -10,6 +10,7 @@
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
+#include "pup/graph/rule_pattern.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/parser/config.hpp"
@@ -71,7 +72,8 @@ auto print_usage() -> void
                "  -h, --help         Print this help\n"
                "\nEnvironment:\n"
                "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
-               "  PUP_BUILD_DIR      Build directory (overridden by -B)\n");
+               "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
+               "  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)\n");
 }
 
 auto print_version() -> void
@@ -323,7 +325,8 @@ auto parse_directory(
 
 auto find_changed_files_with_implicit(
     std::filesystem::path const& root,
-    pup::index::Index const& old_index) -> std::vector<std::string>
+    pup::index::Index const& old_index,
+    bool verbose = false) -> std::vector<std::string>
 {
     auto changed = std::vector<std::string> {};
 
@@ -335,6 +338,8 @@ auto find_changed_files_with_implicit(
 
         struct stat st = {};
         if (::stat(path.c_str(), &st) < 0) {
+            if (verbose)
+                fmt::print("  Changed (stat failed): {}\n", file.path);
             changed.push_back(file.path);
             continue;
         }
@@ -345,20 +350,29 @@ auto find_changed_files_with_implicit(
         };
 
         if (current_mtime != file.mtime) {
+            if (verbose)
+                fmt::print("  Changed (mtime): {} - stored {}:{} vs current {}:{}\n",
+                    file.path, file.mtime.seconds, file.mtime.nanoseconds,
+                    current_mtime.seconds, current_mtime.nanoseconds);
             changed.push_back(file.path);
             continue;
         }
 
         auto current_size = static_cast<std::uint64_t>(st.st_size);
         if (current_size != file.size) {
+            if (verbose)
+                fmt::print("  Changed (size): {}\n", file.path);
             changed.push_back(file.path);
             continue;
         }
 
         if (file.content_hash != pup::ZERO_HASH) {
             auto hash_result = pup::sha256_file(path);
-            if (!hash_result || *hash_result != file.content_hash)
+            if (!hash_result || *hash_result != file.content_hash) {
+                if (verbose)
+                    fmt::print("  Changed (hash): {}\n", file.path);
                 changed.push_back(file.path);
+            }
         }
     }
 
@@ -389,6 +403,8 @@ auto expand_implicit_deps(
                 continue;
 
             // Handle implicit deps (header -> command)
+            // When a header changes, mark the command's OUTPUTS as changed
+            // This triggers the command to re-run without affecting unrelated commands
             if (edge.type == pup::LinkType::Implicit) {
                 auto cmd_id = pup::NodeId { edge.to };
                 auto const* cmd = index.find_command_by_id(cmd_id);
@@ -399,11 +415,11 @@ auto expand_implicit_deps(
                 if (!cmd_node_id)
                     continue;
 
-                for (auto input_id : graph.get_inputs(*cmd_node_id)) {
-                    auto const* input_node = graph.get_node(input_id);
-                    if (input_node && !input_node->path.empty()) {
-                        if (added.insert(input_node->path).second)
-                            result.push_back(input_node->path);
+                for (auto output_id : graph.get_outputs(*cmd_node_id)) {
+                    auto const* output_node = graph.get_node(output_id);
+                    if (output_node && !output_node->path.empty()) {
+                        if (added.insert(output_node->path).second)
+                            result.push_back(output_node->path);
                     }
                 }
             }
@@ -437,7 +453,8 @@ auto expand_implicit_deps(
 auto build_index(
     pup::graph::BuildGraph const& graph,
     std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
-    std::filesystem::path const& root) -> pup::index::Index
+    std::filesystem::path const& root,
+    pup::index::Index const* old_index = nullptr) -> pup::index::Index
 {
     auto index = pup::index::Index {};
     auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
@@ -448,6 +465,9 @@ auto build_index(
             max_id = node.id;
 
         if (node.type == pup::NodeType::File || node.type == pup::NodeType::Generated) {
+            if (node.path.empty())
+                continue;
+
             auto file_path = std::filesystem::path { root / node.path };
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
@@ -547,6 +567,82 @@ auto build_index(
                 index.add_edge(pup::index::EdgeEntry {
                     .from = dep_id,
                     .to = cmd_id,
+                    .type = pup::LinkType::Implicit,
+                    .group_cmd_id = 0,
+                });
+            }
+        }
+    }
+
+    // Preserve implicit edges from old_index for commands that didn't run this build
+    if (old_index) {
+        // Build set of commands that ran this build (have new discovered deps)
+        auto commands_with_new_deps = std::set<pup::NodeId> {};
+        for (auto const& [cmd_id, _] : discovered_deps)
+            commands_with_new_deps.insert(cmd_id);
+
+        // Build mapping from old file paths to new file IDs
+        auto old_path_to_new_id = std::unordered_map<std::string, pup::NodeId> {};
+        for (auto const& file : old_index->files()) {
+            auto it = path_to_id.find(file.path);
+            if (it != path_to_id.end())
+                old_path_to_new_id[file.path] = it->second;
+        }
+
+        // Copy implicit edges for commands that didn't have new deps discovered
+        for (auto const& edge : old_index->edges()) {
+            if (edge.type != pup::LinkType::Implicit)
+                continue;
+
+            // Skip if this command got new deps this build
+            if (commands_with_new_deps.contains(edge.to))
+                continue;
+
+            // Find the source file in the old index
+            auto const* old_file = old_index->find_file_by_id(edge.from);
+            if (!old_file)
+                continue;
+
+            auto new_file_it = path_to_id.find(old_file->path);
+            pup::NodeId new_from_id;
+            if (new_file_it != path_to_id.end()) {
+                new_from_id = new_file_it->second;
+            } else {
+                // File not in new index yet - add it
+                new_from_id = next_id++;
+
+                auto abs_path = resolve_path(old_file->path, root);
+                auto content_hash = pup::Hash256 {};
+                auto file_size = std::uint64_t { 0 };
+                if (std::filesystem::exists(abs_path)) {
+                    auto hash_result = pup::sha256_file(abs_path);
+                    if (hash_result)
+                        content_hash = *hash_result;
+
+                    auto ec = std::error_code {};
+                    file_size = std::filesystem::file_size(abs_path, ec);
+                }
+
+                auto entry = pup::index::FileEntry {
+                    .id = new_from_id,
+                    .parent_id = 0,
+                    .src_id = 0,
+                    .type = pup::NodeType::File,
+                    .flags = pup::NodeFlags::None,
+                    .path = old_file->path,
+                    .size = file_size,
+                    .mtime = get_file_mtime(abs_path),
+                    .content_hash = content_hash,
+                };
+                index.add_file(std::move(entry));
+                path_to_id[old_file->path] = new_from_id;
+            }
+
+            auto edge_key = std::pair { new_from_id, edge.to };
+            if (added_edges.insert(edge_key).second) {
+                index.add_edge(pup::index::EdgeEntry {
+                    .from = new_from_id,
+                    .to = edge.to,
                     .type = pup::LinkType::Implicit,
                     .group_cmd_id = 0,
                 });
@@ -968,11 +1064,25 @@ auto cmd_build(Options const& opts) -> int
 
     auto vars = pup::parser::VarDb {};
 
+    // Implicit dependency tracking is enabled by default (set PUP_IMPLICIT_DEPS=0 to disable)
+    auto pattern_registry = std::optional<pup::graph::RulePatternRegistry> {};
+    auto implicit_deps_disabled = false;
+    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0")
+        implicit_deps_disabled = true;
+
+    if (!implicit_deps_disabled) {
+        pattern_registry.emplace();
+        pattern_registry->register_pattern(pup::graph::make_gcc_depfile_pattern());
+        if (opts.verbose)
+            fmt::print("Implicit dependency tracking enabled\n");
+    }
+
     auto builder_opts = pup::graph::BuilderOptions {
         .source_root = layout.source_root,
         .output_root = layout.output_root,
         .variant_dir = variant_dir,
         .expand_globs = true,
+        .pattern_registry = pattern_registry ? &*pattern_registry : nullptr,
     };
 
     auto builder = pup::graph::GraphBuilder { builder_opts };
@@ -1023,7 +1133,7 @@ auto cmd_build(Options const& opts) -> int
             auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
             if (index_result) {
                 old_index = std::move(*index_result);
-                changed_files = find_changed_files_with_implicit(layout.source_root, *old_index);
+                changed_files = find_changed_files_with_implicit(layout.source_root, *old_index, opts.verbose);
                 changed_files = expand_implicit_deps(changed_files, *old_index, graph);
 
                 if (changed_files.empty()) {
@@ -1064,7 +1174,34 @@ auto cmd_build(Options const& opts) -> int
                 fmt::print(stderr, "{}\n", result.output);
         } else if (!result.discovered_deps.empty()) {
             auto lock = std::lock_guard { deps_mutex };
-            discovered_deps[job.id] = result.discovered_deps;
+            // If deps_for_command is set, the deps belong to that command (for generated rules)
+            auto target_id = result.deps_for_command != pup::INVALID_NODE_ID
+                ? result.deps_for_command
+                : job.id;
+            auto& deps = discovered_deps[target_id];
+
+            // Resolve paths relative to job's working directory and normalize to source root
+            for (auto const& dep_path : result.discovered_deps) {
+                try {
+                    auto resolved = std::filesystem::path {};
+                    if (std::filesystem::path { dep_path }.is_absolute()) {
+                        resolved = std::filesystem::weakly_canonical(dep_path);
+                    } else {
+                        // dep_path is relative to job.working_dir
+                        resolved = std::filesystem::weakly_canonical(job.working_dir / dep_path);
+                    }
+
+                    // Make relative to source root if under it
+                    if (is_path_under_root(resolved, layout.source_root)) {
+                        deps.push_back(std::filesystem::relative(resolved, layout.source_root).string());
+                    } else {
+                        deps.push_back(resolved.string());
+                    }
+                } catch (std::filesystem::filesystem_error const& e) {
+                    if (opts.verbose)
+                        fmt::print(stderr, "Warning: Skipping dependency '{}': {}\n", dep_path, e.what());
+                }
+            }
         }
     });
 
@@ -1104,7 +1241,8 @@ auto cmd_build(Options const& opts) -> int
             stats.completed_jobs, duration.count());
 
     if (stats.failed_jobs == 0 && !opts.dry_run) {
-        auto index = pup::index::Index { build_index(graph, discovered_deps, layout.source_root) };
+        auto const* old_index_ptr = old_index ? &*old_index : nullptr;
+        auto index = pup::index::Index { build_index(graph, discovered_deps, layout.source_root, old_index_ptr) };
         auto writer = pup::index::IndexWriter {};
         auto write_result = pup::Result<void> { writer.write(index_path, index) };
         if (!write_result) {

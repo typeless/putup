@@ -31,6 +31,11 @@ struct BuildJob {
     std::vector<std::string> outputs = {};
     std::vector<std::string> order_only_inputs = {}; ///< Order-only dependencies
     std::set<std::string> exported_vars = {};        ///< Env vars to export to command
+
+    // For auto-generated rules (from pattern matching)
+    bool capture_stdout = false;             ///< Capture stdout for depfile parsing
+    bool inject_implicit_deps = false;       ///< Parse stdout as depfile
+    NodeId parent_command = INVALID_NODE_ID; ///< Parent command for implicit deps
 };
 
 /// Result of executing a build job
@@ -41,6 +46,7 @@ struct JobResult {
     std::string output = {};
     std::chrono::milliseconds duration = {};
     std::vector<std::string> discovered_deps = {}; ///< Implicit deps from .d files
+    NodeId deps_for_command = INVALID_NODE_ID;     ///< If set, deps belong to this command (not id)
 };
 
 /// Callback types for scheduler events
