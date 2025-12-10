@@ -820,7 +820,11 @@ auto cmd_parse(Options const& opts) -> int
                         rule->inputs.size(), rule->outputs.size());
                     ++total_rules;
                 } else if (auto const* assign = stmt->as<pup::parser::Assignment>()) {
-                    fmt::print("  Assignment: {}\n", assign->name);
+                    // Print the name expression - for simple names, use as_literal
+                    auto name_str = assign->name.is_literal()
+                        ? std::string { assign->name.as_literal() }
+                        : std::string { "<expression>" };
+                    fmt::print("  Assignment: {}\n", name_str);
                     ++total_assignments;
                 } else if (auto const* macro = stmt->as<pup::parser::BangMacro>()) {
                     fmt::print("  Macro: !{}\n", macro->name);

@@ -343,14 +343,18 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
     }
 
-    // Assignment: IDENTIFIER (= | += | :=) value
-    // Also accept Text tokens (e.g., paths with / like "//CFLAGS" which tup allows)
-    if (check(TokenType::Identifier) || check(TokenType::Text)) {
-        auto const name = std::string { current_.text };
-        advance();
+    // Assignment: name (= | += | :=) value
+    // name can be a complex expression like foo-$(BAR) or simple identifier
+    if (check(TokenType::Identifier) || check(TokenType::Text) || check(TokenType::Dollar)) {
+        // Parse the LHS as an expression, stopping at assignment operators
+        auto name_expr = parse_expression_until([](Token const& t) {
+            return t.is_assignment_op() || t.is_end_of_statement();
+        });
+        if (!name_expr)
+            return pup::unexpected<Error>(name_expr.error());
 
         if (current_.is_assignment_op()) {
-            auto assign = parse_assignment(name);
+            auto assign = parse_assignment(std::move(*name_expr));
             if (!assign)
                 return pup::unexpected<Error>(assign.error());
             auto stmt = std::make_unique<Statement>();
@@ -359,9 +363,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             return stmt;
         }
 
-        // Not an assignment - skip this line (tup-like permissive behavior)
-        // This handles edge cases like 'echo "Root = " $(ROOT)' which tup treats
-        // as a weird variable assignment with embedded '='
+        // Not an assignment - skip rest of line (tup-like permissive behavior)
         while (!check(TokenType::Newline) && !check(TokenType::Eof))
             advance();
         return nullptr;
@@ -374,7 +376,11 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         if (!name_tok)
             return pup::unexpected<Error>(name_tok.error());
 
-        auto assign = parse_assignment(std::string { name_tok->text });
+        // Create a simple expression with just the identifier
+        auto name_expr = Expression {};
+        name_expr.parts.emplace_back(Expression::Literal { std::string { name_tok->text } });
+
+        auto assign = parse_assignment(std::move(name_expr));
         if (!assign)
             return pup::unexpected<Error>(assign.error());
 
@@ -587,11 +593,11 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     return macro;
 }
 
-auto Parser::parse_assignment(std::string name) -> Result<Assignment>
+auto Parser::parse_assignment(Expression name_expr) -> Result<Assignment>
 {
     auto assign = Assignment {};
     assign.location = previous_.location;
-    assign.name = std::move(name);
+    assign.name = std::move(name_expr);
 
     // Determine operation type
     if (match(TokenType::Equals))

@@ -257,6 +257,13 @@ auto GraphBuilder::process_assignment(
     parser::Assignment const& assign) -> Result<void>
 {
     auto evaluator = parser::Evaluator { *ctx.eval };
+
+    // Evaluate the variable name (may contain variable refs like foo-$(BAR))
+    auto name = Result<std::string> { evaluator.expand(assign.name) };
+    if (!name)
+        return pup::unexpected<Error>(name.error());
+
+    // Evaluate the value
     auto value = Result<std::string> { evaluator.expand(assign.value) };
     if (!value)
         return pup::unexpected<Error>(value.error());
@@ -272,14 +279,14 @@ auto GraphBuilder::process_assignment(
 
     switch (assign.op) {
     case parser::Assignment::Op::Set:
-        db->set(assign.name, *value);
+        db->set(*name, *value);
         break;
     case parser::Assignment::Op::Append:
-        db->append(assign.name, *value);
+        db->append(*name, *value);
         break;
     case parser::Assignment::Op::Define:
         // := means no further expansion
-        db->set(assign.name, *value);
+        db->set(*name, *value);
         break;
     }
 

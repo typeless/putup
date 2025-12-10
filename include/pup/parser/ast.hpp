@@ -117,7 +117,7 @@ struct Assignment : AstNode {
         Append,
         Define };
 
-    std::string name;
+    Expression name; ///< Variable name (may contain variable refs like foo-$(BAR))
     Op op = Op::Set;
     Expression value;
     VarRef::Kind var_kind = VarRef::Kind::Regular; ///< For &var = assignments

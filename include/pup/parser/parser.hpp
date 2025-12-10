@@ -96,7 +96,7 @@ private:
     [[nodiscard]] auto parse_line() -> Result<std::unique_ptr<Statement>>;
     [[nodiscard]] auto parse_rule() -> Result<Rule>;
     [[nodiscard]] auto parse_bang_macro() -> Result<BangMacro>;
-    [[nodiscard]] auto parse_assignment(std::string name) -> Result<Assignment>;
+    [[nodiscard]] auto parse_assignment(Expression name_expr) -> Result<Assignment>;
     [[nodiscard]] auto parse_conditional(Conditional::Kind kind) -> Result<Conditional>;
     [[nodiscard]] auto parse_include(bool is_rules) -> Result<Include>;
     [[nodiscard]] auto parse_export() -> Result<Export>;

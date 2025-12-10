@@ -36,7 +36,7 @@ TEST_CASE("Parser simple assignment", "[parser]")
         REQUIRE(result->statements[0]->is<Assignment>());
 
         auto const* assign = result->statements[0]->as<Assignment>();
-        REQUIRE(assign->name == "FOO");
+        REQUIRE(assign->name.as_literal() == "FOO");
         REQUIRE(assign->op == Assignment::Op::Set);
         REQUIRE(assign->value.is_literal());
         REQUIRE(assign->value.as_literal() == "bar");
@@ -51,7 +51,7 @@ TEST_CASE("Parser simple assignment", "[parser]")
         REQUIRE(result->statements.size() == 1);
 
         auto const* assign = result->statements[0]->as<Assignment>();
-        REQUIRE(assign->name == "CFLAGS");
+        REQUIRE(assign->name.as_literal() == "CFLAGS");
         REQUIRE(assign->op == Assignment::Op::Append);
         REQUIRE(assign->value.as_literal() == "-Wall");
     }
