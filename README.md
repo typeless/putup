@@ -49,6 +49,7 @@ Commands:
   parse             Parse and validate Tupfiles
   graph             Print dependency graph (graphviz format)
   clean             Remove generated files
+  disclean          Full reset: remove .pup and variant directory
   variant <config> [dir]  Create variant build directory
 
 Options:
@@ -82,6 +83,9 @@ pup graph | dot -Tpng > deps.png
 
 # Create a variant build directory
 pup variant default.config build
+
+# Full reset (remove .pup and variant directory)
+pup disclean -B build
 ```
 
 ### Tupfile Syntax

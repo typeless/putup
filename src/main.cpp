@@ -59,6 +59,7 @@ auto print_usage() -> void
                "  build             Execute build (default)\n"
                "  graph             Print dependency graph\n"
                "  clean             Remove generated files\n"
+               "  disclean          Full reset: remove .pup and variant directory\n"
                "  variant <config> [dir]  Create variant build directory\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
@@ -998,6 +999,53 @@ auto cmd_clean(Options const& opts) -> int
     return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
+auto cmd_disclean(Options const& opts) -> int
+{
+    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
+    if (!root) {
+        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        return EXIT_FAILURE;
+    }
+
+    auto variant_dir = std::optional<std::filesystem::path> {};
+    if (!opts.build_dir.empty()) {
+        variant_dir = std::filesystem::path { opts.build_dir };
+        if (variant_dir->is_relative())
+            variant_dir = *root / *variant_dir;
+    } else if (!opts.variant.empty()) {
+        variant_dir = *root / opts.variant;
+    } else if (auto var_name = pup::find_variant_dir(*root)) {
+        variant_dir = *root / *var_name;
+    }
+
+    auto pup_dir = variant_dir ? *variant_dir / ".pup" : *root / ".pup";
+
+    if (std::filesystem::exists(pup_dir)) {
+        if (opts.dry_run) {
+            fmt::print("Would remove: {}\n", pup_dir.string());
+        } else {
+            if (opts.verbose)
+                fmt::print("Removing: {}\n", pup_dir.string());
+            std::filesystem::remove_all(pup_dir);
+        }
+    }
+
+    if (variant_dir && *variant_dir != *root && std::filesystem::exists(*variant_dir)) {
+        if (opts.dry_run) {
+            fmt::print("Would remove: {}\n", variant_dir->string());
+        } else {
+            if (opts.verbose)
+                fmt::print("Removing: {}\n", variant_dir->string());
+            std::filesystem::remove_all(*variant_dir);
+        }
+    }
+
+    if (!opts.dry_run)
+        fmt::print("Project reset complete\n");
+
+    return EXIT_SUCCESS;
+}
+
 auto cmd_variant(Options const& opts) -> int
 {
     if (opts.targets.empty()) {
@@ -1314,6 +1362,8 @@ auto main(int argc, char** argv) -> int
         return cmd_build(opts);
     if (opts.command == "clean")
         return cmd_clean(opts);
+    if (opts.command == "disclean")
+        return cmd_disclean(opts);
     if (opts.command == "variant")
         return cmd_variant(opts);
 

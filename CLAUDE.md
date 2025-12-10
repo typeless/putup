@@ -35,6 +35,53 @@ tup               # Build
 
 Build artifacts go to `build/` using tup's variant system.
 
+## Commands
+
+```bash
+pup [OPTIONS] [COMMAND]
+```
+
+| Command | Description |
+|---------|-------------|
+| `init` | Initialize `.pup` directory in current project |
+| `parse` | Parse and validate Tupfiles without building |
+| `build` | Execute build (default if no command specified) |
+| `graph` | Print dependency graph |
+| `clean` | Remove generated files from variant directory |
+| `disclean` | Full reset: remove `.pup` directory and entire variant build directory |
+| `variant <config> [dir]` | Create variant build directory from config file |
+
+### Common Options
+
+| Option | Description |
+|--------|-------------|
+| `-j N` | Run N jobs in parallel |
+| `-k` | Keep going after failures |
+| `-n` | Dry-run: print commands without executing |
+| `-v` | Verbose output |
+| `-S DIR` | Source directory (default: auto-detect) |
+| `-B DIR` | Build/output directory for variant builds |
+| `--variant=DIR` | Use DIR as variant subdirectory |
+
+### Examples
+
+```bash
+# Basic build
+pup build
+
+# Variant build (out-of-tree)
+pup build -B build-release
+
+# Full reset of variant build
+pup disclean -B build-release
+
+# Dry-run to see what would be removed
+pup disclean -n -B build-release
+
+# Parse only (no build)
+pup parse -v
+```
+
 ## Testing
 
 ```bash
