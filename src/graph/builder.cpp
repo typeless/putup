@@ -777,12 +777,31 @@ auto GraphBuilder::expand_inputs(
                         result.push_back((ctx.current_dir / path).string());
                     else
                         result.push_back(std::move(path));
-                } else if (full_path.filename() == "tup.config" && !ctx.options.variant_dir.empty()) {
-                    // Special case: tup.config lives in variant directory, not source root
-                    auto variant_config = ctx.options.variant_dir / "tup.config";
-                    if (std::filesystem::exists(ctx.options.source_root / variant_config))
-                        result.push_back(variant_config.string());
-                    else
+                } else if (full_path.filename() == "tup.config" &&
+                           (!ctx.options.variant_dir.empty() || !ctx.options.output_root.empty())) {
+                    // Special case: tup.config lives in variant/output directory, not source root
+                    // For -B builds: check output_root/tup.config
+                    // For --variant builds: check source_root/variant_dir/tup.config
+                    auto config_found = false;
+                    if (!ctx.options.output_root.empty()) {
+                        auto out_config = ctx.options.output_root / "tup.config";
+                        if (fs::exists(out_config)) {
+                            // Return relative path from SOURCE working dir to OUTPUT tup.config
+                            // Using TUP_VARIANT_OUTPUTDIR-style path that reaches from source to output
+                            auto src_dir = ctx.options.source_root / ctx.current_dir;
+                            auto rel = fs::relative(out_config, src_dir);
+                            result.push_back(rel.string());
+                            config_found = true;
+                        }
+                    }
+                    if (!config_found && !ctx.options.variant_dir.empty()) {
+                        auto variant_config = ctx.options.variant_dir / "tup.config";
+                        if (fs::exists(ctx.options.source_root / variant_config)) {
+                            result.push_back(variant_config.string());
+                            config_found = true;
+                        }
+                    }
+                    if (!config_found)
                         result.push_back(std::move(path));
                 } else {
                     // Not on disk - try demand-driven parsing of the file's directory

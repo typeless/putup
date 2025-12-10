@@ -340,3 +340,25 @@ Binary file at `.pup/index`:
 4. ✅ **Index** - Binary format, reader/writer, implicit deps
 5. ✅ **Execution** - Scheduler, command runner, incremental builds
 6. 🔄 **Polish** - Edge cases, error handling, performance
+
+## Design Decisions & Implementation Notes
+
+### Variant Build Architecture
+
+**Key insight**: In tup variant builds, commands run from the SOURCE directory, not the output directory. All path calculations (TUP_CWD, ROOT, TUP_VARIANT_OUTPUTDIR) are designed to work from this perspective.
+
+**TUP_VARIANT_OUTPUTDIR** must be computed as the relative path from the SOURCE directory to the OUTPUT directory:
+- For in-tree builds: `../build-variant/current_dir`
+- For out-of-tree builds (`-B`): Relative path from `source_root/current_dir` to `output_root/current_dir`
+
+**tup.config handling**: When a Tupfile references `../../tup.config`, it expects to find the config file:
+- In source tree: doesn't exist (no tup.config at source root)
+- In variant tree: `variant/tup.config` exists as symlink to actual config
+
+For `-B` builds, special handling maps `tup.config` references to `output_root/tup.config`.
+
+### Path Normalization (TODO)
+
+**Issue**: Output paths use absolute format (`/path/to/build/file.o`) while input references from Tupfiles may use relative format (`../../build/file.o`). The scheduler's dependency map uses exact string matching, so these don't connect.
+
+**Fix needed**: Normalize all paths to a canonical format (either all absolute or all relative to a common root) when building the dependency map.

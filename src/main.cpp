@@ -128,16 +128,34 @@ auto parse_args(int argc, char** argv) -> Options
     return opts;
 }
 
+/// Compute TUP_VARIANTDIR/TUP_VARIANT_OUTPUTDIR for a given source directory.
+/// For in-tree builds: relative path from source_dir to variant_dir/source_dir
+/// For out-of-tree builds (-B): relative path from source_dir to output_root/source_dir
+///
+/// Example: source_dir="modules/vpw", variant_dir="build-s1f3"
+///          returns "../../build-s1f3/modules/vpw"
 auto compute_variantdir(
     std::filesystem::path const& source_dir,
-    std::filesystem::path const& variant_dir) -> std::string
+    std::filesystem::path const& variant_dir,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& output_root) -> std::string
 {
-    if (variant_dir.empty())
-        return ".";
+    // Out-of-tree build with -B
+    if (!output_root.empty() && source_root != output_root) {
+        auto output_dir = output_root / source_dir;
+        auto src_dir = source_root / source_dir;
+        auto rel = std::filesystem::relative(output_dir, src_dir);
+        return rel.string();
+    }
 
-    auto output_dir = std::filesystem::path { variant_dir / source_dir };
-    auto rel = std::filesystem::relative(output_dir, source_dir);
-    return rel.string();
+    // In-tree variant build
+    if (!variant_dir.empty()) {
+        auto output_dir = std::filesystem::path { variant_dir / source_dir };
+        auto rel = std::filesystem::relative(output_dir, source_dir);
+        return rel.string();
+    }
+
+    return ".";
 }
 
 auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
@@ -228,6 +246,7 @@ auto parse_directory(
     pup::graph::GraphBuilder& builder,
     pup::graph::BuildGraph& graph,
     std::filesystem::path const& root,
+    std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
     pup::parser::VarDb const& config_vars,
     std::filesystem::path const& variant_dir,
@@ -240,6 +259,7 @@ auto parse_directory(
     pup::graph::GraphBuilder& builder,
     pup::graph::BuildGraph& graph,
     std::filesystem::path const& root,
+    std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
     pup::parser::VarDb const& config_vars,
     std::filesystem::path const& variant_dir,
@@ -293,11 +313,11 @@ auto parse_directory(
     auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
     auto tup_variantdir = compute_variantdir(
         normalized_dir == "." ? std::filesystem::path {} : rel_dir,
-        variant_dir);
+        variant_dir, root, output_root);
     // Create recursive callback for demand-driven parsing
     // Pass base_vars (not the local vars copy) so each directory starts fresh
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, root, base_vars, config_vars, variant_dir, verbose);
+        return parse_directory(dir, state, builder, graph, root, output_root, base_vars, config_vars, variant_dir, verbose);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
@@ -872,7 +892,7 @@ auto cmd_graph(Options const& opts) -> int
     // Start with root Tupfile if it exists
     auto root_rel = std::filesystem::path { "." };
     if (state.available.contains(root_rel)) {
-        if (auto result = parse_directory(root_rel, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
+        if (auto result = parse_directory(root_rel, state, builder, graph, *root, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
             return EXIT_FAILURE;
         }
@@ -882,7 +902,7 @@ auto cmd_graph(Options const& opts) -> int
     for (auto const& dir : state.available) {
         if (state.parsed.contains(dir))
             continue;
-        if (auto result = parse_directory(dir, state, builder, graph, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
+        if (auto result = parse_directory(dir, state, builder, graph, *root, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
             return EXIT_FAILURE;
         }
@@ -1104,7 +1124,7 @@ auto cmd_build(Options const& opts) -> int
     auto root_rel = std::filesystem::path { "." };
     if (state.available.contains(root_rel)) {
         auto result = pup::Result<void> {
-            parse_directory(root_rel, state, builder, graph, layout.source_root, vars, config_vars, variant_dir, opts.verbose)
+            parse_directory(root_rel, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, opts.verbose)
         };
         if (!result && !opts.keep_going) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
@@ -1117,7 +1137,7 @@ auto cmd_build(Options const& opts) -> int
         if (state.parsed.contains(dir))
             continue;
         auto result = pup::Result<void> {
-            parse_directory(dir, state, builder, graph, layout.source_root, vars, config_vars, variant_dir, opts.verbose)
+            parse_directory(dir, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, opts.verbose)
         };
         if (!result && !opts.keep_going) {
             fmt::print(stderr, "Error: {}\n", result.error().message);
