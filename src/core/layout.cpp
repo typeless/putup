@@ -71,6 +71,9 @@ auto normalize_path(std::filesystem::path const& path) -> std::filesystem::path
     auto result = std::filesystem::weakly_canonical(path, ec);
     if (ec)
         return std::filesystem::absolute(path);
+    // Ensure result is absolute (weakly_canonical may return relative for non-existent paths)
+    if (!result.is_absolute())
+        result = std::filesystem::absolute(result);
     return result;
 }
 
