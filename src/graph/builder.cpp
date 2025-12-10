@@ -462,11 +462,12 @@ auto GraphBuilder::expand_rule(
         cmd_str.erase(0, 1);
 
     if (!cmd_str.empty() && cmd_str[0] == '!') {
-        // Bang macro reference - look up the macro
-        macro_name = cmd_str.substr(1);
-        // Trim trailing whitespace from macro name
-        while (!macro_name.empty() && (macro_name.back() == ' ' || macro_name.back() == '\t'))
-            macro_name.pop_back();
+        // Bang macro reference - extract just the macro name (first word after !)
+        auto name_end = cmd_str.find_first_of(" \t", 1);
+        if (name_end == std::string::npos)
+            macro_name = cmd_str.substr(1);
+        else
+            macro_name = cmd_str.substr(1, name_end - 1);
 
         auto it = decltype(ctx.macros)::iterator { ctx.macros.find(macro_name) };
         if (it == ctx.macros.end())

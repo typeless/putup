@@ -379,7 +379,15 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 
     if (db) {
         auto value = db->get(ref.name);
-        return std::string { value };
+        if (!value.empty())
+            return std::string { value };
+    }
+
+    // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
+    if (ref.kind == VarRef::Kind::Regular && ctx_.config_vars) {
+        auto value = ctx_.config_vars->get(ref.name);
+        if (!value.empty())
+            return std::string { value };
     }
 
     // Variable not found - return empty string (tup behavior)
