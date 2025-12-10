@@ -50,7 +50,11 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
         if (!name.starts_with(CONFIG_PREFIX))
             continue;
 
-        // Store with full name (CONFIG_*) - tup uses $(CONFIG_FOO) syntax
+        // Store both forms for compatibility:
+        // - Stripped form (FOO) for @(FOO) syntax
+        // - Full form (CONFIG_FOO) for $(CONFIG_FOO) syntax
+        auto stripped_name = name.substr(CONFIG_PREFIX.size());
+        db.set(stripped_name, std::string { value });
         db.set(name, std::string { value });
     }
 
