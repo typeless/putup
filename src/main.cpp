@@ -1025,9 +1025,11 @@ auto cmd_build(Options const& opts) -> int
     }
     auto layout = pup::ProjectLayout { std::move(*layout_result) };
 
-    // Override variant_dir from --variant if specified
+    // Override variant_dir from --variant or -B if specified
     if (!opts.variant.empty())
         layout.variant_dir = std::filesystem::path { opts.variant };
+    else if (!opts.build_dir.empty())
+        layout.variant_dir = std::filesystem::path { opts.build_dir };
 
     // Auto-initialize if Tupfile.ini exists but .pup/ doesn't
     auto pup_dir = layout.pup_dir();
@@ -1053,16 +1055,24 @@ auto cmd_build(Options const& opts) -> int
     auto variant_dir = layout.variant_dir;
 
     // Load config variables from tup.config
+    // Config is located in output_root (for -B) or source_root/variant_dir
     auto config_vars = pup::parser::VarDb {};
-    if (!variant_dir.empty()) {
-        auto config_path = std::filesystem::path { layout.output_root / variant_dir / "tup.config" };
-        if (std::filesystem::exists(config_path)) {
-            auto config_result = pup::Result<pup::parser::VarDb> { pup::parser::parse_config(config_path) };
-            if (config_result) {
-                config_vars = std::move(*config_result);
-                if (opts.verbose)
-                    fmt::print("Loaded config from {}\n", config_path.string());
-            }
+    auto config_path = std::filesystem::path {};
+    if (!opts.build_dir.empty()) {
+        // -B was specified - config is directly in output_root
+        config_path = layout.output_root / "tup.config";
+    } else if (!variant_dir.empty()) {
+        // variant was specified via --variant
+        config_path = layout.source_root / variant_dir / "tup.config";
+    }
+
+    if (!config_path.empty() && std::filesystem::exists(config_path)) {
+        auto config_result = pup::Result<pup::parser::VarDb> { pup::parser::parse_config(config_path) };
+        if (config_result) {
+            config_vars = std::move(*config_result);
+            if (opts.verbose)
+                fmt::print("Loaded {} config variables from {}\n",
+                    config_vars.names().size(), config_path.string());
         }
     }
 
