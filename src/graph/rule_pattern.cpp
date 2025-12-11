@@ -3,6 +3,8 @@
 
 #include "pup/graph/rule_pattern.hpp"
 
+#include "pup/core/string_utils.hpp"
+
 #include <cctype>
 #include <sstream>
 
@@ -95,11 +97,7 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
 {
     // Parse the original command to extract compiler, flags, and source files
     // Command format: "gcc -c foo.c -o foo.o" or "ccache gcc -c foo.c -o foo.o"
-    auto ss = std::istringstream { cmd.command };
-    auto words = std::vector<std::string> {};
-    auto word = std::string {};
-    while (ss >> word)
-        words.push_back(word);
+    auto words = core::tokenize_shell_command(cmd.command);
 
     if (words.empty())
         return {};

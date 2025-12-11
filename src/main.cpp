@@ -5,6 +5,7 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/string_utils.hpp"
 #include "pup/core/types.hpp"
 #include "pup/exec/runner.hpp"
 #include "pup/exec/scheduler.hpp"
@@ -1328,36 +1329,6 @@ auto cmd_compdb(Options const& opts) -> int
 
     auto& ctx = *result;
 
-    // Helper: tokenize command string into arguments
-    auto tokenize_command = [](std::string_view cmd) -> std::vector<std::string> {
-        auto args = std::vector<std::string> {};
-        auto current = std::string {};
-        auto in_quote = false;
-        auto quote_char = char {};
-
-        for (auto c : cmd) {
-            if (in_quote) {
-                if (c == quote_char)
-                    in_quote = false;
-                else
-                    current += c;
-            } else if (c == '"' || c == '\'') {
-                in_quote = true;
-                quote_char = c;
-            } else if (c == ' ' || c == '\t') {
-                if (!current.empty()) {
-                    args.push_back(std::move(current));
-                    current.clear();
-                }
-            } else {
-                current += c;
-            }
-        }
-        if (!current.empty())
-            args.push_back(std::move(current));
-        return args;
-    };
-
     // Helper: escape string for JSON (RFC 8259)
     auto escape_json = [](std::string_view s) -> std::string {
         auto result = std::string {};
@@ -1437,7 +1408,7 @@ auto cmd_compdb(Options const& opts) -> int
         if (!node->source_dir.empty())
             working_dir /= node->source_dir;
 
-        auto args = tokenize_command(node->command);
+        auto args = pup::core::tokenize_shell_command(node->command);
         if (args.empty())
             continue;
 
