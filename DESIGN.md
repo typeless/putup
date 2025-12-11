@@ -353,10 +353,10 @@ struct Node {
     NodeId id;
     NodeType type;
     NodeFlags flags;
-    std::string path;       // For files
+    std::string name;       // Basename only (tup-style identification)
     std::string command;    // For commands
     std::string display;    // Display text
-    NodeId parent_dir;
+    NodeId parent_dir;      // Parent directory node (used with name for lookup)
     Hash256 content_hash;
     FileTime mtime;
     std::vector<NodeId> inputs;
@@ -371,13 +371,17 @@ struct Edge {
 };
 ```
 
+**Path storage model**: Nodes store only their basename in `name`. Full paths are reconstructed by walking the `parent_dir` chain via `get_full_path()`, which caches results for efficiency.
+
 Graph operations:
 
 ```cpp
 class BuildGraph {
     auto add_node(Node) -> NodeId;
     auto add_edge(from, to, type) -> void;
-    auto find_by_path(path) -> std::optional<NodeId>;
+    auto get_full_path(id) -> std::string;                    // Reconstruct from parent chain
+    auto find_by_dir_name(parent_id, name) -> std::optional<NodeId>;  // O(1) lookup
+    auto find_by_path(path) -> std::optional<NodeId>;         // Derived from get_full_path
     auto get_inputs(id) -> std::span<NodeId const>;
     auto get_outputs(id) -> std::span<NodeId const>;
     auto nodes_of_type(type) -> std::vector<NodeId>;
@@ -1008,6 +1012,17 @@ Unlike some build systems that filter out system headers:
 - **Simplicity** - No heuristics for deciding "what matters"
 - **Reproducibility** - Same source + same headers = same build
 - **Minimal overhead** - Header paths stored once per command, hash computed only when mtime differs
+
+### Why (parent_dir, name) Path Storage?
+
+Like tup, pup stores paths as `(parent_dir, basename)` pairs rather than full path strings:
+
+- **No path format mismatches** - No canonicalization bugs from `./foo` vs `foo` vs `/abs/foo`
+- **Smaller storage** - Basenames are short; parent relationship is a single NodeId
+- **O(1) lookup** - Hash on `(parent_id, name)` gives instant lookup
+- **Efficient caching** - `get_full_path()` caches reconstructed paths
+
+The `find_by_path()` method remains for compatibility, but internally derives from the `(parent_dir, name)` model.
 
 ---
 

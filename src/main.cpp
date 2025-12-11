@@ -619,10 +619,10 @@ auto expand_implicit_deps(
                     continue;
 
                 for (auto output_id : graph.get_outputs(*cmd_node_id)) {
-                    auto const* output_node = graph.get_node(output_id);
-                    if (output_node && !output_node->path.empty()) {
-                        if (added.insert(output_node->path).second)
-                            result.push_back(output_node->path);
+                    auto output_path = graph.get_full_path(output_id);
+                    if (!output_path.empty()) {
+                        if (added.insert(output_path).second)
+                            result.push_back(output_path);
                     }
                 }
             }
@@ -640,10 +640,10 @@ auto expand_implicit_deps(
 
                 // Mark command's outputs as changed to trigger rebuild
                 for (auto output_id : graph.get_outputs(*cmd_node_id)) {
-                    auto const* output_node = graph.get_node(output_id);
-                    if (output_node && !output_node->path.empty()) {
-                        if (added.insert(output_node->path).second)
-                            result.push_back(output_node->path);
+                    auto output_path = graph.get_full_path(output_id);
+                    if (!output_path.empty()) {
+                        if (added.insert(output_path).second)
+                            result.push_back(output_path);
                     }
                 }
             }
@@ -668,10 +668,11 @@ auto build_index(
             max_id = node.id;
 
         if (node.type == pup::NodeType::File || node.type == pup::NodeType::Generated) {
-            if (node.path.empty())
+            auto node_path = graph.get_full_path(node.id);
+            if (node_path.empty())
                 continue;
 
-            auto file_path = std::filesystem::path { root / node.path };
+            auto file_path = std::filesystem::path { root / node_path };
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
 
@@ -690,13 +691,13 @@ auto build_index(
                 .src_id = 0,
                 .type = node.type,
                 .flags = node.flags,
-                .path = node.path,
+                .path = node_path,
                 .size = file_size,
                 .mtime = get_file_mtime(file_path),
                 .content_hash = content_hash,
             };
             index.add_file(std::move(entry));
-            path_to_id[node.path] = node.id;
+            path_to_id[node_path] = node.id;
         } else if (node.type == pup::NodeType::Command) {
             auto entry = pup::index::CommandEntry {
                 .id = node.id,
@@ -1054,7 +1055,9 @@ auto cmd_export_script(Options const& opts) -> int
             continue;
         if (node->type != pup::NodeType::Generated && node->type != pup::NodeType::File)
             continue;
-        if (node->path.empty())
+
+        auto node_path = ctx.graph.get_full_path(id);
+        if (node_path.empty())
             continue;
 
         // Check if this is an output (has incoming edges from commands)
@@ -1062,7 +1065,7 @@ auto cmd_export_script(Options const& opts) -> int
         for (auto input_id : inputs) {
             auto const* input = ctx.graph.get_node(input_id);
             if (input && input->type == pup::NodeType::Command) {
-                auto path = std::filesystem::path { node->path };
+                auto path = std::filesystem::path { node_path };
                 if (path.has_parent_path()) {
                     auto parent = path.parent_path().string();
                     if (!parent.empty() && parent != ".")
@@ -1140,7 +1143,7 @@ auto cmd_export_graph(Options const& opts) -> int
         auto label = escape_dot_label(
             node->type == pup::NodeType::Command
                 ? (node->display.empty() ? node->command : node->display)
-                : node->path);
+                : ctx.graph.get_full_path(id));
 
         fmt::print("  n{} [label=\"{}\"];\n", id, label);
 
@@ -1487,12 +1490,11 @@ auto cmd_export_compdb(Options const& opts) -> int
         // Find source file from inputs (required by compile_commands.json spec)
         auto source_file = std::string {};
         for (auto input_id : ctx.graph.get_inputs(id)) {
-            auto const* input = ctx.graph.get_node(input_id);
-            if (!input || input->path.empty())
+            auto input_path = ctx.graph.get_full_path(input_id);
+            if (input_path.empty())
                 continue;
-            auto const& p = input->path;
-            if (p.ends_with(".c") || p.ends_with(".cc") || p.ends_with(".cpp") || p.ends_with(".cxx") || p.ends_with(".C") || p.ends_with(".S") || p.ends_with(".s")) {
-                source_file = p;
+            if (input_path.ends_with(".c") || input_path.ends_with(".cc") || input_path.ends_with(".cpp") || input_path.ends_with(".cxx") || input_path.ends_with(".C") || input_path.ends_with(".S") || input_path.ends_with(".s")) {
+                source_file = std::move(input_path);
                 break;
             }
         }
@@ -1500,11 +1502,11 @@ auto cmd_export_compdb(Options const& opts) -> int
         // Find output file
         auto output_file = std::string {};
         for (auto output_id : ctx.graph.get_outputs(id)) {
-            auto const* output = ctx.graph.get_node(output_id);
-            if (!output || output->path.empty())
+            auto output_path = ctx.graph.get_full_path(output_id);
+            if (output_path.empty())
                 continue;
-            if (output->path.ends_with(".o") || output->path.ends_with(".obj")) {
-                output_file = output->path;
+            if (output_path.ends_with(".o") || output_path.ends_with(".obj")) {
+                output_file = std::move(output_path);
                 break;
             }
         }

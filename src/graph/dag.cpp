@@ -12,10 +12,6 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
     auto const id = next_id_++;
     node.id = id;
 
-    // Index by path for files (transitional)
-    if (!node.path.empty())
-        path_index_[node.path] = id;
-
     // Index by (parent_dir, name) for tup-style lookup
     if (!node.name.empty())
         dir_name_index_[DirNameKey { node.parent_dir, node.name }] = id;
@@ -28,6 +24,11 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
     if (id >= nodes_.size())
         nodes_.resize(id + 1);
     nodes_[id] = std::move(node);
+
+    // Build path_index from reconstructed path (for find_by_path compatibility)
+    auto path = get_full_path(id);
+    if (!path.empty())
+        path_index_[path] = id;
 
     return id;
 }
@@ -220,9 +221,9 @@ auto BuildGraph::get_full_path(NodeId id) const -> std::string
     if (!node)
         return "";
 
-    // Legacy nodes: use path field directly
+    // Nodes without name have no path
     if (node->name.empty())
-        return node->path;
+        return "";
 
     // Check cache first
     if (auto it = path_cache_.find(id); it != path_cache_.end()) {

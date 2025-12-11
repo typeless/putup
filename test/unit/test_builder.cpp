@@ -361,7 +361,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
             auto o_count = 0;
             for (auto input_id : inputs) {
                 auto const* input_node = graph.get_node(input_id);
-                if (input_node && input_node->path.find(".o") != std::string::npos)
+                if (input_node && graph.get_full_path(input_node->id).find(".o") != std::string::npos)
                     ++o_count;
             }
             REQUIRE(o_count == 2);
@@ -554,9 +554,9 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[builder][exclusio
         auto outputs = graph.get_outputs(id);
         for (auto out_id : outputs) {
             auto const* node = graph.get_node(out_id);
-            if (node && node->path.find(".o") != std::string::npos) {
+            if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (node->path.find("baz.o") != std::string::npos)
+                if (graph.get_full_path(node->id).find("baz.o") != std::string::npos)
                     has_baz = true;
             }
         }
@@ -617,9 +617,9 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion
         auto outputs = graph.get_outputs(id);
         for (auto out_id : outputs) {
             auto const* node = graph.get_node(out_id);
-            if (node && node->path.find(".o") != std::string::npos) {
+            if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (node->path.find("test_") != std::string::npos)
+                if (graph.get_full_path(node->id).find("test_") != std::string::npos)
                     has_test = true;
             }
         }
@@ -830,7 +830,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[builder][variant]")
     auto const* node = graph.get_node(generated[0]);
     REQUIRE(node != nullptr);
     // Output should be under build-variant/src/main.o or absolute path
-    CHECK(node->path.find("main.o") != std::string::npos);
+    CHECK(graph.get_full_path(node->id).find("main.o") != std::string::npos);
 }
 
 // =============================================================================
@@ -880,9 +880,9 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[builder][deep-
     auto found_header = false;
     for (auto id : files) {
         auto const* node = graph.get_node(id);
-        if (node && node->path.find("common.h") != std::string::npos) {
+        if (node && graph.get_full_path(node->id).find("common.h") != std::string::npos) {
             // Path should be normalized to include/common.h
-            CHECK(node->path == "include/common.h");
+            CHECK(graph.get_full_path(node->id) == "include/common.h");
             found_header = true;
             break;
         }
@@ -928,7 +928,7 @@ TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
     Node const* helpers_node = nullptr;
     for (auto id : files) {
         auto const* node = graph.get_node(id);
-        if (node && node->path.find("helpers.c") != std::string::npos) {
+        if (node && graph.get_full_path(node->id).find("helpers.c") != std::string::npos) {
             helpers_node = node;
             break;
         }

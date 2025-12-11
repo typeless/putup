@@ -51,15 +51,14 @@ struct Node {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string path = {};       ///< For files: full path (transitional, will be removed)
     std::string name = {};       ///< Basename only (tup-style identification)
     std::string command = {};    ///< For commands: the command string
     std::string display = {};    ///< For commands: display text (from ^ ^ markers)
     std::string source_dir = {}; ///< For commands: Tupfile directory (relative to root)
 
-    NodeId parent_dir = 0;       ///< Parent directory node (used with name for lookup)
-    Hash256 content_hash = {{}};  ///< Content hash for files (double braces force zero-init)
-    FileTime mtime = {};         ///< Modification time
+    NodeId parent_dir = 0;         ///< Parent directory node (used with name for lookup)
+    Hash256 content_hash = { {} }; ///< Content hash for files (double braces force zero-init)
+    FileTime mtime = {};           ///< Modification time
 
     std::vector<NodeId> inputs = {};          ///< Input edges (dependencies)
     std::vector<NodeId> outputs = {};         ///< Output edges (dependents)

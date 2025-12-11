@@ -166,17 +166,28 @@ auto Scheduler::build_incremental(
     index::Index const& /*old_index*/,
     std::vector<std::string> const& changed_files) -> Result<BuildStats>
 {
+    // Build temporary path-to-NodeId map for changed file lookup
+    // This is O(n) scan but only done once per incremental build
+    auto path_to_id = std::unordered_map<std::string, NodeId> {};
+    for (auto id : graph.all_nodes()) {
+        auto path = graph.get_full_path(id);
+        if (!path.empty())
+            path_to_id[path] = id;
+    }
+
     // Find all nodes affected by changes
     auto affected = std::set<NodeId> {};
 
-    for (auto const& path : changed_files) {
-        if (auto id = graph.find_by_path(path)) {
-            affected.insert(*id);
+    for (auto const& file_path : changed_files) {
+        auto it = path_to_id.find(file_path);
+        if (it != path_to_id.end()) {
+            auto id = it->second;
+            affected.insert(id);
 
             // For generated files that are missing/changed, also mark the producing command
-            auto const* node = graph.get_node(*id);
+            auto const* node = graph.get_node(id);
             if (node && node->type == NodeType::Generated) {
-                for (auto input_id : graph.get_inputs(*id))
+                for (auto input_id : graph.get_inputs(id))
                     affected.insert(input_id);
             }
         }
@@ -533,26 +544,23 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
 
         // Collect input paths
         for (auto input_id : graph.get_inputs(id)) {
-            if (auto const* input_node = graph.get_node(input_id)) {
-                if (!input_node->path.empty())
-                    job.inputs.push_back(input_node->path);
-            }
+            auto input_path = graph.get_full_path(input_id);
+            if (!input_path.empty())
+                job.inputs.push_back(std::move(input_path));
         }
 
         // Collect output paths
         for (auto output_id : graph.get_outputs(id)) {
-            if (auto const* output_node = graph.get_node(output_id)) {
-                if (!output_node->path.empty())
-                    job.outputs.push_back(output_node->path);
-            }
+            auto output_path = graph.get_full_path(output_id);
+            if (!output_path.empty())
+                job.outputs.push_back(std::move(output_path));
         }
 
         // Collect order-only input paths
         for (auto oi_id : graph.get_order_only(id)) {
-            if (auto const* oi_node = graph.get_node(oi_id)) {
-                if (!oi_node->path.empty())
-                    job.order_only_inputs.push_back(oi_node->path);
-            }
+            auto oi_path = graph.get_full_path(oi_id);
+            if (!oi_path.empty())
+                job.order_only_inputs.push_back(std::move(oi_path));
         }
 
         jobs.push_back(std::move(job));

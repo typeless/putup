@@ -431,38 +431,17 @@ Binary file at `.pup/index`:
 
 For `-B` builds, special handling maps `tup.config` references to `output_root/tup.config`.
 
-### Path Storage Architecture (Transitional)
+### Path Storage Architecture
 
-Pup is migrating from full path strings to tup's (parent_dir, name) model. Both systems currently coexist.
+Pup uses tup's (parent_dir, name) model for path storage:
 
-**Tup's model (target):**
-- Each node stores basename only (e.g., `"kernel.hex"`)
+- Each node stores basename only via `name` field (e.g., `"kernel.hex"`)
 - `parent_dir` field stores directory NodeId
 - Full path reconstructed via `get_full_path()` with caching
-- Pros: No path format mismatches, smaller storage
+- `find_by_dir_name(parent_id, basename)` for efficient lookup
+- `find_by_path()` derives from `get_full_path()` for backward compatibility
 
-**Legacy model (being phased out):**
-- `path` field stores complete path string
-- `find_by_path()` for lookup
-- Pros: Simple lookups, no reconstruction needed
-- Cons: Path canonicalization errors cause duplicate nodes
-
-**Current state (dual-mode):**
-- New nodes have both `path` AND `(parent_dir, name)` populated
-- `find_by_dir_name()` available for tup-style lookups
-- `get_full_path()` reconstructs path from parent chain with caching
-- Scheduler uses graph edges (NodeIds) instead of path string matching
-- Index format v2 stores `name` field alongside `path`
-
-**Migration progress:**
-1. ✅ Added `name` field and `find_by_dir_name()` to BuildGraph
-2. ✅ Builder creates directory nodes with `parent_dir` links
-3. ✅ Path cache for efficient `get_full_path()` reconstruction
-4. ✅ Scheduler uses graph edges instead of path strings
-5. ✅ Index format v2 stores `name` field
-6. 🔄 Consumer migration - main.cpp, builder.cpp still use `path` field
-
-**Remaining work:**
-- Migrate `expand_inputs()` in builder.cpp to use `find_by_dir_name()`
-- Migrate export functions in main.cpp to use `get_full_path()`
-- Remove `path` field and `find_by_path()` after all consumers migrate
+**Key APIs:**
+- `graph.get_full_path(id)` - Reconstruct path from (parent_dir, name) chain
+- `graph.find_by_dir_name(parent_id, name)` - O(1) lookup by parent + basename
+- `graph.find_by_path(path)` - O(1) lookup by full path (computed from above)

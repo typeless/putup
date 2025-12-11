@@ -34,7 +34,7 @@ auto generate_linear_graph(std::size_t n) -> BuildGraph
     auto graph = BuildGraph {};
     for (auto i = std::size_t { 0 }; i < n; ++i) {
         (void)graph.add_node(Node { .type = NodeType::File,
-            .path = fmt::format("file_{}.c", i) });
+            .name = fmt::format("file_{}.c", i) });
     }
     return graph;
 }
@@ -43,7 +43,7 @@ auto generate_order_only_graph(std::size_t n_commands)
     -> std::pair<BuildGraph, pup::NodeId>
 {
     auto graph = BuildGraph {};
-    auto header = graph.add_node(Node { .type = NodeType::File, .path = "common.h" });
+    auto header = graph.add_node(Node { .type = NodeType::File, .name = "common.h" });
 
     for (auto i = std::size_t { 0 }; i < n_commands; ++i) {
         auto cmd = graph.add_node(Node { .type = NodeType::Command,
@@ -58,7 +58,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
     auto graph = BuildGraph {};
 
     // Create a shared order-only dependency
-    auto shared_result = graph.add_node(Node { .type = NodeType::File, .path = "shared.h" });
+    auto shared_result = graph.add_node(Node { .type = NodeType::File, .name = "shared.h" });
     auto shared = *shared_result;
 
     // Create 'width' independent chains of 'depth' nodes
@@ -100,7 +100,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
             for (auto id : ids) {
                 auto const* node = graph.get_node(id);
                 if (node)
-                    sum += node->path.size();
+                    sum += graph.get_full_path(node->id).size();
             }
             return sum;
         });
@@ -115,7 +115,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
             for (auto id : ids) {
                 auto const* node = graph.get_node(id);
                 if (node)
-                    sum += node->path.size();
+                    sum += graph.get_full_path(node->id).size();
             }
             return sum;
         });
@@ -130,7 +130,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
             for (auto id : ids) {
                 auto const* node = graph.get_node(id);
                 if (node)
-                    sum += node->path.size();
+                    sum += graph.get_full_path(node->id).size();
             }
             return sum;
         });

@@ -150,8 +150,9 @@ auto GraphBuilder::add_tupfile(
             return {};
         auto paths = std::vector<std::string> {};
         for (auto id : it->second) {
-            if (auto const* node = ctx.graph->get_node(id))
-                paths.push_back(node->path);
+            auto path = ctx.graph->get_full_path(id);
+            if (!path.empty())
+                paths.push_back(std::move(path));
         }
         return paths;
     };
@@ -166,8 +167,9 @@ auto GraphBuilder::add_tupfile(
             return {};
         auto paths = std::vector<std::string> {};
         for (auto id : it->second) {
-            if (auto const* node = ctx.graph->get_node(id))
-                paths.push_back(node->path);
+            auto path = ctx.graph->get_full_path(id);
+            if (!path.empty())
+                paths.push_back(std::move(path));
         }
         return paths;
     };
@@ -686,8 +688,9 @@ auto GraphBuilder::expand_inputs(
             auto it = decltype(ctx.groups)::iterator { ctx.groups.find(pattern.group_name) };
             if (it != ctx.groups.end()) {
                 for (auto id : it->second) {
-                    if (auto const* node = ctx.graph->get_node(id))
-                        result.push_back(node->path);
+                    auto path = ctx.graph->get_full_path(id);
+                    if (!path.empty())
+                        result.push_back(std::move(path));
                 }
             }
             continue;
@@ -722,8 +725,9 @@ auto GraphBuilder::expand_inputs(
             auto it = order_only_groups_.find(key);
             if (it != order_only_groups_.end()) {
                 for (auto id : it->second) {
-                    if (auto const* node = ctx.graph->get_node(id))
-                        result.push_back(node->path);
+                    auto path = ctx.graph->get_full_path(id);
+                    if (!path.empty())
+                        result.push_back(std::move(path));
                 }
             }
             continue;
@@ -762,8 +766,9 @@ auto GraphBuilder::expand_inputs(
                 auto it = order_only_groups_.find(key);
                 if (it != order_only_groups_.end()) {
                     for (auto id : it->second) {
-                        if (auto const* node = ctx.graph->get_node(id))
-                            result.push_back(node->path);
+                        auto path = ctx.graph->get_full_path(id);
+                        if (!path.empty())
+                            result.push_back(std::move(path));
                     }
                 }
                 continue;
@@ -801,10 +806,9 @@ auto GraphBuilder::expand_inputs(
                         ctx.options.source_root, ctx.options.output_root);
                     auto glob = parser::Glob { variant_path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
-                        if (auto const* node = ctx.graph->get_node(id)) {
-                            if (glob.matches(node->path))
-                                result.push_back(node->path);
-                        }
+                        auto node_path = ctx.graph->get_full_path(id);
+                        if (!node_path.empty() && glob.matches(node_path))
+                            result.push_back(std::move(node_path));
                     }
                 }
             } else {
@@ -1103,18 +1107,13 @@ auto GraphBuilder::get_or_create_directory_node(
         return parent_id_result;
     auto parent_id = *parent_id_result;
 
-    // Check if directory already exists (new-style lookup)
+    // Check if directory already exists
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename))
-        return *existing;
-
-    // Fallback: check old-style path lookup
-    if (auto existing = ctx.graph->find_by_path(normalized))
         return *existing;
 
     // Create new directory node
     auto node = Node {
         .type = NodeType::Directory,
-        .path = normalized,
         .name = basename,
         .parent_dir = parent_id,
     };
@@ -1139,18 +1138,13 @@ auto GraphBuilder::get_or_create_file_node(
         return parent_id_result;
     auto parent_id = *parent_id_result;
 
-    // Check if node already exists (new-style lookup first)
+    // Check if node already exists
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename))
         return *existing;
 
-    // Fallback: check old-style path lookup
-    if (auto existing = ctx.graph->find_by_path(normalized))
-        return *existing;
-
-    // Create new node with both path and (parent_dir, name)
+    // Create new node
     auto node = Node {
         .type = type,
-        .path = normalized,
         .name = basename,
         .parent_dir = parent_id,
     };
