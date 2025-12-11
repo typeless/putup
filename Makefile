@@ -85,10 +85,10 @@ install: build
 	install -m 755 $(BUILD_DIR)/pup $(PREFIX)/bin/pup
 	@echo "Installed pup to $(PREFIX)/bin/pup"
 
-# Generate compile_commands.json using pup compdb
+# Generate compile_commands.json using pup export compdb
 compdb: build
 	@echo "Generating compile_commands.json..."
-	@./$(BUILD_DIR)/pup compdb -B $(BUILD_DIR) > $(COMPDB)
+	@./$(BUILD_DIR)/pup export compdb -B $(BUILD_DIR) > $(COMPDB)
 
 # Run clang-tidy on all source files (uses compile_commands.json)
 tidy: compdb

@@ -12,6 +12,7 @@
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
+#include "pup/graph/topo.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/parser/config.hpp"
@@ -44,9 +45,11 @@ struct Options {
     bool dry_run = false;
     bool version = false;
     bool help = false;
+    bool summary = false; ///< --summary flag for export graph
     std::string command = {};
-    std::string source_dir = {}; ///< -S: source directory
-    std::string build_dir = {};  ///< -B: build/output directory
+    std::string export_format = {}; ///< Format for export command (script, compdb, graph)
+    std::string source_dir = {};    ///< -S: source directory
+    std::string build_dir = {};     ///< -B: build/output directory
     std::vector<std::string> targets = {};
 };
 
@@ -58,8 +61,10 @@ auto print_usage() -> void
                "  init              Initialize .pup directory\n"
                "  parse             Parse and validate Tupfiles\n"
                "  build             Execute build (default)\n"
-               "  graph             Print dependency graph\n"
-               "  compdb            Output compile_commands.json to stdout\n"
+               "  export <format>   Export build info:\n"
+               "                      script  - Shell script\n"
+               "                      compdb  - compile_commands.json\n"
+               "                      graph   - DOT format (--summary for text)\n"
                "  clean             Remove generated files\n"
                "  distclean         Full reset: remove .pup and variant directory\n"
                "  variant <config> [dir]  Create variant build directory\n"
@@ -70,6 +75,7 @@ auto print_usage() -> void
                "  -v, --verbose      Verbose output\n"
                "  -S DIR             Source directory (default: auto-detect)\n"
                "  -B DIR             Build/output directory (default: source)\n"
+               "  --summary          Human-readable output (for export graph)\n"
                "  --version          Print version\n"
                "  -h, --help         Print this help\n"
                "\nEnvironment:\n"
@@ -124,11 +130,16 @@ auto parse_args(int argc, char** argv) -> Options
         } else if (arg == "-B") {
             if (i + 1 < argc)
                 opts.build_dir = std::string { argv[++i] };
+        } else if (arg == "--summary") {
+            opts.summary = true;
         } else if (!arg.starts_with("-")) {
-            if (opts.command.empty())
+            if (opts.command.empty()) {
                 opts.command = std::string { arg };
-            else
+            } else if (opts.command == "export" && opts.export_format.empty()) {
+                opts.export_format = std::string { arg };
+            } else {
                 opts.targets.emplace_back(arg);
+            }
         }
     }
 
@@ -961,77 +972,60 @@ auto cmd_init(Options const& /*opts*/) -> int
 
 auto cmd_parse(Options const& opts) -> int
 {
-    auto root = pup::find_project_root(std::filesystem::current_path());
-    if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
+    auto graph_opts = BuildGraphOptions {
+        .verbose = opts.verbose,
+    };
+
+    auto result = pup::Result<BuildGraphResult> { build_graph(opts, graph_opts) };
+    if (!result) {
+        fmt::print(stderr, "Error: {}\n", result.error().message);
         return EXIT_FAILURE;
     }
 
-    if (opts.verbose)
-        fmt::print("Project root: \"{}\"\n", root->string());
+    auto& ctx = *result;
 
-    // Discover all Tupfiles
-    auto tupfile_dirs = std::set<std::filesystem::path> { discover_tupfile_dirs(*root) };
-    if (tupfile_dirs.empty()) {
-        fmt::print(stderr, "Error: No Tupfiles found in project\n");
-        return EXIT_FAILURE;
+    if (opts.verbose) {
+        fmt::print("Project root: \"{}\"\n", ctx.layout.source_root.string());
+        fmt::print("\nTupfiles:\n");
+        for (auto const& dir : ctx.state.parsed) {
+            auto tupfile_path = (dir == "." || dir.empty())
+                ? ctx.layout.source_root / "Tupfile"
+                : ctx.layout.source_root / dir / "Tupfile";
+            fmt::print("  {}\n", tupfile_path.string());
+        }
     }
 
-    auto total_statements = std::size_t { 0 };
-    auto total_rules = std::size_t { 0 };
-    auto total_macros = std::size_t { 0 };
-    auto total_assignments = std::size_t { 0 };
+    auto commands = ctx.graph.nodes_of_type(pup::NodeType::Command);
 
-    for (auto const& dir : tupfile_dirs) {
-        auto tupfile_path = std::filesystem::path {
-            dir == "." ? *root / "Tupfile" : *root / dir / "Tupfile"
-        };
-
-        auto source = std::optional<std::string> { read_file(tupfile_path) };
-        if (!source) {
-            fmt::print(stderr, "Error: Failed to read Tupfile at \"{}\"\n", tupfile_path.string());
-            continue;
-        }
-
-        auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-        auto result = pup::Result<pup::parser::Tupfile> { parser.parse() };
-
-        if (!result) {
-            fmt::print(stderr, "Parse error in {}: {}\n", tupfile_path.string(), result.error().message);
-            return EXIT_FAILURE;
-        }
-
-        auto const& tupfile = *result;
-        total_statements += tupfile.statements.size();
-
-        if (opts.verbose) {
-            fmt::print("{}:\n", tupfile_path.string());
-            for (auto const& stmt : tupfile.statements) {
-                if (auto const* rule = stmt->as<pup::parser::Rule>()) {
-                    fmt::print("  Rule: {} inputs -> {} outputs\n",
-                        rule->inputs.size(), rule->outputs.size());
-                    ++total_rules;
-                } else if (auto const* assign = stmt->as<pup::parser::Assignment>()) {
-                    // Print the name expression - for simple names, use as_literal
-                    auto name_str = assign->name.is_literal()
-                        ? std::string { assign->name.as_literal() }
-                        : std::string { "<expression>" };
-                    fmt::print("  Assignment: {}\n", name_str);
-                    ++total_assignments;
-                } else if (auto const* macro = stmt->as<pup::parser::BangMacro>()) {
-                    fmt::print("  Macro: !{}\n", macro->name);
-                    ++total_macros;
-                }
+    if (opts.verbose && !commands.empty()) {
+        fmt::print("\nCommands:\n");
+        for (auto id : commands) {
+            if (auto const* node = ctx.graph.get_node(id)) {
+                auto display = node->display.empty() ? node->command : node->display;
+                fmt::print("  {}\n", display);
             }
         }
     }
 
-    fmt::print("Parsed {} statements from {} Tupfile(s)\n", total_statements, tupfile_dirs.size());
+    fmt::print("Parsed {} Tupfile(s), {} commands\n", ctx.state.parsed.size(), commands.size());
 
     return EXIT_SUCCESS;
 }
 
-auto cmd_graph(Options const& opts) -> int
+/// Escape string for DOT format (graphviz)
+auto escape_dot_label(std::string_view s) -> std::string
+{
+    auto result = std::string {};
+    result.reserve(s.size());
+    for (auto c : s) {
+        if (c == '"' || c == '\\')
+            result += '\\';
+        result += c;
+    }
+    return result;
+}
+
+auto cmd_export_script(Options const& opts) -> int
 {
     auto graph_opts = BuildGraphOptions {
         .verbose = opts.verbose,
@@ -1044,25 +1038,80 @@ auto cmd_graph(Options const& opts) -> int
     }
 
     auto& ctx = *result;
-    auto num_nodes = std::size_t { ctx.graph.node_count() };
-    auto num_edges = std::size_t { ctx.graph.edge_count() };
-    auto commands = std::vector<pup::NodeId> { ctx.graph.nodes_of_type(pup::NodeType::Command) };
+    auto topo = pup::graph::topological_sort(ctx.graph);
 
-    fmt::print("Tupfiles: {}\n", ctx.state.parsed.size());
-    fmt::print("Nodes: {}\n", num_nodes);
-    fmt::print("Edges: {}\n", num_edges);
-    fmt::print("Commands: {}\n", commands.size());
+    fmt::print("#!/bin/sh\n");
+    fmt::print("# Generated by pup\n");
+    fmt::print("set -e\n");
+    fmt::print("cd \"{}\"\n\n", ctx.layout.source_root.string());
 
-    if (opts.verbose) {
-        fmt::print("\nCommands:\n");
-        for (auto id : commands) {
-            if (auto const* node = ctx.graph.get_node(id)) {
-                auto display = std::string { node->display.empty() ? node->command : node->display };
-                fmt::print("  {}\n", display);
-            }
-        }
+    for (auto id : topo.order) {
+        auto const* node = ctx.graph.get_node(id);
+        if (!node || node->type != pup::NodeType::Command)
+            continue;
+
+        auto dir = node->source_dir.empty() ? std::string { "." } : node->source_dir;
+        fmt::print("(cd \"{}\" && {})\n", dir, node->command);
     }
 
+    return EXIT_SUCCESS;
+}
+
+auto cmd_export_graph(Options const& opts) -> int
+{
+    auto graph_opts = BuildGraphOptions {
+        .verbose = opts.verbose,
+    };
+
+    auto result = pup::Result<BuildGraphResult> { build_graph(opts, graph_opts) };
+    if (!result) {
+        fmt::print(stderr, "Error: {}\n", result.error().message);
+        return EXIT_FAILURE;
+    }
+
+    auto& ctx = *result;
+
+    if (opts.summary) {
+        // Human-readable summary (old cmd_graph behavior)
+        auto commands = ctx.graph.nodes_of_type(pup::NodeType::Command);
+        fmt::print("Tupfiles: {}\n", ctx.state.parsed.size());
+        fmt::print("Nodes: {}\n", ctx.graph.node_count());
+        fmt::print("Edges: {}\n", ctx.graph.edge_count());
+        fmt::print("Commands: {}\n", commands.size());
+
+        if (opts.verbose) {
+            fmt::print("\nCommands:\n");
+            for (auto id : commands) {
+                if (auto const* node = ctx.graph.get_node(id)) {
+                    auto display = node->display.empty() ? node->command : node->display;
+                    fmt::print("  {}\n", display);
+                }
+            }
+        }
+        return EXIT_SUCCESS;
+    }
+
+    // DOT format output
+    fmt::print("digraph G {{\n");
+    fmt::print("  rankdir=LR;\n");
+
+    for (auto id : ctx.graph.all_nodes()) {
+        auto const* node = ctx.graph.get_node(id);
+        if (!node)
+            continue;
+
+        auto label = escape_dot_label(
+            node->type == pup::NodeType::Command
+                ? (node->display.empty() ? node->command : node->display)
+                : node->path);
+
+        fmt::print("  n{} [label=\"{}\"];\n", id, label);
+
+        for (auto input_id : ctx.graph.get_inputs(id))
+            fmt::print("  n{} -> n{};\n", input_id, id);
+    }
+
+    fmt::print("}}\n");
     return EXIT_SUCCESS;
 }
 
@@ -1315,7 +1364,30 @@ auto cmd_variant(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
-auto cmd_compdb(Options const& opts) -> int
+// Forward declaration
+auto cmd_export_compdb(Options const& opts) -> int;
+
+auto cmd_export(Options const& opts) -> int
+{
+    if (opts.export_format.empty()) {
+        fmt::print(stderr, "Usage: pup export <format>\n");
+        fmt::print(stderr, "Formats: script, compdb, graph\n");
+        return EXIT_FAILURE;
+    }
+
+    if (opts.export_format == "script")
+        return cmd_export_script(opts);
+    if (opts.export_format == "compdb")
+        return cmd_export_compdb(opts);
+    if (opts.export_format == "graph")
+        return cmd_export_graph(opts);
+
+    fmt::print(stderr, "Unknown export format: {}\n", opts.export_format);
+    fmt::print(stderr, "Formats: script, compdb, graph\n");
+    return EXIT_FAILURE;
+}
+
+auto cmd_export_compdb(Options const& opts) -> int
 {
     auto graph_opts = BuildGraphOptions {
         .verbose = opts.verbose,
@@ -1627,10 +1699,8 @@ auto main(int argc, char** argv) -> int
         return cmd_init(opts);
     if (opts.command == "parse")
         return cmd_parse(opts);
-    if (opts.command == "graph")
-        return cmd_graph(opts);
-    if (opts.command == "compdb")
-        return cmd_compdb(opts);
+    if (opts.command == "export")
+        return cmd_export(opts);
     if (opts.command == "build")
         return cmd_build(opts);
     if (opts.command == "clean")

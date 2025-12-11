@@ -47,10 +47,9 @@ Commands:
   init              Initialize .pup directory
   build             Execute build (default)
   parse             Parse and validate Tupfiles
-  graph             Print dependency graph
-  compdb            Output compile_commands.json to stdout
+  export <format>   Export build info (script, compdb, graph)
   clean             Remove generated files
-  distclean          Full reset: remove .pup and variant directory
+  distclean         Full reset: remove .pup and variant directory
   variant <config> [dir]  Create variant build directory
 
 Options:
@@ -60,6 +59,7 @@ Options:
   -k, --keep-going      Continue building after failures
   -n, --dry-run         Print commands without executing
   -v, --verbose         Show commands as they execute
+  --summary             Human-readable output (for export graph)
   --version             Print version information
   -h, --help            Show help
 ```
@@ -80,10 +80,13 @@ pup -j8
 pup -n
 
 # Generate dependency graph
-pup graph | dot -Tpng > deps.png
+pup export graph | dot -Tpng > deps.png
 
 # Generate compile_commands.json for clangd
-pup compdb > compile_commands.json
+pup export compdb > compile_commands.json
+
+# Generate a standalone build script
+pup export script > build.sh
 
 # Create a variant build directory
 pup variant default.config build
@@ -210,8 +213,6 @@ pup -S /path/to/source -B /path/to/build
 | `preload dir` | Subdirectory preloading |
 | Bins `<name>` | Output bins (different from groups) |
 | `tup monitor` | File watching (no FUSE by design) |
-| `tup generate` | Makefile/script export |
-| `tup compiledb` | compile_commands.json generation |
 | Lua Tupfiles | Lua scripting support |
 
 ### Behavioral Differences

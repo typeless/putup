@@ -46,10 +46,18 @@ pup [OPTIONS] [COMMAND]
 | `init` | Initialize `.pup` directory in current project |
 | `parse` | Parse and validate Tupfiles without building |
 | `build` | Execute build (default if no command specified) |
-| `graph` | Print dependency graph |
+| `export <format>` | Export build info (see below) |
 | `clean` | Remove generated output files (using index) |
 | `distclean` | Full reset: remove outputs, `.pup`, and `tup.config` |
 | `variant <config> [dir]` | Create variant build directory from config file |
+
+### Export Formats
+
+| Format | Description |
+|--------|-------------|
+| `script` | Shell script that runs all commands in order |
+| `compdb` | compile_commands.json for IDE integration |
+| `graph` | DOT format for graphviz (add `--summary` for text output) |
 
 ### Common Options
 
@@ -61,6 +69,7 @@ pup [OPTIONS] [COMMAND]
 | `-v` | Verbose output |
 | `-S DIR` | Source directory (default: auto-detect) |
 | `-B DIR` | Build/output directory for variant builds |
+| `--summary` | Human-readable output (for `export graph`) |
 
 ### Examples
 
@@ -86,6 +95,18 @@ pup clean -n -B build-release
 
 # Parse only (no build)
 pup parse -v
+
+# Export build script
+pup export script > build.sh
+
+# Generate compile_commands.json
+pup export compdb > compile_commands.json
+
+# Export dependency graph (DOT format)
+pup export graph | dot -Tpng -o graph.png
+
+# Export dependency graph (summary)
+pup export graph --summary
 ```
 
 ## Testing
