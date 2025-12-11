@@ -903,9 +903,37 @@ auto GraphBuilder::expand_inputs(
             continue;
 
         for (auto const& excl : *paths) {
-            result.erase(
-                std::remove(result.begin(), result.end(), excl),
-                result.end());
+            // Expand globs in exclusion pattern if needed
+            if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
+                auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.source_root
+                                                                            : ctx.options.source_root / ctx.current_dir };
+                auto expanded = Result<std::vector<std::string>> { parser::glob_expand(excl, base) };
+                if (expanded && !expanded->empty()) {
+                    for (auto const& p : *expanded) {
+                        // Normalize the same way as included paths
+                        auto normalized = std::string {};
+                        if (!ctx.current_dir.empty())
+                            normalized = (ctx.current_dir / p).lexically_normal().string();
+                        else
+                            normalized = fs::path { p }.lexically_normal().string();
+
+                        result.erase(
+                            std::remove(result.begin(), result.end(), normalized),
+                            result.end());
+                    }
+                }
+            } else {
+                // Non-glob exclusion: normalize path the same way as included paths
+                auto normalized_excl = std::string {};
+                if (!ctx.current_dir.empty())
+                    normalized_excl = (ctx.current_dir / excl).lexically_normal().string();
+                else
+                    normalized_excl = fs::path { excl }.lexically_normal().string();
+
+                result.erase(
+                    std::remove(result.begin(), result.end(), normalized_excl),
+                    result.end());
+            }
         }
     }
 
