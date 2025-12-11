@@ -362,15 +362,16 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
     }
 
     // Ensure output directories exist
+    // Note: create_directories() is idempotent and thread-safe
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
-        // For relative paths, prefix with output_root; absolute paths used as-is
         if (!output_path.is_absolute())
             output_path = options_.output_root / output;
-        auto parent = std::filesystem::path { output_path.parent_path() };
-        if (!parent.empty() && !std::filesystem::exists(parent)) {
+        auto parent = output_path.parent_path();
+        if (!parent.empty()) {
             auto ec = std::error_code {};
             std::filesystem::create_directories(parent, ec);
+            // Ignore errors - let the command fail naturally if dir can't be created
         }
     }
 
