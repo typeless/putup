@@ -162,6 +162,11 @@ private:
         std::vector<std::string> const& inputs,
         std::vector<std::string> const& outputs) -> Result<std::string>;
 
+    auto get_or_create_directory_node(
+        BuilderContext& ctx,
+        std::filesystem::path const& dir_path,
+        int depth = 0) -> Result<NodeId>;
+
     auto get_or_create_file_node(
         BuilderContext& ctx,
         std::string const& path,

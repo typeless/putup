@@ -889,3 +889,64 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[builder][deep-
     }
     REQUIRE(found_header);
 }
+
+TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
+{
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/util/helpers.c");
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = {},
+        .variant_dir = {},
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("src");
+    fixture.create_file("src/Tupfile");
+
+    auto rule = Rule {};
+    rule.command.parts.push_back(Expression::Literal { "cc -c util/helpers.c" });
+    rule.inputs.push_back(make_path_pattern("util/helpers.c"));
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "helpers.o" });
+    rule.outputs.push_back(output);
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    // Find the helpers.c file node
+    auto files = graph.nodes_of_type(NodeType::File);
+    Node const* helpers_node = nullptr;
+    for (auto id : files) {
+        auto const* node = graph.get_node(id);
+        if (node && node->path.find("helpers.c") != std::string::npos) {
+            helpers_node = node;
+            break;
+        }
+    }
+    REQUIRE(helpers_node != nullptr);
+
+    // Verify the node has name and parent_dir set
+    CHECK(helpers_node->name == "helpers.c");
+    CHECK(helpers_node->parent_dir != 0); // Not root
+
+    // Verify the parent directory node exists
+    auto const* parent_dir = graph.get_node(helpers_node->parent_dir);
+    REQUIRE(parent_dir != nullptr);
+    CHECK(parent_dir->type == NodeType::Directory);
+    CHECK(parent_dir->name == "util");
+
+    // Verify we can find the file via (parent_dir, name)
+    auto found = graph.find_by_dir_name(helpers_node->parent_dir, "helpers.c");
+    REQUIRE(found.has_value());
+    CHECK(*found == helpers_node->id);
+}

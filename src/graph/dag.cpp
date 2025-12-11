@@ -12,9 +12,13 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
     auto const id = next_id_++;
     node.id = id;
 
-    // Index by path for files
+    // Index by path for files (deprecated)
     if (!node.path.empty())
         path_index_[node.path] = id;
+
+    // Index by (parent_dir, name) for tup-style lookup
+    if (!node.name.empty())
+        dir_name_index_[DirNameKey { node.parent_dir, node.name }] = id;
 
     // Index by command for command nodes
     if (node.type == NodeType::Command && !node.command.empty())
@@ -95,6 +99,16 @@ auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<Node
     return std::nullopt;
 }
 
+auto BuildGraph::find_by_dir_name(NodeId parent_dir, std::string_view name) const
+    -> std::optional<NodeId>
+{
+    auto key = DirNameKey { parent_dir, std::string { name } };
+    auto it = dir_name_index_.find(key);
+    if (it != dir_name_index_.end())
+        return it->second;
+    return std::nullopt;
+}
+
 auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
 {
     auto it = decltype(command_index_)::const_iterator { command_index_.find(std::string { cmd }) };
@@ -150,6 +164,7 @@ auto BuildGraph::clear() -> void
     nodes_.clear();
     edges_.clear();
     path_index_.clear();
+    dir_name_index_.clear();
     command_index_.clear();
     order_only_dependents_.clear();
     next_id_ = 1;

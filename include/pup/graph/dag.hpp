@@ -7,6 +7,7 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
@@ -17,6 +18,24 @@
 #include <vector>
 
 namespace pup::graph {
+
+/// Hash for (parent_dir, name) lookup key
+struct DirNameKey {
+    NodeId parent_dir = 0;
+    std::string name = {};
+
+    auto operator==(DirNameKey const& other) const -> bool = default;
+};
+
+struct DirNameKeyHash {
+    auto operator()(DirNameKey const& key) const noexcept -> std::size_t
+    {
+        auto h1 = std::hash<NodeId> {}(key.parent_dir);
+        auto h2 = std::hash<std::string> {}(key.name);
+        // Use boost::hash_combine pattern for better distribution
+        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+};
 
 /// Edge between nodes in the build graph
 struct Edge {
@@ -32,12 +51,13 @@ struct Node {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string path = {};       ///< For files: relative path from tup root
+    std::string path = {};       ///< For files: relative path from tup root (deprecated, use name)
+    std::string name = {};       ///< Basename only (new: tup-style identification)
     std::string command = {};    ///< For commands: the command string
     std::string display = {};    ///< For commands: display text (from ^ ^ markers)
     std::string source_dir = {}; ///< For commands: Tupfile directory (relative to root)
 
-    NodeId parent_dir = 0;     ///< Parent directory node
+    NodeId parent_dir = 0;     ///< Parent directory node (used with name for lookup)
     Hash256 content_hash = {}; ///< Content hash for files
     FileTime mtime = {};       ///< Modification time
 
@@ -74,8 +94,12 @@ public:
     /// Get mutable node by ID (alias for non-const get_node)
     [[nodiscard]] auto get_node_mut(NodeId id) -> Node* { return get_node(id); }
 
-    /// Find a node by path
+    /// Find a node by path (deprecated, use find_by_dir_name)
     [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
+
+    /// Find a node by parent directory and basename (tup-style lookup)
+    [[nodiscard]] auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
+        -> std::optional<NodeId>;
 
     /// Find a node by command string
     [[nodiscard]] auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
@@ -129,6 +153,7 @@ private:
     std::vector<Node> nodes_;
     std::vector<Edge> edges_;
     std::unordered_map<std::string, NodeId> path_index_;
+    std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index_;
     std::unordered_map<std::string, NodeId> command_index_;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents_;
     NodeId next_id_ = 1;

@@ -1073,6 +1073,55 @@ auto GraphBuilder::expand_command(
     return evaluator.expand_pattern(*expanded, flags);
 }
 
+namespace {
+constexpr auto MAX_DIRECTORY_DEPTH = 128;
+}
+
+auto GraphBuilder::get_or_create_directory_node(
+    BuilderContext& ctx,
+    std::filesystem::path const& dir_path,
+    int depth) -> Result<NodeId>
+{
+    // Normalize first to handle ., .., and redundant separators
+    auto normalized_path = dir_path.lexically_normal();
+
+    // Root directory (empty, ".", or "/") has no parent - return 0
+    if (normalized_path.empty() || normalized_path == "." || normalized_path == "/")
+        return NodeId { 0 };
+
+    // Guard against pathological recursion
+    if (depth > MAX_DIRECTORY_DEPTH)
+        return make_error<NodeId>(ErrorCode::InvalidArgument, "Directory nesting exceeds maximum depth");
+
+    auto normalized = normalized_path.string();
+    auto parent_path = normalized_path.parent_path();
+    auto basename = normalized_path.filename().string();
+
+    // Recurse to get/create parent directory
+    auto parent_id_result = get_or_create_directory_node(ctx, parent_path, depth + 1);
+    if (!parent_id_result)
+        return parent_id_result;
+    auto parent_id = *parent_id_result;
+
+    // Check if directory already exists (new-style lookup)
+    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename))
+        return *existing;
+
+    // Fallback: check old-style path lookup
+    if (auto existing = ctx.graph->find_by_path(normalized))
+        return *existing;
+
+    // Create new directory node
+    auto node = Node {
+        .type = NodeType::Directory,
+        .path = normalized,
+        .name = basename,
+        .parent_dir = parent_id,
+    };
+
+    return ctx.graph->add_node(std::move(node));
+}
+
 auto GraphBuilder::get_or_create_file_node(
     BuilderContext& ctx,
     std::string const& path,
@@ -1080,15 +1129,30 @@ auto GraphBuilder::get_or_create_file_node(
 {
     // Normalize path for consistent lookup (handles //, ., ..)
     auto normalized = normalize_path(path);
+    auto fs_path = fs::path { normalized };
+    auto basename = fs_path.filename().string();
 
-    // Check if node already exists
-    if (auto existing = std::optional<NodeId> { ctx.graph->find_by_path(normalized) })
+    // Get or create parent directory node
+    auto parent_path = fs_path.parent_path();
+    auto parent_id_result = get_or_create_directory_node(ctx, parent_path);
+    if (!parent_id_result)
+        return parent_id_result;
+    auto parent_id = *parent_id_result;
+
+    // Check if node already exists (new-style lookup first)
+    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename))
         return *existing;
 
-    // Create new node with normalized path
+    // Fallback: check old-style path lookup
+    if (auto existing = ctx.graph->find_by_path(normalized))
+        return *existing;
+
+    // Create new node with both path and (parent_dir, name)
     auto node = Node {
         .type = type,
         .path = normalized,
+        .name = basename,
+        .parent_dir = parent_id,
     };
 
     return ctx.graph->add_node(std::move(node));
