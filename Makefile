@@ -51,15 +51,15 @@ else
 	INIT_CMD = tup init
 endif
 
-# Compiler flags for clang-tidy (must match Tuprules.tup)
-CXXFLAGS := -std=c++20 -I include -I third_party
-
 # Source files
 CXX_SOURCES := $(shell find src -name '*.cpp')
 HPP_HEADERS := $(shell find include -name '*.hpp')
 ALL_SOURCES := $(CXX_SOURCES) $(HPP_HEADERS)
 
-.PHONY: all build test install tidy tidy-fix format check clean
+# Compilation database for clang-tidy
+COMPDB := compile_commands.json
+
+.PHONY: all build test install tidy tidy-fix format check clean compdb
 
 all: build
 
@@ -85,20 +85,20 @@ install: build
 	install -m 755 $(BUILD_DIR)/pup $(PREFIX)/bin/pup
 	@echo "Installed pup to $(PREFIX)/bin/pup"
 
-# Run clang-tidy on all source files
-tidy:
+# Generate compile_commands.json using pup compdb
+compdb: build
+	@echo "Generating compile_commands.json..."
+	@./$(BUILD_DIR)/pup compdb -B $(BUILD_DIR) > $(COMPDB)
+
+# Run clang-tidy on all source files (uses compile_commands.json)
+tidy: compdb
 	@echo "Running clang-tidy..."
-	@clang-tidy $(CXX_SOURCES) -- $(CXXFLAGS)
+	@run-clang-tidy -p . $(CXX_SOURCES)
 
 # Run clang-tidy with automatic fixes
-tidy-fix:
+tidy-fix: compdb
 	@echo "Running clang-tidy with fixes..."
-	@clang-tidy -fix $(CXX_SOURCES) -- $(CXXFLAGS)
-
-# Run clang-tidy in parallel (faster on multi-core)
-tidy-parallel:
-	@echo "Running clang-tidy in parallel..."
-	@printf '%s\n' $(CXX_SOURCES) | xargs -P$$(nproc) -I{} clang-tidy {} -- $(CXXFLAGS)
+	@run-clang-tidy -p . -fix $(CXX_SOURCES)
 
 # Format all source files
 format:
