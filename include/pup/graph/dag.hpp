@@ -143,6 +143,16 @@ public:
     /// Get leaf nodes (nodes with no outputs)
     [[nodiscard]] auto leaf_nodes() const -> std::vector<NodeId>;
 
+    /// Reconstruct full path from (parent_dir, name) chain
+    /// Uses internal cache for efficiency. Returns node->path if name is empty (legacy nodes).
+    [[nodiscard]] auto get_full_path(NodeId id) const -> std::string;
+
+    /// Invalidate path cache for a node (call when parent_dir or name changes)
+    auto invalidate_path_cache(NodeId id) -> void;
+
+    /// Clear the entire path cache
+    auto clear_path_cache() -> void;
+
     /// Iterator support
     [[nodiscard]] auto begin() { return nodes_.begin(); }
     [[nodiscard]] auto end() { return nodes_.end(); }
@@ -156,6 +166,7 @@ private:
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index_;
     std::unordered_map<std::string, NodeId> command_index_;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents_;
+    mutable std::unordered_map<NodeId, std::string> path_cache_;
     NodeId next_id_ = 1;
 
     [[nodiscard]] auto validate_node_id(NodeId id) const -> bool;

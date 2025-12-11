@@ -101,6 +101,91 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(*found_src != *found_lib);
     }
 
+    SECTION("get_full_path - simple hierarchy")
+    {
+        // Build: src/foo.c
+        auto src_dir = graph.add_node(Node { .type = NodeType::Directory, .name = "src" });
+        auto foo_file = graph.add_node(Node {
+            .type = NodeType::File,
+            .name = "foo.c",
+            .parent_dir = *src_dir,
+        });
+        REQUIRE(src_dir.has_value());
+        REQUIRE(foo_file.has_value());
+
+        REQUIRE(graph.get_full_path(*src_dir) == "src");
+        REQUIRE(graph.get_full_path(*foo_file) == "src/foo.c");
+    }
+
+    SECTION("get_full_path - deep hierarchy")
+    {
+        // Build: a/b/c/d/file.txt
+        auto a_dir = graph.add_node(Node { .type = NodeType::Directory, .name = "a" });
+        auto b_dir = graph.add_node(Node { .type = NodeType::Directory, .name = "b", .parent_dir = *a_dir });
+        auto c_dir = graph.add_node(Node { .type = NodeType::Directory, .name = "c", .parent_dir = *b_dir });
+        auto d_dir = graph.add_node(Node { .type = NodeType::Directory, .name = "d", .parent_dir = *c_dir });
+        auto file = graph.add_node(Node { .type = NodeType::File, .name = "file.txt", .parent_dir = *d_dir });
+
+        REQUIRE(graph.get_full_path(*a_dir) == "a");
+        REQUIRE(graph.get_full_path(*b_dir) == "a/b");
+        REQUIRE(graph.get_full_path(*c_dir) == "a/b/c");
+        REQUIRE(graph.get_full_path(*d_dir) == "a/b/c/d");
+        REQUIRE(graph.get_full_path(*file) == "a/b/c/d/file.txt");
+    }
+
+    SECTION("get_full_path - legacy node uses path field")
+    {
+        auto node = graph.add_node(Node { .type = NodeType::File, .path = "legacy/path.c" });
+        REQUIRE(graph.get_full_path(*node) == "legacy/path.c");
+    }
+
+    SECTION("get_full_path - root level file")
+    {
+        auto file = graph.add_node(Node { .type = NodeType::File, .name = "Makefile" });
+        REQUIRE(graph.get_full_path(*file) == "Makefile");
+    }
+
+    SECTION("get_full_path - invalid node returns empty")
+    {
+        REQUIRE(graph.get_full_path(0) == "");
+        REQUIRE(graph.get_full_path(9999) == "");
+    }
+
+    SECTION("get_full_path - caching works")
+    {
+        auto dir = graph.add_node(Node { .type = NodeType::Directory, .name = "cached" });
+        auto file = graph.add_node(Node { .type = NodeType::File, .name = "test.c", .parent_dir = *dir });
+
+        // First call computes and caches
+        auto path1 = graph.get_full_path(*file);
+        // Second call should hit cache
+        auto path2 = graph.get_full_path(*file);
+
+        REQUIRE(path1 == "cached/test.c");
+        REQUIRE(path2 == "cached/test.c");
+    }
+
+    SECTION("invalidate_path_cache and clear_path_cache")
+    {
+        auto dir = graph.add_node(Node { .type = NodeType::Directory, .name = "dir" });
+        auto file = graph.add_node(Node { .type = NodeType::File, .name = "file.c", .parent_dir = *dir });
+
+        // Populate cache
+        (void)graph.get_full_path(*file);
+        (void)graph.get_full_path(*dir);
+
+        // Invalidate single entry
+        graph.invalidate_path_cache(*file);
+        // Should still work (recomputes)
+        REQUIRE(graph.get_full_path(*file) == "dir/file.c");
+
+        // Clear entire cache
+        graph.clear_path_cache();
+        // Should still work (recomputes)
+        REQUIRE(graph.get_full_path(*dir) == "dir");
+        REQUIRE(graph.get_full_path(*file) == "dir/file.c");
+    }
+
     SECTION("add edges")
     {
         auto id1 = graph.add_node(Node { .type = NodeType::File, .path = "foo.c" });

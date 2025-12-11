@@ -167,6 +167,7 @@ auto BuildGraph::clear() -> void
     dir_name_index_.clear();
     command_index_.clear();
     order_only_dependents_.clear();
+    path_cache_.clear();
     next_id_ = 1;
 }
 
@@ -208,6 +209,50 @@ auto BuildGraph::validate_node_id(NodeId id) const -> bool
     if (id == 0 || id >= nodes_.size())
         return false;
     return nodes_[id].id == id;
+}
+
+auto BuildGraph::get_full_path(NodeId id) const -> std::string
+{
+    if (id == 0)
+        return "";
+
+    auto const* node = get_node(id);
+    if (!node)
+        return "";
+
+    // Legacy nodes: use path field directly
+    if (node->name.empty())
+        return node->path;
+
+    // Check cache first
+    if (auto it = path_cache_.find(id); it != path_cache_.end())
+        return it->second;
+
+    // Reconstruct path by walking parent chain
+    auto path = std::string {};
+    if (node->parent_dir != 0) {
+        auto parent_path = get_full_path(node->parent_dir);
+        if (!parent_path.empty())
+            path = parent_path + "/" + node->name;
+        else
+            path = node->name;
+    } else {
+        path = node->name;
+    }
+
+    // Cache and return
+    path_cache_[id] = path;
+    return path;
+}
+
+auto BuildGraph::invalidate_path_cache(NodeId id) -> void
+{
+    path_cache_.erase(id);
+}
+
+auto BuildGraph::clear_path_cache() -> void
+{
+    path_cache_.clear();
 }
 
 } // namespace pup::graph
