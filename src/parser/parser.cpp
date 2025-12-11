@@ -430,84 +430,18 @@ auto Parser::parse_rule() -> Result<Rule>
         }
     }
 
-    // Expect |> before command
-    if (!check(TokenType::PipeArrow))
-        return pup::make_error<Rule>(ErrorCode::ParseError, "Expected '|>' before command");
+    // Parse rule body (command + outputs + groups)
+    auto body = parse_rule_body();
+    if (!body)
+        return pup::unexpected<Error>(body.error());
 
-    // Set context BEFORE advancing so next token is read in Command context
-    lexer_.set_context(Lexer::Context::Command);
-    advance(); // Consume |> and read command token in Command context
-
-    // Parse command
-    auto cmd = parse_command();
-    if (!cmd)
-        return pup::unexpected<Error>(cmd.error());
-    rule.command = std::move(*cmd);
-
-    // Switch context before advancing so advance() reads Outputs context token
-    lexer_.set_context(Lexer::Context::Outputs);
-
-    // Expect |> before outputs
-    auto arrow2 = expect(TokenType::PipeArrow, "Expected '|>' after command");
-    if (!arrow2)
-        return pup::unexpected<Error>(arrow2.error());
-
-    // Parse outputs (stop before {group} or <group> at end)
-    // stop_at_angle=true so path/<group> splits the path from the group
-    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-        auto pattern = parse_path_pattern(true);
-        if (!pattern)
-            return pup::unexpected<Error>(pattern.error());
-        rule.outputs.push_back(std::move(*pattern));
-    }
-
-    // Parse extra outputs if present
-    if (match(TokenType::Pipe)) {
-        while (!check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-            auto pattern = parse_path_pattern(true);
-            if (!pattern)
-                return pup::unexpected<Error>(pattern.error());
-            rule.extra_outputs.push_back(std::move(*pattern));
-        }
-    }
-
-    // Parse output group {name} if present
-    if (match(TokenType::OpenBrace)) {
-        if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            rule.output_group = std::string { current_.text };
-            advance();
-        }
-        auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
-        if (!close)
-            return pup::unexpected<Error>(close.error());
-    }
-
-    // Parse order-only output group <name> if present
-    // Supports path/<group> syntax where path specifies the group's directory
-    if (match(TokenType::OpenAngle)) {
-        // Check if last output is a directory prefix (ends with /)
-        // If so, use it as the group directory and remove from outputs
-        if (!rule.outputs.empty()) {
-            auto& last = rule.outputs.back();
-            if (!last.path.parts.empty()) {
-                // Check if last part is a literal ending with /
-                if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
-                    if (!lit->value.empty() && lit->value.back() == '/') {
-                        rule.output_order_only_group_dir = std::move(last.path);
-                        rule.outputs.pop_back();
-                    }
-                }
-            }
-        }
-
-        if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            rule.output_order_only_group = std::string { current_.text };
-            advance();
-        }
-        auto close = expect(TokenType::CloseAngle, "Expected '>' after group name");
-        if (!close)
-            return pup::unexpected<Error>(close.error());
-    }
+    rule.command = std::move(body->command);
+    rule.display = std::move(body->display);
+    rule.outputs = std::move(body->outputs);
+    rule.extra_outputs = std::move(body->extra_outputs);
+    rule.output_group = std::move(body->output_group);
+    rule.output_order_only_group = std::move(body->output_order_only_group);
+    rule.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
 
     lexer_.set_context(Lexer::Context::LineStart);
     return rule;
@@ -544,9 +478,30 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
         }
     }
 
+    // Parse rule body (command + outputs + groups)
+    auto body = parse_rule_body();
+    if (!body)
+        return pup::unexpected<Error>(body.error());
+
+    macro.command = std::move(body->command);
+    macro.display = std::move(body->display);
+    macro.outputs = std::move(body->outputs);
+    macro.extra_outputs = std::move(body->extra_outputs);
+    macro.output_group = std::move(body->output_group);
+    macro.output_order_only_group = std::move(body->output_order_only_group);
+    macro.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
+
+    lexer_.set_context(Lexer::Context::LineStart);
+    return macro;
+}
+
+auto Parser::parse_rule_body() -> Result<RuleBody>
+{
+    auto body = RuleBody {};
+
     // Expect |> before command
     if (!check(TokenType::PipeArrow))
-        return pup::make_error<BangMacro>(ErrorCode::ParseError, "Expected '|>' before command");
+        return pup::make_error<RuleBody>(ErrorCode::ParseError, "Expected '|>' before command");
 
     // Set context BEFORE advancing so next token is read in Command context
     lexer_.set_context(Lexer::Context::Command);
@@ -556,7 +511,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     auto cmd = parse_command();
     if (!cmd)
         return pup::unexpected<Error>(cmd.error());
-    macro.command = std::move(*cmd);
+    body.command = std::move(*cmd);
 
     // Switch context before advancing so advance() reads Outputs context token
     lexer_.set_context(Lexer::Context::Outputs);
@@ -571,7 +526,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
         auto pattern = parse_path_pattern(true);
         if (!pattern)
             return pup::unexpected<Error>(pattern.error());
-        macro.outputs.push_back(std::move(*pattern));
+        body.outputs.push_back(std::move(*pattern));
     }
 
     // Parse extra outputs if present
@@ -580,14 +535,14 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
             auto pattern = parse_path_pattern(true);
             if (!pattern)
                 return pup::unexpected<Error>(pattern.error());
-            macro.extra_outputs.push_back(std::move(*pattern));
+            body.extra_outputs.push_back(std::move(*pattern));
         }
     }
 
     // Parse output group {name} if present
     if (match(TokenType::OpenBrace)) {
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            macro.output_group = std::string { current_.text };
+            body.output_group = std::string { current_.text };
             advance();
         }
         auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
@@ -599,20 +554,20 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     // Supports path/<group> syntax where path specifies the group's directory
     if (match(TokenType::OpenAngle)) {
         // Check if last output is a directory prefix (ends with /)
-        if (!macro.outputs.empty()) {
-            auto& last = macro.outputs.back();
+        if (!body.outputs.empty()) {
+            auto& last = body.outputs.back();
             if (!last.path.parts.empty()) {
                 if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
                     if (!lit->value.empty() && lit->value.back() == '/') {
-                        macro.output_order_only_group_dir = std::move(last.path);
-                        macro.outputs.pop_back();
+                        body.output_order_only_group_dir = std::move(last.path);
+                        body.outputs.pop_back();
                     }
                 }
             }
         }
 
         if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            macro.output_order_only_group = std::string { current_.text };
+            body.output_order_only_group = std::string { current_.text };
             advance();
         }
         auto close = expect(TokenType::CloseAngle, "Expected '>' after group name");
@@ -620,8 +575,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
             return pup::unexpected<Error>(close.error());
     }
 
-    lexer_.set_context(Lexer::Context::LineStart);
-    return macro;
+    return body;
 }
 
 auto Parser::parse_assignment(Expression name_expr) -> Result<Assignment>

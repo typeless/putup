@@ -37,8 +37,8 @@ Date: 2025-12-11
 
 ## Code Duplication
 
-- **parser.cpp:403-625**: `parse_rule()` and `parse_bang_macro()` are 95% identical
-- **topo.cpp:40-76**: Cycle detection logic duplicated for normal/order-only edges
+- ✅ FIXED **parser.cpp**: `parse_rule()` and `parse_bang_macro()` now share `parse_rule_body()`
+- ✅ FIXED **topo.cpp**: Cycle detection extracted to `visit_neighbors()` helper
 
 ## Architecture Issues
 

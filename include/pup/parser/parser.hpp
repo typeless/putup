@@ -92,10 +92,22 @@ private:
     auto expect(TokenType type, std::string_view message) -> Result<Token>;
     auto skip_to_next_statement() -> void;
 
+    // Rule body (shared between Rule and BangMacro)
+    struct RuleBody {
+        Expression command;
+        std::optional<Expression> display;
+        std::vector<PathPattern> outputs;
+        std::vector<PathPattern> extra_outputs;
+        std::optional<std::string> output_group;
+        std::optional<std::string> output_order_only_group;
+        std::optional<Expression> output_order_only_group_dir;
+    };
+
     // Statement parsing
     [[nodiscard]] auto parse_line() -> Result<std::unique_ptr<Statement>>;
     [[nodiscard]] auto parse_rule() -> Result<Rule>;
     [[nodiscard]] auto parse_bang_macro() -> Result<BangMacro>;
+    [[nodiscard]] auto parse_rule_body() -> Result<RuleBody>;
     [[nodiscard]] auto parse_assignment(Expression name_expr) -> Result<Assignment>;
     [[nodiscard]] auto parse_conditional(Conditional::Kind kind) -> Result<Conditional>;
     [[nodiscard]] auto parse_include(bool is_rules) -> Result<Include>;
