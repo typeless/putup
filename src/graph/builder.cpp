@@ -872,13 +872,20 @@ auto GraphBuilder::expand_inputs(
                     }
 
                     // Check for generated file in variant
-                    // Convert absolute path to project-relative for graph lookup
-                    auto abs_path = full_path.lexically_normal();
-                    auto rel_path = abs_path.lexically_relative(ctx.options.source_root).string();
-                    if (ctx.graph->find_by_path(rel_path)) {
+                    // Try multiple path formats in order of likelihood
+                    auto abs_path = full_path.lexically_normal().string();
+                    auto rel_path = fs::path { abs_path }.lexically_relative(ctx.options.source_root).string();
+
+                    // First try absolute path (outputs from -B builds use absolute paths)
+                    if (ctx.graph->find_by_path(abs_path)) {
+                        result.push_back(abs_path);
+                    }
+                    // Then try project-relative path
+                    else if (ctx.graph->find_by_path(rel_path)) {
                         result.push_back(rel_path);
-                    } else {
-                        // Try mapping to variant (for simple paths like "foo.o")
+                    }
+                    // Try mapping to variant (for simple paths like "foo.o")
+                    else {
                         auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
                             ctx.options.source_root, ctx.options.output_root);
                         if (ctx.graph->find_by_path(variant_path)) {

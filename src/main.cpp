@@ -1045,6 +1045,43 @@ auto cmd_export_script(Options const& opts) -> int
     fmt::print("set -e\n");
     fmt::print("cd \"{}\"\n\n", ctx.layout.source_root.string());
 
+    // Collect all output directories that need to be created
+    // Output files are Generated nodes that have a command as an input
+    auto output_dirs = std::set<std::string> {};
+    for (auto id : ctx.graph.all_nodes()) {
+        auto const* node = ctx.graph.get_node(id);
+        if (!node)
+            continue;
+        if (node->type != pup::NodeType::Generated && node->type != pup::NodeType::File)
+            continue;
+        if (node->path.empty())
+            continue;
+
+        // Check if this is an output (has incoming edges from commands)
+        auto inputs = ctx.graph.get_inputs(id);
+        for (auto input_id : inputs) {
+            auto const* input = ctx.graph.get_node(input_id);
+            if (input && input->type == pup::NodeType::Command) {
+                auto path = std::filesystem::path { node->path };
+                if (path.has_parent_path()) {
+                    auto parent = path.parent_path().string();
+                    if (!parent.empty() && parent != ".")
+                        output_dirs.insert(parent);
+                }
+                break;
+            }
+        }
+    }
+
+    // Print mkdir commands for output directories
+    if (!output_dirs.empty()) {
+        fmt::print("# Create output directories\n");
+        for (auto const& dir : output_dirs)
+            fmt::print("mkdir -p \"{}\"\n", dir);
+        fmt::print("\n");
+    }
+
+    // Print build commands
     for (auto id : topo.order) {
         auto const* node = ctx.graph.get_node(id);
         if (!node || node->type != pup::NodeType::Command)
