@@ -50,7 +50,7 @@ Commands:
   graph             Print dependency graph
   compdb            Output compile_commands.json to stdout
   clean             Remove generated files
-  disclean          Full reset: remove .pup and variant directory
+  distclean          Full reset: remove .pup and variant directory
   variant <config> [dir]  Create variant build directory
 
 Options:
@@ -89,7 +89,7 @@ pup compdb > compile_commands.json
 pup variant default.config build
 
 # Full reset (remove .pup and variant directory)
-pup disclean -B build
+pup distclean -B build
 ```
 
 ### Tupfile Syntax

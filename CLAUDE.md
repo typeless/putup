@@ -48,7 +48,7 @@ pup [OPTIONS] [COMMAND]
 | `build` | Execute build (default if no command specified) |
 | `graph` | Print dependency graph |
 | `clean` | Remove generated files from variant directory |
-| `disclean` | Full reset: remove `.pup` directory and entire variant build directory |
+| `distclean` | Full reset: remove `.pup` directory and entire variant build directory |
 | `variant <config> [dir]` | Create variant build directory from config file |
 
 ### Common Options
@@ -73,10 +73,10 @@ pup build
 pup build -B build-release
 
 # Full reset of variant build
-pup disclean -B build-release
+pup distclean -B build-release
 
 # Dry-run to see what would be removed
-pup disclean -n -B build-release
+pup distclean -n -B build-release
 
 # Parse only (no build)
 pup parse -v

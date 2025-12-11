@@ -61,7 +61,7 @@ auto print_usage() -> void
                "  graph             Print dependency graph\n"
                "  compdb            Output compile_commands.json to stdout\n"
                "  clean             Remove generated files\n"
-               "  disclean          Full reset: remove .pup and variant directory\n"
+               "  distclean         Full reset: remove .pup and variant directory\n"
                "  variant <config> [dir]  Create variant build directory\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
@@ -1142,7 +1142,7 @@ auto cmd_clean(Options const& opts) -> int
     return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-auto cmd_disclean(Options const& opts) -> int
+auto cmd_distclean(Options const& opts) -> int
 {
     auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
     if (!root) {
@@ -1569,8 +1569,8 @@ auto main(int argc, char** argv) -> int
         return cmd_build(opts);
     if (opts.command == "clean")
         return cmd_clean(opts);
-    if (opts.command == "disclean")
-        return cmd_disclean(opts);
+    if (opts.command == "distclean")
+        return cmd_distclean(opts);
     if (opts.command == "variant")
         return cmd_variant(opts);
 
