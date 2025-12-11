@@ -431,8 +431,30 @@ Binary file at `.pup/index`:
 
 For `-B` builds, special handling maps `tup.config` references to `output_root/tup.config`.
 
-### Path Normalization (TODO)
+### Path Storage Architecture (TODO: Consider Refactoring)
 
-**Issue**: Output paths use absolute format (`/path/to/build/file.o`) while input references from Tupfiles may use relative format (`../../build/file.o`). The scheduler's dependency map uses exact string matching, so these don't connect.
+Pup and tup use fundamentally different approaches for storing file paths:
 
-**Fix needed**: Normalize all paths to a canonical format (either all absolute or all relative to a common root) when building the dependency map.
+**Tup's approach: Name + Parent Directory ID**
+- Each node stores only its basename (e.g., `"kernel.hex"`)
+- Parent directory stored as `dt` (directory ID)
+- Full path reconstructed by walking parent chain
+- Pros: No path format mismatches, automatic propagation on directory rename, smaller storage
+- Cons: Requires directory nodes, path reconstruction cost
+
+**Pup's approach: Full Path String**
+- Each node stores complete path (e.g., `"/home/.../build-s1f3/modules/kernel/kernel.hex"`)
+- For `-B` builds: absolute paths
+- For in-tree builds: project-relative paths
+- Pros: Simple lookups, no reconstruction needed
+- Cons: Path format mismatches cause duplicate nodes and broken dependencies
+
+**Known issues with pup's current approach:**
+
+1. **Cross-directory input references**: When `output/hex/Tupfile` references `../../build-s1f3/SBI/SBI.hex`, this resolves to an absolute path. If the lookup tries project-relative first, it won't find the existing node and creates a duplicate. Fixed in `expand_inputs()` by trying absolute path lookup first.
+
+2. **Index dir_id not populated**: The `Node` struct has `source_dir` (string) which IS populated, but `parent_dir` (NodeId) is NOT populated. The index stores `dir_id = 0` for all commands. This would break if we ever restore commands from the index without re-parsing.
+
+3. **Canonicalization burden**: Every code path that creates or looks up nodes must produce the exact same path string. This is error-prone and has caused bugs.
+
+**Potential future fix**: Consider migrating to tup's model with directory nodes and basename-only storage. This would eliminate path format issues but requires significant refactoring of the graph builder and index format.
