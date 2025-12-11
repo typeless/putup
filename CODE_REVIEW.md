@@ -22,7 +22,7 @@ Date: 2025-12-11
 | **Scheduler** | ✅ FIXED: Output directory TOCTOU race | Removed exists() check, use idempotent create_directories() |
 | **Parser** | ✅ FIXED: VarDb heterogeneous lookup | Added StringHash with is_transparent |
 | **Main** | God object: 1373 lines | Extract to `pup/commands/` module |
-| **Index** | No endianness handling | Add flag to header |
+| **Index** | No endianness handling | Won't fix - index files are local artifacts, never shared cross-arch |
 
 ## Medium Priority (Performance)
 
@@ -170,7 +170,7 @@ Should use `std::move(*peeked_)`.
 
 **entry.cpp:105-124** - O(n) linear search in `find_file()`. Add hash map index.
 
-**No endianness handling** - Binary format not portable across architectures.
+**No endianness handling** - Won't fix. Index files are local build artifacts in `.pup/index`, never shared across different architectures. Rebuilding the index on a new machine is trivial.
 
 ### Main Entry Point (src/main.cpp)
 
