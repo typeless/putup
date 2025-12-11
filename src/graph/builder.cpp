@@ -90,8 +90,9 @@ auto normalize_group_dir(
 }
 
 /// Map an output path to the output directory.
+/// All paths are project-relative (tup-style), never absolute.
 /// For in-tree builds: variant_dir/current_dir/path (e.g., "build/src/lib/foo.o")
-/// For out-of-tree builds: absolute path under output_root (e.g., "/tmp/build/src/lib/foo.o")
+/// For out-of-tree builds (-B): variant_dir/current_dir/path (e.g., "build-s1f3/boot/boot.hex")
 auto map_to_variant(
     std::string const& path,
     std::filesystem::path const& current_dir,
@@ -99,18 +100,27 @@ auto map_to_variant(
     std::filesystem::path const& source_root,
     std::filesystem::path const& output_root) -> std::string
 {
-    // If path is already absolute, return as-is
     auto p = std::filesystem::path { path };
-    if (p.is_absolute())
-        return p.lexically_normal().string();
 
-    // Out-of-tree build: use absolute paths under output_root
-    // Note: When output_root != source_root, output_root already contains the variant
-    // So we don't add variant_dir again
+    // If path is already absolute, make it relative to source_root
+    if (p.is_absolute()) {
+        auto rel = fs::relative(p, source_root);
+        if (!rel.empty() && rel.string()[0] != '.')
+            return rel.lexically_normal().string();
+        // Can't make relative - return as-is (shouldn't happen in normal use)
+        return p.lexically_normal().string();
+    }
+
+    // Out-of-tree build (-B): use variant_dir which is the output directory basename
+    // relative to source root (e.g., "build-s1f3" for -B build-s1f3)
     if (!output_root.empty() && source_root != output_root) {
+        // Compute variant_dir from output_root if not explicitly provided
+        auto effective_variant = variant_dir.empty()
+            ? fs::relative(output_root, source_root)
+            : variant_dir;
         if (current_dir.empty())
-            return (output_root / path).lexically_normal().string();
-        return (output_root / current_dir / path).lexically_normal().string();
+            return (effective_variant / path).lexically_normal().string();
+        return (effective_variant / current_dir / path).lexically_normal().string();
     }
 
     // In-tree build: paths are project-relative
