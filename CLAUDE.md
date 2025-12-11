@@ -47,8 +47,8 @@ pup [OPTIONS] [COMMAND]
 | `parse` | Parse and validate Tupfiles without building |
 | `build` | Execute build (default if no command specified) |
 | `graph` | Print dependency graph |
-| `clean` | Remove generated files from variant directory |
-| `distclean` | Full reset: remove `.pup` directory and entire variant build directory |
+| `clean` | Remove generated files from build directory |
+| `distclean` | Full reset: remove `.pup` directory and entire build directory |
 | `variant <config> [dir]` | Create variant build directory from config file |
 
 ### Common Options
@@ -61,7 +61,6 @@ pup [OPTIONS] [COMMAND]
 | `-v` | Verbose output |
 | `-S DIR` | Source directory (default: auto-detect) |
 | `-B DIR` | Build/output directory for variant builds |
-| `--variant=DIR` | Use DIR as variant subdirectory |
 
 ### Examples
 

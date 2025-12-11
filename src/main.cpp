@@ -44,7 +44,6 @@ struct Options {
     bool version = false;
     bool help = false;
     std::string command = {};
-    std::string variant = {};
     std::string source_dir = {}; ///< -S: source directory
     std::string build_dir = {};  ///< -B: build/output directory
     std::vector<std::string> targets = {};
@@ -70,7 +69,6 @@ auto print_usage() -> void
                "  -v, --verbose      Verbose output\n"
                "  -S DIR             Source directory (default: auto-detect)\n"
                "  -B DIR             Build/output directory (default: source)\n"
-               "  --variant=DIR      Use DIR as variant subdirectory\n"
                "  --version          Print version\n"
                "  -h, --help         Print this help\n"
                "\nEnvironment:\n"
@@ -119,8 +117,6 @@ auto parse_args(int argc, char** argv) -> Options
                 fmt::print(stderr, "Error: Invalid job count '{}'\n", arg.substr(2));
                 std::exit(EXIT_FAILURE);
             }
-        } else if (arg.starts_with("--variant=")) {
-            opts.variant = std::string { arg.substr(10) };
         } else if (arg == "-S") {
             if (i + 1 < argc)
                 opts.source_dir = std::string { argv[++i] };
@@ -406,10 +402,6 @@ auto build_graph(Options const& opts, BuildGraphOptions const& graph_opts)
         return pup::unexpected<pup::Error>(layout_result.error());
 
     auto layout = pup::ProjectLayout { std::move(*layout_result) };
-
-    // Override variant_dir from --variant if specified
-    if (!opts.variant.empty())
-        layout.variant_dir = std::filesystem::path { opts.variant };
 
     // Auto-initialize if requested and Tupfile.ini exists but .pup/ doesn't
     if (graph_opts.auto_init) {
@@ -1073,35 +1065,48 @@ auto cmd_graph(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
+struct CleanContext {
+    std::filesystem::path root;
+    std::optional<std::filesystem::path> build_dir;
+};
+
+auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
+{
+    auto root = pup::find_project_root(std::filesystem::current_path());
+    if (!root)
+        return std::nullopt;
+
+    auto build_dir = std::optional<std::filesystem::path> {};
+    if (!opts.build_dir.empty()) {
+        build_dir = std::filesystem::path { opts.build_dir };
+        if (build_dir->is_relative())
+            build_dir = *root / *build_dir;
+    } else if (auto detected = pup::find_variant_dir(*root)) {
+        build_dir = *root / *detected;
+    }
+
+    return CleanContext { *root, build_dir };
+}
+
 auto cmd_clean(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
-    if (!root) {
+    auto ctx = resolve_clean_context(opts);
+    if (!ctx) {
         fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
         return EXIT_FAILURE;
     }
 
-    // Find variant directory
-    auto variant_dir = std::optional<std::filesystem::path> {};
-    if (!opts.variant.empty()) {
-        variant_dir = *root / opts.variant;
-    } else if (auto var_name = pup::find_variant_dir(*root)) {
-        variant_dir = *root / *var_name;
-    }
-
-    if (!variant_dir || !std::filesystem::exists(*variant_dir)) {
-        fmt::print(stderr, "Error: No variant directory found (nothing to clean)\n");
+    if (!ctx->build_dir || !std::filesystem::exists(*ctx->build_dir)) {
+        fmt::print(stderr, "Error: No build directory found (use -B to specify)\n");
         return EXIT_FAILURE;
     }
 
     auto removed_count = std::size_t { 0 };
     auto error_count = std::size_t { 0 };
 
-    // Remove all files in variant directory except tup.config
-    for (auto const& entry : std::filesystem::directory_iterator(*variant_dir)) {
+    for (auto const& entry : std::filesystem::directory_iterator(*ctx->build_dir)) {
         auto filename = std::string { entry.path().filename().string() };
 
-        // Preserve tup.config and .gitignore
         if (filename == "tup.config" || filename == ".gitignore")
             continue;
 
@@ -1144,24 +1149,13 @@ auto cmd_clean(Options const& opts) -> int
 
 auto cmd_distclean(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
-    if (!root) {
+    auto ctx = resolve_clean_context(opts);
+    if (!ctx) {
         fmt::print(stderr, "Error: Not in a pup/tup project\n");
         return EXIT_FAILURE;
     }
 
-    auto variant_dir = std::optional<std::filesystem::path> {};
-    if (!opts.build_dir.empty()) {
-        variant_dir = std::filesystem::path { opts.build_dir };
-        if (variant_dir->is_relative())
-            variant_dir = *root / *variant_dir;
-    } else if (!opts.variant.empty()) {
-        variant_dir = *root / opts.variant;
-    } else if (auto var_name = pup::find_variant_dir(*root)) {
-        variant_dir = *root / *var_name;
-    }
-
-    auto pup_dir = variant_dir ? *variant_dir / ".pup" : *root / ".pup";
+    auto pup_dir = ctx->build_dir ? *ctx->build_dir / ".pup" : ctx->root / ".pup";
 
     if (std::filesystem::exists(pup_dir)) {
         if (opts.dry_run) {
@@ -1173,13 +1167,13 @@ auto cmd_distclean(Options const& opts) -> int
         }
     }
 
-    if (variant_dir && *variant_dir != *root && std::filesystem::exists(*variant_dir)) {
+    if (ctx->build_dir && *ctx->build_dir != ctx->root && std::filesystem::exists(*ctx->build_dir)) {
         if (opts.dry_run) {
-            fmt::print("Would remove: {}\n", variant_dir->string());
+            fmt::print("Would remove: {}\n", ctx->build_dir->string());
         } else {
             if (opts.verbose)
-                fmt::print("Removing: {}\n", variant_dir->string());
-            std::filesystem::remove_all(*variant_dir);
+                fmt::print("Removing: {}\n", ctx->build_dir->string());
+            std::filesystem::remove_all(*ctx->build_dir);
         }
     }
 
