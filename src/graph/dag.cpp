@@ -25,7 +25,7 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
         nodes_.resize(id + 1);
     nodes_[id] = std::move(node);
 
-    // Build path_index from reconstructed path (for find_by_path compatibility)
+    // Build path_index from reconstructed path (derived index for find_by_path)
     auto path = get_full_path(id);
     if (!path.empty())
         path_index_[path] = id;

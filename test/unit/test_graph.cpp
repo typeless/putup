@@ -130,7 +130,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(graph.get_full_path(*file) == "a/b/c/d/file.txt");
     }
 
-    SECTION("get_full_path - legacy node uses path field")
+    SECTION("get_full_path - name with path separator (no parent_dir)")
     {
         auto node = graph.add_node(Node { .type = NodeType::File, .name = "legacy/path.c" });
         REQUIRE(graph.get_full_path(*node) == "legacy/path.c");

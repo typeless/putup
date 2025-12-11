@@ -93,7 +93,7 @@ public:
     /// Get mutable node by ID (alias for non-const get_node)
     [[nodiscard]] auto get_node_mut(NodeId id) -> Node* { return get_node(id); }
 
-    /// Find a node by path (transitional, will be removed)
+    /// Find a node by full path (convenience API, derived from parent_dir/name model)
     [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
 
     /// Find a node by parent directory and basename (tup-style lookup)
