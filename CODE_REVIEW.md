@@ -28,9 +28,9 @@ Date: 2025-12-11
 
 | Area | Issue | Impact |
 |------|-------|--------|
-| **DAG** | Triple edge storage (edges_, inputs, outputs) | Memory waste |
+| **DAG** | Triple edge storage (edges_, inputs, outputs) | Won't fix - intentional: edges_ for serialization metadata, adjacency for O(1) traversal |
 | **DAG** | `nodes_of_type()` is O(n) scan | Add type index |
-| **Builder** | `expand_inputs()` is 241 lines | Split into helpers |
+| **Builder** | `expand_inputs()` is 241 lines | Split into helpers when modifying |
 | **Scheduler** | `notify_all()` on every job | Use `notify_one()` |
 | **Topo** | Topological sort recomputed each call | Cache result |
 | **Parser** | Massive switch statement (140 lines) | Dispatch table |
@@ -87,7 +87,7 @@ Zero functions in main.cpp are testable because:
 - Good module separation (core/parser/graph/index/exec)
 - Atomic file writes (temp + rename pattern)
 - Memory-mapped index reader
-- Comprehensive unit tests (831 assertions in 90 test cases)
+- Comprehensive unit tests (855 assertions in 101 test cases)
 
 ## Recommended Priority
 
@@ -103,8 +103,9 @@ Zero functions in main.cpp are testable because:
 
 ### P2 (Tech debt)
 7. Refactor `expand_inputs()`
-8. Deduplicate parse_rule/parse_bang_macro
-9. Add path normalization consolidation
+8. ✅ DONE: Deduplicate parse_rule/parse_bang_macro (extracted `parse_rule_body()`)
+9. ✅ DONE: Deduplicate topo.cpp cycle detection (extracted `visit_neighbors()`)
+10. Add path normalization consolidation
 
 ---
 
@@ -112,17 +113,11 @@ Zero functions in main.cpp are testable because:
 
 ### Parser/Evaluator (src/parser/)
 
-**lexer.cpp:18-23** - Unnecessary Optional Copying
-```cpp
-auto tok = Token { *peeked_ };
-peeked_.reset();
-return tok;
-```
-Should use `std::move(*peeked_)`.
+**lexer.cpp:18-23** - ✅ FIXED: Unnecessary optional copying now uses `std::exchange(peeked_, std::nullopt).value()`.
 
-**lexer.cpp:146-147** - Manual position manipulation appears 5+ times. Create `putback()` helper.
+**lexer.cpp:146-147** - ✅ FIXED: Manual position manipulation extracted to `putback()` helper (5 call sites).
 
-**lexer.cpp:332** - 13-condition if statement. Extract to `is_delimiter()` helper.
+**lexer.cpp:332** - ✅ FIXED: 13-condition if extracted to `is_delimiter()` using `string_view::find()`.
 
 **parser.cpp:200-343** - 140-line switch statement. Use dispatch table pattern.
 
@@ -132,15 +127,25 @@ Should use `std::move(*peeked_)`.
 
 ### Graph/Builder (src/graph/)
 
-**dag.cpp:24-26** - Sparse vector with holes. Consider `std::unordered_map<NodeId, Node>`.
+**dag.cpp:24-26** - Sparse vector with holes. Won't fix - current design is O(1) lookup, suitable for build graphs where nodes are rarely deleted.
 
-**dag.cpp:44-52** - Edge info stored in THREE places (edges_, inputs, outputs). Remove `edges_` vector.
+**dag.cpp:44-52** - Edge info stored in THREE places (edges_, inputs, outputs). Won't fix - `edges_` stores `type` and `group_cmd_id` needed for serialization; adjacency lists store only NodeId for O(1) traversal. Intentional tradeoff.
 
-**dag.cpp:49-52** - Silent failure if node lookup fails. Should return error.
+**dag.cpp:49-52** - ✅ FALSE POSITIVE: Lines 33-36 validate node IDs before this code runs. The null checks are defensive redundancy.
 
-**builder.cpp:673-914** - 241-line function handling 8+ cases. Extract into named helpers.
+**builder.cpp:673-914** - 241-line `expand_inputs()` function handling 8+ interleaved cases. Now has comprehensive test coverage in `test_builder.cpp` (11 test cases). Key complexity:
 
-**builder.cpp:177-181** - Inconsistent error handling (accumulate vs fail-fast).
+- **Three distinct group lookup patterns** with subtly different path normalization:
+  1. `is_order_only_group` with empty path → uses `current_dir` directly
+  2. `is_order_only_group` with non-empty path → uses `normalize_group_dir(expanded_path)`
+  3. `path/<group>` pattern → uses `normalize_group_dir(dir_part)` (ALWAYS, even if dir_part is empty)
+- **Shared evaluator state** across all pattern processing
+- **Demand-driven parsing** interspersed with path resolution (4 locations)
+- **Path normalization** differs for source files vs generated files vs glob patterns
+- **Previous refactoring attempt** (Dec 2025) caused regression: unit tests passed but spos build failed at 72%
+- ✅ Added test_builder.cpp with tests for all three group patterns, glob expansion, variant mapping, deep directories
+
+**builder.cpp:177-181** - INTENTIONAL: In verbose mode, accumulates all errors; in non-verbose, fails fast. Allows verbose to report all Tupfile errors.
 
 **rule_pattern.cpp:94-103** - Naive tokenization doesn't handle shell quoting.
 

@@ -354,6 +354,147 @@ auto parse_directory(
     return result;
 }
 
+// =============================================================================
+// Unified graph building
+// =============================================================================
+
+/// Options for build_graph()
+struct BuildGraphOptions {
+    bool verbose = false;
+    bool keep_going = false;
+    bool auto_init = false;
+    pup::graph::RulePatternRegistry* pattern_registry = nullptr;
+};
+
+/// Result of build_graph() containing all state needed by commands
+struct BuildGraphResult {
+    pup::ProjectLayout layout;
+    pup::parser::VarDb config_vars;
+    pup::parser::VarDb vars;
+    pup::graph::BuildGraph graph;
+    TupfileParseState state;
+};
+
+/// Build the dependency graph from Tupfiles
+/// This is the shared implementation for graph, build, and compdb commands
+auto build_graph(Options const& opts, BuildGraphOptions const& graph_opts)
+    -> pup::Result<BuildGraphResult>
+{
+    // Discover project layout (source/output directories)
+    auto layout_opts = pup::LayoutOptions {};
+    if (!opts.source_dir.empty())
+        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
+    if (!opts.build_dir.empty())
+        layout_opts.build_dir = std::filesystem::path { opts.build_dir };
+
+    auto layout_result = pup::Result<pup::ProjectLayout> { pup::discover_layout(layout_opts) };
+    if (!layout_result)
+        return pup::unexpected<pup::Error>(layout_result.error());
+
+    auto layout = pup::ProjectLayout { std::move(*layout_result) };
+
+    // Override variant_dir from --variant if specified
+    if (!opts.variant.empty())
+        layout.variant_dir = std::filesystem::path { opts.variant };
+
+    // Auto-initialize if requested and Tupfile.ini exists but .pup/ doesn't
+    if (graph_opts.auto_init) {
+        auto pup_dir = layout.pup_dir();
+        if (!std::filesystem::exists(pup_dir)) {
+            if (std::filesystem::exists(layout.source_root / "Tupfile.ini")) {
+                std::filesystem::create_directories(pup_dir);
+                fmt::print("Initialized pup in \"{}\"\n", pup_dir.string());
+            }
+        }
+    }
+
+    // Discover all directories containing Tupfiles
+    auto state = TupfileParseState {};
+    state.available = discover_tupfile_dirs(layout.source_root);
+
+    if (state.available.empty()) {
+        return pup::make_error<BuildGraphResult>(
+            pup::ErrorCode::IoError, "No Tupfiles found in project");
+    }
+
+    if (graph_opts.verbose)
+        fmt::print("Found {} directories with Tupfiles\n", state.available.size());
+
+    auto variant_dir = layout.variant_dir;
+
+    // Load config variables from tup.config
+    auto config_vars = pup::parser::VarDb {};
+    auto config_path = std::filesystem::path {};
+    if (!opts.build_dir.empty()) {
+        // -B was specified - config is directly in output_root
+        config_path = layout.output_root / "tup.config";
+    } else if (!variant_dir.empty()) {
+        // variant was specified via --variant
+        config_path = layout.source_root / variant_dir / "tup.config";
+    }
+
+    if (!config_path.empty() && std::filesystem::exists(config_path)) {
+        auto config_result = pup::Result<pup::parser::VarDb> { pup::parser::parse_config(config_path) };
+        if (config_result) {
+            config_vars = std::move(*config_result);
+            if (graph_opts.verbose)
+                fmt::print("Loaded {} config variables from {}\n",
+                    config_vars.names().size(), config_path.string());
+        }
+    }
+
+    auto vars = pup::parser::VarDb {};
+
+    auto builder_opts = pup::graph::BuilderOptions {
+        .source_root = layout.source_root,
+        .output_root = layout.output_root,
+        .variant_dir = variant_dir,
+        .expand_globs = true,
+        .pattern_registry = graph_opts.pattern_registry,
+    };
+
+    auto builder = pup::graph::GraphBuilder { builder_opts };
+    auto graph = pup::graph::BuildGraph {};
+
+    // Parse all Tupfiles starting with root
+    auto root_rel = std::filesystem::path { "." };
+    if (state.available.contains(root_rel)) {
+        auto result = pup::Result<void> {
+            parse_directory(root_rel, state, builder, graph, layout.source_root,
+                layout.output_root, vars, config_vars, variant_dir, graph_opts.verbose)
+        };
+        if (!result && !graph_opts.keep_going)
+            return pup::unexpected<pup::Error>(result.error());
+    }
+
+    // Parse remaining directories (orphan Tupfiles)
+    for (auto const& dir : state.available) {
+        if (state.parsed.contains(dir))
+            continue;
+        auto result = pup::Result<void> {
+            parse_directory(dir, state, builder, graph, layout.source_root,
+                layout.output_root, vars, config_vars, variant_dir, graph_opts.verbose)
+        };
+        if (!result && !graph_opts.keep_going)
+            return pup::unexpected<pup::Error>(result.error());
+    }
+
+    if (graph_opts.verbose)
+        fmt::print("Parsed {} Tupfiles\n", state.parsed.size());
+
+    return BuildGraphResult {
+        .layout = std::move(layout),
+        .config_vars = std::move(config_vars),
+        .vars = std::move(vars),
+        .graph = std::move(graph),
+        .state = std::move(state),
+    };
+}
+
+// =============================================================================
+// Incremental build support
+// =============================================================================
+
 auto find_changed_files_with_implicit(
     std::filesystem::path const& root,
     pup::index::Index const& old_index,
@@ -872,58 +1013,22 @@ auto cmd_parse(Options const& opts) -> int
 
 auto cmd_graph(Options const& opts) -> int
 {
-    auto root = std::optional<std::filesystem::path> { pup::find_project_root(std::filesystem::current_path()) };
-    if (!root) {
-        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
-        return EXIT_FAILURE;
-    }
-
-    // Discover all Tupfiles
-    auto state = TupfileParseState {};
-    state.available = discover_tupfile_dirs(*root);
-
-    if (state.available.empty()) {
-        fmt::print(stderr, "Error: No Tupfiles found in project\n");
-        return EXIT_FAILURE;
-    }
-
-    auto vars = pup::parser::VarDb {};
-    auto config_vars = pup::parser::VarDb {};
-    auto variant_dir = std::filesystem::path {};
-
-    auto builder_opts = pup::graph::BuilderOptions {
-        .source_root = *root,
-        .output_root = *root,
-        .variant_dir = variant_dir,
-        .expand_globs = true,
+    auto graph_opts = BuildGraphOptions {
+        .verbose = opts.verbose,
     };
 
-    auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph = pup::graph::BuildGraph {};
-
-    // Start with root Tupfile if it exists
-    auto root_rel = std::filesystem::path { "." };
-    if (state.available.contains(root_rel)) {
-        if (auto result = parse_directory(root_rel, state, builder, graph, *root, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
-            fmt::print(stderr, "Error: {}\n", result.error().message);
-            return EXIT_FAILURE;
-        }
+    auto result = pup::Result<BuildGraphResult> { build_graph(opts, graph_opts) };
+    if (!result) {
+        fmt::print(stderr, "Error: {}\n", result.error().message);
+        return EXIT_FAILURE;
     }
 
-    // Parse remaining directories
-    for (auto const& dir : state.available) {
-        if (state.parsed.contains(dir))
-            continue;
-        if (auto result = parse_directory(dir, state, builder, graph, *root, *root, vars, config_vars, variant_dir, opts.verbose); !result) {
-            fmt::print(stderr, "Error: {}\n", result.error().message);
-            return EXIT_FAILURE;
-        }
-    }
+    auto& ctx = *result;
+    auto num_nodes = std::size_t { ctx.graph.node_count() };
+    auto num_edges = std::size_t { ctx.graph.edge_count() };
+    auto commands = std::vector<pup::NodeId> { ctx.graph.nodes_of_type(pup::NodeType::Command) };
 
-    auto num_nodes = std::size_t { graph.node_count() };
-    auto num_edges = std::size_t { graph.edge_count() };
-    auto commands = std::vector<pup::NodeId> { graph.nodes_of_type(pup::NodeType::Command) };
-    fmt::print("Tupfiles: {}\n", state.parsed.size());
+    fmt::print("Tupfiles: {}\n", ctx.state.parsed.size());
     fmt::print("Nodes: {}\n", num_nodes);
     fmt::print("Edges: {}\n", num_edges);
     fmt::print("Commands: {}\n", commands.size());
@@ -931,7 +1036,7 @@ auto cmd_graph(Options const& opts) -> int
     if (opts.verbose) {
         fmt::print("\nCommands:\n");
         for (auto id : commands) {
-            if (auto const* node = graph.get_node(id)) {
+            if (auto const* node = ctx.graph.get_node(id)) {
                 auto display = std::string { node->display.empty() ? node->command : node->display };
                 fmt::print("  {}\n", display);
             }
@@ -1089,75 +1194,17 @@ auto cmd_variant(Options const& opts) -> int
 
 auto cmd_compdb(Options const& opts) -> int
 {
-    // Discover project layout (handles -B option)
-    auto layout_opts = pup::LayoutOptions {};
-    if (!opts.source_dir.empty())
-        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
-    if (!opts.build_dir.empty())
-        layout_opts.build_dir = std::filesystem::path { opts.build_dir };
-
-    auto layout_result = pup::Result<pup::ProjectLayout> { pup::discover_layout(layout_opts) };
-    if (!layout_result) {
-        fmt::print(stderr, "Error: {}\n", layout_result.error().message);
-        return EXIT_FAILURE;
-    }
-    auto layout = pup::ProjectLayout { std::move(*layout_result) };
-
-    if (!opts.variant.empty())
-        layout.variant_dir = std::filesystem::path { opts.variant };
-
-    auto variant_dir = layout.variant_dir;
-
-    // Load config variables from tup.config
-    auto config_vars = pup::parser::VarDb {};
-    auto config_path = std::filesystem::path {};
-    if (!opts.build_dir.empty())
-        config_path = layout.output_root / "tup.config";
-    else if (!variant_dir.empty())
-        config_path = layout.source_root / variant_dir / "tup.config";
-
-    if (!config_path.empty() && std::filesystem::exists(config_path)) {
-        if (auto cfg = pup::parser::parse_config(config_path))
-            config_vars = std::move(*cfg);
-    }
-
-    // Discover all directories with Tupfiles
-    auto state = TupfileParseState {};
-    state.available = discover_tupfile_dirs(layout.source_root);
-
-    if (state.available.empty()) {
-        fmt::print(stderr, "Error: No Tupfiles found in project\n");
-        return EXIT_FAILURE;
-    }
-
-    auto vars = pup::parser::VarDb {};
-    auto builder_opts = pup::graph::BuilderOptions {
-        .source_root = layout.source_root,
-        .output_root = layout.output_root,
-        .variant_dir = variant_dir,
-        .expand_globs = true,
+    auto graph_opts = BuildGraphOptions {
+        .verbose = opts.verbose,
     };
 
-    auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph = pup::graph::BuildGraph {};
-
-    // Parse all directories
-    auto root_rel = std::filesystem::path { "." };
-    if (state.available.contains(root_rel)) {
-        if (auto r = parse_directory(root_rel, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, false); !r) {
-            fmt::print(stderr, "Error: {}\n", r.error().message);
-            return EXIT_FAILURE;
-        }
+    auto result = pup::Result<BuildGraphResult> { build_graph(opts, graph_opts) };
+    if (!result) {
+        fmt::print(stderr, "Error: {}\n", result.error().message);
+        return EXIT_FAILURE;
     }
 
-    for (auto const& dir : state.available) {
-        if (state.parsed.contains(dir))
-            continue;
-        if (auto r = parse_directory(dir, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, false); !r) {
-            fmt::print(stderr, "Error: {}\n", r.error().message);
-            return EXIT_FAILURE;
-        }
-    }
+    auto& ctx = *result;
 
     // Helper: tokenize command string into arguments
     auto tokenize_command = [](std::string_view cmd) -> std::vector<std::string> {
@@ -1227,18 +1274,18 @@ auto cmd_compdb(Options const& opts) -> int
 
     // Output JSON
     fmt::print("[\n");
-    auto commands = graph.nodes_of_type(pup::NodeType::Command);
+    auto commands = ctx.graph.nodes_of_type(pup::NodeType::Command);
     auto first = true;
 
     for (auto id : commands) {
-        auto const* node = graph.get_node(id);
+        auto const* node = ctx.graph.get_node(id);
         if (!node)
             continue;
 
         // Find source file from inputs (required by compile_commands.json spec)
         auto source_file = std::string {};
-        for (auto input_id : graph.get_inputs(id)) {
-            auto const* input = graph.get_node(input_id);
+        for (auto input_id : ctx.graph.get_inputs(id)) {
+            auto const* input = ctx.graph.get_node(input_id);
             if (!input || input->path.empty())
                 continue;
             auto const& p = input->path;
@@ -1250,8 +1297,8 @@ auto cmd_compdb(Options const& opts) -> int
 
         // Find output file
         auto output_file = std::string {};
-        for (auto output_id : graph.get_outputs(id)) {
-            auto const* output = graph.get_node(output_id);
+        for (auto output_id : ctx.graph.get_outputs(id)) {
+            auto const* output = ctx.graph.get_node(output_id);
             if (!output || output->path.empty())
                 continue;
             if (output->path.ends_with(".o") || output->path.ends_with(".obj")) {
@@ -1264,7 +1311,7 @@ auto cmd_compdb(Options const& opts) -> int
             continue;
 
         // Compute working directory
-        auto working_dir = layout.source_root;
+        auto working_dir = ctx.layout.source_root;
         if (!node->source_dir.empty())
             working_dir /= node->source_dir;
 
@@ -1299,72 +1346,6 @@ auto cmd_compdb(Options const& opts) -> int
 
 auto cmd_build(Options const& opts) -> int
 {
-    // Discover project layout (source/output directories)
-    auto layout_opts = pup::LayoutOptions {};
-    if (!opts.source_dir.empty())
-        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
-    if (!opts.build_dir.empty())
-        layout_opts.build_dir = std::filesystem::path { opts.build_dir };
-
-    auto layout_result = pup::Result<pup::ProjectLayout> { pup::discover_layout(layout_opts) };
-    if (!layout_result) {
-        fmt::print(stderr, "Error: {}\n", layout_result.error().message);
-        return EXIT_FAILURE;
-    }
-    auto layout = pup::ProjectLayout { std::move(*layout_result) };
-
-    // Override variant_dir from --variant if specified
-    // Note: -B is already handled by discover_layout() which sets output_root and clears variant_dir
-    if (!opts.variant.empty())
-        layout.variant_dir = std::filesystem::path { opts.variant };
-
-    // Auto-initialize if Tupfile.ini exists but .pup/ doesn't
-    auto pup_dir = layout.pup_dir();
-    if (!std::filesystem::exists(pup_dir)) {
-        if (std::filesystem::exists(layout.source_root / "Tupfile.ini")) {
-            std::filesystem::create_directories(pup_dir);
-            fmt::print("Initialized pup in \"{}\"\n", pup_dir.string());
-        }
-    }
-
-    // Discover all directories containing Tupfiles
-    auto state = TupfileParseState {};
-    state.available = discover_tupfile_dirs(layout.source_root);
-
-    if (state.available.empty()) {
-        fmt::print(stderr, "Error: No Tupfiles found in project\n");
-        return EXIT_FAILURE;
-    }
-
-    if (opts.verbose)
-        fmt::print("Found {} directories with Tupfiles\n", state.available.size());
-
-    auto variant_dir = layout.variant_dir;
-
-    // Load config variables from tup.config
-    // Config is located in output_root (for -B) or source_root/variant_dir
-    auto config_vars = pup::parser::VarDb {};
-    auto config_path = std::filesystem::path {};
-    if (!opts.build_dir.empty()) {
-        // -B was specified - config is directly in output_root
-        config_path = layout.output_root / "tup.config";
-    } else if (!variant_dir.empty()) {
-        // variant was specified via --variant
-        config_path = layout.source_root / variant_dir / "tup.config";
-    }
-
-    if (!config_path.empty() && std::filesystem::exists(config_path)) {
-        auto config_result = pup::Result<pup::parser::VarDb> { pup::parser::parse_config(config_path) };
-        if (config_result) {
-            config_vars = std::move(*config_result);
-            if (opts.verbose)
-                fmt::print("Loaded {} config variables from {}\n",
-                    config_vars.names().size(), config_path.string());
-        }
-    }
-
-    auto vars = pup::parser::VarDb {};
-
     // Implicit dependency tracking is enabled by default (set PUP_IMPLICIT_DEPS=0 to disable)
     auto pattern_registry = std::optional<pup::graph::RulePatternRegistry> {};
     auto implicit_deps_disabled = false;
@@ -1378,52 +1359,28 @@ auto cmd_build(Options const& opts) -> int
             fmt::print("Implicit dependency tracking enabled\n");
     }
 
-    auto builder_opts = pup::graph::BuilderOptions {
-        .source_root = layout.source_root,
-        .output_root = layout.output_root,
-        .variant_dir = variant_dir,
-        .expand_globs = true,
+    auto graph_opts = BuildGraphOptions {
+        .verbose = opts.verbose,
+        .keep_going = opts.keep_going,
+        .auto_init = true,
         .pattern_registry = pattern_registry ? &*pattern_registry : nullptr,
     };
 
-    auto builder = pup::graph::GraphBuilder { builder_opts };
-    auto graph = pup::graph::BuildGraph {};
-
-    // Start with root Tupfile if it exists
-    auto root_rel = std::filesystem::path { "." };
-    if (state.available.contains(root_rel)) {
-        auto result = pup::Result<void> {
-            parse_directory(root_rel, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, opts.verbose)
-        };
-        if (!result && !opts.keep_going) {
-            fmt::print(stderr, "Error: {}\n", result.error().message);
-            return EXIT_FAILURE;
-        }
+    auto result = pup::Result<BuildGraphResult> { build_graph(opts, graph_opts) };
+    if (!result) {
+        fmt::print(stderr, "Error: {}\n", result.error().message);
+        return EXIT_FAILURE;
     }
 
-    // Parse any remaining unparsed directories (orphan Tupfiles)
-    for (auto const& dir : state.available) {
-        if (state.parsed.contains(dir))
-            continue;
-        auto result = pup::Result<void> {
-            parse_directory(dir, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, opts.verbose)
-        };
-        if (!result && !opts.keep_going) {
-            fmt::print(stderr, "Error: {}\n", result.error().message);
-            return EXIT_FAILURE;
-        }
-    }
-
-    if (opts.verbose)
-        fmt::print("Parsed {} Tupfiles\n", state.parsed.size());
-    auto num_commands = std::size_t { graph.nodes_of_type(pup::NodeType::Command).size() };
+    auto& ctx = *result;
+    auto num_commands = std::size_t { ctx.graph.nodes_of_type(pup::NodeType::Command).size() };
 
     if (num_commands == 0) {
         fmt::print("Nothing to do.\n");
         return EXIT_SUCCESS;
     }
 
-    auto index_path = layout.index_path();
+    auto index_path = ctx.layout.index_path();
     auto old_index = std::optional<pup::index::Index> {};
     auto use_incremental = false;
     auto changed_files = std::vector<std::string> {};
@@ -1434,8 +1391,8 @@ auto cmd_build(Options const& opts) -> int
             auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
             if (index_result) {
                 old_index = std::move(*index_result);
-                changed_files = find_changed_files_with_implicit(layout.source_root, *old_index, opts.verbose);
-                changed_files = expand_implicit_deps(changed_files, *old_index, graph);
+                changed_files = find_changed_files_with_implicit(ctx.layout.source_root, *old_index, opts.verbose);
+                changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph);
 
                 if (changed_files.empty()) {
                     fmt::print("Nothing to do (up to date).\n");
@@ -1454,9 +1411,9 @@ auto cmd_build(Options const& opts) -> int
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
-        .source_root = layout.source_root,
-        .output_root = layout.output_root,
-        .variant_dir = variant_dir,
+        .source_root = ctx.layout.source_root,
+        .output_root = ctx.layout.output_root,
+        .variant_dir = ctx.layout.variant_dir,
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
@@ -1493,8 +1450,8 @@ auto cmd_build(Options const& opts) -> int
                     }
 
                     // Make relative to source root if under it
-                    if (is_path_under_root(resolved, layout.source_root)) {
-                        deps.push_back(std::filesystem::relative(resolved, layout.source_root).string());
+                    if (is_path_under_root(resolved, ctx.layout.source_root)) {
+                        deps.push_back(std::filesystem::relative(resolved, ctx.layout.source_root).string());
                     } else {
                         deps.push_back(resolved.string());
                     }
@@ -1518,9 +1475,9 @@ auto cmd_build(Options const& opts) -> int
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
     if (use_incremental && old_index) {
-        build_result = scheduler.build_incremental(graph, *old_index, changed_files);
+        build_result = scheduler.build_incremental(ctx.graph, *old_index, changed_files);
     } else {
-        build_result = scheduler.build(graph);
+        build_result = scheduler.build(ctx.graph);
     }
     auto end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
@@ -1543,7 +1500,7 @@ auto cmd_build(Options const& opts) -> int
 
     if (stats.failed_jobs == 0 && !opts.dry_run) {
         auto const* old_index_ptr = old_index ? &*old_index : nullptr;
-        auto index = pup::index::Index { build_index(graph, discovered_deps, layout.source_root, old_index_ptr) };
+        auto index = pup::index::Index { build_index(ctx.graph, discovered_deps, ctx.layout.source_root, old_index_ptr) };
         auto writer = pup::index::IndexWriter {};
         auto write_result = pup::Result<void> { writer.write(index_path, index) };
         if (!write_result) {
