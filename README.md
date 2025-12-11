@@ -47,7 +47,8 @@ Commands:
   init              Initialize .pup directory
   build             Execute build (default)
   parse             Parse and validate Tupfiles
-  graph             Print dependency graph (graphviz format)
+  graph             Print dependency graph
+  compdb            Output compile_commands.json to stdout
   clean             Remove generated files
   disclean          Full reset: remove .pup and variant directory
   variant <config> [dir]  Create variant build directory
@@ -80,6 +81,9 @@ pup -n
 
 # Generate dependency graph
 pup graph | dot -Tpng > deps.png
+
+# Generate compile_commands.json for clangd
+pup compdb > compile_commands.json
 
 # Create a variant build directory
 pup variant default.config build

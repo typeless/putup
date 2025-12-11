@@ -58,6 +58,7 @@ auto print_usage() -> void
                "  parse             Parse and validate Tupfiles\n"
                "  build             Execute build (default)\n"
                "  graph             Print dependency graph\n"
+               "  compdb            Output compile_commands.json to stdout\n"
                "  clean             Remove generated files\n"
                "  disclean          Full reset: remove .pup and variant directory\n"
                "  variant <config> [dir]  Create variant build directory\n"
@@ -1076,6 +1077,203 @@ auto cmd_variant(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
+auto cmd_compdb(Options const& opts) -> int
+{
+    // Discover project layout (handles -B option)
+    auto layout_opts = pup::LayoutOptions {};
+    if (!opts.source_dir.empty())
+        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
+    if (!opts.build_dir.empty())
+        layout_opts.build_dir = std::filesystem::path { opts.build_dir };
+
+    auto layout_result = pup::Result<pup::ProjectLayout> { pup::discover_layout(layout_opts) };
+    if (!layout_result) {
+        fmt::print(stderr, "Error: {}\n", layout_result.error().message);
+        return EXIT_FAILURE;
+    }
+    auto layout = pup::ProjectLayout { std::move(*layout_result) };
+
+    if (!opts.variant.empty())
+        layout.variant_dir = std::filesystem::path { opts.variant };
+
+    auto variant_dir = layout.variant_dir;
+
+    // Load config variables from tup.config
+    auto config_vars = pup::parser::VarDb {};
+    auto config_path = std::filesystem::path {};
+    if (!opts.build_dir.empty())
+        config_path = layout.output_root / "tup.config";
+    else if (!variant_dir.empty())
+        config_path = layout.source_root / variant_dir / "tup.config";
+
+    if (!config_path.empty() && std::filesystem::exists(config_path)) {
+        if (auto cfg = pup::parser::parse_config(config_path))
+            config_vars = std::move(*cfg);
+    }
+
+    // Discover all directories with Tupfiles
+    auto state = TupfileParseState {};
+    state.available = discover_tupfile_dirs(layout.source_root);
+
+    if (state.available.empty()) {
+        fmt::print(stderr, "Error: No Tupfiles found in project\n");
+        return EXIT_FAILURE;
+    }
+
+    auto vars = pup::parser::VarDb {};
+    auto builder_opts = pup::graph::BuilderOptions {
+        .source_root = layout.source_root,
+        .output_root = layout.output_root,
+        .variant_dir = variant_dir,
+        .expand_globs = true,
+    };
+
+    auto builder = pup::graph::GraphBuilder { builder_opts };
+    auto graph = pup::graph::BuildGraph {};
+
+    // Parse all directories
+    auto root_rel = std::filesystem::path { "." };
+    if (state.available.contains(root_rel)) {
+        if (auto r = parse_directory(root_rel, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, false); !r) {
+            fmt::print(stderr, "Error: {}\n", r.error().message);
+            return EXIT_FAILURE;
+        }
+    }
+
+    for (auto const& dir : state.available) {
+        if (state.parsed.contains(dir))
+            continue;
+        if (auto r = parse_directory(dir, state, builder, graph, layout.source_root, layout.output_root, vars, config_vars, variant_dir, false); !r) {
+            fmt::print(stderr, "Error: {}\n", r.error().message);
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Helper: tokenize command string into arguments
+    auto tokenize_command = [](std::string_view cmd) -> std::vector<std::string> {
+        auto args = std::vector<std::string> {};
+        auto current = std::string {};
+        auto in_quote = false;
+        auto quote_char = char {};
+
+        for (auto c : cmd) {
+            if (in_quote) {
+                if (c == quote_char)
+                    in_quote = false;
+                else
+                    current += c;
+            } else if (c == '"' || c == '\'') {
+                in_quote = true;
+                quote_char = c;
+            } else if (c == ' ' || c == '\t') {
+                if (!current.empty()) {
+                    args.push_back(std::move(current));
+                    current.clear();
+                }
+            } else {
+                current += c;
+            }
+        }
+        if (!current.empty())
+            args.push_back(std::move(current));
+        return args;
+    };
+
+    // Helper: escape string for JSON (RFC 8259)
+    auto escape_json = [](std::string_view s) -> std::string {
+        auto result = std::string {};
+        result.reserve(s.size());
+        for (auto c : s) {
+            switch (c) {
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\b': result += "\\b"; break;
+            case '\f': result += "\\f"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20)
+                    continue; // Skip other control characters
+                result += c;
+            }
+        }
+        return result;
+    };
+
+    // Output JSON
+    fmt::print("[\n");
+    auto commands = graph.nodes_of_type(pup::NodeType::Command);
+    auto first = true;
+
+    for (auto id : commands) {
+        auto const* node = graph.get_node(id);
+        if (!node)
+            continue;
+
+        // Find source file from inputs (required by compile_commands.json spec)
+        auto source_file = std::string {};
+        for (auto input_id : graph.get_inputs(id)) {
+            auto const* input = graph.get_node(input_id);
+            if (!input || input->path.empty())
+                continue;
+            auto const& p = input->path;
+            if (p.ends_with(".c") || p.ends_with(".cc") || p.ends_with(".cpp") ||
+                p.ends_with(".cxx") || p.ends_with(".C") || p.ends_with(".S") || p.ends_with(".s")) {
+                source_file = p;
+                break;
+            }
+        }
+
+        // Find output file
+        auto output_file = std::string {};
+        for (auto output_id : graph.get_outputs(id)) {
+            auto const* output = graph.get_node(output_id);
+            if (!output || output->path.empty())
+                continue;
+            if (output->path.ends_with(".o") || output->path.ends_with(".obj")) {
+                output_file = output->path;
+                break;
+            }
+        }
+
+        if (source_file.empty())
+            continue;
+
+        // Compute working directory
+        auto working_dir = layout.source_root;
+        if (!node->source_dir.empty())
+            working_dir /= node->source_dir;
+
+        auto args = tokenize_command(node->command);
+        if (args.empty())
+            continue;
+
+        if (!first)
+            fmt::print(",\n");
+        first = false;
+
+        fmt::print("  {{\n");
+        fmt::print("    \"directory\": \"{}\",\n", escape_json(working_dir.string()));
+
+        fmt::print("    \"arguments\": [");
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (i > 0)
+                fmt::print(", ");
+            fmt::print("\"{}\"", escape_json(args[i]));
+        }
+        fmt::print("],\n");
+
+        fmt::print("    \"file\": \"{}\"", escape_json(source_file));
+        if (!output_file.empty())
+            fmt::print(",\n    \"output\": \"{}\"", escape_json(output_file));
+        fmt::print("\n  }}");
+    }
+
+    fmt::print("\n]\n");
+    return EXIT_SUCCESS;
+}
+
 auto cmd_build(Options const& opts) -> int
 {
     // Discover project layout (source/output directories)
@@ -1358,6 +1556,8 @@ auto main(int argc, char** argv) -> int
         return cmd_parse(opts);
     if (opts.command == "graph")
         return cmd_graph(opts);
+    if (opts.command == "compdb")
+        return cmd_compdb(opts);
     if (opts.command == "build")
         return cmd_build(opts);
     if (opts.command == "clean")
