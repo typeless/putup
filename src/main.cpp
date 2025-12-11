@@ -1105,21 +1105,26 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
     return CleanContext { *root, build_dir, is_in_tree };
 }
 
+struct CleanResult {
+    std::size_t removed_count = 0;
+    std::size_t error_count = 0;
+    std::set<std::filesystem::path> output_dirs = {};
+};
+
 auto remove_indexed_outputs(
     std::filesystem::path const& index_path,
     bool dry_run,
-    bool verbose) -> std::pair<std::size_t, std::size_t>
+    bool verbose) -> CleanResult
 {
-    auto removed_count = std::size_t { 0 };
-    auto error_count = std::size_t { 0 };
+    auto result = CleanResult {};
 
     auto reader_result = pup::index::IndexReader::open(index_path);
     if (!reader_result)
-        return { 0, 0 };
+        return result;
 
     auto index_result = reader_result->read();
     if (!index_result)
-        return { 0, 0 };
+        return result;
 
     auto const& index = *index_result;
 
@@ -1127,27 +1132,75 @@ auto remove_indexed_outputs(
         if (file.type != pup::NodeType::Generated)
             continue;
 
-        if (!std::filesystem::exists(file.path))
+        auto path = std::filesystem::path { file.path };
+        // Add all parent directories
+        for (auto parent = path.parent_path();
+             !parent.empty() && parent != parent.parent_path();
+             parent = parent.parent_path())
+            result.output_dirs.insert(parent);
+
+        if (!std::filesystem::exists(path))
             continue;
 
         if (dry_run) {
             fmt::print("Would remove: {}\n", file.path);
-            ++removed_count;
+            ++result.removed_count;
             continue;
         }
 
         auto ec = std::error_code {};
-        if (std::filesystem::remove(file.path, ec)) {
-            ++removed_count;
+        if (std::filesystem::remove(path, ec)) {
+            ++result.removed_count;
             if (verbose)
                 fmt::print("Removed: {}\n", file.path);
         } else if (ec) {
             fmt::print(stderr, "Error removing {}: {}\n", file.path, ec.message());
-            ++error_count;
+            ++result.error_count;
         }
     }
 
-    return { removed_count, error_count };
+    return result;
+}
+
+auto remove_empty_output_directories(
+    std::set<std::filesystem::path> const& output_dirs,
+    std::filesystem::path const& build_dir,
+    std::filesystem::path const& source_dir,
+    bool dry_run,
+    bool verbose) -> std::size_t
+{
+    auto removed = std::size_t { 0 };
+
+    // Sort by depth (deepest first) so children are removed before parents
+    auto dirs = std::vector<std::filesystem::path>(output_dirs.begin(), output_dirs.end());
+    std::sort(dirs.begin(), dirs.end(), [](auto const& a, auto const& b) {
+        return a.string().size() > b.string().size();
+    });
+
+    for (auto const& dir : dirs) {
+        // Never remove source directory
+        if (dir == source_dir)
+            continue;
+
+        // Must be within or equal to build_dir
+        auto rel = std::filesystem::relative(dir, build_dir);
+        if (rel.string().starts_with(".."))
+            continue;
+
+        // Must be empty
+        if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir))
+            continue;
+
+        if (dry_run) {
+            fmt::print("Would remove empty dir: {}\n", dir.string());
+        } else {
+            std::filesystem::remove(dir);
+            ++removed;
+            if (verbose)
+                fmt::print("Removed empty dir: {}\n", dir.string());
+        }
+    }
+    return removed;
 }
 
 auto cmd_clean(Options const& opts) -> int
@@ -1164,14 +1217,18 @@ auto cmd_clean(Options const& opts) -> int
         return EXIT_SUCCESS;
     }
 
-    auto [removed_count, error_count] = remove_indexed_outputs(index_path, opts.dry_run, opts.verbose);
+    auto result = remove_indexed_outputs(index_path, opts.dry_run, opts.verbose);
+
+    // Remove empty directories that contained outputs
+    auto dirs_removed = remove_empty_output_directories(
+        result.output_dirs, ctx->build_dir, ctx->root, opts.dry_run, opts.verbose);
 
     if (opts.dry_run)
-        fmt::print("Would remove {} files\n", removed_count);
+        fmt::print("Would remove {} files, {} directories\n", result.removed_count, dirs_removed);
     else
-        fmt::print("Removed {} files\n", removed_count);
+        fmt::print("Removed {} files, {} directories\n", result.removed_count, dirs_removed);
 
-    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 auto cmd_distclean(Options const& opts) -> int
@@ -1183,14 +1240,14 @@ auto cmd_distclean(Options const& opts) -> int
     }
 
     auto index_path = ctx->build_dir / ".pup" / "index";
-    auto removed_count = std::size_t { 0 };
     auto error_count = std::size_t { 0 };
+    auto output_dirs = std::set<std::filesystem::path> {};
 
     // Remove indexed outputs (if index exists)
     if (std::filesystem::exists(index_path)) {
-        auto [count, errors] = remove_indexed_outputs(index_path, opts.dry_run, opts.verbose);
-        removed_count += count;
-        error_count += errors;
+        auto result = remove_indexed_outputs(index_path, opts.dry_run, opts.verbose);
+        error_count += result.error_count;
+        output_dirs = std::move(result.output_dirs);
     }
 
     // Remove .pup directory
@@ -1217,19 +1274,9 @@ auto cmd_distclean(Options const& opts) -> int
         }
     }
 
-    // For out-of-tree builds, remove empty build directory
-    if (!ctx->is_in_tree && std::filesystem::exists(ctx->build_dir)) {
-        auto is_empty = std::filesystem::is_empty(ctx->build_dir);
-        if (is_empty) {
-            if (opts.dry_run) {
-                fmt::print("Would remove: {}\n", ctx->build_dir.string());
-            } else {
-                if (opts.verbose)
-                    fmt::print("Removing: {}\n", ctx->build_dir.string());
-                std::filesystem::remove(ctx->build_dir);
-            }
-        }
-    }
+    // Remove empty directories that contained outputs (including build_dir if not source_dir)
+    output_dirs.insert(ctx->build_dir);
+    remove_empty_output_directories(output_dirs, ctx->build_dir, ctx->root, opts.dry_run, opts.verbose);
 
     if (!opts.dry_run)
         fmt::print("Project reset complete\n");
