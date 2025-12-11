@@ -43,7 +43,7 @@ TEST_CASE("Index format struct sizes", "[index]")
 
 TEST_CASE("RawFileEntry helpers", "[index]")
 {
-    auto entry = RawFileEntry{};
+    auto entry = RawFileEntry {};
 
     SECTION("file size helpers")
     {
@@ -68,7 +68,7 @@ TEST_CASE("RawFileEntry helpers", "[index]")
 
     SECTION("mtime helpers")
     {
-        auto mtime = FileTime{.seconds = 1234567890, .nanoseconds = 123456789};
+        auto mtime = FileTime { .seconds = 1234567890, .nanoseconds = 123456789 };
         set_mtime(entry, mtime);
         auto result = get_mtime(entry);
         REQUIRE(result.seconds == mtime.seconds);
@@ -78,23 +78,24 @@ TEST_CASE("RawFileEntry helpers", "[index]")
 
 TEST_CASE("FileEntry conversion", "[index]")
 {
-    auto file = FileEntry{
+    auto file = FileEntry {
         .id = 42,
         .parent_id = 1,
         .src_id = 0,
         .type = NodeType::File,
         .flags = NodeFlags::Modified,
         .path = "src/main.cpp",
+        .name = "main.cpp",
         .size = 1024,
-        .mtime = {.seconds = 1700000000, .nanoseconds = 500000000},
+        .mtime = { .seconds = 1700000000, .nanoseconds = 500000000 },
         .content_hash = {},
     };
 
     // Set some hash bytes
-    file.content_hash[0] = std::byte{0xAB};
-    file.content_hash[31] = std::byte{0xCD};
+    file.content_hash[0] = std::byte { 0xAB };
+    file.content_hash[31] = std::byte { 0xCD };
 
-    auto raw = file.to_raw(100);
+    auto raw = file.to_raw(100, 200);
 
     REQUIRE(raw.id == 42);
     REQUIRE(raw.parent_id == 1);
@@ -102,16 +103,19 @@ TEST_CASE("FileEntry conversion", "[index]")
     REQUIRE(get_file_size(raw) == 1024);
     REQUIRE(raw.path_offset == 100);
     REQUIRE(raw.path_length == 12);
-    REQUIRE(raw.content_hash[0] == std::byte{0xAB});
-    REQUIRE(raw.content_hash[31] == std::byte{0xCD});
+    REQUIRE(raw.name_offset == 200);
+    REQUIRE(raw.name_length == 8);
+    REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
+    REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
 
-    auto restored = FileEntry::from_raw(raw, "src/main.cpp");
+    auto restored = FileEntry::from_raw(raw, "src/main.cpp", "main.cpp");
 
     REQUIRE(restored.id == file.id);
     REQUIRE(restored.parent_id == file.parent_id);
     REQUIRE(restored.type == file.type);
     REQUIRE(restored.flags == file.flags);
     REQUIRE(restored.path == file.path);
+    REQUIRE(restored.name == file.name);
     REQUIRE(restored.size == file.size);
     REQUIRE(restored.mtime == file.mtime);
     REQUIRE(restored.content_hash == file.content_hash);
@@ -119,7 +123,7 @@ TEST_CASE("FileEntry conversion", "[index]")
 
 TEST_CASE("CommandEntry conversion", "[index]")
 {
-    auto cmd = CommandEntry{
+    auto cmd = CommandEntry {
         .id = 100,
         .dir_id = 5,
         .command = "gcc -c main.c -o main.o",
@@ -154,7 +158,7 @@ TEST_CASE("EdgeEntry conversion", "[index]")
 {
     SECTION("Sticky edge")
     {
-        auto edge = EdgeEntry{
+        auto edge = EdgeEntry {
             .from = 10,
             .to = 20,
             .type = LinkType::Sticky,
@@ -178,7 +182,7 @@ TEST_CASE("EdgeEntry conversion", "[index]")
 
     SECTION("Implicit edge (header dependency)")
     {
-        auto edge = EdgeEntry{
+        auto edge = EdgeEntry {
             .from = 100,
             .to = 200,
             .type = LinkType::Implicit,
@@ -203,7 +207,7 @@ TEST_CASE("EdgeEntry conversion", "[index]")
 
 TEST_CASE("Index in-memory operations", "[index]")
 {
-    auto index = Index{};
+    auto index = Index {};
 
     REQUIRE(index.empty());
     REQUIRE(index.file_count() == 0);
@@ -212,8 +216,8 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find files")
     {
-        index.add_file(FileEntry{.id = 1, .path = "foo.c"});
-        index.add_file(FileEntry{.id = 2, .path = "bar.c"});
+        index.add_file(FileEntry { .id = 1, .path = "foo.c" });
+        index.add_file(FileEntry { .id = 2, .path = "bar.c" });
 
         REQUIRE(index.file_count() == 2);
         REQUIRE_FALSE(index.empty());
@@ -231,8 +235,8 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry{.id = 10, .command = "gcc foo.c"});
-        index.add_command(CommandEntry{.id = 11, .command = "gcc bar.c"});
+        index.add_command(CommandEntry { .id = 10, .command = "gcc foo.c" });
+        index.add_command(CommandEntry { .id = 11, .command = "gcc bar.c" });
 
         REQUIRE(index.command_count() == 2);
 
@@ -245,9 +249,9 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and query edges")
     {
-        index.add_edge(EdgeEntry{.from = 1, .to = 10});
-        index.add_edge(EdgeEntry{.from = 10, .to = 2});
-        index.add_edge(EdgeEntry{.from = 1, .to = 11});
+        index.add_edge(EdgeEntry { .from = 1, .to = 10 });
+        index.add_edge(EdgeEntry { .from = 10, .to = 2 });
+        index.add_edge(EdgeEntry { .from = 1, .to = 11 });
 
         REQUIRE(index.edge_count() == 3);
 
@@ -261,9 +265,9 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("clear")
     {
-        index.add_file(FileEntry{.id = 1, .path = "test.c"});
-        index.add_command(CommandEntry{.id = 10});
-        index.add_edge(EdgeEntry{.from = 1, .to = 10});
+        index.add_file(FileEntry { .id = 1, .path = "test.c" });
+        index.add_command(CommandEntry { .id = 10 });
+        index.add_edge(EdgeEntry { .from = 1, .to = 10 });
 
         REQUIRE_FALSE(index.empty());
 
@@ -278,19 +282,19 @@ TEST_CASE("Index in-memory operations", "[index]")
 
 TEST_CASE("Index serialization roundtrip", "[index]")
 {
-    auto index = Index{};
+    auto index = Index {};
 
     // Add some files
-    index.add_file(FileEntry{
+    index.add_file(FileEntry {
         .id = 1,
         .parent_id = 0,
         .type = NodeType::File,
         .path = "src/main.cpp",
         .size = 1024,
-        .mtime = {.seconds = 1700000000, .nanoseconds = 0},
+        .mtime = { .seconds = 1700000000, .nanoseconds = 0 },
     });
 
-    index.add_file(FileEntry{
+    index.add_file(FileEntry {
         .id = 2,
         .parent_id = 0,
         .type = NodeType::Generated,
@@ -299,7 +303,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     });
 
     // Add a command
-    index.add_command(CommandEntry{
+    index.add_command(CommandEntry {
         .id = 10,
         .dir_id = 0,
         .command = "g++ -c src/main.cpp -o build/main.o",
@@ -307,7 +311,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     });
 
     // Add a header file (implicit dependency)
-    index.add_file(FileEntry{
+    index.add_file(FileEntry {
         .id = 3,
         .parent_id = 0,
         .type = NodeType::File,
@@ -316,12 +320,12 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     });
 
     // Add edges (including implicit header dependency)
-    index.add_edge(EdgeEntry{.from = 1, .to = 10, .type = LinkType::Normal});
-    index.add_edge(EdgeEntry{.from = 10, .to = 2, .type = LinkType::Normal});
-    index.add_edge(EdgeEntry{.from = 3, .to = 10, .type = LinkType::Implicit});
+    index.add_edge(EdgeEntry { .from = 1, .to = 10, .type = LinkType::Normal });
+    index.add_edge(EdgeEntry { .from = 10, .to = 2, .type = LinkType::Normal });
+    index.add_edge(EdgeEntry { .from = 3, .to = 10, .type = LinkType::Implicit });
 
     // Serialize
-    auto writer = IndexWriter{};
+    auto writer = IndexWriter {};
     auto data = writer.serialize(index);
     REQUIRE(data.has_value());
     REQUIRE(data->size() > sizeof(RawHeader) + sizeof(RawFooter));
@@ -415,11 +419,11 @@ TEST_CASE("Index reader validation", "[index]")
         REQUIRE_FALSE(IndexReader::is_valid_index("/nonexistent"));
 
         // Create a valid index
-        auto index = Index{};
-        index.add_file(FileEntry{.id = 1, .path = "test.c"});
+        auto index = Index {};
+        index.add_file(FileEntry { .id = 1, .path = "test.c" });
 
         auto temp_path = std::filesystem::temp_directory_path() / "pup_valid_test";
-        auto writer = IndexWriter{};
+        auto writer = IndexWriter {};
         (void)writer.write(temp_path, index);
 
         REQUIRE(IndexReader::is_valid_index(temp_path));

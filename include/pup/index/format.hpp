@@ -14,7 +14,10 @@ namespace pup::index {
 inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 
 /// Current index format version
-inline constexpr auto INDEX_VERSION = std::uint32_t { 1 };
+/// Version history:
+///   1 - Initial format with full path strings
+///   2 - Added name field for tup-style (parent_dir, name) identification
+inline constexpr auto INDEX_VERSION = std::uint32_t { 2 };
 
 /// Index file header (64 bytes, packed)
 struct alignas(8) RawHeader {
@@ -58,7 +61,8 @@ struct alignas(8) RawFileEntry {
     std::uint32_t path_offset = 0; ///< Offset into string table for path
     std::uint32_t path_length = 0; ///< Length of path string
 
-    std::uint64_t reserved2 = 0; ///< Reserved for future use
+    std::uint32_t name_offset = 0; ///< Offset into string table for basename (v2+)
+    std::uint32_t name_length = 0; ///< Length of name string (v2+)
 
     Hash256 content_hash = {}; ///< SHA-256 content hash
 };

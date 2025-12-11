@@ -7,7 +7,7 @@
 
 namespace pup::index {
 
-auto FileEntry::to_raw(std::uint32_t path_offset) const -> RawFileEntry
+auto FileEntry::to_raw(std::uint32_t path_offset, std::uint32_t name_offset) const -> RawFileEntry
 {
     auto raw = RawFileEntry {};
     raw.id = id;
@@ -19,11 +19,13 @@ auto FileEntry::to_raw(std::uint32_t path_offset) const -> RawFileEntry
     set_mtime(raw, mtime);
     raw.path_offset = path_offset;
     raw.path_length = static_cast<std::uint32_t>(path.size());
+    raw.name_offset = name_offset;
+    raw.name_length = static_cast<std::uint32_t>(name.size());
     raw.content_hash = content_hash;
     return raw;
 }
 
-auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view path_str) -> FileEntry
+auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view path_str, std::string_view name_str) -> FileEntry
 {
     return FileEntry {
         .id = raw.id,
@@ -32,6 +34,7 @@ auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view path_str) -> 
         .type = static_cast<NodeType>(raw.type),
         .flags = get_node_flags(raw),
         .path = std::string { path_str },
+        .name = std::string { name_str },
         .size = raw.size,
         .mtime = get_mtime(raw),
         .content_hash = raw.content_hash,

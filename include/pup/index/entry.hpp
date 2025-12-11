@@ -23,16 +23,17 @@ struct FileEntry {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string path = {};
+    std::string path = {}; ///< Full path (deprecated, use name + parent_id)
+    std::string name = {}; ///< Basename only (tup-style identification)
     std::uint64_t size = 0;
     FileTime mtime = {};
     Hash256 content_hash = {};
 
     /// Convert to raw format for serialization
-    [[nodiscard]] auto to_raw(std::uint32_t path_offset) const -> RawFileEntry;
+    [[nodiscard]] auto to_raw(std::uint32_t path_offset, std::uint32_t name_offset) const -> RawFileEntry;
 
     /// Create from raw format
-    [[nodiscard]] static auto from_raw(RawFileEntry const& raw, std::string_view path_str)
+    [[nodiscard]] static auto from_raw(RawFileEntry const& raw, std::string_view path_str, std::string_view name_str)
         -> FileEntry;
 };
 

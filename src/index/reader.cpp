@@ -72,9 +72,14 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 
     // Validate header
     auto const* hdr = reader.header();
-    if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0 || hdr->version != INDEX_VERSION) {
+    if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
         reader.close();
-        return make_error<IndexReader>(ErrorCode::InvalidFormat, "Invalid index file header");
+        return make_error<IndexReader>(ErrorCode::InvalidFormat, "Invalid index file magic");
+    }
+    // Support reading older versions (1 and 2)
+    if (hdr->version < 1 || hdr->version > INDEX_VERSION) {
+        reader.close();
+        return make_error<IndexReader>(ErrorCode::InvalidFormat, "Unsupported index version");
     }
 
     return reader;
@@ -93,7 +98,8 @@ auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
     if (n != static_cast<ssize_t>(sizeof(header)))
         return false;
 
-    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 && header.version == INDEX_VERSION;
+    // Accept versions 1 and 2
+    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 && header.version >= 1 && header.version <= INDEX_VERSION;
 }
 
 auto IndexReader::read() const -> Result<Index>
@@ -104,10 +110,15 @@ auto IndexReader::read() const -> Result<Index>
     auto index = Index {};
 
     // Read file entries
+    auto const* hdr = header();
     auto files = raw_files();
     for (auto const& raw : files) {
         auto path = get_string(raw.path_offset, raw.path_length);
-        index.add_file(FileEntry::from_raw(raw, path));
+        // name field added in version 2
+        auto name = std::string_view {};
+        if (hdr->version >= 2)
+            name = get_string(raw.name_offset, raw.name_length);
+        index.add_file(FileEntry::from_raw(raw, path, name));
     }
 
     // Read command entries
