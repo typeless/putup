@@ -128,7 +128,7 @@ private:
     ProgressCallback on_progress_ = {};
 
     /// Execute jobs in parallel
-    auto execute_parallel(std::vector<BuildJob> const& jobs) -> Result<void>;
+    auto execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>;
 
     /// Execute a single job
     auto execute_job(BuildJob const& job, CommandRunner& runner,

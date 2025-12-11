@@ -22,21 +22,6 @@ namespace pup::exec {
 
 namespace {
 
-/// Canonicalize a path to absolute form for consistent dependency matching.
-/// - Relative paths are resolved against working_dir
-/// - Result is lexically normalized
-auto canonicalize_path(
-    std::string const& path,
-    std::filesystem::path const& working_dir) -> std::string
-{
-    auto p = std::filesystem::path { path };
-    if (p.is_absolute())
-        return p.lexically_normal().string();
-
-    // Relative path - resolve against working directory
-    return (working_dir / p).lexically_normal().string();
-}
-
 using EnvCache = std::unordered_map<std::string, std::string>;
 
 /// Build immutable cache of environment variables for exported vars.
@@ -55,43 +40,74 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
     return cache;
 }
 
-/// Build dependency map between jobs based on input/output relationships.
+/// Build dependency map between jobs using the graph's edge structure.
 /// Returns: in_degree[j] = number of jobs that j depends on
 ///          dependents[i] = list of jobs that depend on job i
 ///
-/// Note: Paths in the graph are relative to source_root, not to individual
-/// command working directories. We canonicalize all paths against source_root.
+/// Uses NodeIds from the graph edges directly - no path string matching needed.
 auto build_dependency_map(
     std::vector<BuildJob> const& jobs,
-    std::filesystem::path const& source_root)
+    graph::BuildGraph const& graph)
     -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
 {
     auto in_degree = std::vector<std::size_t>(jobs.size(), 0);
     auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
 
-    // Build map from canonicalized output path -> job index that produces it
-    auto output_to_job = std::unordered_map<std::string, std::size_t> {};
+    // Build map from command NodeId -> job index
+    auto cmd_to_job = std::unordered_map<NodeId, std::size_t> {};
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i)
+        cmd_to_job[jobs[i].id] = i;
+
+    // Build map from output NodeId -> job index that produces it
+    // (output nodes point back to the command that created them via inputs)
+    auto output_to_job = std::unordered_map<NodeId, std::size_t> {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        for (auto const& output : jobs[i].outputs)
-            output_to_job[canonicalize_path(output, source_root)] = i;
+        for (auto output_id : graph.get_outputs(jobs[i].id))
+            output_to_job[output_id] = i;
     }
 
-    // For each job, find which earlier jobs produce its inputs
+    // For each job, find dependencies via input edges
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
         auto dependencies = std::set<std::size_t> {};
+        auto cmd_id = jobs[j].id;
 
-        // Check regular inputs
-        for (auto const& input : jobs[j].inputs) {
-            auto it = output_to_job.find(canonicalize_path(input, source_root));
-            if (it != output_to_job.end() && it->second != j)
-                dependencies.insert(it->second);
+        // Check regular inputs - traverse graph edges
+        for (auto input_id : graph.get_inputs(cmd_id)) {
+            auto const* input_node = graph.get_node(input_id);
+            if (!input_node)
+                continue;
+
+            // Case 1: Input itself is a command (e.g., generated dep-scan rule)
+            if (input_node->type == NodeType::Command) {
+                if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j)
+                    dependencies.insert(it->second);
+                continue;
+            }
+
+            // Case 2: Input is a file produced by another command
+            for (auto producer_id : graph.get_inputs(input_id)) {
+                auto const* producer = graph.get_node(producer_id);
+                if (producer && producer->type == NodeType::Command) {
+                    if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != j)
+                        dependencies.insert(it->second);
+                }
+            }
         }
 
-        // Check order-only inputs
-        for (auto const& input : jobs[j].order_only_inputs) {
-            auto it = output_to_job.find(canonicalize_path(input, source_root));
-            if (it != output_to_job.end() && it->second != j)
+        // Check order-only inputs - these may be outputs of other commands or groups
+        for (auto oo_id : graph.get_order_only(cmd_id)) {
+            // Check if order-only input is a direct output of another job
+            if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j)
                 dependencies.insert(it->second);
+
+            // Also check for group producers (groups have commands as inputs)
+            for (auto producer_id : graph.get_inputs(oo_id)) {
+                auto const* producer = graph.get_node(producer_id);
+                if (producer && producer->type == NodeType::Command) {
+                    if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j)
+                        dependencies.insert(it2->second);
+                }
+            }
         }
 
         in_degree[j] = dependencies.size();
@@ -133,7 +149,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     }
 
     // Execute jobs
-    auto exec_result = Result<void> { execute_parallel(jobs) };
+    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -195,14 +211,14 @@ auto Scheduler::build_incremental(
     if (jobs.empty())
         return stats_;
 
-    auto exec_result = Result<void> { execute_parallel(jobs) };
+    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
     if (!exec_result && !options_.keep_going)
         return pup::unexpected<Error>(exec_result.error());
 
     return stats_;
 }
 
-auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<void>
+auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>
 {
     // Build immutable env cache before spawning workers (getenv is not thread-safe)
     auto const env_cache = build_env_cache(jobs);
@@ -250,8 +266,8 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     auto failed = std::atomic<bool> { false };
     auto all_done = std::atomic<bool> { false };
 
-    // Build dependency map
-    auto [in_degree, dependents] = build_dependency_map(jobs, options_.source_root);
+    // Build dependency map using graph edges (no path string matching needed)
+    auto [in_degree, dependents] = build_dependency_map(jobs, graph);
 
     // Initialize ready queue with jobs that have no dependencies
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
