@@ -47,8 +47,8 @@ pup [OPTIONS] [COMMAND]
 | `parse` | Parse and validate Tupfiles without building |
 | `build` | Execute build (default if no command specified) |
 | `graph` | Print dependency graph |
-| `clean` | Remove generated files from build directory |
-| `distclean` | Full reset: remove `.pup` directory and entire build directory |
+| `clean` | Remove generated output files (using index) |
+| `distclean` | Full reset: remove outputs, `.pup`, and `tup.config` |
 | `variant <config> [dir]` | Create variant build directory from config file |
 
 ### Common Options
@@ -71,11 +71,18 @@ pup build
 # Variant build (out-of-tree)
 pup build -B build-release
 
+# Clean generated outputs (keeps .pup and tup.config)
+pup clean -B build-release
+
 # Full reset of variant build
 pup distclean -B build-release
 
+# In-tree builds (auto-detected via tup.config or .pup at root)
+pup clean       # Remove outputs
+pup distclean   # Remove outputs + .pup + tup.config
+
 # Dry-run to see what would be removed
-pup distclean -n -B build-release
+pup clean -n -B build-release
 
 # Parse only (no build)
 pup parse -v

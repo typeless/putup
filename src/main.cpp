@@ -1067,7 +1067,8 @@ auto cmd_graph(Options const& opts) -> int
 
 struct CleanContext {
     std::filesystem::path root;
-    std::optional<std::filesystem::path> build_dir;
+    std::filesystem::path build_dir;
+    bool is_in_tree;
 };
 
 auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
@@ -1076,73 +1077,99 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
     if (!root)
         return std::nullopt;
 
-    auto build_dir = std::optional<std::filesystem::path> {};
+    auto build_dir = std::filesystem::path {};
+    auto is_in_tree = false;
+
     if (!opts.build_dir.empty()) {
+        // Explicit -B specified
         build_dir = std::filesystem::path { opts.build_dir };
-        if (build_dir->is_relative())
-            build_dir = *root / *build_dir;
+        if (build_dir.is_relative())
+            build_dir = *root / build_dir;
+        is_in_tree = (build_dir == *root);
+    } else if (std::filesystem::exists(*root / "tup.config")) {
+        // In-tree build: tup.config at project root
+        build_dir = *root;
+        is_in_tree = true;
+    } else if (std::filesystem::exists(*root / ".pup")) {
+        // In-tree build: .pup at project root
+        build_dir = *root;
+        is_in_tree = true;
     } else if (auto detected = pup::find_variant_dir(*root)) {
+        // Out-of-tree variant directory
         build_dir = *root / *detected;
+        is_in_tree = false;
+    } else {
+        return std::nullopt;
     }
 
-    return CleanContext { *root, build_dir };
+    return CleanContext { *root, build_dir, is_in_tree };
+}
+
+auto remove_indexed_outputs(
+    std::filesystem::path const& index_path,
+    bool dry_run,
+    bool verbose) -> std::pair<std::size_t, std::size_t>
+{
+    auto removed_count = std::size_t { 0 };
+    auto error_count = std::size_t { 0 };
+
+    auto reader_result = pup::index::IndexReader::open(index_path);
+    if (!reader_result)
+        return { 0, 0 };
+
+    auto index_result = reader_result->read();
+    if (!index_result)
+        return { 0, 0 };
+
+    auto const& index = *index_result;
+
+    for (auto const& file : index.files()) {
+        if (file.type != pup::NodeType::Generated)
+            continue;
+
+        if (!std::filesystem::exists(file.path))
+            continue;
+
+        if (dry_run) {
+            fmt::print("Would remove: {}\n", file.path);
+            ++removed_count;
+            continue;
+        }
+
+        auto ec = std::error_code {};
+        if (std::filesystem::remove(file.path, ec)) {
+            ++removed_count;
+            if (verbose)
+                fmt::print("Removed: {}\n", file.path);
+        } else if (ec) {
+            fmt::print(stderr, "Error removing {}: {}\n", file.path, ec.message());
+            ++error_count;
+        }
+    }
+
+    return { removed_count, error_count };
 }
 
 auto cmd_clean(Options const& opts) -> int
 {
     auto ctx = resolve_clean_context(opts);
     if (!ctx) {
-        fmt::print(stderr, "Error: Not in a pup/tup project (no Tupfile.ini, Tupfile, or .pup/ found)\n");
-        return EXIT_FAILURE;
-    }
-
-    if (!ctx->build_dir || !std::filesystem::exists(*ctx->build_dir)) {
         fmt::print(stderr, "Error: No build directory found (use -B to specify)\n");
         return EXIT_FAILURE;
     }
 
-    auto removed_count = std::size_t { 0 };
-    auto error_count = std::size_t { 0 };
-
-    for (auto const& entry : std::filesystem::directory_iterator(*ctx->build_dir)) {
-        auto filename = std::string { entry.path().filename().string() };
-
-        if (filename == "tup.config" || filename == ".gitignore")
-            continue;
-
-        if (opts.dry_run) {
-            fmt::print("Would remove: {}\n", entry.path().string());
-            ++removed_count;
-            continue;
-        }
-
-        auto ec = std::error_code {};
-        if (entry.is_directory()) {
-            auto count = std::filesystem::remove_all(entry.path(), ec);
-            if (ec) {
-                fmt::print(stderr, "Error removing {}: {}\n", entry.path().string(), ec.message());
-                ++error_count;
-            } else {
-                removed_count += count;
-                if (opts.verbose)
-                    fmt::print("Removed: {} ({} files)\n", entry.path().string(), count);
-            }
-        } else {
-            if (std::filesystem::remove(entry.path(), ec)) {
-                ++removed_count;
-                if (opts.verbose)
-                    fmt::print("Removed: {}\n", entry.path().string());
-            } else if (ec) {
-                fmt::print(stderr, "Error removing {}: {}\n", entry.path().string(), ec.message());
-                ++error_count;
-            }
-        }
+    auto index_path = ctx->build_dir / ".pup" / "index";
+    if (!std::filesystem::exists(index_path)) {
+        fmt::print("Nothing to clean (no index found)\n");
+        return EXIT_SUCCESS;
     }
 
+    auto [removed_count, error_count] = remove_indexed_outputs(index_path, opts.dry_run, opts.verbose);
+
     if (opts.dry_run)
-        fmt::print("Would remove {} items\n", removed_count);
+        fmt::print("Would remove {} files\n", removed_count);
     else
-        fmt::print("Removed {} items\n", removed_count);
+        fmt::print("Removed {} files\n", removed_count);
 
     return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
@@ -1151,12 +1178,23 @@ auto cmd_distclean(Options const& opts) -> int
 {
     auto ctx = resolve_clean_context(opts);
     if (!ctx) {
-        fmt::print(stderr, "Error: Not in a pup/tup project\n");
+        fmt::print(stderr, "Error: No build directory found (use -B to specify)\n");
         return EXIT_FAILURE;
     }
 
-    auto pup_dir = ctx->build_dir ? *ctx->build_dir / ".pup" : ctx->root / ".pup";
+    auto index_path = ctx->build_dir / ".pup" / "index";
+    auto removed_count = std::size_t { 0 };
+    auto error_count = std::size_t { 0 };
 
+    // Remove indexed outputs (if index exists)
+    if (std::filesystem::exists(index_path)) {
+        auto [count, errors] = remove_indexed_outputs(index_path, opts.dry_run, opts.verbose);
+        removed_count += count;
+        error_count += errors;
+    }
+
+    // Remove .pup directory
+    auto pup_dir = ctx->build_dir / ".pup";
     if (std::filesystem::exists(pup_dir)) {
         if (opts.dry_run) {
             fmt::print("Would remove: {}\n", pup_dir.string());
@@ -1167,20 +1205,36 @@ auto cmd_distclean(Options const& opts) -> int
         }
     }
 
-    if (ctx->build_dir && *ctx->build_dir != ctx->root && std::filesystem::exists(*ctx->build_dir)) {
+    // Remove tup.config
+    auto config_path = ctx->build_dir / "tup.config";
+    if (std::filesystem::exists(config_path)) {
         if (opts.dry_run) {
-            fmt::print("Would remove: {}\n", ctx->build_dir->string());
+            fmt::print("Would remove: {}\n", config_path.string());
         } else {
             if (opts.verbose)
-                fmt::print("Removing: {}\n", ctx->build_dir->string());
-            std::filesystem::remove_all(*ctx->build_dir);
+                fmt::print("Removing: {}\n", config_path.string());
+            std::filesystem::remove(config_path);
+        }
+    }
+
+    // For out-of-tree builds, remove empty build directory
+    if (!ctx->is_in_tree && std::filesystem::exists(ctx->build_dir)) {
+        auto is_empty = std::filesystem::is_empty(ctx->build_dir);
+        if (is_empty) {
+            if (opts.dry_run) {
+                fmt::print("Would remove: {}\n", ctx->build_dir.string());
+            } else {
+                if (opts.verbose)
+                    fmt::print("Removing: {}\n", ctx->build_dir.string());
+                std::filesystem::remove(ctx->build_dir);
+            }
         }
     }
 
     if (!opts.dry_run)
         fmt::print("Project reset complete\n");
 
-    return EXIT_SUCCESS;
+    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 auto cmd_variant(Options const& opts) -> int
