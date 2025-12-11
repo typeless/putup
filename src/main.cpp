@@ -14,6 +14,7 @@
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/parser/config.hpp"
+#include "pup/parser/ignore.hpp"
 #include "pup/parser/parser.hpp"
 
 #include <chrono>
@@ -222,15 +223,28 @@ struct TupfileParseState {
 };
 
 /// Discover all directories containing Tupfiles
-auto discover_tupfile_dirs(std::filesystem::path const& root)
+auto discover_tupfile_dirs(std::filesystem::path const& root,
+    pup::parser::IgnoreList const& ignore = {})
     -> std::set<std::filesystem::path>
 {
     auto dirs = std::set<std::filesystem::path> {};
     auto ec = std::error_code {};
+    auto options = std::filesystem::directory_options::skip_permission_denied;
 
-    for (auto const& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
+    for (auto it = std::filesystem::recursive_directory_iterator(root, options, ec);
+         it != std::filesystem::recursive_directory_iterator(); ++it) {
         if (ec)
             break;
+
+        auto const& entry = *it;
+        auto rel = std::filesystem::relative(entry.path(), root);
+
+        // Check if this directory should be ignored
+        if (entry.is_directory() && ignore.is_ignored(rel)) {
+            it.disable_recursion_pending();
+            continue;
+        }
+
         if (!entry.is_regular_file())
             continue;
         if (entry.path().filename() != "Tupfile")
@@ -243,8 +257,8 @@ auto discover_tupfile_dirs(std::filesystem::path const& root)
             continue;
 
         // Store relative path from root
-        auto rel = std::filesystem::relative(dir, root);
-        dirs.insert(rel.empty() || rel == "." ? std::filesystem::path { "." } : rel);
+        auto dir_rel = std::filesystem::relative(dir, root);
+        dirs.insert(dir_rel.empty() || dir_rel == "." ? std::filesystem::path { "." } : dir_rel);
     }
 
     return dirs;
@@ -408,9 +422,22 @@ auto build_graph(Options const& opts, BuildGraphOptions const& graph_opts)
         }
     }
 
+    // Load ignore patterns from .pupignore (or use defaults)
+    auto ignore = pup::parser::IgnoreList::with_defaults();
+    auto ignore_path = layout.source_root / ".pupignore";
+    if (std::filesystem::exists(ignore_path)) {
+        auto ignore_result = pup::parser::IgnoreList::load(ignore_path);
+        if (ignore_result) {
+            ignore = std::move(*ignore_result);
+            if (graph_opts.verbose)
+                fmt::print("Loaded {} ignore patterns from {}\n",
+                    ignore.size(), ignore_path.string());
+        }
+    }
+
     // Discover all directories containing Tupfiles
     auto state = TupfileParseState {};
-    state.available = discover_tupfile_dirs(layout.source_root);
+    state.available = discover_tupfile_dirs(layout.source_root, ignore);
 
     if (state.available.empty()) {
         return pup::make_error<BuildGraphResult>(

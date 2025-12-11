@@ -53,8 +53,12 @@ run_fixture() {
     local fixture_dir="$FIXTURES_DIR/$name"
     local work_dir=$(mktemp -d)
 
-    # Copy fixture to temp directory
+    # Copy fixture to temp directory (including hidden files)
     cp -r "$fixture_dir"/* "$work_dir/"
+    # Also copy hidden files if any exist
+    for hidden in "$fixture_dir"/.*; do
+        [[ -e "$hidden" && ! "$hidden" =~ /\.\.?$ ]] && cp -r "$hidden" "$work_dir/"
+    done
 
     # Rename Tupfile.fixture to Tupfile (avoids tup scanning fixtures)
     if [[ -f "$work_dir/Tupfile.fixture" ]]; then
