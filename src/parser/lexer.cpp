@@ -4,6 +4,7 @@
 #include "pup/parser/lexer.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace pup::parser {
 
@@ -15,11 +16,8 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
 
 auto Lexer::next() -> Token
 {
-    if (peeked_) {
-        auto tok = Token { *peeked_ };
-        peeked_.reset();
-        return tok;
-    }
+    if (peeked_)
+        return std::exchange(peeked_, std::nullopt).value();
     return scan_token();
 }
 
@@ -112,6 +110,14 @@ auto Lexer::advance_line() -> void
     context_ = Context::LineStart;
 }
 
+auto Lexer::putback() -> void
+{
+    if (pos_ > 0) {
+        --pos_;
+        --column_;
+    }
+}
+
 auto Lexer::scan_token() -> Token
 {
     // Skip whitespace (but not newlines) unless in command context
@@ -142,8 +148,7 @@ auto Lexer::scan_token() -> Token
             return make_token(TokenType::PipeArrow, start);
         }
         // Otherwise scan command text
-        --pos_; // Put back the character
-        --column_;
+        putback();
         return scan_command_text();
     }
 
@@ -157,8 +162,7 @@ auto Lexer::scan_token() -> Token
             return make_token(TokenType::KwGitignore, start);
         }
         // Otherwise treat as start of path (put back the '.')
-        --pos_;
-        --column_;
+        putback();
         return scan_text();
     }
 
@@ -224,8 +228,7 @@ auto Lexer::scan_token() -> Token
         if (match('='))
             return make_token(TokenType::PlusEquals, start);
         // + in text context is part of identifier/path
-        --pos_;
-        --column_;
+        putback();
         return scan_text();
     }
 
@@ -244,15 +247,13 @@ auto Lexer::scan_token() -> Token
 
     // Identifier, keyword, or text
     if (is_identifier_start(c)) {
-        --pos_;
-        --column_;
+        putback();
         return scan_identifier_or_keyword();
     }
 
     // Text (paths, filenames, etc.)
     if (is_text_char(c)) {
-        --pos_;
-        --column_;
+        putback();
         return scan_text();
     }
 
@@ -328,12 +329,8 @@ auto Lexer::scan_text() -> Token
     while (!at_end()) {
         auto const c = peek_char();
 
-        // Stop at delimiters
-        if (c == ' ' || c == '\t' || c == '\n' || c == '#' || c == '|' || c == ':' || c == '=' || c == '(' || c == ')' || c == '{' || c == '}' || c == '<' || c == '>')
-            break;
-
-        // Handle variable references as part of text
-        if (c == '$' || c == '@' || c == '&')
+        // Stop at delimiters or variable references
+        if (is_delimiter(c) || c == '$' || c == '@' || c == '&')
             break;
 
         // Handle line continuation
@@ -422,6 +419,12 @@ auto Lexer::is_path_char(char c) -> bool
 {
     // Characters that indicate this is a path rather than identifier
     return c == '/' || c == '.' || c == '*' || c == '?';
+}
+
+auto Lexer::is_delimiter(char c) -> bool
+{
+    constexpr auto delims = std::string_view { " \t\n#|:=(){}[]<>" };
+    return delims.find(c) != std::string_view::npos;
 }
 
 auto Lexer::keyword_type(std::string_view text) -> std::optional<TokenType>

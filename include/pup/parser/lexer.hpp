@@ -81,6 +81,7 @@ private:
     [[nodiscard]] auto match(std::string_view expected) -> bool;
     auto advance() -> char;
     auto advance_line() -> void;
+    auto putback() -> void;
 
     [[nodiscard]] auto scan_token() -> Token;
     [[nodiscard]] auto scan_identifier_or_keyword() -> Token;
@@ -94,6 +95,7 @@ private:
     [[nodiscard]] static auto is_identifier_char(char c) -> bool;
     [[nodiscard]] static auto is_text_char(char c) -> bool;
     [[nodiscard]] static auto is_path_char(char c) -> bool;
+    [[nodiscard]] static auto is_delimiter(char c) -> bool;
     [[nodiscard]] static auto keyword_type(std::string_view text) -> std::optional<TokenType>;
 };
 
