@@ -19,11 +19,13 @@ namespace pup::parser {
 /// Transparent hash for heterogeneous lookup in VarDb
 struct StringHash {
     using is_transparent = void;
-    auto operator()(std::string_view sv) const noexcept -> std::size_t {
-        return std::hash<std::string_view>{}(sv);
+    auto operator()(std::string_view sv) const noexcept -> std::size_t
+    {
+        return std::hash<std::string_view> {}(sv);
     }
-    auto operator()(std::string const& s) const noexcept -> std::size_t {
-        return std::hash<std::string_view>{}(s);
+    auto operator()(std::string const& s) const noexcept -> std::size_t
+    {
+        return std::hash<std::string_view> {}(s);
     }
 };
 

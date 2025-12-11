@@ -1195,13 +1195,27 @@ auto cmd_compdb(Options const& opts) -> int
         result.reserve(s.size());
         for (auto c : s) {
             switch (c) {
-            case '"': result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\b': result += "\\b"; break;
-            case '\f': result += "\\f"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
+            case '"':
+                result += "\\\"";
+                break;
+            case '\\':
+                result += "\\\\";
+                break;
+            case '\b':
+                result += "\\b";
+                break;
+            case '\f':
+                result += "\\f";
+                break;
+            case '\n':
+                result += "\\n";
+                break;
+            case '\r':
+                result += "\\r";
+                break;
+            case '\t':
+                result += "\\t";
+                break;
             default:
                 if (static_cast<unsigned char>(c) < 0x20)
                     continue; // Skip other control characters
@@ -1228,8 +1242,7 @@ auto cmd_compdb(Options const& opts) -> int
             if (!input || input->path.empty())
                 continue;
             auto const& p = input->path;
-            if (p.ends_with(".c") || p.ends_with(".cc") || p.ends_with(".cpp") ||
-                p.ends_with(".cxx") || p.ends_with(".C") || p.ends_with(".S") || p.ends_with(".s")) {
+            if (p.ends_with(".c") || p.ends_with(".cc") || p.ends_with(".cpp") || p.ends_with(".cxx") || p.ends_with(".C") || p.ends_with(".S") || p.ends_with(".s")) {
                 source_file = p;
                 break;
             }

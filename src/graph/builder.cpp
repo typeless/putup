@@ -634,8 +634,8 @@ auto GraphBuilder::expand_rule(
             auto const* group_dir_expr = rule.output_order_only_group_dir
                 ? &*rule.output_order_only_group_dir
                 : (macro_ptr && macro_ptr->output_order_only_group_dir
-                    ? &*macro_ptr->output_order_only_group_dir
-                    : nullptr);
+                          ? &*macro_ptr->output_order_only_group_dir
+                          : nullptr);
 
             if (group_dir_expr) {
                 auto evaluator = parser::Evaluator { *ctx.eval };
@@ -820,8 +820,7 @@ auto GraphBuilder::expand_inputs(
                     } else {
                         result.push_back(std::move(path));
                     }
-                } else if (full_path.filename() == "tup.config" &&
-                           (!ctx.options.variant_dir.empty() || !ctx.options.output_root.empty())) {
+                } else if (full_path.filename() == "tup.config" && (!ctx.options.variant_dir.empty() || !ctx.options.output_root.empty())) {
                     // Special case: tup.config lives in variant/output directory, not source root
                     // For -B builds: check output_root/tup.config
                     // For --variant builds: check source_root/variant_dir/tup.config

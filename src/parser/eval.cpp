@@ -20,7 +20,7 @@ auto VarDb::set(std::string_view name, std::string value) -> void
 
 auto VarDb::append(std::string_view name, std::string_view value) -> void
 {
-    auto it = vars_.find(name);  // Heterogeneous lookup
+    auto it = vars_.find(name); // Heterogeneous lookup
     if (it == vars_.end()) {
         vars_[std::string { name }] = std::string { value };
     } else {
@@ -32,7 +32,7 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
 
 auto VarDb::get(std::string_view name) const -> std::string_view
 {
-    auto it = vars_.find(name);  // Heterogeneous lookup - no temp string
+    auto it = vars_.find(name); // Heterogeneous lookup - no temp string
     if (it != vars_.end())
         return it->second;
     return {};
@@ -40,7 +40,7 @@ auto VarDb::get(std::string_view name) const -> std::string_view
 
 auto VarDb::contains(std::string_view name) const -> bool
 {
-    return vars_.find(name) != vars_.end();  // Heterogeneous lookup
+    return vars_.find(name) != vars_.end(); // Heterogeneous lookup
 }
 
 auto VarDb::remove(std::string_view name) -> void

@@ -368,7 +368,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
 }
 
 auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
-                            std::unordered_map<std::string, std::string> const& env_cache) -> JobResult
+    std::unordered_map<std::string, std::string> const& env_cache) -> JobResult
 {
     auto result = JobResult {
         .id = job.id,

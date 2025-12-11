@@ -132,7 +132,7 @@ private:
 
     /// Execute a single job
     auto execute_job(BuildJob const& job, CommandRunner& runner,
-                     std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
+        std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
 
     /// Build job list from graph in topological order
     [[nodiscard]] auto build_job_list(graph::BuildGraph const& graph)
