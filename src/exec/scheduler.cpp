@@ -37,6 +37,24 @@ auto canonicalize_path(
     return (working_dir / p).lexically_normal().string();
 }
 
+using EnvCache = std::unordered_map<std::string, std::string>;
+
+/// Build immutable cache of environment variables for exported vars.
+/// Must be called before spawning worker threads (getenv is not thread-safe).
+auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
+{
+    auto cache = EnvCache {};
+    for (auto const& job : jobs) {
+        for (auto const& var_name : job.exported_vars) {
+            if (!cache.contains(var_name)) {
+                if (auto const* env_val = std::getenv(var_name.c_str()))
+                    cache.emplace(var_name, env_val);
+            }
+        }
+    }
+    return cache;
+}
+
 /// Build dependency map between jobs based on input/output relationships.
 /// Returns: in_degree[j] = number of jobs that j depends on
 ///          dependents[i] = list of jobs that depend on job i
@@ -186,6 +204,9 @@ auto Scheduler::build_incremental(
 
 auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<void>
 {
+    // Build immutable env cache before spawning workers (getenv is not thread-safe)
+    auto const env_cache = build_env_cache(jobs);
+
     if (options_.jobs == 1 || jobs.size() == 1) {
         // Sequential execution
         auto runner = CommandRunner {};
@@ -201,7 +222,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
             if (on_start_)
                 on_start_(job);
 
-            auto result = JobResult { execute_job(job, runner) };
+            auto result = JobResult { execute_job(job, runner, env_cache) };
 
             if (on_complete_)
                 on_complete_(job, result);
@@ -274,7 +295,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
                 on_start_(job);
             }
 
-            auto result = JobResult { execute_job(job, runner) };
+            auto result = JobResult { execute_job(job, runner, env_cache) };
 
             {
                 auto lock = std::lock_guard { mutex };
@@ -346,7 +367,8 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs) -> Result<vo
     return {};
 }
 
-auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobResult
+auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
+                            std::unordered_map<std::string, std::string> const& env_cache) -> JobResult
 {
     auto result = JobResult {
         .id = job.id,
@@ -382,8 +404,8 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner) -> JobRe
     // Pass exported environment variables to command
     // Per tup manual: "value for the variable comes from tup's environment"
     for (auto const& var_name : job.exported_vars) {
-        if (auto const* env_val = std::getenv(var_name.c_str()))
-            run_opts.env.push_back(var_name + "=" + env_val);
+        if (auto it = env_cache.find(var_name); it != env_cache.end())
+            run_opts.env.push_back(var_name + "=" + it->second);
     }
 
     auto cmd_result = runner.run(job.command, run_opts);

@@ -17,6 +17,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace pup::exec {
@@ -130,7 +131,8 @@ private:
     auto execute_parallel(std::vector<BuildJob> const& jobs) -> Result<void>;
 
     /// Execute a single job
-    auto execute_job(BuildJob const& job, CommandRunner& runner) -> JobResult;
+    auto execute_job(BuildJob const& job, CommandRunner& runner,
+                     std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
 
     /// Build job list from graph in topological order
     [[nodiscard]] auto build_job_list(graph::BuildGraph const& graph)

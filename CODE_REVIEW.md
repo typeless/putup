@@ -18,7 +18,7 @@ Date: 2025-12-11
 | Area | Issue | Fix |
 |------|-------|-----|
 | **Graph** | ✅ Already handled: `add_edge()` validates node IDs | N/A |
-| **Scheduler** | `std::getenv()` not thread-safe | Cache env vars at startup |
+| **Scheduler** | ✅ FIXED: `std::getenv()` not thread-safe | Immutable env cache built before spawning workers |
 | **Scheduler** | ✅ FIXED: Output directory TOCTOU race | Removed exists() check, use idempotent create_directories() |
 | **Parser** | ✅ FIXED: VarDb heterogeneous lookup | Added StringHash with is_transparent |
 | **Main** | God object: 1373 lines | Extract to `pup/commands/` module |
@@ -156,7 +156,7 @@ Should use `std::move(*peeked_)`.
 
 **scheduler.cpp:364-375** - ✅ FIXED: Removed TOCTOU race by calling create_directories() unconditionally.
 
-**scheduler.cpp:383-386** - `std::getenv()` is not thread-safe.
+**scheduler.cpp:383-386** - ✅ FIXED: `std::getenv()` replaced with immutable env cache.
 
 **scheduler.cpp:310, 323** - `notify_all()` on every job completion. Use `notify_one()`.
 
