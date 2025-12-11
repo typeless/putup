@@ -17,10 +17,10 @@ Date: 2025-12-11
 
 | Area | Issue | Fix |
 |------|-------|-----|
-| **Graph** | Silent failure in `add_edge()` | Return error if node not found |
+| **Graph** | ✅ Already handled: `add_edge()` validates node IDs | N/A |
 | **Scheduler** | `std::getenv()` not thread-safe | Cache env vars at startup |
 | **Scheduler** | Output directory race condition | Create dirs before threading |
-| **Parser** | VarDb lookup creates temp strings | Use heterogeneous lookup |
+| **Parser** | ✅ FIXED: VarDb heterogeneous lookup | Added StringHash with is_transparent |
 | **Main** | God object: 1373 lines | Extract to `pup/commands/` module |
 | **Index** | No endianness handling | Add flag to header |
 
@@ -99,7 +99,7 @@ Zero functions in main.cpp are testable because:
 ### P1 (This week)
 4. Extract commands from main.cpp
 5. ✅ DONE: Fix O(n²) string operations
-6. Add heterogeneous lookup to VarDb
+6. ✅ DONE: Add heterogeneous lookup to VarDb
 
 ### P2 (Tech debt)
 7. Refactor `expand_inputs()`
@@ -126,13 +126,7 @@ Should use `std::move(*peeked_)`.
 
 **parser.cpp:200-343** - 140-line switch statement. Use dispatch table pattern.
 
-**eval.cpp:34-40** - String lookup creates temporary. Use C++20 heterogeneous lookup:
-```cpp
-struct StringHash {
-    using is_transparent = void;
-    auto operator()(std::string_view sv) const -> std::size_t;
-};
-```
+**eval.cpp:34-40** - ✅ FIXED: Added `StringHash` with `is_transparent` for heterogeneous lookup in VarDb.
 
 **eval.cpp:96-147** - Three linear scans per iteration (O(n²)). Use single-pass with lookahead.
 

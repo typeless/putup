@@ -16,6 +16,17 @@
 
 namespace pup::parser {
 
+/// Transparent hash for heterogeneous lookup in VarDb
+struct StringHash {
+    using is_transparent = void;
+    auto operator()(std::string_view sv) const noexcept -> std::size_t {
+        return std::hash<std::string_view>{}(sv);
+    }
+    auto operator()(std::string const& s) const noexcept -> std::size_t {
+        return std::hash<std::string_view>{}(s);
+    }
+};
+
 /// Variable database for storing and retrieving variable values
 class VarDb {
 public:
@@ -43,7 +54,7 @@ public:
     auto clear() -> void;
 
 private:
-    std::unordered_map<std::string, std::string> vars_;
+    std::unordered_map<std::string, std::string, StringHash, std::equal_to<>> vars_;
 };
 
 /// Context for evaluating expressions
