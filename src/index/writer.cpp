@@ -91,9 +91,8 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     file_entries.reserve(index.files().size());
 
     for (auto const& file : index.files()) {
-        auto path_offset = strings.add(file.path);
         auto name_offset = strings.add(file.name);
-        file_entries.push_back(file.to_raw(path_offset, name_offset));
+        file_entries.push_back(file.to_raw(name_offset));
     }
 
     // Build command entries and collect strings

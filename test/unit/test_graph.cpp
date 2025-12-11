@@ -27,19 +27,6 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(graph.node_count() == 2);
     }
 
-    SECTION("find by path")
-    {
-        auto node = Node { .type = NodeType::File, .name = "src/foo.c" };
-        auto id = graph.add_node(node);
-
-        REQUIRE(id.has_value());
-        auto found = graph.find_by_path("src/foo.c");
-        REQUIRE(found.has_value());
-        REQUIRE(*found == *id);
-
-        REQUIRE_FALSE(graph.find_by_path("nonexistent.c").has_value());
-    }
-
     SECTION("find by dir and name")
     {
         // Create directory node first

@@ -400,11 +400,13 @@ The depfile parser (`include/pup/parser/depfile.hpp`) handles:
 
 Binary file at `.pup/index`:
 - Header (64 bytes): magic, version, counts
-- File entries (96 bytes each): id, path, mtime, size, SHA-256 hash
+- File entries (96 bytes each): id, parent_id, name, mtime, size, SHA-256 hash
 - Command entries (64 bytes each): id, command, display
 - Edges (24 bytes each): from, to, type (Normal, Sticky, Group, Implicit)
 - String table: packed strings
 - Footer (32 bytes): SHA-256 checksum
+
+Full paths are reconstructed from the (parent_id, name) chain at load time.
 
 ## Implementation Phases
 

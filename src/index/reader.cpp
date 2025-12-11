@@ -110,16 +110,14 @@ auto IndexReader::read() const -> Result<Index>
     auto index = Index {};
 
     // Read file entries
-    auto const* hdr = header();
     auto files = raw_files();
     for (auto const& raw : files) {
-        auto path = get_string(raw.path_offset, raw.path_length);
-        // name field added in version 2
-        auto name = std::string_view {};
-        if (hdr->version >= 2)
-            name = get_string(raw.name_offset, raw.name_length);
-        index.add_file(FileEntry::from_raw(raw, path, name));
+        auto name = get_string(raw.name_offset, raw.name_length);
+        index.add_file(FileEntry::from_raw(raw, name));
     }
+
+    // Compute paths from parent chain (after all files loaded)
+    index.compute_paths();
 
     // Read command entries
     auto commands = raw_commands();

@@ -25,11 +25,6 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
         nodes_.resize(id + 1);
     nodes_[id] = std::move(node);
 
-    // Build path_index from reconstructed path (derived index for find_by_path)
-    auto path = get_full_path(id);
-    if (!path.empty())
-        path_index_[path] = id;
-
     return id;
 }
 
@@ -90,14 +85,6 @@ auto BuildGraph::get_node(NodeId id) const -> Node const*
         return nullptr;
     auto const& node = nodes_[id];
     return node.id == id ? &node : nullptr;
-}
-
-auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
-{
-    auto it = decltype(path_index_)::const_iterator { path_index_.find(std::string { path }) };
-    if (it != path_index_.end())
-        return it->second;
-    return std::nullopt;
 }
 
 auto BuildGraph::find_by_dir_name(NodeId parent_dir, std::string_view name) const
@@ -164,7 +151,6 @@ auto BuildGraph::clear() -> void
 {
     nodes_.clear();
     edges_.clear();
-    path_index_.clear();
     dir_name_index_.clear();
     command_index_.clear();
     order_only_dependents_.clear();

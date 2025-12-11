@@ -84,8 +84,8 @@ TEST_CASE("FileEntry conversion", "[index]")
         .src_id = 0,
         .type = NodeType::File,
         .flags = NodeFlags::Modified,
-        .path = "src/main.cpp",
         .name = "main.cpp",
+        .path = {}, // computed from parent chain, not serialized
         .size = 1024,
         .mtime = { .seconds = 1700000000, .nanoseconds = 500000000 },
         .content_hash = {},
@@ -95,26 +95,23 @@ TEST_CASE("FileEntry conversion", "[index]")
     file.content_hash[0] = std::byte { 0xAB };
     file.content_hash[31] = std::byte { 0xCD };
 
-    auto raw = file.to_raw(100, 200);
+    auto raw = file.to_raw(200);
 
     REQUIRE(raw.id == 42);
     REQUIRE(raw.parent_id == 1);
     REQUIRE(raw.type == static_cast<std::uint8_t>(NodeType::File));
     REQUIRE(get_file_size(raw) == 1024);
-    REQUIRE(raw.path_offset == 100);
-    REQUIRE(raw.path_length == 12);
     REQUIRE(raw.name_offset == 200);
     REQUIRE(raw.name_length == 8);
     REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
     REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
 
-    auto restored = FileEntry::from_raw(raw, "src/main.cpp", "main.cpp");
+    auto restored = FileEntry::from_raw(raw, "main.cpp");
 
     REQUIRE(restored.id == file.id);
     REQUIRE(restored.parent_id == file.parent_id);
     REQUIRE(restored.type == file.type);
     REQUIRE(restored.flags == file.flags);
-    REQUIRE(restored.path == file.path);
     REQUIRE(restored.name == file.name);
     REQUIRE(restored.size == file.size);
     REQUIRE(restored.mtime == file.mtime);
@@ -216,8 +213,8 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find files")
     {
-        index.add_file(FileEntry { .id = 1, .path = "foo.c" });
-        index.add_file(FileEntry { .id = 2, .path = "bar.c" });
+        index.add_file(FileEntry { .id = 1, .name = "foo.c", .path = "foo.c" });
+        index.add_file(FileEntry { .id = 2, .name = "bar.c", .path = "bar.c" });
 
         REQUIRE(index.file_count() == 2);
         REQUIRE_FALSE(index.empty());
@@ -230,7 +227,7 @@ TEST_CASE("Index in-memory operations", "[index]")
 
         auto* by_id = index.find_file_by_id(2);
         REQUIRE(by_id != nullptr);
-        REQUIRE(by_id->path == "bar.c");
+        REQUIRE(by_id->name == "bar.c");
     }
 
     SECTION("add and find commands")
@@ -265,7 +262,7 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("clear")
     {
-        index.add_file(FileEntry { .id = 1, .path = "test.c" });
+        index.add_file(FileEntry { .id = 1, .name = "test.c" });
         index.add_command(CommandEntry { .id = 10 });
         index.add_edge(EdgeEntry { .from = 1, .to = 10 });
 
@@ -284,21 +281,36 @@ TEST_CASE("Index serialization roundtrip", "[index]")
 {
     auto index = Index {};
 
+    // Add directories first (for parent chain)
+    index.add_file(FileEntry {
+        .id = 100,
+        .parent_id = 0,
+        .type = NodeType::Directory,
+        .name = "src",
+    });
+
+    index.add_file(FileEntry {
+        .id = 101,
+        .parent_id = 0,
+        .type = NodeType::Directory,
+        .name = "build",
+    });
+
     // Add some files
     index.add_file(FileEntry {
         .id = 1,
-        .parent_id = 0,
+        .parent_id = 100, // src
         .type = NodeType::File,
-        .path = "src/main.cpp",
+        .name = "main.cpp",
         .size = 1024,
         .mtime = { .seconds = 1700000000, .nanoseconds = 0 },
     });
 
     index.add_file(FileEntry {
         .id = 2,
-        .parent_id = 0,
+        .parent_id = 101, // build
         .type = NodeType::Generated,
-        .path = "build/main.o",
+        .name = "main.o",
         .size = 4096,
     });
 
@@ -310,12 +322,12 @@ TEST_CASE("Index serialization roundtrip", "[index]")
         .display = "CXX main.cpp",
     });
 
-    // Add a header file (implicit dependency)
+    // Add a header file (implicit dependency, root-level with path-like name)
     index.add_file(FileEntry {
         .id = 3,
         .parent_id = 0,
         .type = NodeType::File,
-        .path = "/usr/include/stdio.h",
+        .name = "/usr/include/stdio.h",
         .size = 8192,
     });
 
@@ -351,7 +363,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(hdr != nullptr);
     REQUIRE(std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) == 0);
     REQUIRE(hdr->version == INDEX_VERSION);
-    REQUIRE(hdr->file_count == 3);
+    REQUIRE(hdr->file_count == 5); // 2 dirs + 3 files
     REQUIRE(hdr->command_count == 1);
     REQUIRE(hdr->edge_count == 3);
 
@@ -363,11 +375,11 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(read_result.has_value());
 
     auto& restored = *read_result;
-    REQUIRE(restored.file_count() == 3);
+    REQUIRE(restored.file_count() == 5);
     REQUIRE(restored.command_count() == 1);
     REQUIRE(restored.edge_count() == 3);
 
-    // Verify file content
+    // Verify file content (paths are computed from parent chain)
     auto* file1 = restored.find_file("src/main.cpp");
     REQUIRE(file1 != nullptr);
     REQUIRE(file1->id == 1);
@@ -420,7 +432,7 @@ TEST_CASE("Index reader validation", "[index]")
 
         // Create a valid index
         auto index = Index {};
-        index.add_file(FileEntry { .id = 1, .path = "test.c" });
+        index.add_file(FileEntry { .id = 1, .name = "test.c" });
 
         auto temp_path = std::filesystem::temp_directory_path() / "pup_valid_test";
         auto writer = IndexWriter {};

@@ -23,18 +23,17 @@ struct FileEntry {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string path = {}; ///< Full path (for index format serialization)
     std::string name = {}; ///< Basename only (tup-style identification)
+    std::string path = {}; ///< Full path (computed from parent_id/name chain, not serialized)
     std::uint64_t size = 0;
     FileTime mtime = {};
     Hash256 content_hash = {};
 
     /// Convert to raw format for serialization
-    [[nodiscard]] auto to_raw(std::uint32_t path_offset, std::uint32_t name_offset) const -> RawFileEntry;
+    [[nodiscard]] auto to_raw(std::uint32_t name_offset) const -> RawFileEntry;
 
-    /// Create from raw format
-    [[nodiscard]] static auto from_raw(RawFileEntry const& raw, std::string_view path_str, std::string_view name_str)
-        -> FileEntry;
+    /// Create from raw format (path must be computed separately from parent chain)
+    [[nodiscard]] static auto from_raw(RawFileEntry const& raw, std::string_view name_str) -> FileEntry;
 };
 
 /// In-memory command entry
@@ -119,6 +118,9 @@ public:
 
     /// Build edge indices for O(1) lookup (call after loading all edges)
     auto build_edge_indices() -> void;
+
+    /// Compute paths from parent_id/name chain (call after loading all files)
+    auto compute_paths() -> void;
 
     /// Clear all entries
     auto clear() -> void;

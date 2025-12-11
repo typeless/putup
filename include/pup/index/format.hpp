@@ -17,7 +17,8 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 /// Version history:
 ///   1 - Initial format with full path strings
 ///   2 - Added name field for tup-style (parent_dir, name) identification
-inline constexpr auto INDEX_VERSION = std::uint32_t { 2 };
+///   3 - Removed path field, only name stored (path reconstructed at load time)
+inline constexpr auto INDEX_VERSION = std::uint32_t { 3 };
 
 /// Index file header (64 bytes, packed)
 struct alignas(8) RawHeader {
@@ -58,11 +59,11 @@ struct alignas(8) RawFileEntry {
     std::uint8_t flags_high = 0; ///< NodeFlags (high byte)
     std::uint8_t reserved1 = 0;  ///< Padding
 
-    std::uint32_t path_offset = 0; ///< Offset into string table for path
-    std::uint32_t path_length = 0; ///< Length of path string
+    std::uint32_t name_offset = 0; ///< Offset into string table for basename
+    std::uint32_t name_length = 0; ///< Length of name string
 
-    std::uint32_t name_offset = 0; ///< Offset into string table for basename (v2+)
-    std::uint32_t name_length = 0; ///< Length of name string (v2+)
+    std::uint32_t reserved2 = 0; ///< Reserved (was path_offset in v1-v2)
+    std::uint32_t reserved3 = 0; ///< Reserved (was path_length in v1-v2)
 
     Hash256 content_hash = {}; ///< SHA-256 content hash
 };

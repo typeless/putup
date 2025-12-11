@@ -93,9 +93,6 @@ public:
     /// Get mutable node by ID (alias for non-const get_node)
     [[nodiscard]] auto get_node_mut(NodeId id) -> Node* { return get_node(id); }
 
-    /// Find a node by full path (convenience API, derived from parent_dir/name model)
-    [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
-
     /// Find a node by parent directory and basename (tup-style lookup)
     [[nodiscard]] auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
         -> std::optional<NodeId>;
@@ -161,7 +158,6 @@ public:
 private:
     std::vector<Node> nodes_;
     std::vector<Edge> edges_;
-    std::unordered_map<std::string, NodeId> path_index_;
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index_;
     std::unordered_map<std::string, NodeId> command_index_;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents_;
