@@ -1013,9 +1013,11 @@ auto Parser::parse_command() -> Result<Expression>
         tok = Token { lexer_.next() };
     }
 
-    // Trim leading whitespace first
-    while (!cmd_text.empty() && (cmd_text.front() == ' ' || cmd_text.front() == '\t'))
-        cmd_text.erase(0, 1);
+    // Trim leading whitespace (O(n) using find_first_not_of + substr)
+    if (auto pos = cmd_text.find_first_not_of(" \t"); pos != std::string::npos)
+        cmd_text = cmd_text.substr(pos);
+    else if (!cmd_text.empty() && (cmd_text.front() == ' ' || cmd_text.front() == '\t'))
+        cmd_text.clear();
 
     // Handle display text: ^ text ^ at start of command
     // This handles the case where the entire command is one Text token
@@ -1023,11 +1025,12 @@ auto Parser::parse_command() -> Result<Expression>
         // Find the second caret
         auto second_caret = std::size_t { cmd_text.find('^', 1) };
         if (second_caret != std::string::npos) {
-            // Skip past the display text (including the second caret)
-            cmd_text = cmd_text.substr(second_caret + 1);
-            // Trim leading whitespace from actual command
-            while (!cmd_text.empty() && (cmd_text.front() == ' ' || cmd_text.front() == '\t'))
-                cmd_text.erase(0, 1);
+            // Skip past the display text (including the second caret) and trim whitespace
+            auto rest = cmd_text.substr(second_caret + 1);
+            if (auto pos = rest.find_first_not_of(" \t"); pos != std::string::npos)
+                cmd_text = rest.substr(pos);
+            else
+                cmd_text.clear();
         }
     }
 

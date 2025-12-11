@@ -145,9 +145,13 @@ auto CommandRunner::run_with_output(
         ::close(stdin_pipe[0]);
 
     // Write stdin data if provided
+    // Note: For large stdin data (>64KB), this could block if pipe buffer fills.
+    // A proper fix would use non-blocking I/O in the poll loop below.
     if (merged.stdin_data && stdin_pipe[1] >= 0) {
         auto const& data = *merged.stdin_data;
-        [[maybe_unused]] auto written = ::write(stdin_pipe[1], data.data(), data.size());
+        auto written = ::write(stdin_pipe[1], data.data(), data.size());
+        // Best effort - ignore errors (child may have closed stdin early or pipe buffer full)
+        (void)written;
         ::close(stdin_pipe[1]);
         stdin_pipe[1] = -1;
     } else if (stdin_pipe[1] >= 0) {

@@ -104,10 +104,20 @@ auto parse_args(int argc, char** argv) -> Options
             opts.keep_going = true;
         } else if (arg == "-j" || arg == "--jobs") {
             if (i + 1 < argc) {
-                opts.jobs = static_cast<std::size_t>(std::stoi(argv[++i]));
+                try {
+                    opts.jobs = static_cast<std::size_t>(std::stoi(argv[++i]));
+                } catch (std::exception const&) {
+                    fmt::print(stderr, "Error: Invalid job count '{}'\n", argv[i]);
+                    std::exit(EXIT_FAILURE);
+                }
             }
         } else if (arg.starts_with("-j")) {
-            opts.jobs = static_cast<std::size_t>(std::stoi(std::string { arg.substr(2) }));
+            try {
+                opts.jobs = static_cast<std::size_t>(std::stoi(std::string { arg.substr(2) }));
+            } catch (std::exception const&) {
+                fmt::print(stderr, "Error: Invalid job count '{}'\n", arg.substr(2));
+                std::exit(EXIT_FAILURE);
+            }
         } else if (arg.starts_with("--variant=")) {
             opts.variant = std::string { arg.substr(10) };
         } else if (arg == "-S") {
