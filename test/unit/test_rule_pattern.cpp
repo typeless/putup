@@ -428,6 +428,48 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         REQUIRE(generated[0].command == "gcc -M --sysroot=/opt/sdk foo.c");
     }
 
+    SECTION("preserves -D with nested quotes (mbedtls config)")
+    {
+        // Real pattern from spos project: -DMBEDTLS_CONFIG_FILE='"path/config.h"'
+        // Shell tokenizer strips outer single quotes, preserving inner double quotes
+        // Output must be re-quoted for shell execution
+        auto cmd = CommandInfo {
+            .node_id = 755,
+            .command = R"(gcc -DMBEDTLS_CONFIG_FILE='"../include/mbedtls_config.h"' -c foo.c -o foo.o)",
+            .display = "CC foo.o",
+            .inputs = { "foo.c" },
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        // The -D flag with inner double quotes should be preserved and re-quoted
+        REQUIRE(generated[0].command == R"(gcc -M '-DMBEDTLS_CONFIG_FILE="../include/mbedtls_config.h"' foo.c)");
+    }
+
+    SECTION("preserves -D with escaped double quotes")
+    {
+        // Pattern: -D__PFILENAME__=\"\"
+        // After tokenizing: -D__PFILENAME__=""
+        // Must be re-quoted for shell execution
+        auto cmd = CommandInfo {
+            .node_id = 756,
+            .command = R"(gcc -D__PFILENAME__=\"\" -c foo.c -o foo.o)",
+            .display = "CC foo.o",
+            .inputs = { "foo.c" },
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        // The escaped quotes should be preserved and re-quoted
+        REQUIRE(generated[0].command == R"(gcc -M '-D__PFILENAME__=""' foo.c)");
+    }
+
     SECTION("handles sccache wrapper")
     {
         auto cmd = CommandInfo {

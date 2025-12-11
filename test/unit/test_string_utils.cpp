@@ -189,4 +189,30 @@ TEST_CASE("tokenize_shell_command compiler commands", "[string_utils]")
         REQUIRE(result[5] == "-o");
         REQUIRE(result[6] == "main.o");
     }
+
+    SECTION("mbedtls config file with nested quotes")
+    {
+        // Pattern from spos project: -DMBEDTLS_CONFIG_FILE='"path/to/config.h"'
+        // The outer single quotes protect the inner double quotes from shell
+        // Result should be: -DMBEDTLS_CONFIG_FILE="path/to/config.h"
+        auto const result = tokenize_shell_command(
+            R"(gcc -DMBEDTLS_CONFIG_FILE='"../../../include/mbedtls_config.h"' -c x.c)");
+        REQUIRE(result.size() == 4);
+        REQUIRE(result[0] == "gcc");
+        REQUIRE(result[1] == R"(-DMBEDTLS_CONFIG_FILE="../../../include/mbedtls_config.h")");
+        REQUIRE(result[2] == "-c");
+        REQUIRE(result[3] == "x.c");
+    }
+
+    SECTION("define with escaped double quotes")
+    {
+        // Pattern: -D__PFILENAME__=\"\"
+        // Result should be: -D__PFILENAME__=""
+        auto const result = tokenize_shell_command(R"(gcc -D__PFILENAME__=\"\" -c x.c)");
+        REQUIRE(result.size() == 4);
+        REQUIRE(result[0] == "gcc");
+        REQUIRE(result[1] == R"(-D__PFILENAME__="")");
+        REQUIRE(result[2] == "-c");
+        REQUIRE(result[3] == "x.c");
+    }
 }

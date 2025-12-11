@@ -53,6 +53,37 @@ auto has_shell_special(std::string const& flag) -> bool
     return flag.find('`') != std::string::npos || flag.find("$(") != std::string::npos;
 }
 
+/// Check if a string needs shell quoting
+auto needs_shell_quoting(std::string const& s) -> bool
+{
+    for (auto c : s) {
+        if (c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
+            || c == '!' || c == '*' || c == '?' || c == '[' || c == ']' || c == '(' || c == ')'
+            || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '&' || c == ';'
+            || c == '#' || c == '~')
+            return true;
+    }
+    return false;
+}
+
+/// Quote a string for shell using single quotes (handles embedded single quotes)
+auto shell_quote(std::string const& s) -> std::string
+{
+    if (!needs_shell_quoting(s))
+        return s;
+
+    // Use single quotes, escaping embedded single quotes as: '\''
+    auto result = std::string { "'" };
+    for (auto c : s) {
+        if (c == '\'')
+            result += "'\\''";
+        else
+            result += c;
+    }
+    result += '\'';
+    return result;
+}
+
 /// Check if a flag is relevant for dependency generation
 auto is_dep_relevant_flag(std::string const& flag) -> bool
 {
@@ -130,7 +161,7 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
             // This is the argument to a flag like -include
-            dep_cmd << ' ' << words[i];
+            dep_cmd << ' ' << shell_quote(words[i]);
             skip_next = false;
             continue;
         }
@@ -149,7 +180,7 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
 
         // Include relevant preprocessor flags
         if (is_dep_relevant_flag(w)) {
-            dep_cmd << ' ' << w;
+            dep_cmd << ' ' << shell_quote(w);
             // -include takes a separate argument
             if (w == "-include")
                 skip_next = true;
@@ -163,7 +194,7 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
 
     // Add source files extracted from original command
     for (auto const& src : source_files)
-        dep_cmd << ' ' << src;
+        dep_cmd << ' ' << shell_quote(src);
 
     return dep_cmd.str();
 }
