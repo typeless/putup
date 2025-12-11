@@ -23,7 +23,7 @@ struct FileEntry {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string path = {}; ///< Full path (deprecated, use name + parent_id)
+    std::string path = {}; ///< Full path (transitional, will be removed)
     std::string name = {}; ///< Basename only (tup-style identification)
     std::uint64_t size = 0;
     FileTime mtime = {};

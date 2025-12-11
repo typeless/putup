@@ -431,30 +431,38 @@ Binary file at `.pup/index`:
 
 For `-B` builds, special handling maps `tup.config` references to `output_root/tup.config`.
 
-### Path Storage Architecture (TODO: Consider Refactoring)
+### Path Storage Architecture (Transitional)
 
-Pup and tup use fundamentally different approaches for storing file paths:
+Pup is migrating from full path strings to tup's (parent_dir, name) model. Both systems currently coexist.
 
-**Tup's approach: Name + Parent Directory ID**
-- Each node stores only its basename (e.g., `"kernel.hex"`)
-- Parent directory stored as `dt` (directory ID)
-- Full path reconstructed by walking parent chain
-- Pros: No path format mismatches, automatic propagation on directory rename, smaller storage
-- Cons: Requires directory nodes, path reconstruction cost
+**Tup's model (target):**
+- Each node stores basename only (e.g., `"kernel.hex"`)
+- `parent_dir` field stores directory NodeId
+- Full path reconstructed via `get_full_path()` with caching
+- Pros: No path format mismatches, smaller storage
 
-**Pup's approach: Full Path String**
-- Each node stores complete path (e.g., `"/home/.../build-s1f3/modules/kernel/kernel.hex"`)
-- For `-B` builds: absolute paths
-- For in-tree builds: project-relative paths
+**Legacy model (being phased out):**
+- `path` field stores complete path string
+- `find_by_path()` for lookup
 - Pros: Simple lookups, no reconstruction needed
-- Cons: Path format mismatches cause duplicate nodes and broken dependencies
+- Cons: Path canonicalization errors cause duplicate nodes
 
-**Known issues with pup's current approach:**
+**Current state (dual-mode):**
+- New nodes have both `path` AND `(parent_dir, name)` populated
+- `find_by_dir_name()` available for tup-style lookups
+- `get_full_path()` reconstructs path from parent chain with caching
+- Scheduler uses graph edges (NodeIds) instead of path string matching
+- Index format v2 stores `name` field alongside `path`
 
-1. **Cross-directory input references**: When `output/hex/Tupfile` references `../../build-s1f3/SBI/SBI.hex`, this resolves to an absolute path. If the lookup tries project-relative first, it won't find the existing node and creates a duplicate. Fixed in `expand_inputs()` by trying absolute path lookup first.
+**Migration progress:**
+1. ✅ Added `name` field and `find_by_dir_name()` to BuildGraph
+2. ✅ Builder creates directory nodes with `parent_dir` links
+3. ✅ Path cache for efficient `get_full_path()` reconstruction
+4. ✅ Scheduler uses graph edges instead of path strings
+5. ✅ Index format v2 stores `name` field
+6. 🔄 Consumer migration - main.cpp, builder.cpp still use `path` field
 
-2. **Index dir_id not populated**: The `Node` struct has `source_dir` (string) which IS populated, but `parent_dir` (NodeId) is NOT populated. The index stores `dir_id = 0` for all commands. This would break if we ever restore commands from the index without re-parsing.
-
-3. **Canonicalization burden**: Every code path that creates or looks up nodes must produce the exact same path string. This is error-prone and has caused bugs.
-
-**Potential future fix**: Consider migrating to tup's model with directory nodes and basename-only storage. This would eliminate path format issues but requires significant refactoring of the graph builder and index format.
+**Remaining work:**
+- Migrate `expand_inputs()` in builder.cpp to use `find_by_dir_name()`
+- Migrate export functions in main.cpp to use `get_full_path()`
+- Remove `path` field and `find_by_path()` after all consumers migrate

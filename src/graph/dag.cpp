@@ -12,7 +12,7 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
     auto const id = next_id_++;
     node.id = id;
 
-    // Index by path for files (deprecated)
+    // Index by path for files (transitional)
     if (!node.path.empty())
         path_index_[node.path] = id;
 
@@ -225,8 +225,15 @@ auto BuildGraph::get_full_path(NodeId id) const -> std::string
         return node->path;
 
     // Check cache first
-    if (auto it = path_cache_.find(id); it != path_cache_.end())
+    if (auto it = path_cache_.find(id); it != path_cache_.end()) {
+        // Empty string is sentinel for "currently visiting" - cycle detected
+        if (it->second.empty())
+            return node->name;
         return it->second;
+    }
+
+    // Mark as being visited (empty string sentinel) to detect cycles
+    path_cache_[id] = "";
 
     // Reconstruct path by walking parent chain
     auto path = std::string {};
