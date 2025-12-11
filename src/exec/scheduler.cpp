@@ -412,15 +412,15 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
 
     // Ensure output directories exist
     // Note: create_directories() is idempotent and thread-safe
+    // Output paths are relative to source_root (e.g., "build-s1f3/tools/modHeader")
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
         if (!output_path.is_absolute())
-            output_path = options_.output_root / output;
+            output_path = options_.source_root / output;
         auto parent = output_path.parent_path();
         if (!parent.empty()) {
             auto ec = std::error_code {};
             std::filesystem::create_directories(parent, ec);
-            // Ignore errors - let the command fail naturally if dir can't be created
         }
     }
 
@@ -475,7 +475,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
                 continue;
 
             auto depfile_path = std::filesystem::path {
-                options_.output_root / output_path.parent_path() / (output_path.stem().string() + ".d")
+                options_.source_root / output_path.parent_path() / (output_path.stem().string() + ".d")
             };
 
             if (!std::filesystem::exists(depfile_path))

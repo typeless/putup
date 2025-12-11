@@ -433,6 +433,22 @@ Full paths are reconstructed from the (parent_id, name) chain at load time.
 
 For `-B` builds, special handling maps `tup.config` references to `output_root/tup.config`.
 
+### Command Execution Rules
+
+**Rule 1: Working Directory**
+Commands always execute from the Tupfile's source directory, not from the output directory or project root.
+
+**Rule 2: Path Expansion**
+All paths in commands (`%f`, `%o`, etc.) are relative to the Tupfile's directory:
+- Local files: `add.c` stays as `add.c` (not `../../src/lib/add.c`)
+- Cross-directory references: `../../include/foo.h` preserved as-is
+- Variant outputs: `../../build/src/lib/add.o` (relative to source dir)
+
+**Implementation detail**: Pup stores paths project-root-relative internally for graph consistency, then transforms them to Tupfile-relative during command expansion:
+- If path starts with `current_dir/`, strip the prefix (local file)
+- If path starts with `..`, keep as-is (already relative)
+- Otherwise, prepend `../` for each directory level (cross-directory)
+
 ### Path Storage Architecture
 
 Pup uses tup's (parent_dir, name) model for path storage:

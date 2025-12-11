@@ -1062,6 +1062,7 @@ auto GraphBuilder::expand_command(
         }
     }
 
+    auto current_dir_str = ctx.current_dir.string();
     auto make_source_relative = [&](std::string const& path) -> std::string {
         if (path.empty())
             return path;
@@ -1073,6 +1074,13 @@ auto GraphBuilder::expand_command(
             return path;
         if (source_to_root.empty())
             return path;
+        // Local paths: strip current_dir prefix instead of round-trip via root
+        // e.g., "src/lib/add.c" -> "add.c" (not "../../src/lib/add.c")
+        if (!current_dir_str.empty() && path.starts_with(current_dir_str + "/"))
+            return path.substr(current_dir_str.size() + 1);
+        if (!current_dir_str.empty() && path == current_dir_str)
+            return ".";
+        // Cross-directory reference: use full relative path from source dir
         return source_to_root + path;
     };
 
