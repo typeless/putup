@@ -451,15 +451,42 @@ All paths in commands (`%f`, `%o`, etc.) are relative to the Tupfile's directory
 
 ### Path Storage Architecture
 
-Pup uses tup's (parent_dir, name) model for path storage:
+**Deviation from tup**: tup stores its database at `<project_root>/.tup/` and all paths are source-root-relative. Pup supports true out-of-tree builds (`-B`), so the index lives in the build root. This requires paths to be stored relative to the build root (`-B` directory), not the source root.
 
-- Each node stores basename only via `name` field (e.g., `"kernel.hex"`)
-- `parent_dir` field stores directory NodeId
-- Full path reconstructed via `get_full_path()` with caching
-- `find_by_dir_name(parent_id, basename)` for efficient lookup
-- `find_by_path()` derives from `get_full_path()` for backward compatibility
+Pup uses a layered path architecture with clear separation between storage and presentation:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Command Execution Layer                     │
+│  Paths relative to Tupfile directory (what compiler sees)       │
+│  e.g., "add.c", "../../build/src/lib/add.o"                     │
+└─────────────────────────────────────────────────────────────────┘
+                              ↑
+                    Translation at expand_command()
+                              ↑
+┌─────────────────────────────────────────────────────────────────┐
+│                     Index Storage Layer                         │
+│  Paths relative to index location (-B dir or source root)       │
+│  e.g., "src/lib/add.c", "src/lib/add.o"                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Index Storage (`.pup/index` in -B dir)**:
+- Paths stored relative to the build root (-B directory)
+- Uses tup's (parent_dir, name) model: basename + parent NodeId
+- Makes index self-contained and portable
+- Full paths reconstructed via `get_full_path()` with caching
+
+**Command Execution**:
+- Commands run from Tupfile's source directory (not -B dir)
+- Paths translated to be relative to working directory
+- Local files: `src/lib/add.c` → `add.c` (strip current_dir prefix)
+- Cross-directory: `include/foo.h` → `../../include/foo.h` (prepend `../`)
+- Variant outputs: `src/lib/add.o` → `../../build/src/lib/add.o`
+
+**Key insight**: The index stores "what exists where" (build-root-relative), while commands express "how to build" (Tupfile-relative). These are different coordinate systems requiring translation.
 
 **Key APIs:**
 - `graph.get_full_path(id)` - Reconstruct path from (parent_dir, name) chain
 - `graph.find_by_dir_name(parent_id, name)` - O(1) lookup by parent + basename
-- `graph.find_by_path(path)` - O(1) lookup by full path (computed from above)
+- `expand_command()` - Translates index paths to Tupfile-relative paths
