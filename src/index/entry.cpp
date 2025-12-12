@@ -186,10 +186,15 @@ auto Index::compute_paths() -> void
 
         if (file->parent_id != 0) {
             auto parent_path = get_path(file->parent_id);
-            if (!parent_path.empty())
-                path = parent_path + "/" + file->name;
-            else
+            if (!parent_path.empty()) {
+                // Avoid double slash when parent is "/" (virtual root for external files)
+                if (parent_path.back() == '/')
+                    path = parent_path + file->name;
+                else
+                    path = parent_path + "/" + file->name;
+            } else {
                 path = file->name;
+            }
         } else {
             path = file->name;
         }

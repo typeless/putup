@@ -691,6 +691,7 @@ auto build_index(
                 .src_id = 0,
                 .type = node.type,
                 .flags = node.flags,
+                .name = node.name,
                 .path = node_path,
                 .size = file_size,
                 .mtime = get_file_mtime(file_path),
@@ -698,6 +699,23 @@ auto build_index(
             };
             index.add_file(std::move(entry));
             path_to_id[node_path] = node.id;
+        } else if (node.type == pup::NodeType::Directory || node.type == pup::NodeType::GeneratedDir) {
+            auto node_path = graph.get_full_path(node.id);
+            auto entry = pup::index::FileEntry {
+                .id = node.id,
+                .parent_id = node.parent_dir,
+                .src_id = 0,
+                .type = node.type,
+                .flags = node.flags,
+                .name = node.name,
+                .path = node_path,
+                .size = 0,
+                .mtime = {},
+                .content_hash = {},
+            };
+            index.add_file(std::move(entry));
+            if (!node_path.empty())
+                path_to_id[node_path] = node.id;
         } else if (node.type == pup::NodeType::Command) {
             auto entry = pup::index::CommandEntry {
                 .id = node.id,
@@ -722,6 +740,64 @@ auto build_index(
 
     auto next_id = pup::NodeId { max_id + 1 };
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
+
+    // Helper to get or create directory entry in index
+    // For external paths (starting with /), creates a virtual "/" directory under root
+    auto get_or_create_dir = [&](this auto& self, std::filesystem::path const& dir_path) -> pup::NodeId {
+        auto normalized = dir_path.lexically_normal();
+        auto path_str = normalized.string();
+
+        // Project root or empty returns 0
+        if (path_str.empty() || path_str == ".")
+            return pup::NodeId { 0 };
+
+        // Check if already exists
+        if (auto it = path_to_id.find(path_str); it != path_to_id.end())
+            return it->second;
+
+        // Filesystem root "/" gets a virtual directory node (like tup's slash_dt)
+        if (path_str == "/") {
+            auto dir_id = next_id++;
+            auto entry = pup::index::FileEntry {
+                .id = dir_id,
+                .parent_id = pup::NodeId { 0 },
+                .src_id = 0,
+                .type = pup::NodeType::Directory,
+                .flags = pup::NodeFlags::None,
+                .name = "/",
+                .path = "/",
+                .size = 0,
+                .mtime = {},
+                .content_hash = {},
+            };
+            index.add_file(std::move(entry));
+            path_to_id["/"] = dir_id;
+            return dir_id;
+        }
+
+        // Get or create parent
+        auto parent_path = normalized.parent_path();
+        auto parent_id = self(parent_path);
+        auto basename = normalized.filename().string();
+
+        // Create directory entry
+        auto dir_id = next_id++;
+        auto entry = pup::index::FileEntry {
+            .id = dir_id,
+            .parent_id = parent_id,
+            .src_id = 0,
+            .type = pup::NodeType::Directory,
+            .flags = pup::NodeFlags::None,
+            .name = basename,
+            .path = path_str,
+            .size = 0,
+            .mtime = {},
+            .content_hash = {},
+        };
+        index.add_file(std::move(entry));
+        path_to_id[path_str] = dir_id;
+        return dir_id;
+    };
 
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
@@ -751,12 +827,18 @@ auto build_index(
                     file_size = std::filesystem::file_size(abs_path, ec);
                 }
 
+                // Get or create parent directory chain
+                auto fs_path = std::filesystem::path { rel_path };
+                auto parent_id = get_or_create_dir(fs_path.parent_path());
+                auto basename = fs_path.filename().string();
+
                 auto entry = pup::index::FileEntry {
                     .id = dep_id,
-                    .parent_id = 0,
+                    .parent_id = parent_id,
                     .src_id = 0,
                     .type = pup::NodeType::File,
                     .flags = pup::NodeFlags::None,
+                    .name = basename,
                     .path = rel_path,
                     .size = file_size,
                     .mtime = get_file_mtime(abs_path),

@@ -226,10 +226,15 @@ auto BuildGraph::get_full_path(NodeId id) const -> std::string
     auto path = std::string {};
     if (node->parent_dir != 0) {
         auto parent_path = get_full_path(node->parent_dir);
-        if (!parent_path.empty())
-            path = parent_path + "/" + node->name;
-        else
+        if (!parent_path.empty()) {
+            // Avoid double slash when parent is "/" (virtual root for external files)
+            if (parent_path.back() == '/')
+                path = parent_path + node->name;
+            else
+                path = parent_path + "/" + node->name;
+        } else {
             path = node->name;
+        }
     } else {
         path = node->name;
     }
