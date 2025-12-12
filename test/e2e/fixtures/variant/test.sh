@@ -46,5 +46,13 @@ if [[ "$output" != "Hello from variant build!" ]]; then
     exit 1
 fi
 
+# Verify second build is a no-op (tests incremental build with variant)
+rebuild_output=$($PUP build --variant=build 2>&1)
+if ! echo "$rebuild_output" | grep -q "Nothing to do"; then
+    echo "FAIL: Second build should be no-op, got:"
+    echo "$rebuild_output"
+    exit 1
+fi
+
 echo "Variant build test passed: outputs in build/ directory"
 exit 0

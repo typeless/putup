@@ -868,9 +868,13 @@ auto GraphBuilder::expand_inputs(
                         if (fs::exists(out_config)) {
                             // Return relative path from SOURCE working dir to OUTPUT tup.config
                             // Using TUP_VARIANT_OUTPUTDIR-style path that reaches from source to output
+                            // NOTE: We manually compute the relative path to avoid fs::relative()
+                            // which resolves symlinks (tup.config is often a symlink to configs/*.config)
                             auto src_dir = ctx.options.source_root / ctx.current_dir;
-                            auto rel = fs::relative(out_config, src_dir);
-                            result.push_back(rel.string());
+                            auto rel_to_root = fs::relative(ctx.options.source_root, src_dir);
+                            auto rel_output = fs::relative(ctx.options.output_root, ctx.options.source_root);
+                            auto rel = rel_to_root / rel_output / "tup.config";
+                            result.push_back(rel.lexically_normal().string());
                             config_found = true;
                         }
                     }
@@ -1168,8 +1172,24 @@ auto GraphBuilder::get_or_create_file_node(
     std::string const& path,
     NodeType type) -> Result<NodeId>
 {
+    // Convert working-directory-relative paths to source-root-relative or absolute
+    // Paths like "../../build/foo" from "src/bar" should become "build/foo"
+    // Paths that escape source root become absolute for correct stat() resolution
+    auto resolved = std::string { path };
+    if (!ctx.current_dir.empty() && path.starts_with("..")) {
+        auto normalized = (ctx.current_dir / path).lexically_normal();
+        // Check if path escapes source root (starts with ..)
+        if (normalized.string().starts_with("..")) {
+            // Use absolute path for out-of-tree files (without resolving symlinks)
+            auto abs = (ctx.options.source_root / normalized).lexically_normal();
+            resolved = abs.string();
+        } else {
+            resolved = normalized.string();
+        }
+    }
+
     // Normalize path for consistent lookup (handles //, ., ..)
-    auto normalized = normalize_path(path);
+    auto normalized = normalize_path(resolved);
     auto fs_path = fs::path { normalized };
     auto basename = fs_path.filename().string();
 

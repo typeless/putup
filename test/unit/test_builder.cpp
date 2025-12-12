@@ -1178,3 +1178,217 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
     auto full_path = graph.get_full_path(output_node->id);
     CHECK(full_path == "build/sub/dir/out.txt");
 }
+
+// =============================================================================
+// Path simplification tests
+// =============================================================================
+
+TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
+{
+    // Test that paths at project root stay as-is (no transformation needed)
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("main.c");
+    fixture.create_file("Tupfile");
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = {},
+        .variant_dir = {},
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("");
+
+    // Rule: : main.c |> gcc -c %f -o %o |> main.o
+    auto rule = Rule {};
+    rule.inputs.push_back(make_path_pattern("main.c"));
+    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "main.o" });
+    rule.outputs.push_back(output);
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    auto commands = graph.nodes_of_type(NodeType::Command);
+    REQUIRE(!commands.empty());
+
+    auto const* cmd_node = graph.get_node(commands[0]);
+    REQUIRE(cmd_node != nullptr);
+
+    // At root, paths should be direct (no ../ prefixes)
+    CHECK(cmd_node->command.find("../") == std::string::npos);
+    CHECK(cmd_node->command.find("-c main.c") != std::string::npos);
+    CHECK(cmd_node->command.find("-o main.o") != std::string::npos);
+}
+
+TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder][paths]")
+{
+    // Test that local files in subdirectory builds use simplified paths
+    // e.g., "add.c" not "../../src/lib/add.c" when Tupfile is in src/lib/
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/lib/add.c");
+    fixture.create_file("src/lib/Tupfile");
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = {},
+        .variant_dir = {},
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("src/lib");
+
+    // Rule: : add.c |> gcc -c %f -o %o |> add.o
+    auto rule = Rule {};
+    rule.inputs.push_back(make_path_pattern("add.c"));
+    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "add.o" });
+    rule.outputs.push_back(output);
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    // Find the command node
+    auto commands = graph.nodes_of_type(NodeType::Command);
+    REQUIRE(!commands.empty());
+
+    auto const* cmd_node = graph.get_node(commands[0]);
+    REQUIRE(cmd_node != nullptr);
+
+    // Command should use "add.c" not "../../src/lib/add.c"
+    CHECK(cmd_node->command.find("../../src/lib/add.c") == std::string::npos);
+    CHECK(cmd_node->command.find("-c add.c") != std::string::npos);
+    CHECK(cmd_node->command.find("-o add.o") != std::string::npos);
+}
+
+TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[builder][paths]")
+{
+    // Test that cross-directory references resolve correctly
+    // When Tupfile is in src/lib/ and references ../util/helper.c
+    // The path becomes root-relative (../../src/util/helper.c) which is
+    // functionally correct from the working directory
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/lib/main.c");
+    fixture.create_file("src/lib/Tupfile");
+    fixture.create_file("src/util/helper.c");
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = {},
+        .variant_dir = {},
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("src/lib");
+
+    // Rule: : main.c ../util/helper.c |> gcc -c %f -o %o |> app.o
+    auto rule = Rule {};
+    rule.inputs.push_back(make_path_pattern("main.c"));
+    rule.inputs.push_back(make_path_pattern("../util/helper.c"));
+    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "app.o" });
+    rule.outputs.push_back(output);
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    // Find the command node
+    auto commands = graph.nodes_of_type(NodeType::Command);
+    REQUIRE(!commands.empty());
+
+    auto const* cmd_node = graph.get_node(commands[0]);
+    REQUIRE(cmd_node != nullptr);
+
+    // Local file should be simplified, cross-directory uses root-relative path
+    INFO("Command: " << cmd_node->command);
+    CHECK(cmd_node->command.find("main.c") != std::string::npos);
+    // Cross-directory reference becomes root-relative: ../../src/util/helper.c
+    CHECK(cmd_node->command.find("src/util/helper.c") != std::string::npos);
+}
+
+TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths][variant]")
+{
+    // Test that in variant builds:
+    // - Input paths (source files) are still simplified
+    // - Output paths go to variant directory
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/lib/add.c");
+    fixture.create_file("src/lib/Tupfile");
+    fs::create_directories(fixture.root() / "build" / "src" / "lib");
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    // Variant build with output_root
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = fixture.root() / "build",
+        .variant_dir = fs::path { "build" },
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    ctx.tup_variant_outputdir = "../../build/src/lib";
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("src/lib");
+
+    // Rule: : add.c |> gcc -c %f -o %o |> add.o
+    auto rule = Rule {};
+    rule.inputs.push_back(make_path_pattern("add.c"));
+    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "add.o" });
+    rule.outputs.push_back(output);
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    auto commands = graph.nodes_of_type(NodeType::Command);
+    REQUIRE(!commands.empty());
+
+    auto const* cmd_node = graph.get_node(commands[0]);
+    REQUIRE(cmd_node != nullptr);
+
+    INFO("Command: " << cmd_node->command);
+
+    // Input should be simplified (just "add.c", not round-trip path)
+    CHECK(cmd_node->command.find("-c add.c") != std::string::npos);
+
+    // Output should go to variant directory
+    CHECK(cmd_node->command.find("build/src/lib/add.o") != std::string::npos);
+}
