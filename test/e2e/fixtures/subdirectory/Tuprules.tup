@@ -1,0 +1,4 @@
+# Root-level rules
+# TUP_CWD here gives path from current Tupfile back to this location
+ROOT = $(TUP_CWD)
+CFLAGS = -MD -I$(ROOT)/include

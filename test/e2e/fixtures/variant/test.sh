@@ -53,6 +53,33 @@ if ! echo "$rebuild_output" | grep -q "Nothing to do"; then
     echo "$rebuild_output"
     exit 1
 fi
+echo "No-op rebuild OK"
+
+# Modify header and rebuild
+echo '#define MESSAGE "Modified variant message!"' > message.h
+
+rebuild_output=$($PUP build --variant=build 2>&1)
+if echo "$rebuild_output" | grep -q "Nothing to do"; then
+    echo "FAIL: Build should rebuild after header change"
+    exit 1
+fi
+
+# Verify new output
+output=$(./build/hello)
+if [[ "$output" != "Modified variant message!" ]]; then
+    echo "FAIL: Unexpected output after header change: $output"
+    exit 1
+fi
+echo "Header rebuild OK: $output"
+
+# After header rebuild, verify build stabilizes
+rebuild_output=$($PUP build --variant=build 2>&1)
+if ! echo "$rebuild_output" | grep -q "Nothing to do"; then
+    echo "FAIL: Build should stabilize after header rebuild, got:"
+    echo "$rebuild_output"
+    exit 1
+fi
+echo "Build stabilization OK"
 
 echo "Variant build test passed: outputs in build/ directory"
 exit 0

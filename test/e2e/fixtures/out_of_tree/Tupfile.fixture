@@ -1,4 +1,4 @@
-# Variant test with header dependency
+# Out-of-tree build test
 CFLAGS = -MD
 
 : hello.c |> gcc $(CFLAGS) -c %f -o %o |> hello.o

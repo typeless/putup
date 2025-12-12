@@ -17,5 +17,13 @@ if [[ "$output" != "Hello from pup!" ]]; then
     echo "Error: unexpected output: $output"
     exit 1
 fi
-
 echo "Output verified: $output"
+
+# Second build should be no-op
+rebuild_output=$($PUP build 2>&1)
+if ! echo "$rebuild_output" | grep -q "Nothing to do"; then
+    echo "FAIL: Second build should be no-op, got:"
+    echo "$rebuild_output"
+    exit 1
+fi
+echo "No-op rebuild OK"

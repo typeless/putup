@@ -1,0 +1,5 @@
+# Subdirectory Tupfile
+include_rules
+
+: main.c |> gcc $(CFLAGS) -c %f -o %o |> main.o
+: main.o |> gcc %f -o %o |> program

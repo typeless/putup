@@ -909,12 +909,18 @@ auto build_index(
                     file_size = std::filesystem::file_size(abs_path, ec);
                 }
 
+                // Compute parent directory chain and basename for v3 format
+                auto fs_path = std::filesystem::path { old_file->path };
+                auto parent_id = get_or_create_dir(fs_path.parent_path());
+                auto basename = fs_path.filename().string();
+
                 auto entry = pup::index::FileEntry {
                     .id = new_from_id,
-                    .parent_id = 0,
+                    .parent_id = parent_id,
                     .src_id = 0,
                     .type = pup::NodeType::File,
                     .flags = pup::NodeFlags::None,
+                    .name = basename,
                     .path = old_file->path,
                     .size = file_size,
                     .mtime = get_file_mtime(abs_path),
