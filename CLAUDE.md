@@ -379,7 +379,14 @@ PUP_IMPLICIT_DEPS=1 pup build
 - Pattern regex may not match all compiler invocation styles
 
 ### Change Detection
-When determining if a file changed:
+
+**What triggers rebuilds:**
+- Source file changes (inputs to commands)
+- Tupfile/Tuprules.tup changes (via `LinkType::Sticky` edges)
+- tup.config changes (via `LinkType::Sticky` edges)
+- Header file changes (via `LinkType::Implicit` edges from `.d` files)
+
+**How file changes are detected:**
 1. Compare mtime - if different, rebuild
 2. If mtime same, compare file size - if different, rebuild
 3. If size same, compute SHA-256 hash - if different, rebuild
