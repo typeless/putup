@@ -1,0 +1,1 @@
+: main.c |> gcc -DVERSION=1 -o %o %f |> program

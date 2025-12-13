@@ -177,6 +177,14 @@ auto GraphBuilder::add_tupfile(
     if (tupfile_node_result)
         ctx.sticky_sources.push_back(*tupfile_node_result);
 
+    // Add tup.config as sticky source if it exists (for change detection)
+    if (!options_.config_path.empty() && std::filesystem::exists(options_.config_path)) {
+        auto config_rel = std::filesystem::relative(options_.config_path, options_.source_root).string();
+        auto config_node_result = get_or_create_file_node(ctx, config_rel, NodeType::File);
+        if (config_node_result)
+            ctx.sticky_sources.push_back(*config_node_result);
+    }
+
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name) -> std::vector<std::string> {
         auto it = ctx.groups.find(std::string { name });

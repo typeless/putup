@@ -480,6 +480,7 @@ auto build_graph(Options const& opts, BuildGraphOptions const& graph_opts)
         .source_root = layout.source_root,
         .output_root = layout.output_root,
         .variant_dir = variant_dir,
+        .config_path = config_path,
         .expand_globs = true,
         .pattern_registry = graph_opts.pattern_registry,
     };

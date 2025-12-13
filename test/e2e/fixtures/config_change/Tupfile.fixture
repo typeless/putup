@@ -1,0 +1,1 @@
+: main.c |> gcc -DOPT_LEVEL=@(OPT) -o %o %f |> program

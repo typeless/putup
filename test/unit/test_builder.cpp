@@ -130,6 +130,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[builde
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -187,6 +188,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -245,6 +247,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[buil
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -304,6 +307,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -390,6 +394,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[builder][glob]")
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -428,6 +433,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[builder][glob]")
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = "build-variant",
+        .config_path = {},
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -478,6 +484,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[builder][config]")
         .source_root = fixture.root(),
         .output_root = fixture.root() / "build-variant",
         .variant_dir = "build-variant",
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -519,6 +526,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[builder][exclusio
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -582,6 +590,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -645,6 +654,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -727,6 +737,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -803,6 +814,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[builder][variant]")
         .source_root = fixture.root(),
         .output_root = fixture.root() / "build-variant",
         .variant_dir = "build-variant",
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -852,6 +864,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[builder][deep-
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -903,6 +916,7 @@ TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -974,6 +988,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[builder
         .source_root = fixture.root(),
         .output_root = output_root,
         .variant_dir = fs::path { "build-variant" },
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1039,6 +1054,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
         .source_root = fixture.root(),
         .output_root = output_root,
         .variant_dir = fs::path { "build-variant" },
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1138,6 +1154,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = fs::path { "build" },
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1199,6 +1216,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1248,6 +1266,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1301,6 +1320,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[buil
         .source_root = fixture.root(),
         .output_root = {},
         .variant_dir = {},
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1356,6 +1376,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
         .source_root = fixture.root(),
         .output_root = fixture.root() / "build",
         .variant_dir = fs::path { "build" },
+        .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
     };
