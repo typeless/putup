@@ -361,7 +361,8 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
 
 auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
 {
-    auto root = find_project_root(std::filesystem::current_path());
+    auto cwd = std::filesystem::current_path();
+    auto root = find_project_root(cwd);
     if (!root) {
         return std::nullopt;
     }
@@ -375,8 +376,12 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
             build_dir = *root / build_dir;
         }
         is_in_tree = (build_dir == *root);
+    } else if (std::filesystem::exists(cwd / ".pup") && cwd != *root) {
+        // cwd contains .pup and is not source root - we're inside a build directory
+        build_dir = cwd;
+        is_in_tree = false;
     } else if (std::filesystem::exists(*root / "tup.config")
-               || std::filesystem::exists(*root / ".pup")) {
+        || std::filesystem::exists(*root / ".pup")) {
         build_dir = *root;
         is_in_tree = true;
     } else if (auto detected = find_build_subdir(*root)) {

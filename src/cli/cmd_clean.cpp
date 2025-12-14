@@ -18,6 +18,7 @@ namespace {
 
 auto remove_indexed_outputs(
     std::filesystem::path const& index_path,
+    std::filesystem::path const& root,
     OutputMode mode) -> RemoveResult
 {
     auto result = RemoveResult {};
@@ -39,14 +40,15 @@ auto remove_indexed_outputs(
             continue;
         }
 
-        auto path = std::filesystem::path { file.path };
-        for (auto parent = path.parent_path();
+        auto rel_path = std::filesystem::path { file.path };
+        auto abs_path = root / rel_path;
+        for (auto parent = abs_path.parent_path();
              !parent.empty() && parent != parent.parent_path();
              parent = parent.parent_path()) {
             result.output_dirs.insert(parent);
         }
 
-        if (!std::filesystem::exists(path)) {
+        if (!std::filesystem::exists(abs_path)) {
             continue;
         }
 
@@ -57,7 +59,7 @@ auto remove_indexed_outputs(
         }
 
         auto ec = std::error_code {};
-        if (std::filesystem::remove(path, ec)) {
+        if (std::filesystem::remove(abs_path, ec)) {
             ++result.removed_count;
             if (mode.verbose) {
                 fmt::print("Removed: {}\n", file.path);
@@ -93,7 +95,7 @@ auto cmd_clean(Options const& opts) -> int
         }
 
         auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-        auto result = remove_indexed_outputs(index_path, mode);
+        auto result = remove_indexed_outputs(index_path, ctx.root, mode);
 
         auto dirs_removed = remove_empty_directories(
             result.output_dirs, ctx.build_dir, ctx.root, mode);
@@ -118,7 +120,7 @@ auto cmd_distclean(Options const& opts) -> int
         auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
         if (std::filesystem::exists(index_path)) {
-            auto result = remove_indexed_outputs(index_path, mode);
+            auto result = remove_indexed_outputs(index_path, ctx.root, mode);
             error_count += result.error_count;
             output_dirs = std::move(result.output_dirs);
         }
