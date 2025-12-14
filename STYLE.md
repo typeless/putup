@@ -1,6 +1,19 @@
 # Modern C++ Style Guide
 
-A concise style guide for modern C++ (C++20/23) projects.
+**Version:** 1.3.0
+**Updated:** 2025-12-10
+**C++ Standard:** C++20/23
+
+A concise style guide for modern C++ projects.
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.3.0 | 2025-12-10 | Always use braces for if/for/while statements |
+| 1.2.0 | 2025-12-10 | Call site arguments follow same formatting as declarations |
+| 1.1.0 | 2025-12-10 | Long parameter lists: one parameter per line |
+| 1.0.0 | 2024-12-10 | Initial release |
 
 ## Core Principles
 
@@ -104,31 +117,48 @@ auto const INTERNAL_CONST = 42;
 // - Sink parameters: by value, move into place
 auto process(std::string_view text) -> Result<void>;
 auto add(Node node) -> Result<NodeId>;  // takes ownership
+
+// Long parameter lists - one parameter per line
+auto create_connection(
+    std::string_view host,
+    std::uint16_t port,
+    ConnectionOptions const& options,
+    std::chrono::milliseconds timeout
+) -> Result<Connection>;
+
+// Fits on one line - keep together
+auto add(int a, int b) -> int;
+
+// Call sites follow the same pattern
+auto conn = create_connection(
+    "localhost",
+    8080,
+    default_options,
+    std::chrono::milliseconds{5000}
+);
 ```
 
 ## Control Flow
 
 ```cpp
-// No braces for single statements
-if (condition)
-    return early;
-
-for (auto const& item : items)
-    process(item);
-
-// Braces for multiple statements
+// Always use braces
 if (condition) {
-    do_something();
-    do_more();
+    return early;
+}
+
+for (auto const& item : items) {
+    process(item);
 }
 
 // Early returns over nesting
 auto get_node(NodeId id) -> Node*
 {
-    if (id == 0)
+    if (id == 0) {
         return nullptr;
-    if (id >= nodes_.size())
+    }
+    if (id >= nodes_.size()) {
         return nullptr;
+    }
     return &nodes_[id];
 }
 ```
@@ -143,12 +173,14 @@ auto parse() -> Result<Config>;
 auto process(Path const& path) -> Result<void>
 {
     auto content = read_file(path);
-    if (!content)
+    if (!content) {
         return unexpected<Error>(content.error());
+    }
 
     auto parsed = parse(*content);
-    if (!parsed)
+    if (!parsed) {
         return unexpected<Error>(parsed.error());
+    }
 
     return {};  // Success for Result<void>
 }
@@ -164,8 +196,9 @@ auto node = Node{
 };
 
 // Structured bindings
-for (auto const& [key, value] : map)
+for (auto const& [key, value] : map) {
     process(key, value);
+}
 
 // std::optional for optional values
 auto find(Key k) -> std::optional<Value>;
@@ -229,4 +262,6 @@ private:
 - [ ] `[[nodiscard]]` on important returns
 - [ ] Anonymous namespace for internal linkage
 - [ ] Early returns for error cases
+- [ ] Long parameter/argument lists formatted one-per-line
+- [ ] Always use braces for control flow statements
 - [ ] Comments explain "why" not "what"

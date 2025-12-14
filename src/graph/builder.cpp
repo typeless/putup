@@ -675,11 +675,11 @@ auto GraphBuilder::expand_rule(
             auto dir = std::string {};
 
             // Get directory from path prefix if specified
-            auto const* group_dir_expr = rule.output_order_only_group_dir
-                ? &*rule.output_order_only_group_dir
-                : (macro_ptr && macro_ptr->output_order_only_group_dir
-                          ? &*macro_ptr->output_order_only_group_dir
-                          : nullptr);
+            parser::Expression const* group_dir_expr = nullptr;
+            if (rule.output_order_only_group_dir)
+                group_dir_expr = &*rule.output_order_only_group_dir;
+            else if (macro_ptr && macro_ptr->output_order_only_group_dir)
+                group_dir_expr = &*macro_ptr->output_order_only_group_dir;
 
             if (group_dir_expr) {
                 auto evaluator = parser::Evaluator { *ctx.eval };
@@ -1151,7 +1151,6 @@ auto GraphBuilder::get_or_create_directory_node(
     if (depth > MAX_DIRECTORY_DEPTH)
         return make_error<NodeId>(ErrorCode::InvalidArgument, "Directory nesting exceeds maximum depth");
 
-    auto normalized = normalized_path.string();
     auto parent_path = normalized_path.parent_path();
     auto basename = normalized_path.filename().string();
 
