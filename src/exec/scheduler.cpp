@@ -607,7 +607,7 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         // Compute working directory: source_dir for subdirectory Tupfiles.
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
-        // prefixed with variant_dir by the builder.
+        // mapped to the output directory by the builder.
         auto working_dir = std::filesystem::path { impl_->options.source_root };
         if (!node->source_dir.empty()) {
             working_dir /= node->source_dir;

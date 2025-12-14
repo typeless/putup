@@ -28,9 +28,8 @@ struct TupfileParseState {
     std::set<std::filesystem::path> parsing;
 };
 
-auto compute_variantdir(
+auto compute_tup_variantdir(
     std::filesystem::path const& source_dir,
-    std::filesystem::path const& variant_dir,
     std::filesystem::path const& source_root,
     std::filesystem::path const& output_root) -> std::string
 {
@@ -41,13 +40,31 @@ auto compute_variantdir(
         return rel.string();
     }
 
-    if (!variant_dir.empty()) {
-        auto output_dir = std::filesystem::path { variant_dir / source_dir };
-        auto rel = std::filesystem::relative(output_dir, source_dir);
-        return rel.string();
+    return ".";
+}
+
+auto find_build_subdir(std::filesystem::path const& root)
+    -> std::optional<std::filesystem::path>
+{
+    for (auto const& name : { "build", "out", "variant" }) {
+        auto dir = std::filesystem::path { root / name };
+        if (std::filesystem::exists(dir / "tup.config")) {
+            return dir;
+        }
     }
 
-    return ".";
+    if (std::filesystem::is_directory(root)) {
+        for (auto const& entry : std::filesystem::directory_iterator(root)) {
+            if (entry.is_directory()) {
+                auto config_path = std::filesystem::path { entry.path() / "tup.config" };
+                if (std::filesystem::exists(config_path)) {
+                    return entry.path();
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
 }
 
 auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
@@ -113,7 +130,6 @@ auto parse_directory(
     std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
     pup::parser::VarDb const& config_vars,
-    std::filesystem::path const& variant_dir,
     bool verbose) -> pup::Result<void>
 {
     auto vars = pup::parser::VarDb { base_vars };
@@ -157,12 +173,12 @@ auto parse_directory(
     }
 
     auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
-    auto tup_variantdir = compute_variantdir(
+    auto tup_variantdir = compute_tup_variantdir(
         normalized_dir == "." ? std::filesystem::path {} : rel_dir,
-        variant_dir, root, output_root);
+        root, output_root);
 
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, root, output_root, base_vars, config_vars, variant_dir, verbose);
+        return parse_directory(dir, state, builder, graph, root, output_root, base_vars, config_vars, verbose);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
@@ -289,16 +305,9 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
         fmt::print("Found {} directories with Tupfiles\n", ctx.impl_->state.available.size());
     }
 
-    auto variant_dir = ctx.impl_->layout.variant_dir;
-
-    auto config_path = std::filesystem::path {};
-    if (!opts.build_dir.empty()) {
-        config_path = ctx.impl_->layout.output_root / "tup.config";
-    } else if (!variant_dir.empty()) {
-        config_path = ctx.impl_->layout.source_root / variant_dir / "tup.config";
-    }
-
-    if (!config_path.empty() && std::filesystem::exists(config_path)) {
+    // tup.config lives in output_root (variant or -B directory)
+    auto config_path = ctx.impl_->layout.output_root / "tup.config";
+    if (std::filesystem::exists(config_path)) {
         auto config_result = Result<parser::VarDb> { parser::parse_config(config_path) };
         if (config_result) {
             ctx.impl_->config_vars = std::move(*config_result);
@@ -312,7 +321,6 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
     auto builder_opts = graph::BuilderOptions {
         .source_root = ctx.impl_->layout.source_root,
         .output_root = ctx.impl_->layout.output_root,
-        .variant_dir = variant_dir,
         .config_path = config_path,
         .expand_globs = true,
         .pattern_registry = ctx_opts.pattern_registry,
@@ -325,7 +333,7 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
         auto result = Result<void> {
             parse_directory(root_rel, ctx.impl_->state, builder, ctx.impl_->graph,
                 ctx.impl_->layout.source_root, ctx.impl_->layout.output_root,
-                ctx.impl_->vars, ctx.impl_->config_vars, variant_dir, ctx_opts.verbose)
+                ctx.impl_->vars, ctx.impl_->config_vars, ctx_opts.verbose)
         };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
@@ -339,7 +347,7 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
         auto result = Result<void> {
             parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph,
                 ctx.impl_->layout.source_root, ctx.impl_->layout.output_root,
-                ctx.impl_->vars, ctx.impl_->config_vars, variant_dir, ctx_opts.verbose)
+                ctx.impl_->vars, ctx.impl_->config_vars, ctx_opts.verbose)
         };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
@@ -375,8 +383,8 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
     } else if (std::filesystem::exists(*root / ".pup")) {
         build_dir = *root;
         is_in_tree = true;
-    } else if (auto detected = find_variant_dir(*root)) {
-        build_dir = *root / *detected;
+    } else if (auto detected = find_build_subdir(*root)) {
+        build_dir = *detected;
         is_in_tree = false;
     } else {
         return std::nullopt;

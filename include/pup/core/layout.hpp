@@ -14,8 +14,7 @@ namespace pup {
 /// Enables read-only source directories by separating source and output trees.
 struct ProjectLayout {
     std::filesystem::path source_root; ///< Where Tupfile.ini lives (may be read-only)
-    std::filesystem::path output_root; ///< Where tup.config/.pup lives (writable)
-    std::filesystem::path variant_dir; ///< Variant subdirectory within output_root
+    std::filesystem::path output_root; ///< Where outputs/.pup/tup.config go (writable)
 
     /// True if source and output are the same (in-tree build)
     [[nodiscard]] auto is_in_tree() const -> bool
@@ -26,10 +25,7 @@ struct ProjectLayout {
     /// Get path to .pup directory
     [[nodiscard]] auto pup_dir() const -> std::filesystem::path
     {
-        if (variant_dir.empty()) {
-            return output_root / ".pup";
-        }
-        return output_root / variant_dir / ".pup";
+        return output_root / ".pup";
     }
 
     /// Get path to index file
@@ -49,10 +45,7 @@ struct ProjectLayout {
     [[nodiscard]] auto resolve_output(std::filesystem::path const& rel) const
         -> std::filesystem::path
     {
-        if (variant_dir.empty()) {
-            return output_root / rel;
-        }
-        return output_root / variant_dir / rel;
+        return output_root / rel;
     }
 };
 
@@ -68,10 +61,6 @@ struct LayoutOptions {
 
 /// Find project root by walking up from start_dir looking for Tupfile.ini
 [[nodiscard]] auto find_project_root(std::filesystem::path const& start_dir)
-    -> std::optional<std::filesystem::path>;
-
-/// Find variant directory containing tup.config
-[[nodiscard]] auto find_variant_dir(std::filesystem::path const& root)
     -> std::optional<std::filesystem::path>;
 
 } // namespace pup

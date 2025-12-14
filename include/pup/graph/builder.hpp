@@ -23,8 +23,7 @@ namespace pup::graph {
 /// Options for graph building
 struct BuilderOptions {
     std::filesystem::path source_root;                     ///< Source tree root (where Tupfile.ini lives)
-    std::filesystem::path output_root;                     ///< Output tree root (where .pup lives)
-    std::filesystem::path variant_dir;                     ///< Variant subdirectory within output_root
+    std::filesystem::path output_root;                     ///< Output tree root (where outputs/.pup go)
     std::filesystem::path config_path;                     ///< Path to tup.config (for sticky edge tracking)
     bool expand_globs = true;                              ///< Expand glob patterns
     bool validate_inputs = true;                           ///< Check that input files exist

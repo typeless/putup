@@ -565,7 +565,6 @@ auto cmd_build(Options const& opts) -> int
         .verbose = opts.verbose,
         .source_root = ctx.layout().source_root,
         .output_root = ctx.layout().output_root,
-        .variant_dir = ctx.layout().variant_dir,
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };

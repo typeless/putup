@@ -97,12 +97,11 @@ auto normalize_group_dir(
 
 /// Map an output path to the output directory.
 /// All paths are project-relative (tup-style), never absolute.
-/// For in-tree builds: variant_dir/current_dir/path (e.g., "build/src/lib/foo.o")
-/// For out-of-tree builds (-B): variant_dir/current_dir/path (e.g., "build-s1f3/boot/boot.hex")
-auto map_to_variant(
+/// For in-tree builds: current_dir/path (e.g., "src/lib/foo.o")
+/// For out-of-tree builds: output_prefix/current_dir/path (e.g., "build/src/lib/foo.o")
+auto map_to_output(
     std::string const& path,
     std::filesystem::path const& current_dir,
-    std::filesystem::path const& variant_dir,
     std::filesystem::path const& source_root,
     std::filesystem::path const& output_root) -> std::string
 {
@@ -114,33 +113,24 @@ auto map_to_variant(
         if (!rel.empty() && rel.string()[0] != '.') {
             return rel.lexically_normal().string();
         }
-        // Can't make relative - return as-is (shouldn't happen in normal use)
         return p.lexically_normal().string();
     }
 
-    // Out-of-tree build (-B): use variant_dir which is the output directory basename
-    // relative to source root (e.g., "build-s1f3" for -B build-s1f3)
+    // Out-of-tree build: outputs go to output_root
+    // Compute output prefix as relative path from source_root to output_root
     if (!output_root.empty() && source_root != output_root) {
-        // Compute variant_dir from output_root if not explicitly provided
-        auto effective_variant = variant_dir.empty()
-            ? fs::relative(output_root, source_root)
-            : variant_dir;
+        auto output_prefix = fs::relative(output_root, source_root);
         if (current_dir.empty()) {
-            return (effective_variant / path).lexically_normal().string();
+            return (output_prefix / path).lexically_normal().string();
         }
-        return (effective_variant / current_dir / path).lexically_normal().string();
+        return (output_prefix / current_dir / path).lexically_normal().string();
     }
 
     // In-tree build: paths are project-relative
-    if (variant_dir.empty()) {
-        if (current_dir.empty()) {
-            return path;
-        }
-        return (current_dir / path).lexically_normal().string();
+    if (current_dir.empty()) {
+        return path;
     }
-
-    auto full_path = std::filesystem::path { variant_dir / current_dir / path };
-    return full_path.lexically_normal().string();
+    return (current_dir / path).lexically_normal().string();
 }
 
 } // namespace
@@ -965,10 +955,10 @@ auto GraphBuilder::expand_inputs(
                         }
                     }
 
-                    // Map the pattern to variant path for matching
-                    auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
+                    // Map the pattern to output path for matching
+                    auto output_path = map_to_output(path, ctx.current_dir,
                         ctx.options.source_root, ctx.options.output_root);
-                    auto glob = parser::Glob { variant_path };
+                    auto glob = parser::Glob { output_path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         auto node_path = ctx.graph->get_full_path(id);
                         if (!node_path.empty() && glob.matches(node_path)) {
@@ -989,34 +979,19 @@ auto GraphBuilder::expand_inputs(
                     } else {
                         result.push_back(std::move(path));
                     }
-                } else if (full_path.filename() == "tup.config" && (!ctx.options.variant_dir.empty() || !ctx.options.output_root.empty())) {
-                    // Special case: tup.config lives in variant/output directory, not source root
-                    // For -B builds: check output_root/tup.config
-                    // For --variant builds: check source_root/variant_dir/tup.config
-                    auto config_found = false;
-                    if (!ctx.options.output_root.empty()) {
-                        auto out_config = ctx.options.output_root / "tup.config";
-                        if (fs::exists(out_config)) {
-                            // Return relative path from SOURCE working dir to OUTPUT tup.config
-                            // Using TUP_VARIANT_OUTPUTDIR-style path that reaches from source to output
-                            // NOTE: We manually compute the relative path to avoid fs::relative()
-                            // which resolves symlinks (tup.config is often a symlink to configs/*.config)
-                            auto src_dir = ctx.options.source_root / ctx.current_dir;
-                            auto rel_to_root = fs::relative(ctx.options.source_root, src_dir);
-                            auto rel_output = fs::relative(ctx.options.output_root, ctx.options.source_root);
-                            auto rel = rel_to_root / rel_output / "tup.config";
-                            result.push_back(rel.lexically_normal().string());
-                            config_found = true;
-                        }
-                    }
-                    if (!config_found && !ctx.options.variant_dir.empty()) {
-                        auto variant_config = ctx.options.variant_dir / "tup.config";
-                        if (fs::exists(ctx.options.source_root / variant_config)) {
-                            result.push_back(variant_config.string());
-                            config_found = true;
-                        }
-                    }
-                    if (!config_found) {
+                } else if (full_path.filename() == "tup.config" && ctx.options.source_root != ctx.options.output_root) {
+                    // Special case: tup.config lives in output directory, not source root
+                    auto out_config = ctx.options.output_root / "tup.config";
+                    if (fs::exists(out_config)) {
+                        // Return relative path from SOURCE working dir to OUTPUT tup.config
+                        // NOTE: We manually compute the relative path to avoid fs::relative()
+                        // which resolves symlinks (tup.config is often a symlink to configs/*.config)
+                        auto src_dir = ctx.options.source_root / ctx.current_dir;
+                        auto rel_to_root = fs::relative(ctx.options.source_root, src_dir);
+                        auto rel_output = fs::relative(ctx.options.output_root, ctx.options.source_root);
+                        auto rel = rel_to_root / rel_output / "tup.config";
+                        result.push_back(rel.lexically_normal().string());
+                    } else {
                         result.push_back(std::move(path));
                     }
                 } else {
@@ -1024,15 +999,15 @@ auto GraphBuilder::expand_inputs(
                     auto file_dir = fs::path { path }.parent_path();
                     auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
 
-                    // If path references the variant output, map back to source for Tupfile lookup
+                    // If path references the build output, map back to source for Tupfile lookup
                     // E.g., "../../build-s1f3/modules/kernel" -> "modules/kernel"
                     auto source_dir = abs_file_dir;
-                    auto variant_prefix = ctx.options.variant_dir.string();
-                    if (!variant_prefix.empty()) {
+                    if (ctx.options.source_root != ctx.options.output_root) {
+                        auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root).string();
                         auto abs_dir_str = abs_file_dir.string();
-                        if (abs_dir_str.starts_with(variant_prefix + "/")) {
-                            source_dir = fs::path { abs_dir_str.substr(variant_prefix.size() + 1) };
-                        } else if (abs_dir_str == variant_prefix) {
+                        if (abs_dir_str.starts_with(output_prefix + "/")) {
+                            source_dir = fs::path { abs_dir_str.substr(output_prefix.size() + 1) };
+                        } else if (abs_dir_str == output_prefix) {
                             source_dir = fs::path { "." };
                         }
                     }
@@ -1046,7 +1021,7 @@ auto GraphBuilder::expand_inputs(
                         }
                     }
 
-                    // Check for generated file in variant
+                    // Check for generated file in build output
                     // Try multiple path formats in order of likelihood
                     auto abs_path = full_path.lexically_normal().string();
                     auto rel_path = fs::path { abs_path }.lexically_relative(ctx.options.source_root).string();
@@ -1059,12 +1034,12 @@ auto GraphBuilder::expand_inputs(
                     else if (find_node_by_path(*ctx.graph, rel_path)) {
                         result.push_back(rel_path);
                     }
-                    // Try mapping to variant (for simple paths like "foo.o")
+                    // Try mapping to output (for simple paths like "foo.o")
                     else {
-                        auto variant_path = map_to_variant(path, ctx.current_dir, ctx.options.variant_dir,
+                        auto output_path = map_to_output(path, ctx.current_dir,
                             ctx.options.source_root, ctx.options.output_root);
-                        if (find_node_by_path(*ctx.graph, variant_path)) {
-                            result.push_back(variant_path);
+                        if (find_node_by_path(*ctx.graph, output_path)) {
+                            result.push_back(output_path);
                         } else {
                             // Fall back to project-relative path for error messages
                             result.push_back(rel_path);
@@ -1167,7 +1142,7 @@ auto GraphBuilder::expand_outputs(
             auto output_path = expanded ? *expanded : std::move(path);
 
             // Map to output directory
-            output_path = map_to_variant(output_path, ctx.current_dir, ctx.options.variant_dir,
+            output_path = map_to_output(output_path, ctx.current_dir,
                 ctx.options.source_root, ctx.options.output_root);
 
             result.push_back(std::move(output_path));

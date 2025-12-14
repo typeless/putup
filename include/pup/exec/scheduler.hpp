@@ -62,8 +62,7 @@ struct SchedulerOptions {
     bool dry_run = false;                             ///< Print commands without executing
     bool verbose = false;                             ///< Print commands as they run
     std::filesystem::path source_root = {};           ///< Source tree root (where Tupfile.ini lives)
-    std::filesystem::path output_root = {};           ///< Output tree root (where .pup lives)
-    std::filesystem::path variant_dir = {};           ///< Variant subdirectory within output_root
+    std::filesystem::path output_root = {};           ///< Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 
