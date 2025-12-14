@@ -18,6 +18,9 @@ include_rules
 # Exec library sources
 : foreach src/exec/*.cpp |> !cxx |> %B.o {exec_objs}
 
+# CLI library sources
+: foreach src/cli/*.cpp |> !cxx |> %B.o {cli_objs}
+
 # Build pup executable
 : foreach src/*.cpp |> !cxx |> %B.o {main_objs}
-: {third_party_objs} {core_objs} {parser_objs} {graph_objs} {index_objs} {exec_objs} {main_objs} |> !link |> pup
+: {third_party_objs} {core_objs} {parser_objs} {graph_objs} {index_objs} {exec_objs} {cli_objs} {main_objs} |> !link |> pup
