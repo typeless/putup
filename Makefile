@@ -16,6 +16,12 @@ PREFIX ?= $(HOME)
 # Build output directory
 BUILD_DIR := build
 
+# Detect mold linker (faster linking)
+MOLD_PATH := $(shell command -v mold 2>/dev/null)
+ifneq ($(MOLD_PATH),)
+export USE_MOLD := 1
+endif
+
 # Build tool selection: pup by default, tup with TUP=1
 # Priority: ./build/pup > pup in PATH > tup
 PUP_LOCAL := $(shell test -x ./$(BUILD_DIR)/pup && echo yes)

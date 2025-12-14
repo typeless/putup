@@ -6,6 +6,9 @@ CC = gcc
 CXX = g++
 AR = ar
 
+# Use mold linker if available (set by Makefile or environment)
+import USE_MOLD
+
 CFLAGS = -std=c11
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -I$(ROOT)/third_party
@@ -26,6 +29,11 @@ else
 CFLAGS += -O2 -ffunction-sections -fdata-sections
 CXXFLAGS += -O2 -DNDEBUG -ffunction-sections -fdata-sections
 LDFLAGS += -Wl,--gc-sections
+endif
+
+# Use mold linker for faster linking
+ifdef USE_MOLD
+LDFLAGS += -fuse-ld=mold
 endif
 
 # Compile C source to object
