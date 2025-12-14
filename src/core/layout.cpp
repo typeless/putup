@@ -30,9 +30,11 @@ auto find_project_root(std::filesystem::path const& start_dir)
     auto current = std::filesystem::path { start_dir };
 
     while (true) {
+        // Only Tupfile.ini or Tupfile are authoritative source root markers.
+        // .pup alone is not sufficient - it exists in both source roots (in-tree)
+        // and build directories (variant builds).
         if (std::filesystem::exists(current / "Tupfile.ini")
-            || std::filesystem::exists(current / "Tupfile")
-            || std::filesystem::exists(current / ".pup")) {
+            || std::filesystem::exists(current / "Tupfile")) {
             return current;
         }
 

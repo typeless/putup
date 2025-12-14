@@ -118,6 +118,24 @@ make test                          # Run all tests
 ./test/e2e/run_tests.sh            # E2E tests only
 ```
 
+## Development Workflow
+
+This project follows **Test-Driven Development (TDD)**:
+
+1. **Write a failing test** - Define expected behavior before implementation
+2. **Make it pass** - Write minimal code to satisfy the test
+3. **Refactor** - Clean up while keeping tests green
+
+```bash
+# TDD cycle
+./build/test/unit/pup_test "[new_feature]"  # Run specific test (fails)
+# ... implement ...
+./build/test/unit/pup_test "[new_feature]"  # Run again (passes)
+make test                                    # Verify no regressions
+```
+
+For bug fixes, write a test that reproduces the bug first, then fix.
+
 ## Code Style
 
 ### AAA (Almost Always Auto)
