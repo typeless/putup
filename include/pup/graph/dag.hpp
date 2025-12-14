@@ -7,35 +7,15 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
-#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
 #include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace pup::graph {
-
-/// Hash for (parent_dir, name) lookup key
-struct DirNameKey {
-    NodeId parent_dir = 0;
-    std::string name = {};
-
-    auto operator==(DirNameKey const& other) const -> bool = default;
-};
-
-struct DirNameKeyHash {
-    auto operator()(DirNameKey const& key) const noexcept -> std::size_t
-    {
-        auto h1 = std::hash<NodeId> {}(key.parent_dir);
-        auto h2 = std::hash<std::string> {}(key.name);
-        // Use boost::hash_combine pattern for better distribution
-        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-};
 
 /// Edge between nodes in the build graph
 struct Edge {
@@ -71,10 +51,17 @@ struct Node {
     NodeId parent_command = INVALID_NODE_ID;              ///< Parent command for InjectImplicitDeps
 };
 
-/// Build graph - DAG of nodes and edges
+/// Build graph - DAG of nodes and edges (PIMPL for compile-time isolation)
 class BuildGraph {
 public:
-    BuildGraph() = default;
+    BuildGraph();
+    ~BuildGraph();
+
+    BuildGraph(BuildGraph const&) = delete;
+    auto operator=(BuildGraph const&) -> BuildGraph& = delete;
+
+    BuildGraph(BuildGraph&&) noexcept;
+    auto operator=(BuildGraph&&) noexcept -> BuildGraph&;
 
     /// Add a node to the graph
     [[nodiscard]] auto add_node(Node node) -> Result<NodeId>;
@@ -116,16 +103,16 @@ public:
     [[nodiscard]] auto get_order_only_dependents(NodeId id) const -> std::vector<NodeId>;
 
     /// Get all edges
-    [[nodiscard]] auto edges() const -> std::vector<Edge> const& { return edges_; }
+    [[nodiscard]] auto edges() const -> std::vector<Edge> const&;
 
     /// Get total number of nodes
-    [[nodiscard]] auto node_count() const -> std::size_t { return nodes_.empty() ? 0 : nodes_.size() - 1; }
+    [[nodiscard]] auto node_count() const -> std::size_t;
 
     /// Get total number of edges
-    [[nodiscard]] auto edge_count() const -> std::size_t { return edges_.size(); }
+    [[nodiscard]] auto edge_count() const -> std::size_t;
 
     /// Check if graph is empty
-    [[nodiscard]] auto empty() const -> bool { return nodes_.empty(); }
+    [[nodiscard]] auto empty() const -> bool;
 
     /// Clear the graph
     auto clear() -> void;
@@ -149,22 +136,16 @@ public:
     /// Clear the entire path cache
     auto clear_path_cache() -> void;
 
-    /// Iterator support
-    [[nodiscard]] auto begin() { return nodes_.begin(); }
-    [[nodiscard]] auto end() { return nodes_.end(); }
-    [[nodiscard]] auto begin() const { return nodes_.begin(); }
-    [[nodiscard]] auto end() const { return nodes_.end(); }
+    /// Iterator support (over nodes vector)
+    [[nodiscard]] auto begin() -> std::vector<Node>::iterator;
+    [[nodiscard]] auto end() -> std::vector<Node>::iterator;
+    [[nodiscard]] auto begin() const -> std::vector<Node>::const_iterator;
+    [[nodiscard]] auto end() const -> std::vector<Node>::const_iterator;
+
+    struct Impl;
 
 private:
-    std::vector<Node> nodes_;
-    std::vector<Edge> edges_;
-    std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index_;
-    std::unordered_map<std::string, NodeId> command_index_;
-    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents_;
-    mutable std::unordered_map<NodeId, std::string> path_cache_;
-    NodeId next_id_ = 1;
-
-    [[nodiscard]] auto validate_node_id(NodeId id) const -> bool;
+    std::unique_ptr<Impl> impl_;
 };
 
 } // namespace pup::graph

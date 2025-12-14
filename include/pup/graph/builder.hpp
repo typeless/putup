@@ -11,6 +11,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -65,10 +66,17 @@ struct BuilderContext {
     std::vector<std::string> warnings = {};
 };
 
-/// Build graph from a parsed Tupfile
+/// Build graph from a parsed Tupfile (PIMPL for compile-time isolation)
 class GraphBuilder {
 public:
     explicit GraphBuilder(BuilderOptions options = {});
+    ~GraphBuilder();
+
+    GraphBuilder(GraphBuilder const&) = delete;
+    auto operator=(GraphBuilder const&) -> GraphBuilder& = delete;
+
+    GraphBuilder(GraphBuilder&&) noexcept;
+    auto operator=(GraphBuilder&&) noexcept -> GraphBuilder&;
 
     /// Build graph from a single Tupfile AST
     [[nodiscard]] auto build(parser::Tupfile const& tupfile, parser::EvalContext& eval)
@@ -81,35 +89,15 @@ public:
         parser::EvalContext& eval) -> Result<void>;
 
     /// Get build errors
-    [[nodiscard]] auto errors() const -> std::vector<std::string> const& { return errors_; }
+    [[nodiscard]] auto errors() const -> std::vector<std::string> const&;
 
     /// Get build warnings
-    [[nodiscard]] auto warnings() const -> std::vector<std::string> const& { return warnings_; }
+    [[nodiscard]] auto warnings() const -> std::vector<std::string> const&;
+
+    struct Impl;
 
 private:
-    BuilderOptions options_;
-    std::vector<std::string> errors_;
-    std::vector<std::string> warnings_;
-
-    /// Key for order-only groups: (directory relative to root, group name)
-    struct GroupKey {
-        std::string directory;
-        std::string name;
-
-        auto operator==(GroupKey const& other) const -> bool = default;
-    };
-
-    struct GroupKeyHash {
-        auto operator()(GroupKey const& k) const -> std::size_t
-        {
-            auto h1 = std::hash<std::string> {}(k.directory);
-            auto h2 = std::hash<std::string> {}(k.name);
-            return h1 ^ (h2 << 1);
-        }
-    };
-
-    /// Order-only groups <name> - keyed by (directory, name) for cross-directory support
-    std::unordered_map<GroupKey, std::vector<NodeId>, GroupKeyHash> order_only_groups_;
+    std::unique_ptr<Impl> impl_;
 
     auto process_statement(
         BuilderContext& ctx,

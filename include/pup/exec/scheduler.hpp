@@ -81,6 +81,13 @@ struct BuildStats {
 class Scheduler {
 public:
     explicit Scheduler(SchedulerOptions options = {});
+    ~Scheduler();
+
+    Scheduler(Scheduler const&) = delete;
+    auto operator=(Scheduler const&) -> Scheduler& = delete;
+
+    Scheduler(Scheduler&&) noexcept;
+    auto operator=(Scheduler&&) noexcept -> Scheduler&;
 
     /// Build from a dependency graph
     [[nodiscard]] auto build(graph::BuildGraph const& graph) -> Result<BuildStats>;
@@ -92,40 +99,27 @@ public:
         std::vector<std::string> const& changed_files) -> Result<BuildStats>;
 
     /// Set callback for job start
-    auto on_job_start(JobStartCallback callback) -> void
-    {
-        on_start_ = std::move(callback);
-    }
+    auto on_job_start(JobStartCallback callback) -> void;
 
     /// Set callback for job completion
-    auto on_job_complete(JobCompleteCallback callback) -> void
-    {
-        on_complete_ = std::move(callback);
-    }
+    auto on_job_complete(JobCompleteCallback callback) -> void;
 
     /// Set callback for progress updates
-    auto on_progress(ProgressCallback callback) -> void
-    {
-        on_progress_ = std::move(callback);
-    }
+    auto on_progress(ProgressCallback callback) -> void;
 
     /// Request build cancellation
-    auto cancel() -> void { cancelled_.store(true); }
+    auto cancel() -> void;
 
     /// Check if build was cancelled
-    [[nodiscard]] auto is_cancelled() const -> bool { return cancelled_.load(); }
+    [[nodiscard]] auto is_cancelled() const -> bool;
 
     /// Get current statistics
-    [[nodiscard]] auto stats() const -> BuildStats { return stats_; }
+    [[nodiscard]] auto stats() const -> BuildStats;
+
+    struct Impl;
 
 private:
-    SchedulerOptions options_ = {};
-    BuildStats stats_ = {};
-    std::atomic<bool> cancelled_ = false;
-
-    JobStartCallback on_start_ = {};
-    JobCompleteCallback on_complete_ = {};
-    ProgressCallback on_progress_ = {};
+    std::unique_ptr<Impl> impl_;
 
     /// Execute jobs in parallel
     auto execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>;

@@ -145,9 +145,49 @@ auto map_to_variant(
 
 } // namespace
 
+struct GraphBuilder::Impl {
+    struct GroupKey {
+        std::string directory;
+        std::string name;
+
+        auto operator==(GroupKey const& other) const -> bool = default;
+    };
+
+    struct GroupKeyHash {
+        auto operator()(GroupKey const& k) const -> std::size_t
+        {
+            auto h1 = std::hash<std::string> {}(k.directory);
+            auto h2 = std::hash<std::string> {}(k.name);
+            return h1 ^ (h2 << 1);
+        }
+    };
+
+    BuilderOptions options;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+    std::unordered_map<GroupKey, std::vector<NodeId>, GroupKeyHash> order_only_groups;
+};
+
 GraphBuilder::GraphBuilder(BuilderOptions options)
-    : options_(std::move(options))
+    : impl_(std::make_unique<Impl>())
 {
+    impl_->options = std::move(options);
+}
+
+GraphBuilder::~GraphBuilder() = default;
+
+GraphBuilder::GraphBuilder(GraphBuilder&&) noexcept = default;
+
+auto GraphBuilder::operator=(GraphBuilder&&) noexcept -> GraphBuilder& = default;
+
+auto GraphBuilder::errors() const -> std::vector<std::string> const&
+{
+    return impl_->errors;
+}
+
+auto GraphBuilder::warnings() const -> std::vector<std::string> const&
+{
+    return impl_->warnings;
 }
 
 auto GraphBuilder::build(parser::Tupfile const& tupfile, parser::EvalContext& eval)
@@ -168,7 +208,7 @@ auto GraphBuilder::add_tupfile(
 {
     // Compute current_dir relative to source_root
     auto tupfile_parent = std::filesystem::path { tupfile.filename }.parent_path();
-    auto relative_dir = std::filesystem::relative(tupfile_parent, options_.source_root);
+    auto relative_dir = std::filesystem::relative(tupfile_parent, impl_->options.source_root);
     if (relative_dir == ".") {
         relative_dir = "";
     }
@@ -177,21 +217,21 @@ auto GraphBuilder::add_tupfile(
         .graph = &graph,
         .eval = &eval,
         .vars = eval.vars,
-        .options = options_,
+        .options = impl_->options,
         .current_dir = relative_dir,
         .current_file = tupfile.filename,
     };
 
     // Create Tupfile node and add to sticky_sources for dependency tracking
-    auto tupfile_rel = std::filesystem::relative(tupfile.filename, options_.source_root).string();
+    auto tupfile_rel = std::filesystem::relative(tupfile.filename, impl_->options.source_root).string();
     auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
     if (tupfile_node_result) {
         ctx.sticky_sources.push_back(*tupfile_node_result);
     }
 
     // Add tup.config as sticky source if it exists (for change detection)
-    if (!options_.config_path.empty() && std::filesystem::exists(options_.config_path)) {
-        auto config_rel = std::filesystem::relative(options_.config_path, options_.source_root).string();
+    if (!impl_->options.config_path.empty() && std::filesystem::exists(impl_->options.config_path)) {
+        auto config_rel = std::filesystem::relative(impl_->options.config_path, impl_->options.source_root).string();
         auto config_node_result = get_or_create_file_node(ctx, config_rel, NodeType::File);
         if (config_node_result) {
             ctx.sticky_sources.push_back(*config_node_result);
@@ -218,9 +258,9 @@ auto GraphBuilder::add_tupfile(
     // This is for local group references (no directory prefix) - uses current directory
     eval.resolve_order_only_group = [this, &ctx](std::string_view name) -> std::vector<std::string> {
         auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
-        auto key = GroupKey { dir, std::string { name } };
-        auto it = order_only_groups_.find(key);
-        if (it == order_only_groups_.end()) {
+        auto key = Impl::GroupKey { dir, std::string { name } };
+        auto it = impl_->order_only_groups.find(key);
+        if (it == impl_->order_only_groups.end()) {
             return {};
         }
         auto paths = std::vector<std::string> {};
@@ -236,8 +276,8 @@ auto GraphBuilder::add_tupfile(
     for (auto const& stmt : tupfile.statements) {
         auto result = Result<void> { process_statement(ctx, *stmt) };
         if (!result) {
-            errors_.push_back(result.error().message);
-            if (!options_.verbose) {
+            impl_->errors.push_back(result.error().message);
+            if (!impl_->options.verbose) {
                 return pup::unexpected<Error>(result.error());
             }
         }
@@ -245,10 +285,10 @@ auto GraphBuilder::add_tupfile(
 
     // Copy errors and warnings
     for (auto& err : ctx.errors) {
-        errors_.push_back(std::move(err));
+        impl_->errors.push_back(std::move(err));
     }
     for (auto& warn : ctx.warnings) {
-        warnings_.push_back(std::move(warn));
+        impl_->warnings.push_back(std::move(warn));
     }
 
     return {};
@@ -770,8 +810,8 @@ auto GraphBuilder::expand_rule(
                 dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
             }
 
-            auto key = GroupKey { dir, *output_oo_group };
-            order_only_groups_[key].push_back(*output_id);
+            auto key = Impl::GroupKey { dir, *output_oo_group };
+            impl_->order_only_groups[key].push_back(*output_id);
         }
     }
 
@@ -838,9 +878,9 @@ auto GraphBuilder::expand_inputs(
                 group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
             }
 
-            auto key = GroupKey { group_dir, pattern.group_name };
-            auto it = order_only_groups_.find(key);
-            if (it != order_only_groups_.end()) {
+            auto key = Impl::GroupKey { group_dir, pattern.group_name };
+            auto it = impl_->order_only_groups.find(key);
+            if (it != impl_->order_only_groups.end()) {
                 for (auto id : it->second) {
                     auto path = ctx.graph->get_full_path(id);
                     if (!path.empty()) {
@@ -883,9 +923,9 @@ auto GraphBuilder::expand_inputs(
                 }
 
                 // Look up the group
-                auto key = GroupKey { group_dir, group_name };
-                auto it = order_only_groups_.find(key);
-                if (it != order_only_groups_.end()) {
+                auto key = Impl::GroupKey { group_dir, group_name };
+                auto it = impl_->order_only_groups.find(key);
+                if (it != impl_->order_only_groups.end()) {
                     for (auto id : it->second) {
                         auto path = ctx.graph->get_full_path(id);
                         if (!path.empty()) {

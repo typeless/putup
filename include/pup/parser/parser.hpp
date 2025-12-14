@@ -57,13 +57,20 @@ struct ParserOptions {
     int max_include_depth = 100;
 };
 
-/// Parser for Tupfile syntax
+/// Parser for Tupfile syntax (PIMPL for compile-time isolation)
 class Parser {
 public:
     using Options = ParserOptions;
 
     Parser(std::string_view source, std::string_view filename,
         std::shared_ptr<FileResolver> resolver = nullptr, Options options = Options {});
+    ~Parser();
+
+    Parser(Parser const&) = delete;
+    auto operator=(Parser const&) -> Parser& = delete;
+
+    Parser(Parser&&) noexcept;
+    auto operator=(Parser&&) noexcept -> Parser&;
 
     /// Parse complete Tupfile
     [[nodiscard]] auto parse() -> Result<Tupfile>;
@@ -72,18 +79,12 @@ public:
     [[nodiscard]] auto parse_statement() -> Result<std::unique_ptr<Statement>>;
 
     /// Get all parse errors
-    [[nodiscard]] auto errors() const -> std::vector<ParseError> const& { return errors_; }
+    [[nodiscard]] auto errors() const -> std::vector<ParseError> const&;
+
+    struct Impl;
 
 private:
-    Lexer lexer_;
-    std::shared_ptr<FileResolver> resolver_;
-    Options options_;
-    std::vector<ParseError> errors_;
-    std::unordered_set<std::string> included_files_;
-    int include_depth_ = 0;
-
-    Token current_;
-    Token previous_;
+    std::unique_ptr<Impl> impl_;
 
     // Token management
     auto advance() -> Token;
@@ -92,21 +93,11 @@ private:
     auto expect(TokenType type, std::string_view message) -> Result<Token>;
     auto skip_to_next_statement() -> void;
 
-    // Rule body (shared between Rule and BangMacro)
-    struct RuleBody {
-        Expression command;
-        std::optional<Expression> display;
-        std::vector<PathPattern> outputs;
-        std::vector<PathPattern> extra_outputs;
-        std::optional<std::string> output_group;
-        std::optional<std::string> output_order_only_group;
-        std::optional<Expression> output_order_only_group_dir;
-    };
-
     // Statement parsing
     [[nodiscard]] auto parse_line() -> Result<std::unique_ptr<Statement>>;
     [[nodiscard]] auto parse_rule() -> Result<Rule>;
     [[nodiscard]] auto parse_bang_macro() -> Result<BangMacro>;
+    struct RuleBody;
     [[nodiscard]] auto parse_rule_body() -> Result<RuleBody>;
     [[nodiscard]] auto parse_assignment(Expression name_expr) -> Result<Assignment>;
     [[nodiscard]] auto parse_conditional(Conditional::Kind kind) -> Result<Conditional>;

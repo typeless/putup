@@ -129,19 +129,66 @@ auto build_dependency_map(
 
 } // namespace
 
+struct Scheduler::Impl {
+    SchedulerOptions options;
+    BuildStats stats;
+    std::atomic<bool> cancelled = false;
+
+    JobStartCallback on_start;
+    JobCompleteCallback on_complete;
+    ProgressCallback on_progress;
+};
+
 Scheduler::Scheduler(SchedulerOptions options)
-    : options_(std::move(options))
+    : impl_(std::make_unique<Impl>())
 {
-    if (options_.jobs == 0) {
-        options_.jobs = detect_parallelism();
+    impl_->options = std::move(options);
+    if (impl_->options.jobs == 0) {
+        impl_->options.jobs = detect_parallelism();
     }
+}
+
+Scheduler::~Scheduler() = default;
+
+Scheduler::Scheduler(Scheduler&&) noexcept = default;
+
+auto Scheduler::operator=(Scheduler&&) noexcept -> Scheduler& = default;
+
+auto Scheduler::on_job_start(JobStartCallback callback) -> void
+{
+    impl_->on_start = std::move(callback);
+}
+
+auto Scheduler::on_job_complete(JobCompleteCallback callback) -> void
+{
+    impl_->on_complete = std::move(callback);
+}
+
+auto Scheduler::on_progress(ProgressCallback callback) -> void
+{
+    impl_->on_progress = std::move(callback);
+}
+
+auto Scheduler::cancel() -> void
+{
+    impl_->cancelled.store(true);
+}
+
+auto Scheduler::is_cancelled() const -> bool
+{
+    return impl_->cancelled.load();
+}
+
+auto Scheduler::stats() const -> BuildStats
+{
+    return impl_->stats;
 }
 
 auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-    cancelled_.store(false);
-    stats_ = BuildStats {};
+    impl_->cancelled.store(false);
+    impl_->stats = BuildStats {};
 
     // Build job list in topological order
     auto jobs_result = Result<std::vector<BuildJob>> { build_job_list(graph) };
@@ -150,27 +197,27 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     }
 
     auto& jobs = *jobs_result;
-    stats_.total_jobs = jobs.size();
+    impl_->stats.total_jobs = jobs.size();
 
     if (jobs.empty()) {
         auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-        stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time);
-        return stats_;
+        return impl_->stats;
     }
 
     // Execute jobs
     auto exec_result = Result<void> { execute_parallel(jobs, graph) };
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-    stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+    impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time);
 
-    if (!exec_result && !options_.keep_going) {
+    if (!exec_result && !impl_->options.keep_going) {
         return pup::unexpected<Error>(exec_result.error());
     }
 
-    return stats_;
+    return impl_->stats;
 }
 
 auto Scheduler::build_incremental(
@@ -233,19 +280,19 @@ auto Scheduler::build_incremental(
     }
 
     auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected) };
-    stats_.total_jobs = jobs.size();
-    stats_.skipped_jobs = all_jobs->size() - jobs.size();
+    impl_->stats.total_jobs = jobs.size();
+    impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 
     if (jobs.empty()) {
-        return stats_;
+        return impl_->stats;
     }
 
     auto exec_result = Result<void> { execute_parallel(jobs, graph) };
-    if (!exec_result && !options_.keep_going) {
+    if (!exec_result && !impl_->options.keep_going) {
         return pup::unexpected<Error>(exec_result.error());
     }
 
-    return stats_;
+    return impl_->stats;
 }
 
 auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>
@@ -253,42 +300,42 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
     // Build immutable env cache before spawning workers (getenv is not thread-safe)
     auto const env_cache = build_env_cache(jobs);
 
-    if (options_.jobs == 1 || jobs.size() == 1) {
+    if (impl_->options.jobs == 1 || jobs.size() == 1) {
         // Sequential execution
         auto runner = CommandRunner {};
-        if (!options_.source_root.empty()) {
-            runner.set_working_dir(options_.source_root);
+        if (!impl_->options.source_root.empty()) {
+            runner.set_working_dir(impl_->options.source_root);
         }
-        if (options_.timeout) {
-            runner.set_timeout(*options_.timeout);
+        if (impl_->options.timeout) {
+            runner.set_timeout(*impl_->options.timeout);
         }
 
         for (auto const& job : jobs) {
-            if (cancelled_.load()) {
+            if (impl_->cancelled.load()) {
                 break;
             }
 
-            if (on_start_) {
-                on_start_(job);
+            if (impl_->on_start) {
+                impl_->on_start(job);
             }
 
             auto result = JobResult { execute_job(job, runner, env_cache) };
 
-            if (on_complete_) {
-                on_complete_(job, result);
+            if (impl_->on_complete) {
+                impl_->on_complete(job, result);
             }
 
             if (result.success) {
-                ++stats_.completed_jobs;
+                ++impl_->stats.completed_jobs;
             } else {
-                ++stats_.failed_jobs;
-                if (!options_.keep_going) {
+                ++impl_->stats.failed_jobs;
+                if (!impl_->options.keep_going) {
                     return make_error<void>(ErrorCode::CommandFailed, "Command failed");
                 }
             }
 
-            if (on_progress_) {
-                on_progress_(stats_.completed_jobs + stats_.failed_jobs, stats_.total_jobs);
+            if (impl_->on_progress) {
+                impl_->on_progress(impl_->stats.completed_jobs + impl_->stats.failed_jobs, impl_->stats.total_jobs);
             }
         }
 
@@ -315,11 +362,11 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
 
     auto worker = [&]() {
         auto runner = CommandRunner {};
-        if (!options_.source_root.empty()) {
-            runner.set_working_dir(options_.source_root);
+        if (!impl_->options.source_root.empty()) {
+            runner.set_working_dir(impl_->options.source_root);
         }
-        if (options_.timeout) {
-            runner.set_timeout(*options_.timeout);
+        if (impl_->options.timeout) {
+            runner.set_timeout(*impl_->options.timeout);
         }
 
         while (true) {
@@ -328,10 +375,10 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
                 auto lock = std::unique_lock { mutex };
                 cv.wait(lock, [&] {
                     // Wake up when: queue has ready jobs, OR all done, OR cancelled, OR failed
-                    return !ready_queue.empty() || all_done.load() || cancelled_.load() || (failed.load() && !options_.keep_going);
+                    return !ready_queue.empty() || all_done.load() || impl_->cancelled.load() || (failed.load() && !impl_->options.keep_going);
                 });
 
-                if (cancelled_.load() || (failed.load() && !options_.keep_going)) {
+                if (impl_->cancelled.load() || (failed.load() && !impl_->options.keep_going)) {
                     return;
                 }
 
@@ -348,9 +395,9 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
 
             auto const& job = jobs[job_idx];
 
-            if (on_start_) {
+            if (impl_->on_start) {
                 auto lock = std::lock_guard { mutex };
-                on_start_(job);
+                impl_->on_start(job);
             }
 
             auto result = JobResult { execute_job(job, runner, env_cache) };
@@ -358,22 +405,22 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
             {
                 auto lock = std::lock_guard { mutex };
 
-                if (on_complete_) {
-                    on_complete_(job, result);
+                if (impl_->on_complete) {
+                    impl_->on_complete(job, result);
                 }
 
                 if (result.success) {
-                    ++stats_.completed_jobs;
+                    ++impl_->stats.completed_jobs;
                 } else {
-                    ++stats_.failed_jobs;
+                    ++impl_->stats.failed_jobs;
                     failed.store(true);
                 }
 
                 ++completed_count;
-                stats_.build_time += result.duration;
+                impl_->stats.build_time += result.duration;
 
-                if (on_progress_) {
-                    on_progress_(completed_count, stats_.total_jobs);
+                if (impl_->on_progress) {
+                    impl_->on_progress(completed_count, impl_->stats.total_jobs);
                 }
 
                 // Queue dependents whose dependencies are now satisfied
@@ -396,7 +443,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
 
     // Start worker threads
     auto threads = std::vector<std::thread> {};
-    auto num_workers = std::min(options_.jobs, jobs.size());
+    auto num_workers = std::min(impl_->options.jobs, jobs.size());
     threads.reserve(num_workers);
 
     for (auto i = std::size_t { 0 }; i < num_workers; ++i) {
@@ -410,7 +457,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
     {
         auto lock = std::unique_lock { mutex };
         cv.wait(lock, [&] {
-            return all_done.load() || cancelled_.load() || (failed.load() && !options_.keep_going);
+            return all_done.load() || impl_->cancelled.load() || (failed.load() && !impl_->options.keep_going);
         });
     }
 
@@ -425,7 +472,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
         }
     }
 
-    if (failed.load() && !options_.keep_going) {
+    if (failed.load() && !impl_->options.keep_going) {
         return make_error<void>(ErrorCode::CommandFailed, "Build failed");
     }
 
@@ -443,7 +490,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
         .duration = {},
     };
 
-    if (options_.dry_run) {
+    if (impl_->options.dry_run) {
         result.success = true;
         return result;
     }
@@ -454,7 +501,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
         if (!output_path.is_absolute()) {
-            output_path = options_.source_root / output;
+            output_path = impl_->options.source_root / output;
         }
         auto parent = output_path.parent_path();
         if (!parent.empty()) {
@@ -520,7 +567,7 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
             }
 
             auto depfile_path = std::filesystem::path {
-                options_.source_root / output_path.parent_path() / (output_path.stem().string() + ".d")
+                impl_->options.source_root / output_path.parent_path() / (output_path.stem().string() + ".d")
             };
 
             if (!std::filesystem::exists(depfile_path)) {
@@ -561,7 +608,7 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // prefixed with variant_dir by the builder.
-        auto working_dir = std::filesystem::path { options_.source_root };
+        auto working_dir = std::filesystem::path { impl_->options.source_root };
         if (!node->source_dir.empty()) {
             working_dir /= node->source_dir;
         }
