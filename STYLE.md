@@ -1,7 +1,7 @@
 # Modern C++ Style Guide
 
-**Version:** 1.3.0
-**Updated:** 2025-12-10
+**Version:** 1.4.0
+**Updated:** 2025-12-14
 **C++ Standard:** C++20/23
 
 A concise style guide for modern C++ projects.
@@ -10,6 +10,7 @@ A concise style guide for modern C++ projects.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4.0 | 2025-12-14 | Remove explicit type wrapper requirement for function calls |
 | 1.3.0 | 2025-12-10 | Always use braces for if/for/while statements |
 | 1.2.0 | 2025-12-10 | Call site arguments follow same formatting as declarations |
 | 1.1.0 | 2025-12-10 | Long parameter lists: one parameter per line |
@@ -17,7 +18,7 @@ A concise style guide for modern C++ projects.
 
 ## Core Principles
 
-1. **Explicit over implicit** - Types visible at declaration
+1. **Clarity over brevity** - Readable code, clear intent
 2. **Const by default** - Right-side const, immutable when possible
 3. **Early returns** - Reduce nesting, handle errors immediately
 4. **Self-documenting code** - Clear names over comments
@@ -32,11 +33,11 @@ auto x = 42;
 auto pi = 3.14;
 auto name = "hello";
 
-// Function calls - wrap in explicit type
-auto result = Result<void>{compute()};
-auto count = std::size_t{vec.size()};
+// Function calls - auto deduces return type
+auto result = compute();
+auto count = vec.size();
 
-// Factory functions - already explicit
+// Factory functions
 auto ptr = std::make_unique<Foo>();
 auto opt = std::make_optional(42);
 
@@ -256,7 +257,7 @@ private:
 
 ## Checklist
 
-- [ ] `auto` with explicit type initialization
+- [ ] Use `auto` for variable declarations
 - [ ] Trailing return types
 - [ ] Right-side `const`
 - [ ] `[[nodiscard]]` on important returns
