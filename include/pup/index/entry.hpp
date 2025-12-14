@@ -122,6 +122,18 @@ public:
     /// Compute paths from parent_id/name chain (call after loading all files)
     auto compute_paths() -> void;
 
+    /// Build parent->children index for Merkle tree traversal
+    auto build_children_index() -> void;
+
+    /// Get children of a directory (O(1) after build_children_index)
+    [[nodiscard]] auto get_children(NodeId parent_id) const -> std::vector<NodeId>;
+
+    /// Compute Merkle hashes for all directories (bottom-up)
+    auto compute_merkle_hashes() -> void;
+
+    /// Check if Merkle hashes have been computed (directories have non-zero hashes)
+    [[nodiscard]] auto has_merkle_hashes() const -> bool;
+
     /// Clear all entries
     auto clear() -> void;
 
@@ -144,6 +156,9 @@ private:
     // Edge indices for O(1) lookup (indices into edges_ vector)
     std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index_ = {};
     std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index_ = {};
+
+    // Children index for Merkle tree traversal (parent_id -> child ids)
+    std::unordered_map<NodeId, std::vector<NodeId>> children_index_ = {};
 };
 
 } // namespace pup::index

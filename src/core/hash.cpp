@@ -7,6 +7,7 @@ extern "C" {
 #include "sha256/sha256.h"
 }
 
+#include <algorithm>
 #include <cstring>
 #include <fstream>
 
@@ -157,6 +158,48 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>
 auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool
 {
     return std::memcmp(a.data(), b.data(), a.size()) == 0;
+}
+
+auto compute_merkle_hash(
+    std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children)
+    -> Hash256
+{
+    // Sort children by name for deterministic ordering
+    auto sorted = children;
+    std::sort(sorted.begin(), sorted.end(),
+        [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
+
+    // Compute hash from serialized children entries
+    // Format: [name_length: 4 bytes BE][name: UTF-8][type: 1 byte][hash: 32 bytes]
+    auto hasher = Sha256 {};
+
+    for (auto const& [name, type, hash_ptr] : sorted) {
+        // Name length (4 bytes, big-endian)
+        auto const name_len = static_cast<std::uint32_t>(name.size());
+        auto len_bytes = std::array<std::byte, 4> {
+            static_cast<std::byte>((name_len >> 24) & 0xFF),
+            static_cast<std::byte>((name_len >> 16) & 0xFF),
+            static_cast<std::byte>((name_len >> 8) & 0xFF),
+            static_cast<std::byte>(name_len & 0xFF),
+        };
+        hasher.update(std::span { len_bytes });
+
+        // Name (UTF-8)
+        hasher.update(name);
+
+        // Type (1 byte)
+        auto type_byte = std::array<std::byte, 1> { static_cast<std::byte>(type) };
+        hasher.update(std::span { type_byte });
+
+        // Hash (32 bytes) - use zero hash if null
+        if (hash_ptr) {
+            hasher.update(std::span { hash_ptr->data(), hash_ptr->size() });
+        } else {
+            hasher.update(std::span { ZERO_HASH.data(), ZERO_HASH.size() });
+        }
+    }
+
+    return hasher.finalize();
 }
 
 } // namespace pup
