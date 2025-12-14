@@ -375,10 +375,8 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
             build_dir = *root / build_dir;
         }
         is_in_tree = (build_dir == *root);
-    } else if (std::filesystem::exists(*root / "tup.config")) {
-        build_dir = *root;
-        is_in_tree = true;
-    } else if (std::filesystem::exists(*root / ".pup")) {
+    } else if (std::filesystem::exists(*root / "tup.config")
+               || std::filesystem::exists(*root / ".pup")) {
         build_dir = *root;
         is_in_tree = true;
     } else if (auto detected = find_build_subdir(*root)) {
