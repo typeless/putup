@@ -13,27 +13,27 @@ A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup
 
 ## Building & Testing
 
-A Makefile wraps tup for common workflows:
+Pup builds itself (self-hosting). Use the Makefile for common workflows:
 
 ```bash
-make              # Build (quiet mode)
+make              # Build with pup (self-hosting)
 make V=1          # Build with verbose output
+make TUP=1        # Build with tup (compatibility check)
 make test         # Run unit tests + E2E tests
 make tidy         # Run clang-tidy
 make format       # Format with clang-format
 make check        # Full CI: format-check + tidy + test
-make clean        # Clean and reinitialize tup
+make clean        # Clean build artifacts
 ```
 
-Or use tup directly:
+Or use pup directly:
 
 ```bash
-tup init          # First time only
-tup               # Build
-./build/pup       # Run
+pup               # Build (uses existing ./build/pup or pup in PATH)
+./build/pup       # Run the built binary
 ```
 
-Build artifacts go to `build/` using tup's variant system.
+Build artifacts go to `build/`.
 
 ## Commands
 
