@@ -19,8 +19,6 @@ namespace pup::cli {
 
 namespace {
 
-auto const PUP_DIR = ".pup";
-
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
     std::set<std::filesystem::path> available;
