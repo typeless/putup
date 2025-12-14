@@ -410,6 +410,24 @@ PUP_IMPLICIT_DEPS=1 pup build
 2. If mtime same, compare file size - if different, rebuild
 3. If size same, compute SHA-256 hash - if different, rebuild
 
+**Build flow:**
+1. **Parse**: Re-parse all Tupfiles to build fresh in-memory DAG
+2. **Load**: Load previous build state from `.pup/index` (if exists)
+3. **Diff**: Compare new graph against old index to find:
+   - New commands (exist in graph, not in index) → must run
+   - Removed commands (exist in index, not in graph) → delete stale outputs
+   - Changed commands (different command string) → rebuild
+   - Changed inputs (via sticky/implicit edges) → rebuild dependents
+4. **Execute**: Run affected commands in topological order
+5. **Write**: Save complete new index as snapshot of current state
+
+**Key insight**: The index is a *checkpoint*, not a live database. Each build writes a complete new index file - there's no incremental patching. This is efficient because:
+- Serialization is fast (binary format, ~96 bytes/file + 64 bytes/command)
+- Only changed parts of the *build* execute
+- Index write happens once at the end
+
+This implements Mike Shal's "Beta build system" from the tup paper - persistent DAG storage enables O(log² n) incremental builds.
+
 ### .d File Format
 ```makefile
 foo.o: foo.c \
