@@ -18,7 +18,8 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   1 - Initial format with full path strings
 ///   2 - Added name field for tup-style (parent_dir, name) identification
 ///   3 - Removed path field, only name stored (path reconstructed at load time)
-inline constexpr auto INDEX_VERSION = std::uint32_t { 3 };
+///   4 - Directory content_hash stores Merkle hash for O(log n) change detection
+inline constexpr auto INDEX_VERSION = std::uint32_t { 4 };
 
 /// Index file header (64 bytes, packed)
 struct alignas(8) RawHeader {

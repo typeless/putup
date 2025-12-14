@@ -480,6 +480,9 @@ auto build_index(
         }
     }
 
+    // Compute Merkle hashes for directories (enables O(log n) change detection)
+    index.compute_merkle_hashes();
+
     return index;
 }
 
@@ -533,6 +536,12 @@ auto cmd_build(Options const& opts) -> int
             auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
             if (index_result) {
                 old_index = std::move(*index_result);
+                old_index->build_children_index();
+
+                if (opts.verbose && old_index->has_merkle_hashes()) {
+                    fmt::print("Index has Merkle hashes (v4 format)\n");
+                }
+
                 changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, opts.verbose);
                 changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
 
