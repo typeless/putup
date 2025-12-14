@@ -82,10 +82,10 @@ auto print_usage() -> void
 {
     fmt::print("pup - Tup build system reimplementation\n\n"
                "Usage: pup [OPTIONS] [COMMAND]\n\n"
+               "Running 'pup' with no command executes the build.\n\n"
                "Commands:\n"
                "  init              Initialize .pup directory\n"
                "  parse             Parse and validate Tupfiles\n"
-               "  build             Execute build (default)\n"
                "  export <format>   Export build info:\n"
                "                      script  - Shell script\n"
                "                      compdb  - compile_commands.json\n"

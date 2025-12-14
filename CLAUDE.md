@@ -41,11 +41,12 @@ Build artifacts go to `build/` using tup's variant system.
 pup [OPTIONS] [COMMAND]
 ```
 
+Running `pup` with no command executes the build.
+
 | Command | Description |
 |---------|-------------|
 | `init` | Initialize `.pup` directory in current project |
 | `parse` | Parse and validate Tupfiles without building |
-| `build` | Execute build (default if no command specified) |
 | `export <format>` | Export build info (see below) |
 | `clean` | Remove generated output files (using index) |
 | `distclean` | Full reset: remove outputs, `.pup`, and `tup.config` |
@@ -75,10 +76,10 @@ pup [OPTIONS] [COMMAND]
 
 ```bash
 # Basic build
-pup build
+pup
 
 # Variant build (out-of-tree)
-pup build -B build-release
+pup -B build-release
 
 # Clean generated outputs (keeps .pup and tup.config)
 pup clean -B build-release
