@@ -7,7 +7,8 @@
 #   make install      # Install to ~/bin (or PREFIX=/usr/local)
 #   make tidy         # Run clang-tidy on all sources
 #   make format       # Format all sources with clang-format
-#   make clean        # Clean build artifacts
+#   make clean        # Clean build outputs (keep .pup, tup.config)
+#   make distclean    # Full reset: remove outputs + .pup + .tup
 
 # Installation prefix (default: ~, so pup installs to ~/bin)
 PREFIX ?= $(HOME)
@@ -59,7 +60,7 @@ ALL_SOURCES := $(CXX_SOURCES) $(HPP_HEADERS)
 # Compilation database for clang-tidy
 COMPDB := compile_commands.json
 
-.PHONY: all build test install tidy tidy-fix format check clean compdb
+.PHONY: all build test install tidy tidy-fix format check clean distclean compdb
 
 all: build
 
@@ -116,16 +117,20 @@ check: format-check tidy test
 
 clean:
 ifeq ($(PUP_LOCAL),yes)
-	./$(BUILD_DIR)/pup clean
+	./$(BUILD_DIR)/pup clean -B $(BUILD_DIR)
 else ifneq ($(PUP_PATH),)
-	pup clean
+	pup clean -B $(BUILD_DIR)
+else ifdef TUP
+	@echo "Note: tup doesn't have a clean command, use 'make distclean'"
 else
-	find $(BUILD_DIR) -mindepth 1 ! -name 'tup.config' -exec rm -rf {} + 2>/dev/null || true
-	rm -f *.o test/unit/*.o pup test/unit/pup_test 2>/dev/null || true
+	rm -rf $(BUILD_DIR)/*.o $(BUILD_DIR)/pup $(BUILD_DIR)/test
 endif
-	rm -rf .tup .pup
-ifneq ($(PUP_PATH),)
-	pup init
+
+distclean:
+ifeq ($(PUP_LOCAL),yes)
+	./$(BUILD_DIR)/pup distclean -B $(BUILD_DIR)
+else ifneq ($(PUP_PATH),)
+	pup distclean -B $(BUILD_DIR)
 else
-	tup init
+	rm -rf $(BUILD_DIR) .pup .tup
 endif
