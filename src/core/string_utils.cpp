@@ -21,25 +21,27 @@ auto tokenize_shell_command(std::string_view cmd) -> std::vector<std::string>
         }
 
         if (in_single_quote) {
-            if (c == '\'')
+            if (c == '\'') {
                 in_single_quote = false;
-            else
+            } else {
                 current += c;
+            }
         } else if (in_double_quote) {
-            if (c == '\\')
+            if (c == '\\') {
                 escaped = true;
-            else if (c == '"')
+            } else if (c == '"') {
                 in_double_quote = false;
-            else
+            } else {
                 current += c;
+            }
         } else {
-            if (c == '\\')
+            if (c == '\\') {
                 escaped = true;
-            else if (c == '\'')
+            } else if (c == '\'') {
                 in_single_quote = true;
-            else if (c == '"')
+            } else if (c == '"') {
                 in_double_quote = true;
-            else if (c == ' ' || c == '\t') {
+            } else if (c == ' ' || c == '\t') {
                 if (!current.empty()) {
                     args.push_back(std::move(current));
                     current.clear();
@@ -49,8 +51,9 @@ auto tokenize_shell_command(std::string_view cmd) -> std::vector<std::string>
             }
         }
     }
-    if (!current.empty())
+    if (!current.empty()) {
         args.push_back(std::move(current));
+    }
     return args;
 }
 

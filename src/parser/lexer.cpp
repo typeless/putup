@@ -16,15 +16,17 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
 
 auto Lexer::next() -> Token
 {
-    if (peeked_)
+    if (peeked_) {
         return std::exchange(peeked_, std::nullopt).value();
+    }
     return scan_token();
 }
 
 auto Lexer::peek() -> Token
 {
-    if (!peeked_)
+    if (!peeked_) {
         peeked_ = scan_token();
+    }
     return *peeked_;
 }
 
@@ -45,17 +47,18 @@ auto Lexer::location() const -> SourceLocation
 
 auto Lexer::skip_to_eol() -> void
 {
-    while (!at_end() && peek_char() != '\n')
+    while (!at_end() && peek_char() != '\n') {
         advance();
+    }
 }
 
 auto Lexer::skip_whitespace() -> void
 {
     while (!at_end()) {
         auto const c = peek_char();
-        if (c == ' ' || c == '\t')
+        if (c == ' ' || c == '\t') {
             advance();
-        else if (c == '\\' && peek_char(1) == '\n') {
+        } else if (c == '\\' && peek_char(1) == '\n') {
             // Line continuation
             advance(); // backslash
             advance(); // newline
@@ -84,8 +87,9 @@ auto Lexer::match(char expected) -> bool
 auto Lexer::match(std::string_view expected) -> bool
 {
     if (source_.substr(pos_).starts_with(expected)) {
-        for (std::size_t i = 0; i < expected.size(); ++i)
+        for (std::size_t i = 0; i < expected.size(); ++i) {
             advance();
+        }
         return true;
     }
     return false;
@@ -93,13 +97,15 @@ auto Lexer::match(std::string_view expected) -> bool
 
 auto Lexer::advance() -> char
 {
-    if (at_end())
+    if (at_end()) {
         return '\0';
+    }
     auto const c = source_[pos_++];
-    if (c == '\n')
+    if (c == '\n') {
         advance_line();
-    else
+    } else {
         ++column_;
+    }
     return c;
 }
 
@@ -121,18 +127,21 @@ auto Lexer::putback() -> void
 auto Lexer::scan_token() -> Token
 {
     // Skip whitespace (but not newlines) unless in command context
-    if (context_ != Context::Command)
+    if (context_ != Context::Command) {
         skip_whitespace();
+    }
 
-    if (at_end())
+    if (at_end()) {
         return make_token(TokenType::Eof, pos_);
+    }
 
     auto const start = pos_;
     auto const c = advance();
 
     // Newline
-    if (c == '\n')
+    if (c == '\n') {
         return make_token(TokenType::Newline, start);
+    }
 
     // Comment
     if (c == '#') {
@@ -157,8 +166,9 @@ auto Lexer::scan_token() -> Token
         // Check if this is .gitignore
         if (source_.substr(pos_ - 1).starts_with(".gitignore")) {
             // Consume the rest
-            for (auto i = std::size_t { 1 }; i < 10; ++i)
+            for (auto i = std::size_t { 1 }; i < 10; ++i) {
                 advance();
+            }
             return make_token(TokenType::KwGitignore, start);
         }
         // Otherwise treat as start of path (put back the '.')
@@ -204,13 +214,15 @@ auto Lexer::scan_token() -> Token
     if (c == '%') {
         // Check if followed by identifier character (makes it a pattern flag)
         if (!at_end() && is_identifier_char(peek_char())) {
-            while (!at_end() && is_identifier_char(peek_char()))
+            while (!at_end() && is_identifier_char(peek_char())) {
                 advance();
+            }
             // Also include trailing extension like %B.o
             if (peek_char() == '.') {
                 advance();
-                while (!at_end() && is_identifier_char(peek_char()))
+                while (!at_end() && is_identifier_char(peek_char())) {
                     advance();
+                }
             }
             return make_token(TokenType::Text, start);
         }
@@ -219,31 +231,36 @@ auto Lexer::scan_token() -> Token
 
     // Multi-character tokens
     if (c == ':') {
-        if (match('='))
+        if (match('=')) {
             return make_token(TokenType::ColonEquals, start);
+        }
         return make_token(TokenType::Colon, start);
     }
 
     if (c == '+') {
-        if (match('='))
+        if (match('=')) {
             return make_token(TokenType::PlusEquals, start);
+        }
         // + in text context is part of identifier/path
         putback();
         return scan_text();
     }
 
-    if (c == '=')
+    if (c == '=') {
         return make_token(TokenType::Equals, start);
+    }
 
     if (c == '|') {
-        if (match('>'))
+        if (match('>')) {
             return make_token(TokenType::PipeArrow, start);
+        }
         return make_token(TokenType::Pipe, start);
     }
 
     // Quoted strings
-    if (c == '"' || c == '\'')
+    if (c == '"' || c == '\'') {
         return scan_string(c);
+    }
 
     // Identifier, keyword, or text
     if (is_identifier_start(c)) {
@@ -272,8 +289,9 @@ auto Lexer::scan_identifier_or_keyword() -> Token
     auto const start = pos_;
 
     // First, consume identifier characters
-    while (!at_end() && is_identifier_char(peek_char()))
+    while (!at_end() && is_identifier_char(peek_char())) {
         advance();
+    }
 
     // Check if this continues as a path (contains /, ., *, ?)
     // If so, it's text not an identifier
@@ -297,8 +315,9 @@ auto Lexer::scan_identifier_or_keyword() -> Token
     auto const text = std::string_view { source_.substr(start, pos_ - start) };
 
     // Check for keywords
-    if (auto kw = std::optional<TokenType> { keyword_type(text) })
+    if (auto kw = std::optional<TokenType> { keyword_type(text) }) {
         return make_token(*kw, start);
+    }
 
     return make_token(TokenType::Identifier, start);
 }
@@ -316,8 +335,9 @@ auto Lexer::scan_string(char quote) -> Token
         }
     }
 
-    if (peek_char() == quote)
+    if (peek_char() == quote) {
         advance(); // Consume closing quote
+    }
 
     return make_token(TokenType::String, start);
 }
@@ -330,8 +350,9 @@ auto Lexer::scan_text() -> Token
         auto const c = peek_char();
 
         // Stop at delimiters or variable references
-        if (is_delimiter(c) || c == '$' || c == '@' || c == '&')
+        if (is_delimiter(c) || c == '$' || c == '@' || c == '&') {
             break;
+        }
 
         // Handle line continuation
         if (c == '\\' && peek_char(1) == '\n') {
@@ -356,8 +377,9 @@ auto Lexer::scan_command_text() -> Token
     while (!at_end()) {
         auto const c = peek_char();
 
-        if (c == '\n')
+        if (c == '\n') {
             break;
+        }
 
         // Check for |>
         if (c == '|' && peek_char(1) == '>') {
@@ -377,8 +399,9 @@ auto Lexer::scan_command_text() -> Token
 
     // Trim trailing whitespace from command
     auto end = pos_;
-    while (end > start && (source_[end - 1] == ' ' || source_[end - 1] == '\t'))
+    while (end > start && (source_[end - 1] == ' ' || source_[end - 1] == '\t')) {
         --end;
+    }
 
     auto tok = Token { make_token(TokenType::Text, start) };
     tok.text = source_.substr(start, end - start);
@@ -429,36 +452,51 @@ auto Lexer::is_delimiter(char c) -> bool
 
 auto Lexer::keyword_type(std::string_view text) -> std::optional<TokenType>
 {
-    if (text == "foreach")
+    if (text == "foreach") {
         return TokenType::KwForeach;
-    if (text == "include")
+    }
+    if (text == "include") {
         return TokenType::KwInclude;
-    if (text == "include_rules")
+    }
+    if (text == "include_rules") {
         return TokenType::KwIncludeRules;
-    if (text == "ifdef")
+    }
+    if (text == "ifdef") {
         return TokenType::KwIfdef;
-    if (text == "ifndef")
+    }
+    if (text == "ifndef") {
         return TokenType::KwIfndef;
-    if (text == "ifeq")
+    }
+    if (text == "ifeq") {
         return TokenType::KwIfeq;
-    if (text == "ifneq")
+    }
+    if (text == "ifneq") {
         return TokenType::KwIfneq;
-    if (text == "else")
+    }
+    if (text == "else") {
         return TokenType::KwElse;
-    if (text == "endif")
+    }
+    if (text == "endif") {
         return TokenType::KwEndif;
-    if (text == "export")
+    }
+    if (text == "export") {
         return TokenType::KwExport;
-    if (text == "import")
+    }
+    if (text == "import") {
         return TokenType::KwImport;
-    if (text == "preload")
+    }
+    if (text == "preload") {
         return TokenType::KwPreload;
-    if (text == "error")
+    }
+    if (text == "error") {
         return TokenType::KwError;
-    if (text == "run")
+    }
+    if (text == "run") {
         return TokenType::KwRun;
-    if (text == ".gitignore")
+    }
+    if (text == ".gitignore") {
         return TokenType::KwGitignore;
+    }
     return std::nullopt;
 }
 

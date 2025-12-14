@@ -66,8 +66,9 @@ struct Expression : AstNode {
 
     [[nodiscard]] auto as_literal() const -> std::string_view
     {
-        if (is_literal())
+        if (is_literal()) {
             return std::get<Literal>(parts[0]).value;
+        }
         return {};
     }
 

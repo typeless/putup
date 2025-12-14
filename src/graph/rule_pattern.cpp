@@ -29,13 +29,15 @@ auto has_dep_flags(std::string const& cmd) -> bool
         // Check the flag type
         auto next_pos = pos + 2;
         // Bare -M at end of string
-        if (next_pos >= cmd.size())
+        if (next_pos >= cmd.size()) {
             return true;
+        }
         auto c = cmd[next_pos];
         // -MD, -MM, -MMD, -MF, -MG, -MP, -MT, -MQ, -MV, or bare -M followed by whitespace
         if (c == 'D' || c == 'M' || c == 'F' || c == 'G' || c == 'P' || c == 'T' || c == 'Q' || c == 'V'
-            || std::isspace(static_cast<unsigned char>(c)) != 0)
+            || std::isspace(static_cast<unsigned char>(c)) != 0) {
             return true;
+        }
         ++pos;
     }
     return false;
@@ -60,8 +62,9 @@ auto needs_shell_quoting(std::string const& s) -> bool
         if (c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
             || c == '!' || c == '*' || c == '?' || c == '[' || c == ']' || c == '(' || c == ')'
             || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '&' || c == ';'
-            || c == '#' || c == '~')
+            || c == '#' || c == '~') {
             return true;
+        }
     }
     return false;
 }
@@ -69,16 +72,18 @@ auto needs_shell_quoting(std::string const& s) -> bool
 /// Quote a string for shell using single quotes (handles embedded single quotes)
 auto shell_quote(std::string const& s) -> std::string
 {
-    if (!needs_shell_quoting(s))
+    if (!needs_shell_quoting(s)) {
         return s;
+    }
 
     // Use single quotes, escaping embedded single quotes as: '\''
     auto result = std::string { "'" };
     for (auto c : s) {
-        if (c == '\'')
+        if (c == '\'') {
             result += "'\\''";
-        else
+        } else {
             result += c;
+        }
     }
     result += '\'';
     return result;
@@ -88,36 +93,44 @@ auto shell_quote(std::string const& s) -> std::string
 auto is_dep_relevant_flag(std::string const& flag) -> bool
 {
     // Skip flags with shell command substitution (backticks or $())
-    if (has_shell_special(flag))
+    if (has_shell_special(flag)) {
         return false;
+    }
 
     // Include paths
-    if (flag.starts_with("-I") || flag.starts_with("-isystem") || flag.starts_with("-iquote"))
+    if (flag.starts_with("-I") || flag.starts_with("-isystem") || flag.starts_with("-iquote")) {
         return true;
+    }
     // Preprocessor defines
-    if (flag.starts_with("-D") || flag.starts_with("-U"))
+    if (flag.starts_with("-D") || flag.starts_with("-U")) {
         return true;
+    }
     // Language standard
-    if (flag.starts_with("-std="))
+    if (flag.starts_with("-std=")) {
         return true;
+    }
     // Force include
-    if (flag == "-include")
+    if (flag == "-include") {
         return true;
+    }
     // Sysroot
-    if (flag.starts_with("--sysroot") || flag.starts_with("-isysroot"))
+    if (flag.starts_with("--sysroot") || flag.starts_with("-isysroot")) {
         return true;
+    }
     return false;
 }
 
 /// Check if a word looks like a source file (not a flag)
 auto is_source_file(std::string const& word) -> bool
 {
-    if (word.empty() || word[0] == '-')
+    if (word.empty() || word[0] == '-') {
         return false;
+    }
     // Check for common source file extensions
     auto dot_pos = word.rfind('.');
-    if (dot_pos == std::string::npos)
+    if (dot_pos == std::string::npos) {
         return false;
+    }
     auto ext = word.substr(dot_pos);
     return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".C" || ext == ".c++"
         || ext == ".S" || ext == ".s" || ext == ".asm";
@@ -130,25 +143,29 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
     // Command format: "gcc -c foo.c -o foo.o" or "ccache gcc -c foo.c -o foo.o"
     auto words = core::tokenize_shell_command(cmd.command);
 
-    if (words.empty())
+    if (words.empty()) {
         return {};
+    }
 
     // Find compiler (possibly after a wrapper like ccache)
     auto compiler_idx = std::size_t { 0 };
     auto first_basename = words[0];
-    if (auto slash_pos = first_basename.rfind('/'); slash_pos != std::string::npos)
+    if (auto slash_pos = first_basename.rfind('/'); slash_pos != std::string::npos) {
         first_basename = first_basename.substr(slash_pos + 1);
+    }
 
-    if (is_compiler_wrapper(first_basename) && words.size() > 1)
+    if (is_compiler_wrapper(first_basename) && words.size() > 1) {
         compiler_idx = 1;
+    }
 
     // Build dep command: wrapper? compiler -M flags inputs...
     auto dep_cmd = std::ostringstream {};
 
     // Add wrapper and compiler
     for (auto i = std::size_t { 0 }; i <= compiler_idx; ++i) {
-        if (i > 0)
+        if (i > 0) {
             dep_cmd << ' ';
+        }
         dep_cmd << words[i];
     }
 
@@ -169,8 +186,9 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
         auto const& w = words[i];
 
         // Skip -c flag
-        if (w == "-c")
+        if (w == "-c") {
             continue;
+        }
 
         // Skip -o and its argument
         if (w == "-o") {
@@ -182,19 +200,22 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
         if (is_dep_relevant_flag(w)) {
             dep_cmd << ' ' << shell_quote(w);
             // -include takes a separate argument
-            if (w == "-include")
+            if (w == "-include") {
                 skip_next = true;
+            }
             continue;
         }
 
         // Collect source files (use paths from original command, not cmd.inputs)
-        if (is_source_file(w))
+        if (is_source_file(w)) {
             source_files.push_back(w);
+        }
     }
 
     // Add source files extracted from original command
-    for (auto const& src : source_files)
+    for (auto const& src : source_files) {
         dep_cmd << ' ' << shell_quote(src);
+    }
 
     return dep_cmd.str();
 }
@@ -212,11 +233,13 @@ auto RulePatternRegistry::match_and_generate(CommandInfo const& cmd) const
     auto result = std::vector<GeneratedRule> {};
 
     for (auto const& pattern : patterns_) {
-        if (!std::regex_search(cmd.command, pattern.command_pattern))
+        if (!std::regex_search(cmd.command, pattern.command_pattern)) {
             continue;
+        }
 
-        if (auto rule = pattern.generate(cmd))
+        if (auto rule = pattern.generate(cmd)) {
             result.push_back(std::move(*rule));
+        }
     }
 
     return result;
@@ -228,8 +251,9 @@ auto make_gcc_depfile_pattern() -> RulePattern
         .command_pattern = std::regex { R"((gcc|g\+\+|clang|clang\+\+|cc|c\+\+).*\s-c\s)" },
 
         .generate = [](CommandInfo const& cmd) -> std::optional<GeneratedRule> {
-            if (has_dep_flags(cmd.command))
+            if (has_dep_flags(cmd.command)) {
                 return std::nullopt;
+            }
 
             auto display = cmd.inputs.empty()
                 ? std::string { "DEP" }

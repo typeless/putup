@@ -14,9 +14,11 @@ auto const PUP_BUILD_DIR_ENV = "PUP_BUILD_DIR";
 
 auto get_env(char const* name) -> std::optional<std::filesystem::path>
 {
-    if (auto const* value = std::getenv(name))
-        if (*value != '\0')
+    if (auto const* value = std::getenv(name)) {
+        if (*value != '\0') {
             return std::filesystem::path { value };
+        }
+    }
     return std::nullopt;
 }
 
@@ -35,8 +37,9 @@ auto find_project_root(std::filesystem::path const& start_dir)
         }
 
         auto parent = std::filesystem::path { current.parent_path() };
-        if (parent == current)
+        if (parent == current) {
             return std::nullopt;
+        }
         current = parent;
     }
 }
@@ -46,16 +49,18 @@ auto find_variant_dir(std::filesystem::path const& root)
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path { root / name };
-        if (std::filesystem::exists(dir / "tup.config"))
+        if (std::filesystem::exists(dir / "tup.config")) {
             return std::filesystem::path { name };
+        }
     }
 
     if (std::filesystem::is_directory(root)) {
         for (auto const& entry : std::filesystem::directory_iterator(root)) {
             if (entry.is_directory()) {
                 auto config_path = std::filesystem::path { entry.path() / "tup.config" };
-                if (std::filesystem::exists(config_path))
+                if (std::filesystem::exists(config_path)) {
                     return std::filesystem::relative(entry.path(), root);
+                }
             }
         }
     }
@@ -69,11 +74,13 @@ auto normalize_path(std::filesystem::path const& path) -> std::filesystem::path
 {
     auto ec = std::error_code {};
     auto result = std::filesystem::weakly_canonical(path, ec);
-    if (ec)
+    if (ec) {
         return std::filesystem::absolute(path);
+    }
     // Ensure result is absolute (weakly_canonical may return relative for non-existent paths)
-    if (!result.is_absolute())
+    if (!result.is_absolute()) {
         result = std::filesystem::absolute(result);
+    }
     return result;
 }
 
@@ -85,23 +92,26 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
     // Step 1: Determine source_root
     // Priority: CLI arg > env var > walk up from cwd
     if (opts.source_dir) {
-        if (!std::filesystem::exists(*opts.source_dir))
+        if (!std::filesystem::exists(*opts.source_dir)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
                 "Source directory not found: " + opts.source_dir->string());
+        }
         layout.source_root = normalize_path(*opts.source_dir);
     } else if (auto env_source = get_env(PUP_SOURCE_DIR_ENV)) {
-        if (!std::filesystem::exists(*env_source))
+        if (!std::filesystem::exists(*env_source)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
                 "PUP_SOURCE_DIR not found: " + env_source->string());
+        }
         layout.source_root = normalize_path(*env_source);
     } else {
         auto root = find_project_root(cwd);
-        if (!root)
+        if (!root) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
                 "Not in a pup/tup project (no Tupfile.ini found)");
+        }
         layout.source_root = normalize_path(*root);
     }
 

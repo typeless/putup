@@ -23,27 +23,32 @@ auto remove_indexed_outputs(
     auto result = RemoveResult {};
 
     auto reader_result = pup::index::IndexReader::open(index_path);
-    if (!reader_result)
+    if (!reader_result) {
         return result;
+    }
 
     auto index_result = reader_result->read();
-    if (!index_result)
+    if (!index_result) {
         return result;
+    }
 
     auto const& index = *index_result;
 
     for (auto const& file : index.files()) {
-        if (file.type != pup::NodeType::Generated)
+        if (file.type != pup::NodeType::Generated) {
             continue;
+        }
 
         auto path = std::filesystem::path { file.path };
         for (auto parent = path.parent_path();
              !parent.empty() && parent != parent.parent_path();
-             parent = parent.parent_path())
+             parent = parent.parent_path()) {
             result.output_dirs.insert(parent);
+        }
 
-        if (!std::filesystem::exists(path))
+        if (!std::filesystem::exists(path)) {
             continue;
+        }
 
         if (mode.dry_run) {
             fmt::print("Would remove: {}\n", file.path);
@@ -54,8 +59,9 @@ auto remove_indexed_outputs(
         auto ec = std::error_code {};
         if (std::filesystem::remove(path, ec)) {
             ++result.removed_count;
-            if (mode.verbose)
+            if (mode.verbose) {
                 fmt::print("Removed: {}\n", file.path);
+            }
         } else if (ec) {
             fmt::print(stderr, "Error removing {}: {}\n", file.path, ec.message());
             ++result.error_count;
@@ -92,10 +98,11 @@ auto cmd_clean(Options const& opts) -> int
         auto dirs_removed = remove_empty_directories(
             result.output_dirs, ctx.build_dir, ctx.root, mode);
 
-        if (opts.dry_run)
+        if (opts.dry_run) {
             fmt::print("Would remove {} files, {} directories\n", result.removed_count, dirs_removed);
-        else
+        } else {
             fmt::print("Removed {} files, {} directories\n", result.removed_count, dirs_removed);
+        }
 
         return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     });
@@ -121,8 +128,9 @@ auto cmd_distclean(Options const& opts) -> int
             if (opts.dry_run) {
                 fmt::print("Would remove: {}\n", pup_dir.string());
             } else {
-                if (opts.verbose)
+                if (opts.verbose) {
                     fmt::print("Removing: {}\n", pup_dir.string());
+                }
                 std::filesystem::remove_all(pup_dir);
             }
         }
@@ -132,8 +140,9 @@ auto cmd_distclean(Options const& opts) -> int
             if (opts.dry_run) {
                 fmt::print("Would remove: {}\n", config_path.string());
             } else {
-                if (opts.verbose)
+                if (opts.verbose) {
                     fmt::print("Removing: {}\n", config_path.string());
+                }
                 std::filesystem::remove(config_path);
             }
         }
@@ -141,8 +150,9 @@ auto cmd_distclean(Options const& opts) -> int
         output_dirs.insert(ctx.build_dir);
         remove_empty_directories(output_dirs, ctx.build_dir, ctx.root, mode);
 
-        if (!opts.dry_run)
+        if (!opts.dry_run) {
             fmt::print("Project reset complete\n");
+        }
 
         return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
     });

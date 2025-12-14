@@ -32,8 +32,9 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
     for (auto const& job : jobs) {
         for (auto const& var_name : job.exported_vars) {
             if (!cache.contains(var_name)) {
-                if (auto const* env_val = std::getenv(var_name.c_str()))
+                if (auto const* env_val = std::getenv(var_name.c_str())) {
                     cache.emplace(var_name, env_val);
+                }
             }
         }
     }
@@ -55,15 +56,17 @@ auto build_dependency_map(
 
     // Build map from command NodeId -> job index
     auto cmd_to_job = std::unordered_map<NodeId, std::size_t> {};
-    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i)
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         cmd_to_job[jobs[i].id] = i;
+    }
 
     // Build map from output NodeId -> job index that produces it
     // (output nodes point back to the command that created them via inputs)
     auto output_to_job = std::unordered_map<NodeId, std::size_t> {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        for (auto output_id : graph.get_outputs(jobs[i].id))
+        for (auto output_id : graph.get_outputs(jobs[i].id)) {
             output_to_job[output_id] = i;
+        }
     }
 
     // For each job, find dependencies via input edges
@@ -74,13 +77,15 @@ auto build_dependency_map(
         // Check regular inputs - traverse graph edges
         for (auto input_id : graph.get_inputs(cmd_id)) {
             auto const* input_node = graph.get_node(input_id);
-            if (!input_node)
+            if (!input_node) {
                 continue;
+            }
 
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
             if (input_node->type == NodeType::Command) {
-                if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j)
+                if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j) {
                     dependencies.insert(it->second);
+                }
                 continue;
             }
 
@@ -88,8 +93,9 @@ auto build_dependency_map(
             for (auto producer_id : graph.get_inputs(input_id)) {
                 auto const* producer = graph.get_node(producer_id);
                 if (producer && producer->type == NodeType::Command) {
-                    if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != j)
+                    if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != j) {
                         dependencies.insert(it->second);
+                    }
                 }
             }
         }
@@ -97,22 +103,25 @@ auto build_dependency_map(
         // Check order-only inputs - these may be outputs of other commands or groups
         for (auto oo_id : graph.get_order_only(cmd_id)) {
             // Check if order-only input is a direct output of another job
-            if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j)
+            if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j) {
                 dependencies.insert(it->second);
+            }
 
             // Also check for group producers (groups have commands as inputs)
             for (auto producer_id : graph.get_inputs(oo_id)) {
                 auto const* producer = graph.get_node(producer_id);
                 if (producer && producer->type == NodeType::Command) {
-                    if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j)
+                    if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
                         dependencies.insert(it2->second);
+                    }
                 }
             }
         }
 
         in_degree[j] = dependencies.size();
-        for (auto dep : dependencies)
+        for (auto dep : dependencies) {
             dependents[dep].push_back(j);
+        }
     }
 
     return { std::move(in_degree), std::move(dependents) };
@@ -123,8 +132,9 @@ auto build_dependency_map(
 Scheduler::Scheduler(SchedulerOptions options)
     : options_(std::move(options))
 {
-    if (options_.jobs == 0)
+    if (options_.jobs == 0) {
         options_.jobs = detect_parallelism();
+    }
 }
 
 auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
@@ -135,8 +145,9 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 
     // Build job list in topological order
     auto jobs_result = Result<std::vector<BuildJob>> { build_job_list(graph) };
-    if (!jobs_result)
+    if (!jobs_result) {
         return pup::unexpected<Error>(jobs_result.error());
+    }
 
     auto& jobs = *jobs_result;
     stats_.total_jobs = jobs.size();
@@ -155,8 +166,9 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     stats_.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time);
 
-    if (!exec_result && !options_.keep_going)
+    if (!exec_result && !options_.keep_going) {
         return pup::unexpected<Error>(exec_result.error());
+    }
 
     return stats_;
 }
@@ -171,8 +183,9 @@ auto Scheduler::build_incremental(
     auto path_to_id = std::unordered_map<std::string, NodeId> {};
     for (auto id : graph.all_nodes()) {
         auto path = graph.get_full_path(id);
-        if (!path.empty())
+        if (!path.empty()) {
             path_to_id[path] = id;
+        }
     }
 
     // Find all nodes affected by changes
@@ -187,8 +200,9 @@ auto Scheduler::build_incremental(
             // For generated files that are missing/changed, also mark the producing command
             auto const* node = graph.get_node(id);
             if (node && node->type == NodeType::Generated) {
-                for (auto input_id : graph.get_inputs(id))
+                for (auto input_id : graph.get_inputs(id)) {
                     affected.insert(input_id);
+                }
             }
         }
     }
@@ -200,31 +214,36 @@ auto Scheduler::build_incremental(
         to_process.pop_back();
 
         for (auto dep_id : graph.get_outputs(id)) {
-            if (affected.insert(dep_id).second)
+            if (affected.insert(dep_id).second) {
                 to_process.push_back(dep_id);
+            }
         }
 
         for (auto dep_id : graph.get_order_only_dependents(id)) {
-            if (affected.insert(dep_id).second)
+            if (affected.insert(dep_id).second) {
                 to_process.push_back(dep_id);
+            }
         }
     }
 
     // Build all jobs, then filter
     auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
-    if (!all_jobs)
+    if (!all_jobs) {
         return pup::unexpected<Error>(all_jobs.error());
+    }
 
     auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected) };
     stats_.total_jobs = jobs.size();
     stats_.skipped_jobs = all_jobs->size() - jobs.size();
 
-    if (jobs.empty())
+    if (jobs.empty()) {
         return stats_;
+    }
 
     auto exec_result = Result<void> { execute_parallel(jobs, graph) };
-    if (!exec_result && !options_.keep_going)
+    if (!exec_result && !options_.keep_going) {
         return pup::unexpected<Error>(exec_result.error());
+    }
 
     return stats_;
 }
@@ -237,33 +256,40 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
     if (options_.jobs == 1 || jobs.size() == 1) {
         // Sequential execution
         auto runner = CommandRunner {};
-        if (!options_.source_root.empty())
+        if (!options_.source_root.empty()) {
             runner.set_working_dir(options_.source_root);
-        if (options_.timeout)
+        }
+        if (options_.timeout) {
             runner.set_timeout(*options_.timeout);
+        }
 
         for (auto const& job : jobs) {
-            if (cancelled_.load())
+            if (cancelled_.load()) {
                 break;
+            }
 
-            if (on_start_)
+            if (on_start_) {
                 on_start_(job);
+            }
 
             auto result = JobResult { execute_job(job, runner, env_cache) };
 
-            if (on_complete_)
+            if (on_complete_) {
                 on_complete_(job, result);
+            }
 
             if (result.success) {
                 ++stats_.completed_jobs;
             } else {
                 ++stats_.failed_jobs;
-                if (!options_.keep_going)
+                if (!options_.keep_going) {
                     return make_error<void>(ErrorCode::CommandFailed, "Command failed");
+                }
             }
 
-            if (on_progress_)
+            if (on_progress_) {
                 on_progress_(stats_.completed_jobs + stats_.failed_jobs, stats_.total_jobs);
+            }
         }
 
         return {};
@@ -282,16 +308,19 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
 
     // Initialize ready queue with jobs that have no dependencies
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        if (in_degree[i] == 0)
+        if (in_degree[i] == 0) {
             ready_queue.push(i);
+        }
     }
 
     auto worker = [&]() {
         auto runner = CommandRunner {};
-        if (!options_.source_root.empty())
+        if (!options_.source_root.empty()) {
             runner.set_working_dir(options_.source_root);
-        if (options_.timeout)
+        }
+        if (options_.timeout) {
             runner.set_timeout(*options_.timeout);
+        }
 
         while (true) {
             auto job_idx = std::size_t { 0 };
@@ -302,12 +331,14 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
                     return !ready_queue.empty() || all_done.load() || cancelled_.load() || (failed.load() && !options_.keep_going);
                 });
 
-                if (cancelled_.load() || (failed.load() && !options_.keep_going))
+                if (cancelled_.load() || (failed.load() && !options_.keep_going)) {
                     return;
+                }
 
                 if (ready_queue.empty()) {
-                    if (all_done.load())
+                    if (all_done.load()) {
                         return;
+                    }
                     continue; // Spurious wakeup, wait again
                 }
 
@@ -327,8 +358,9 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
             {
                 auto lock = std::lock_guard { mutex };
 
-                if (on_complete_)
+                if (on_complete_) {
                     on_complete_(job, result);
+                }
 
                 if (result.success) {
                     ++stats_.completed_jobs;
@@ -340,19 +372,22 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
                 ++completed_count;
                 stats_.build_time += result.duration;
 
-                if (on_progress_)
+                if (on_progress_) {
                     on_progress_(completed_count, stats_.total_jobs);
+                }
 
                 // Queue dependents whose dependencies are now satisfied
                 for (auto dependent_idx : dependents[job_idx]) {
                     --in_degree[dependent_idx];
-                    if (in_degree[dependent_idx] == 0)
+                    if (in_degree[dependent_idx] == 0) {
                         ready_queue.push(dependent_idx);
+                    }
                 }
 
                 // Check if all jobs are done
-                if (completed_count >= jobs.size())
+                if (completed_count >= jobs.size()) {
                     all_done.store(true);
+                }
             }
 
             cv.notify_all();
@@ -364,8 +399,9 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
     auto num_workers = std::min(options_.jobs, jobs.size());
     threads.reserve(num_workers);
 
-    for (auto i = std::size_t { 0 }; i < num_workers; ++i)
+    for (auto i = std::size_t { 0 }; i < num_workers; ++i) {
         threads.emplace_back(worker);
+    }
 
     // Notify workers to start
     cv.notify_all();
@@ -384,12 +420,14 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
 
     // Join threads
     for (auto& t : threads) {
-        if (t.joinable())
+        if (t.joinable()) {
             t.join();
+        }
     }
 
-    if (failed.load() && !options_.keep_going)
+    if (failed.load() && !options_.keep_going) {
         return make_error<void>(ErrorCode::CommandFailed, "Build failed");
+    }
 
     return {};
 }
@@ -415,8 +453,9 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
     // Output paths are relative to source_root (e.g., "build-s1f3/tools/modHeader")
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
-        if (!output_path.is_absolute())
+        if (!output_path.is_absolute()) {
             output_path = options_.source_root / output;
+        }
         auto parent = output_path.parent_path();
         if (!parent.empty()) {
             auto ec = std::error_code {};
@@ -425,14 +464,16 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
     }
 
     auto run_opts = RunOptions {};
-    if (!job.working_dir.empty())
+    if (!job.working_dir.empty()) {
         run_opts.working_dir = job.working_dir;
+    }
 
     // Pass exported environment variables to command
     // Per tup manual: "value for the variable comes from tup's environment"
     for (auto const& var_name : job.exported_vars) {
-        if (auto it = env_cache.find(var_name); it != env_cache.end())
+        if (auto it = env_cache.find(var_name); it != env_cache.end()) {
             run_opts.env.push_back(var_name + "=" + it->second);
+        }
     }
 
     auto cmd_result = runner.run(job.command, run_opts);
@@ -445,11 +486,13 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
     result.success = (cmd_result->exit_code == 0);
     result.duration = cmd_result->duration;
 
-    if (!cmd_result->stdout_output.empty())
+    if (!cmd_result->stdout_output.empty()) {
         result.output = cmd_result->stdout_output;
+    }
     if (!cmd_result->stderr_output.empty()) {
-        if (!result.output.empty())
+        if (!result.output.empty()) {
             result.output += '\n';
+        }
         result.output += cmd_result->stderr_output;
     }
 
@@ -459,8 +502,9 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
         if (job.inject_implicit_deps && !cmd_result->stdout_output.empty()) {
             auto depfile_result = parser::parse_depfile(std::string_view { cmd_result->stdout_output });
             if (depfile_result) {
-                for (auto& dep : depfile_result->dependencies)
+                for (auto& dep : depfile_result->dependencies) {
                     result.discovered_deps.push_back(std::move(dep));
+                }
                 result.deps_for_command = job.parent_command;
             }
         }
@@ -471,20 +515,23 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
             auto ext = output_path.extension().string();
 
             // Support common object file extensions (.o on Unix, .obj on Windows)
-            if (ext != ".o" && ext != ".obj")
+            if (ext != ".o" && ext != ".obj") {
                 continue;
+            }
 
             auto depfile_path = std::filesystem::path {
                 options_.source_root / output_path.parent_path() / (output_path.stem().string() + ".d")
             };
 
-            if (!std::filesystem::exists(depfile_path))
+            if (!std::filesystem::exists(depfile_path)) {
                 continue;
+            }
 
             auto depfile_result = parser::parse_depfile(depfile_path);
             if (depfile_result) {
-                for (auto& dep : depfile_result->dependencies)
+                for (auto& dep : depfile_result->dependencies) {
                     result.discovered_deps.push_back(std::move(dep));
+                }
             }
         }
     }
@@ -497,24 +544,27 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
 {
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
-    if (topo_result.has_cycle)
+    if (topo_result.has_cycle) {
         return make_error<std::vector<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected");
+    }
 
     auto jobs = std::vector<BuildJob> {};
 
     for (auto id : topo_result.order) {
         auto const* node = graph.get_node(id);
-        if (!node || node->type != NodeType::Command)
+        if (!node || node->type != NodeType::Command) {
             continue;
+        }
 
         // Compute working directory: source_dir for subdirectory Tupfiles.
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // prefixed with variant_dir by the builder.
         auto working_dir = std::filesystem::path { options_.source_root };
-        if (!node->source_dir.empty())
+        if (!node->source_dir.empty()) {
             working_dir /= node->source_dir;
+        }
 
         // Check if this is a generated rule that captures stdout
         auto capture_stdout = false;
@@ -545,22 +595,25 @@ auto Scheduler::build_job_list(graph::BuildGraph const& graph)
         // Collect input paths
         for (auto input_id : graph.get_inputs(id)) {
             auto input_path = graph.get_full_path(input_id);
-            if (!input_path.empty())
+            if (!input_path.empty()) {
                 job.inputs.push_back(std::move(input_path));
+            }
         }
 
         // Collect output paths
         for (auto output_id : graph.get_outputs(id)) {
             auto output_path = graph.get_full_path(output_id);
-            if (!output_path.empty())
+            if (!output_path.empty()) {
                 job.outputs.push_back(std::move(output_path));
+            }
         }
 
         // Collect order-only input paths
         for (auto oi_id : graph.get_order_only(id)) {
             auto oi_path = graph.get_full_path(oi_id);
-            if (!oi_path.empty())
+            if (!oi_path.empty()) {
                 job.order_only_inputs.push_back(std::move(oi_path));
+            }
         }
 
         jobs.push_back(std::move(job));
@@ -577,8 +630,9 @@ auto Scheduler::filter_jobs(
     result.reserve(all_jobs.size());
 
     for (auto const& job : all_jobs) {
-        if (affected_nodes.contains(job.id))
+        if (affected_nodes.contains(job.id)) {
             result.push_back(job);
+        }
     }
 
     return result;

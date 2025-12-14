@@ -53,8 +53,9 @@ auto compute_variantdir(
 auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
 {
     auto file = std::ifstream { path };
-    if (!file)
+    if (!file) {
         return std::nullopt;
+    }
 
     auto ss = std::stringstream {};
     ss << file.rdbuf();
@@ -71,8 +72,9 @@ auto discover_tupfile_dirs(std::filesystem::path const& root,
 
     for (auto it = std::filesystem::recursive_directory_iterator(root, options, ec);
          it != std::filesystem::recursive_directory_iterator(); ++it) {
-        if (ec)
+        if (ec) {
             break;
+        }
 
         auto const& entry = *it;
         auto rel = std::filesystem::relative(entry.path(), root);
@@ -82,15 +84,18 @@ auto discover_tupfile_dirs(std::filesystem::path const& root,
             continue;
         }
 
-        if (!entry.is_regular_file())
+        if (!entry.is_regular_file()) {
             continue;
-        if (entry.path().filename() != "Tupfile")
+        }
+        if (entry.path().filename() != "Tupfile") {
             continue;
+        }
 
         auto dir = std::filesystem::path { entry.path().parent_path() };
 
-        if (std::filesystem::exists(dir / "tup.config"))
+        if (std::filesystem::exists(dir / "tup.config")) {
             continue;
+        }
 
         auto dir_rel = std::filesystem::relative(dir, root);
         dirs.insert(dir_rel.empty() || dir_rel == "." ? std::filesystem::path { "." } : dir_rel);
@@ -116,8 +121,9 @@ auto parse_directory(
         rel_dir.empty() || rel_dir == "." ? std::filesystem::path { "." } : rel_dir
     };
 
-    if (state.parsed.contains(normalized_dir))
+    if (state.parsed.contains(normalized_dir)) {
         return {};
+    }
 
     if (state.parsing.contains(normalized_dir)) {
         return pup::make_error<void>(
@@ -131,8 +137,9 @@ auto parse_directory(
         normalized_dir == "." ? root / "Tupfile" : root / rel_dir / "Tupfile"
     };
 
-    if (verbose)
+    if (verbose) {
         fmt::print("Parsing: {}\n", tupfile_path.string());
+    }
 
     auto source = read_file(tupfile_path);
     if (!source) {
@@ -233,14 +240,17 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
     -> Result<BuildContext>
 {
     auto layout_opts = LayoutOptions {};
-    if (!opts.source_dir.empty())
+    if (!opts.source_dir.empty()) {
         layout_opts.source_dir = std::filesystem::path { opts.source_dir };
-    if (!opts.build_dir.empty())
+    }
+    if (!opts.build_dir.empty()) {
         layout_opts.build_dir = std::filesystem::path { opts.build_dir };
+    }
 
     auto layout_result = Result<ProjectLayout> { discover_layout(layout_opts) };
-    if (!layout_result)
+    if (!layout_result) {
         return unexpected<Error>(layout_result.error());
+    }
 
     auto ctx = BuildContext {};
     ctx.impl_->layout = std::move(*layout_result);
@@ -261,9 +271,10 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
         auto ignore_result = parser::IgnoreList::load(ignore_path);
         if (ignore_result) {
             ignore = std::move(*ignore_result);
-            if (ctx_opts.verbose)
+            if (ctx_opts.verbose) {
                 fmt::print("Loaded {} ignore patterns from {}\n",
                     ignore.size(), ignore_path.string());
+            }
         }
     }
 
@@ -274,8 +285,9 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
             ErrorCode::IoError, "No Tupfiles found in project");
     }
 
-    if (ctx_opts.verbose)
+    if (ctx_opts.verbose) {
         fmt::print("Found {} directories with Tupfiles\n", ctx.impl_->state.available.size());
+    }
 
     auto variant_dir = ctx.impl_->layout.variant_dir;
 
@@ -290,9 +302,10 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
         auto config_result = Result<parser::VarDb> { parser::parse_config(config_path) };
         if (config_result) {
             ctx.impl_->config_vars = std::move(*config_result);
-            if (ctx_opts.verbose)
+            if (ctx_opts.verbose) {
                 fmt::print("Loaded {} config variables from {}\n",
                     ctx.impl_->config_vars.names().size(), config_path.string());
+            }
         }
     }
 
@@ -314,24 +327,28 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
                 ctx.impl_->layout.source_root, ctx.impl_->layout.output_root,
                 ctx.impl_->vars, ctx.impl_->config_vars, variant_dir, ctx_opts.verbose)
         };
-        if (!result && !ctx_opts.keep_going)
+        if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
+        }
     }
 
     for (auto const& dir : ctx.impl_->state.available) {
-        if (ctx.impl_->state.parsed.contains(dir))
+        if (ctx.impl_->state.parsed.contains(dir)) {
             continue;
+        }
         auto result = Result<void> {
             parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph,
                 ctx.impl_->layout.source_root, ctx.impl_->layout.output_root,
                 ctx.impl_->vars, ctx.impl_->config_vars, variant_dir, ctx_opts.verbose)
         };
-        if (!result && !ctx_opts.keep_going)
+        if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
+        }
     }
 
-    if (ctx_opts.verbose)
+    if (ctx_opts.verbose) {
         fmt::print("Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
+    }
 
     return ctx;
 }
@@ -339,16 +356,18 @@ auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
 auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
 {
     auto root = find_project_root(std::filesystem::current_path());
-    if (!root)
+    if (!root) {
         return std::nullopt;
+    }
 
     auto build_dir = std::filesystem::path {};
     auto is_in_tree = false;
 
     if (!opts.build_dir.empty()) {
         build_dir = std::filesystem::path { opts.build_dir };
-        if (build_dir.is_relative())
+        if (build_dir.is_relative()) {
             build_dir = *root / build_dir;
+        }
         is_in_tree = (build_dir == *root);
     } else if (std::filesystem::exists(*root / "tup.config")) {
         build_dir = *root;

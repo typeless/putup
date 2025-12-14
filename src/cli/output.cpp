@@ -12,16 +12,18 @@ namespace pup::cli {
 
 auto remove_file(std::filesystem::path const& path, OutputMode mode) -> bool
 {
-    if (!std::filesystem::exists(path))
+    if (!std::filesystem::exists(path)) {
         return false;
+    }
 
     if (mode.dry_run) {
         fmt::print("Would remove: {}\n", path.string());
         return true;
     }
 
-    if (mode.verbose)
+    if (mode.verbose) {
         fmt::print("Removing: {}\n", path.string());
+    }
 
     auto ec = std::error_code {};
     return std::filesystem::remove(path, ec);
@@ -32,19 +34,22 @@ auto remove_empty_dir(
     std::filesystem::path const& root_guard,
     OutputMode mode) -> bool
 {
-    if (dir == root_guard)
+    if (dir == root_guard) {
         return false;
+    }
 
-    if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir))
+    if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir)) {
         return false;
+    }
 
     if (mode.dry_run) {
         fmt::print("Would remove empty dir: {}\n", dir.string());
         return true;
     }
 
-    if (mode.verbose)
+    if (mode.verbose) {
         fmt::print("Removing empty dir: {}\n", dir.string());
+    }
 
     auto ec = std::error_code {};
     return std::filesystem::remove(dir, ec);
@@ -64,23 +69,27 @@ auto remove_empty_directories(
     });
 
     for (auto const& dir : dirs) {
-        if (dir == source_dir)
+        if (dir == source_dir) {
             continue;
+        }
 
         auto rel = std::filesystem::relative(dir, build_dir);
-        if (rel.string().starts_with(".."))
+        if (rel.string().starts_with("..")) {
             continue;
+        }
 
-        if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir))
+        if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir)) {
             continue;
+        }
 
         if (mode.dry_run) {
             fmt::print("Would remove empty dir: {}\n", dir.string());
         } else {
             std::filesystem::remove(dir);
             ++removed;
-            if (mode.verbose)
+            if (mode.verbose) {
                 fmt::print("Removed empty dir: {}\n", dir.string());
+            }
         }
     }
     return removed;
@@ -91,8 +100,9 @@ auto escape_dot_label(std::string_view s) -> std::string
     auto result = std::string {};
     result.reserve(s.size());
     for (auto c : s) {
-        if (c == '"' || c == '\\')
+        if (c == '"' || c == '\\') {
             result += '\\';
+        }
         result += c;
     }
     return result;
@@ -126,8 +136,9 @@ auto escape_json(std::string_view s) -> std::string
             result += "\\t";
             break;
         default:
-            if (static_cast<unsigned char>(c) < 0x20)
+            if (static_cast<unsigned char>(c) < 0x20) {
                 continue;
+            }
             result += c;
         }
     }

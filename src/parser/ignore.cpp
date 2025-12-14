@@ -16,38 +16,44 @@ namespace pup::parser {
 auto IgnoreList::load(std::filesystem::path const& path) -> Result<IgnoreList>
 {
     auto file = std::ifstream { path };
-    if (!file)
+    if (!file) {
         return make_error<IgnoreList>(ErrorCode::IoError,
             "Failed to open ignore file: " + path.string());
+    }
 
     auto list = IgnoreList::with_defaults();
     auto line = std::string {};
 
     while (std::getline(file, line)) {
         // Skip empty lines and comments
-        if (line.empty())
+        if (line.empty()) {
             continue;
+        }
 
         // Trim leading whitespace
         auto start = line.find_first_not_of(" \t");
-        if (start == std::string::npos)
+        if (start == std::string::npos) {
             continue;
+        }
 
         line = line.substr(start);
 
         // Skip comments
-        if (line[0] == '#')
+        if (line[0] == '#') {
             continue;
+        }
 
         // Trim trailing whitespace (but preserve escaped spaces)
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) {
-            if (line.size() >= 2 && line[line.size() - 2] == '\\')
+            if (line.size() >= 2 && line[line.size() - 2] == '\\') {
                 break;
+            }
             line.pop_back();
         }
 
-        if (line.empty())
+        if (line.empty()) {
             continue;
+        }
 
         list.add(line);
     }
@@ -66,14 +72,16 @@ auto IgnoreList::with_defaults() -> IgnoreList
 
 auto IgnoreList::add(std::string_view pattern) -> void
 {
-    if (auto p = parse_pattern(pattern))
+    if (auto p = parse_pattern(pattern)) {
         patterns_.push_back(std::move(*p));
+    }
 }
 
 auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePattern>
 {
-    if (line.empty())
+    if (line.empty()) {
         return std::nullopt;
+    }
 
     auto p = IgnorePattern {};
 
@@ -81,16 +89,18 @@ auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePat
     if (line[0] == '!') {
         p.negated = true;
         line = line.substr(1);
-        if (line.empty())
+        if (line.empty()) {
             return std::nullopt;
+        }
     }
 
     // Check for directory-only (trailing /)
     if (!line.empty() && line.back() == '/') {
         p.dir_only = true;
         line = line.substr(0, line.size() - 1);
-        if (line.empty())
+        if (line.empty()) {
             return std::nullopt;
+        }
     }
 
     // Check if anchored (contains / not at end)
@@ -132,12 +142,14 @@ auto IgnoreList::match_pattern(IgnorePattern const& p,
 
     // Unanchored: try matching against basename first
     auto basename = path.filename().string();
-    if (glob_match(p.pattern, basename))
+    if (glob_match(p.pattern, basename)) {
         return true;
+    }
 
     // Also try matching against full path for patterns like **/foo
-    if (p.pattern.starts_with("**"))
+    if (p.pattern.starts_with("**")) {
         return glob_match(p.pattern, path_str);
+    }
 
     return false;
 }
@@ -160,17 +172,20 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
             // Skip **
             pi += 2;
             // Skip optional trailing /
-            if (pi < pattern.size() && pattern[pi] == '/')
+            if (pi < pattern.size() && pattern[pi] == '/') {
                 ++pi;
+            }
 
             // If ** is at end, match everything
-            if (pi >= pattern.size())
+            if (pi >= pattern.size()) {
                 return true;
+            }
 
             // Try matching remainder at every position
             for (auto i = ti; i <= text.size(); ++i) {
-                if (glob_match_recursive(pattern.substr(pi), text.substr(i)))
+                if (glob_match_recursive(pattern.substr(pi), text.substr(i))) {
                     return true;
+                }
             }
             return false;
         }
@@ -180,13 +195,15 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
             ++pi;
 
             // If * is at end of pattern, match if no more / in text
-            if (pi >= pattern.size())
+            if (pi >= pattern.size()) {
                 return text.find('/', ti) == std::string_view::npos;
+            }
 
             // Try matching at each position until /
             while (ti < text.size() && text[ti] != '/') {
-                if (glob_match_recursive(pattern.substr(pi), text.substr(ti)))
+                if (glob_match_recursive(pattern.substr(pi), text.substr(ti))) {
                     return true;
+                }
                 ++ti;
             }
             // Also try matching at current position (empty * match)
@@ -195,8 +212,9 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
 
         // ? matches any single character except /
         if (pc == '?') {
-            if (text[ti] == '/')
+            if (text[ti] == '/') {
                 return false;
+            }
             ++pi;
             ++ti;
             continue;
@@ -207,8 +225,9 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
             auto close = pattern.find(']', pi + 1);
             if (close == std::string_view::npos) {
                 // No closing bracket, treat as literal
-                if (text[ti] != pc)
+                if (text[ti] != pc) {
                     return false;
+                }
                 ++pi;
                 ++ti;
                 continue;
@@ -237,11 +256,13 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
                 }
             }
 
-            if (negate)
+            if (negate) {
                 matched = !matched;
+            }
 
-            if (!matched)
+            if (!matched) {
                 return false;
+            }
 
             pi = close + 1;
             ++ti;
@@ -249,8 +270,9 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
         }
 
         // Literal character
-        if (pc != text[ti])
+        if (pc != text[ti]) {
             return false;
+        }
 
         ++pi;
         ++ti;

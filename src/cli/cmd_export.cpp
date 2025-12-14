@@ -42,14 +42,17 @@ auto cmd_export_script(Options const& opts) -> int
     auto output_dirs = std::set<std::string> {};
     for (auto id : ctx.graph().all_nodes()) {
         auto const* node = ctx.graph().get_node(id);
-        if (!node)
+        if (!node) {
             continue;
-        if (node->type != pup::NodeType::Generated && node->type != pup::NodeType::File)
+        }
+        if (node->type != pup::NodeType::Generated && node->type != pup::NodeType::File) {
             continue;
+        }
 
         auto node_path = ctx.graph().get_full_path(id);
-        if (node_path.empty())
+        if (node_path.empty()) {
             continue;
+        }
 
         auto inputs = ctx.graph().get_inputs(id);
         for (auto input_id : inputs) {
@@ -58,8 +61,9 @@ auto cmd_export_script(Options const& opts) -> int
                 auto path = std::filesystem::path { node_path };
                 if (path.has_parent_path()) {
                     auto parent = path.parent_path().string();
-                    if (!parent.empty() && parent != ".")
+                    if (!parent.empty() && parent != ".") {
                         output_dirs.insert(parent);
+                    }
                 }
                 break;
             }
@@ -68,15 +72,17 @@ auto cmd_export_script(Options const& opts) -> int
 
     if (!output_dirs.empty()) {
         fmt::print("# Create output directories\n");
-        for (auto const& dir : output_dirs)
+        for (auto const& dir : output_dirs) {
             fmt::print("mkdir -p \"{}\"\n", dir);
+        }
         fmt::print("\n");
     }
 
     for (auto id : topo.order) {
         auto const* node = ctx.graph().get_node(id);
-        if (!node || node->type != pup::NodeType::Command)
+        if (!node || node->type != pup::NodeType::Command) {
             continue;
+        }
 
         auto dir = node->source_dir.empty() ? std::string { "." } : node->source_dir;
         fmt::print("(cd \"{}\" && {})\n", dir, node->command);
@@ -123,8 +129,9 @@ auto cmd_export_graph(Options const& opts) -> int
 
     for (auto id : ctx.graph().all_nodes()) {
         auto const* node = ctx.graph().get_node(id);
-        if (!node)
+        if (!node) {
             continue;
+        }
 
         auto label = escape_dot_label(
             node->type == pup::NodeType::Command
@@ -133,8 +140,9 @@ auto cmd_export_graph(Options const& opts) -> int
 
         fmt::print("  n{} [label=\"{}\"];\n", id, label);
 
-        for (auto input_id : ctx.graph().get_inputs(id))
+        for (auto input_id : ctx.graph().get_inputs(id)) {
             fmt::print("  n{} -> n{};\n", input_id, id);
+        }
     }
 
     fmt::print("}}\n");
@@ -161,14 +169,16 @@ auto cmd_export_compdb(Options const& opts) -> int
 
     for (auto id : commands) {
         auto const* node = ctx.graph().get_node(id);
-        if (!node)
+        if (!node) {
             continue;
+        }
 
         auto source_file = std::string {};
         for (auto input_id : ctx.graph().get_inputs(id)) {
             auto input_path = ctx.graph().get_full_path(input_id);
-            if (input_path.empty())
+            if (input_path.empty()) {
                 continue;
+            }
             if (input_path.ends_with(".c") || input_path.ends_with(".cc") || input_path.ends_with(".cpp") || input_path.ends_with(".cxx") || input_path.ends_with(".C") || input_path.ends_with(".S") || input_path.ends_with(".s")) {
                 source_file = std::move(input_path);
                 break;
@@ -178,27 +188,32 @@ auto cmd_export_compdb(Options const& opts) -> int
         auto output_file = std::string {};
         for (auto output_id : ctx.graph().get_outputs(id)) {
             auto output_path = ctx.graph().get_full_path(output_id);
-            if (output_path.empty())
+            if (output_path.empty()) {
                 continue;
+            }
             if (output_path.ends_with(".o") || output_path.ends_with(".obj")) {
                 output_file = std::move(output_path);
                 break;
             }
         }
 
-        if (source_file.empty())
+        if (source_file.empty()) {
             continue;
+        }
 
         auto working_dir = ctx.layout().source_root;
-        if (!node->source_dir.empty())
+        if (!node->source_dir.empty()) {
             working_dir /= node->source_dir;
+        }
 
         auto args = pup::core::tokenize_shell_command(node->command);
-        if (args.empty())
+        if (args.empty()) {
             continue;
+        }
 
-        if (!first)
+        if (!first) {
             fmt::print(",\n");
+        }
         first = false;
 
         fmt::print("  {{\n");
@@ -206,15 +221,17 @@ auto cmd_export_compdb(Options const& opts) -> int
 
         fmt::print("    \"arguments\": [");
         for (std::size_t i = 0; i < args.size(); ++i) {
-            if (i > 0)
+            if (i > 0) {
                 fmt::print(", ");
+            }
             fmt::print("\"{}\"", escape_json(args[i]));
         }
         fmt::print("],\n");
 
         fmt::print("    \"file\": \"{}\"", escape_json(source_file));
-        if (!output_file.empty())
+        if (!output_file.empty()) {
             fmt::print(",\n    \"output\": \"{}\"", escape_json(output_file));
+        }
         fmt::print("\n  }}");
     }
 
@@ -232,12 +249,15 @@ auto cmd_export(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    if (opts.export_format == "script")
+    if (opts.export_format == "script") {
         return cmd_export_script(opts);
-    if (opts.export_format == "compdb")
+    }
+    if (opts.export_format == "compdb") {
         return cmd_export_compdb(opts);
-    if (opts.export_format == "graph")
+    }
+    if (opts.export_format == "graph") {
         return cmd_export_graph(opts);
+    }
 
     fmt::print(stderr, "Unknown export format: {}\n", opts.export_format);
     fmt::print(stderr, "Formats: script, compdb, graph\n");

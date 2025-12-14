@@ -28,8 +28,9 @@ Glob::Glob(std::string_view pattern)
 
 auto Glob::matches(std::string_view filename) const -> bool
 {
-    if (!has_wildcards_)
+    if (!has_wildcards_) {
         return pattern_ == filename;
+    }
     return match_impl(pattern_, filename);
 }
 
@@ -54,17 +55,20 @@ auto Glob::match_recursive(std::string_view pattern, std::string_view text) cons
             // Skip **
             pi += 2;
             // Skip optional trailing /
-            if (pi < pattern.size() && pattern[pi] == '/')
+            if (pi < pattern.size() && pattern[pi] == '/') {
                 ++pi;
+            }
 
             // If ** is at end, match everything
-            if (pi >= pattern.size())
+            if (pi >= pattern.size()) {
                 return true;
+            }
 
             // Try matching remainder at every position
             for (auto i = ti; i <= text.size(); ++i) {
-                if (match_recursive(pattern.substr(pi), text.substr(i)))
+                if (match_recursive(pattern.substr(pi), text.substr(i))) {
                     return true;
+                }
             }
             return false;
         }
@@ -74,13 +78,15 @@ auto Glob::match_recursive(std::string_view pattern, std::string_view text) cons
             ++pi;
 
             // If * is at end of pattern, match if no more / in text
-            if (pi >= pattern.size())
+            if (pi >= pattern.size()) {
                 return text.find('/', ti) == std::string_view::npos;
+            }
 
             // Try matching at each position until /
             while (ti < text.size() && text[ti] != '/') {
-                if (match_recursive(pattern.substr(pi), text.substr(ti)))
+                if (match_recursive(pattern.substr(pi), text.substr(ti))) {
                     return true;
+                }
                 ++ti;
             }
             // Also try matching at current position (empty * match)
@@ -89,8 +95,9 @@ auto Glob::match_recursive(std::string_view pattern, std::string_view text) cons
 
         // ? matches any single character except /
         if (pc == '?') {
-            if (text[ti] == '/')
+            if (text[ti] == '/') {
                 return false;
+            }
             ++pi;
             ++ti;
             continue;
@@ -99,16 +106,18 @@ auto Glob::match_recursive(std::string_view pattern, std::string_view text) cons
         // [...] character class
         if (pc == '[') {
             auto bracket_pattern = pattern.substr(pi);
-            if (!match_bracket(bracket_pattern, text[ti]))
+            if (!match_bracket(bracket_pattern, text[ti])) {
                 return false;
+            }
             pi = pattern.size() - bracket_pattern.size();
             ++ti;
             continue;
         }
 
         // Literal match
-        if (pc != text[ti])
+        if (pc != text[ti]) {
             return false;
+        }
 
         ++pi;
         ++ti;
@@ -119,11 +128,13 @@ auto Glob::match_recursive(std::string_view pattern, std::string_view text) cons
         if (pattern[pi] == '*') {
             ++pi;
             // Skip **
-            if (pi < pattern.size() && pattern[pi] == '*')
+            if (pi < pattern.size() && pattern[pi] == '*') {
                 ++pi;
+            }
             // Skip trailing /
-            if (pi < pattern.size() && pattern[pi] == '/')
+            if (pi < pattern.size() && pattern[pi] == '/') {
                 ++pi;
+            }
         } else {
             break;
         }
@@ -134,8 +145,9 @@ auto Glob::match_recursive(std::string_view pattern, std::string_view text) cons
 
 auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
 {
-    if (pattern.empty() || pattern[0] != '[')
+    if (pattern.empty() || pattern[0] != '[') {
         return false;
+    }
 
     auto negate = false;
     auto pos = std::size_t { 1 };
@@ -154,22 +166,25 @@ auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
         // Range: a-z
         if (pc == '-' && prev != 0 && pos + 1 < pattern.size() && pattern[pos + 1] != ']') {
             auto const end = pattern[pos + 1];
-            if (c >= prev && c <= end)
+            if (c >= prev && c <= end) {
                 matched = true;
+            }
             pos += 2;
             prev = 0;
             continue;
         }
 
-        if (pc == c)
+        if (pc == c) {
             matched = true;
+        }
         prev = pc;
         ++pos;
     }
 
     // Skip closing bracket
-    if (pos < pattern.size() && pattern[pos] == ']')
+    if (pos < pattern.size() && pattern[pos] == ']') {
         ++pos;
+    }
 
     pattern = pattern.substr(pos);
     return negate ? !matched : matched;
@@ -192,8 +207,9 @@ auto glob_expand(
     if (!has_glob_chars(pattern)) {
         // Literal path - just check if it exists
         auto path = fs::path { base_dir / pattern };
-        if (fs::exists(path))
+        if (fs::exists(path)) {
             results.emplace_back(pattern);
+        }
         return results;
     }
 
@@ -201,8 +217,9 @@ auto glob_expand(
     auto [dir_part, file_pattern] = glob_split_path(pattern);
     auto search_dir = fs::path { dir_part.empty() ? base_dir : base_dir / dir_part };
 
-    if (!fs::exists(search_dir) || !fs::is_directory(search_dir))
+    if (!fs::exists(search_dir) || !fs::is_directory(search_dir)) {
         return results;
+    }
 
     auto glob = Glob { file_pattern };
 
@@ -214,8 +231,9 @@ auto glob_expand(
         auto filename = path.filename().string();
 
         // Skip hidden files unless requested
-        if (!options.include_hidden && !filename.empty() && filename[0] == '.')
+        if (!options.include_hidden && !filename.empty() && filename[0] == '.') {
             return;
+        }
 
         // For recursive, match against relative path
         if (is_recursive) {
@@ -236,14 +254,16 @@ auto glob_expand(
     auto ec = std::error_code {};
     if (is_recursive) {
         for (auto const& entry : fs::recursive_directory_iterator(search_dir, ec)) {
-            if (ec)
+            if (ec) {
                 break;
+            }
             iterate(entry);
         }
     } else {
         for (auto const& entry : fs::directory_iterator(search_dir, ec)) {
-            if (ec)
+            if (ec) {
                 break;
+            }
             iterate(entry);
         }
     }
@@ -261,23 +281,28 @@ auto glob_expand_all(
     auto result = GlobResult {};
 
     for (auto const& pattern : patterns) {
-        if (pattern.empty())
+        if (pattern.empty()) {
             continue;
+        }
 
         // Check for exclusion pattern
         if (pattern[0] == '!') {
             auto exclude_pattern = pattern.substr(1);
             auto excluded = glob_expand(exclude_pattern, base_dir, options);
-            if (!excluded)
+            if (!excluded) {
                 return pup::unexpected<Error>(excluded.error());
-            for (auto& path : *excluded)
+            }
+            for (auto& path : *excluded) {
                 result.exclusions.push_back(std::move(path));
+            }
         } else {
             auto matches = glob_expand(pattern, base_dir, options);
-            if (!matches)
+            if (!matches) {
                 return pup::unexpected<Error>(matches.error());
-            for (auto& path : *matches)
+            }
+            for (auto& path : *matches) {
                 result.matches.push_back(std::move(path));
+            }
         }
     }
 
@@ -307,15 +332,17 @@ auto glob_split_path(std::string_view pattern)
     if (glob_pos == std::string_view::npos) {
         // No globs - find last /
         auto last_slash = pattern.rfind('/');
-        if (last_slash == std::string_view::npos)
+        if (last_slash == std::string_view::npos) {
             return { {}, pattern };
+        }
         return { pattern.substr(0, last_slash), pattern.substr(last_slash + 1) };
     }
 
     // Find / before the first glob
     auto slash_before_glob = pattern.substr(0, glob_pos).rfind('/');
-    if (slash_before_glob == std::string_view::npos)
+    if (slash_before_glob == std::string_view::npos) {
         return { {}, pattern };
+    }
 
     return { pattern.substr(0, slash_before_glob), pattern.substr(slash_before_glob + 1) };
 }
@@ -330,8 +357,9 @@ auto has_glob_chars(std::string_view pattern) -> bool
 auto path_basename(std::string_view path) -> std::string_view
 {
     auto last_slash = path.rfind('/');
-    if (last_slash == std::string_view::npos)
+    if (last_slash == std::string_view::npos) {
         return path;
+    }
     return path.substr(last_slash + 1);
 }
 
@@ -339,8 +367,9 @@ auto path_stem(std::string_view path) -> std::string_view
 {
     auto base = path_basename(path);
     auto dot = base.rfind('.');
-    if (dot == std::string_view::npos || dot == 0)
+    if (dot == std::string_view::npos || dot == 0) {
         return base;
+    }
     return base.substr(0, dot);
 }
 
@@ -348,16 +377,18 @@ auto path_extension(std::string_view path) -> std::string_view
 {
     auto base = path_basename(path);
     auto dot = base.rfind('.');
-    if (dot == std::string_view::npos || dot == 0)
+    if (dot == std::string_view::npos || dot == 0) {
         return {};
+    }
     return base.substr(dot + 1);
 }
 
 auto path_directory(std::string_view path) -> std::string_view
 {
     auto last_slash = path.rfind('/');
-    if (last_slash == std::string_view::npos)
+    if (last_slash == std::string_view::npos) {
         return {};
+    }
     return path.substr(0, last_slash);
 }
 

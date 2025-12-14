@@ -107,8 +107,8 @@
 #   and adds visual noise.
 #
 # readability-braces-around-statements:
-#   Requires braces around single-line if/for/while bodies. Project style
-#   allows braceless single statements for brevity: if (x) return;
+#   ENABLED: Project style now requires braces around all if/for/while bodies
+#   for consistency and to prevent bugs from later additions.
 #
 # readability-convert-member-functions-to-static:
 #   Suggests making member functions static when they don't use 'this'. This
@@ -197,7 +197,6 @@ Checks: >
   -performance-no-int-to-ptr,
   -performance-noexcept-move-constructor,
   -performance-trivially-destructible,
-  -readability-braces-around-statements,
   -readability-convert-member-functions-to-static,
   -readability-else-after-return,
   -readability-function-cognitive-complexity,

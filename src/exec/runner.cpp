@@ -44,8 +44,9 @@ auto CommandRunner::run_with_output(
     int stderr_pipe[2] = { -1, -1 };
     int stdin_pipe[2] = { -1, -1 };
 
-    if (merged.capture_stdout && ::pipe(stdout_pipe) < 0)
+    if (merged.capture_stdout && ::pipe(stdout_pipe) < 0) {
         return make_error<CommandResult>(ErrorCode::IoError, "Failed to create stdout pipe");
+    }
 
     if (merged.capture_stderr && ::pipe(stderr_pipe) < 0) {
         if (stdout_pipe[0] >= 0) {
@@ -107,16 +108,18 @@ auto CommandRunner::run_with_output(
 
         // Change working directory
         if (!merged.working_dir.empty()) {
-            if (::chdir(merged.working_dir.c_str()) < 0)
+            if (::chdir(merged.working_dir.c_str()) < 0) {
                 ::_exit(127);
+            }
         }
 
         // Build environment
         auto env_strings = std::vector<std::string> { build_env(merged) };
         auto env_ptrs = std::vector<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
-        for (auto& s : env_strings)
+        for (auto& s : env_strings) {
             env_ptrs.push_back(s.data());
+        }
         env_ptrs.push_back(nullptr);
 
         // Execute via shell
@@ -128,21 +131,25 @@ auto CommandRunner::run_with_output(
             nullptr
         };
 
-        if (merged.inherit_env && merged.env.empty())
+        if (merged.inherit_env && merged.env.empty()) {
             ::execv("/bin/sh", argv);
-        else
+        } else {
             ::execve("/bin/sh", argv, env_ptrs.data());
+        }
 
         ::_exit(127);
     }
 
     // Parent process
-    if (stdout_pipe[1] >= 0)
+    if (stdout_pipe[1] >= 0) {
         ::close(stdout_pipe[1]);
-    if (stderr_pipe[1] >= 0)
+    }
+    if (stderr_pipe[1] >= 0) {
         ::close(stderr_pipe[1]);
-    if (stdin_pipe[0] >= 0)
+    }
+    if (stdin_pipe[0] >= 0) {
         ::close(stdin_pipe[0]);
+    }
 
     // Write stdin data if provided
     // Note: For large stdin data (>64KB), this could block if pipe buffer fills.
@@ -159,10 +166,12 @@ auto CommandRunner::run_with_output(
     }
 
     // Set pipes to non-blocking
-    if (stdout_pipe[0] >= 0)
+    if (stdout_pipe[0] >= 0) {
         ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK);
-    if (stderr_pipe[0] >= 0)
+    }
+    if (stderr_pipe[0] >= 0) {
         ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK);
+    }
 
     auto result = CommandResult {};
     auto timed_out = false;
@@ -204,8 +213,9 @@ auto CommandRunner::run_with_output(
 
         auto poll_result = int { ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms) };
         if (poll_result < 0) {
-            if (errno == EINTR)
+            if (errno == EINTR) {
                 continue;
+            }
             break;
         }
 
@@ -221,34 +231,40 @@ auto CommandRunner::run_with_output(
                     auto data = std::string_view { buffer.data(), static_cast<std::size_t>(n) };
                     auto is_stderr = (fds[i].fd == stderr_pipe[0]);
 
-                    if (callback)
+                    if (callback) {
                         callback(data, is_stderr);
+                    }
 
-                    if (is_stderr)
+                    if (is_stderr) {
                         result.stderr_output.append(data);
-                    else
+                    } else {
                         result.stdout_output.append(data);
+                    }
                 } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-                    if (fds[i].fd == stdout_pipe[0])
+                    if (fds[i].fd == stdout_pipe[0]) {
                         stdout_open = false;
-                    else
+                    } else {
                         stderr_open = false;
+                    }
                 }
             }
             if (fds[i].revents & (POLLERR | POLLNVAL)) {
-                if (fds[i].fd == stdout_pipe[0])
+                if (fds[i].fd == stdout_pipe[0]) {
                     stdout_open = false;
-                else
+                } else {
                     stderr_open = false;
+                }
             }
         }
     }
 
     // Close remaining pipes
-    if (stdout_pipe[0] >= 0)
+    if (stdout_pipe[0] >= 0) {
         ::close(stdout_pipe[0]);
-    if (stderr_pipe[0] >= 0)
+    }
+    if (stderr_pipe[0] >= 0) {
         ::close(stderr_pipe[0]);
+    }
 
     // Handle timeout
     if (timed_out) {
@@ -279,16 +295,18 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
 {
     auto merged = RunOptions { options };
 
-    if (merged.working_dir.empty())
+    if (merged.working_dir.empty()) {
         merged.working_dir = default_options_.working_dir;
+    }
 
     // Merge environment variables
     auto env = default_options_.env;
     env.insert(env.end(), options.env.begin(), options.env.end());
     merged.env = std::move(env);
 
-    if (!merged.timeout && default_options_.timeout)
+    if (!merged.timeout && default_options_.timeout) {
         merged.timeout = default_options_.timeout;
+    }
 
     return merged;
 }
@@ -298,12 +316,14 @@ auto CommandRunner::build_env(RunOptions const& options) const -> std::vector<st
     auto result = std::vector<std::string> {};
 
     if (options.inherit_env) {
-        for (auto** e = environ; *e != nullptr; ++e)
+        for (auto** e = environ; *e != nullptr; ++e) {
             result.emplace_back(*e);
+        }
     }
 
-    for (auto const& var : options.env)
+    for (auto const& var : options.env) {
         result.push_back(var);
+    }
 
     return result;
 }
@@ -349,8 +369,9 @@ auto parse_command(std::string_view command) -> std::vector<std::string>
         current += c;
     }
 
-    if (!current.empty())
+    if (!current.empty()) {
         result.push_back(std::move(current));
+    }
 
     return result;
 }
@@ -365,15 +386,17 @@ auto shell_quote(std::string_view str) -> std::string
         }
     }
 
-    if (!needs_quoting)
+    if (!needs_quoting) {
         return std::string { str };
+    }
 
     auto result = std::string { "'" };
     for (auto c : str) {
-        if (c == '\'')
+        if (c == '\'') {
             result += "'\"'\"'";
-        else
+        } else {
             result += c;
+        }
     }
     result += '\'';
 

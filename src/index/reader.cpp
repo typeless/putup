@@ -47,8 +47,9 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
     auto reader = IndexReader {};
 
     reader.fd_ = ::open(path.c_str(), O_RDONLY);
-    if (reader.fd_ < 0)
+    if (reader.fd_ < 0) {
         return make_error<IndexReader>(ErrorCode::IoError, "Failed to open index file");
+    }
 
     struct stat st;
     if (::fstat(reader.fd_, &st) < 0) {
@@ -88,15 +89,17 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
 {
     auto fd = int { ::open(path.c_str(), O_RDONLY) };
-    if (fd < 0)
+    if (fd < 0) {
         return false;
+    }
 
     auto header = RawHeader {};
     auto n = ssize_t { ::read(fd, &header, sizeof(header)) };
     ::close(fd);
 
-    if (n != static_cast<ssize_t>(sizeof(header)))
+    if (n != static_cast<ssize_t>(sizeof(header))) {
         return false;
+    }
 
     // Accept versions 1 and 2
     return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 && header.version >= 1 && header.version <= INDEX_VERSION;
@@ -104,8 +107,9 @@ auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
 
 auto IndexReader::read() const -> Result<Index>
 {
-    if (!is_open())
+    if (!is_open()) {
         return make_error<Index>(ErrorCode::InvalidState, "Reader not open");
+    }
 
     auto index = Index {};
 
@@ -130,8 +134,9 @@ auto IndexReader::read() const -> Result<Index>
 
     // Read edges
     auto edges = raw_edges();
-    for (auto const& raw : edges)
+    for (auto const& raw : edges) {
         index.add_edge(EdgeEntry::from_raw(raw));
+    }
 
     // Build edge indices for O(1) lookup
     index.build_edge_indices();
@@ -141,16 +146,18 @@ auto IndexReader::read() const -> Result<Index>
 
 auto IndexReader::header() const -> RawHeader const*
 {
-    if (!is_open() || size_ < sizeof(RawHeader))
+    if (!is_open() || size_ < sizeof(RawHeader)) {
         return nullptr;
+    }
     return static_cast<RawHeader const*>(data_);
 }
 
 auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
 {
     auto const* hdr = header();
-    if (!hdr || hdr->file_count == 0)
+    if (!hdr || hdr->file_count == 0) {
         return {};
+    }
 
     auto const* base = static_cast<std::byte const*>(data_);
     auto const* files = reinterpret_cast<RawFileEntry const*>(base + hdr->file_offset);
@@ -160,8 +167,9 @@ auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
 auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
 {
     auto const* hdr = header();
-    if (!hdr || hdr->command_count == 0)
+    if (!hdr || hdr->command_count == 0) {
         return {};
+    }
 
     auto const* base = static_cast<std::byte const*>(data_);
     auto const* commands = reinterpret_cast<RawCommandEntry const*>(base + hdr->command_offset);
@@ -171,8 +179,9 @@ auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
 auto IndexReader::raw_edges() const -> std::span<RawEdge const>
 {
     auto const* hdr = header();
-    if (!hdr || hdr->edge_count == 0)
+    if (!hdr || hdr->edge_count == 0) {
         return {};
+    }
 
     auto const* base = static_cast<std::byte const*>(data_);
     auto const* edges = reinterpret_cast<RawEdge const*>(base + hdr->edge_offset);
@@ -182,22 +191,25 @@ auto IndexReader::raw_edges() const -> std::span<RawEdge const>
 auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -> std::string_view
 {
     auto const* hdr = header();
-    if (!hdr || length == 0)
+    if (!hdr || length == 0) {
         return {};
+    }
 
     auto const* base = static_cast<char const*>(data_);
     auto const string_start = hdr->string_offset + offset;
 
-    if (string_start + length > size_)
+    if (string_start + length > size_) {
         return {};
+    }
 
     return { base + string_start, length };
 }
 
 auto IndexReader::verify_checksum() const -> bool
 {
-    if (!is_open() || size_ < sizeof(RawFooter))
+    if (!is_open() || size_ < sizeof(RawFooter)) {
         return false;
+    }
 
     auto const content_size = size_ - sizeof(RawFooter);
     auto const* base = static_cast<std::byte const*>(data_);

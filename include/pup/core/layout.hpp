@@ -26,8 +26,9 @@ struct ProjectLayout {
     /// Get path to .pup directory
     [[nodiscard]] auto pup_dir() const -> std::filesystem::path
     {
-        if (variant_dir.empty())
+        if (variant_dir.empty()) {
             return output_root / ".pup";
+        }
         return output_root / variant_dir / ".pup";
     }
 
@@ -48,8 +49,9 @@ struct ProjectLayout {
     [[nodiscard]] auto resolve_output(std::filesystem::path const& rel) const
         -> std::filesystem::path
     {
-        if (variant_dir.empty())
+        if (variant_dir.empty()) {
             return output_root / rel;
+        }
         return output_root / variant_dir / rel;
     }
 };

@@ -14,13 +14,15 @@ namespace pup::index {
 
 auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
 {
-    if (str.empty())
+    if (str.empty()) {
         return 0;
+    }
 
     // Check for 4GB string table limit (uint32_t offset)
     auto constexpr MAX_OFFSET = std::numeric_limits<std::uint32_t>::max();
-    if (data_.size() > MAX_OFFSET - str.size())
+    if (data_.size() > MAX_OFFSET - str.size()) {
         throw std::overflow_error("String table exceeds 4GB limit");
+    }
 
     auto offset = static_cast<std::uint32_t>(data_.size());
     data_.insert(data_.end(), str.begin(), str.end());
@@ -32,16 +34,18 @@ auto IndexWriter::write(
     Index const& index) -> Result<void>
 {
     auto data = Result<std::vector<std::byte>> { serialize(index) };
-    if (!data)
+    if (!data) {
         return pup::unexpected<Error>(data.error());
+    }
 
     // Create parent directories if needed
     auto parent = path.parent_path();
     if (!parent.empty()) {
         auto ec = std::error_code {};
         std::filesystem::create_directories(parent, ec);
-        if (ec)
+        if (ec) {
             return make_error<void>(ErrorCode::IoError, "Failed to create directory");
+        }
     }
 
     // Generate temporary filename
@@ -52,19 +56,22 @@ auto IndexWriter::write(
     auto gen = std::mt19937 { std::random_device::result_type { rd() } };
     auto dist = std::uniform_int_distribution<> { 0, 15 };
     auto const* const hex = "0123456789abcdef";
-    for (auto i = 0; i < 8; ++i)
+    for (auto i = 0; i < 8; ++i) {
         temp_path += hex[dist(gen)];
+    }
 
     // Write to temporary file
     auto fd = int { ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644) };
-    if (fd < 0)
+    if (fd < 0) {
         return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
+    }
 
     auto bytes_written = ssize_t { ::write(fd, data->data(), data->size()) };
     auto write_error = (bytes_written != static_cast<ssize_t>(data->size()));
 
-    if (::fsync(fd) < 0)
+    if (::fsync(fd) < 0) {
         write_error = true;
+    }
 
     ::close(fd);
 
@@ -110,8 +117,9 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     auto edge_entries = std::vector<RawEdge> {};
     edge_entries.reserve(index.edges().size());
 
-    for (auto const& edge : index.edges())
+    for (auto const& edge : index.edges()) {
         edge_entries.push_back(edge.to_raw());
+    }
 
     // Calculate offsets
     auto const header_size = sizeof(RawHeader);

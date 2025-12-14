@@ -24,8 +24,9 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
     if (it == vars_.end()) {
         vars_[std::string { name }] = std::string { value };
     } else {
-        if (!it->second.empty())
+        if (!it->second.empty()) {
             it->second += ' ';
+        }
         it->second += value;
     }
 }
@@ -33,8 +34,9 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
 auto VarDb::get(std::string_view name) const -> std::string_view
 {
     auto it = vars_.find(name); // Heterogeneous lookup - no temp string
-    if (it != vars_.end())
+    if (it != vars_.end()) {
         return it->second;
+    }
     return {};
 }
 
@@ -52,8 +54,9 @@ auto VarDb::names() const -> std::vector<std::string_view>
 {
     auto result = std::vector<std::string_view> {};
     result.reserve(vars_.size());
-    for (auto const& [name, _] : vars_)
+    for (auto const& [name, _] : vars_) {
         result.push_back(name);
+    }
     return result;
 }
 
@@ -81,8 +84,9 @@ auto Evaluator::expand(Expression const& expr) -> Result<std::string>
         } else if (std::holds_alternative<Expression::Variable>(part)) {
             auto const& var = std::get<Expression::Variable>(part);
             auto expanded = expand_var(var.ref);
-            if (!expanded)
+            if (!expanded) {
                 return pup::unexpected<Error>(expanded.error());
+            }
             result += *expanded;
         }
     }
@@ -122,15 +126,17 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
                 auto name = text.substr(next + 2, close - next - 2);
                 auto kind = VarRef::Kind::Regular;
 
-                if (text[next] == '@')
+                if (text[next] == '@') {
                     kind = VarRef::Kind::Config;
-                else if (text[next] == '&')
+                } else if (text[next] == '&') {
                     kind = VarRef::Kind::Node;
+                }
 
                 auto ref = VarRef { kind, std::string { name }, {} };
                 auto expanded = expand_var(ref);
-                if (!expanded)
+                if (!expanded) {
                     return pup::unexpected<Error>(expanded.error());
+                }
                 result += *expanded;
                 pos = close + 1;
                 continue;
@@ -179,8 +185,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
         // Check for %Nf pattern (N-th input)
         if (flag >= '0' && flag <= '9') {
             auto end = pos;
-            while (end < text.size() && text[end] >= '0' && text[end] <= '9')
+            while (end < text.size() && text[end] >= '0' && text[end] <= '9') {
                 ++end;
+            }
 
             auto num = 0;
             auto const* start_ptr = text.data() + percent + 1;
@@ -189,8 +196,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
 
             if (end < text.size() && text[end] == 'f') {
                 // %Nf - N-th input file
-                if (num > 0 && static_cast<std::size_t>(num) <= flags.all_inputs.size())
+                if (num > 0 && static_cast<std::size_t>(num) <= flags.all_inputs.size()) {
                     result += flags.all_inputs[static_cast<std::size_t>(num - 1)];
+                }
                 pos = end + 1;
                 continue;
             }
@@ -216,8 +224,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
             if (ctx_.resolve_order_only_group) {
                 auto paths = ctx_.resolve_order_only_group(group_name);
                 for (std::size_t i = 0; i < paths.size(); ++i) {
-                    if (i > 0)
+                    if (i > 0) {
                         result += ' ';
+                    }
                     result += paths[i];
                 }
             }
@@ -229,8 +238,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
         case 'f':
             // %f - all inputs space-separated
             for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
-                if (i > 0)
+                if (i > 0) {
                     result += ' ';
+                }
                 result += flags.all_inputs[i];
             }
             break;
@@ -258,8 +268,9 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
         case 'i':
             // %i - all inputs space-separated
             for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
-                if (i > 0)
+                if (i > 0) {
                     result += ' ';
+                }
                 result += flags.all_inputs[i];
             }
             break;
@@ -299,22 +310,26 @@ auto Evaluator::expand_path(PathPattern const& pattern)
 
     // Expand the path expression
     auto path_result = expand(pattern.path);
-    if (!path_result)
+    if (!path_result) {
         return pup::unexpected<Error>(path_result.error());
+    }
 
     // Split result by whitespace - variables may contain multiple files
     auto const& expanded = *path_result;
     auto start = std::size_t { 0 };
     while (start < expanded.size()) {
         // Skip whitespace
-        while (start < expanded.size() && (expanded[start] == ' ' || expanded[start] == '\t'))
+        while (start < expanded.size() && (expanded[start] == ' ' || expanded[start] == '\t')) {
             ++start;
-        if (start >= expanded.size())
+        }
+        if (start >= expanded.size()) {
             break;
+        }
         // Find end of token
         auto end = start;
-        while (end < expanded.size() && expanded[end] != ' ' && expanded[end] != '\t')
+        while (end < expanded.size() && expanded[end] != ' ' && expanded[end] != '\t') {
             ++end;
+        }
         if (end > start) {
             // Normalize path to remove // and resolve . and .. components
             auto path_str = expanded.substr(start, end - start);
@@ -331,32 +346,38 @@ auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
 {
     switch (cond.kind) {
     case Conditional::Kind::Ifdef:
-        if (ctx_.vars && ctx_.vars->contains(cond.var_name))
+        if (ctx_.vars && ctx_.vars->contains(cond.var_name)) {
             return true;
-        if (ctx_.config_vars && ctx_.config_vars->contains(cond.var_name))
+        }
+        if (ctx_.config_vars && ctx_.config_vars->contains(cond.var_name)) {
             return true;
+        }
         return false;
 
     case Conditional::Kind::Ifndef:
-        if (ctx_.vars && ctx_.vars->contains(cond.var_name))
+        if (ctx_.vars && ctx_.vars->contains(cond.var_name)) {
             return false;
-        if (ctx_.config_vars && ctx_.config_vars->contains(cond.var_name))
+        }
+        if (ctx_.config_vars && ctx_.config_vars->contains(cond.var_name)) {
             return false;
+        }
         return true;
 
     case Conditional::Kind::Ifeq: {
         auto lhs = expand(cond.lhs);
         auto rhs = expand(cond.rhs);
-        if (!lhs || !rhs)
+        if (!lhs || !rhs) {
             return false;
+        }
         return *lhs == *rhs;
     }
 
     case Conditional::Kind::Ifneq: {
         auto lhs = expand(cond.lhs);
         auto rhs = expand(cond.rhs);
-        if (!lhs || !rhs)
+        if (!lhs || !rhs) {
             return false;
+        }
         return *lhs != *rhs;
     }
     }
@@ -367,8 +388,9 @@ auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
 auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 {
     // First check for special built-in variables
-    if (auto special = expand_special_var(ref.name))
+    if (auto special = expand_special_var(ref.name)) {
         return *special;
+    }
 
     VarDb* db = nullptr;
     switch (ref.kind) {
@@ -385,15 +407,17 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 
     if (db) {
         auto value = db->get(ref.name);
-        if (!value.empty())
+        if (!value.empty()) {
             return std::string { value };
+        }
     }
 
     // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
     if (ref.kind == VarRef::Kind::Regular && ctx_.config_vars) {
         auto value = ctx_.config_vars->get(ref.name);
-        if (!value.empty())
+        if (!value.empty()) {
             return std::string { value };
+        }
     }
 
     // Variable not found - return empty string (tup behavior)
@@ -402,16 +426,21 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 
 auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::string>
 {
-    if (name == builtin_vars::TUP_CWD)
+    if (name == builtin_vars::TUP_CWD) {
         return ctx_.tup_cwd;
-    if (name == builtin_vars::TUP_PLATFORM)
+    }
+    if (name == builtin_vars::TUP_PLATFORM) {
         return ctx_.tup_platform;
-    if (name == builtin_vars::TUP_ARCH)
+    }
+    if (name == builtin_vars::TUP_ARCH) {
         return ctx_.tup_arch;
-    if (name == builtin_vars::TUP_VARIANTDIR)
+    }
+    if (name == builtin_vars::TUP_VARIANTDIR) {
         return ctx_.tup_variantdir;
-    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR)
+    }
+    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
         return ctx_.tup_variant_outputdir;
+    }
 
     return std::nullopt;
 }

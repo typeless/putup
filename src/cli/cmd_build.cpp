@@ -29,8 +29,9 @@ namespace {
 auto get_file_mtime(std::filesystem::path const& path) -> pup::FileTime
 {
     struct stat st = {};
-    if (::stat(path.c_str(), &st) < 0)
+    if (::stat(path.c_str(), &st) < 0) {
         return {};
+    }
     return pup::FileTime {
         .seconds = st.st_mtim.tv_sec,
         .nanoseconds = static_cast<std::int32_t>(st.st_mtim.tv_nsec),
@@ -50,8 +51,9 @@ auto is_path_under_root(
 {
     auto path_str = path.string();
     auto root_str = root.string();
-    if (!root_str.empty() && root_str.back() != '/')
+    if (!root_str.empty() && root_str.back() != '/') {
         root_str += '/';
+    }
     return path_str.starts_with(root_str) || path == root;
 }
 
@@ -63,15 +65,17 @@ auto find_changed_files_with_implicit(
     auto changed = std::vector<std::string> {};
 
     for (auto const& file : old_index.files()) {
-        if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated)
+        if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated) {
             continue;
+        }
 
         auto path = resolve_path(file.path, root);
 
         struct stat st = {};
         if (::stat(path.c_str(), &st) < 0) {
-            if (verbose)
+            if (verbose) {
                 fmt::print("  Changed (stat failed): {}\n", file.path);
+            }
             changed.push_back(file.path);
             continue;
         }
@@ -82,18 +86,20 @@ auto find_changed_files_with_implicit(
         };
 
         if (current_mtime != file.mtime) {
-            if (verbose)
+            if (verbose) {
                 fmt::print("  Changed (mtime): {} - stored {}:{} vs current {}:{}\n",
                     file.path, file.mtime.seconds, file.mtime.nanoseconds,
                     current_mtime.seconds, current_mtime.nanoseconds);
+            }
             changed.push_back(file.path);
             continue;
         }
 
         auto current_size = static_cast<std::uint64_t>(st.st_size);
         if (current_size != file.size) {
-            if (verbose)
+            if (verbose) {
                 fmt::print("  Changed (size): {}\n", file.path);
+            }
             changed.push_back(file.path);
             continue;
         }
@@ -101,8 +107,9 @@ auto find_changed_files_with_implicit(
         if (file.content_hash != pup::ZERO_HASH) {
             auto hash_result = pup::sha256_file(path);
             if (!hash_result || *hash_result != file.content_hash) {
-                if (verbose)
+                if (verbose) {
                     fmt::print("  Changed (hash): {}\n", file.path);
+                }
                 changed.push_back(file.path);
             }
         }
@@ -120,35 +127,41 @@ auto expand_implicit_deps(
     auto added = std::set<std::string> { changed.begin(), changed.end() };
 
     auto path_to_file = std::unordered_map<std::string, pup::index::FileEntry const*> {};
-    for (auto const& file : index.files())
+    for (auto const& file : index.files()) {
         path_to_file[file.path] = &file;
+    }
 
     for (auto const& path : changed) {
         auto it = path_to_file.find(path);
-        if (it == path_to_file.end())
+        if (it == path_to_file.end()) {
             continue;
+        }
 
         auto file_id = pup::NodeId { it->second->id };
 
         for (auto const& edge : index.edges()) {
-            if (edge.from != file_id)
+            if (edge.from != file_id) {
                 continue;
+            }
 
             if (edge.type == pup::LinkType::Implicit) {
                 auto cmd_id = pup::NodeId { edge.to };
                 auto const* cmd = index.find_command_by_id(cmd_id);
-                if (!cmd)
+                if (!cmd) {
                     continue;
+                }
 
                 auto cmd_node_id = graph.find_by_command(cmd->command);
-                if (!cmd_node_id)
+                if (!cmd_node_id) {
                     continue;
+                }
 
                 for (auto output_id : graph.get_outputs(*cmd_node_id)) {
                     auto output_path = graph.get_full_path(output_id);
                     if (!output_path.empty()) {
-                        if (added.insert(output_path).second)
+                        if (added.insert(output_path).second) {
                             result.push_back(output_path);
+                        }
                     }
                 }
             }
@@ -156,18 +169,21 @@ auto expand_implicit_deps(
             if (edge.type == pup::LinkType::Sticky) {
                 auto cmd_id = pup::NodeId { edge.to };
                 auto const* cmd = index.find_command_by_id(cmd_id);
-                if (!cmd)
+                if (!cmd) {
                     continue;
+                }
 
                 auto cmd_node_id = graph.find_by_command(cmd->command);
-                if (!cmd_node_id)
+                if (!cmd_node_id) {
                     continue;
+                }
 
                 for (auto output_id : graph.get_outputs(*cmd_node_id)) {
                     auto output_path = graph.get_full_path(output_id);
                     if (!output_path.empty()) {
-                        if (added.insert(output_path).second)
+                        if (added.insert(output_path).second) {
                             result.push_back(output_path);
+                        }
                     }
                 }
             }
@@ -188,13 +204,15 @@ auto build_index(
 
     auto max_id = pup::NodeId { 0 };
     for (auto const& node : graph) {
-        if (node.id > max_id)
+        if (node.id > max_id) {
             max_id = node.id;
+        }
 
         if (node.type == pup::NodeType::File || node.type == pup::NodeType::Generated) {
             auto node_path = graph.get_full_path(node.id);
-            if (node_path.empty())
+            if (node_path.empty()) {
                 continue;
+            }
 
             auto file_path = std::filesystem::path { root / node_path };
             auto content_hash = pup::Hash256 {};
@@ -202,8 +220,9 @@ auto build_index(
 
             if (std::filesystem::exists(file_path)) {
                 auto hash_result = pup::sha256_file(file_path);
-                if (hash_result)
+                if (hash_result) {
                     content_hash = *hash_result;
+                }
 
                 auto ec = std::error_code {};
                 file_size = std::filesystem::file_size(file_path, ec);
@@ -238,8 +257,9 @@ auto build_index(
                 .content_hash = {},
             };
             index.add_file(std::move(entry));
-            if (!node_path.empty())
+            if (!node_path.empty()) {
                 path_to_id[node_path] = node.id;
+            }
         } else if (node.type == pup::NodeType::Command) {
             auto entry = pup::index::CommandEntry {
                 .id = node.id,
@@ -269,11 +289,13 @@ auto build_index(
         auto normalized = dir_path.lexically_normal();
         auto path_str = normalized.string();
 
-        if (path_str.empty() || path_str == ".")
+        if (path_str.empty() || path_str == ".") {
             return pup::NodeId { 0 };
+        }
 
-        if (auto it = path_to_id.find(path_str); it != path_to_id.end())
+        if (auto it = path_to_id.find(path_str); it != path_to_id.end()) {
             return it->second;
+        }
 
         if (path_str == "/") {
             auto dir_id = next_id++;
@@ -321,10 +343,11 @@ auto build_index(
             auto abs_path = resolve_path(dep_path, root);
 
             auto rel_path = std::string {};
-            if (is_path_under_root(abs_path, root))
+            if (is_path_under_root(abs_path, root)) {
                 rel_path = std::filesystem::relative(abs_path, root).string();
-            else
+            } else {
                 rel_path = abs_path.string();
+            }
 
             auto dep_id = pup::NodeId { 0 };
             auto it = path_to_id.find(rel_path);
@@ -337,8 +360,9 @@ auto build_index(
                 auto file_size = std::uint64_t { 0 };
                 if (std::filesystem::exists(abs_path)) {
                     auto hash_result = pup::sha256_file(abs_path);
-                    if (hash_result)
+                    if (hash_result) {
                         content_hash = *hash_result;
+                    }
 
                     auto ec = std::error_code {};
                     file_size = std::filesystem::file_size(abs_path, ec);
@@ -378,26 +402,31 @@ auto build_index(
 
     if (old_index) {
         auto commands_with_new_deps = std::set<pup::NodeId> {};
-        for (auto const& [cmd_id, _] : discovered_deps)
+        for (auto const& [cmd_id, _] : discovered_deps) {
             commands_with_new_deps.insert(cmd_id);
+        }
 
         auto old_path_to_new_id = std::unordered_map<std::string, pup::NodeId> {};
         for (auto const& file : old_index->files()) {
             auto it = path_to_id.find(file.path);
-            if (it != path_to_id.end())
+            if (it != path_to_id.end()) {
                 old_path_to_new_id[file.path] = it->second;
+            }
         }
 
         for (auto const& edge : old_index->edges()) {
-            if (edge.type != pup::LinkType::Implicit)
+            if (edge.type != pup::LinkType::Implicit) {
                 continue;
+            }
 
-            if (commands_with_new_deps.contains(edge.to))
+            if (commands_with_new_deps.contains(edge.to)) {
                 continue;
+            }
 
             auto const* old_file = old_index->find_file_by_id(edge.from);
-            if (!old_file)
+            if (!old_file) {
                 continue;
+            }
 
             auto new_file_it = path_to_id.find(old_file->path);
             pup::NodeId new_from_id;
@@ -411,8 +440,9 @@ auto build_index(
                 auto file_size = std::uint64_t { 0 };
                 if (std::filesystem::exists(abs_path)) {
                     auto hash_result = pup::sha256_file(abs_path);
-                    if (hash_result)
+                    if (hash_result) {
                         content_hash = *hash_result;
+                    }
 
                     auto ec = std::error_code {};
                     file_size = std::filesystem::file_size(abs_path, ec);
@@ -459,14 +489,16 @@ auto cmd_build(Options const& opts) -> int
 {
     auto pattern_registry = std::optional<pup::graph::RulePatternRegistry> {};
     auto implicit_deps_disabled = false;
-    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0")
+    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
         implicit_deps_disabled = true;
+    }
 
     if (!implicit_deps_disabled) {
         pattern_registry.emplace();
         pattern_registry->register_pattern(pup::graph::make_gcc_depfile_pattern());
-        if (opts.verbose)
+        if (opts.verbose) {
             fmt::print("Implicit dependency tracking enabled\n");
+        }
     }
 
     auto ctx_opts = BuildContextOptions {
@@ -510,8 +542,9 @@ auto cmd_build(Options const& opts) -> int
                 }
 
                 use_incremental = true;
-                if (opts.verbose)
+                if (opts.verbose) {
                     fmt::print("Incremental build: {} changed files\n", changed_files.size());
+                }
             }
         }
     }
@@ -531,15 +564,17 @@ auto cmd_build(Options const& opts) -> int
     auto deps_mutex = std::mutex {};
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
-        if (opts.verbose || opts.dry_run)
+        if (opts.verbose || opts.dry_run) {
             fmt::print("{}\n", job.display);
+        }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
             fmt::print(stderr, "FAILED: {}\n", job.display);
-            if (!job_result.output.empty())
+            if (!job_result.output.empty()) {
                 fmt::print(stderr, "{}\n", job_result.output);
+            }
         } else if (!job_result.discovered_deps.empty()) {
             auto lock = std::lock_guard { deps_mutex };
             auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
@@ -562,8 +597,9 @@ auto cmd_build(Options const& opts) -> int
                         deps.push_back(resolved.string());
                     }
                 } catch (std::filesystem::filesystem_error const& e) {
-                    if (opts.verbose)
+                    if (opts.verbose) {
                         fmt::print(stderr, "Warning: Skipping dependency '{}': {}\n", dep_path, e.what());
+                    }
                 }
             }
         }
@@ -588,8 +624,9 @@ auto cmd_build(Options const& opts) -> int
     auto end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
 
-    if (!opts.verbose)
+    if (!opts.verbose) {
         fmt::print("\n");
+    }
 
     if (!build_result) {
         fmt::print(stderr, "Build failed: {}\n", build_result.error().message);
@@ -597,12 +634,13 @@ auto cmd_build(Options const& opts) -> int
     }
 
     auto const& stats = *build_result;
-    if (stats.failed_jobs > 0)
+    if (stats.failed_jobs > 0) {
         fmt::print("Build completed: {} commands ({} failed) in {}ms\n",
             stats.completed_jobs, stats.failed_jobs, duration.count());
-    else
+    } else {
         fmt::print("Build completed: {} commands in {}ms\n",
             stats.completed_jobs, duration.count());
+    }
 
     if (stats.failed_jobs == 0 && !opts.dry_run) {
         auto const* old_index_ptr = old_index ? &*old_index : nullptr;

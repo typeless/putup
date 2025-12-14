@@ -13,20 +13,27 @@ namespace pup::cli {
 
 auto dispatch(Options const& opts) -> int
 {
-    if (opts.command == "init")
+    if (opts.command == "init") {
         return cmd_init(opts);
-    if (opts.command == "parse")
+    }
+    if (opts.command == "parse") {
         return cmd_parse(opts);
-    if (opts.command == "export")
+    }
+    if (opts.command == "export") {
         return cmd_export(opts);
-    if (opts.command == "build")
+    }
+    if (opts.command == "build") {
         return cmd_build(opts);
-    if (opts.command == "clean")
+    }
+    if (opts.command == "clean") {
         return cmd_clean(opts);
-    if (opts.command == "distclean")
+    }
+    if (opts.command == "distclean") {
         return cmd_distclean(opts);
-    if (opts.command == "variant")
+    }
+    if (opts.command == "variant") {
         return cmd_variant(opts);
+    }
 
     fmt::print(stderr, "Unknown command: {}\n", opts.command);
     print_usage();

@@ -19,6 +19,7 @@ BreakConstructorInitializers: BeforeComma
 
 IndentPPDirectives: AfterHash
 
+InsertBraces: true
 InsertNewlineAtEOF: true
 LineEnding: LF
 

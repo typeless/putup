@@ -82,8 +82,9 @@ auto sha256(std::string_view data) -> Hash256
 auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
 {
     auto file = std::ifstream { path, std::ios::binary };
-    if (!file)
+    if (!file) {
         return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path.string());
+    }
 
     auto hasher = Sha256 {};
     auto buffer = std::array<char, 8192> {};
@@ -93,8 +94,9 @@ auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
         hasher.update(std::string_view { buffer.data(), bytes_read });
     }
 
-    if (file.bad())
+    if (file.bad()) {
         return make_error<Hash256>(ErrorCode::IoError, "Error reading file: " + path.string());
+    }
 
     return hasher.finalize();
 }
@@ -116,8 +118,9 @@ auto hash_to_hex(Hash256 const& hash) -> std::string
 
 auto hex_to_hash(std::string_view hex) -> Result<Hash256>
 {
-    if (hex.size() != 64)
+    if (hex.size() != 64) {
         return make_error<Hash256>(ErrorCode::InvalidArgument, "Hex string must be 64 characters");
+    }
 
     auto result = Hash256 {};
 
@@ -126,20 +129,24 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>
         auto const lo = char { hex[i * 2 + 1] };
 
         auto parse_nibble = [](char c) -> int {
-            if (c >= '0' && c <= '9')
+            if (c >= '0' && c <= '9') {
                 return c - '0';
-            if (c >= 'a' && c <= 'f')
+            }
+            if (c >= 'a' && c <= 'f') {
                 return c - 'a' + 10;
-            if (c >= 'A' && c <= 'F')
+            }
+            if (c >= 'A' && c <= 'F') {
                 return c - 'A' + 10;
+            }
             return -1;
         };
 
         auto const hi_val = int { parse_nibble(hi) };
         auto const lo_val = int { parse_nibble(lo) };
 
-        if (hi_val < 0 || lo_val < 0)
+        if (hi_val < 0 || lo_val < 0) {
             return make_error<Hash256>(ErrorCode::InvalidArgument, "Invalid hex character");
+        }
 
         result[i] = static_cast<std::byte>((hi_val << 4) | lo_val);
     }

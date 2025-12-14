@@ -31,8 +31,9 @@ auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void;
 auto visit_neighbors(BuildGraph const& graph, NodeId u, auto const& neighbors, DfsState& state) -> void
 {
     for (auto v : neighbors) {
-        if (state.has_cycle)
+        if (state.has_cycle) {
             return;
+        }
         if (state.color[v] == Color::White) {
             state.parent[v] = u;
             dfs_visit(graph, v, state);
@@ -53,8 +54,9 @@ auto visit_neighbors(BuildGraph const& graph, NodeId u, auto const& neighbors, D
 
 auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void
 {
-    if (state.has_cycle)
+    if (state.has_cycle) {
         return;
+    }
     state.color[u] = Color::Gray;
     visit_neighbors(graph, u, graph.get_outputs(u), state);
     visit_neighbors(graph, u, graph.get_order_only_dependents(u), state);
@@ -71,15 +73,18 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
     auto state = DfsState {};
 
     // Initialize all nodes as white (unvisited)
-    for (auto id : graph.all_nodes())
+    for (auto id : graph.all_nodes()) {
         state.color[id] = Color::White;
+    }
 
     // DFS from all unvisited nodes
     for (auto id : graph.all_nodes()) {
-        if (state.color[id] == Color::White)
+        if (state.color[id] == Color::White) {
             dfs_visit(graph, id, state);
-        if (state.has_cycle)
+        }
+        if (state.has_cycle) {
             break;
+        }
     }
 
     // Reverse for topological order (dependencies first)
@@ -122,15 +127,17 @@ auto reachable_from(BuildGraph const& graph, NodeId start) -> std::vector<NodeId
         auto u = NodeId { stack.top() };
         stack.pop();
 
-        if (visited.contains(u))
+        if (visited.contains(u)) {
             continue;
+        }
 
         visited.insert(u);
         result.push_back(u);
 
         for (auto v : graph.get_outputs(u)) {
-            if (!visited.contains(v))
+            if (!visited.contains(v)) {
                 stack.push(v);
+            }
         }
     }
 
@@ -149,15 +156,17 @@ auto can_reach(BuildGraph const& graph, NodeId target) -> std::vector<NodeId>
         auto u = NodeId { stack.top() };
         stack.pop();
 
-        if (visited.contains(u))
+        if (visited.contains(u)) {
             continue;
+        }
 
         visited.insert(u);
         result.push_back(u);
 
         for (auto v : graph.get_inputs(u)) {
-            if (!visited.contains(v))
+            if (!visited.contains(v)) {
                 stack.push(v);
+            }
         }
     }
 
@@ -166,8 +175,9 @@ auto can_reach(BuildGraph const& graph, NodeId target) -> std::vector<NodeId>
 
 auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
 {
-    if (source == target)
+    if (source == target) {
         return true;
+    }
 
     auto visited = std::unordered_set<NodeId> {};
     auto stack = std::stack<NodeId> {};
@@ -178,17 +188,20 @@ auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
         auto u = NodeId { stack.top() };
         stack.pop();
 
-        if (u == target)
+        if (u == target) {
             return true;
+        }
 
-        if (visited.contains(u))
+        if (visited.contains(u)) {
             continue;
+        }
 
         visited.insert(u);
 
         for (auto v : graph.get_outputs(u)) {
-            if (!visited.contains(v))
+            if (!visited.contains(v)) {
                 stack.push(v);
+            }
         }
     }
 
@@ -213,8 +226,9 @@ auto nodes_at_depth(BuildGraph const& graph, std::size_t depth) -> std::vector<N
         auto [u, d] = queue.front();
         queue.pop();
 
-        if (d == depth)
+        if (d == depth) {
             result.push_back(u);
+        }
 
         if (d < depth) {
             for (auto v : graph.get_outputs(u)) {
@@ -236,17 +250,20 @@ auto node_depth(BuildGraph const& graph, NodeId id) -> std::size_t
 
     // Topological sort first
     auto sorted = TopoSortResult { topological_sort(graph) };
-    if (sorted.has_cycle)
+    if (sorted.has_cycle) {
         return 0;
+    }
 
     // Initialize root depths
-    for (auto root : graph.root_nodes())
+    for (auto root : graph.root_nodes()) {
         depths[root] = 0;
+    }
 
     // Process in topological order
     for (auto u : sorted.order) {
-        if (!depths.contains(u))
+        if (!depths.contains(u)) {
             depths[u] = 0;
+        }
 
         for (auto v : graph.get_outputs(u)) {
             depths[v] = std::max(depths[v], depths[u] + 1);
@@ -259,19 +276,22 @@ auto node_depth(BuildGraph const& graph, NodeId id) -> std::size_t
 auto max_depth(BuildGraph const& graph) -> std::size_t
 {
     auto sorted = TopoSortResult { topological_sort(graph) };
-    if (sorted.has_cycle)
+    if (sorted.has_cycle) {
         return 0;
+    }
 
     auto depths = std::unordered_map<NodeId, std::size_t> {};
 
-    for (auto root : graph.root_nodes())
+    for (auto root : graph.root_nodes()) {
         depths[root] = 0;
+    }
 
     auto max_d = std::size_t { 0 };
 
     for (auto u : sorted.order) {
-        if (!depths.contains(u))
+        if (!depths.contains(u)) {
             depths[u] = 0;
+        }
 
         for (auto v : graph.get_outputs(u)) {
             depths[v] = std::max(depths[v], depths[u] + 1);
@@ -285,19 +305,22 @@ auto max_depth(BuildGraph const& graph) -> std::size_t
 auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
 {
     auto sorted = TopoSortResult { topological_sort(graph) };
-    if (sorted.has_cycle)
+    if (sorted.has_cycle) {
         return {};
+    }
 
     // Forward pass: compute longest path to each node
     auto dist = std::unordered_map<NodeId, std::size_t> {};
     auto pred = std::unordered_map<NodeId, NodeId> {};
 
-    for (auto root : graph.root_nodes())
+    for (auto root : graph.root_nodes()) {
         dist[root] = 0;
+    }
 
     for (auto u : sorted.order) {
-        if (!dist.contains(u))
+        if (!dist.contains(u)) {
             dist[u] = 0;
+        }
 
         for (auto v : graph.get_outputs(u)) {
             if (!dist.contains(v) || dist[u] + 1 > dist[v]) {
@@ -317,16 +340,18 @@ auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
         }
     }
 
-    if (end_node == 0)
+    if (end_node == 0) {
         return {};
+    }
 
     // Backtrack to find the path
     auto path = std::vector<NodeId> {};
     auto curr = end_node;
     while (curr != 0) {
         path.push_back(curr);
-        if (!pred.contains(curr))
+        if (!pred.contains(curr)) {
             break;
+        }
         curr = pred[curr];
     }
 

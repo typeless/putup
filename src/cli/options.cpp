@@ -51,11 +51,13 @@ auto parse_args(int argc, char** argv) -> Options
                 std::exit(EXIT_FAILURE);
             }
         } else if (arg == "-S") {
-            if (i + 1 < argc)
+            if (i + 1 < argc) {
                 opts.source_dir = std::string { argv[++i] };
+            }
         } else if (arg == "-B") {
-            if (i + 1 < argc)
+            if (i + 1 < argc) {
                 opts.build_dir = std::string { argv[++i] };
+            }
         } else if (arg == "--summary") {
             opts.summary = true;
         } else if (!arg.starts_with("-")) {
@@ -69,8 +71,9 @@ auto parse_args(int argc, char** argv) -> Options
         }
     }
 
-    if (opts.command.empty())
+    if (opts.command.empty()) {
         opts.command = "build";
+    }
 
     return opts;
 }
