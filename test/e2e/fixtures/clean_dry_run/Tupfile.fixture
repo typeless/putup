@@ -1,0 +1,1 @@
+: hello.c |> gcc -c -o %o %f |> hello.o
