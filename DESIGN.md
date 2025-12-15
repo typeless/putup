@@ -486,13 +486,12 @@ struct BuilderContext {
 │   offsets to each section           │
 ├─────────────────────────────────────┤
 │ FileEntry[] (96 bytes each)         │
-│   id, parent_id, type, flags        │
-│   path_offset, path_length          │
-│   mtime, size, content_hash         │
+│   id, parent_id, src_id, type       │
+│   name_offset, name_length          │
+│   size, content_hash                │
 ├─────────────────────────────────────┤
-│ CommandEntry[] (64 bytes each)      │
-│   id, dir_id                        │
-│   cmd_offset, cmd_length            │
+│ CommandEntry[] (72 bytes each)      │
+│   id, dir_id, command_hash          │
 │   display_offset, display_length    │
 ├─────────────────────────────────────┤
 │ Edge[] (24 bytes each)              │

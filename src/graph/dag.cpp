@@ -2,8 +2,10 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/graph/dag.hpp"
+#include "pup/core/hash.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <unordered_map>
 
@@ -27,13 +29,30 @@ struct DirNameKeyHash {
     }
 };
 
+struct DirHashKey {
+    NodeId dir_id = 0;
+    Hash256 hash = {};
+
+    auto operator==(DirHashKey const& other) const -> bool = default;
+};
+
+struct DirHashKeyHash {
+    auto operator()(DirHashKey const& key) const noexcept -> std::size_t
+    {
+        auto h1 = std::hash<NodeId> {}(key.dir_id);
+        auto h2 = std::size_t {};
+        std::memcpy(&h2, key.hash.data(), sizeof(h2));
+        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+};
+
 } // namespace
 
 struct BuildGraph::Impl {
     std::vector<Node> nodes;
     std::vector<Edge> edges;
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
-    std::unordered_map<std::string, NodeId> command_index;
+    std::unordered_map<DirHashKey, NodeId, DirHashKeyHash> command_hash_index;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
     mutable std::unordered_map<NodeId, std::string> path_cache;
     NodeId next_id = 1;
@@ -68,7 +87,7 @@ auto BuildGraph::add_node(Node node) -> Result<NodeId>
     }
 
     if (node.type == NodeType::Command && !node.command.empty()) {
-        impl_->command_index[node.command] = id;
+        impl_->command_hash_index[DirHashKey { node.parent_dir, sha256(node.command) }] = id;
     }
 
     if (id >= impl_->nodes.size()) {
@@ -155,10 +174,11 @@ auto BuildGraph::find_by_dir_name(NodeId parent_dir, std::string_view name) cons
     return std::nullopt;
 }
 
-auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
+auto BuildGraph::find_by_command_hash(NodeId dir_id, Hash256 const& hash) const -> std::optional<NodeId>
 {
-    auto it = impl_->command_index.find(std::string { cmd });
-    if (it != impl_->command_index.end()) {
+    auto key = DirHashKey { dir_id, hash };
+    auto it = impl_->command_hash_index.find(key);
+    if (it != impl_->command_hash_index.end()) {
         return it->second;
     }
     return std::nullopt;
@@ -236,7 +256,7 @@ auto BuildGraph::clear() -> void
     impl_->nodes.clear();
     impl_->edges.clear();
     impl_->dir_name_index.clear();
-    impl_->command_index.clear();
+    impl_->command_hash_index.clear();
     impl_->order_only_dependents.clear();
     impl_->path_cache.clear();
     impl_->next_id = 1;

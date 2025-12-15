@@ -41,15 +41,13 @@ auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view name_str) -> 
 }
 
 auto CommandEntry::to_raw(
-    std::uint32_t cmd_offset,
     std::uint32_t display_offset,
     std::uint32_t env_offset) const -> RawCommandEntry
 {
     auto raw = RawCommandEntry {};
     raw.id = id;
     raw.dir_id = dir_id;
-    raw.cmd_offset = cmd_offset;
-    raw.cmd_length = static_cast<std::uint32_t>(command.size());
+    raw.command_hash = command_hash;
     raw.display_offset = display_offset;
     raw.display_length = static_cast<std::uint32_t>(display.size());
     raw.env_offset = env_offset;
@@ -60,14 +58,13 @@ auto CommandEntry::to_raw(
 
 auto CommandEntry::from_raw(
     RawCommandEntry const& raw,
-    std::string_view cmd_str,
     std::string_view display_str,
     std::string_view env_str) -> CommandEntry
 {
     return CommandEntry {
         .id = raw.id,
         .dir_id = raw.dir_id,
-        .command = std::string { cmd_str },
+        .command_hash = raw.command_hash,
         .display = std::string { display_str },
         .env = std::string { env_str },
         .flags = raw.flags,

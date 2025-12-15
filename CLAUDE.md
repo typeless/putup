@@ -461,13 +461,13 @@ This content-based detection eliminates false positives from `touch`, `rsync`, `
 3. **Diff**: Compare new graph against old index to find:
    - New commands (exist in graph, not in index) → must run
    - Removed commands (exist in index, not in graph) → delete stale outputs
-   - Changed commands (different command string) → rebuild
+   - Changed commands (different command hash) → rebuild
    - Changed inputs (via sticky/implicit edges) → rebuild dependents
 4. **Execute**: Run affected commands in topological order
 5. **Write**: Save complete new index as snapshot of current state
 
 **Key insight**: The index is a *checkpoint*, not a live database. Each build writes a complete new index file - there's no incremental patching. This is efficient because:
-- Serialization is fast (binary format, ~96 bytes/file + 64 bytes/command)
+- Serialization is fast (binary format, ~96 bytes/file + 72 bytes/command)
 - Only changed parts of the *build* execute
 - Index write happens once at the end
 
@@ -490,7 +490,7 @@ The depfile parser (`include/pup/parser/depfile.hpp`) handles:
 Binary file at `.pup/index`:
 - Header (64 bytes): magic, version, counts
 - File entries (96 bytes each): id, parent_id, name, size, SHA-256 hash
-- Command entries (64 bytes each): id, command, display
+- Command entries (72 bytes each): id, command_hash, display
 - Edges (24 bytes each): from, to, type (Normal, Sticky, Group, Implicit)
 - String table: packed strings
 - Footer (32 bytes): SHA-256 checksum

@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/hash.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/format.hpp"
 #include "pup/index/reader.hpp"
@@ -25,9 +26,9 @@ TEST_CASE("Index format struct sizes", "[index]")
         REQUIRE(sizeof(RawFileEntry) == 96);
     }
 
-    SECTION("RawCommandEntry is 64 bytes")
+    SECTION("RawCommandEntry is 72 bytes")
     {
-        REQUIRE(sizeof(RawCommandEntry) == 64);
+        REQUIRE(sizeof(RawCommandEntry) == 72);
     }
 
     SECTION("RawEdge is 24 bytes")
@@ -109,32 +110,32 @@ TEST_CASE("FileEntry conversion", "[index]")
 
 TEST_CASE("CommandEntry conversion", "[index]")
 {
+    auto cmd_hash = pup::sha256("gcc -c main.c -o main.o");
     auto cmd = CommandEntry {
         .id = 100,
         .dir_id = 5,
-        .command = "gcc -c main.c -o main.o",
+        .command_hash = cmd_hash,
         .display = "CC main.c",
         .env = "CC=gcc",
         .flags = 1,
     };
 
-    auto raw = cmd.to_raw(0, 50, 100);
+    auto raw = cmd.to_raw(0, 50);
 
     REQUIRE(raw.id == 100);
     REQUIRE(raw.dir_id == 5);
-    REQUIRE(raw.cmd_offset == 0);
-    REQUIRE(raw.cmd_length == 23);
-    REQUIRE(raw.display_offset == 50);
+    REQUIRE(raw.command_hash == cmd_hash);
+    REQUIRE(raw.display_offset == 0);
     REQUIRE(raw.display_length == 9);
-    REQUIRE(raw.env_offset == 100);
+    REQUIRE(raw.env_offset == 50);
     REQUIRE(raw.env_length == 6);
     REQUIRE(raw.flags == 1);
 
-    auto restored = CommandEntry::from_raw(raw, cmd.command, cmd.display, cmd.env);
+    auto restored = CommandEntry::from_raw(raw, cmd.display, cmd.env);
 
     REQUIRE(restored.id == cmd.id);
     REQUIRE(restored.dir_id == cmd.dir_id);
-    REQUIRE(restored.command == cmd.command);
+    REQUIRE(restored.command_hash == cmd.command_hash);
     REQUIRE(restored.display == cmd.display);
     REQUIRE(restored.env == cmd.env);
     REQUIRE(restored.flags == cmd.flags);
@@ -221,14 +222,16 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = 10, .command = "gcc foo.c" });
-        index.add_command(CommandEntry { .id = 11, .command = "gcc bar.c" });
+        auto hash1 = pup::sha256("gcc foo.c");
+        auto hash2 = pup::sha256("gcc bar.c");
+        index.add_command(CommandEntry { .id = 10, .command_hash = hash1 });
+        index.add_command(CommandEntry { .id = 11, .command_hash = hash2 });
 
         REQUIRE(index.command_count() == 2);
 
         auto* found = index.find_command_by_id(10);
         REQUIRE(found != nullptr);
-        REQUIRE(found->command == "gcc foo.c");
+        REQUIRE(found->command_hash == hash1);
 
         REQUIRE(index.find_command_by_id(999) == nullptr);
     }
@@ -303,10 +306,11 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     });
 
     // Add a command
+    auto cmd_hash = pup::sha256("g++ -c src/main.cpp -o build/main.o");
     index.add_command(CommandEntry {
         .id = 10,
         .dir_id = 0,
-        .command = "g++ -c src/main.cpp -o build/main.o",
+        .command_hash = cmd_hash,
         .display = "CXX main.cpp",
     });
 
@@ -381,7 +385,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     // Verify command
     auto* cmd = restored.find_command_by_id(10);
     REQUIRE(cmd != nullptr);
-    REQUIRE(cmd->command == "g++ -c src/main.cpp -o build/main.o");
+    REQUIRE(cmd->command_hash == cmd_hash);
     REQUIRE(cmd->display == "CXX main.cpp");
 
     // Verify header file (implicit dependency)
@@ -469,14 +473,87 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = 10, .command = "gcc", .display = "", .env = "" });
-        index.add_command(CommandEntry { .id = 11, .command = "gcc", .display = "", .env = "" });
+        auto cmd_hash = pup::sha256("gcc");
+        index.add_command(CommandEntry { .id = 10, .command_hash = cmd_hash, .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = 11, .command_hash = cmd_hash, .display = "", .env = "" });
 
         auto writer = IndexWriter {};
         auto data = writer.serialize(index);
         REQUIRE(data.has_value());
 
+        // String table should be empty (no display, no env, command is now a hash)
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
-        REQUIRE(hdr->string_table_size == 3);
+        REQUIRE(hdr->string_table_size == 0);
+    }
+}
+
+TEST_CASE("CommandEntry uses hash instead of string", "[index]")
+{
+    SECTION("command hash is stored and retrieved correctly")
+    {
+        auto cmd_hash = pup::sha256("gcc -c main.c -o main.o");
+
+        auto cmd = CommandEntry {
+            .id = 100,
+            .dir_id = 5,
+            .command_hash = cmd_hash,
+            .display = "CC main.c",
+            .env = "CC=gcc",
+            .flags = 1,
+        };
+
+        auto raw = cmd.to_raw(0, 50);
+
+        REQUIRE(raw.id == 100);
+        REQUIRE(raw.dir_id == 5);
+        REQUIRE(raw.command_hash == cmd_hash);
+        REQUIRE(raw.display_offset == 0);
+        REQUIRE(raw.display_length == 9);
+        REQUIRE(raw.env_offset == 50);
+        REQUIRE(raw.env_length == 6);
+        REQUIRE(raw.flags == 1);
+
+        auto restored = CommandEntry::from_raw(raw, cmd.display, cmd.env);
+
+        REQUIRE(restored.id == cmd.id);
+        REQUIRE(restored.dir_id == cmd.dir_id);
+        REQUIRE(restored.command_hash == cmd.command_hash);
+        REQUIRE(restored.display == cmd.display);
+        REQUIRE(restored.env == cmd.env);
+        REQUIRE(restored.flags == cmd.flags);
+    }
+
+    SECTION("identical commands produce identical hashes")
+    {
+        auto hash1 = pup::sha256("gcc -c foo.c -o foo.o");
+        auto hash2 = pup::sha256("gcc -c foo.c -o foo.o");
+        REQUIRE(hash1 == hash2);
+    }
+
+    SECTION("different commands produce different hashes")
+    {
+        auto hash1 = pup::sha256("gcc -c foo.c -o foo.o");
+        auto hash2 = pup::sha256("clang -c foo.c -o foo.o");
+        REQUIRE(hash1 != hash2);
+    }
+
+    SECTION("command strings not stored in string table")
+    {
+        auto index = Index {};
+
+        // Add commands with different hashes but same display
+        auto hash1 = pup::sha256("gcc -O0 -c foo.c -o foo.o");
+        auto hash2 = pup::sha256("gcc -O2 -c foo.c -o foo.o");
+
+        index.add_command(CommandEntry { .id = 10, .command_hash = hash1, .display = "CC foo.o" });
+        index.add_command(CommandEntry { .id = 11, .command_hash = hash2, .display = "CC foo.o" });
+
+        auto writer = IndexWriter {};
+        auto data = writer.serialize(index);
+        REQUIRE(data.has_value());
+
+        // String table should only contain "CC foo.o" once (8 bytes), not command strings
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 8);
     }
 }

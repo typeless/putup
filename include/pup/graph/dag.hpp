@@ -83,8 +83,9 @@ public:
     [[nodiscard]] auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
         -> std::optional<NodeId>;
 
-    /// Find a node by command string
-    [[nodiscard]] auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
+    /// Find a node by directory and command hash (for index comparison)
+    [[nodiscard]] auto find_by_command_hash(NodeId dir_id, Hash256 const& hash) const
+        -> std::optional<NodeId>;
 
     /// Get all nodes of a given type
     [[nodiscard]] auto nodes_of_type(NodeType type) const -> std::vector<NodeId>;

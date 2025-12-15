@@ -20,7 +20,8 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   3 - Removed path field, only name stored (path reconstructed at load time)
 ///   4 - Directory content_hash stores Merkle hash for O(log n) change detection
 ///   5 - Removed mtime fields, change detection uses size + content hash only
-inline constexpr auto INDEX_VERSION = std::uint32_t { 5 };
+///   6 - Store command hash instead of command string (saves space)
+inline constexpr auto INDEX_VERSION = std::uint32_t { 6 };
 
 /// Index file header (64 bytes, packed)
 struct alignas(8) RawHeader {
@@ -72,14 +73,13 @@ struct alignas(8) RawFileEntry {
 
 static_assert(sizeof(RawFileEntry) == 96, "RawFileEntry must be 96 bytes");
 
-/// Raw command entry (64 bytes)
+/// Raw command entry (72 bytes)
 /// Represents build commands
 struct alignas(8) RawCommandEntry {
     std::uint64_t id = 0;     ///< Node ID
     std::uint64_t dir_id = 0; ///< Directory where command runs
 
-    std::uint32_t cmd_offset = 0; ///< Offset into string table for command
-    std::uint32_t cmd_length = 0; ///< Length of command string
+    Hash256 command_hash = {}; ///< SHA-256 hash of command string
 
     std::uint32_t display_offset = 0; ///< Offset into string table for display text
     std::uint32_t display_length = 0; ///< Length of display string
@@ -91,12 +91,9 @@ struct alignas(8) RawCommandEntry {
     std::uint8_t reserved1 = 0;
     std::uint16_t reserved2 = 0;
     std::uint32_t reserved3 = 0;
-
-    std::uint64_t reserved4 = 0; ///< Reserved for future use
-    std::uint64_t reserved5 = 0; ///< Reserved for future use
 };
 
-static_assert(sizeof(RawCommandEntry) == 64, "RawCommandEntry must be 64 bytes");
+static_assert(sizeof(RawCommandEntry) == 72, "RawCommandEntry must be 72 bytes");
 
 /// Raw edge entry (24 bytes)
 /// Represents dependencies between nodes
