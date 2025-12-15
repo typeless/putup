@@ -4,9 +4,7 @@
 #pragma once
 
 #include <array>
-#include <compare>
 #include <cstdint>
-#include <ctime>
 
 namespace pup {
 
@@ -21,23 +19,6 @@ inline constexpr auto ROOT_NODE_ID = NodeId { 1 };
 
 /// SHA-256 hash (32 bytes)
 using Hash256 = std::array<std::byte, 32>;
-
-/// File modification time with nanosecond precision
-struct FileTime {
-    std::int64_t seconds = 0;
-    std::int32_t nanoseconds = 0;
-
-    [[nodiscard]] auto operator<=>(FileTime const&) const = default;
-
-    /// Create from timespec
-    [[nodiscard]] static auto from_timespec(struct timespec const& ts) -> FileTime
-    {
-        return FileTime {
-            .seconds = ts.tv_sec,
-            .nanoseconds = static_cast<std::int32_t>(ts.tv_nsec),
-        };
-    }
-};
 
 /// Node types in the dependency graph (matches tup's model)
 enum class NodeType : std::uint8_t {

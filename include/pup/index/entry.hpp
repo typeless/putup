@@ -26,7 +26,6 @@ struct FileEntry {
     std::string name = {}; ///< Basename only (tup-style identification)
     std::string path = {}; ///< Full path (computed from parent_id/name chain, not serialized)
     std::uint64_t size = 0;
-    FileTime mtime = {};
     Hash256 content_hash = {};
 
     /// Convert to raw format for serialization

@@ -10,19 +10,6 @@ TEST_CASE("NodeId constants", "[types]")
     REQUIRE(pup::ROOT_NODE_ID == 1);
 }
 
-TEST_CASE("FileTime comparison", "[types]")
-{
-    auto const t1 = pup::FileTime{.seconds = 100, .nanoseconds = 500};
-    auto const t2 = pup::FileTime{.seconds = 100, .nanoseconds = 500};
-    auto const t3 = pup::FileTime{.seconds = 100, .nanoseconds = 600};
-    auto const t4 = pup::FileTime{.seconds = 101, .nanoseconds = 0};
-
-    REQUIRE(t1 == t2);
-    REQUIRE(t1 < t3);
-    REQUIRE(t1 < t4);
-    REQUIRE(t3 < t4);
-}
-
 TEST_CASE("NodeFlags bitwise operations", "[types]")
 {
     using enum pup::NodeFlags;

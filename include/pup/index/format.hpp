@@ -19,7 +19,8 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   2 - Added name field for tup-style (parent_dir, name) identification
 ///   3 - Removed path field, only name stored (path reconstructed at load time)
 ///   4 - Directory content_hash stores Merkle hash for O(log n) change detection
-inline constexpr auto INDEX_VERSION = std::uint32_t { 4 };
+///   5 - Removed mtime fields, change detection uses size + content hash only
+inline constexpr auto INDEX_VERSION = std::uint32_t { 5 };
 
 /// Index file header (64 bytes, packed)
 struct alignas(8) RawHeader {
@@ -50,15 +51,15 @@ struct alignas(8) RawFileEntry {
     std::uint64_t parent_id = 0; ///< Parent directory node ID
     std::uint64_t src_id = 0;    ///< For generated files: source command ID
 
-    std::int64_t mtime_sec = 0; ///< Modification time (seconds)
+    std::uint64_t reserved_mtime = 0; ///< Reserved (was mtime_sec in v1-v4)
 
     std::uint64_t size = 0; ///< File size
 
-    std::int32_t mtime_nsec = 0; ///< Modification time (nanoseconds)
-    std::uint8_t type = 0;       ///< NodeType
-    std::uint8_t flags_low = 0;  ///< NodeFlags (low byte)
-    std::uint8_t flags_high = 0; ///< NodeFlags (high byte)
-    std::uint8_t reserved1 = 0;  ///< Padding
+    std::uint32_t reserved_mtime_ns = 0; ///< Reserved (was mtime_nsec in v1-v4)
+    std::uint8_t type = 0;               ///< NodeType
+    std::uint8_t flags_low = 0;          ///< NodeFlags (low byte)
+    std::uint8_t flags_high = 0;         ///< NodeFlags (high byte)
+    std::uint8_t reserved1 = 0;          ///< Padding
 
     std::uint32_t name_offset = 0; ///< Offset into string table for basename
     std::uint32_t name_length = 0; ///< Length of name string
@@ -143,22 +144,6 @@ inline auto set_node_flags(RawFileEntry& entry, NodeFlags flags) -> void
     auto const value = static_cast<std::uint16_t>(flags);
     entry.flags_low = static_cast<std::uint8_t>(value & 0xFF);
     entry.flags_high = static_cast<std::uint8_t>(value >> 8);
-}
-
-/// Helper to get FileTime from entry
-[[nodiscard]] inline auto get_mtime(RawFileEntry const& entry) -> FileTime
-{
-    return FileTime {
-        .seconds = entry.mtime_sec,
-        .nanoseconds = entry.mtime_nsec,
-    };
-}
-
-/// Helper to set FileTime in entry
-inline auto set_mtime(RawFileEntry& entry, FileTime const& mtime) -> void
-{
-    entry.mtime_sec = mtime.seconds;
-    entry.mtime_nsec = mtime.nanoseconds;
 }
 
 } // namespace pup::index

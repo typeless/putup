@@ -65,15 +65,6 @@ TEST_CASE("RawFileEntry helpers", "[index]")
         set_node_flags(entry, NodeFlags::None);
         REQUIRE(get_node_flags(entry) == NodeFlags::None);
     }
-
-    SECTION("mtime helpers")
-    {
-        auto mtime = FileTime { .seconds = 1234567890, .nanoseconds = 123456789 };
-        set_mtime(entry, mtime);
-        auto result = get_mtime(entry);
-        REQUIRE(result.seconds == mtime.seconds);
-        REQUIRE(result.nanoseconds == mtime.nanoseconds);
-    }
 }
 
 TEST_CASE("FileEntry conversion", "[index]")
@@ -87,7 +78,6 @@ TEST_CASE("FileEntry conversion", "[index]")
         .name = "main.cpp",
         .path = {}, // computed from parent chain, not serialized
         .size = 1024,
-        .mtime = { .seconds = 1700000000, .nanoseconds = 500000000 },
         .content_hash = {},
     };
 
@@ -114,7 +104,6 @@ TEST_CASE("FileEntry conversion", "[index]")
     REQUIRE(restored.flags == file.flags);
     REQUIRE(restored.name == file.name);
     REQUIRE(restored.size == file.size);
-    REQUIRE(restored.mtime == file.mtime);
     REQUIRE(restored.content_hash == file.content_hash);
 }
 
@@ -303,7 +292,6 @@ TEST_CASE("Index serialization roundtrip", "[index]")
         .type = NodeType::File,
         .name = "main.cpp",
         .size = 1024,
-        .mtime = { .seconds = 1700000000, .nanoseconds = 0 },
     });
 
     index.add_file(FileEntry {

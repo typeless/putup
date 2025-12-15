@@ -26,18 +26,6 @@ namespace pup::cli {
 
 namespace {
 
-auto get_file_mtime(std::filesystem::path const& path) -> pup::FileTime
-{
-    struct stat st = {};
-    if (::stat(path.c_str(), &st) < 0) {
-        return {};
-    }
-    return pup::FileTime {
-        .seconds = st.st_mtim.tv_sec,
-        .nanoseconds = static_cast<std::int32_t>(st.st_mtim.tv_nsec),
-    };
-}
-
 auto resolve_path(
     std::filesystem::path const& path,
     std::filesystem::path const& root) -> std::filesystem::path
@@ -80,21 +68,7 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
-        auto current_mtime = pup::FileTime {
-            .seconds = st.st_mtim.tv_sec,
-            .nanoseconds = static_cast<std::int32_t>(st.st_mtim.tv_nsec),
-        };
-
-        if (current_mtime != file.mtime) {
-            if (verbose) {
-                fmt::print("  Changed (mtime): {} - stored {}:{} vs current {}:{}\n",
-                    file.path, file.mtime.seconds, file.mtime.nanoseconds,
-                    current_mtime.seconds, current_mtime.nanoseconds);
-            }
-            changed.push_back(file.path);
-            continue;
-        }
-
+        // Size check (fast path)
         auto current_size = static_cast<std::uint64_t>(st.st_size);
         if (current_size != file.size) {
             if (verbose) {
@@ -104,6 +78,7 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
+        // Content hash check (authoritative)
         if (file.content_hash != pup::ZERO_HASH) {
             auto hash_result = pup::sha256_file(path);
             if (!hash_result || *hash_result != file.content_hash) {
@@ -237,7 +212,6 @@ auto build_index(
                 .name = node.name,
                 .path = node_path,
                 .size = file_size,
-                .mtime = get_file_mtime(file_path),
                 .content_hash = content_hash,
             };
             index.add_file(std::move(entry));
@@ -253,7 +227,6 @@ auto build_index(
                 .name = node.name,
                 .path = node_path,
                 .size = 0,
-                .mtime = {},
                 .content_hash = {},
             };
             index.add_file(std::move(entry));
@@ -308,7 +281,6 @@ auto build_index(
                 .name = "/",
                 .path = "/",
                 .size = 0,
-                .mtime = {},
                 .content_hash = {},
             };
             index.add_file(std::move(entry));
@@ -330,7 +302,6 @@ auto build_index(
             .name = basename,
             .path = path_str,
             .size = 0,
-            .mtime = {},
             .content_hash = {},
         };
         index.add_file(std::move(entry));
@@ -381,7 +352,6 @@ auto build_index(
                     .name = basename,
                     .path = rel_path,
                     .size = file_size,
-                    .mtime = get_file_mtime(abs_path),
                     .content_hash = content_hash,
                 };
                 index.add_file(std::move(entry));
@@ -461,7 +431,6 @@ auto build_index(
                     .name = basename,
                     .path = old_file->path,
                     .size = file_size,
-                    .mtime = get_file_mtime(abs_path),
                     .content_hash = content_hash,
                 };
                 index.add_file(std::move(entry));

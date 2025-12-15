@@ -19,7 +19,6 @@ auto FileEntry::to_raw(std::uint32_t name_offset) const -> RawFileEntry
     raw.type = static_cast<std::uint8_t>(type);
     set_node_flags(raw, flags);
     raw.size = size;
-    set_mtime(raw, mtime);
     raw.name_offset = name_offset;
     raw.name_length = static_cast<std::uint32_t>(name.size());
     raw.content_hash = content_hash;
@@ -37,7 +36,6 @@ auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view name_str) -> 
         .name = std::string { name_str },
         .path = {}, // Computed later from parent chain
         .size = raw.size,
-        .mtime = get_mtime(raw),
         .content_hash = raw.content_hash,
     };
 }

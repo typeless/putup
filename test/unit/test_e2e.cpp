@@ -284,6 +284,37 @@ SCENARIO("Config file changes trigger rebuild", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Touch does not trigger unnecessary rebuild", "[e2e][incremental]")
+{
+    GIVEN("a built project with source files")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.is_executable("hello"));
+
+        WHEN("a source file is touched without content change")
+        {
+            // Touch updates mtime but not content
+            // Use absolute path to touch since it's not in workdir
+            auto result = f.run("/usr/bin/touch", { "hello.c" });
+            REQUIRE(result.success());
+
+            auto build_result = f.build();
+
+            THEN("build succeeds")
+            {
+                REQUIRE(build_result.success());
+            }
+
+            THEN("no rebuild occurs because content hash unchanged")
+            {
+                REQUIRE(build_result.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
 {
     GIVEN("a project built with implicit dependency tracking")

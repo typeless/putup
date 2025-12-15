@@ -450,9 +450,10 @@ PUP_IMPLICIT_DEPS=1 pup build
 - Header file changes (via `LinkType::Implicit` edges from `.d` files)
 
 **How file changes are detected:**
-1. Compare mtime - if different, rebuild
-2. If mtime same, compare file size - if different, rebuild
-3. If size same, compute SHA-256 hash - if different, rebuild
+1. Compare file size - if different, rebuild (fast path)
+2. If size matches, compute SHA-256 hash - if different, rebuild
+
+This content-based detection eliminates false positives from `touch`, `rsync`, `git checkout`, etc.
 
 **Build flow:**
 1. **Parse**: Re-parse all Tupfiles to build fresh in-memory DAG
@@ -488,7 +489,7 @@ The depfile parser (`include/pup/parser/depfile.hpp`) handles:
 
 Binary file at `.pup/index`:
 - Header (64 bytes): magic, version, counts
-- File entries (96 bytes each): id, parent_id, name, mtime, size, SHA-256 hash
+- File entries (96 bytes each): id, parent_id, name, size, SHA-256 hash
 - Command entries (64 bytes each): id, command, display
 - Edges (24 bytes each): from, to, type (Normal, Sticky, Group, Implicit)
 - String table: packed strings

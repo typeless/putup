@@ -38,7 +38,6 @@ struct Node {
 
     NodeId parent_dir = 0;         ///< Parent directory node (used with name for lookup)
     Hash256 content_hash = { {} }; ///< Content hash for files (double braces force zero-init)
-    FileTime mtime = {};           ///< Modification time
 
     std::vector<NodeId> inputs = {};          ///< Input edges (dependencies)
     std::vector<NodeId> outputs = {};         ///< Output edges (dependents)
