@@ -27,7 +27,8 @@ auto find_build_subdir(std::filesystem::path const& root)
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path { root / name };
-        if (std::filesystem::exists(dir / "tup.config")) {
+        if (std::filesystem::exists(dir / "tup.config")
+            || std::filesystem::is_directory(dir / ".pup")) {
             return dir;
         }
     }
@@ -35,8 +36,8 @@ auto find_build_subdir(std::filesystem::path const& root)
     if (std::filesystem::is_directory(root)) {
         for (auto const& entry : std::filesystem::directory_iterator(root)) {
             if (entry.is_directory()) {
-                auto config_path = std::filesystem::path { entry.path() / "tup.config" };
-                if (std::filesystem::exists(config_path)) {
+                if (std::filesystem::exists(entry.path() / "tup.config")
+                    || std::filesystem::is_directory(entry.path() / ".pup")) {
                     return entry.path();
                 }
             }

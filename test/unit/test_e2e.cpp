@@ -937,3 +937,69 @@ SCENARIO("Export graph --summary --all shows implicit edge count", "[e2e][export
         }
     }
 }
+
+// =============================================================================
+// Layout Detection Tests
+// =============================================================================
+
+SCENARIO("Layout detection finds build directory via .pup", "[e2e][layout]")
+{
+    GIVEN("a project with build/.pup but no build/tup.config")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        f.mkdir("build");
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        // Remove tup.config if it exists, keeping only .pup
+        if (f.exists("build/tup.config")) {
+            f.remove_file("build/tup.config");
+        }
+        REQUIRE(f.exists("build/.pup"));
+        REQUIRE_FALSE(f.exists("build/tup.config"));
+
+        WHEN("export graph --all is run without -B")
+        {
+            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+
+            THEN("build directory is auto-detected via .pup")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
+            }
+
+            THEN("no warning about missing index")
+            {
+                REQUIRE(result.stderr_output.find("No index found") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Layout detection prefers tup.config over .pup", "[e2e][layout]")
+{
+    GIVEN("a project with both build/tup.config and build/.pup")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        f.mkdir("build");
+        f.write_file("build/tup.config", "# Variant config\n");
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        REQUIRE(f.exists("build/.pup"));
+        REQUIRE(f.exists("build/tup.config"));
+
+        WHEN("export graph --all is run without -B")
+        {
+            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+
+            THEN("build directory is detected")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
+            }
+        }
+    }
+}
