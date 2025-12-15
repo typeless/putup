@@ -3,8 +3,11 @@ include_rules
 # Catch2 amalgamated (compile once, disable -Werror for third-party code)
 : $(ROOT)/third_party/catch_amalgamated.cpp |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-error -c %f -o %o |> catch_amalgamated.o {catch}
 
+# E2E test fixture support
+: e2e_fixture.cpp |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> e2e_fixture.o {e2e_support}
+
 # Test sources (disable spurious maybe-uninitialized warnings from std::variant)
 : foreach test_*.cpp |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-maybe-uninitialized -c %f -o %o |> %B.o {test_objs}
 
 # Link test runner (reference all library objects)
-: {test_objs} {catch} $(ROOT)/sha256.o $(ROOT)/string_utils.o $(ROOT)/hash.o $(ROOT)/layout.o $(ROOT)/lexer.o $(ROOT)/parser.o $(ROOT)/ast.o $(ROOT)/eval.o $(ROOT)/glob.o $(ROOT)/depfile.o $(ROOT)/ignore.o $(ROOT)/dag.o $(ROOT)/topo.o $(ROOT)/builder.o $(ROOT)/rule_pattern.o $(ROOT)/entry.o $(ROOT)/reader.o $(ROOT)/writer.o $(ROOT)/runner.o $(ROOT)/scheduler.o |> !link |> pup_test
+: {test_objs} {e2e_support} {catch} $(ROOT)/sha256.o $(ROOT)/string_utils.o $(ROOT)/hash.o $(ROOT)/layout.o $(ROOT)/lexer.o $(ROOT)/parser.o $(ROOT)/ast.o $(ROOT)/eval.o $(ROOT)/glob.o $(ROOT)/depfile.o $(ROOT)/ignore.o $(ROOT)/dag.o $(ROOT)/topo.o $(ROOT)/builder.o $(ROOT)/rule_pattern.o $(ROOT)/entry.o $(ROOT)/reader.o $(ROOT)/writer.o $(ROOT)/runner.o $(ROOT)/scheduler.o |> !link |> pup_test

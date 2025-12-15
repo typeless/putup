@@ -113,10 +113,12 @@ pup export graph --summary
 ## Testing
 
 ```bash
-make test                          # Run all tests
-./build/test/unit/pup_test         # Unit tests only
-./build/test/unit/pup_test -s      # Unit tests with verbose output
-./test/e2e/run_tests.sh            # E2E tests only
+make test                            # Run all tests
+./build/test/unit/pup_test           # All tests (unit + E2E)
+./build/test/unit/pup_test -s        # Verbose output
+./build/test/unit/pup_test '[e2e]'   # E2E tests only
+./build/test/unit/pup_test '[build]' # Build tests only
+./build/test/unit/pup_test '[clean]' # Clean/distclean tests only
 ```
 
 ## Development Workflow
@@ -219,10 +221,10 @@ pup/
 │   └── exec/           # Scheduler, command runner
 ├── src/                # Implementation files
 ├── test/
-│   ├── unit/           # Catch2 unit tests
-│   └── e2e/            # End-to-end tests
-│       ├── run_tests.sh
-│       └── fixtures/   # Test fixtures (simple_c, multi_file, etc.)
+│   ├── unit/           # Catch2 unit + E2E tests (BDD style)
+│   │   ├── test_*.cpp  # Test files
+│   │   └── e2e_fixture.{hpp,cpp}  # E2E test infrastructure
+│   └── e2e/fixtures/   # Test fixture data (Tupfiles, sources)
 ├── third_party/        # expected-lite, fmt, sha256, Catch2
 ├── Makefile            # Workflow wrapper (make test, make tidy, etc.)
 ├── Tupfile             # Build configuration

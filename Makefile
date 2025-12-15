@@ -85,7 +85,6 @@ endif
 
 test: build
 	./$(BUILD_DIR)/test/unit/pup_test
-	./test/e2e/run_tests.sh
 
 install: build
 	@mkdir -p $(PREFIX)/bin
