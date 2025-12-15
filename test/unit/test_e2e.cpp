@@ -39,7 +39,7 @@ SCENARIO("Building a simple C project", "[e2e][build]")
 
         WHEN("built again without changes")
         {
-            (void)f.build(); // first build
+            (void)f.build();         // first build
             auto result = f.build(); // second build
 
             THEN("nothing is rebuilt")
@@ -826,6 +826,114 @@ SCENARIO("Pupignore test via shell fixture", "[e2e][shell]")
         THEN("ignored directories are skipped")
         {
             REQUIRE(result.success());
+        }
+    }
+}
+
+// =============================================================================
+// Export Command Tests
+// =============================================================================
+
+SCENARIO("Export graph shows only declared deps by default", "[e2e][export]")
+{
+    GIVEN("a built implicit_deps project")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("export graph is run without --all")
+        {
+            auto result = f.pup({ "export", "graph" });
+
+            THEN("output is valid DOT format")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("digraph G {") != std::string::npos);
+            }
+
+            THEN("implicit deps are not shown")
+            {
+                REQUIRE(result.stdout_output.find("config.h") == std::string::npos);
+                REQUIRE(result.stdout_output.find("style=dashed") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Export graph --all includes implicit deps", "[e2e][export]")
+{
+    GIVEN("a built implicit_deps project")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("export graph --all is run")
+        {
+            auto result = f.pup({ "export", "graph", "--all" });
+
+            THEN("output is valid DOT format")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("digraph G {") != std::string::npos);
+            }
+
+            THEN("implicit deps are shown with dashed style")
+            {
+                REQUIRE(result.stdout_output.find("config.h") != std::string::npos);
+                REQUIRE(result.stdout_output.find("style=dashed") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Export graph --all with no index warns", "[e2e][export]")
+{
+    GIVEN("an initialized but NOT built project")
+    {
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+
+        WHEN("export graph --all is run")
+        {
+            auto result = f.pup({ "export", "graph", "--all" });
+
+            THEN("command succeeds with warning")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("No index found") != std::string::npos);
+            }
+
+            THEN("output has declared deps only")
+            {
+                REQUIRE(result.stdout_output.find("digraph G {") != std::string::npos);
+                REQUIRE(result.stdout_output.find("style=dashed") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Export graph --summary --all shows implicit edge count", "[e2e][export]")
+{
+    GIVEN("a built implicit_deps project")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("export graph --summary --all is run")
+        {
+            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+
+            THEN("output shows implicit edge count")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
+            }
         }
     }
 }

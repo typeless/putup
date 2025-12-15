@@ -18,6 +18,7 @@ struct Options {
     bool version = false;
     bool help = false;
     bool summary = false;
+    bool include_all_deps = false;
     std::string command = {};
     std::string export_format = {};
     std::string source_dir = {};

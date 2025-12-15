@@ -9,15 +9,46 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/topo.hpp"
+#include "pup/index/entry.hpp"
+#include "pup/index/reader.hpp"
 
 #include <cstdlib>
+#include <optional>
 #include <set>
+#include <unordered_set>
 
 #include <fmt/core.h>
 
 namespace pup::cli {
 
 namespace {
+
+auto load_index_for_all_deps(Options const& opts, ProjectLayout const& layout)
+    -> std::optional<pup::index::Index>
+{
+    if (!opts.include_all_deps) {
+        return std::nullopt;
+    }
+
+    auto index_path = layout.index_path();
+    if (!std::filesystem::exists(index_path)) {
+        fmt::print(stderr, "Warning: No index found - run 'pup build' first\n");
+        return std::nullopt;
+    }
+
+    auto reader = pup::index::IndexReader::open(index_path);
+    if (!reader) {
+        return std::nullopt;
+    }
+
+    auto index_result = reader->read();
+    if (!index_result) {
+        return std::nullopt;
+    }
+
+    index_result->build_edge_indices();
+    return std::move(*index_result);
+}
 
 auto cmd_export_script(Options const& opts) -> int
 {
@@ -104,6 +135,7 @@ auto cmd_export_graph(Options const& opts) -> int
     }
 
     auto& ctx = *result;
+    auto index = load_index_for_all_deps(opts, ctx.layout());
 
     if (opts.summary) {
         auto commands = ctx.graph().nodes_of_type(pup::NodeType::Command);
@@ -111,6 +143,16 @@ auto cmd_export_graph(Options const& opts) -> int
         fmt::print("Nodes: {}\n", ctx.graph().node_count());
         fmt::print("Edges: {}\n", ctx.graph().edge_count());
         fmt::print("Commands: {}\n", commands.size());
+
+        if (index) {
+            auto implicit_count = std::size_t { 0 };
+            for (auto const& edge : index->edges()) {
+                if (edge.type == pup::LinkType::Implicit) {
+                    ++implicit_count;
+                }
+            }
+            fmt::print("Implicit edges: {}\n", implicit_count);
+        }
 
         if (opts.verbose) {
             fmt::print("\nCommands:\n");
@@ -127,11 +169,14 @@ auto cmd_export_graph(Options const& opts) -> int
     fmt::print("digraph G {{\n");
     fmt::print("  rankdir=LR;\n");
 
+    auto declared_nodes = std::unordered_set<pup::NodeId> {};
     for (auto id : ctx.graph().all_nodes()) {
         auto const* node = ctx.graph().get_node(id);
         if (!node) {
             continue;
         }
+
+        declared_nodes.insert(id);
 
         auto label = escape_dot_label(
             node->type == pup::NodeType::Command
@@ -142,6 +187,34 @@ auto cmd_export_graph(Options const& opts) -> int
 
         for (auto input_id : ctx.graph().get_inputs(id)) {
             fmt::print("  n{} -> n{};\n", input_id, id);
+        }
+    }
+
+    if (index) {
+        auto implicit_nodes = std::unordered_set<pup::NodeId> {};
+
+        for (auto const& edge : index->edges()) {
+            if (edge.type != pup::LinkType::Implicit) {
+                continue;
+            }
+
+            auto from_id = edge.from;
+            auto to_id = edge.to;
+
+            if (declared_nodes.find(to_id) == declared_nodes.end()) {
+                continue;
+            }
+
+            if (declared_nodes.find(from_id) == declared_nodes.end()) {
+                if (implicit_nodes.find(from_id) == implicit_nodes.end()) {
+                    implicit_nodes.insert(from_id);
+                    auto const* file = index->find_file_by_id(from_id);
+                    auto label = file ? escape_dot_label(file->path) : fmt::format("node_{}", from_id);
+                    fmt::print("  n{} [label=\"{}\" style=filled fillcolor=\"#f0f0f0\"];\n", from_id, label);
+                }
+            }
+
+            fmt::print("  n{} -> n{} [style=dashed color=\"#888888\"];\n", from_id, to_id);
         }
     }
 
