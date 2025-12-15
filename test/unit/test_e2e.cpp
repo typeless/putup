@@ -1003,3 +1003,44 @@ SCENARIO("Layout detection prefers tup.config over .pup", "[e2e][layout]")
         }
     }
 }
+
+SCENARIO("Layout detection prefers build/.pup with index over empty source .pup", "[e2e][layout]")
+{
+    GIVEN("source root has empty .pup AND build has .pup with index")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+
+        // Create empty .pup at source root (simulating stale directory)
+        f.mkdir(".pup");
+        REQUIRE(f.exists(".pup"));
+        REQUIRE_FALSE(f.exists(".pup/index"));
+
+        // Build to build/ which creates build/.pup/index
+        f.mkdir("build");
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/.pup/index"));
+
+        WHEN("clean is run without -B")
+        {
+            auto result = f.clean();
+
+            THEN("it finds build/.pup and cleans successfully")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("no index found") == std::string::npos);
+            }
+        }
+
+        WHEN("export graph --all is run without -B")
+        {
+            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+
+            THEN("it finds build/.pup/index")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
+            }
+        }
+    }
+}

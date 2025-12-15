@@ -381,13 +381,15 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
         // cwd contains .pup and is not source root - we're inside a build directory
         build_dir = cwd;
         is_in_tree = false;
-    } else if (std::filesystem::exists(*root / "tup.config")
-        || std::filesystem::exists(*root / ".pup")) {
-        build_dir = *root;
-        is_in_tree = true;
     } else if (auto detected = find_build_subdir(*root)) {
+        // Prefer build subdirectory with .pup/index over source root
         build_dir = *detected;
         is_in_tree = false;
+    } else if (std::filesystem::exists(*root / "tup.config")
+        || std::filesystem::exists(*root / ".pup")) {
+        // Fall back to source root for in-tree builds
+        build_dir = *root;
+        is_in_tree = true;
     } else {
         return std::nullopt;
     }
