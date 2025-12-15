@@ -20,6 +20,9 @@ CXXFLAGS += -I$(ROOT)/include
 CXXFLAGS += -I$(ROOT)/third_party
 CXXFLAGS += -fPIC
 CXXFLAGS += -DFMT_HEADER_ONLY
+CXXFLAGS += -DFMT_USE_LOCALE=0
+CXXFLAGS += -DFMT_USE_INT128=0
+CXXFLAGS += -DFMT_USE_FLOAT128=0
 
 ifdef DEBUG
 CFLAGS += -g -O0 -fsanitize=address,undefined
