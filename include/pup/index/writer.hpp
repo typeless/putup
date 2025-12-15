@@ -8,6 +8,7 @@
 #include "pup/core/result.hpp"
 
 #include <filesystem>
+#include <unordered_map>
 #include <vector>
 
 namespace pup::index {
@@ -44,6 +45,7 @@ private:
 
     private:
         std::vector<char> data_ = {};
+        std::unordered_map<std::string, std::uint32_t> offsets_ = {};
     };
 
     auto build_header(

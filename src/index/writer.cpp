@@ -18,7 +18,10 @@ auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
         return 0;
     }
 
-    // Check for 4GB string table limit (uint32_t offset)
+    if (auto it = offsets_.find(std::string { str }); it != offsets_.end()) {
+        return it->second;
+    }
+
     auto constexpr MAX_OFFSET = std::numeric_limits<std::uint32_t>::max();
     if (data_.size() > MAX_OFFSET - str.size()) {
         throw std::overflow_error("String table exceeds 4GB limit");
@@ -26,6 +29,7 @@ auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
 
     auto offset = static_cast<std::uint32_t>(data_.size());
     data_.insert(data_.end(), str.begin(), str.end());
+    offsets_.emplace(std::string { str }, offset);
     return offset;
 }
 

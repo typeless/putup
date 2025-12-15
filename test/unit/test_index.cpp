@@ -431,3 +431,52 @@ TEST_CASE("Index reader validation", "[index]")
         std::filesystem::remove(temp_path);
     }
 }
+
+TEST_CASE("StringTable deduplication", "[index]")
+{
+    SECTION("identical strings are deduplicated")
+    {
+        auto index = Index {};
+
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = "main.cpp" });
+        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = "main.cpp" });
+        index.add_file(FileEntry { .id = 3, .parent_id = 0, .name = "main.cpp" });
+
+        auto writer = IndexWriter {};
+        auto data = writer.serialize(index);
+        REQUIRE(data.has_value());
+
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 8);
+    }
+
+    SECTION("system header paths are deduplicated")
+    {
+        auto index = Index {};
+
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = "/usr/include/stdio.h" });
+        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = "/usr/include/stdio.h" });
+
+        auto writer = IndexWriter {};
+        auto data = writer.serialize(index);
+        REQUIRE(data.has_value());
+
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 20);
+    }
+
+    SECTION("empty strings return offset 0")
+    {
+        auto index = Index {};
+
+        index.add_command(CommandEntry { .id = 10, .command = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = 11, .command = "gcc", .display = "", .env = "" });
+
+        auto writer = IndexWriter {};
+        auto data = writer.serialize(index);
+        REQUIRE(data.has_value());
+
+        auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
+        REQUIRE(hdr->string_table_size == 3);
+    }
+}
