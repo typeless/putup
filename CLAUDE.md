@@ -113,12 +113,54 @@ pup export graph --summary
 ## Testing
 
 ```bash
-make test                            # Run all tests
-./build/test/unit/pup_test           # All tests (unit + E2E)
-./build/test/unit/pup_test -s        # Verbose output
-./build/test/unit/pup_test '[e2e]'   # E2E tests only
-./build/test/unit/pup_test '[build]' # Build tests only
-./build/test/unit/pup_test '[clean]' # Clean/distclean tests only
+make test                                 # Run all tests
+./build/test/unit/pup_test                # All tests (unit + E2E)
+./build/test/unit/pup_test -s             # Verbose output
+./build/test/unit/pup_test '[e2e]'        # E2E tests only
+./build/test/unit/pup_test '[build]'      # Build tests only
+./build/test/unit/pup_test '[clean]'      # Clean/distclean tests only
+./build/test/unit/pup_test '[incremental]' # Incremental rebuild tests
+./build/test/unit/pup_test '[variant]'    # Out-of-tree/variant tests
+./build/test/unit/pup_test '[shell]'      # Shell fixture tests
+```
+
+### Writing E2E Tests
+
+E2E tests use BDD style with `SCENARIO/GIVEN/WHEN/THEN` macros. Use the `E2EFixture` class to manage test fixtures:
+
+```cpp
+SCENARIO("Feature description", "[e2e][tag]")
+{
+    GIVEN("an initialized project")
+    {
+        auto f = E2EFixture { "fixture_name" };  // From test/e2e/fixtures/
+        REQUIRE(f.init().success());
+
+        WHEN("something happens")
+        {
+            auto result = f.build();
+
+            THEN("expected outcome")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("output"));
+            }
+        }
+    }
+}
+```
+
+**E2EFixture methods:**
+- `init()`, `build()`, `clean()`, `distclean()`, `parse()` - Run pup commands
+- `exists()`, `is_file()`, `is_directory()`, `is_executable()` - Check paths
+- `read_file()`, `write_file()`, `append_file()`, `remove_file()` - File I/O
+- `run()` - Execute a program and capture output
+- `run_pup_in_dir()` - Run pup from a subdirectory
+- `create_symlink()`, `mkdir()` - Filesystem operations
+
+**Environment variables:**
+```cpp
+auto env = EnvGuard { "VAR_NAME", "value" };  // RAII - auto-restores on scope exit
 ```
 
 ## Development Workflow
