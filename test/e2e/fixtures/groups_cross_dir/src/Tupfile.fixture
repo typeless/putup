@@ -1,0 +1,10 @@
+# Compile with cross-directory order-only dependency
+# The | ../include/<gen-headers> ensures version.h is generated first
+
+CC = gcc
+
+# Test %<group> expansion with cross-directory group reference
+: | ../include/<gen-headers> |> cat %<gen-headers> > %o |> headers.txt
+
+: main.c | ../include/<gen-headers> |> $(CC) -I../include -c %f -o %o |> main.o
+: main.o |> $(CC) %f -o %o |> program

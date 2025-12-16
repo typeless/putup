@@ -133,6 +133,61 @@ auto map_to_output(
     return (current_dir / path).lexically_normal().string();
 }
 
+/// Transform a project-root-relative path to be relative to source directory
+/// Used for command expansion where commands run from Tupfile directory
+auto make_source_relative(
+    std::string const& path,
+    std::string_view source_to_root,
+    std::string_view current_dir_str) -> std::string
+{
+    if (path.empty() || path[0] == '/') {
+        return path;
+    }
+    if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
+        return path;
+    }
+    if (source_to_root.empty()) {
+        return path;
+    }
+    if (!current_dir_str.empty() && path.starts_with(std::string { current_dir_str } + "/")) {
+        return path.substr(current_dir_str.size() + 1);
+    }
+    if (!current_dir_str.empty() && path == current_dir_str) {
+        return ".";
+    }
+    return std::string { source_to_root } + path;
+}
+
+/// Compute the "../" prefix needed to go from current_dir to project root
+auto compute_source_to_root(fs::path const& current_dir) -> std::string
+{
+    auto result = std::string {};
+    for (auto const& comp : current_dir) {
+        auto s = comp.string();
+        if (s != "." && s != "/" && !s.empty()) {
+            result += "../";
+        }
+    }
+    return result;
+}
+
+/// RAII scope guard for cleanup on scope exit
+struct ScopeGuard {
+    std::function<void()> cleanup;
+    explicit ScopeGuard(std::function<void()> fn)
+        : cleanup { std::move(fn) }
+    {
+    }
+    ~ScopeGuard()
+    {
+        if (cleanup) {
+            cleanup();
+        }
+    }
+    ScopeGuard(ScopeGuard const&) = delete;
+    auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
+};
+
 } // namespace
 
 struct GraphBuilder::Impl {
@@ -585,6 +640,109 @@ auto GraphBuilder::expand_rule(
 {
     // Get the primary input for pattern expansion
     auto primary_input = inputs.empty() ? std::string {} : inputs[0];
+
+    // Pre-resolve order-only group references so %<group> can expand them in commands
+    // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
+    auto rule_order_only_groups = std::unordered_map<std::string, std::vector<std::string>> {};
+    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto source_to_root = compute_source_to_root(ctx.current_dir);
+    auto current_dir_str = ctx.current_dir.string();
+
+    // Also check regular inputs for order-only group references
+    // In tup, <group> references are always order-only even when in the inputs section
+    auto all_inputs = std::vector<parser::PathPattern> {};
+    all_inputs.insert(all_inputs.end(), rule.inputs.begin(), rule.inputs.end());
+    all_inputs.insert(all_inputs.end(), rule.order_only_inputs.begin(), rule.order_only_inputs.end());
+
+    for (auto const& pattern : all_inputs) {
+        if (pattern.is_order_only_group) {
+            // Direct group reference: <group> or dir/<group> (is_order_only_group=true)
+            auto group_dir = std::string {};
+            if (!pattern.path.empty()) {
+                auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
+                if (expanded) {
+                    group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
+                }
+            } else {
+                group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+            }
+
+            // Demand-driven parsing: request the directory's Tupfile if not yet parsed
+            auto dir_path = fs::path { group_dir };
+            if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
+                    (void)ctx.eval->request_directory(dir_path);
+                }
+            }
+
+            auto key = Impl::GroupKey { group_dir, pattern.group_name };
+            auto it = impl_->order_only_groups.find(key);
+            if (it != impl_->order_only_groups.end()) {
+                auto& paths = rule_order_only_groups[pattern.group_name];
+                for (auto id : it->second) {
+                    auto path = ctx.graph->get_full_path(id);
+                    if (!path.empty()) {
+                        paths.push_back(make_source_relative(path, source_to_root, current_dir_str));
+                    }
+                }
+            }
+        } else if (!pattern.path.empty()) {
+            // Path expression that may contain <group> suffix: ../include/<gen-headers>
+            auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
+            if (!expanded) {
+                continue;
+            }
+            auto const& path = *expanded;
+            auto lt_pos = path.rfind('<');
+            auto gt_pos = path.rfind('>');
+            if (lt_pos != std::string::npos && gt_pos != std::string::npos
+                && gt_pos == path.size() - 1 && gt_pos > lt_pos) {
+                auto group_name = path.substr(lt_pos + 1, gt_pos - lt_pos - 1);
+                if (group_name.empty()) {
+                    continue;
+                }
+                auto dir_part = path.substr(0, lt_pos);
+                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.source_root);
+                auto dir_path = fs::path { group_dir };
+
+                // Demand-driven parsing: request the directory's Tupfile if not yet parsed
+                if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                    if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
+                        (void)ctx.eval->request_directory(dir_path);
+                    }
+                }
+
+                auto key = Impl::GroupKey { group_dir, group_name };
+                auto it = impl_->order_only_groups.find(key);
+                if (it != impl_->order_only_groups.end()) {
+                    auto& paths = rule_order_only_groups[group_name];
+                    for (auto id : it->second) {
+                        auto p = ctx.graph->get_full_path(id);
+                        if (!p.empty()) {
+                            paths.push_back(make_source_relative(p, source_to_root, current_dir_str));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Temporarily enhance resolve_order_only_group to include this rule's groups
+    // ScopeGuard ensures restoration even on early returns
+    auto original_resolver = ctx.eval->resolve_order_only_group;
+    auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
+    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &original_resolver](std::string_view name) -> std::vector<std::string> {
+        // First check groups referenced by this rule (handles cross-directory)
+        auto it = rule_order_only_groups.find(std::string { name });
+        if (it != rule_order_only_groups.end()) {
+            return it->second;
+        }
+        // Fall back to original resolver (local groups)
+        if (original_resolver) {
+            return original_resolver(name);
+        }
+        return {};
+    };
 
     // Check if command is a bang macro reference
     auto cmd_text = std::string {};
@@ -1174,54 +1332,19 @@ auto GraphBuilder::expand_command(
 
     // Transform paths to be relative to source directory (where command runs)
     // Input/output paths are project-root-relative, but commands run from source_dir
-    auto source_to_root = std::string {};
-    if (!ctx.current_dir.empty()) {
-        for (auto const& comp : ctx.current_dir) {
-            auto s = comp.string();
-            if (s != "." && s != "/" && !s.empty()) {
-                source_to_root += "../";
-            }
-        }
-    }
-
+    auto source_to_root = compute_source_to_root(ctx.current_dir);
     auto current_dir_str = ctx.current_dir.string();
-    auto make_source_relative = [&](std::string const& path) -> std::string {
-        if (path.empty()) {
-            return path;
-        }
-        // Absolute paths (from out-of-tree builds) stay absolute
-        if (!path.empty() && path[0] == '/') {
-            return path;
-        }
-        // Don't transform paths that already start with ../
-        if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
-            return path;
-        }
-        if (source_to_root.empty()) {
-            return path;
-        }
-        // Local paths: strip current_dir prefix instead of round-trip via root
-        // e.g., "src/lib/add.c" -> "add.c" (not "../../src/lib/add.c")
-        if (!current_dir_str.empty() && path.starts_with(current_dir_str + "/")) {
-            return path.substr(current_dir_str.size() + 1);
-        }
-        if (!current_dir_str.empty() && path == current_dir_str) {
-            return ".";
-        }
-        // Cross-directory reference: use full relative path from source dir
-        return source_to_root + path;
-    };
 
     auto cmd_inputs = std::vector<std::string> {};
     cmd_inputs.reserve(inputs.size());
     for (auto const& inp : inputs) {
-        cmd_inputs.push_back(make_source_relative(inp));
+        cmd_inputs.push_back(make_source_relative(inp, source_to_root, current_dir_str));
     }
 
     auto cmd_outputs = std::vector<std::string> {};
     cmd_outputs.reserve(outputs.size());
     for (auto const& out : outputs) {
-        cmd_outputs.push_back(make_source_relative(out));
+        cmd_outputs.push_back(make_source_relative(out, source_to_root, current_dir_str));
     }
 
     // Build pattern flags

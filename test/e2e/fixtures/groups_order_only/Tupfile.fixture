@@ -1,0 +1,16 @@
+# Test order-only groups: <gen-headers> ensures ordering without triggering rebuilds
+
+CC = gcc
+
+# Generate config header - outputs to <gen-headers> group
+: |> ./gen_config.sh > %o |> config.h <gen-headers>
+
+# Test %<group> pattern expansion in command body
+: | <gen-headers> |> echo %<gen-headers> > %o |> headers.txt
+
+# Compile with order-only dependency on generated header
+# The | <gen-headers> ensures config.h exists before compiling
+: main.c | <gen-headers> |> $(CC) -include config.h -c %f -o %o |> main.o
+
+# Link
+: main.o |> $(CC) %f -o %o |> program

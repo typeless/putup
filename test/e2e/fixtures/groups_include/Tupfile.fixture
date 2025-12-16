@@ -1,0 +1,7 @@
+# Test groups defined in included files
+# gen.tup defines a group, build.tup references it
+
+CC = gcc
+
+include gen.tup
+include build.tup

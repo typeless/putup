@@ -155,6 +155,133 @@ SCENARIO("Building with output groups", "[e2e][build]")
     }
 }
 
+SCENARIO("Order-only groups ensure build ordering", "[e2e][groups]")
+{
+    GIVEN("a project with order-only header generation")
+    {
+        auto f = E2EFixture { "groups_order_only" };
+        REQUIRE(f.init().success());
+
+        WHEN("built from scratch")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("generated header exists")
+            {
+                REQUIRE(f.exists("config.h"));
+            }
+
+            THEN("percent-group pattern expands in command body")
+            {
+                // %<gen-headers> in command body should expand to config.h
+                auto content = f.read_file("headers.txt");
+                REQUIRE(content.find("config.h") != std::string::npos);
+            }
+
+            THEN("program uses generated config value")
+            {
+                auto output = f.run("program").stdout_output;
+                REQUIRE(output.find("CONFIG_VALUE=42") != std::string::npos);
+            }
+        }
+
+        WHEN("rebuilt without changes")
+        {
+            (void)f.build({ "-j1" });
+            auto result = f.build({ "-j1" });
+
+            THEN("nothing is rebuilt")
+            {
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Cross-directory order-only groups", "[e2e][groups]")
+{
+    GIVEN("a multi-directory project with cross-dir group reference")
+    {
+        auto f = E2EFixture { "groups_cross_dir" };
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("header is generated in include directory")
+            {
+                REQUIRE(f.exists("include/version.h"));
+            }
+
+            THEN("program is built in src directory")
+            {
+                REQUIRE(f.is_executable("src/program"));
+            }
+
+            THEN("program uses generated version")
+            {
+                auto output = f.run("src/program").stdout_output;
+                REQUIRE(output.find("Version: 1.0.0") != std::string::npos);
+            }
+
+            THEN("percent-group expands cross-directory group in command")
+            {
+                // %<gen-headers> should expand to ../include/version.h
+                auto content = f.read_file("src/headers.txt");
+                REQUIRE(content.find("VERSION") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Groups defined in included files are visible", "[e2e][groups]")
+{
+    GIVEN("a Tupfile that includes gen.tup (defines group) and build.tup (references group)")
+    {
+        auto f = E2EFixture { "groups_include" };
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("generated header from included file exists")
+            {
+                REQUIRE(f.exists("config.h"));
+            }
+
+            THEN("program built from another included file works")
+            {
+                auto output = f.run("program").stdout_output;
+                REQUIRE(output.find("CONFIG_VALUE=123") != std::string::npos);
+            }
+
+            THEN("percent-group expands group from included file in command")
+            {
+                // %<gen-headers> should expand to config.h (defined in gen.tup)
+                auto content = f.read_file("headers.txt");
+                REQUIRE(content.find("CONFIG_VALUE") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Build fails when command fails", "[e2e][build]")
 {
     GIVEN("an initialized failure project with invalid source")

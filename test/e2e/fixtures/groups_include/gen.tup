@@ -1,0 +1,2 @@
+# Generate config header - outputs to <gen-headers> group
+: |> ./gen_config.sh > %o |> config.h <gen-headers>

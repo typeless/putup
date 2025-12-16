@@ -1,0 +1,2 @@
+# Generate version header - outputs to <gen-headers> group
+: |> ./gen_version.sh > %o |> version.h <gen-headers>

@@ -1,0 +1,7 @@
+# Reference group defined in gen.tup
+
+# Test %<group> expansion with group from included file
+: | <gen-headers> |> cat %<gen-headers> > %o |> headers.txt
+
+: main.c | <gen-headers> |> $(CC) -include config.h -c %f -o %o |> main.o
+: main.o |> $(CC) %f -o %o |> program
