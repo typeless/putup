@@ -10,6 +10,7 @@ extern "C" {
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <ranges>
 
 namespace pup {
 
@@ -166,8 +167,7 @@ auto compute_merkle_hash(
 {
     // Sort children by name for deterministic ordering
     auto sorted = children;
-    std::sort(sorted.begin(), sorted.end(),
-        [](auto const& a, auto const& b) { return std::get<0>(a) < std::get<0>(b); });
+    std::ranges::sort(sorted, {}, [](auto const& x) { return std::get<0>(x); });
 
     // Compute hash from serialized children entries
     // Format: [name_length: 4 bytes BE][name: UTF-8][type: 1 byte][hash: 32 bytes]

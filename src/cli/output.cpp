@@ -4,6 +4,8 @@
 #include "pup/cli/output.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <ranges>
 #include <vector>
 
 #include <fmt/core.h>
@@ -64,8 +66,8 @@ auto remove_empty_directories(
     auto removed = std::size_t { 0 };
 
     auto dirs = std::vector<std::filesystem::path>(output_dirs.begin(), output_dirs.end());
-    std::sort(dirs.begin(), dirs.end(), [](auto const& a, auto const& b) {
-        return a.string().size() > b.string().size();
+    std::ranges::sort(dirs, std::greater{}, [](auto const& p) {
+        return p.string().size();
     });
 
     for (auto const& dir : dirs) {

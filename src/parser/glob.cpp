@@ -4,6 +4,7 @@
 #include "pup/parser/glob.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 namespace pup::parser {
 
@@ -261,7 +262,7 @@ auto glob_expand(
     }
 
     // Sort for consistent output
-    std::sort(results.begin(), results.end());
+    std::ranges::sort(results);
     return results;
 }
 
