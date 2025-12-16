@@ -280,8 +280,9 @@ auto E2EFixture::create_symlink(std::string_view target, std::string_view link) 
     fs::create_symlink(target, link_path);
 }
 
-auto E2EFixture::run_pup_in_dir(std::string_view dir, std::vector<std::string> const& args)
-    -> PupResult
+auto E2EFixture::run_pup_in_dir(
+    std::string_view dir, std::vector<std::string> const& args
+) -> PupResult
 {
     auto working_dir = resolve_path(dir);
 

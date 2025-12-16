@@ -151,8 +151,8 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
     return result;
 }
 
-auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
-    -> Result<std::string>
+auto Evaluator::expand_pattern(
+    std::string_view text, PatternFlags const& flags) -> Result<std::string>
 {
     auto result = std::string {};
     auto pos = std::size_t { 0 };
@@ -285,8 +285,8 @@ auto Evaluator::expand_pattern(std::string_view text, PatternFlags const& flags)
     return result;
 }
 
-auto Evaluator::expand_path(PathPattern const& pattern)
-    -> Result<std::vector<std::string>>
+auto Evaluator::expand_path(
+    PathPattern const& pattern) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
 

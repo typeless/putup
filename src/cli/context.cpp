@@ -42,8 +42,8 @@ auto compute_tup_variantdir(
     return ".";
 }
 
-auto find_build_subdir(std::filesystem::path const& root)
-    -> std::optional<std::filesystem::path>
+auto find_build_subdir(
+    std::filesystem::path const& root) -> std::optional<std::filesystem::path>
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path { root / name };
@@ -79,9 +79,9 @@ auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
     return ss.str();
 }
 
-auto discover_tupfile_dirs(std::filesystem::path const& root,
-    pup::parser::IgnoreList const& ignore = {})
-    -> std::set<std::filesystem::path>
+auto discover_tupfile_dirs(
+    std::filesystem::path const& root,
+    pup::parser::IgnoreList const& ignore = {}) -> std::set<std::filesystem::path>
 {
     auto dirs = std::set<std::filesystem::path> {};
     auto ec = std::error_code {};
@@ -256,8 +256,8 @@ auto BuildContext::parsed_dirs() const -> std::set<std::filesystem::path> const&
     return impl_->state.parsed;
 }
 
-auto build_context(Options const& opts, BuildContextOptions const& ctx_opts)
-    -> Result<BuildContext>
+auto build_context(
+    Options const& opts, BuildContextOptions const& ctx_opts) -> Result<BuildContext>
 {
     auto layout_opts = LayoutOptions {};
     if (!opts.source_dir.empty()) {

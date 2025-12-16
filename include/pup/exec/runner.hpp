@@ -50,8 +50,9 @@ public:
     [[nodiscard]] auto run(std::string_view command) -> Result<CommandResult>;
 
     /// Run a command with specific options
-    [[nodiscard]] auto run(std::string_view command, RunOptions const& options)
-        -> Result<CommandResult>;
+    [[nodiscard]] auto run(
+        std::string_view command,
+        RunOptions const& options) -> Result<CommandResult>;
 
     /// Run a command with real-time output callback
     [[nodiscard]] auto run_with_output(

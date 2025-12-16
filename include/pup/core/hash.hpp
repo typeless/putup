@@ -67,7 +67,6 @@ inline constexpr auto ZERO_HASH = Hash256 {};
 /// Compute Merkle hash for a directory from sorted children entries
 /// Each entry is (name, type, hash_ptr) - sorted by name before hashing
 [[nodiscard]] auto compute_merkle_hash(
-    std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children)
-    -> Hash256;
+    std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children) -> Hash256;
 
 } // namespace pup

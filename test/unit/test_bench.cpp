@@ -39,8 +39,9 @@ auto generate_linear_graph(std::size_t n) -> BuildGraph
     return graph;
 }
 
-auto generate_order_only_graph(std::size_t n_commands)
-    -> std::pair<BuildGraph, pup::NodeId>
+auto generate_order_only_graph(
+    std::size_t n_commands
+) -> std::pair<BuildGraph, pup::NodeId>
 {
     auto graph = BuildGraph {};
     auto header = graph.add_node(Node { .type = NodeType::File, .name = "common.h" });

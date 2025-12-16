@@ -117,8 +117,9 @@ public:
     [[nodiscard]] auto read_file(std::string_view path) const -> std::string;
 
     // Execute programs
-    [[nodiscard]] auto run(std::string_view path, std::vector<std::string> const& args = {})
-        -> ProcessResult;
+    [[nodiscard]] auto run(
+        std::string_view path, std::vector<std::string> const& args = {}
+    ) -> ProcessResult;
 
     // Modification
     auto write_file(std::string_view path, std::string_view content) -> void;
@@ -128,8 +129,9 @@ public:
     auto create_symlink(std::string_view target, std::string_view link) -> void;
 
     /// Run pup from a specific directory within the workdir
-    [[nodiscard]] auto run_pup_in_dir(std::string_view dir, std::vector<std::string> const& args = {})
-        -> PupResult;
+    [[nodiscard]] auto run_pup_in_dir(
+        std::string_view dir, std::vector<std::string> const& args = {}
+    ) -> PupResult;
 
     // Accessors
     [[nodiscard]] auto workdir() const -> std::filesystem::path const& { return m_workdir; }

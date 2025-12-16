@@ -48,8 +48,7 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
 auto build_dependency_map(
     std::vector<BuildJob> const& jobs,
-    graph::BuildGraph const& graph)
-    -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
+    graph::BuildGraph const& graph) -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
 {
     auto in_degree = std::vector<std::size_t>(jobs.size(), 0);
     auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
@@ -586,8 +585,8 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
     return result;
 }
 
-auto Scheduler::build_job_list(graph::BuildGraph const& graph)
-    -> Result<std::vector<BuildJob>>
+auto Scheduler::build_job_list(
+    graph::BuildGraph const& graph) -> Result<std::vector<BuildJob>>
 {
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };

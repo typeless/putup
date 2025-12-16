@@ -128,8 +128,8 @@ private:
         std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
 
     /// Build job list from graph in topological order
-    [[nodiscard]] auto build_job_list(graph::BuildGraph const& graph)
-        -> Result<std::vector<BuildJob>>;
+    [[nodiscard]] auto build_job_list(
+        graph::BuildGraph const& graph) -> Result<std::vector<BuildJob>>;
 
     /// Determine which jobs need to run based on changes
     [[nodiscard]] auto filter_jobs(

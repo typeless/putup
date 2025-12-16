@@ -66,8 +66,7 @@ public:
     [[nodiscard]] auto add_node(Node node) -> Result<NodeId>;
 
     /// Add an edge between nodes
-    [[nodiscard]] auto add_edge(NodeId from, NodeId to, LinkType type = LinkType::Normal)
-        -> Result<void>;
+    [[nodiscard]] auto add_edge(NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
     /// Add an order-only edge (dependency that doesn't trigger rebuild)
     [[nodiscard]] auto add_order_only_edge(NodeId from, NodeId to) -> Result<void>;

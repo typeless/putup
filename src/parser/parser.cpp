@@ -18,8 +18,8 @@ DefaultFileResolver::DefaultFileResolver(std::string_view root_dir)
 {
 }
 
-auto DefaultFileResolver::resolve(std::string_view path, std::string_view relative_to)
-    -> Result<std::string>
+auto DefaultFileResolver::resolve(
+    std::string_view path, std::string_view relative_to) -> Result<std::string>
 {
     namespace fs = std::filesystem;
 

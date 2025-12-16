@@ -27,8 +27,9 @@ public:
     virtual ~FileResolver() = default;
 
     /// Resolve a path relative to the current file
-    [[nodiscard]] virtual auto resolve(std::string_view path, std::string_view relative_to)
-        -> Result<std::string> = 0;
+    [[nodiscard]] virtual auto resolve(
+        std::string_view path,
+        std::string_view relative_to) -> Result<std::string> = 0;
 
     /// Read file contents
     [[nodiscard]] virtual auto read_file(std::string_view path) -> Result<std::string> = 0;
@@ -42,8 +43,9 @@ class DefaultFileResolver : public FileResolver {
 public:
     explicit DefaultFileResolver(std::string_view root_dir);
 
-    [[nodiscard]] auto resolve(std::string_view path, std::string_view relative_to)
-        -> Result<std::string> override;
+    [[nodiscard]] auto resolve(
+        std::string_view path,
+        std::string_view relative_to) -> Result<std::string> override;
     [[nodiscard]] auto read_file(std::string_view path) -> Result<std::string> override;
     [[nodiscard]] auto find_tuprules(std::string_view from_dir) -> Result<std::string> override;
 

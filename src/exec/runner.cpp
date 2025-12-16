@@ -25,8 +25,8 @@ auto CommandRunner::run(std::string_view command) -> Result<CommandResult>
     return run(command, default_options_);
 }
 
-auto CommandRunner::run(std::string_view command, RunOptions const& options)
-    -> Result<CommandResult>
+auto CommandRunner::run(
+    std::string_view command, RunOptions const& options) -> Result<CommandResult>
 {
     return run_with_output(command, nullptr, options);
 }

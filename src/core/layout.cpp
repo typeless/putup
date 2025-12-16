@@ -22,8 +22,8 @@ auto get_env(char const* name) -> std::optional<std::filesystem::path>
     return std::nullopt;
 }
 
-auto find_build_subdir(std::filesystem::path const& root)
-    -> std::optional<std::filesystem::path>
+auto find_build_subdir(
+    std::filesystem::path const& root) -> std::optional<std::filesystem::path>
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path { root / name };
@@ -49,8 +49,8 @@ auto find_build_subdir(std::filesystem::path const& root)
 
 } // namespace
 
-auto find_project_root(std::filesystem::path const& start_dir)
-    -> std::optional<std::filesystem::path>
+auto find_project_root(
+    std::filesystem::path const& start_dir) -> std::optional<std::filesystem::path>
 {
     auto current = std::filesystem::path { start_dir };
     auto last_tupfile_dir = std::optional<std::filesystem::path> {};

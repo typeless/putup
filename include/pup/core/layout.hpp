@@ -60,7 +60,7 @@ struct LayoutOptions {
 [[nodiscard]] auto discover_layout(LayoutOptions const& opts = {}) -> Result<ProjectLayout>;
 
 /// Find project root by walking up from start_dir looking for Tupfile.ini
-[[nodiscard]] auto find_project_root(std::filesystem::path const& start_dir)
-    -> std::optional<std::filesystem::path>;
+[[nodiscard]] auto find_project_root(
+    std::filesystem::path const& start_dir) -> std::optional<std::filesystem::path>;
 
 } // namespace pup

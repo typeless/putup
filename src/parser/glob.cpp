@@ -309,8 +309,8 @@ auto glob_expand_all(
     return result;
 }
 
-auto glob_split_path(std::string_view pattern)
-    -> std::pair<std::string_view, std::string_view>
+auto glob_split_path(
+    std::string_view pattern) -> std::pair<std::string_view, std::string_view>
 {
     // Find the last / before any glob characters
     auto glob_pos = std::string_view::npos;

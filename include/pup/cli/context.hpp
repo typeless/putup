@@ -56,8 +56,9 @@ public:
 private:
     std::unique_ptr<Impl> impl_;
 
-    friend auto build_context(Options const&, BuildContextOptions const&)
-        -> Result<BuildContext>;
+    friend auto build_context(
+        Options const&,
+        BuildContextOptions const&) -> Result<BuildContext>;
 };
 
 /// Build the dependency graph from Tupfiles
@@ -73,7 +74,7 @@ struct CleanContext {
 };
 
 /// Resolve clean context from options
-[[nodiscard]] auto resolve_clean_context(Options const& opts)
-    -> std::optional<CleanContext>;
+[[nodiscard]] auto resolve_clean_context(
+    Options const& opts) -> std::optional<CleanContext>;
 
 } // namespace pup::cli

@@ -69,8 +69,8 @@ private:
 
 /// Parse a path pattern into directory prefix and glob suffix
 /// e.g., "src/foo/*.c" -> ("src/foo", "*.c")
-[[nodiscard]] auto glob_split_path(std::string_view pattern)
-    -> std::pair<std::string_view, std::string_view>;
+[[nodiscard]] auto glob_split_path(
+    std::string_view pattern) -> std::pair<std::string_view, std::string_view>;
 
 /// Check if a pattern contains glob wildcards
 [[nodiscard]] auto has_glob_chars(std::string_view pattern) -> bool;

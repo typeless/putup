@@ -235,8 +235,8 @@ auto GraphBuilder::warnings() const -> std::vector<std::string> const&
     return impl_->warnings;
 }
 
-auto GraphBuilder::build(parser::Tupfile const& tupfile, parser::EvalContext& eval)
-    -> Result<BuildGraph>
+auto GraphBuilder::build(
+    parser::Tupfile const& tupfile, parser::EvalContext& eval) -> Result<BuildGraph>
 {
     auto graph = BuildGraph {};
     auto result = Result<void> { add_tupfile(graph, tupfile, eval) };
