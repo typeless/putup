@@ -68,6 +68,7 @@ Running `pup` with no command executes the build.
 | `-k` | Keep going after failures |
 | `-n` | Dry-run: print commands without executing |
 | `-v` | Verbose output |
+| `--stats` | Print build statistics (files checked, hashes, timing) |
 | `-S DIR` | Source directory (default: auto-detect) |
 | `-B DIR` | Build/output directory for variant builds |
 | `--summary` | Human-readable output (for `export graph`) |
