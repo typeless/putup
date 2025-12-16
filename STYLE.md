@@ -1,7 +1,7 @@
 # Modern C++ Style Guide
 
-**Version:** 1.4.0
-**Updated:** 2025-12-14
+**Version:** 1.5.0
+**Updated:** 2025-12-16
 **C++ Standard:** C++20/23
 
 A concise style guide for modern C++ projects.
@@ -10,6 +10,7 @@ A concise style guide for modern C++ projects.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.0 | 2025-12-16 | Multiline declarations break before trailing return type |
 | 1.4.0 | 2025-12-14 | Remove explicit type wrapper requirement for function calls |
 | 1.3.0 | 2025-12-10 | Always use braces for if/for/while statements |
 | 1.2.0 | 2025-12-10 | Call site arguments follow same formatting as declarations |
@@ -53,9 +54,16 @@ auto* ptr = get_pointer();
 ### Trailing Return Types
 
 ```cpp
+// Short declarations - return type on same line
 auto foo() -> ReturnType;
-auto bar(int x) -> std::expected<Result, Error>;
 auto empty() const -> bool;
+
+// Multiline declarations - break before trailing return type
+auto create_connection(
+    std::string_view host,
+    std::uint16_t port,
+    ConnectionOptions const& options)
+    -> Result<Connection>;
 ```
 
 ### Right-side Const
