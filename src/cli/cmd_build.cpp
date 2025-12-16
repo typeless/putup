@@ -122,6 +122,8 @@ auto find_changed_files_with_implicit(
         }
 
         // Skip files outside scopes (but always check Tupfiles)
+        // FIXME: O(n) linear scan. Lexicographically sorted index would enable
+        // O(log n + k) via binary search bounds on scope prefix.
         if (!scopes.empty() && !is_tupfile(file.path) && !pup::is_path_in_any_scope(file.path, scopes)) {
             continue;
         }
