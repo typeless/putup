@@ -306,7 +306,8 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
             runner.set_working_dir(impl_->options.source_root);
         }
         if (impl_->options.timeout) {
-            runner.set_timeout(*impl_->options.timeout);
+            // FIXME: False positive - optional is checked on previous line
+            runner.set_timeout(*impl_->options.timeout); // NOLINT(bugprone-unchecked-optional-access)
         }
 
         for (auto const& job : jobs) {

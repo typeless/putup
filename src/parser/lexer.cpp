@@ -17,7 +17,8 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
 auto Lexer::next() -> Token
 {
     if (peeked_) {
-        return std::exchange(peeked_, std::nullopt).value();
+        // FIXME: False positive - optional is checked on previous line
+        return *std::exchange(peeked_, std::nullopt); // NOLINT(bugprone-unchecked-optional-access)
     }
     return scan_token();
 }

@@ -5,6 +5,7 @@
 
 #include "pup/core/string_utils.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <fmt/core.h>
@@ -60,15 +61,12 @@ auto has_shell_special(std::string const& flag) -> bool
 /// Check if a string needs shell quoting
 auto needs_shell_quoting(std::string const& s) -> bool
 {
-    for (auto c : s) {
-        if (c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
+    return std::ranges::any_of(s, [](char c) {
+        return c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
             || c == '!' || c == '*' || c == '?' || c == '[' || c == ']' || c == '(' || c == ')'
             || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '&' || c == ';'
-            || c == '#' || c == '~') {
-            return true;
-        }
-    }
-    return false;
+            || c == '#' || c == '~';
+    });
 }
 
 /// Quote a string for shell using single quotes (handles embedded single quotes)

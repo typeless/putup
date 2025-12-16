@@ -165,7 +165,6 @@ auto Parser::parse() -> Result<Tupfile>
 auto Parser::parse_statement() -> Result<std::unique_ptr<Statement>>
 {
     while (match(TokenType::Newline) || match(TokenType::Hash)) {
-        continue;
     }
 
     if (check(TokenType::Eof)) {

@@ -178,10 +178,13 @@ auto cmd_export_graph(Options const& opts) -> int
 
         declared_nodes.insert(id);
 
-        auto label = escape_dot_label(
-            node->type == pup::NodeType::Command
-                ? (node->display.empty() ? node->command : node->display)
-                : ctx.graph().get_full_path(id));
+        auto get_label = [&]() -> std::string {
+            if (node->type == pup::NodeType::Command) {
+                return node->display.empty() ? node->command : node->display;
+            }
+            return ctx.graph().get_full_path(id);
+        };
+        auto label = escape_dot_label(get_label());
 
         fmt::print("  n{} [label=\"{}\"];\n", id, label);
 
