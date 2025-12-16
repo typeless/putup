@@ -574,6 +574,43 @@ auto cmd_build(Options const& opts) -> int
                     }
                 }
 
+                // Detect removed commands (in old index but not in fresh graph)
+                // and delete their stale outputs
+                for (auto const& cmd : old_index->commands()) {
+                    if (ctx.graph().find_by_command(cmd.command)) {
+                        continue;
+                    }
+
+                    for (auto const& edge : old_index->edges()) {
+                        if (edge.from != cmd.id) {
+                            continue;
+                        }
+
+                        auto const* file = old_index->find_file_by_id(edge.to);
+                        if (!file || file->type != pup::NodeType::Generated) {
+                            continue;
+                        }
+
+                        auto abs_path = ctx.layout().source_root / file->path;
+                        if (std::filesystem::exists(abs_path)) {
+                            if (opts.dry_run) {
+                                fmt::print("Would remove stale: {}\n", file->path);
+                            } else {
+                                auto ec = std::error_code {};
+                                if (std::filesystem::remove(abs_path, ec)) {
+                                    if (opts.verbose) {
+                                        fmt::print("  Removed stale: {}\n", file->path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (opts.verbose) {
+                        fmt::print("  Removed command: {}\n", cmd.display);
+                    }
+                }
+
                 if (changed_files.empty()) {
                     fmt::print("Nothing to do (up to date).\n");
                     if (opts.stat) {

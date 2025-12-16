@@ -551,6 +551,35 @@ SCENARIO("New source file triggers rebuild", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Removed source file triggers stale output cleanup", "[e2e][incremental]")
+{
+    GIVEN("a project with two source files")
+    {
+        auto f = E2EFixture { "new_file_detection" };
+
+        // Add second file
+        f.write_file("mul.c", "int mul(int a, int b) { return a * b; }\n");
+
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("add.o"));
+        REQUIRE(f.exists("mul.o"));
+
+        WHEN("a source file is removed")
+        {
+            f.remove_file("mul.c");
+            auto result = f.build();
+
+            THEN("the stale output is deleted")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("add.o"));
+                REQUIRE_FALSE(f.exists("mul.o"));
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Clean/Distclean Tests
 // =============================================================================
