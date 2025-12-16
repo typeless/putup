@@ -11,8 +11,10 @@
 #include "pup/parser/ignore.hpp"
 #include "pup/parser/parser.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 #include <fmt/core.h>
 
@@ -110,7 +112,9 @@ auto discover_tupfile_dirs(
 
         auto dir = std::filesystem::path { entry.path().parent_path() };
 
-        if (std::filesystem::exists(dir / "tup.config")) {
+        // Skip variant directories (have tup.config but are not the source root)
+        // The source root may have both Tupfile and tup.config
+        if (dir != root && std::filesystem::exists(dir / "tup.config")) {
             continue;
         }
 
@@ -332,19 +336,28 @@ auto build_context(
 
     auto builder = graph::GraphBuilder { builder_opts };
 
+    // Post-order traversal: parse children before parents so groups are populated
+    // before parent directories reference them. Sort by path depth (deeper first).
+    // Root directory "." is always parsed last.
     auto root_rel = std::filesystem::path { "." };
-    if (ctx.impl_->state.available.contains(root_rel)) {
-        auto result = Result<void> {
-            parse_directory(root_rel, ctx.impl_->state, builder, ctx.impl_->graph,
-                ctx.impl_->layout.source_root, ctx.impl_->layout.output_root,
-                ctx.impl_->vars, ctx.impl_->config_vars, ctx_opts.verbose)
-        };
-        if (!result && !ctx_opts.keep_going) {
-            return unexpected<Error>(result.error());
+    auto dirs = std::vector<std::filesystem::path> {
+        ctx.impl_->state.available.begin(), ctx.impl_->state.available.end()
+    };
+    std::sort(dirs.begin(), dirs.end(), [&root_rel](auto const& a, auto const& b) {
+        auto is_root_a = (a == root_rel);
+        auto is_root_b = (b == root_rel);
+        if (is_root_a != is_root_b) {
+            return is_root_b;
         }
-    }
+        auto depth_a = std::distance(a.begin(), a.end());
+        auto depth_b = std::distance(b.begin(), b.end());
+        if (depth_a != depth_b) {
+            return depth_a > depth_b;
+        }
+        return a < b;
+    });
 
-    for (auto const& dir : ctx.impl_->state.available) {
+    for (auto const& dir : dirs) {
         if (ctx.impl_->state.parsed.contains(dir)) {
             continue;
         }
