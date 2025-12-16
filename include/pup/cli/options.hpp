@@ -16,6 +16,7 @@ struct Options {
     bool verbose = false;
     bool dry_run = false;
     bool stat = false;
+    bool all = false; // Force full project build (ignore cwd scoping)
     bool version = false;
     bool help = false;
     bool summary = false;

@@ -1,0 +1,1 @@
+: foo.c |> gcc -c %f -o %o |> foo.o

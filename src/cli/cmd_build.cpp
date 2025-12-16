@@ -77,9 +77,77 @@ auto print_stats(
     }
 }
 
+auto is_tupfile(std::string_view path) -> bool
+{
+    return path.ends_with("/Tupfile") || path.ends_with("/Tuprules.tup")
+        || path == "Tupfile" || path == "Tuprules.tup"
+        || path.ends_with("/tup.config") || path == "tup.config";
+}
+
+auto is_in_scope(std::string_view path, std::string_view scope) -> bool
+{
+    if (scope.empty()) {
+        return true;
+    }
+    // Path is in scope if it starts with scope prefix
+    // scope = "lib" should match "lib/foo.c" but not "library/bar.c"
+    if (!path.starts_with(scope)) {
+        return false;
+    }
+    // Ensure we match at directory boundary
+    if (path.size() == scope.size()) {
+        return true;
+    }
+    return path[scope.size()] == '/';
+}
+
+/// Compute build scope from cwd relative to source_root
+/// Returns empty string for full project build, or a path prefix for scoped build
+auto compute_build_scope(
+    Options const& opts,
+    ProjectLayout const& layout) -> std::string
+{
+    // -A/--all flag forces full project build
+    if (opts.all) {
+        return "";
+    }
+
+    // Explicit targets override cwd
+    if (!opts.targets.empty()) {
+        // For now, use first target as scope
+        // TODO: support multiple scopes
+        return opts.targets[0];
+    }
+
+    // Compute scope from current working directory
+    auto cwd = std::filesystem::current_path();
+    auto source_root = std::filesystem::canonical(layout.source_root);
+
+    // If cwd is source_root, build all
+    if (cwd == source_root) {
+        return "";
+    }
+
+    // Check if cwd is under source_root
+    auto cwd_str = cwd.string();
+    auto root_str = source_root.string();
+    if (!root_str.empty() && root_str.back() != '/') {
+        root_str += '/';
+    }
+
+    if (!cwd_str.starts_with(root_str)) {
+        // cwd is not under source_root, build all
+        return "";
+    }
+
+    // Return the relative path from source_root to cwd
+    return cwd_str.substr(root_str.size());
+}
+
 auto find_changed_files_with_implicit(
     std::filesystem::path const& root,
     pup::index::Index const& old_index,
+    std::string const& scope,
     bool verbose = false) -> std::vector<std::string>
 {
     auto changed = std::vector<std::string> {};
@@ -87,6 +155,11 @@ auto find_changed_files_with_implicit(
 
     for (auto const& file : old_index.files()) {
         if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated) {
+            continue;
+        }
+
+        // Skip files outside scope (but always check Tupfiles)
+        if (!scope.empty() && !is_tupfile(file.path) && !is_in_scope(file.path, scope)) {
             continue;
         }
 
@@ -552,7 +625,16 @@ auto cmd_build(Options const& opts) -> int
                     fmt::print("Index has Merkle hashes (v4 format)\n");
                 }
 
-                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, opts.verbose);
+                auto scope = compute_build_scope(opts, ctx.layout());
+                if (opts.verbose) {
+                    if (scope.empty()) {
+                        fmt::print("Full project build\n");
+                    } else {
+                        fmt::print("Scoped build: {}\n", scope);
+                    }
+                }
+
+                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, scope, opts.verbose);
                 changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
 
                 // Detect new commands (in fresh graph but not in old index)

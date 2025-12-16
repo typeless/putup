@@ -610,6 +610,146 @@ SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incr
 }
 
 // =============================================================================
+// Scoped Build Tests
+// =============================================================================
+
+SCENARIO("Scoped build skips changes outside scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a multi-directory project with cross-directory dependencies")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("a file outside scope is modified and build runs from subdirectory")
+        {
+            f.append_file("app/main.c", "// modified\n");
+            auto result = f.run_pup_in_dir("lib", {});
+
+            THEN("the build is a no-op (out-of-scope change ignored)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Scoped build detects changes within scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a multi-directory project")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("a file inside scope is modified")
+        {
+            f.append_file("lib/foo.c", "// modified\n");
+            auto result = f.run_pup_in_dir("lib", {});
+
+            THEN("the file is rebuilt")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Scoped build propagates downstream", "[e2e][incremental][scope]")
+{
+    GIVEN("a multi-directory project with cross-directory dependencies")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("a library file is modified and build runs from lib/")
+        {
+            f.append_file("lib/foo.c", "// modified\n");
+            auto result = f.run_pup_in_dir("lib", { "-v" });
+
+            THEN("both the library and dependent app are rebuilt")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("foo.o") != std::string::npos);
+                REQUIRE(result.stdout_output.find("app") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("-A flag forces full project build", "[e2e][incremental][scope]")
+{
+    GIVEN("a multi-directory project")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("-A flag is used from subdirectory with out-of-scope changes")
+        {
+            f.append_file("app/main.c", "// modified\n");
+            auto result = f.run_pup_in_dir("lib", { "-A" });
+
+            THEN("the out-of-scope file is rebuilt")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Explicit target path sets scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a multi-directory project")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("explicit target 'lib' is passed from project root")
+        {
+            f.append_file("lib/foo.c", "// modified\n");
+            f.append_file("app/main.c", "// also modified\n");
+            auto result = f.build({ "lib", "-v" });
+
+            THEN("only the lib scope is checked and rebuilt")
+            {
+                REQUIRE(result.success());
+                // lib/foo.c change detected and rebuilt
+                REQUIRE(result.stdout_output.find("foo.o") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Tupfile changes detected regardless of scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a multi-directory project")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("a Tupfile outside scope is modified")
+        {
+            f.append_file("app/Tupfile", "\n# comment\n");
+            auto result = f.run_pup_in_dir("lib", { "-v" });
+
+            THEN("the change is detected and triggers rebuild")
+            {
+                REQUIRE(result.success());
+                // Tupfile change causes dependent app to rebuild
+                REQUIRE_FALSE(result.is_noop());
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Clean/Distclean Tests
 // =============================================================================
 
@@ -1127,9 +1267,9 @@ SCENARIO("Export graph --all includes implicit deps", "[e2e][export]")
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        WHEN("export graph --all is run")
+        WHEN("export graph --all-deps is run")
         {
-            auto result = f.pup({ "export", "graph", "--all" });
+            auto result = f.pup({ "export", "graph", "--all-deps" });
 
             THEN("output is valid DOT format")
             {
@@ -1146,16 +1286,16 @@ SCENARIO("Export graph --all includes implicit deps", "[e2e][export]")
     }
 }
 
-SCENARIO("Export graph --all with no index warns", "[e2e][export]")
+SCENARIO("Export graph --all-deps with no index warns", "[e2e][export]")
 {
     GIVEN("an initialized but NOT built project")
     {
         auto f = E2EFixture { "implicit_deps" };
         REQUIRE(f.init().success());
 
-        WHEN("export graph --all is run")
+        WHEN("export graph --all-deps is run")
         {
-            auto result = f.pup({ "export", "graph", "--all" });
+            auto result = f.pup({ "export", "graph", "--all-deps" });
 
             THEN("command succeeds with warning")
             {
@@ -1172,7 +1312,7 @@ SCENARIO("Export graph --all with no index warns", "[e2e][export]")
     }
 }
 
-SCENARIO("Export graph --summary --all shows implicit edge count", "[e2e][export]")
+SCENARIO("Export graph --summary --all-deps shows implicit edge count", "[e2e][export]")
 {
     GIVEN("a built implicit_deps project")
     {
@@ -1181,9 +1321,9 @@ SCENARIO("Export graph --summary --all shows implicit edge count", "[e2e][export
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        WHEN("export graph --summary --all is run")
+        WHEN("export graph --summary --all-deps is run")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
 
             THEN("output shows implicit edge count")
             {
@@ -1215,9 +1355,9 @@ SCENARIO("Layout detection finds build directory via .pup", "[e2e][layout]")
         REQUIRE(f.exists("build/.pup"));
         REQUIRE_FALSE(f.exists("build/tup.config"));
 
-        WHEN("export graph --all is run without -B")
+        WHEN("export graph --all-deps is run without -B")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
 
             THEN("build directory is auto-detected via .pup")
             {
@@ -1247,9 +1387,9 @@ SCENARIO("Layout detection prefers tup.config over .pup", "[e2e][layout]")
         REQUIRE(f.exists("build/.pup"));
         REQUIRE(f.exists("build/tup.config"));
 
-        WHEN("export graph --all is run without -B")
+        WHEN("export graph --all-deps is run without -B")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
 
             THEN("build directory is detected")
             {
@@ -1288,9 +1428,9 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
             }
         }
 
-        WHEN("export graph --all is run without -B")
+        WHEN("export graph --all-deps is run without -B")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all" });
+            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
 
             THEN("it finds build/.pup/index")
             {

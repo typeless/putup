@@ -1,0 +1,1 @@
+: main.c ../lib/foo.o |> gcc %f -o %o |> app

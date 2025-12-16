@@ -62,8 +62,10 @@ auto parse_args(int argc, char** argv) -> Options
             }
         } else if (arg == "--summary") {
             opts.summary = true;
-        } else if (arg == "-a" || arg == "--all") {
+        } else if (arg == "-a" || arg == "--all-deps") {
             opts.include_all_deps = true;
+        } else if (arg == "-A" || arg == "--all") {
+            opts.all = true;
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty()) {
                 opts.command = std::string { arg };
@@ -106,7 +108,8 @@ auto print_usage() -> void
                "  -B DIR             Build/output directory (default: source)\n"
                "  --summary          Human-readable output (for export graph)\n"
                "  --stat             Print build statistics\n"
-               "  -a, --all          Include implicit deps in graph output\n"
+               "  -A, --all          Full project build (ignore cwd scoping)\n"
+               "  -a, --all-deps     Include implicit deps in graph output\n"
                "  --version          Print version\n"
                "  -h, --help         Print this help\n"
                "\nEnvironment:\n"

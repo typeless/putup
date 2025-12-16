@@ -53,19 +53,23 @@ auto find_project_root(std::filesystem::path const& start_dir)
     -> std::optional<std::filesystem::path>
 {
     auto current = std::filesystem::path { start_dir };
+    auto last_tupfile_dir = std::optional<std::filesystem::path> {};
 
     while (true) {
-        // Only Tupfile.ini or Tupfile are authoritative source root markers.
-        // .pup alone is not sufficient - it exists in both source roots (in-tree)
-        // and build directories (out-of-tree builds).
-        if (std::filesystem::exists(current / "Tupfile.ini")
-            || std::filesystem::exists(current / "Tupfile")) {
+        // Tupfile.ini is the authoritative project root marker.
+        if (std::filesystem::exists(current / "Tupfile.ini")) {
             return current;
+        }
+
+        // Track the topmost directory with a Tupfile (fallback for simple projects)
+        if (std::filesystem::exists(current / "Tupfile")) {
+            last_tupfile_dir = current;
         }
 
         auto parent = std::filesystem::path { current.parent_path() };
         if (parent == current) {
-            return std::nullopt;
+            // Reached filesystem root. Use the topmost Tupfile dir if found.
+            return last_tupfile_dir;
         }
         current = parent;
     }
