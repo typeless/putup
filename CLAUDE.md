@@ -118,6 +118,7 @@ make test                                 # Run all tests
 ./build/test/unit/pup_test -s             # Verbose output
 ./build/test/unit/pup_test '[e2e]'        # E2E tests only
 ./build/test/unit/pup_test '[build]'      # Build tests only
+./build/test/unit/pup_test '[groups]'     # Group semantics tests ({group}, <group>)
 ./build/test/unit/pup_test '[clean]'      # Clean/distclean tests only
 ./build/test/unit/pup_test '[incremental]' # Incremental rebuild tests
 ./build/test/unit/pup_test '[variant]'    # Out-of-tree/variant tests
