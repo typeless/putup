@@ -120,6 +120,9 @@ cd lib && pup -A
 
 # Scope to specific directory
 pup lib
+
+# Scope to multiple directories
+pup lib app
 ```
 
 ## Testing
@@ -496,18 +499,25 @@ When running pup from a subdirectory, change detection is limited to that subtre
 | `pup` from project root | All files |
 | `pup` from subdirectory | Only that subtree |
 | `pup <target>` | Only target directory |
+| `pup <t1> <t2> ...` | Multiple directories |
 | `pup -A` or `pup --all` | All files (explicit) |
 
 **Key behaviors:**
 - Tupfiles/Tuprules.tup/tup.config are always checked regardless of scope
 - If a scoped file changes, its downstream dependents (even outside scope) are rebuilt
 - Project root is determined by `Tupfile.ini` (authoritative) or topmost `Tupfile` (fallback)
+- Multiple scopes can be specified to check several directories at once
 
-**Example:** In a project with `lib/` and `app/` where app depends on lib:
+**Examples:**
 ```bash
+# Single scope
 cd lib && pup          # Only checks lib/*.c, but if changed, rebuilds app too
 cd lib && pup -A       # Checks all files in project
 pup lib                # From root, scopes to lib/
+
+# Multiple scopes
+pup lib app            # Checks both lib/ and app/ directories
+pup modules/PM modules/KMS  # Build specific modules only
 ```
 
 ### .d File Format
