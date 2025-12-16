@@ -66,7 +66,7 @@ auto remove_empty_directories(
     auto removed = std::size_t { 0 };
 
     auto dirs = std::vector<std::filesystem::path>(output_dirs.begin(), output_dirs.end());
-    std::ranges::sort(dirs, std::greater{}, [](auto const& p) {
+    std::ranges::sort(dirs, std::greater {}, [](auto const& p) {
         return p.string().size();
     });
 

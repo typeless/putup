@@ -286,7 +286,7 @@ auto Index::compute_merkle_hashes() -> void
     }
 
     // Sort by depth descending (deepest first for bottom-up processing)
-    std::ranges::sort(directories, std::greater{}, [&depths](auto const* p) {
+    std::ranges::sort(directories, std::greater {}, [&depths](auto const* p) {
         return depths[p->id];
     });
 
