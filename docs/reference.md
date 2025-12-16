@@ -587,44 +587,826 @@ include_rules
 
 ### 6.1 tup.config
 
+The `tup.config` file defines project-wide configuration variables accessible in Tupfiles via `@(VAR)` syntax.
+
+**Location:**
+- In-tree builds: `<project_root>/tup.config`
+- Variant builds: `<variant_dir>/tup.config`
+
+**Format:**
+
+```ini
+# Comment lines start with #
+CONFIG_CC=gcc
+CONFIG_CFLAGS=-Wall -O2
+CONFIG_DEBUG=y
+CONFIG_VERSION="1.0.0"
+```
+
+**Rules:**
+- Variable names must start with `CONFIG_`
+- Values can be quoted (quotes are stripped)
+- Empty lines and comments (`#`) are ignored
+
+**Usage in Tupfiles:**
+
+```tup
+# Access stripped name (recommended)
+CC = @(CC)              # Gets value of CONFIG_CC
+
+# Access with default value
+DEBUG = @(DEBUG:-n)     # Use "n" if CONFIG_DEBUG not set
+
+# Full name also works
+CFLAGS = $(CONFIG_CFLAGS)
+```
+
+**Example tup.config:**
+
+```ini
+# Compiler settings
+CONFIG_CC=clang
+CONFIG_CXX=clang++
+CONFIG_CFLAGS=-Wall -Wextra -O2
+CONFIG_LDFLAGS=-flto
+
+# Feature flags
+CONFIG_ENABLE_TESTS=y
+CONFIG_ENABLE_DEBUG=n
+
+# Build metadata
+CONFIG_VERSION="0.1.0"
+```
+
 ### 6.2 .pupignore / .tupignore
 
+Ignore files specify directories and files that pup should skip during scanning.
+
+**Location:** Project root (`.pupignore` or `.tupignore`)
+
+**Default ignores** (always applied):
+- `.git/`
+- `.pup/`
+- `node_modules/`
+
+**Syntax:**
+
+```gitignore
+# Comment
+pattern          # Ignore matching files/directories
+pattern/         # Directory only (trailing slash)
+!pattern         # Negation (un-ignore)
+path/to/file     # Anchored pattern (contains /)
+```
+
+**Pattern matching:**
+| Pattern | Matches |
+|---------|---------|
+| `*.o` | Any `.o` file in any directory |
+| `build/` | Directory named `build` |
+| `src/*.o` | `.o` files directly in `src/` (anchored) |
+| `**/test` | `test` in any subdirectory |
+| `!important.o` | Keep `important.o` even if `*.o` ignored |
+
+**Wildcards:**
+- `*` - Any characters except `/`
+- `**` - Any path segments (including none)
+- `?` - Any single character except `/`
+- `[abc]` - Character class
+- `[a-z]` - Character range
+
+**Example .pupignore:**
+
+```gitignore
+# Build artifacts
+*.o
+*.a
+*.so
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+
+# Specific directories
+build/
+out/
+third_party/
+
+# Keep this one
+!third_party/catch.hpp
+```
+
 ### 6.3 Tupfile.ini
+
+The `Tupfile.ini` file marks the project root. It's the authoritative root marker that stops upward directory traversal.
+
+**Location:** Project root only
+
+**Content:** Can be empty (just needs to exist)
+
+**Optional settings:**
+
+```ini
+[tup]
+# Future: project-wide settings may go here
+```
+
+**Purpose:**
+1. **Root detection** - Pup walks up from cwd looking for `Tupfile.ini`
+2. **Boundary marker** - Prevents accidental builds in parent directories
+3. **Required for out-of-tree builds** - Variant directories reference the source root
+
+**Simple projects** can omit `Tupfile.ini` if they have a `Tupfile` at the root, but it's recommended for clarity.
 
 ## 7. Build Modes
 
 ### 7.1 In-Tree Builds
 
+The default mode where outputs are generated alongside source files.
+
+**Characteristics:**
+- Outputs placed in same directory as Tupfiles
+- Single `.pup/` directory at project root
+- Simplest setup for small projects
+
+**Setup:**
+
+```
+project/
+├── Tupfile.ini        # Project root marker
+├── Tupfile            # Build rules
+├── main.c
+├── main.o             # Generated output
+└── .pup/              # Index directory
+```
+
+**Usage:**
+
+```bash
+pup                    # Build
+pup clean              # Remove outputs
+pup distclean          # Full reset
+```
+
+**When to use:**
+- Single-configuration projects
+- Quick prototyping
+- Projects where generated files don't clutter source
+
 ### 7.2 Variant Builds
+
+Out-of-tree builds that separate outputs from source files. Multiple variants can coexist (debug, release, cross-compile).
+
+**Setup:**
+
+1. Create a config file:
+```ini
+# configs/debug.config
+CONFIG_CC=gcc
+CONFIG_CFLAGS=-g -O0 -DDEBUG
+```
+
+2. Create the variant:
+```bash
+pup variant configs/debug.config
+# Creates build-debug/
+```
+
+**Result:**
+
+```
+project/
+├── Tupfile.ini
+├── Tupfile
+├── main.c
+├── configs/
+│   ├── debug.config
+│   └── release.config
+├── build-debug/       # Variant directory
+│   ├── tup.config     # Symlink to configs/debug.config
+│   ├── main.o         # Output goes here
+│   └── .pup/          # Variant's index
+└── build-release/     # Another variant
+    └── ...
+```
+
+**Building variants:**
+
+```bash
+# Method 1: From project root with -B
+pup -B build-debug
+
+# Method 2: cd into variant directory
+cd build-debug && pup
+```
+
+**Multiple variants:**
+
+```bash
+pup variant configs/debug.config       # Creates build-debug/
+pup variant configs/release.config     # Creates build-release/
+pup variant configs/arm.config out-arm # Creates out-arm/
+
+# Build all
+pup -B build-debug
+pup -B build-release
+pup -B out-arm
+```
+
+**Cleaning variants:**
+
+```bash
+pup clean -B build-debug      # Remove outputs only
+pup distclean -B build-debug  # Remove entire variant directory
+```
 
 ### 7.3 Scoped Builds
 
+Limit builds to specific directories for faster iteration during development.
+
+**How scoping works:**
+
+When you run `pup` from a subdirectory, only rules affecting that directory and its children are considered:
+
+```
+project/
+├── lib/
+│   └── Tupfile        # Compiles lib/*.c
+├── app/
+│   └── Tupfile        # Compiles app/*.c, links with lib
+└── test/
+    └── Tupfile        # Compiles tests
+```
+
+```bash
+cd project/lib
+pup                    # Only builds lib/ outputs
+```
+
+**Explicit scopes:**
+
+Specify directories as targets:
+
+```bash
+pup lib app            # Build lib/ and app/ only
+pup test               # Build test/ only
+```
+
+**Full builds:**
+
+Use `-A` to ignore scoping and build everything:
+
+```bash
+cd project/lib
+pup -A                 # Builds entire project despite cwd
+```
+
+**Scope behavior:**
+- Scoped builds still respect dependencies (if `app/` needs `lib/`, both build)
+- Change detection is project-wide, but only scoped commands execute
+- Useful for large projects where full builds are slow
+
 ## 8. Implicit Dependencies
+
+Header files included by C/C++ sources aren't listed in Tupfiles, but changes to them should trigger rebuilds. Pup tracks these "implicit dependencies" automatically.
 
 ### 8.1 Compiler .d Files
 
+The recommended method: let the compiler generate dependency information.
+
+**Setup:**
+
+Add `-MD` to your compile flags:
+
+```tup
+CFLAGS = -Wall -O2 -MD
+
+: foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+```
+
+**How it works:**
+
+1. Compiler generates `foo.d` alongside `foo.o`:
+   ```makefile
+   foo.o: foo.c include/header.h /usr/include/stdio.h
+   ```
+
+2. After successful compilation, pup parses the `.d` file
+
+3. Discovered headers stored as implicit edges in the index
+
+4. On subsequent builds, changed headers trigger rebuilds
+
+**Depfile format:**
+
+```makefile
+target.o: source.c \
+  header1.h \
+  path/to/header2.h \
+  /usr/include/stdio.h
+```
+
+The parser handles:
+- Backslash line continuations
+- Escaped spaces in paths (`path\ with\ spaces`)
+- Windows (CRLF) and Unix (LF) line endings
+
+**Compiler flags:**
+| Flag | Effect |
+|------|--------|
+| `-MD` | Generate `.d` file, continue compilation |
+| `-MMD` | Like `-MD` but skip system headers |
+| `-MF file` | Write dependencies to specific file |
+| `-MT target` | Override target name in `.d` file |
+
+**Recommendation:** Use `-MD` (not `-MMD`) to track system headers too. This catches changes to SDK/toolchain headers during upgrades.
+
 ### 8.2 Auto-Generated Dependency Rules
+
+Alternative method: let pup auto-generate dependency scanning commands.
+
+**Setup:**
+
+```bash
+PUP_IMPLICIT_DEPS=1 pup build
+```
+
+**How it works:**
+
+1. Pup pattern-matches C/C++ compile commands
+
+2. Auto-generates `gcc -M` rules to discover dependencies
+
+3. Generated rules run before their parent compile commands
+
+4. stdout parsed as depfile, headers added as implicit edges
+
+**Example transformation:**
+
+```tup
+# Original rule
+: foo.c |> gcc -c %f -o %o |> foo.o
+```
+
+Pup generates an internal dependency-scanning rule equivalent to:
+```bash
+gcc -M -MT foo.o foo.c
+```
+
+**Pattern matching:**
+
+Recognized compilers: `gcc`, `g++`, `clang`, `clang++`, `cc`, `c++`
+
+Recognized wrappers: `ccache`, `distcc`, `sccache`, `icecc`
+
+Preserved flags: `-I`, `-D`, `-U`, `-std=`, `-isystem`, `--sysroot`
+
+**When to use each method:**
+
+| Method | Pros | Cons |
+|--------|------|------|
+| `.d` files (`-MD`) | Standard, reliable, fast | Requires flag in every compile |
+| `PUP_IMPLICIT_DEPS` | Zero Tupfile changes | Slightly slower, pattern-based |
+
+**Recommendation:** Use `-MD` for new projects. Use `PUP_IMPLICIT_DEPS` when adopting existing Tupfiles that don't have `-MD`.
 
 ## 9. Incremental Builds
 
+Pup rebuilds only what's necessary by tracking file changes and dependencies in a persistent index.
+
 ### 9.1 Change Detection
+
+**What triggers rebuilds:**
+
+| Change | Effect |
+|--------|--------|
+| Source file modified | Commands using it re-run |
+| Tupfile/Tuprules.tup modified | Affected commands re-run |
+| tup.config modified | All commands re-run |
+| Header file modified | Commands with implicit deps re-run |
+| Command string changed | That command re-runs |
+| Output file missing | Command re-runs |
+
+**How changes are detected:**
+
+1. **Size check** (fast path): If file size differs from index, it changed
+
+2. **Hash check**: If size matches, compute SHA-256 hash and compare
+
+This content-based detection eliminates false positives from:
+- `touch file` (timestamp changes, content unchanged)
+- `git checkout` (restores old timestamp)
+- `rsync` (may preserve timestamps)
+- Editor save without changes
+
+**Build flow:**
+
+```
+1. PARSE    Re-parse all Tupfiles → fresh in-memory DAG
+2. LOAD     Load previous state from .pup/index
+3. DIFF     Compare new DAG vs old index:
+            - New commands → must run
+            - Removed commands → delete stale outputs
+            - Changed commands → rebuild
+            - Changed inputs → rebuild dependents
+4. EXECUTE  Run affected commands (topologically sorted)
+5. WRITE    Save complete new index
+```
 
 ### 9.2 The Index File
 
+Binary file at `.pup/index` storing the complete build state.
+
+**Contents:**
+
+| Section | Description |
+|---------|-------------|
+| Header (64 bytes) | Magic number, version, counts |
+| File entries (96 bytes each) | ID, parent, name, size, SHA-256 hash |
+| Command entries (64 bytes each) | ID, command string, display text |
+| Edges (24 bytes each) | From, to, link type |
+| String table | Packed strings |
+| Footer (32 bytes) | SHA-256 checksum |
+
+**Link types:**
+
+| Type | Meaning |
+|------|---------|
+| Normal | Input/output relationship |
+| Sticky | Explicit dependency from Tupfile (triggers rebuild on Tupfile change) |
+| Group | Membership in output group |
+| Implicit | Header dependency from `.d` file |
+
+**Key design:**
+
+The index is a *snapshot*, not a live database. Each build writes a complete new index file. This is efficient because:
+
+- Serialization is fast (simple binary format)
+- Only changed parts of the *build* execute
+- Single atomic write at the end
+
+**Path storage:**
+
+Paths use a (parent_id, name) model like tup's database:
+- Only basename stored per entry
+- Full paths reconstructed by walking parent chain
+- Enables O(1) lookup by directory + name
+
 ### 9.3 Stale Output Cleanup
+
+When rules are removed or outputs change, pup automatically cleans up stale files.
+
+**Detection:**
+
+During the DIFF phase, pup identifies:
+- Commands in index but not in new DAG (rule removed)
+- Outputs in index but not in new DAG (output changed)
+
+**Cleanup behavior:**
+
+1. Files generated by removed commands are deleted
+2. Old outputs from modified rules are deleted before rebuild
+3. Empty parent directories are removed
+
+**Example:**
+
+```tup
+# Before: outputs foo.o and bar.o
+: foreach *.c |> gcc -c %f -o %o |> %B.o
+```
+
+```tup
+# After: only outputs foo.o (bar.c deleted)
+: foo.c |> gcc -c %f -o %o |> foo.o
+```
+
+Pup detects `bar.o` is stale and removes it.
+
+**Manual cleanup:**
+
+```bash
+pup clean              # Remove all generated files
+pup clean -n           # Dry-run: show what would be removed
+```
 
 ## 10. Troubleshooting
 
 ### 10.1 Common Errors
 
+**"Not in a pup/tup project"**
+
+```
+Error: Not in a pup/tup project (no Tupfile.ini found)
+```
+
+Cause: No `Tupfile.ini` or `Tupfile` found in current or parent directories.
+
+Fix: Create `Tupfile.ini` at project root, or cd into the project.
+
+---
+
+**"Circular dependency detected"**
+
+```
+Error: Circular dependency: a.o -> b.o -> a.o
+```
+
+Cause: Rules create a dependency cycle.
+
+Fix: Review rules to break the cycle. Use `pup export graph` to visualize.
+
+---
+
+**"Output already defined"**
+
+```
+Error: Output 'foo.o' already defined by another rule
+```
+
+Cause: Multiple rules produce the same output file.
+
+Fix: Ensure each output is produced by exactly one rule.
+
+---
+
+**"Unknown variable"**
+
+```
+Error: Unknown variable: $(UNDEFINED_VAR)
+```
+
+Cause: Variable referenced but never assigned.
+
+Fix: Define the variable, or use a default: `$(VAR:-default)`
+
+---
+
+**"Group not found"**
+
+```
+Error: Group {objs} referenced but not defined
+```
+
+Cause: Using a group as input before any rule outputs to it.
+
+Fix: Ensure rules outputting to the group are in scope.
+
+---
+
+**Command fails but file exists**
+
+Cause: Previous partial build left output file.
+
+Fix: Run `pup clean` then rebuild, or delete the output manually.
+
 ### 10.2 Diagnostic Options
 
+**Verbose mode (`-v`)**
+
+Shows detailed information during build:
+
+```bash
+pup -v
+```
+
+Output includes:
+- Each Tupfile as it's parsed
+- Variables being set
+- Change detection decisions
+- Commands being executed
+
+**Dry-run (`-n`)**
+
+Print commands without executing:
+
+```bash
+pup -n
+```
+
+Useful for:
+- Seeing what would rebuild
+- Checking command expansion
+- Verifying after Tupfile changes
+
+**Statistics (`--stat`)**
+
+Print build statistics:
+
+```bash
+pup --stat
+```
+
+Shows:
+- Total files/commands
+- Files changed
+- Commands executed
+- Build time
+
+**Graph export**
+
+Visualize dependencies:
+
+```bash
+# DOT format for graphviz
+pup export graph | dot -Tpng -o deps.png
+
+# Text summary
+pup export graph --summary
+
+# Include header dependencies
+pup export graph --all-deps
+```
+
 ### 10.3 Debug Techniques
+
+**Isolate the problem:**
+
+```bash
+# Build single directory
+pup lib/
+
+# Build with single job (sequential)
+pup -j1
+
+# Clean and rebuild
+pup clean && pup
+```
+
+**Check what changed:**
+
+```bash
+# Dry-run shows what would rebuild
+pup -n
+
+# Verbose shows why
+pup -v -n
+```
+
+**Inspect the graph:**
+
+```bash
+# Text summary of all rules
+pup export graph --summary
+
+# Visual graph (requires graphviz)
+pup export graph | dot -Tsvg -o graph.svg
+```
+
+**Force full rebuild:**
+
+```bash
+# Remove index, keep outputs
+rm -rf .pup/index
+
+# Or clean everything
+pup distclean && pup
+```
+
+**Check variable expansion:**
+
+```bash
+# Parse only, verbose
+pup parse -v
+```
+
+**Compare with tup:**
+
+If migrating from tup, run both and compare:
+
+```bash
+# Build with pup
+pup -n > pup-commands.txt
+
+# Build with tup (if available)
+tup -n > tup-commands.txt
+
+diff pup-commands.txt tup-commands.txt
+```
 
 ## Appendices
 
 ### A. Tup Compatibility Matrix
 
+| Feature | Tup | Pup | Notes |
+|---------|-----|-----|-------|
+| **Core Syntax** |
+| Basic rules | ✅ | ✅ | |
+| foreach rules | ✅ | ✅ | |
+| Bang macros | ✅ | ✅ | |
+| Variables | ✅ | ✅ | |
+| Config variables (@) | ✅ | ✅ | |
+| Node variables (&) | ✅ | ⚠️ | Partial |
+| Conditionals | ✅ | ✅ | |
+| Groups | ✅ | ✅ | |
+| Order-only deps | ✅ | ✅ | |
+| **Directives** |
+| include | ✅ | ✅ | |
+| include_rules | ✅ | ✅ | |
+| export | ✅ | ✅ | |
+| import | ✅ | ✅ | |
+| preload | ✅ | ✅ | |
+| run | ✅ | ❌ | Shell execution during parse |
+| .gitignore | ✅ | ✅ | |
+| **Commands** |
+| build | ✅ | ✅ | |
+| init | ✅ | ✅ | |
+| parse | ✅ | ✅ | |
+| upd | ✅ | ➡️ | Alias for build |
+| variant | ✅ | ✅ | |
+| monitor | ✅ | ❌ | Filesystem watch daemon |
+| graph | ✅ | ✅ | Via `export graph` |
+| **Features** |
+| FUSE sandbox | ✅ | ❌ | Pup uses index-based tracking |
+| Lua scripting | ✅ | ❌ | Not planned |
+| SQLite database | ✅ | ❌ | Pup uses binary index |
+| Parallel builds | ✅ | ✅ | |
+| Incremental builds | ✅ | ✅ | |
+| Cross-platform | ✅ | ✅ | Linux, macOS, Windows |
+
+**Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name
+
 ### B. Pattern Flags Reference
 
+**Input Flags:**
+
+| Flag | Description | Example Input | Result |
+|------|-------------|---------------|--------|
+| `%f` | All inputs | `foo.c bar.c` | `foo.c bar.c` |
+| `%b` | Basename with ext | `src/foo.c` | `foo.c` |
+| `%B` | Basename no ext | `src/foo.c` | `foo` |
+| `%e` | Extension only | `foo.c` | `c` |
+| `%d` | Directory | `src/foo.c` | `src` |
+| `%g` | Glob match | `*.c` → `foo.c` | `foo.c` |
+
+**Output Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `%o` | All outputs |
+
+**Numbered Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `%1f` | First input |
+| `%2f` | Second input |
+| `%3f` | Third input (etc.) |
+| `%1o` | First output |
+| `%2o` | Second output (etc.) |
+
+**Usage Examples:**
+
+```tup
+# Basic: %f for inputs, %o for outputs
+: foo.c |> gcc -c %f -o %o |> foo.o
+
+# Foreach: %B expands per-file
+: foreach *.c |> gcc -c %f -o %o |> %B.o
+
+# Numbered: specific input positions
+: header.h source.c |> process %1f %2f -o %o |> output.c
+
+# Directory-aware output
+: foreach src/*.c |> gcc -c %f -o %o |> obj/%B.o
+```
+
 ### C. Environment Variables Reference
+
+**Pup Configuration:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PUP_SOURCE_DIR` | Source directory | Auto-detect |
+| `PUP_BUILD_DIR` | Build/output directory | Source dir |
+| `PUP_IMPLICIT_DEPS` | Enable auto dep scanning | `0` (off) |
+
+**Tupfile Built-ins:**
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `$(TUP_CWD)` | Current Tupfile dir (relative) | `src/lib` |
+| `$(TUP_ROOT)` | Path to root from current dir | `../..` |
+| `$(TUP_PLATFORM)` | Platform name | `linux`, `macosx`, `win32` |
+| `$(TUP_ARCH)` | CPU architecture | `x86_64`, `arm`, `aarch64` |
+| `$(TUP_VARIANTDIR)` | Variant output dir | `../build-debug/src` |
+
+**Priority Order:**
+
+For source/build directories:
+1. Command-line (`-S`, `-B`) — highest
+2. Environment (`PUP_SOURCE_DIR`, `PUP_BUILD_DIR`)
+3. Auto-detection from cwd — lowest
+
+**Example Usage:**
+
+```bash
+# Build with specific directories
+PUP_SOURCE_DIR=/path/to/src PUP_BUILD_DIR=/path/to/build pup
+
+# Enable implicit dependency scanning
+PUP_IMPLICIT_DEPS=1 pup build
+
+# Override via command line (higher priority)
+PUP_SOURCE_DIR=/wrong pup -S /correct  # Uses /correct
+```
