@@ -580,6 +580,35 @@ SCENARIO("Removed source file triggers stale output cleanup", "[e2e][incremental
     }
 }
 
+SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
+{
+    GIVEN("a variant build with two source files")
+    {
+        auto f = E2EFixture { "new_file_detection" };
+        f.write_file("mul.c", "int mul(int a, int b) { return a * b; }\n");
+
+        REQUIRE(f.init().success());
+        f.mkdir("build");
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/add.o"));
+        REQUIRE(f.exists("build/mul.o"));
+        REQUIRE_FALSE(f.exists("add.o")); // Not in source dir
+
+        WHEN("a source file is removed")
+        {
+            f.remove_file("mul.c");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the stale output in the build directory is deleted")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/add.o"));
+                REQUIRE_FALSE(f.exists("build/mul.o"));
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Clean/Distclean Tests
 // =============================================================================
