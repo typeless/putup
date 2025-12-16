@@ -127,9 +127,11 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 
 auto Index::find_command_by_command(std::string const& cmd) const -> CommandEntry const*
 {
-    auto it = std::find_if(commands_.begin(), commands_.end(),
-        [&cmd](auto const& c) { return c.command == cmd; });
-    return it != commands_.end() ? &*it : nullptr;
+    auto it = command_index_.find(cmd);
+    if (it != command_index_.end()) {
+        return &commands_[it->second];
+    }
+    return nullptr;
 }
 
 auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
@@ -162,10 +164,15 @@ auto Index::build_edge_indices() -> void
 {
     edges_from_index_.clear();
     edges_to_index_.clear();
+    command_index_.clear();
 
     for (auto i = std::size_t { 0 }; i < edges_.size(); ++i) {
         edges_from_index_[edges_[i].from].push_back(i);
         edges_to_index_[edges_[i].to].push_back(i);
+    }
+
+    for (auto i = std::size_t { 0 }; i < commands_.size(); ++i) {
+        command_index_[commands_[i].command] = i;
     }
 }
 

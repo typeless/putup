@@ -161,6 +161,9 @@ private:
 
     // Children index for Merkle tree traversal (parent_id -> child ids)
     std::unordered_map<NodeId, std::vector<NodeId>> children_index_ = {};
+
+    // Command index for O(1) lookup by command string (index into commands_ vector)
+    std::unordered_map<std::string, std::size_t> command_index_ = {};
 };
 
 } // namespace pup::index
