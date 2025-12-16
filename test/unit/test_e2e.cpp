@@ -282,6 +282,41 @@ SCENARIO("Groups defined in included files are visible", "[e2e][groups]")
     }
 }
 
+SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
+{
+    GIVEN("a Tupfile with group reference in inputs section (before |)")
+    {
+        // This tests the spos pattern: $(ROOT)/modules/<json-headers> |> cat %<json-headers>
+        // Group references are order-only even when in regular inputs section
+        auto f = E2EFixture { "groups_in_inputs" };
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("module headers are generated")
+            {
+                REQUIRE(f.exists("modules/mod1.header"));
+                REQUIRE(f.exists("modules/mod2.header"));
+            }
+
+            THEN("percent-group in command expands to all group members")
+            {
+                // %<json-headers> should expand to mod1.header and mod2.header
+                auto content = f.read_file("output/headers.txt");
+                REQUIRE(content.find("mod1") != std::string::npos);
+                REQUIRE(content.find("mod2") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Build fails when command fails", "[e2e][build]")
 {
     GIVEN("an initialized failure project with invalid source")
