@@ -11,13 +11,8 @@ namespace pup {
 auto Metrics::operator+=(Metrics const& other) -> Metrics&
 {
     tupfiles_parsed += other.tupfiles_parsed;
-    commands_total += other.commands_total;
-    commands_executed += other.commands_executed;
     files_checked += other.files_checked;
     files_changed += other.files_changed;
-    files_in_index += other.files_in_index;
-    implicit_deps += other.implicit_deps;
-    edges_total += other.edges_total;
     hash_computations += other.hash_computations;
     stat_calls += other.stat_calls;
     index_load_time += other.index_load_time;
@@ -67,6 +62,7 @@ auto collect_metrics() -> Metrics
 
     for (auto* m : metrics_registry()) {
         result += *m;
+        *m = Metrics {};
     }
 
     return result;
