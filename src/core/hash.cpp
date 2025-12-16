@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/core/hash.hpp"
+#include "pup/core/metrics.hpp"
 
 extern "C" {
 #include "sha256/sha256.h"
@@ -83,6 +84,8 @@ auto sha256(std::string_view data) -> Hash256
 
 auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
 {
+    ++thread_metrics().hash_computations;
+
     auto file = std::ifstream { path, std::ios::binary };
     if (!file) {
         return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path.string());

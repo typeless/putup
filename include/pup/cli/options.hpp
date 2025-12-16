@@ -15,6 +15,7 @@ struct Options {
     bool keep_going = false;
     bool verbose = false;
     bool dry_run = false;
+    bool stats = false;
     bool version = false;
     bool help = false;
     bool summary = false;

@@ -3,6 +3,7 @@
 
 #include "pup/cli/context.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/metrics.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
@@ -196,6 +197,10 @@ auto parse_directory(
 
     state.parsing.erase(normalized_dir);
     state.parsed.insert(normalized_dir);
+
+    if (result) {
+        ++pup::thread_metrics().tupfiles_parsed;
+    }
 
     return result;
 }

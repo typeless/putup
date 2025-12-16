@@ -5,6 +5,7 @@
 #include "pup/cli/context.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/metrics.hpp"
 #include "pup/core/types.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
@@ -45,25 +46,60 @@ auto is_path_under_root(
     return path_str.starts_with(root_str) || path == root;
 }
 
+auto print_stats(
+    pup::index::Index const& index,
+    std::size_t num_commands,
+    std::size_t commands_executed) -> void
+{
+    auto metrics = pup::collect_metrics();
+
+    auto implicit_deps_count = std::size_t { 0 };
+    for (auto const& edge : index.edges()) {
+        if (edge.type == pup::LinkType::Implicit) {
+            ++implicit_deps_count;
+        }
+    }
+
+    fmt::print("\nStats:\n");
+    fmt::print("  Tupfiles parsed:    {:>6}\n", metrics.tupfiles_parsed);
+    fmt::print("  Commands:           {:>6} total, {} executed\n",
+        num_commands, commands_executed);
+    fmt::print("  Files checked:      {:>6} ({} changed)\n",
+        metrics.files_checked, metrics.files_changed);
+    fmt::print("  Files in index:     {:>6}\n", index.file_count());
+    fmt::print("  Edges in graph:     {:>6}\n", index.edge_count());
+    fmt::print("  Implicit deps:      {:>6}\n", implicit_deps_count);
+    fmt::print("  Hash computations:  {:>6}\n", metrics.hash_computations);
+    fmt::print("  Stat calls:         {:>6}\n", metrics.stat_calls);
+    if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
+        fmt::print("  Index I/O:          {:>6}ms load, {}ms save\n",
+            metrics.index_load_time.count(), metrics.index_save_time.count());
+    }
+}
+
 auto find_changed_files_with_implicit(
     std::filesystem::path const& root,
     pup::index::Index const& old_index,
     bool verbose = false) -> std::vector<std::string>
 {
     auto changed = std::vector<std::string> {};
+    auto& metrics = pup::thread_metrics();
 
     for (auto const& file : old_index.files()) {
         if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated) {
             continue;
         }
 
+        ++metrics.files_checked;
         auto path = resolve_path(file.path, root);
 
         struct stat st = {};
+        ++metrics.stat_calls;
         if (::stat(path.c_str(), &st) < 0) {
             if (verbose) {
                 fmt::print("  Changed (stat failed): {}\n", file.path);
             }
+            ++metrics.files_changed;
             changed.push_back(file.path);
             continue;
         }
@@ -74,6 +110,7 @@ auto find_changed_files_with_implicit(
             if (verbose) {
                 fmt::print("  Changed (size): {}\n", file.path);
             }
+            ++metrics.files_changed;
             changed.push_back(file.path);
             continue;
         }
@@ -85,6 +122,7 @@ auto find_changed_files_with_implicit(
                 if (verbose) {
                     fmt::print("  Changed (hash): {}\n", file.path);
                 }
+                ++metrics.files_changed;
                 changed.push_back(file.path);
             }
         }
@@ -500,12 +538,15 @@ auto cmd_build(Options const& opts) -> int
     auto changed_files = std::vector<std::string> {};
 
     if (std::filesystem::exists(index_path)) {
+        auto index_load_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
         auto reader_result = pup::Result<pup::index::IndexReader> { pup::index::IndexReader::open(index_path) };
         if (reader_result) {
             auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
             if (index_result) {
                 old_index = std::move(*index_result);
                 old_index->build_children_index();
+                auto index_load_end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+                pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_load_end - index_load_start);
 
                 if (opts.verbose && old_index->has_merkle_hashes()) {
                     fmt::print("Index has Merkle hashes (v4 format)\n");
@@ -516,6 +557,9 @@ auto cmd_build(Options const& opts) -> int
 
                 if (changed_files.empty()) {
                     fmt::print("Nothing to do (up to date).\n");
+                    if (opts.stats) {
+                        print_stats(*old_index, num_commands, 0);
+                    }
                     return EXIT_SUCCESS;
                 }
 
@@ -619,16 +663,31 @@ auto cmd_build(Options const& opts) -> int
             stats.completed_jobs, duration.count());
     }
 
+    auto final_index = std::optional<pup::index::Index> {};
     if (stats.failed_jobs == 0 && !opts.dry_run) {
         auto const* old_index_ptr = old_index ? &*old_index : nullptr;
         auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, old_index_ptr) };
         auto writer = pup::index::IndexWriter {};
+
+        auto index_save_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
         auto write_result = pup::Result<void> { writer.write(index_path, index) };
+        auto index_save_end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
+
         if (!write_result) {
             fmt::print(stderr, "Warning: Failed to save index: {}\n", write_result.error().message);
         } else if (opts.verbose) {
             fmt::print("Saved index: {} files, {} commands, {} edges\n",
                 index.file_count(), index.command_count(), index.edge_count());
+        }
+        final_index = std::move(index);
+    }
+
+    if (opts.stats) {
+        if (final_index) {
+            print_stats(*final_index, num_commands, stats.completed_jobs);
+        } else if (old_index) {
+            print_stats(*old_index, num_commands, stats.completed_jobs);
         }
     }
 
