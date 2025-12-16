@@ -32,8 +32,8 @@ auto parse_args(int argc, char** argv) -> Options
             opts.verbose = true;
         } else if (arg == "-n" || arg == "--dry-run") {
             opts.dry_run = true;
-        } else if (arg == "--stats") {
-            opts.stats = true;
+        } else if (arg == "--stat") {
+            opts.stat = true;
         } else if (arg == "-k" || arg == "--keep-going") {
             opts.keep_going = true;
         } else if (arg == "-j" || arg == "--jobs") {
@@ -105,7 +105,7 @@ auto print_usage() -> void
                "  -S DIR             Source directory (default: auto-detect)\n"
                "  -B DIR             Build/output directory (default: source)\n"
                "  --summary          Human-readable output (for export graph)\n"
-               "  --stats            Print build statistics\n"
+               "  --stat             Print build statistics\n"
                "  -a, --all          Include implicit deps in graph output\n"
                "  --version          Print version\n"
                "  -h, --help         Print this help\n"

@@ -557,7 +557,7 @@ auto cmd_build(Options const& opts) -> int
 
                 if (changed_files.empty()) {
                     fmt::print("Nothing to do (up to date).\n");
-                    if (opts.stats) {
+                    if (opts.stat) {
                         print_stats(*old_index, num_commands, 0);
                     }
                     return EXIT_SUCCESS;
@@ -683,7 +683,7 @@ auto cmd_build(Options const& opts) -> int
         final_index = std::move(index);
     }
 
-    if (opts.stats) {
+    if (opts.stat) {
         if (final_index) {
             print_stats(*final_index, num_commands, stats.completed_jobs);
         } else if (old_index) {
