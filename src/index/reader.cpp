@@ -126,9 +126,10 @@ auto IndexReader::read() const -> Result<Index>
     // Read command entries
     auto commands = raw_commands();
     for (auto const& raw : commands) {
+        auto cmd = get_string(raw.cmd_offset, raw.cmd_length);
         auto display = get_string(raw.display_offset, raw.display_length);
         auto env = get_string(raw.env_offset, raw.env_length);
-        index.add_command(CommandEntry::from_raw(raw, display, env));
+        index.add_command(CommandEntry::from_raw(raw, cmd, display, env));
     }
 
     // Read edges

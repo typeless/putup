@@ -40,20 +40,22 @@ struct CommandEntry {
     NodeId id = 0;
     NodeId dir_id = 0; ///< Directory where command runs
 
-    Hash256 command_hash = {}; ///< SHA-256 hash of command string
-    std::string display = {};  ///< Display text (from ^ ^ markers)
-    std::string env = {};      ///< Environment variables
+    std::string command = {}; ///< Full command string
+    std::string display = {}; ///< Display text (from ^ ^ markers)
+    std::string env = {};     ///< Environment variables
 
     std::uint8_t flags = 0;
 
     /// Convert to raw format for serialization
     [[nodiscard]] auto to_raw(
+        std::uint32_t cmd_offset,
         std::uint32_t display_offset,
         std::uint32_t env_offset) const -> RawCommandEntry;
 
     /// Create from raw format
     [[nodiscard]] static auto from_raw(
         RawCommandEntry const& raw,
+        std::string_view cmd_str,
         std::string_view display_str,
         std::string_view env_str) -> CommandEntry;
 };

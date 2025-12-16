@@ -111,9 +111,10 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
+        auto cmd_offset = strings.add(cmd.command);
         auto display_offset = strings.add(cmd.display);
         auto env_offset = strings.add(cmd.env);
-        command_entries.push_back(cmd.to_raw(display_offset, env_offset));
+        command_entries.push_back(cmd.to_raw(cmd_offset, display_offset, env_offset));
     }
 
     // Build edge entries

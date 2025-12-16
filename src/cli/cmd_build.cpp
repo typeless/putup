@@ -126,7 +126,7 @@ auto expand_implicit_deps(
                     continue;
                 }
 
-                auto cmd_node_id = graph.find_by_command_hash(cmd->dir_id, cmd->command_hash);
+                auto cmd_node_id = graph.find_by_command(cmd->command);
                 if (!cmd_node_id) {
                     continue;
                 }
@@ -148,7 +148,7 @@ auto expand_implicit_deps(
                     continue;
                 }
 
-                auto cmd_node_id = graph.find_by_command_hash(cmd->dir_id, cmd->command_hash);
+                auto cmd_node_id = graph.find_by_command(cmd->command);
                 if (!cmd_node_id) {
                     continue;
                 }
@@ -237,7 +237,7 @@ auto build_index(
             auto entry = pup::index::CommandEntry {
                 .id = node.id,
                 .dir_id = node.parent_dir,
-                .command_hash = pup::sha256(node.command),
+                .command = node.command,
                 .display = node.display,
                 .env = {},
                 .flags = 0,
