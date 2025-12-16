@@ -69,6 +69,8 @@ Running `pup` with no command executes the build.
 | `-n` | Dry-run: print commands without executing |
 | `-v` | Verbose output |
 | `--stat` | Print build statistics (files checked, hashes, timing) |
+| `-A, --all` | Force full project build (ignore cwd scoping) |
+| `-a, --all-deps` | Include implicit deps in graph output |
 | `-S DIR` | Source directory (default: auto-detect) |
 | `-B DIR` | Build/output directory for variant builds |
 | `--summary` | Human-readable output (for `export graph`) |
@@ -109,6 +111,15 @@ pup export graph | dot -Tpng -o graph.png
 
 # Export dependency graph (summary)
 pup export graph --summary
+
+# Scoped build from subdirectory (only checks files in lib/)
+cd lib && pup
+
+# Force full project build from subdirectory
+cd lib && pup -A
+
+# Scope to specific directory
+pup lib
 ```
 
 ## Testing
@@ -123,6 +134,7 @@ make test                                 # Run all tests
 ./build/test/unit/pup_test '[clean]'      # Clean/distclean tests only
 ./build/test/unit/pup_test '[incremental]' # Incremental rebuild tests
 ./build/test/unit/pup_test '[variant]'    # Out-of-tree/variant tests
+./build/test/unit/pup_test '[scope]'      # Scoped build tests
 ./build/test/unit/pup_test '[shell]'      # Shell fixture tests
 ```
 
@@ -474,6 +486,29 @@ This content-based detection eliminates false positives from `touch`, `rsync`, `
 - Index write happens once at the end
 
 This implements Mike Shal's "Beta build system" from the tup paper - persistent DAG storage enables O(log² n) incremental builds.
+
+### Scoped Builds
+
+When running pup from a subdirectory, change detection is limited to that subtree for faster incremental builds. Downstream dependents outside the scope are still rebuilt via DAG propagation.
+
+| Scenario | Change detection scope |
+|----------|----------------------|
+| `pup` from project root | All files |
+| `pup` from subdirectory | Only that subtree |
+| `pup <target>` | Only target directory |
+| `pup -A` or `pup --all` | All files (explicit) |
+
+**Key behaviors:**
+- Tupfiles/Tuprules.tup/tup.config are always checked regardless of scope
+- If a scoped file changes, its downstream dependents (even outside scope) are rebuilt
+- Project root is determined by `Tupfile.ini` (authoritative) or topmost `Tupfile` (fallback)
+
+**Example:** In a project with `lib/` and `app/` where app depends on lib:
+```bash
+cd lib && pup          # Only checks lib/*.c, but if changed, rebuilds app too
+cd lib && pup -A       # Checks all files in project
+pup lib                # From root, scopes to lib/
+```
 
 ### .d File Format
 ```makefile
