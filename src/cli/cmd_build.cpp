@@ -632,12 +632,8 @@ auto cmd_build(Options const& opts) -> int
                         continue;
                     }
 
-                    for (auto const& edge : old_index->edges()) {
-                        if (edge.from != cmd.id) {
-                            continue;
-                        }
-
-                        auto const* file = old_index->find_file_by_id(edge.to);
+                    for (auto const* edge : old_index->edges_from(cmd.id)) {
+                        auto const* file = old_index->find_file_by_id(edge->to);
                         if (!file || file->type != pup::NodeType::Generated) {
                             continue;
                         }
