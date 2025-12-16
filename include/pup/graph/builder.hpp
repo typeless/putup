@@ -85,7 +85,9 @@ public:
     [[nodiscard]] auto add_tupfile(
         BuildGraph& graph,
         parser::Tupfile const& tupfile,
-        parser::EvalContext& eval) -> Result<void>;
+        parser::EvalContext& eval
+    )
+        -> Result<void>;
 
     /// Get build errors
     [[nodiscard]] auto errors() const -> std::vector<std::string> const&;
@@ -100,70 +102,85 @@ private:
 
     auto process_statement(
         BuilderContext& ctx,
-        parser::Statement const& stmt) -> Result<void>;
+        parser::Statement const& stmt
+    ) -> Result<void>;
 
     auto process_rule(
         BuilderContext& ctx,
-        parser::Rule const& rule) -> Result<void>;
+        parser::Rule const& rule
+    ) -> Result<void>;
 
     auto process_bang_macro(
         BuilderContext& ctx,
-        parser::BangMacro const& macro) -> Result<void>;
+        parser::BangMacro const& macro
+    ) -> Result<void>;
 
     auto process_assignment(
         BuilderContext& ctx,
-        parser::Assignment const& assign) -> Result<void>;
+        parser::Assignment const& assign
+    ) -> Result<void>;
 
     auto process_conditional(
         BuilderContext& ctx,
-        parser::Conditional const& cond) -> Result<void>;
+        parser::Conditional const& cond
+    ) -> Result<void>;
 
     auto process_include(
         BuilderContext& ctx,
-        parser::Include const& inc) -> Result<void>;
+        parser::Include const& inc
+    ) -> Result<void>;
 
     auto process_import(
         BuilderContext& ctx,
-        parser::Import const& imp) -> Result<void>;
+        parser::Import const& imp
+    ) -> Result<void>;
 
     auto process_export(
         BuilderContext& ctx,
-        parser::Export const& exp) -> Result<void>;
+        parser::Export const& exp
+    ) -> Result<void>;
 
     auto expand_rule(
         BuilderContext& ctx,
         parser::Rule const& rule,
-        std::vector<std::string> const& inputs) -> Result<void>;
+        std::vector<std::string> const& inputs
+    ) -> Result<void>;
 
     auto expand_inputs(
         BuilderContext& ctx,
-        std::vector<parser::PathPattern> const& patterns) -> Result<std::vector<std::string>>;
+        std::vector<parser::PathPattern> const& patterns
+    ) -> Result<std::vector<std::string>>;
 
     auto expand_outputs(
         BuilderContext& ctx,
         std::vector<parser::PathPattern> const& patterns,
-        std::string const& input) -> Result<std::vector<std::string>>;
+        std::string const& input
+    ) -> Result<std::vector<std::string>>;
 
     auto expand_command(
         BuilderContext& ctx,
         parser::Expression const& cmd,
         std::vector<std::string> const& inputs,
-        std::vector<std::string> const& outputs) -> Result<std::string>;
+        std::vector<std::string> const& outputs
+    ) -> Result<std::string>;
 
     auto get_or_create_directory_node(
         BuilderContext& ctx,
         std::filesystem::path const& dir_path,
-        int depth = 0) -> Result<NodeId>;
+        int depth = 0
+    ) -> Result<NodeId>;
 
     auto get_or_create_file_node(
         BuilderContext& ctx,
         std::string const& path,
-        NodeType type = NodeType::File) -> Result<NodeId>;
+        NodeType type = NodeType::File
+    ) -> Result<NodeId>;
 
     auto create_command_node(
         BuilderContext& ctx,
         std::string const& command,
-        std::string const& display) -> Result<NodeId>;
+        std::string const& display
+    ) -> Result<NodeId>;
 };
 
 } // namespace pup::graph

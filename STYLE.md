@@ -10,7 +10,7 @@ A concise style guide for modern C++ projects.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.5.0 | 2025-12-16 | Multiline declarations break before trailing return type |
+| 1.5.0 | 2025-12-16 | Multiline declarations: return type follows closing paren |
 | 1.4.0 | 2025-12-14 | Remove explicit type wrapper requirement for function calls |
 | 1.3.0 | 2025-12-10 | Always use braces for if/for/while statements |
 | 1.2.0 | 2025-12-10 | Call site arguments follow same formatting as declarations |
@@ -58,12 +58,12 @@ auto* ptr = get_pointer();
 auto foo() -> ReturnType;
 auto empty() const -> bool;
 
-// Multiline declarations - break before trailing return type
+// Multiline declarations - closing paren on own line, return type follows
 auto create_connection(
     std::string_view host,
     std::uint16_t port,
-    ConnectionOptions const& options)
-    -> Result<Connection>;
+    ConnectionOptions const& options
+) -> Result<Connection>;
 ```
 
 ### Right-side Const
