@@ -6,7 +6,6 @@
 #include "pup/core/result.hpp"
 
 #include <filesystem>
-#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,7 +51,6 @@ private:
     bool has_wildcards_ = false;
     bool has_double_star_ = false;
 
-    [[nodiscard]] auto match_impl(std::string_view pattern, std::string_view text) const -> bool;
     [[nodiscard]] auto match_recursive(std::string_view pattern, std::string_view text) const -> bool;
     [[nodiscard]] auto match_bracket(std::string_view& pattern, char c) const -> bool;
 };

@@ -3,9 +3,7 @@
 
 #include "pup/parser/ignore.hpp"
 
-#include <algorithm>
 #include <fstream>
-#include <sstream>
 
 namespace pup::parser {
 

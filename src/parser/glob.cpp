@@ -31,15 +31,7 @@ auto Glob::matches(std::string_view filename) const -> bool
     if (!has_wildcards_) {
         return pattern_ == filename;
     }
-    return match_impl(pattern_, filename);
-}
-
-auto Glob::match_impl(std::string_view pattern, std::string_view text) const -> bool
-{
-    // Handle recursive ** patterns with a more straightforward approach
-    // by trying to match at each position
-
-    return match_recursive(pattern, text);
+    return match_recursive(pattern_, filename);
 }
 
 auto Glob::match_recursive(std::string_view pattern, std::string_view text) const -> bool
