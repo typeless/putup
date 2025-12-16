@@ -639,6 +639,64 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             REQUIRE(generated[0].command == "g++ -M foo.c++");
         }
     }
+
+    SECTION("normalizes paths with .. segments in -I flags")
+    {
+        // Simple case: build/dir/../../include -> include
+        auto cmd = CommandInfo {
+            .node_id = 830,
+            .command = "gcc -Ibuild/dir/../../include -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = { "foo.c" },
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        // Path normalized: build/dir/../../include -> include
+        REQUIRE(generated[0].command == "gcc -M -Iinclude foo.c");
+    }
+
+    SECTION("normalizes complex variant build paths")
+    {
+        // Pattern from spos: command runs from modules/MSR/driver/
+        // with -I$(TUP_VARIANT_OUTPUTDIR)/include/generated
+        // which expands to -I../../../build-s1f3/modules/MSR/driver/../../../include/generated
+        // The ../../../ goes up from driver/, and modules/MSR/driver/../../../ cancels out
+        auto cmd = CommandInfo {
+            .node_id = 831,
+            .command = "gcc -I../../../build-s1f3/modules/MSR/driver/../../../include/generated -c driver.c -o driver.o",
+            .display = "CC driver.o",
+            .inputs = { "driver.c" },
+            .order_only_inputs = {},
+            .outputs = { "driver.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        // Normalized: the driver/../../../ removes modules/MSR/driver, leaving build-s1f3/include/generated
+        REQUIRE(generated[0].command == "gcc -M -I../../../build-s1f3/include/generated driver.c");
+    }
+
+    SECTION("preserves current directory reference")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 832,
+            .command = "gcc -I. -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = { "foo.c" },
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.size() == 1);
+        REQUIRE(generated[0].command == "gcc -M -I. foo.c");
+    }
 }
 
 TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")

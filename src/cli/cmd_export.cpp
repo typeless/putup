@@ -188,6 +188,11 @@ auto cmd_export_graph(Options const& opts) -> int
         for (auto input_id : ctx.graph().get_inputs(id)) {
             fmt::print("  n{} -> n{};\n", input_id, id);
         }
+
+        // Output order-only edges (dotted)
+        for (auto oo_id : ctx.graph().get_order_only(id)) {
+            fmt::print("  n{} -> n{} [style=dotted color=\"#0088ff\"];\n", oo_id, id);
+        }
     }
 
     if (index) {

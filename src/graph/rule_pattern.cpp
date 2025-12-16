@@ -6,6 +6,8 @@
 #include "pup/core/string_utils.hpp"
 
 #include <cctype>
+#include <cstring>
+#include <fmt/core.h>
 #include <sstream>
 
 namespace pup::graph {
@@ -89,6 +91,68 @@ auto shell_quote(std::string const& s) -> std::string
     return result;
 }
 
+/// Normalize a path by removing foo/../ segments
+/// This is needed because DEP commands run before output directories exist,
+/// so paths like build-dir/foo/bar/../../../include can't be resolved if
+/// build-dir/foo/bar/ doesn't exist yet.
+auto normalize_path(std::string const& path) -> std::string
+{
+    auto parts = std::vector<std::string> {};
+    auto start = std::size_t { 0 };
+    auto is_absolute = !path.empty() && path[0] == '/';
+
+    // Split by /
+    while (start < path.size()) {
+        auto end = path.find('/', start);
+        if (end == std::string::npos) {
+            end = path.size();
+        }
+        auto part = path.substr(start, end - start);
+        if (!part.empty() && part != ".") {
+            if (part == ".." && !parts.empty() && parts.back() != "..") {
+                parts.pop_back();
+            } else {
+                parts.push_back(std::move(part));
+            }
+        }
+        start = end + 1;
+    }
+
+    // Rebuild path (preserve "." for current directory if nothing else)
+    if (parts.empty()) {
+        return is_absolute ? "/" : ".";
+    }
+
+    auto result = std::string {};
+    if (is_absolute) {
+        result = "/";
+    }
+    for (auto const& part : parts) {
+        if (!result.empty() && result.back() != '/') {
+            result += '/';
+        }
+        result += part;
+    }
+    return result;
+}
+
+/// Normalize paths embedded in compiler flags
+/// Handles: -I<path>, -isystem<path>, -iquote<path>, -include<path>, -D, -U, -std=, --sysroot=<path>
+auto normalize_flag_path(std::string const& flag) -> std::string
+{
+    // Flags with path immediately after
+    for (auto const* prefix : { "-I", "-isystem", "-iquote", "-include", "--sysroot=", "-isysroot" }) {
+        if (flag.starts_with(prefix)) {
+            auto path = flag.substr(std::strlen(prefix));
+            if (!path.empty()) {
+                return std::string { prefix } + normalize_path(path);
+            }
+        }
+    }
+    // Flags without paths or that shouldn't be normalized
+    return flag;
+}
+
 /// Check if a flag is relevant for dependency generation
 auto is_dep_relevant_flag(std::string const& flag) -> bool
 {
@@ -109,8 +173,8 @@ auto is_dep_relevant_flag(std::string const& flag) -> bool
     if (flag.starts_with("-std=")) {
         return true;
     }
-    // Force include
-    if (flag == "-include") {
+    // Force include - can be "-include path" or "-includepath" (GCC accepts both)
+    if (flag.starts_with("-include")) {
         return true;
     }
     // Sysroot
@@ -177,8 +241,8 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
     auto source_files = std::vector<std::string> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
-            // This is the argument to a flag like -include
-            dep_cmd << ' ' << shell_quote(words[i]);
+            // This is the argument to a flag like -include (normalize the path)
+            dep_cmd << ' ' << shell_quote(normalize_path(words[i]));
             skip_next = false;
             continue;
         }
@@ -196,9 +260,9 @@ auto build_dep_scan_command(CommandInfo const& cmd) -> std::string
             continue;
         }
 
-        // Include relevant preprocessor flags
+        // Include relevant preprocessor flags (normalize embedded paths)
         if (is_dep_relevant_flag(w)) {
-            dep_cmd << ' ' << shell_quote(w);
+            dep_cmd << ' ' << shell_quote(normalize_flag_path(w));
             // -include takes a separate argument
             if (w == "-include") {
                 skip_next = true;
@@ -259,10 +323,12 @@ auto make_gcc_depfile_pattern() -> RulePattern
                 ? std::string { "DEP" }
                 : "DEP " + cmd.inputs[0];
 
+            auto dep_cmd = build_dep_scan_command(cmd);
+
             return GeneratedRule {
                 .inputs = cmd.inputs,
                 .order_only_inputs = cmd.order_only_inputs,
-                .command = build_dep_scan_command(cmd),
+                .command = dep_cmd,
                 .display = display,
                 .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = {} } },
                 .action = OutputAction::InjectImplicitDeps,
