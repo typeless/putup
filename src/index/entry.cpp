@@ -125,6 +125,13 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
     return it != commands_.end() ? &*it : nullptr;
 }
 
+auto Index::find_command_by_command(std::string const& cmd) const -> CommandEntry const*
+{
+    auto it = std::find_if(commands_.begin(), commands_.end(),
+        [&cmd](auto const& c) { return c.command == cmd; });
+    return it != commands_.end() ? &*it : nullptr;
+}
+
 auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
 {
     auto result = std::vector<EdgeEntry const*> {};

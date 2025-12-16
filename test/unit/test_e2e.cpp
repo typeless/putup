@@ -515,6 +515,42 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("New source file triggers rebuild", "[e2e][incremental]")
+{
+    GIVEN("a project with one source file using foreach glob")
+    {
+        auto f = E2EFixture { "new_file_detection" };
+
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("add.o"));
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            auto noop = f.build();
+            REQUIRE(noop.success());
+            REQUIRE(noop.is_noop());
+
+            WHEN("a new source file is added")
+            {
+                f.write_file("mul.c", "int mul(int a, int b) { return a * b; }\n");
+                auto result = f.build();
+
+                THEN("the new file is compiled")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE(f.exists("mul.o"));
+                }
+
+                THEN("the original file is not recompiled")
+                {
+                    REQUIRE_FALSE(result.is_noop()); // mul.o was built
+                }
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Clean/Distclean Tests
 // =============================================================================

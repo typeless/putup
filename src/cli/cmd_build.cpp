@@ -555,6 +555,25 @@ auto cmd_build(Options const& opts) -> int
                 changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, opts.verbose);
                 changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
 
+                // Detect new commands (in fresh graph but not in old index)
+                for (auto const& node : ctx.graph()) {
+                    if (node.type != pup::NodeType::Command) {
+                        continue;
+                    }
+
+                    if (!old_index->find_command_by_command(node.command)) {
+                        for (auto output_id : ctx.graph().get_outputs(node.id)) {
+                            auto output_path = ctx.graph().get_full_path(output_id);
+                            if (!output_path.empty()) {
+                                changed_files.push_back(output_path);
+                            }
+                        }
+                        if (opts.verbose) {
+                            fmt::print("  New command: {}\n", node.display);
+                        }
+                    }
+                }
+
                 if (changed_files.empty()) {
                     fmt::print("Nothing to do (up to date).\n");
                     if (opts.stat) {

@@ -109,6 +109,9 @@ public:
     /// Find command by ID
     [[nodiscard]] auto find_command_by_id(NodeId id) const -> CommandEntry const*;
 
+    /// Find command by command string
+    [[nodiscard]] auto find_command_by_command(std::string const& cmd) const -> CommandEntry const*;
+
     /// Get edges from a node (O(1) after build_edge_indices)
     [[nodiscard]] auto edges_from(NodeId id) const -> std::vector<EdgeEntry const*>;
 
