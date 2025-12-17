@@ -61,9 +61,9 @@ private:
 
 /// Context for evaluating expressions
 struct EvalContext {
-    VarDb* vars = nullptr;        ///< Regular variables $(VAR)
-    VarDb* config_vars = nullptr; ///< Config variables @(VAR) from tup.config
-    VarDb* node_vars = nullptr;   ///< Node variables &(VAR)
+    VarDb* vars = nullptr;              ///< Regular variables $(VAR)
+    VarDb const* config_vars = nullptr; ///< Config variables @(VAR) from tup.config (read-only)
+    VarDb* node_vars = nullptr;         ///< Node variables &(VAR)
 
     std::string tup_cwd = {};               ///< Current directory (TUP_CWD)
     std::string tup_platform = {};          ///< Platform name (TUP_PLATFORM)

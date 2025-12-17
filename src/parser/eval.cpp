@@ -392,7 +392,7 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
         return *special;
     }
 
-    VarDb* db = nullptr;
+    VarDb const* db = nullptr;
     switch (ref.kind) {
     case VarRef::Kind::Regular:
         db = ctx_.vars;

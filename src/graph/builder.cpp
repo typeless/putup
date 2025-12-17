@@ -443,10 +443,9 @@ auto GraphBuilder::process_assignment(
         return pup::unexpected<Error>(value.error());
     }
 
+    // Config variables are read-only (loaded from tup.config), so only Regular and Node are writable
     auto* db = ctx.eval->vars;
-    if (assign.var_kind == parser::VarRef::Kind::Config) {
-        db = ctx.eval->config_vars;
-    } else if (assign.var_kind == parser::VarRef::Kind::Node) {
+    if (assign.var_kind == parser::VarRef::Kind::Node) {
         db = ctx.eval->node_vars;
     }
 
