@@ -548,7 +548,7 @@ auto build_index(
             }
 
             auto new_file_it = path_to_id.find(old_file->path);
-            pup::NodeId new_from_id;
+            auto new_from_id = pup::NodeId {};
             if (new_file_it != path_to_id.end()) {
                 new_from_id = new_file_it->second;
             } else {

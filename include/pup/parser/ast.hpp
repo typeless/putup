@@ -143,7 +143,7 @@ struct Conditional : AstNode {
     std::vector<std::unique_ptr<Statement>> then_body;
     std::vector<std::unique_ptr<Statement>> else_body;
 
-    ~Conditional();
+    ~Conditional() override;
     Conditional();
     Conditional(Conditional&&) noexcept;
     auto operator=(Conditional&&) noexcept -> Conditional&;

@@ -187,6 +187,7 @@ auto parse_directory(
 
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - config_vars modified during eval
         .config_vars = const_cast<pup::parser::VarDb*>(&config_vars),
         .tup_cwd = tup_cwd,
         .tup_platform = std::string { pup::PLATFORM },

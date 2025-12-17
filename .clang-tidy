@@ -209,11 +209,31 @@ Checks: >
   -readability-redundant-casting,
   -readability-redundant-member-init,
   -readability-simplify-boolean-expr,
-  -readability-uppercase-literal-suffix
+  -readability-uppercase-literal-suffix,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-explicit-virtual-functions,
+  -cppcoreguidelines-macro-to-enum,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-noexcept-destructor,
+  -cppcoreguidelines-noexcept-move-operations,
+  -cppcoreguidelines-noexcept-swap,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-special-member-functions
 
 WarningsAsErrors: ''
 
-HeaderFilterRegex: 'src/.*'
+HeaderFilterRegex: '(include/pup|src)/.*'
 
 FormatStyle: none
 
