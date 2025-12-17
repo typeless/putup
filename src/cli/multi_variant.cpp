@@ -75,7 +75,7 @@ auto for_each_variant(
     }
 
     // Collect results
-    auto failed = int { 0 };
+    auto failed = 0;
     for (auto& future : futures) {
         if (future.get() != 0) {
             ++failed;

@@ -148,12 +148,12 @@ auto atomic_write(
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto fd = int { ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644) };
+    auto fd = ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
         return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
     }
 
-    auto bytes_written = ssize_t { ::write(fd, data.data(), data.size()) };
+    auto bytes_written = ::write(fd, data.data(), data.size());
     auto write_error = (bytes_written != static_cast<ssize_t>(data.size()));
 
     if (::fsync(fd) < 0) {

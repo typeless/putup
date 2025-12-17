@@ -223,7 +223,7 @@ auto run_process_with_callback(
                 std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
         }
 
-        auto poll_result = int { ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms) };
+        auto poll_result = ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms);
         if (poll_result < 0) {
             if (errno == EINTR) {
                 continue;
@@ -282,7 +282,7 @@ auto run_process_with_callback(
         result.timed_out = true;
     }
 
-    auto status = int { 0 };
+    auto status = 0;
     ::waitpid(pid, &status, 0);
 
     if (WIFEXITED(status)) {

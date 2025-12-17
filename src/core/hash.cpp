@@ -146,8 +146,8 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>
             return -1;
         };
 
-        auto const hi_val = int { parse_nibble(hi) };
-        auto const lo_val = int { parse_nibble(lo) };
+        auto const hi_val = parse_nibble(hi);
+        auto const lo_val = parse_nibble(lo);
 
         if (hi_val < 0 || lo_val < 0) {
             return make_error<Hash256>(ErrorCode::InvalidArgument, "Invalid hex character");
