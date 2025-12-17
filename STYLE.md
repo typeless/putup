@@ -58,7 +58,7 @@ auto* ptr = get_pointer();
 auto foo() -> ReturnType;
 auto empty() const -> bool;
 
-// Multiline declarations - closing paren on own line, return type follows
+// Multiline declarations/definitions - closing paren on own line, return type follows
 auto create_connection(
     std::string_view host,
     std::uint16_t port,
