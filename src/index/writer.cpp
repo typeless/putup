@@ -95,41 +95,35 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
 
     // Allocate result buffer
     auto result = std::vector<std::byte>(total_size);
-    auto* ptr = result.data();
+    auto output = std::span<std::byte> { result };
 
     // Write header
-    std::memcpy(ptr, &header, sizeof(header));
-    ptr += sizeof(header);
+    std::memcpy(output.subspan(0, sizeof(header)).data(), &header, sizeof(header));
 
     // Write file entries
     if (!file_entries.empty()) {
-        std::memcpy(ptr, file_entries.data(), file_size);
-        ptr += file_size;
+        std::memcpy(output.subspan(file_offset, file_size).data(), file_entries.data(), file_size);
     }
 
     // Write command entries
     if (!command_entries.empty()) {
-        std::memcpy(ptr, command_entries.data(), command_size);
-        ptr += command_size;
+        std::memcpy(output.subspan(command_offset, command_size).data(), command_entries.data(), command_size);
     }
 
     // Write edge entries
     if (!edge_entries.empty()) {
-        std::memcpy(ptr, edge_entries.data(), edge_size);
-        ptr += edge_size;
+        std::memcpy(output.subspan(edge_offset, edge_size).data(), edge_entries.data(), edge_size);
     }
 
     // Write string table
     if (string_size > 0) {
-        std::memcpy(ptr, strings.data().data(), string_size);
-        ptr += string_size;
+        std::memcpy(output.subspan(string_offset, string_size).data(), strings.data().data(), string_size);
     }
 
     // Compute and write checksum
-    auto content_span = std::span<std::byte const> { result.data(), footer_offset };
-    auto checksum = sha256(content_span);
+    auto checksum = sha256(output.first(footer_offset));
     auto footer = RawFooter { .checksum = checksum };
-    std::memcpy(ptr, &footer, sizeof(footer));
+    std::memcpy(output.subspan(footer_offset, sizeof(footer)).data(), &footer, sizeof(footer));
 
     return result;
 }

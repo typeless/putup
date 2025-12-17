@@ -111,8 +111,10 @@ auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
         return {};
     }
 
-    auto const* base = file_.data();
-    auto const* files = reinterpret_cast<RawFileEntry const*>(base + hdr->file_offset);
+    auto data = std::span<std::byte const> { file_.data(), file_.size() };
+    auto file_bytes = data.subspan(hdr->file_offset, hdr->file_count * sizeof(RawFileEntry));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* files = reinterpret_cast<RawFileEntry const*>(file_bytes.data());
     return { files, hdr->file_count };
 }
 
@@ -123,8 +125,10 @@ auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
         return {};
     }
 
-    auto const* base = file_.data();
-    auto const* commands = reinterpret_cast<RawCommandEntry const*>(base + hdr->command_offset);
+    auto data = std::span<std::byte const> { file_.data(), file_.size() };
+    auto cmd_bytes = data.subspan(hdr->command_offset, hdr->command_count * sizeof(RawCommandEntry));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* commands = reinterpret_cast<RawCommandEntry const*>(cmd_bytes.data());
     return { commands, hdr->command_count };
 }
 
@@ -135,8 +139,10 @@ auto IndexReader::raw_edges() const -> std::span<RawEdge const>
         return {};
     }
 
-    auto const* base = file_.data();
-    auto const* edges = reinterpret_cast<RawEdge const*>(base + hdr->edge_offset);
+    auto data = std::span<std::byte const> { file_.data(), file_.size() };
+    auto edge_bytes = data.subspan(hdr->edge_offset, hdr->edge_count * sizeof(RawEdge));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* edges = reinterpret_cast<RawEdge const*>(edge_bytes.data());
     return { edges, hdr->edge_count };
 }
 
@@ -147,14 +153,15 @@ auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -
         return {};
     }
 
-    auto const* base = reinterpret_cast<char const*>(file_.data());
     auto const string_start = hdr->string_offset + offset;
-
     if (string_start + length > file_.size()) {
         return {};
     }
 
-    return { base + string_start, length };
+    auto data = std::span<std::byte const> { file_.data(), file_.size() };
+    auto str_bytes = data.subspan(string_start, length);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return { reinterpret_cast<char const*>(str_bytes.data()), length };
 }
 
 auto IndexReader::verify_checksum() const -> bool
@@ -164,12 +171,13 @@ auto IndexReader::verify_checksum() const -> bool
     }
 
     auto const content_size = file_.size() - sizeof(RawFooter);
-    auto const* base = file_.data();
+    auto data = std::span<std::byte const> { file_.data(), file_.size() };
 
-    auto content_span = std::span<std::byte const> { base, content_size };
-    auto computed = sha256(content_span);
+    auto computed = sha256(data.first(content_size));
 
-    auto const* footer = reinterpret_cast<RawFooter const*>(base + content_size);
+    auto footer_bytes = data.subspan(content_size, sizeof(RawFooter));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* footer = reinterpret_cast<RawFooter const*>(footer_bytes.data());
     return computed == footer->checksum;
 }
 
