@@ -62,12 +62,10 @@ auto parse_args(int argc, char** argv) -> Options
             if (i + 1 < argc) {
                 opts.source_dir = std::string { argv[++i] };
             }
-        } else if (arg == "-B" || arg == "--variant") {
+        } else if (arg == "-B") {
             if (i + 1 < argc) {
                 opts.build_dirs.emplace_back(argv[++i]);
             }
-        } else if (arg.starts_with("--variant=")) {
-            opts.build_dirs.emplace_back(arg.substr(10));
         } else if (arg == "--summary") {
             opts.summary = true;
         } else if (arg == "-a" || arg == "--all-deps") {

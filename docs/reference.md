@@ -220,7 +220,7 @@ pup export graph --all-deps | dot -Tsvg -o full-deps.svg
 | `-n` | `--dry-run` | Print commands without executing them. |
 | `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
 | `-S DIR` | | Source directory. Overrides auto-detection. |
-| `-B DIR` | `--variant DIR` | Build/output directory (can use multiple times). |
+| `-B DIR` | | Build/output directory (can use multiple times). |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
 | | `--stat` | Print build statistics after completion. |
