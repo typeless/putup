@@ -107,10 +107,76 @@ auto compute_build_scopes(
     return { rel };
 }
 
+/// Collect all upstream input files for commands in the given scopes.
+/// Walks backwards through the DAG from commands to their transitive inputs.
+auto collect_upstream_files(
+    pup::graph::BuildGraph const& graph,
+    std::vector<std::string> const& scopes) -> std::set<std::string>
+{
+    if (scopes.empty()) {
+        return {};
+    }
+
+    auto upstream = std::set<std::string> {};
+    auto visited = std::set<pup::NodeId> {};
+
+    // Recursive helper to collect inputs
+    std::function<void(pup::NodeId)> collect = [&](pup::NodeId id) {
+        if (!visited.insert(id).second) {
+            return;
+        }
+
+        auto const* node = graph.get_node(id);
+        if (!node) {
+            return;
+        }
+
+        if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
+            auto path = graph.get_full_path(id);
+            if (!path.empty()) {
+                upstream.insert(path);
+            }
+        }
+
+        // Walk to inputs (upstream)
+        for (auto input_id : graph.get_inputs(id)) {
+            collect(input_id);
+        }
+
+        // Also follow order-only deps
+        for (auto dep_id : graph.get_order_only(id)) {
+            collect(dep_id);
+        }
+    };
+
+    // Find commands in scope and collect their upstream deps
+    for (auto const& node : graph) {
+        if (node.type != pup::NodeType::Command) {
+            continue;
+        }
+
+        // Check if command's source_dir is in any scope
+        if (!pup::is_path_in_any_scope(node.source_dir, scopes)) {
+            continue;
+        }
+
+        // Collect all inputs for this command
+        for (auto input_id : graph.get_inputs(node.id)) {
+            collect(input_id);
+        }
+        for (auto dep_id : graph.get_order_only(node.id)) {
+            collect(dep_id);
+        }
+    }
+
+    return upstream;
+}
+
 auto find_changed_files_with_implicit(
     std::filesystem::path const& root,
     pup::index::Index const& old_index,
     std::vector<std::string> const& scopes,
+    std::set<std::string> const& upstream_files,
     bool verbose = false) -> std::vector<std::string>
 {
     auto changed = std::vector<std::string> {};
@@ -121,10 +187,10 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
-        // Skip files outside scopes (but always check Tupfiles)
-        // FIXME: O(n) linear scan. Lexicographically sorted index would enable
-        // O(log n + k) via binary search bounds on scope prefix.
-        if (!scopes.empty() && !is_tupfile(file.path) && !pup::is_path_in_any_scope(file.path, scopes)) {
+        // Skip files outside scopes (but always check Tupfiles and upstream deps)
+        if (!scopes.empty() && !is_tupfile(file.path)
+            && !pup::is_path_in_any_scope(file.path, scopes)
+            && !upstream_files.contains(file.path)) {
             continue;
         }
 
@@ -591,6 +657,10 @@ auto cmd_build(Options const& opts) -> int
                 }
 
                 auto scopes = compute_build_scopes(opts, ctx.layout());
+                auto upstream_files = std::set<std::string> {};
+                if (opts.include_all_deps && !scopes.empty()) {
+                    upstream_files = collect_upstream_files(ctx.graph(), scopes);
+                }
                 if (opts.verbose) {
                     if (scopes.empty()) {
                         fmt::print("Full project build\n");
@@ -599,11 +669,14 @@ auto cmd_build(Options const& opts) -> int
                         for (auto const& s : scopes) {
                             fmt::print(" {}", s);
                         }
+                        if (opts.include_all_deps) {
+                            fmt::print(" (+{} upstream deps)", upstream_files.size());
+                        }
                         fmt::print("\n");
                     }
                 }
 
-                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, scopes, opts.verbose);
+                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, scopes, upstream_files, opts.verbose);
                 changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
 
                 // Detect new commands (in fresh graph but not in old index)

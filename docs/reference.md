@@ -214,7 +214,7 @@ pup export graph --all-deps | dot -Tsvg -o full-deps.svg
 | `-S DIR` | | Source directory. Overrides auto-detection. |
 | `-B DIR` | | Build/output directory for variant builds. |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
-| `-a` | `--all-deps` | Include implicit deps in graph output. |
+| `-a` | `--all-deps` | Include upstream deps in scoped builds. |
 | | `--stat` | Print build statistics after completion. |
 | | `--summary` | Human-readable output (for `export graph`). |
 | | `--version` | Print version information. |
@@ -254,7 +254,20 @@ pup clean -B build-release  # Clean that variant
 
 These are different options:
 - `-A` / `--all` - Disable scoped builds; check all files regardless of cwd
-- `-a` / `--all-deps` - Include implicit dependencies (headers) in graph export
+- `-a` / `--all-deps` - Include upstream dependencies in scoped builds
+
+**Scoped Build Behavior (AOSP-style mm/mma):**
+
+By default, scoped builds only check files within the scope directory (like AOSP's `mm`). With `-a`, pup also checks upstream dependencies (like AOSP's `mma`):
+
+```bash
+pup lib        # mm behavior: only check lib/, fast
+pup -a lib     # mma behavior: check lib/ + its dependencies
+```
+
+Example: If `lib/foo.c` includes `../include/header.h`:
+- `pup lib` - changes to `header.h` are ignored
+- `pup -a lib` - changes to `header.h` trigger rebuild
 
 **`--` (End of Options)**
 

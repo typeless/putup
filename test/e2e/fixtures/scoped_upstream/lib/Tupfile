@@ -1,0 +1,1 @@
+: foo.c | ../include/header.h |> gcc -I../include -c %f -o %o |> foo.o

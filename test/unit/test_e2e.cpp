@@ -749,6 +749,63 @@ SCENARIO("Tupfile changes detected regardless of scope", "[e2e][incremental][sco
     }
 }
 
+SCENARIO("Scoped build without -a ignores upstream deps (mm behavior)", "[e2e][incremental][scope]")
+{
+    GIVEN("a project with shared include directory")
+    {
+        auto f = E2EFixture { "scoped_upstream" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("an upstream dependency (header) is modified and scoped build runs WITHOUT -a")
+        {
+            f.write_file("include/header.h", "#define VALUE 100\n");
+            auto result = f.build({ "lib", "-v" });
+
+            THEN("the build is a no-op (upstream change ignored)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Scoped build with -a checks upstream deps (mma behavior)", "[e2e][incremental][scope]")
+{
+    GIVEN("a project with shared include directory")
+    {
+        auto f = E2EFixture { "scoped_upstream" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("an upstream dependency (header) is modified and scoped build runs WITH -a")
+        {
+            f.write_file("include/header.h", "#define VALUE 100\n");
+            auto result = f.build({ "-a", "lib", "-v" });
+
+            THEN("the scoped module is rebuilt")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(result.stdout_output.find("foo.o") != std::string::npos);
+            }
+        }
+
+        WHEN("an independent sibling is modified and scoped build runs with -a")
+        {
+            f.append_file("lib2/bar.c", "// modified\n");
+            auto result = f.build({ "-a", "lib", "-v" });
+
+            THEN("the build is a no-op (sibling change still ignored)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Clean/Distclean Tests
 // =============================================================================

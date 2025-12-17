@@ -73,8 +73,9 @@ auto parse_args(int argc, char** argv) -> Options
         } else if (arg == "-A" || arg == "--all") {
             opts.all = true;
         } else if (arg == "--") {
-            for (++i; i < argc; ++i)
+            for (++i; i < argc; ++i) {
                 opts.targets.emplace_back(argv[i]);
+            }
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty() && is_command(arg)) {
                 opts.command = std::string { arg };
@@ -115,7 +116,7 @@ auto print_usage() -> void
                "  --summary          Human-readable output (for export graph)\n"
                "  --stat             Print build statistics\n"
                "  -A, --all          Full project build (ignore cwd scoping)\n"
-               "  -a, --all-deps     Include implicit deps in graph output\n"
+               "  -a, --all-deps     Include upstream deps in scoped builds\n"
                "  --                 End of options; remaining args are targets\n"
                "  --version          Print version\n"
                "  -h, --help         Print this help\n"
