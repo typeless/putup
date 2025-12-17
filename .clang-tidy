@@ -28,9 +28,8 @@
 #   ignoring the return value is intentional - logging failures shouldn't crash.
 #
 # cert-err58-cpp:
-#   Warns about exceptions in static object constructors. OpenSSL uses static
-#   initialization for internal data structures. This project doesn't use
-#   exceptions anyway.
+#   ENABLED: Warns about exceptions in static object constructors. This project
+#   doesn't use exceptions, so no warnings expected.
 #
 # concurrency-mt-unsafe:
 #   Flags functions like strerror(), localtime(), getenv() as thread-unsafe.
@@ -183,7 +182,6 @@ Checks: >
   -cert-dcl37-c,
   -cert-dcl51-cpp,
   -cert-err33-c,
-  -cert-err58-cpp,
   -concurrency-mt-unsafe,
   -misc-const-correctness,
   -misc-include-cleaner,
@@ -215,8 +213,6 @@ Checks: >
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-explicit-virtual-functions,
-  -cppcoreguidelines-macro-to-enum,
-  -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-noexcept-destructor,
   -cppcoreguidelines-noexcept-move-operations,
   -cppcoreguidelines-noexcept-swap,
