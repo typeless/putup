@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/exec/runner.hpp"
+#include "pup/platform/env.hpp"
 
 #include <cstdlib>
 #include <filesystem>
@@ -22,15 +23,15 @@ public:
     {
         if (auto const* existing = std::getenv(m_name.c_str()))
             m_previous = existing;
-        setenv(m_name.c_str(), value.c_str(), 1);
+        pup::platform::set_env(m_name, value);
     }
 
     ~EnvGuard()
     {
         if (m_previous)
-            setenv(m_name.c_str(), m_previous->c_str(), 1);
+            pup::platform::set_env(m_name, *m_previous);
         else
-            unsetenv(m_name.c_str());
+            pup::platform::unset_env(m_name);
     }
 
     EnvGuard(EnvGuard const&) = delete;

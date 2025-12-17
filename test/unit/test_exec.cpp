@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/exec/runner.hpp"
 #include "pup/exec/scheduler.hpp"
+#include "pup/platform/env.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -433,8 +434,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
     SECTION("exported_vars passed to command environment")
     {
         // Set an env var that the command will echo
-        // setenv is POSIX but works for this test
-        setenv("PUP_TEST_EXPORT_VAR", "exported_value_123", 1);
+        pup::platform::set_env("PUP_TEST_EXPORT_VAR", "exported_value_123");
 
         auto graph = graph::BuildGraph {};
 
@@ -473,12 +473,12 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         REQUIRE(result->completed_jobs == 1);
         REQUIRE(captured_output.find("exported_value_123") != std::string::npos);
 
-        unsetenv("PUP_TEST_EXPORT_VAR");
+        pup::platform::unset_env("PUP_TEST_EXPORT_VAR");
     }
 
     SECTION("unexported vars not passed")
     {
-        setenv("PUP_TEST_HIDDEN_VAR", "hidden_value", 1);
+        pup::platform::set_env("PUP_TEST_HIDDEN_VAR", "hidden_value");
 
         auto graph = graph::BuildGraph {};
 
@@ -519,6 +519,6 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         // inherit parent env unless filtered
         REQUIRE(result->completed_jobs == 1);
 
-        unsetenv("PUP_TEST_HIDDEN_VAR");
+        pup::platform::unset_env("PUP_TEST_HIDDEN_VAR");
     }
 }

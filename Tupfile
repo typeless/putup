@@ -21,6 +21,7 @@ include_rules
 # Platform library sources (uses @(PLATFORM) config variable for platform-specific code)
 : src/platform/process-$(PLATFORM).cpp |> !cxx |> process-$(PLATFORM).o {platform_objs}
 : src/platform/file_io-$(PLATFORM).cpp |> !cxx |> file_io-$(PLATFORM).o {platform_objs}
+: src/platform/env-$(PLATFORM).cpp |> !cxx |> env-$(PLATFORM).o {platform_objs}
 
 # CLI library sources
 : foreach src/cli/*.cpp |> !cxx |> %B.o {cli_objs}

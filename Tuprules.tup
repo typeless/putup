@@ -8,9 +8,13 @@ ifneq (@(PLATFORM),)
 PLATFORM = @(PLATFORM)
 endif
 
-CC = gcc
-CXX = g++
-AR = ar
+# Cross-compilation prefix (e.g., arm-none-eabi-, x86_64-w64-mingw32-)
+import CROSS_COMPILE=
+
+# Toolchain (derived from CROSS_COMPILE or overridden directly)
+import CC=$(CROSS_COMPILE)gcc
+import CXX=$(CROSS_COMPILE)g++
+import AR=$(CROSS_COMPILE)ar
 
 # Use mold linker if available (set by Makefile or environment)
 import USE_MOLD

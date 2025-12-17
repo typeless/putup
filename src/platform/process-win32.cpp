@@ -129,7 +129,8 @@ auto run_process_with_callback(
     cmdline += L'"';
 
     // Setup process startup info
-    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+    STARTUPINFOW si = {};
+    si.cb = sizeof(STARTUPINFOW);
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = stdin_read ? stdin_read : GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = stdout_write ? stdout_write : GetStdHandle(STD_OUTPUT_HANDLE);
