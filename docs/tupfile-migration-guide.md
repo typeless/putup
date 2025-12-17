@@ -119,10 +119,15 @@ Headers generated at build time must be available before compilation:
 # Path to project root
 ROOT = $(TUP_CWD)
 
-# Toolchain
-CC = gcc
-HOSTCC = gcc
-AR = ar
+# Toolchain (importable from environment for cross-compilation)
+import CC=gcc
+import HOSTCC=gcc
+import AR=ar
+
+# Export for subprocess environment (scripts that need these)
+export HOSTCC
+srctree = .
+export srctree
 
 # Flags
 CFLAGS = -Wall -Os
@@ -239,10 +244,11 @@ pup build
 
 | File | Purpose |
 |------|---------|
-| `Tuprules.tup` | Compiler flags, bang macros |
+| `Tuprules.tup` | Compiler flags, bang macros, import/export |
 | `tup.config` | 400+ CONFIG_XXX options |
 | `Tupfile` | Top-level link rule with `<libs>` group |
 | `include/Tupfile` | Generated headers (autoconf.h, applets.h, etc.) |
+| `scripts/kconfig/Tupfile` | Build kconfig conf tool as host binary |
 | `libbb/Tupfile` | Core library with assembly files |
 | `modutils/Tupfile` | Example of negative conditional pattern |
 | `archival/libarchive/Tupfile` | Example of shared source groups |
