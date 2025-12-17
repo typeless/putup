@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 pup authors
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+// POSIX APIs (pipe, execv) require C-style arrays - this is an internal implementation file
+
 #include "pup/platform/process.hpp"
 
 #include <array>
@@ -64,11 +67,8 @@ auto run_process_with_callback(
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
     int stdout_pipe[2] = { -1, -1 };
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
     int stderr_pipe[2] = { -1, -1 };
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
     int stdin_pipe[2] = { -1, -1 };
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
@@ -132,7 +132,6 @@ auto run_process_with_callback(
         env_ptrs.push_back(nullptr);
 
         auto cmd_str = std::string { opts.command };
-        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
         char* const argv[] = {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             const_cast<char*>("/bin/sh"),
@@ -302,3 +301,5 @@ auto run_process_with_callback(
 }
 
 } // namespace pup::platform
+
+// NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
