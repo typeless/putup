@@ -4,10 +4,36 @@ include_rules
 : $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx_thirdparty |> catch_amalgamated.o {test_support}
 
 # E2E test fixture
-: e2e_fixture.cpp |> !cxx |> %B.o {test_support}
+: e2e_fixture.cpp |> !cxx |> e2e_fixture.o {test_support}
 
-# Test sources (disable spurious maybe-uninitialized warnings from std::variant)
-: foreach test_*.cpp |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-maybe-uninitialized -c %f -o %o |> %B.o {test_objs}
+# Test sources
+TEST_CXXFLAGS = $(CXXFLAGS) -Wno-maybe-uninitialized
 
-# Link test runner against libpup.a
+test-srcs-y  = test_bench.cpp
+test-srcs-y += test_builder.cpp
+test-srcs-y += test_depfile.cpp
+test-srcs-y += test_e2e.cpp
+test-srcs-y += test_eval.cpp
+test-srcs-y += test_exec.cpp
+test-srcs-y += test_glob.cpp
+test-srcs-y += test_graph.cpp
+test-srcs-y += test_hash.cpp
+test-srcs-y += test_ignore.cpp
+test-srcs-y += test_index.cpp
+test-srcs-y += test_layout.cpp
+test-srcs-y += test_lexer.cpp
+test-srcs-y += test_main.cpp
+test-srcs-y += test_merkle.cpp
+test-srcs-y += test_parser.cpp
+test-srcs-y += test_path_utils.cpp
+test-srcs-y += test_platform_file_io.cpp
+test-srcs-y += test_platform_process.cpp
+test-srcs-y += test_rule_pattern.cpp
+test-srcs-y += test_string_utils.cpp
+test-srcs-y += test_types.cpp
+
+# Compile test sources
+: foreach $(test-srcs-y) |> ^ CXX %f^ $(CXX) $(TEST_CXXFLAGS) -c %f -o %o |> %B.o {test_objs}
+
+# Link test runner
 : {test_objs} {test_support} $(ROOT)/libpup.a |> !link |> pup_test

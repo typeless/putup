@@ -1,24 +1,63 @@
 include_rules
 
-# Third-party
-: third_party/sha256/sha256.c |> !cc |> sha256.o {lib_objs}
+# Third-party (C)
+c-srcs-y  = third_party/sha256/sha256.c
 
-# Library sources
-: foreach src/core/*.cpp |> !cxx |> %B.o {lib_objs}
-: foreach src/parser/*.cpp |> !cxx |> %B.o {lib_objs}
-: foreach src/graph/*.cpp |> !cxx |> %B.o {lib_objs}
-: foreach src/index/*.cpp |> !cxx |> %B.o {lib_objs}
-: foreach src/exec/*.cpp |> !cxx |> %B.o {lib_objs}
-: foreach src/cli/*.cpp |> !cxx |> %B.o {lib_objs}
+# Core
+srcs-y  = src/core/hash.cpp
+srcs-y += src/core/layout.cpp
+srcs-y += src/core/metrics.cpp
+srcs-y += src/core/path_utils.cpp
+srcs-y += src/core/string_utils.cpp
 
-# Platform-specific sources
-: src/platform/process-$(PLATFORM).cpp |> !cxx |> %B.o {lib_objs}
-: src/platform/file_io-$(PLATFORM).cpp |> !cxx |> %B.o {lib_objs}
-: src/platform/env-$(PLATFORM).cpp |> !cxx |> %B.o {lib_objs}
+# Parser
+srcs-y += src/parser/ast.cpp
+srcs-y += src/parser/config.cpp
+srcs-y += src/parser/depfile.cpp
+srcs-y += src/parser/eval.cpp
+srcs-y += src/parser/glob.cpp
+srcs-y += src/parser/ignore.cpp
+srcs-y += src/parser/lexer.cpp
+srcs-y += src/parser/parser.cpp
 
-# Static library for test linking
+# Graph
+srcs-y += src/graph/builder.cpp
+srcs-y += src/graph/dag.cpp
+srcs-y += src/graph/rule_pattern.cpp
+srcs-y += src/graph/topo.cpp
+
+# Index
+srcs-y += src/index/entry.cpp
+srcs-y += src/index/reader.cpp
+srcs-y += src/index/writer.cpp
+
+# Exec
+srcs-y += src/exec/runner.cpp
+srcs-y += src/exec/scheduler.cpp
+
+# CLI
+srcs-y += src/cli/cmd_build.cpp
+srcs-y += src/cli/cmd_clean.cpp
+srcs-y += src/cli/cmd_export.cpp
+srcs-y += src/cli/cmd_init.cpp
+srcs-y += src/cli/cmd_parse.cpp
+srcs-y += src/cli/cmd_variant.cpp
+srcs-y += src/cli/context.cpp
+srcs-y += src/cli/options.cpp
+srcs-y += src/cli/output.cpp
+
+# Platform
+srcs-y += src/platform/process-$(PLATFORM).cpp
+srcs-y += src/platform/file_io-$(PLATFORM).cpp
+srcs-y += src/platform/env-$(PLATFORM).cpp
+
+# Compile
+: foreach $(c-srcs-y) |> !cc |> {lib_objs}
+: foreach $(srcs-y) |> !cxx |> {lib_objs}
+
+# Static library
 : {lib_objs} |> !ar |> libpup.a
 
 # Main executable
-: foreach src/*.cpp |> !cxx |> %B.o {main_objs}
-: {lib_objs} {main_objs} |> !link |> pup
+: src/main.cpp |> !cxx |> main.o
+: {lib_objs} main.o |> !link |> pup
