@@ -4,11 +4,11 @@
 
 namespace pup {
 
-template <typename F>
+template<typename F>
 struct YCombinator {
     F f;
 
-    template <typename... Args>
+    template<typename... Args>
     constexpr auto operator()(Args&&... args) const
         -> decltype(f(*this, std::forward<Args>(args)...))
     {
@@ -16,7 +16,7 @@ struct YCombinator {
     }
 };
 
-template <typename F>
+template<typename F>
 YCombinator(F) -> YCombinator<F>;
 
 } // namespace pup
