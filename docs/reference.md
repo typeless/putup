@@ -26,6 +26,8 @@ pup [OPTIONS] [TARGETS...]
 
 The default command. Executes the build by parsing Tupfiles, computing the dependency graph, and running commands for changed files.
 
+**Multi-variant auto-detection:** When run from the project root without `-B` flags, pup automatically discovers all variant directories (subdirectories containing `tup.config` or `.pup/`) and builds them in parallel.
+
 **Arguments:**
 - `TARGETS` - Optional directory paths to scope the build (see Section 7.3)
 
@@ -34,16 +36,22 @@ The default command. Executes the build by parsing Tupfiles, computing the depen
 - `-k` - Continue building after failures
 - `-n` - Dry-run: print commands without executing
 - `-v` - Verbose output (show parsed files, change detection)
+- `-B DIR` - Build directory (can specify multiple times for parallel builds)
 - `-A` - Build all files (ignore cwd scoping)
 - `--stat` - Print build statistics after completion
 
 **Examples:**
 ```bash
-pup                    # Build from current directory
+pup                    # Build from current directory (auto-detects variants)
 pup -j8                # Build with 8 parallel jobs
 pup -v                 # Verbose build
 pup lib app            # Build only lib/ and app/ directories
 pup -n                 # Show what would be built
+
+# Multi-variant builds
+pup                              # Auto-build all variants in parallel
+pup -B build-debug               # Build single variant
+pup -B build-debug -B build-release  # Build specific variants in parallel
 ```
 
 ### 3.2 pup init
@@ -212,7 +220,7 @@ pup export graph --all-deps | dot -Tsvg -o full-deps.svg
 | `-n` | `--dry-run` | Print commands without executing them. |
 | `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
 | `-S DIR` | | Source directory. Overrides auto-detection. |
-| `-B DIR` | | Build/output directory for variant builds. |
+| `-B DIR` | `--variant DIR` | Build/output directory (can use multiple times). |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
 | | `--stat` | Print build statistics after completion. |
@@ -243,12 +251,17 @@ pup -S /path/to/project
 
 **`-B DIR` (Build Directory)**
 
-Specify an out-of-tree build directory. All outputs and `.pup/` go here instead of the source tree.
+Specify an out-of-tree build directory. All outputs and `.pup/` go here instead of the source tree. Can be specified multiple times to build multiple variants in parallel.
 
 ```bash
 pup -B build-release    # Build into build-release/
 pup clean -B build-release  # Clean that variant
+
+# Multiple variants (built in parallel)
+pup -B build-debug -B build-release
 ```
+
+**Auto-detection:** Without `-B` flags, pup auto-detects variant directories (subdirs with `tup.config` or `.pup/`) and builds them all in parallel.
 
 **`-A, --all` vs `-a, --all-deps`**
 
@@ -822,6 +835,9 @@ pup -B build-debug
 
 # Method 2: cd into variant directory
 cd build-debug && pup
+
+# Method 3: Auto-detect and build all variants in parallel
+pup                    # From project root, builds all variants
 ```
 
 **Multiple variants:**
@@ -831,11 +847,24 @@ pup variant configs/debug.config       # Creates build-debug/
 pup variant configs/release.config     # Creates build-release/
 pup variant configs/arm.config out-arm # Creates out-arm/
 
-# Build all
-pup -B build-debug
-pup -B build-release
+# Build all variants (auto-detected, parallel)
+pup                    # Auto-detects and builds all in parallel
+
+# Build specific variants in parallel
+pup -B build-debug -B build-release
+
+# Build single variant
 pup -B out-arm
 ```
+
+**Parallel variant builds:**
+
+When run from the project root without `-B` flags, pup automatically:
+1. Discovers all variant directories (subdirs with `tup.config` or `.pup/`)
+2. Builds them in parallel using `std::async`
+3. Reports combined results
+
+In verbose mode (`-v`), output lines are prefixed with `[variant-name]` to distinguish which variant produced each message.
 
 **Cleaning variants:**
 

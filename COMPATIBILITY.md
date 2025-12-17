@@ -242,7 +242,19 @@ Test fixtures cover:
 - Conditionals
 - Incremental builds
 - Variant builds
+- Multi-variant parallel builds
 - Multi-directory projects (tested with ctos - 75 Tupfiles, 681 commands)
+
+## Pup-Specific Features
+
+Features in pup that extend beyond tup:
+
+| Feature | Description |
+|---------|-------------|
+| Multi-variant `-B` flags | `pup -B build-debug -B build-release` builds multiple variants in parallel |
+| Auto-variant detection | Running `pup` from project root auto-detects and builds all variants |
+| Parallel variant builds | Multiple variants are built concurrently using `std::async` |
+| Verbose variant prefix | With `-v`, output lines are prefixed with `[variant-name]` |
 
 ## Reporting Issues
 

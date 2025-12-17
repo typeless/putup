@@ -22,10 +22,15 @@ Requirements: C++20 compiler (GCC 11+, Clang 14+)
 ## Quick Start
 
 ```bash
-pup              # Build the project
+pup              # Build the project (auto-detects variants)
 pup -j8          # Build with 8 parallel jobs
 pup -n           # Dry-run: show what would build
 pup clean        # Remove generated files
+
+# Multi-variant builds (auto-detected or explicit)
+pup                          # Auto-build all variants in parallel
+pup -B build-debug           # Build single variant
+pup -B build-debug -B build-release  # Build specific variants
 ```
 
 ## Documentation
