@@ -1307,6 +1307,294 @@ tup -n > tup-commands.txt
 diff pup-commands.txt tup-commands.txt
 ```
 
+## 11. Style Guide
+
+This section covers idiomatic patterns for writing clean, maintainable Tupfiles.
+
+### 11.1 Explicit Source Lists (srcs-y Pattern)
+
+Prefer explicit source file lists over glob patterns. This makes dependencies visible and prevents accidental inclusion of test files or abandoned code.
+
+**Avoid:**
+```tup
+: foreach src/*.cpp |> !cxx |> {objs}
+```
+
+**Prefer:**
+```tup
+srcs-y  = src/main.cpp
+srcs-y += src/parser.cpp
+srcs-y += src/lexer.cpp
+
+: foreach $(srcs-y) |> !cxx |> {objs}
+```
+
+**Benefits:**
+- Explicit control over what gets compiled
+- Easy to see all sources at a glance
+- Adding/removing files requires conscious decision
+- Works well with code review (diffs show intent)
+
+**Naming convention:** The `-y` suffix (from Linux kernel's Kbuild) indicates "yes, compile this". You can extend with conditional lists:
+
+```tup
+srcs-y  = core.cpp
+srcs-y += parser.cpp
+
+# Platform-specific (see 11.2)
+srcs-y += platform-$(PLATFORM).cpp
+```
+
+### 11.2 Platform Selection via Source Names
+
+Use `$(PLATFORM)` variable substitution in source filenames instead of `ifdef` conditionals.
+
+**Avoid:**
+```tup
+ifeq ($(PLATFORM),win32)
+  : src/platform_win32.cpp |> !cxx |> platform.o
+else
+  : src/platform_posix.cpp |> !cxx |> platform.o
+endif
+```
+
+**Prefer:**
+```tup
+# In tup.config: CONFIG_PLATFORM=posix (or win32)
+PLATFORM = @(PLATFORM)
+
+srcs-y += src/platform-$(PLATFORM).cpp
+
+: foreach $(srcs-y) |> !cxx |> {objs}
+```
+
+**File structure:**
+```
+src/
+├── platform-posix.cpp   # POSIX implementation
+├── platform-win32.cpp   # Win32 implementation
+└── core.cpp             # Shared code
+```
+
+This pattern:
+- Eliminates conditional blocks in Tupfiles
+- Makes platform variants visible in the filesystem
+- Simplifies build rules to single unconditional statements
+
+### 11.3 Config Variables Over Conditionals
+
+Use `@(VAR)` config variables for build options instead of `ifdef` blocks.
+
+**Avoid:**
+```tup
+ifdef DEBUG
+  CFLAGS += -g -O0
+else
+  CFLAGS += -O2 -DNDEBUG
+endif
+
+ifdef USE_MOLD
+  LDFLAGS += -fuse-ld=mold
+endif
+```
+
+**Prefer:**
+```tup
+# tup.config sets these:
+#   CONFIG_DEBUG_CFLAGS=-g -O0
+#   CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
+
+CFLAGS += @(DEBUG_CFLAGS)
+CFLAGS += @(RELEASE_CFLAGS)
+LDFLAGS += @(PLATFORM_LDFLAGS)
+```
+
+**Config files:**
+
+```ini
+# configs/debug.config
+CONFIG_PLATFORM=posix
+CONFIG_DEBUG_CFLAGS=-g -O0 -fsanitize=address,undefined
+CONFIG_DEBUG_LDFLAGS=-fsanitize=address,undefined
+
+# configs/release.config
+CONFIG_PLATFORM=posix
+CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG -ffunction-sections -fdata-sections
+CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
+
+# configs/win32.config
+CONFIG_PLATFORM=win32
+CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
+CONFIG_PLATFORM_LDFLAGS=-static
+```
+
+**Benefits:**
+- Build configuration lives in config files, not Tupfile logic
+- Switching builds = switching config files
+- Tupfiles become simple, declarative
+
+### 11.4 Cross-Compilation (CROSS_COMPILE)
+
+Follow the Linux kernel convention for cross-compilation toolchain prefixes.
+
+**Tuprules.tup:**
+```tup
+# Import toolchain prefix (empty for native builds)
+import CROSS_COMPILE=
+
+# Derive tools from prefix
+import CC=$(CROSS_COMPILE)gcc
+import CXX=$(CROSS_COMPILE)g++
+import AR=$(CROSS_COMPILE)ar
+```
+
+**Usage:**
+```bash
+# Native build
+pup
+
+# ARM cross-compile
+CROSS_COMPILE=arm-none-eabi- pup -B build-arm
+
+# MinGW cross-compile
+CROSS_COMPILE=x86_64-w64-mingw32- pup -B build-win32
+
+# Override specific tool
+CROSS_COMPILE=arm-none-eabi- CC=clang pup -B build-arm-clang
+```
+
+This convention is understood by embedded developers and integrates with SDK environments that set `CROSS_COMPILE`.
+
+### 11.5 Modular Config Files
+
+Organize build configurations in a `configs/` directory with one file per variant.
+
+**Project structure:**
+```
+project/
+├── Tupfile.ini
+├── Tuprules.tup
+├── Tupfile
+├── configs/
+│   ├── default.config    # Default (release, native)
+│   ├── debug.config      # Debug with sanitizers
+│   ├── release.config    # Optimized release
+│   └── win32.config      # Windows cross-compile
+└── src/
+```
+
+**Creating variants:**
+```bash
+pup variant configs/debug.config      # Creates build-debug/
+pup variant configs/release.config    # Creates build-release/
+pup variant configs/win32.config      # Creates build-win32/
+```
+
+**Config file template:**
+```ini
+# configs/example.config
+# Build description
+
+# Platform selection (posix or win32)
+CONFIG_PLATFORM=posix
+
+# Build mode flags (mutually exclusive - set one pair)
+CONFIG_DEBUG_CFLAGS=-g -O0
+CONFIG_DEBUG_CXXFLAGS=-g -O0
+CONFIG_DEBUG_LDFLAGS=
+
+# Or release flags:
+# CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
+# CONFIG_RELEASE_CXXFLAGS=-O2 -DNDEBUG
+# CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
+
+# Platform-specific flags
+CONFIG_PLATFORM_LDFLAGS=
+```
+
+### 11.6 Bang Macro Design
+
+Define reusable bang macros in `Tuprules.tup` with consistent patterns.
+
+**Good macro design:**
+```tup
+# Display text with ^ markers for clean output
+# %B.o output pattern allows override
+!cc = |> ^ CC %f^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+!cxx = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
+!link = |> ^ LINK %o^ $(CXX) %f -o %o $(LDFLAGS) |>
+!ar = |> ^ AR %o^ $(AR) rcs %o %f |>
+
+# Variant for third-party code (relaxed warnings)
+!cxx_thirdparty = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-error -c %f -o %o |> %B.o
+```
+
+**Usage in Tupfile:**
+```tup
+include_rules
+
+: foreach $(srcs-y) |> !cxx |> {objs}
+: {objs} |> !ar |> libfoo.a
+: $(main-srcs-y) |> !cxx |> main.o
+: {objs} main.o |> !link |> program
+```
+
+### 11.7 Complete Example
+
+Putting it all together - a well-structured project:
+
+**Tuprules.tup:**
+```tup
+ROOT = $(TUP_CWD)
+
+# Platform
+PLATFORM = @(PLATFORM)
+PLATFORM ?= posix
+
+# Toolchain
+import CROSS_COMPILE=
+import CC=$(CROSS_COMPILE)gcc
+import CXX=$(CROSS_COMPILE)g++
+import AR=$(CROSS_COMPILE)ar
+
+# Flags
+CFLAGS = -std=c11 -Wall -Wextra -Werror
+CXXFLAGS = -std=c++20 -Wall -Wextra -Werror -I$(ROOT)/include
+
+CFLAGS += @(DEBUG_CFLAGS) @(RELEASE_CFLAGS)
+CXXFLAGS += @(DEBUG_CXXFLAGS) @(RELEASE_CXXFLAGS)
+LDFLAGS += @(DEBUG_LDFLAGS) @(RELEASE_LDFLAGS) @(PLATFORM_LDFLAGS)
+
+# Macros
+!cc = |> ^ CC %f^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+!cxx = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
+!link = |> ^ LINK %o^ $(CXX) %f -o %o $(LDFLAGS) |>
+!ar = |> ^ AR %o^ $(AR) rcs %o %f |>
+```
+
+**Tupfile:**
+```tup
+include_rules
+
+# Sources (explicit listing)
+srcs-y  = src/main.cpp
+srcs-y += src/parser.cpp
+srcs-y += src/lexer.cpp
+srcs-y += src/platform-$(PLATFORM).cpp
+
+# Build
+: foreach $(srcs-y) |> !cxx |> {objs}
+: {objs} |> !link |> myapp
+```
+
+**configs/default.config:**
+```ini
+CONFIG_PLATFORM=posix
+CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
+CONFIG_RELEASE_CXXFLAGS=-O2 -DNDEBUG
+CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
+```
+
 ## Appendices
 
 ### A. Tup Compatibility Matrix
