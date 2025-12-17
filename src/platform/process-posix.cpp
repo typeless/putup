@@ -1,0 +1,304 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2024 pup authors
+
+#include "pup/platform/process.hpp"
+
+#include <array>
+#include <cerrno>
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+namespace pup::platform {
+
+auto build_env_strings(
+    std::vector<std::string> const& extra_env,
+    bool inherit_env) -> std::vector<std::string>
+{
+    auto result = std::vector<std::string> {};
+
+    if (inherit_env) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        for (auto** e = environ; *e != nullptr; ++e) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+            result.emplace_back(*e);
+        }
+    }
+
+    for (auto const& var : extra_env) {
+        result.push_back(var);
+    }
+
+    return result;
+}
+
+namespace {
+
+auto close_pipe(int pipe_fd[2]) -> void
+{
+    if (pipe_fd[0] >= 0) {
+        ::close(pipe_fd[0]);
+        pipe_fd[0] = -1;
+    }
+    if (pipe_fd[1] >= 0) {
+        ::close(pipe_fd[1]);
+        pipe_fd[1] = -1;
+    }
+}
+
+} // namespace
+
+auto run_process(ProcessOptions const& opts) -> Result<ProcessResult>
+{
+    return run_process_with_callback(opts, nullptr, nullptr);
+}
+
+auto run_process_with_callback(
+    ProcessOptions const& opts,
+    ProcessOutputCallback callback,
+    void* user_data) -> Result<ProcessResult>
+{
+    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
+    int stdout_pipe[2] = { -1, -1 };
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
+    int stderr_pipe[2] = { -1, -1 };
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
+    int stdin_pipe[2] = { -1, -1 };
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    if (opts.capture_stdout && ::pipe(stdout_pipe) < 0) {
+        return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stdout pipe");
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    if (opts.capture_stderr && ::pipe(stderr_pipe) < 0) {
+        close_pipe(stdout_pipe);
+        return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stderr pipe");
+    }
+
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    if (opts.stdin_data && ::pipe(stdin_pipe) < 0) {
+        close_pipe(stdout_pipe);
+        close_pipe(stderr_pipe);
+        return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stdin pipe");
+    }
+
+    auto pid = pid_t { ::fork() };
+    if (pid < 0) {
+        close_pipe(stdout_pipe);
+        close_pipe(stderr_pipe);
+        close_pipe(stdin_pipe);
+        return make_error<ProcessResult>(ErrorCode::IoError, "Failed to fork");
+    }
+
+    if (pid == 0) {
+        // Child process
+        if (stdout_pipe[1] >= 0) {
+            ::dup2(stdout_pipe[1], STDOUT_FILENO);
+            ::close(stdout_pipe[0]);
+            ::close(stdout_pipe[1]);
+        }
+
+        if (stderr_pipe[1] >= 0) {
+            ::dup2(stderr_pipe[1], STDERR_FILENO);
+            ::close(stderr_pipe[0]);
+            ::close(stderr_pipe[1]);
+        }
+
+        if (stdin_pipe[0] >= 0) {
+            ::dup2(stdin_pipe[0], STDIN_FILENO);
+            ::close(stdin_pipe[0]);
+            ::close(stdin_pipe[1]);
+        }
+
+        if (!opts.working_dir.empty()) {
+            if (::chdir(opts.working_dir.c_str()) < 0) {
+                ::_exit(127);
+            }
+        }
+
+        auto env_strings = std::vector<std::string> { build_env_strings(opts.env, opts.inherit_env) };
+        auto env_ptrs = std::vector<char*> {};
+        env_ptrs.reserve(env_strings.size() + 1);
+        for (auto& s : env_strings) {
+            env_ptrs.push_back(s.data());
+        }
+        env_ptrs.push_back(nullptr);
+
+        auto cmd_str = std::string { opts.command };
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays)
+        char* const argv[] = {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+            const_cast<char*>("/bin/sh"),
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+            const_cast<char*>("-c"),
+            cmd_str.data(),
+            nullptr
+        };
+
+        if (opts.inherit_env && opts.env.empty()) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+            ::execv("/bin/sh", argv);
+        } else {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+            ::execve("/bin/sh", argv, env_ptrs.data());
+        }
+
+        ::_exit(127);
+    }
+
+    // Parent process
+    if (stdout_pipe[1] >= 0) {
+        ::close(stdout_pipe[1]);
+        stdout_pipe[1] = -1;
+    }
+    if (stderr_pipe[1] >= 0) {
+        ::close(stderr_pipe[1]);
+        stderr_pipe[1] = -1;
+    }
+    if (stdin_pipe[0] >= 0) {
+        ::close(stdin_pipe[0]);
+        stdin_pipe[0] = -1;
+    }
+
+    if (opts.stdin_data && stdin_pipe[1] >= 0) {
+        auto const& data = *opts.stdin_data;
+        auto written = ::write(stdin_pipe[1], data.data(), data.size());
+        (void)written;
+        ::close(stdin_pipe[1]);
+        stdin_pipe[1] = -1;
+    } else if (stdin_pipe[1] >= 0) {
+        ::close(stdin_pipe[1]);
+        stdin_pipe[1] = -1;
+    }
+
+    if (stdout_pipe[0] >= 0) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+        ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK);
+    }
+    if (stderr_pipe[0] >= 0) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+        ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK);
+    }
+
+    auto result = ProcessResult {};
+    auto timed_out = false;
+
+    auto deadline = opts.timeout
+        ? std::optional { std::chrono::steady_clock::now() + *opts.timeout }
+        : std::nullopt;
+
+    auto buffer = std::array<char, 4096> {};
+    auto stdout_open = stdout_pipe[0] >= 0;
+    auto stderr_open = stderr_pipe[0] >= 0;
+
+    while (stdout_open || stderr_open) {
+        auto fds = std::array<pollfd, 2> {};
+        auto nfds = 0;
+
+        if (stdout_open) {
+            fds[nfds].fd = stdout_pipe[0];
+            fds[nfds].events = POLLIN;
+            ++nfds;
+        }
+        if (stderr_open) {
+            fds[nfds].fd = stderr_pipe[0];
+            fds[nfds].events = POLLIN;
+            ++nfds;
+        }
+
+        auto timeout_ms = -1;
+        if (deadline) {
+            auto remaining = *deadline - std::chrono::steady_clock::now();
+            if (remaining <= std::chrono::milliseconds::zero()) {
+                timed_out = true;
+                break;
+            }
+            timeout_ms = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
+        }
+
+        auto poll_result = int { ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms) };
+        if (poll_result < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+
+        if (poll_result == 0 && deadline) {
+            timed_out = true;
+            break;
+        }
+
+        for (auto i = 0; i < nfds; ++i) {
+            if (fds[i].revents & (POLLIN | POLLHUP)) {
+                auto n = ::read(fds[i].fd, buffer.data(), buffer.size());
+                if (n > 0) {
+                    auto data = std::string_view { buffer.data(), static_cast<std::size_t>(n) };
+                    auto is_stderr = (fds[i].fd == stderr_pipe[0]);
+
+                    if (callback) {
+                        callback(data, is_stderr, user_data);
+                    }
+
+                    if (is_stderr) {
+                        result.stderr_output.append(data);
+                    } else {
+                        result.stdout_output.append(data);
+                    }
+                } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+                    if (fds[i].fd == stdout_pipe[0]) {
+                        stdout_open = false;
+                    } else {
+                        stderr_open = false;
+                    }
+                }
+            }
+            if (fds[i].revents & (POLLERR | POLLNVAL)) {
+                if (fds[i].fd == stdout_pipe[0]) {
+                    stdout_open = false;
+                } else {
+                    stderr_open = false;
+                }
+            }
+        }
+    }
+
+    if (stdout_pipe[0] >= 0) {
+        ::close(stdout_pipe[0]);
+    }
+    if (stderr_pipe[0] >= 0) {
+        ::close(stderr_pipe[0]);
+    }
+
+    if (timed_out) {
+        ::kill(pid, SIGKILL);
+        result.timed_out = true;
+    }
+
+    auto status = int { 0 };
+    ::waitpid(pid, &status, 0);
+
+    if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+    } else if (WIFSIGNALED(status)) {
+        result.signaled = true;
+        result.signal = WTERMSIG(status);
+        result.exit_code = 128 + result.signal;
+    }
+
+    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_time - start_time);
+
+    return result;
+}
+
+} // namespace pup::platform

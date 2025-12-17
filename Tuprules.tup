@@ -2,6 +2,12 @@
 
 ROOT = $(TUP_CWD)
 
+# Platform configuration (set via tup.config or default to posix)
+PLATFORM = posix
+ifneq (@(PLATFORM),)
+PLATFORM = @(PLATFORM)
+endif
+
 CC = gcc
 CXX = g++
 AR = ar

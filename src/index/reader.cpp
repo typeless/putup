@@ -5,81 +5,33 @@
 #include "pup/core/hash.hpp"
 
 #include <cstring>
-#include <fcntl.h>
+#include <fstream>
 #include <span>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace pup::index {
-
-IndexReader::~IndexReader()
-{
-    close();
-}
-
-IndexReader::IndexReader(IndexReader&& other) noexcept
-    : data_(other.data_)
-    , size_(other.size_)
-    , fd_(other.fd_)
-{
-    other.data_ = nullptr;
-    other.size_ = 0;
-    other.fd_ = -1;
-}
-
-auto IndexReader::operator=(IndexReader&& other) noexcept -> IndexReader&
-{
-    if (this != &other) {
-        close();
-        data_ = other.data_;
-        size_ = other.size_;
-        fd_ = other.fd_;
-        other.data_ = nullptr;
-        other.size_ = 0;
-        other.fd_ = -1;
-    }
-    return *this;
-}
 
 auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 {
     auto reader = IndexReader {};
 
-    reader.fd_ = ::open(path.c_str(), O_RDONLY);
-    if (reader.fd_ < 0) {
+    auto file_result = pup::platform::MappedFile::open(path);
+    if (!file_result) {
         return make_error<IndexReader>(ErrorCode::IoError, "Failed to open index file");
     }
 
-    struct stat st;
-    if (::fstat(reader.fd_, &st) < 0) {
-        ::close(reader.fd_);
-        return make_error<IndexReader>(ErrorCode::IoError, "Failed to stat index file");
-    }
+    reader.file_ = std::move(*file_result);
 
-    reader.size_ = static_cast<std::size_t>(st.st_size);
-
-    if (reader.size_ < sizeof(RawHeader) + sizeof(RawFooter)) {
-        ::close(reader.fd_);
+    if (reader.file_.size() < sizeof(RawHeader) + sizeof(RawFooter)) {
         return make_error<IndexReader>(ErrorCode::InvalidFormat, "Index file too small");
-    }
-
-    reader.data_ = ::mmap(nullptr, reader.size_, PROT_READ, MAP_PRIVATE, reader.fd_, 0);
-    if (reader.data_ == MAP_FAILED) {
-        reader.data_ = nullptr;
-        ::close(reader.fd_);
-        return make_error<IndexReader>(ErrorCode::IoError, "Failed to mmap index file");
     }
 
     // Validate header
     auto const* hdr = reader.header();
     if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
-        reader.close();
         return make_error<IndexReader>(ErrorCode::InvalidFormat, "Invalid index file magic");
     }
     // Support reading older versions (1 and 2)
     if (hdr->version < 1 || hdr->version > INDEX_VERSION) {
-        reader.close();
         return make_error<IndexReader>(ErrorCode::InvalidFormat, "Unsupported index version");
     }
 
@@ -88,21 +40,21 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 
 auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
 {
-    auto fd = int { ::open(path.c_str(), O_RDONLY) };
-    if (fd < 0) {
+    auto file = std::ifstream { path, std::ios::binary };
+    if (!file) {
         return false;
     }
 
     auto header = RawHeader {};
-    auto n = ssize_t { ::read(fd, &header, sizeof(header)) };
-    ::close(fd);
+    file.read(reinterpret_cast<char*>(&header), sizeof(header));
 
-    if (n != static_cast<ssize_t>(sizeof(header))) {
+    if (!file || file.gcount() != static_cast<std::streamsize>(sizeof(header))) {
         return false;
     }
 
     // Accept versions 1 and 2
-    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0 && header.version >= 1 && header.version <= INDEX_VERSION;
+    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0
+        && header.version >= 1 && header.version <= INDEX_VERSION;
 }
 
 auto IndexReader::read() const -> Result<Index>
@@ -146,10 +98,10 @@ auto IndexReader::read() const -> Result<Index>
 
 auto IndexReader::header() const -> RawHeader const*
 {
-    if (!is_open() || size_ < sizeof(RawHeader)) {
+    if (!is_open() || file_.size() < sizeof(RawHeader)) {
         return nullptr;
     }
-    return static_cast<RawHeader const*>(data_);
+    return reinterpret_cast<RawHeader const*>(file_.data());
 }
 
 auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
@@ -159,7 +111,7 @@ auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
         return {};
     }
 
-    auto const* base = static_cast<std::byte const*>(data_);
+    auto const* base = file_.data();
     auto const* files = reinterpret_cast<RawFileEntry const*>(base + hdr->file_offset);
     return { files, hdr->file_count };
 }
@@ -171,7 +123,7 @@ auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
         return {};
     }
 
-    auto const* base = static_cast<std::byte const*>(data_);
+    auto const* base = file_.data();
     auto const* commands = reinterpret_cast<RawCommandEntry const*>(base + hdr->command_offset);
     return { commands, hdr->command_count };
 }
@@ -183,7 +135,7 @@ auto IndexReader::raw_edges() const -> std::span<RawEdge const>
         return {};
     }
 
-    auto const* base = static_cast<std::byte const*>(data_);
+    auto const* base = file_.data();
     auto const* edges = reinterpret_cast<RawEdge const*>(base + hdr->edge_offset);
     return { edges, hdr->edge_count };
 }
@@ -195,10 +147,10 @@ auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -
         return {};
     }
 
-    auto const* base = static_cast<char const*>(data_);
+    auto const* base = reinterpret_cast<char const*>(file_.data());
     auto const string_start = hdr->string_offset + offset;
 
-    if (string_start + length > size_) {
+    if (string_start + length > file_.size()) {
         return {};
     }
 
@@ -207,31 +159,18 @@ auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -
 
 auto IndexReader::verify_checksum() const -> bool
 {
-    if (!is_open() || size_ < sizeof(RawFooter)) {
+    if (!is_open() || file_.size() < sizeof(RawFooter)) {
         return false;
     }
 
-    auto const content_size = size_ - sizeof(RawFooter);
-    auto const* base = static_cast<std::byte const*>(data_);
+    auto const content_size = file_.size() - sizeof(RawFooter);
+    auto const* base = file_.data();
 
     auto content_span = std::span<std::byte const> { base, content_size };
     auto computed = sha256(content_span);
 
     auto const* footer = reinterpret_cast<RawFooter const*>(base + content_size);
     return computed == footer->checksum;
-}
-
-auto IndexReader::close() -> void
-{
-    if (data_) {
-        ::munmap(data_, size_);
-        data_ = nullptr;
-    }
-    if (fd_ >= 0) {
-        ::close(fd_);
-        fd_ = -1;
-    }
-    size_ = 0;
 }
 
 } // namespace pup::index

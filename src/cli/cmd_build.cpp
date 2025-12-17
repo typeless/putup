@@ -14,12 +14,12 @@
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
 #include <set>
-#include <sys/stat.h>
 #include <unordered_map>
 
 #include <fmt/core.h>
@@ -197,9 +197,9 @@ auto find_changed_files_with_implicit(
         ++metrics.files_checked;
         auto path = resolve_path(file.path, root);
 
-        struct stat st = {};
         ++metrics.stat_calls;
-        if (::stat(path.c_str(), &st) < 0) {
+        auto stat_result = pup::platform::stat_file(path);
+        if (!stat_result) {
             if (verbose) {
                 fmt::print("  Changed (stat failed): {}\n", file.path);
             }
@@ -209,7 +209,7 @@ auto find_changed_files_with_implicit(
         }
 
         // Size check (fast path)
-        auto current_size = static_cast<std::uint64_t>(st.st_size);
+        auto current_size = stat_result->size;
         if (current_size != file.size) {
             if (verbose) {
                 fmt::print("  Changed (size): {}\n", file.path);

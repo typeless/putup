@@ -3,12 +3,10 @@
 
 #include "pup/index/writer.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <cstring>
-#include <fcntl.h>
-#include <random>
 #include <span>
-#include <unistd.h>
 
 namespace pup::index {
 
@@ -42,55 +40,7 @@ auto IndexWriter::write(
         return pup::unexpected<Error>(data.error());
     }
 
-    // Create parent directories if needed
-    auto parent = path.parent_path();
-    if (!parent.empty()) {
-        auto ec = std::error_code {};
-        std::filesystem::create_directories(parent, ec);
-        if (ec) {
-            return make_error<void>(ErrorCode::IoError, "Failed to create directory");
-        }
-    }
-
-    // Generate temporary filename
-    auto temp_path = std::filesystem::path { path };
-    temp_path += ".tmp.";
-
-    auto rd = std::random_device {};
-    auto gen = std::mt19937 { std::random_device::result_type { rd() } };
-    auto dist = std::uniform_int_distribution<> { 0, 15 };
-    auto const* const hex = "0123456789abcdef";
-    for (auto i = 0; i < 8; ++i) {
-        temp_path += hex[dist(gen)];
-    }
-
-    // Write to temporary file
-    auto fd = int { ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644) };
-    if (fd < 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
-    }
-
-    auto bytes_written = ssize_t { ::write(fd, data->data(), data->size()) };
-    auto write_error = (bytes_written != static_cast<ssize_t>(data->size()));
-
-    if (::fsync(fd) < 0) {
-        write_error = true;
-    }
-
-    ::close(fd);
-
-    if (write_error) {
-        ::unlink(temp_path.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to write index file");
-    }
-
-    // Atomic rename
-    if (::rename(temp_path.c_str(), path.c_str()) < 0) {
-        ::unlink(temp_path.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to rename index file");
-    }
-
-    return {};
+    return pup::platform::atomic_write(path, *data);
 }
 
 auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>>

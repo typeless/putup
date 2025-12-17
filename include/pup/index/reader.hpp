@@ -6,6 +6,7 @@
 #include "entry.hpp"
 #include "format.hpp"
 #include "pup/core/result.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -18,13 +19,13 @@ namespace pup::index {
 class IndexReader {
 public:
     IndexReader() = default;
-    ~IndexReader();
+    ~IndexReader() = default;
 
     IndexReader(IndexReader const&) = delete;
     auto operator=(IndexReader const&) -> IndexReader& = delete;
 
-    IndexReader(IndexReader&& other) noexcept;
-    auto operator=(IndexReader&& other) noexcept -> IndexReader&;
+    IndexReader(IndexReader&& other) noexcept = default;
+    auto operator=(IndexReader&& other) noexcept -> IndexReader& = default;
 
     /// Open an index file for reading
     [[nodiscard]] static auto open(std::filesystem::path const& path) -> Result<IndexReader>;
@@ -55,18 +56,16 @@ public:
     [[nodiscard]] auto verify_checksum() const -> bool;
 
     /// Get the file size
-    [[nodiscard]] auto file_size() const -> std::size_t { return size_; }
+    [[nodiscard]] auto file_size() const -> std::size_t { return file_.size(); }
 
     /// Check if reader is valid
-    [[nodiscard]] auto is_open() const -> bool { return data_ != nullptr; }
+    [[nodiscard]] auto is_open() const -> bool { return file_.is_open(); }
 
     /// Close the file
-    auto close() -> void;
+    auto close() -> void { file_.close(); }
 
 private:
-    void* data_ = nullptr;
-    std::size_t size_ = 0;
-    int fd_ = -1;
+    pup::platform::MappedFile file_;
 };
 
 } // namespace pup::index
