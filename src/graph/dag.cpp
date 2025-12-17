@@ -4,6 +4,7 @@
 #include "pup/graph/dag.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <unordered_map>
 
@@ -30,7 +31,7 @@ struct DirNameKeyHash {
 } // namespace
 
 struct BuildGraph::Impl {
-    std::vector<Node> nodes;
+    std::deque<Node> nodes;
     std::vector<Edge> edges;
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
     std::unordered_map<std::string, NodeId> command_index;
@@ -330,26 +331,6 @@ auto BuildGraph::invalidate_path_cache(NodeId id) -> void
 auto BuildGraph::clear_path_cache() -> void
 {
     impl_->path_cache.clear();
-}
-
-auto BuildGraph::begin() -> std::vector<Node>::iterator
-{
-    return impl_->nodes.begin();
-}
-
-auto BuildGraph::end() -> std::vector<Node>::iterator
-{
-    return impl_->nodes.end();
-}
-
-auto BuildGraph::begin() const -> std::vector<Node>::const_iterator
-{
-    return impl_->nodes.begin();
-}
-
-auto BuildGraph::end() const -> std::vector<Node>::const_iterator
-{
-    return impl_->nodes.end();
 }
 
 } // namespace pup::graph

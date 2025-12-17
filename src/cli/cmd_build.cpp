@@ -4,11 +4,11 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/core/hash.hpp"
-#include "pup/core/y_combinator.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/y_combinator.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
@@ -151,21 +151,22 @@ auto collect_upstream_files(
     };
 
     // Find commands in scope and collect their upstream deps
-    for (auto const& node : graph) {
-        if (node.type != pup::NodeType::Command) {
+    for (auto id : graph.all_nodes()) {
+        auto const* node = graph.get_node(id);
+        if (!node || node->type != pup::NodeType::Command) {
             continue;
         }
 
         // Check if command's source_dir is in any scope
-        if (!pup::is_path_in_any_scope(node.source_dir, scopes)) {
+        if (!pup::is_path_in_any_scope(node->source_dir, scopes)) {
             continue;
         }
 
         // Collect all inputs for this command
-        for (auto input_id : graph.get_inputs(node.id)) {
+        for (auto input_id : graph.get_inputs(id)) {
             collect(input_id);
         }
-        for (auto dep_id : graph.get_order_only(node.id)) {
+        for (auto dep_id : graph.get_order_only(id)) {
             collect(dep_id);
         }
     }
@@ -321,13 +322,17 @@ auto build_index(
     auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
 
     auto max_id = pup::NodeId { 0 };
-    for (auto const& node : graph) {
-        if (node.id > max_id) {
-            max_id = node.id;
+    for (auto id : graph.all_nodes()) {
+        auto const* node = graph.get_node(id);
+        if (!node) {
+            continue;
+        }
+        if (id > max_id) {
+            max_id = id;
         }
 
-        if (node.type == pup::NodeType::File || node.type == pup::NodeType::Generated) {
-            auto node_path = graph.get_full_path(node.id);
+        if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
+            auto node_path = graph.get_full_path(id);
             if (node_path.empty()) {
                 continue;
             }
@@ -347,41 +352,41 @@ auto build_index(
             }
 
             auto entry = pup::index::FileEntry {
-                .id = node.id,
-                .parent_id = node.parent_dir,
+                .id = id,
+                .parent_id = node->parent_dir,
                 .src_id = 0,
-                .type = node.type,
-                .flags = node.flags,
-                .name = node.name,
+                .type = node->type,
+                .flags = node->flags,
+                .name = node->name,
                 .path = node_path,
                 .size = file_size,
                 .content_hash = content_hash,
             };
             index.add_file(std::move(entry));
-            path_to_id[node_path] = node.id;
-        } else if (node.type == pup::NodeType::Directory || node.type == pup::NodeType::GeneratedDir) {
-            auto node_path = graph.get_full_path(node.id);
+            path_to_id[node_path] = id;
+        } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
+            auto node_path = graph.get_full_path(id);
             auto entry = pup::index::FileEntry {
-                .id = node.id,
-                .parent_id = node.parent_dir,
+                .id = id,
+                .parent_id = node->parent_dir,
                 .src_id = 0,
-                .type = node.type,
-                .flags = node.flags,
-                .name = node.name,
+                .type = node->type,
+                .flags = node->flags,
+                .name = node->name,
                 .path = node_path,
                 .size = 0,
                 .content_hash = {},
             };
             index.add_file(std::move(entry));
             if (!node_path.empty()) {
-                path_to_id[node_path] = node.id;
+                path_to_id[node_path] = id;
             }
-        } else if (node.type == pup::NodeType::Command) {
+        } else if (node->type == pup::NodeType::Command) {
             auto entry = pup::index::CommandEntry {
-                .id = node.id,
-                .dir_id = node.parent_dir,
-                .command = node.command,
-                .display = node.display,
+                .id = id,
+                .dir_id = node->parent_dir,
+                .command = node->command,
+                .display = node->display,
                 .env = {},
                 .flags = 0,
             };
@@ -681,20 +686,21 @@ auto cmd_build(Options const& opts) -> int
                 changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
 
                 // Detect new commands (in fresh graph but not in old index)
-                for (auto const& node : ctx.graph()) {
-                    if (node.type != pup::NodeType::Command) {
+                for (auto id : ctx.graph().all_nodes()) {
+                    auto const* node = ctx.graph().get_node(id);
+                    if (!node || node->type != pup::NodeType::Command) {
                         continue;
                     }
 
-                    if (!old_index->find_command_by_command(node.command)) {
-                        for (auto output_id : ctx.graph().get_outputs(node.id)) {
+                    if (!old_index->find_command_by_command(node->command)) {
+                        for (auto output_id : ctx.graph().get_outputs(id)) {
                             auto output_path = ctx.graph().get_full_path(output_id);
                             if (!output_path.empty()) {
                                 changed_files.push_back(output_path);
                             }
                         }
                         if (opts.verbose) {
-                            fmt::print("  New command: {}\n", node.display);
+                            fmt::print("  New command: {}\n", node->display);
                         }
                     }
                 }

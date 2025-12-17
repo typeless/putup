@@ -134,12 +134,6 @@ public:
     /// Clear the entire path cache
     auto clear_path_cache() -> void;
 
-    /// Iterator support (over nodes vector)
-    [[nodiscard]] auto begin() -> std::vector<Node>::iterator;
-    [[nodiscard]] auto end() -> std::vector<Node>::iterator;
-    [[nodiscard]] auto begin() const -> std::vector<Node>::const_iterator;
-    [[nodiscard]] auto end() const -> std::vector<Node>::const_iterator;
-
     struct Impl;
 
 private:
