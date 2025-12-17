@@ -231,7 +231,7 @@ Checks: >
 
 WarningsAsErrors: ''
 
-HeaderFilterRegex: '(include/pup|src)/.*'
+HeaderFilterRegex: '(include/pup|src)/[a-zA-Z0-9_/]+\.(hpp|cpp|h)$'
 
 FormatStyle: none
 
