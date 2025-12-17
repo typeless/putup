@@ -201,9 +201,7 @@ Checks: >
   -readability-simplify-boolean-expr,
   cppcoreguidelines-*,
   -cppcoreguidelines-avoid-const-or-ref-data-members,
-  -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-avoid-magic-numbers,
-  -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-explicit-virtual-functions,
   -cppcoreguidelines-noexcept-destructor,
   -cppcoreguidelines-noexcept-move-operations,
@@ -213,7 +211,6 @@ Checks: >
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-pro-type-union-access,
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-special-member-functions
 
