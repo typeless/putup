@@ -49,6 +49,9 @@ ifdef USE_MOLD
 LDFLAGS += -fuse-ld=mold
 endif
 
+# Platform-specific linker flags (e.g., -static for win32)
+LDFLAGS += @(PLATFORM_LDFLAGS)
+
 # Compile C source to object
 !cc = |> ^ CC %f^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 
