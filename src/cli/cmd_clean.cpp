@@ -3,6 +3,7 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
 #include "pup/core/types.hpp"
 #include "pup/index/reader.hpp"
@@ -19,7 +20,8 @@ namespace {
 auto remove_indexed_outputs(
     std::filesystem::path const& index_path,
     std::filesystem::path const& root,
-    OutputMode mode) -> RemoveResult
+    OutputMode mode,
+    std::string_view variant_name) -> RemoveResult
 {
     auto result = RemoveResult {};
 
@@ -53,7 +55,7 @@ auto remove_indexed_outputs(
         }
 
         if (mode.dry_run) {
-            fmt::print("Would remove: {}\n", file.path);
+            fmt::print("[{}] Would remove: {}\n", variant_name, file.path);
             ++result.removed_count;
             continue;
         }
@@ -62,10 +64,10 @@ auto remove_indexed_outputs(
         if (std::filesystem::remove(abs_path, ec)) {
             ++result.removed_count;
             if (mode.verbose) {
-                fmt::print("Removed: {}\n", file.path);
+                fmt::print("[{}] Removed: {}\n", variant_name, file.path);
             }
         } else if (ec) {
-            fmt::print(stderr, "Error removing {}: {}\n", file.path, ec.message());
+            fmt::print(stderr, "[{}] Error removing {}: {}\n", variant_name, file.path, ec.message());
             ++result.error_count;
         }
     }
@@ -73,91 +75,99 @@ auto remove_indexed_outputs(
     return result;
 }
 
-auto with_clean_context(Options const& opts, auto&& handler) -> int
+auto clean_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
     auto ctx = resolve_clean_context(opts);
     if (!ctx) {
-        fmt::print(stderr, "Error: No build directory found (use -B to specify)\n");
+        fmt::print(stderr, "[{}] Error: No build directory found (use -B to specify)\n", variant_name);
         return EXIT_FAILURE;
     }
-    return handler(*ctx);
+
+    auto index_path = ctx->build_dir / ".pup" / "index";
+    if (!std::filesystem::exists(index_path)) {
+        fmt::print("[{}] Nothing to clean (no index found)\n", variant_name);
+        return EXIT_SUCCESS;
+    }
+
+    auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
+    auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
+
+    auto dirs_removed = remove_empty_directories(
+        result.output_dirs, ctx->build_dir, ctx->root, mode);
+
+    if (opts.dry_run) {
+        fmt::print("[{}] Would remove {} files, {} directories\n", variant_name, result.removed_count, dirs_removed);
+    } else {
+        fmt::print("[{}] Removed {} files, {} directories\n", variant_name, result.removed_count, dirs_removed);
+    }
+
+    return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+}
+
+auto distclean_single_variant(Options const& opts, std::string_view variant_name) -> int
+{
+    auto ctx = resolve_clean_context(opts);
+    if (!ctx) {
+        fmt::print(stderr, "[{}] Error: No build directory found (use -B to specify)\n", variant_name);
+        return EXIT_FAILURE;
+    }
+
+    auto index_path = ctx->build_dir / ".pup" / "index";
+    auto error_count = std::size_t { 0 };
+    auto output_dirs = std::set<std::filesystem::path> {};
+
+    auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
+
+    if (std::filesystem::exists(index_path)) {
+        auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
+        error_count += result.error_count;
+        output_dirs = std::move(result.output_dirs);
+    }
+
+    auto pup_dir = ctx->build_dir / ".pup";
+    if (std::filesystem::exists(pup_dir)) {
+        if (opts.dry_run) {
+            fmt::print("[{}] Would remove: {}\n", variant_name, pup_dir.string());
+        } else {
+            if (opts.verbose) {
+                fmt::print("[{}] Removing: {}\n", variant_name, pup_dir.string());
+            }
+            std::filesystem::remove_all(pup_dir);
+        }
+    }
+
+    auto config_path = ctx->build_dir / "tup.config";
+    if (std::filesystem::exists(config_path)) {
+        if (opts.dry_run) {
+            fmt::print("[{}] Would remove: {}\n", variant_name, config_path.string());
+        } else {
+            if (opts.verbose) {
+                fmt::print("[{}] Removing: {}\n", variant_name, config_path.string());
+            }
+            std::filesystem::remove(config_path);
+        }
+    }
+
+    output_dirs.insert(ctx->build_dir);
+    remove_empty_directories(output_dirs, ctx->build_dir, ctx->root, mode);
+
+    if (!opts.dry_run) {
+        fmt::print("[{}] Project reset complete\n", variant_name);
+    }
+
+    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 } // namespace
 
 auto cmd_clean(Options const& opts) -> int
 {
-    return with_clean_context(opts, [&](CleanContext& ctx) {
-        auto index_path = ctx.build_dir / ".pup" / "index";
-        if (!std::filesystem::exists(index_path)) {
-            fmt::print("Nothing to clean (no index found)\n");
-            return EXIT_SUCCESS;
-        }
-
-        auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-        auto result = remove_indexed_outputs(index_path, ctx.root, mode);
-
-        auto dirs_removed = remove_empty_directories(
-            result.output_dirs, ctx.build_dir, ctx.root, mode);
-
-        if (opts.dry_run) {
-            fmt::print("Would remove {} files, {} directories\n", result.removed_count, dirs_removed);
-        } else {
-            fmt::print("Removed {} files, {} directories\n", result.removed_count, dirs_removed);
-        }
-
-        return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
-    });
+    return for_each_variant(opts, clean_single_variant, "Cleaning");
 }
 
 auto cmd_distclean(Options const& opts) -> int
 {
-    return with_clean_context(opts, [&](CleanContext& ctx) {
-        auto index_path = ctx.build_dir / ".pup" / "index";
-        auto error_count = std::size_t { 0 };
-        auto output_dirs = std::set<std::filesystem::path> {};
-
-        auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-
-        if (std::filesystem::exists(index_path)) {
-            auto result = remove_indexed_outputs(index_path, ctx.root, mode);
-            error_count += result.error_count;
-            output_dirs = std::move(result.output_dirs);
-        }
-
-        auto pup_dir = ctx.build_dir / ".pup";
-        if (std::filesystem::exists(pup_dir)) {
-            if (opts.dry_run) {
-                fmt::print("Would remove: {}\n", pup_dir.string());
-            } else {
-                if (opts.verbose) {
-                    fmt::print("Removing: {}\n", pup_dir.string());
-                }
-                std::filesystem::remove_all(pup_dir);
-            }
-        }
-
-        auto config_path = ctx.build_dir / "tup.config";
-        if (std::filesystem::exists(config_path)) {
-            if (opts.dry_run) {
-                fmt::print("Would remove: {}\n", config_path.string());
-            } else {
-                if (opts.verbose) {
-                    fmt::print("Removing: {}\n", config_path.string());
-                }
-                std::filesystem::remove(config_path);
-            }
-        }
-
-        output_dirs.insert(ctx.build_dir);
-        remove_empty_directories(output_dirs, ctx.build_dir, ctx.root, mode);
-
-        if (!opts.dry_run) {
-            fmt::print("Project reset complete\n");
-        }
-
-        return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
-    });
+    return for_each_variant(opts, distclean_single_variant, "Distcleaning");
 }
 
 } // namespace pup::cli

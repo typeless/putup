@@ -1658,3 +1658,88 @@ SCENARIO("No variants found falls back to in-tree build", "[e2e][multi-variant]"
         }
     }
 }
+
+SCENARIO("Multi-variant clean", "[e2e][multi-variant][clean]")
+{
+    GIVEN("a project with multiple built variants")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+        REQUIRE(f.init().success());
+
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("build-debug/hello"));
+        REQUIRE(f.exists("build-release/hello"));
+
+        WHEN("pup clean is run from project root")
+        {
+            auto result = f.clean();
+
+            THEN("all variants are cleaned")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build-debug/hello"));
+                REQUIRE_FALSE(f.exists("build-release/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Multi-variant clean with explicit -B flags", "[e2e][multi-variant][clean]")
+{
+    GIVEN("a project with multiple built variants")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+        REQUIRE(f.init().success());
+
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("build-debug/hello"));
+        REQUIRE(f.exists("build-release/hello"));
+
+        WHEN("pup clean -B build-debug is run")
+        {
+            auto result = f.clean({ "-B", "build-debug" });
+
+            THEN("only the specified variant is cleaned")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build-debug/hello"));
+                REQUIRE(f.exists("build-release/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Multi-variant parse", "[e2e][multi-variant]")
+{
+    GIVEN("a project with multiple variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("pup parse is run from project root")
+        {
+            auto result = f.parse();
+
+            THEN("all variants are parsed")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Parsed") != std::string::npos);
+            }
+        }
+    }
+}
