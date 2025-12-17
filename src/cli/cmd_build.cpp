@@ -4,6 +4,7 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/y_combinator.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
@@ -400,7 +401,7 @@ auto build_index(
     auto next_id = pup::NodeId { max_id + 1 };
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
 
-    auto get_or_create_dir = [&](this auto& self, std::filesystem::path const& dir_path) -> pup::NodeId {
+    auto get_or_create_dir = pup::YCombinator { [&](auto const& self, std::filesystem::path const& dir_path) -> pup::NodeId {
         auto normalized = dir_path.lexically_normal();
         auto path_str = normalized.string();
 
@@ -449,7 +450,7 @@ auto build_index(
         index.add_file(std::move(entry));
         path_to_id[path_str] = dir_id;
         return dir_id;
-    };
+    } };
 
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {

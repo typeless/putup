@@ -20,7 +20,7 @@ CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -I$(ROOT)/third_party
 CFLAGS += -fPIC
 
-CXXFLAGS = -std=c++23
+CXXFLAGS = -std=c++20
 CXXFLAGS += -Wall -Wextra -Werror -Wpedantic
 CXXFLAGS += -I$(ROOT)/include
 CXXFLAGS += -I$(ROOT)/third_party
