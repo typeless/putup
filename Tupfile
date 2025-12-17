@@ -1,31 +1,24 @@
 include_rules
 
-# Third-party C sources
-: third_party/sha256/sha256.c |> !cc |> sha256.o {third_party_objs}
+# Third-party
+: third_party/sha256/sha256.c |> !cc |> sha256.o {lib_objs}
 
-# Core library sources
-: foreach src/core/*.cpp |> !cxx |> %B.o {core_objs}
+# Library sources
+: foreach src/core/*.cpp |> !cxx |> %B.o {lib_objs}
+: foreach src/parser/*.cpp |> !cxx |> %B.o {lib_objs}
+: foreach src/graph/*.cpp |> !cxx |> %B.o {lib_objs}
+: foreach src/index/*.cpp |> !cxx |> %B.o {lib_objs}
+: foreach src/exec/*.cpp |> !cxx |> %B.o {lib_objs}
+: foreach src/cli/*.cpp |> !cxx |> %B.o {lib_objs}
 
-# Parser library sources
-: foreach src/parser/*.cpp |> !cxx |> %B.o {parser_objs}
+# Platform-specific sources
+: src/platform/process-$(PLATFORM).cpp |> !cxx |> %B.o {lib_objs}
+: src/platform/file_io-$(PLATFORM).cpp |> !cxx |> %B.o {lib_objs}
+: src/platform/env-$(PLATFORM).cpp |> !cxx |> %B.o {lib_objs}
 
-# Graph library sources
-: foreach src/graph/*.cpp |> !cxx |> %B.o {graph_objs}
+# Static library for test linking
+: {lib_objs} |> !ar |> libpup.a
 
-# Index library sources
-: foreach src/index/*.cpp |> !cxx |> %B.o {index_objs}
-
-# Exec library sources
-: foreach src/exec/*.cpp |> !cxx |> %B.o {exec_objs}
-
-# Platform library sources (uses @(PLATFORM) config variable for platform-specific code)
-: src/platform/process-$(PLATFORM).cpp |> !cxx |> process-$(PLATFORM).o {platform_objs}
-: src/platform/file_io-$(PLATFORM).cpp |> !cxx |> file_io-$(PLATFORM).o {platform_objs}
-: src/platform/env-$(PLATFORM).cpp |> !cxx |> env-$(PLATFORM).o {platform_objs}
-
-# CLI library sources
-: foreach src/cli/*.cpp |> !cxx |> %B.o {cli_objs}
-
-# Build pup executable
+# Main executable
 : foreach src/*.cpp |> !cxx |> %B.o {main_objs}
-: {third_party_objs} {core_objs} {parser_objs} {graph_objs} {index_objs} {exec_objs} {platform_objs} {cli_objs} {main_objs} |> !link |> pup
+: {lib_objs} {main_objs} |> !link |> pup

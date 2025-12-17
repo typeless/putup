@@ -2,64 +2,39 @@
 
 ROOT = $(TUP_CWD)
 
-# Platform configuration (set via tup.config or default to posix)
-PLATFORM = posix
-ifneq (@(PLATFORM),)
+# Platform (posix or win32)
 PLATFORM = @(PLATFORM)
-endif
+PLATFORM ?= posix
 
-# Cross-compilation prefix (e.g., arm-none-eabi-, x86_64-w64-mingw32-)
+# Toolchain
 import CROSS_COMPILE=
-
-# Toolchain (derived from CROSS_COMPILE or overridden directly)
 import CC=$(CROSS_COMPILE)gcc
 import CXX=$(CROSS_COMPILE)g++
 import AR=$(CROSS_COMPILE)ar
 
-# Use mold linker if available (set by Makefile or environment)
-import USE_MOLD
-
-CFLAGS = -std=c11
-CFLAGS += -Wall -Wextra -Werror
+# Base flags
+CFLAGS = -std=c11 -Wall -Wextra -Werror -fPIC
 CFLAGS += -I$(ROOT)/third_party
-CFLAGS += -fPIC
 
-CXXFLAGS = -std=c++20
-CXXFLAGS += -Wall -Wextra -Werror -Wpedantic
-CXXFLAGS += -I$(ROOT)/include
-CXXFLAGS += -I$(ROOT)/third_party
-CXXFLAGS += -fPIC
-CXXFLAGS += -DFMT_HEADER_ONLY
-CXXFLAGS += -DFMT_USE_LOCALE=0
-CXXFLAGS += -DFMT_USE_INT128=0
-CXXFLAGS += -DFMT_USE_FLOAT128=0
+CXXFLAGS = -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC
+CXXFLAGS += -I$(ROOT)/include -I$(ROOT)/third_party
+CXXFLAGS += -DFMT_HEADER_ONLY -DFMT_USE_LOCALE=0 -DFMT_USE_INT128=0 -DFMT_USE_FLOAT128=0
 
-ifdef DEBUG
-CFLAGS += -g -O0 -fsanitize=address,undefined
-CXXFLAGS += -g -O0 -fsanitize=address,undefined
-LDFLAGS += -fsanitize=address,undefined
-else
-CFLAGS += -O2 -ffunction-sections -fdata-sections
-CXXFLAGS += -O2 -DNDEBUG -ffunction-sections -fdata-sections
-LDFLAGS += -Wl,--gc-sections
-endif
+# Build mode: debug or release (default)
+CFLAGS += @(DEBUG_CFLAGS)
+CXXFLAGS += @(DEBUG_CXXFLAGS)
+LDFLAGS += @(DEBUG_LDFLAGS)
 
-# Use mold linker for faster linking
-ifdef USE_MOLD
-LDFLAGS += -fuse-ld=mold
-endif
+CFLAGS += @(RELEASE_CFLAGS)
+CXXFLAGS += @(RELEASE_CXXFLAGS)
+LDFLAGS += @(RELEASE_LDFLAGS)
 
-# Platform-specific linker flags (e.g., -static for win32)
+# Platform-specific flags
 LDFLAGS += @(PLATFORM_LDFLAGS)
 
-# Compile C source to object
+# Macros
 !cc = |> ^ CC %f^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
-
-# Compile C++ source to object
 !cxx = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
-
-# Link executable
+!cxx_thirdparty = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-error -c %f -o %o |> %B.o
 !link = |> ^ LINK %o^ $(CXX) %f -o %o $(LDFLAGS) |>
-
-# Create static library
 !ar = |> ^ AR %o^ $(AR) rcs %o %f |>
