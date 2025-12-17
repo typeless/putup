@@ -3,6 +3,7 @@
 
 #include "pup/core/layout.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace pup {
@@ -148,6 +149,33 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
     }
 
     return layout;
+}
+
+auto discover_variants(
+    std::filesystem::path const& source_root) -> std::vector<std::filesystem::path>
+{
+    auto result = std::vector<std::filesystem::path> {};
+
+    if (!std::filesystem::is_directory(source_root)) {
+        return result;
+    }
+
+    auto ec = std::error_code {};
+    for (auto const& entry : std::filesystem::directory_iterator(source_root, ec)) {
+        if (!entry.is_directory()) {
+            continue;
+        }
+
+        auto const& path = entry.path();
+        if (std::filesystem::exists(path / "tup.config")
+            || std::filesystem::is_directory(path / ".pup")) {
+            result.push_back(path.filename());
+        }
+    }
+
+    // Sort for deterministic order
+    std::sort(result.begin(), result.end());
+    return result;
 }
 
 } // namespace pup

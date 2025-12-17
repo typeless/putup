@@ -62,10 +62,12 @@ auto parse_args(int argc, char** argv) -> Options
             if (i + 1 < argc) {
                 opts.source_dir = std::string { argv[++i] };
             }
-        } else if (arg == "-B") {
+        } else if (arg == "-B" || arg == "--variant") {
             if (i + 1 < argc) {
-                opts.build_dir = std::string { argv[++i] };
+                opts.build_dirs.emplace_back(argv[++i]);
             }
+        } else if (arg.starts_with("--variant=")) {
+            opts.build_dirs.emplace_back(arg.substr(10));
         } else if (arg == "--summary") {
             opts.summary = true;
         } else if (arg == "-a" || arg == "--all-deps") {
@@ -112,7 +114,7 @@ auto print_usage() -> void
                "  -n, --dry-run      Print commands without executing\n"
                "  -v, --verbose      Verbose output\n"
                "  -S DIR             Source directory (default: auto-detect)\n"
-               "  -B DIR             Build/output directory (default: source)\n"
+               "  -B DIR             Build/output directory (can use multiple times)\n"
                "  --summary          Human-readable output (for export graph)\n"
                "  --stat             Print build statistics\n"
                "  -A, --all          Full project build (ignore cwd scoping)\n"

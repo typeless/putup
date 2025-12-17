@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <vector>
 
 namespace pup {
 
@@ -62,5 +63,10 @@ struct LayoutOptions {
 /// Find project root by walking up from start_dir looking for Tupfile.ini
 [[nodiscard]] auto find_project_root(
     std::filesystem::path const& start_dir) -> std::optional<std::filesystem::path>;
+
+/// Discover variant directories (subdirs containing tup.config or .pup/)
+/// Returns sorted list of variant paths relative to source_root
+[[nodiscard]] auto discover_variants(
+    std::filesystem::path const& source_root) -> std::vector<std::filesystem::path>;
 
 } // namespace pup

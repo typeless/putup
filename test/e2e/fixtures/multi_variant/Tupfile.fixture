@@ -1,0 +1,6 @@
+# Multi-variant test: builds hello with optional DEBUG flag
+ifeq (@(DEBUG),y)
+CFLAGS = -DDEBUG
+endif
+
+: hello.c |> gcc $(CFLAGS) -o %o %f |> hello

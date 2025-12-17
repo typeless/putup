@@ -267,8 +267,8 @@ auto build_context(
     if (!opts.source_dir.empty()) {
         layout_opts.source_dir = std::filesystem::path { opts.source_dir };
     }
-    if (!opts.build_dir.empty()) {
-        layout_opts.build_dir = std::filesystem::path { opts.build_dir };
+    if (!opts.build_dirs.empty()) {
+        layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
     }
 
     auto layout_result = Result<ProjectLayout> { discover_layout(layout_opts) };
@@ -389,8 +389,8 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
     auto build_dir = std::filesystem::path {};
     auto is_in_tree = false;
 
-    if (!opts.build_dir.empty()) {
-        build_dir = std::filesystem::path { opts.build_dir };
+    if (!opts.build_dirs.empty()) {
+        build_dir = std::filesystem::path { opts.build_dirs[0] };
         if (build_dir.is_relative()) {
             build_dir = *root / build_dir;
         }

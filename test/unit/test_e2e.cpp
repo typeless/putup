@@ -1497,3 +1497,164 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
         }
     }
 }
+
+// =============================================================================
+// Multi-Variant Build Tests
+// =============================================================================
+
+SCENARIO("Multi-variant auto-detection", "[e2e][multi-variant]")
+{
+    GIVEN("a project with multiple variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        // Create two variant directories with tup.config
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup is run from project root without -B")
+        {
+            auto result = f.build();
+
+            THEN("all variants are built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+
+            THEN("debug variant has debug output")
+            {
+                REQUIRE(f.run("build-debug/hello").stdout_output == "Debug mode\n");
+            }
+
+            THEN("release variant has release output")
+            {
+                REQUIRE(f.run("build-release/hello").stdout_output == "Release mode\n");
+            }
+        }
+
+        WHEN("rebuilt without changes")
+        {
+            (void)f.build();
+            auto result = f.build();
+
+            THEN("nothing is rebuilt")
+            {
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Explicit multi-variant with -B flags", "[e2e][multi-variant]")
+{
+    GIVEN("a project with multiple variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.mkdir("build-custom");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+        f.write_file("build-custom/tup.config", "CONFIG_DEBUG=y\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup -B build-debug -B build-release is run")
+        {
+            auto result = f.build({ "-B", "build-debug", "-B", "build-release" });
+
+            THEN("specified variants are built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+
+            THEN("unspecified variant is NOT built")
+            {
+                REQUIRE_FALSE(f.exists("build-custom/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Single -B flag still works", "[e2e][multi-variant]")
+{
+    GIVEN("a project with multiple variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup -B build-debug is run")
+        {
+            auto result = f.build({ "-B", "build-debug" });
+
+            THEN("only specified variant is built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE_FALSE(f.exists("build-release/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Multi-variant verbose output prefixes lines", "[e2e][multi-variant]")
+{
+    GIVEN("a project with multiple variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup -v is run with multiple variants")
+        {
+            auto result = f.build({ "-v" });
+
+            THEN("output lines are prefixed with variant names")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("[build-debug]") != std::string::npos);
+                REQUIRE(result.stdout_output.find("[build-release]") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("No variants found falls back to in-tree build", "[e2e][multi-variant]")
+{
+    GIVEN("a project with no variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+        REQUIRE(f.init().success());
+
+        WHEN("pup is run from project root")
+        {
+            auto result = f.build();
+
+            THEN("in-tree build succeeds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("hello"));
+            }
+        }
+    }
+}
