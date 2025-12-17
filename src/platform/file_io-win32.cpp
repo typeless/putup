@@ -21,18 +21,13 @@ MappedFile::~MappedFile()
     close();
 }
 
-MappedFile::MappedFile(MappedFile&& other) noexcept
-    : impl_(other.impl_)
-{
-    other.impl_ = nullptr;
-}
+MappedFile::MappedFile(MappedFile&& other) noexcept = default;
 
 auto MappedFile::operator=(MappedFile&& other) noexcept -> MappedFile&
 {
     if (this != &other) {
         close();
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
+        impl_ = std::move(other.impl_);
     }
     return *this;
 }
@@ -55,7 +50,7 @@ auto MappedFile::is_open() const -> bool
 auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
 {
     auto file = MappedFile {};
-    file.impl_ = new Impl {};
+    file.impl_ = std::make_unique<Impl>();
 
     file.impl_->file_handle = CreateFileW(
         path.c_str(),
@@ -67,16 +62,14 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
         nullptr);
 
     if (file.impl_->file_handle == INVALID_HANDLE_VALUE) {
-        delete file.impl_;
-        file.impl_ = nullptr;
+        file.impl_.reset();
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
     }
 
     LARGE_INTEGER file_size;
     if (!GetFileSizeEx(file.impl_->file_handle, &file_size)) {
         CloseHandle(file.impl_->file_handle);
-        delete file.impl_;
-        file.impl_ = nullptr;
+        file.impl_.reset();
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to get file size");
     }
 
@@ -93,8 +86,7 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
 
         if (!file.impl_->mapping_handle) {
             CloseHandle(file.impl_->file_handle);
-            delete file.impl_;
-            file.impl_ = nullptr;
+            file.impl_.reset();
             return make_error<MappedFile>(ErrorCode::IoError, "Failed to create file mapping");
         }
 
@@ -104,8 +96,7 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
         if (!file.impl_->data) {
             CloseHandle(file.impl_->mapping_handle);
             CloseHandle(file.impl_->file_handle);
-            delete file.impl_;
-            file.impl_ = nullptr;
+            file.impl_.reset();
             return make_error<MappedFile>(ErrorCode::IoError, "Failed to map view of file");
         }
     }
@@ -128,8 +119,7 @@ auto MappedFile::close() -> void
     if (impl_->file_handle != INVALID_HANDLE_VALUE) {
         CloseHandle(impl_->file_handle);
     }
-    delete impl_;
-    impl_ = nullptr;
+    impl_.reset();
 }
 
 auto stat_file(std::filesystem::path const& path) -> Result<FileStat>

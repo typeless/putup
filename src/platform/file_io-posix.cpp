@@ -25,18 +25,13 @@ MappedFile::~MappedFile()
     close();
 }
 
-MappedFile::MappedFile(MappedFile&& other) noexcept
-    : impl_(other.impl_)
-{
-    other.impl_ = nullptr;
-}
+MappedFile::MappedFile(MappedFile&& other) noexcept = default;
 
 auto MappedFile::operator=(MappedFile&& other) noexcept -> MappedFile&
 {
     if (this != &other) {
         close();
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
+        impl_ = std::move(other.impl_);
     }
     return *this;
 }
@@ -59,21 +54,19 @@ auto MappedFile::is_open() const -> bool
 auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
 {
     auto file = MappedFile {};
-    file.impl_ = new Impl {};
+    file.impl_ = std::make_unique<Impl>();
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     file.impl_->fd = ::open(path.c_str(), O_RDONLY);
     if (file.impl_->fd < 0) {
-        delete file.impl_;
-        file.impl_ = nullptr;
+        file.impl_.reset();
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
     }
 
     struct stat st { };
     if (::fstat(file.impl_->fd, &st) < 0) {
         ::close(file.impl_->fd);
-        delete file.impl_;
-        file.impl_ = nullptr;
+        file.impl_.reset();
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to stat file");
     }
 
@@ -86,8 +79,7 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
         if (file.impl_->data == MAP_FAILED) {
             file.impl_->data = nullptr;
             ::close(file.impl_->fd);
-            delete file.impl_;
-            file.impl_ = nullptr;
+            file.impl_.reset();
             return make_error<MappedFile>(ErrorCode::IoError, "Failed to mmap file");
         }
     }
@@ -107,8 +99,7 @@ auto MappedFile::close() -> void
     if (impl_->fd >= 0) {
         ::close(impl_->fd);
     }
-    delete impl_;
-    impl_ = nullptr;
+    impl_.reset();
 }
 
 auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
