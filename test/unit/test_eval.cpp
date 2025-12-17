@@ -57,7 +57,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("literal expression")
     {
@@ -112,7 +112,7 @@ TEST_CASE("Evaluator string expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("no variables")
     {
@@ -151,7 +151,7 @@ TEST_CASE("Evaluator config variables", "[eval]")
     auto vars = VarDb {};
     auto config_vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("config variable expansion")
     {
@@ -175,7 +175,7 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
         .tup_platform = "linux",
         .tup_arch = "x86_64",
     };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("TUP_CWD")
     {
@@ -202,7 +202,7 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     // For foreach rules, all_inputs has just one element (the current input)
     auto flags = PatternFlags {
@@ -251,7 +251,7 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     // For non-foreach rules, all_inputs has all input files
     auto flags = PatternFlags {
@@ -287,7 +287,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
     auto vars = VarDb {};
     auto config_vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("ifdef - true when defined")
     {
@@ -359,7 +359,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("resolve_group callback for {name}")
     {
@@ -416,7 +416,7 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     ctx.resolve_order_only_group = [](std::string_view name) -> std::vector<std::string> {
         if (name == "headers")
@@ -459,7 +459,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = ".";
 
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     auto result = eval.expand("$(TUP_VARIANT_OUTPUTDIR)");
     REQUIRE(result.has_value());
@@ -476,7 +476,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]"
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     auto result = eval.expand("$(TUP_VARIANT_OUTPUTDIR)");
     REQUIRE(result.has_value());
@@ -492,7 +492,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     auto result = eval.expand("echo -o $(TUP_VARIANT_OUTPUTDIR)/out.txt");
     REQUIRE(result.has_value());
@@ -515,7 +515,7 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
     ctx.tup_variantdir = "../../build/rules";
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
-    auto eval = Evaluator { ctx };
+    auto eval = Evaluator { &ctx };
 
     SECTION("TUP_CWD expands to included file's relative path")
     {

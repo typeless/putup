@@ -25,6 +25,11 @@ struct ParseError {
 class FileResolver {
 public:
     virtual ~FileResolver() = default;
+    FileResolver() = default;
+    FileResolver(FileResolver const&) = delete;
+    auto operator=(FileResolver const&) -> FileResolver& = delete;
+    FileResolver(FileResolver&&) = delete;
+    auto operator=(FileResolver&&) -> FileResolver& = delete;
 
     /// Resolve a path relative to the current file
     [[nodiscard]] virtual auto resolve(

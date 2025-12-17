@@ -186,6 +186,8 @@ struct ScopeGuard {
     }
     ScopeGuard(ScopeGuard const&) = delete;
     auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
+    ScopeGuard(ScopeGuard&&) = delete;
+    auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
 };
 
 } // namespace
@@ -429,7 +431,7 @@ auto GraphBuilder::process_assignment(
     BuilderContext& ctx,
     parser::Assignment const& assign) -> Result<void>
 {
-    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto evaluator = parser::Evaluator { ctx.eval };
 
     // Evaluate the variable name (may contain variable refs like foo-$(BAR))
     auto name = Result<std::string> { evaluator.expand(assign.name) };
@@ -473,7 +475,7 @@ auto GraphBuilder::process_conditional(
     BuilderContext& ctx,
     parser::Conditional const& cond) -> Result<void>
 {
-    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto evaluator = parser::Evaluator { ctx.eval };
     auto condition_true = evaluator.evaluate_condition(cond);
 
     auto const& body = condition_true ? cond.then_body : cond.else_body;
@@ -517,7 +519,7 @@ auto GraphBuilder::process_include(
         }
     } else {
         // include path: expand and resolve the path
-        auto evaluator = parser::Evaluator { *ctx.eval };
+        auto evaluator = parser::Evaluator { ctx.eval };
         auto path_result = Result<std::string> { evaluator.expand(inc.path) };
         if (!path_result) {
             return pup::unexpected<Error>(path_result.error());
@@ -606,7 +608,7 @@ auto GraphBuilder::process_import(
         value = env_val;
     } else if (imp.default_value) {
         // Expand default value expression
-        auto evaluator = parser::Evaluator { *ctx.eval };
+        auto evaluator = parser::Evaluator { ctx.eval };
         auto expanded = Result<std::string> { evaluator.expand(*imp.default_value) };
         if (!expanded) {
             return pup::unexpected<Error>(expanded.error());
@@ -643,7 +645,7 @@ auto GraphBuilder::expand_rule(
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     auto rule_order_only_groups = std::unordered_map<std::string, std::vector<std::string>> {};
-    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto evaluator = parser::Evaluator { ctx.eval };
     auto source_to_root = compute_source_to_root(ctx.current_dir);
     auto current_dir_str = ctx.current_dir.string();
 
@@ -938,7 +940,7 @@ auto GraphBuilder::expand_rule(
             }
 
             if (group_dir_expr) {
-                auto evaluator = parser::Evaluator { *ctx.eval };
+                auto evaluator = parser::Evaluator { ctx.eval };
                 auto expanded = evaluator.expand(*group_dir_expr);
                 if (expanded) {
                     // Remove trailing slash and normalize
@@ -978,7 +980,7 @@ auto GraphBuilder::expand_inputs(
     std::vector<parser::PathPattern> const& patterns) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
-    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto evaluator = parser::Evaluator { ctx.eval };
 
     for (auto const& pattern : patterns) {
         if (pattern.is_exclusion) {
@@ -1264,7 +1266,7 @@ auto GraphBuilder::expand_outputs(
     std::string const& input) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
-    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto evaluator = parser::Evaluator { ctx.eval };
 
     // Build pattern flags from input
     // For outputs, %d is the current directory basename (where the Tupfile is),
@@ -1315,7 +1317,7 @@ auto GraphBuilder::expand_command(
     std::vector<std::string> const& inputs,
     std::vector<std::string> const& outputs) -> Result<std::string>
 {
-    auto evaluator = parser::Evaluator { *ctx.eval };
+    auto evaluator = parser::Evaluator { ctx.eval };
 
     // First get literal text from expression
     auto literal = Result<std::string> { evaluator.expand(cmd) };

@@ -200,7 +200,6 @@ Checks: >
   -readability-redundant-member-init,
   -readability-simplify-boolean-expr,
   cppcoreguidelines-*,
-  -cppcoreguidelines-avoid-const-or-ref-data-members,
   -cppcoreguidelines-avoid-magic-numbers,
   -cppcoreguidelines-explicit-virtual-functions,
   -cppcoreguidelines-noexcept-destructor,
@@ -211,8 +210,7 @@ Checks: >
   -cppcoreguidelines-pro-bounds-constant-array-index,
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-pro-type-vararg,
-  -cppcoreguidelines-special-member-functions
+  -cppcoreguidelines-pro-type-vararg
 
 WarningsAsErrors: ''
 

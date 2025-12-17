@@ -2,7 +2,9 @@
 // Copyright (c) 2024 pup authors
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-// POSIX APIs (pipe, execv) require C-style arrays - this is an internal implementation file
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+// NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+// POSIX APIs (pipe, execv, environ) require C-style arrays and pointer arithmetic
 
 #include "pup/platform/process.hpp"
 
@@ -25,9 +27,7 @@ auto build_env_strings(
     auto result = std::vector<std::string> {};
 
     if (inherit_env) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         for (auto** e = environ; *e != nullptr; ++e) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             result.emplace_back(*e);
         }
     }
@@ -71,18 +71,15 @@ auto run_process_with_callback(
     int stderr_pipe[2] = { -1, -1 };
     int stdin_pipe[2] = { -1, -1 };
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
     if (opts.capture_stdout && ::pipe(stdout_pipe) < 0) {
         return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stdout pipe");
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
     if (opts.capture_stderr && ::pipe(stderr_pipe) < 0) {
         close_pipe(stdout_pipe);
         return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stderr pipe");
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
     if (opts.stdin_data && ::pipe(stdin_pipe) < 0) {
         close_pipe(stdout_pipe);
         close_pipe(stderr_pipe);
@@ -133,19 +130,15 @@ auto run_process_with_callback(
 
         auto cmd_str = std::string { opts.command };
         char* const argv[] = {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-            const_cast<char*>("/bin/sh"),
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-            const_cast<char*>("-c"),
+            const_cast<char*>("/bin/sh"),  // NOLINT(cppcoreguidelines-pro-type-const-cast)
+            const_cast<char*>("-c"),       // NOLINT(cppcoreguidelines-pro-type-const-cast)
             cmd_str.data(),
             nullptr
         };
 
         if (opts.inherit_env && opts.env.empty()) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
             ::execv("/bin/sh", argv);
         } else {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
             ::execve("/bin/sh", argv, env_ptrs.data());
         }
 
@@ -302,4 +295,6 @@ auto run_process_with_callback(
 
 } // namespace pup::platform
 
+// NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+// NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
 // NOLINTEND(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)

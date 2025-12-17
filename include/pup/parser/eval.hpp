@@ -103,7 +103,7 @@ struct PatternFlags {
 /// Expression evaluator
 class Evaluator {
 public:
-    explicit Evaluator(EvalContext& ctx);
+    explicit Evaluator(EvalContext* ctx);
 
     /// Expand an expression, replacing variable references with values
     [[nodiscard]] auto expand(Expression const& expr) -> Result<std::string>;
@@ -124,7 +124,7 @@ public:
     [[nodiscard]] auto evaluate_condition(Conditional const& cond) -> bool;
 
 private:
-    EvalContext& ctx_;
+    EvalContext* ctx_;
 
     [[nodiscard]] auto expand_var(VarRef const& ref) -> Result<std::string>;
     [[nodiscard]] auto expand_special_var(std::string_view name) -> std::optional<std::string>;

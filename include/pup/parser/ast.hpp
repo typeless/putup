@@ -145,6 +145,8 @@ struct Conditional : AstNode {
 
     ~Conditional() override;
     Conditional();
+    Conditional(Conditional const&) = delete;
+    auto operator=(Conditional const&) -> Conditional& = delete;
     Conditional(Conditional&&) noexcept;
     auto operator=(Conditional&&) noexcept -> Conditional&;
 };

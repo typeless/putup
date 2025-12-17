@@ -69,7 +69,7 @@ auto VarDb::clear() -> void
 // Evaluator
 // =============================================================================
 
-Evaluator::Evaluator(EvalContext& ctx)
+Evaluator::Evaluator(EvalContext* ctx)
     : ctx_(ctx)
 {
 }
@@ -221,8 +221,8 @@ auto Evaluator::expand_pattern(
             pos = end + 1;
 
             // Resolve order-only group to paths via callback
-            if (ctx_.resolve_order_only_group) {
-                auto paths = ctx_.resolve_order_only_group(group_name);
+            if (ctx_->resolve_order_only_group) {
+                auto paths = ctx_->resolve_order_only_group(group_name);
                 for (std::size_t i = 0; i < paths.size(); ++i) {
                     if (i > 0) {
                         result += ' ';
@@ -292,8 +292,8 @@ auto Evaluator::expand_path(
 
     if (pattern.is_order_only_group) {
         // Order-only group reference <groupname> - use callback to resolve
-        if (ctx_.resolve_order_only_group) {
-            auto paths = ctx_.resolve_order_only_group(pattern.group_name);
+        if (ctx_->resolve_order_only_group) {
+            auto paths = ctx_->resolve_order_only_group(pattern.group_name);
             result.insert(result.end(), paths.begin(), paths.end());
         }
         return result;
@@ -301,8 +301,8 @@ auto Evaluator::expand_path(
 
     if (pattern.is_group) {
         // Group reference {groupname} - use callback to resolve
-        if (ctx_.resolve_group) {
-            auto paths = ctx_.resolve_group(pattern.group_name);
+        if (ctx_->resolve_group) {
+            auto paths = ctx_->resolve_group(pattern.group_name);
             result.insert(result.end(), paths.begin(), paths.end());
         }
         return result;
@@ -346,19 +346,19 @@ auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
 {
     switch (cond.kind) {
     case Conditional::Kind::Ifdef:
-        if (ctx_.vars && ctx_.vars->contains(cond.var_name)) {
+        if (ctx_->vars && ctx_->vars->contains(cond.var_name)) {
             return true;
         }
-        if (ctx_.config_vars && ctx_.config_vars->contains(cond.var_name)) {
+        if (ctx_->config_vars && ctx_->config_vars->contains(cond.var_name)) {
             return true;
         }
         return false;
 
     case Conditional::Kind::Ifndef:
-        if (ctx_.vars && ctx_.vars->contains(cond.var_name)) {
+        if (ctx_->vars && ctx_->vars->contains(cond.var_name)) {
             return false;
         }
-        if (ctx_.config_vars && ctx_.config_vars->contains(cond.var_name)) {
+        if (ctx_->config_vars && ctx_->config_vars->contains(cond.var_name)) {
             return false;
         }
         return true;
@@ -395,13 +395,13 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
     VarDb const* db = nullptr;
     switch (ref.kind) {
     case VarRef::Kind::Regular:
-        db = ctx_.vars;
+        db = ctx_->vars;
         break;
     case VarRef::Kind::Config:
-        db = ctx_.config_vars;
+        db = ctx_->config_vars;
         break;
     case VarRef::Kind::Node:
-        db = ctx_.node_vars;
+        db = ctx_->node_vars;
         break;
     }
 
@@ -413,8 +413,8 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
     }
 
     // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
-    if (ref.kind == VarRef::Kind::Regular && ctx_.config_vars) {
-        auto value = ctx_.config_vars->get(ref.name);
+    if (ref.kind == VarRef::Kind::Regular && ctx_->config_vars) {
+        auto value = ctx_->config_vars->get(ref.name);
         if (!value.empty()) {
             return std::string { value };
         }
@@ -427,19 +427,19 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::string>
 {
     if (name == builtin_vars::TUP_CWD) {
-        return ctx_.tup_cwd;
+        return ctx_->tup_cwd;
     }
     if (name == builtin_vars::TUP_PLATFORM) {
-        return ctx_.tup_platform;
+        return ctx_->tup_platform;
     }
     if (name == builtin_vars::TUP_ARCH) {
-        return ctx_.tup_arch;
+        return ctx_->tup_arch;
     }
     if (name == builtin_vars::TUP_VARIANTDIR) {
-        return ctx_.tup_variantdir;
+        return ctx_->tup_variantdir;
     }
     if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
-        return ctx_.tup_variant_outputdir;
+        return ctx_->tup_variant_outputdir;
     }
 
     return std::nullopt;
