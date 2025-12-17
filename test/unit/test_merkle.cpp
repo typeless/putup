@@ -249,7 +249,8 @@ auto copy_index(Index const& src) -> Index
 auto find_changed_files_merkle(
     Index const& old_index,
     Index const& new_index,
-    ChangeDetectionStats* stats) -> std::vector<std::string>
+    ChangeDetectionStats* stats
+) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> {};
 
@@ -361,7 +362,8 @@ auto find_changed_files_merkle(
 auto find_changed_files_legacy(
     Index const& old_index,
     Index const& new_index,
-    ChangeDetectionStats* stats) -> std::vector<std::string>
+    ChangeDetectionStats* stats
+) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> {};
 

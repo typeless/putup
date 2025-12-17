@@ -58,13 +58,15 @@ private:
 
     friend auto build_context(
         Options const&,
-        BuildContextOptions const&) -> Result<BuildContext>;
+        BuildContextOptions const&
+    ) -> Result<BuildContext>;
 };
 
 /// Build the dependency graph from Tupfiles
 [[nodiscard]] auto build_context(
     Options const& opts,
-    BuildContextOptions const& ctx_opts = {}) -> Result<BuildContext>;
+    BuildContextOptions const& ctx_opts = {}
+) -> Result<BuildContext>;
 
 /// Context for clean commands
 struct CleanContext {
@@ -75,6 +77,7 @@ struct CleanContext {
 
 /// Resolve clean context from options
 [[nodiscard]] auto resolve_clean_context(
-    Options const& opts) -> std::optional<CleanContext>;
+    Options const& opts
+) -> std::optional<CleanContext>;
 
 } // namespace pup::cli

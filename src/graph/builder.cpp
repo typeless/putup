@@ -76,7 +76,8 @@ auto normalize_path(std::string const& path_str) -> std::string
 auto normalize_group_dir(
     std::string const& path_str,
     fs::path const& current_dir,
-    fs::path const& source_root) -> std::string
+    fs::path const& source_root
+) -> std::string
 {
     auto cleaned = strip_trailing_slashes(path_str);
     auto path = fs::path { cleaned }.lexically_normal();
@@ -103,7 +104,8 @@ auto map_to_output(
     std::string const& path,
     std::filesystem::path const& current_dir,
     std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root) -> std::string
+    std::filesystem::path const& output_root
+) -> std::string
 {
     auto p = std::filesystem::path { path };
 
@@ -138,7 +140,8 @@ auto map_to_output(
 auto make_source_relative(
     std::string const& path,
     std::string_view source_to_root,
-    std::string_view current_dir_str) -> std::string
+    std::string_view current_dir_str
+) -> std::string
 {
     if (path.empty() || path[0] == '/') {
         return path;
@@ -238,7 +241,9 @@ auto GraphBuilder::warnings() const -> std::vector<std::string> const&
 }
 
 auto GraphBuilder::build(
-    parser::Tupfile const& tupfile, parser::EvalContext& eval) -> Result<BuildGraph>
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval
+) -> Result<BuildGraph>
 {
     auto graph = BuildGraph {};
     auto result = Result<void> { add_tupfile(graph, tupfile, eval) };
@@ -251,7 +256,8 @@ auto GraphBuilder::build(
 auto GraphBuilder::add_tupfile(
     BuildGraph& graph,
     parser::Tupfile const& tupfile,
-    parser::EvalContext& eval) -> Result<void>
+    parser::EvalContext& eval
+) -> Result<void>
 {
     // Compute current_dir relative to source_root
     auto tupfile_parent = std::filesystem::path { tupfile.filename }.parent_path();
@@ -286,7 +292,8 @@ auto GraphBuilder::add_tupfile(
     }
 
     // Set up resolve_group callback for {group} pattern expansion
-    eval.resolve_group = [&ctx](std::string_view name) -> std::vector<std::string> {
+    eval.resolve_group = [&ctx](std::string_view name
+    ) -> std::vector<std::string> {
         auto it = ctx.groups.find(std::string { name });
         if (it == ctx.groups.end()) {
             return {};
@@ -303,7 +310,8 @@ auto GraphBuilder::add_tupfile(
 
     // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
     // This is for local group references (no directory prefix) - uses current directory
-    eval.resolve_order_only_group = [this, &ctx](std::string_view name) -> std::vector<std::string> {
+    eval.resolve_order_only_group = [this, &ctx](std::string_view name
+    ) -> std::vector<std::string> {
         auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
         auto key = Impl::GroupKey { dir, std::string { name } };
         auto it = impl_->order_only_groups.find(key);
@@ -343,7 +351,8 @@ auto GraphBuilder::add_tupfile(
 
 auto GraphBuilder::process_statement(
     BuilderContext& ctx,
-    parser::Statement const& stmt) -> Result<void>
+    parser::Statement const& stmt
+) -> Result<void>
 {
     if (auto const* rule = stmt.as<parser::Rule>()) {
         return process_rule(ctx, *rule);
@@ -379,7 +388,8 @@ auto GraphBuilder::process_statement(
 
 auto GraphBuilder::process_rule(
     BuilderContext& ctx,
-    parser::Rule const& rule) -> Result<void>
+    parser::Rule const& rule
+) -> Result<void>
 {
     // Expand input patterns
     auto inputs = Result<std::vector<std::string>> { expand_inputs(ctx, rule.inputs) };
@@ -408,7 +418,8 @@ auto GraphBuilder::process_rule(
 
 auto GraphBuilder::process_bang_macro(
     BuilderContext& ctx,
-    parser::BangMacro const& macro) -> Result<void>
+    parser::BangMacro const& macro
+) -> Result<void>
 {
     // Store macro definition for later use
     ctx.macros[macro.name] = BangMacroDef {
@@ -429,7 +440,8 @@ auto GraphBuilder::process_bang_macro(
 
 auto GraphBuilder::process_assignment(
     BuilderContext& ctx,
-    parser::Assignment const& assign) -> Result<void>
+    parser::Assignment const& assign
+) -> Result<void>
 {
     auto evaluator = parser::Evaluator { ctx.eval };
 
@@ -473,7 +485,8 @@ auto GraphBuilder::process_assignment(
 
 auto GraphBuilder::process_conditional(
     BuilderContext& ctx,
-    parser::Conditional const& cond) -> Result<void>
+    parser::Conditional const& cond
+) -> Result<void>
 {
     auto evaluator = parser::Evaluator { ctx.eval };
     auto condition_true = evaluator.evaluate_condition(cond);
@@ -492,7 +505,8 @@ auto GraphBuilder::process_conditional(
 
 auto GraphBuilder::process_include(
     BuilderContext& ctx,
-    parser::Include const& inc) -> Result<void>
+    parser::Include const& inc
+) -> Result<void>
 {
     // Find the include file path
     auto include_path = std::string {};
@@ -597,7 +611,8 @@ auto GraphBuilder::process_include(
 
 auto GraphBuilder::process_import(
     BuilderContext& ctx,
-    parser::Import const& imp) -> Result<void>
+    parser::Import const& imp
+) -> Result<void>
 {
     // Per tup manual: "sets a variable inside the Tupfile that has the value
     // of the environment variable"
@@ -626,7 +641,8 @@ auto GraphBuilder::process_import(
 
 auto GraphBuilder::process_export(
     BuilderContext& ctx,
-    parser::Export const& exp) -> Result<void>
+    parser::Export const& exp
+) -> Result<void>
 {
     // Per tup manual: "adds the environment variable VARIABLE to the export
     // list for future :-rules"
@@ -637,7 +653,8 @@ auto GraphBuilder::process_export(
 auto GraphBuilder::expand_rule(
     BuilderContext& ctx,
     parser::Rule const& rule,
-    std::vector<std::string> const& inputs) -> Result<void>
+    std::vector<std::string> const& inputs
+) -> Result<void>
 {
     // Get the primary input for pattern expansion
     auto primary_input = inputs.empty() ? std::string {} : inputs[0];
@@ -732,7 +749,8 @@ auto GraphBuilder::expand_rule(
     // ScopeGuard ensures restoration even on early returns
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
-    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &original_resolver](std::string_view name) -> std::vector<std::string> {
+    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &original_resolver](std::string_view name
+    ) -> std::vector<std::string> {
         // First check groups referenced by this rule (handles cross-directory)
         auto it = rule_order_only_groups.find(std::string { name });
         if (it != rule_order_only_groups.end()) {
@@ -977,7 +995,8 @@ auto GraphBuilder::expand_rule(
 
 auto GraphBuilder::expand_inputs(
     BuilderContext& ctx,
-    std::vector<parser::PathPattern> const& patterns) -> Result<std::vector<std::string>>
+    std::vector<parser::PathPattern> const& patterns
+) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
     auto evaluator = parser::Evaluator { ctx.eval };
@@ -1263,7 +1282,8 @@ auto GraphBuilder::expand_inputs(
 auto GraphBuilder::expand_outputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns,
-    std::string const& input) -> Result<std::vector<std::string>>
+    std::string const& input
+) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
     auto evaluator = parser::Evaluator { ctx.eval };
@@ -1315,7 +1335,8 @@ auto GraphBuilder::expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     std::vector<std::string> const& inputs,
-    std::vector<std::string> const& outputs) -> Result<std::string>
+    std::vector<std::string> const& outputs
+) -> Result<std::string>
 {
     auto evaluator = parser::Evaluator { ctx.eval };
 
@@ -1380,7 +1401,8 @@ constexpr auto MAX_DIRECTORY_DEPTH = 128;
 auto GraphBuilder::get_or_create_directory_node(
     BuilderContext& ctx,
     std::filesystem::path const& dir_path,
-    int depth) -> Result<NodeId>
+    int depth
+) -> Result<NodeId>
 {
     // Normalize first to handle ., .., and redundant separators
     auto normalized_path = dir_path.lexically_normal();
@@ -1423,7 +1445,8 @@ auto GraphBuilder::get_or_create_directory_node(
 auto GraphBuilder::get_or_create_file_node(
     BuilderContext& ctx,
     std::string const& path,
-    NodeType type) -> Result<NodeId>
+    NodeType type
+) -> Result<NodeId>
 {
     // Convert working-directory-relative paths to source-root-relative or absolute
     // Paths like "../../build/foo" from "src/bar" should become "build/foo"
@@ -1472,7 +1495,8 @@ auto GraphBuilder::get_or_create_file_node(
 auto GraphBuilder::create_command_node(
     BuilderContext& ctx,
     std::string const& command,
-    std::string const& display) -> Result<NodeId>
+    std::string const& display
+) -> Result<NodeId>
 {
     auto node = Node {
         .type = NodeType::Command,

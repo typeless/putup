@@ -32,7 +32,8 @@ namespace {
 
 auto resolve_path(
     std::filesystem::path const& path,
-    std::filesystem::path const& root) -> std::filesystem::path
+    std::filesystem::path const& root
+) -> std::filesystem::path
 {
     return path.is_absolute() ? path : root / path;
 }
@@ -40,7 +41,8 @@ auto resolve_path(
 auto print_stats(
     pup::index::Index const& index,
     std::size_t num_commands,
-    std::size_t commands_executed) -> void
+    std::size_t commands_executed
+) -> void
 {
     auto metrics = pup::collect_metrics();
 
@@ -79,7 +81,8 @@ auto is_tupfile(std::string_view path) -> bool
 /// Returns empty vector for full project build, or path prefixes for scoped build.
 auto compute_build_scopes(
     Options const& opts,
-    ProjectLayout const& layout) -> std::vector<std::string>
+    ProjectLayout const& layout
+) -> std::vector<std::string>
 {
     // -A/--all flag forces full project build
     if (opts.all) {
@@ -113,7 +116,8 @@ auto compute_build_scopes(
 /// Walks backwards through the DAG from commands to their transitive inputs.
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
-    std::vector<std::string> const& scopes) -> std::set<std::string>
+    std::vector<std::string> const& scopes
+) -> std::set<std::string>
 {
     if (scopes.empty()) {
         return {};
@@ -180,7 +184,8 @@ auto find_changed_files_with_implicit(
     pup::index::Index const& old_index,
     std::vector<std::string> const& scopes,
     std::set<std::string> const& upstream_files,
-    bool verbose = false) -> std::vector<std::string>
+    bool verbose = false
+) -> std::vector<std::string>
 {
     auto changed = std::vector<std::string> {};
     auto& metrics = pup::thread_metrics();
@@ -241,7 +246,8 @@ auto find_changed_files_with_implicit(
 auto expand_implicit_deps(
     std::vector<std::string> const& changed,
     pup::index::Index const& index,
-    pup::graph::BuildGraph const& graph) -> std::vector<std::string>
+    pup::graph::BuildGraph const& graph
+) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> { changed };
     auto added = std::set<std::string> { changed.begin(), changed.end() };
@@ -317,7 +323,8 @@ auto build_index(
     pup::graph::BuildGraph const& graph,
     std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
     std::filesystem::path const& root,
-    pup::index::Index const* old_index = nullptr) -> pup::index::Index
+    pup::index::Index const* old_index = nullptr
+) -> pup::index::Index
 {
     auto index = pup::index::Index {};
     auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
@@ -407,7 +414,10 @@ auto build_index(
     auto next_id = pup::NodeId { max_id + 1 };
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
 
-    auto get_or_create_dir = pup::YCombinator { [&](auto const& self, std::filesystem::path const& dir_path) -> pup::NodeId {
+    auto get_or_create_dir = pup::YCombinator { [&](
+        auto const& self,
+        std::filesystem::path const& dir_path
+    ) -> pup::NodeId {
         auto normalized = dir_path.lexically_normal();
         auto path_str = normalized.string();
 
@@ -608,7 +618,8 @@ auto build_index(
 /// Expects opts.build_dirs to contain at most one element.
 auto build_single_variant(
     Options const& opts,
-    std::string_view variant_name) -> int
+    std::string_view variant_name
+) -> int
 {
     // Helper to format output with variant prefix
     auto vprint = [&](std::string_view fmt_str, auto&&... args) {

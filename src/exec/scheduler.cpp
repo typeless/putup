@@ -48,7 +48,8 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
 auto build_dependency_map(
     std::vector<BuildJob> const& jobs,
-    graph::BuildGraph const& graph) -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
+    graph::BuildGraph const& graph
+) -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
 {
     auto in_degree = std::vector<std::size_t>(jobs.size(), 0);
     auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
@@ -222,7 +223,8 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 auto Scheduler::build_incremental(
     graph::BuildGraph const& graph,
     index::Index const& /*old_index*/,
-    std::vector<std::string> const& changed_files) -> Result<BuildStats>
+    std::vector<std::string> const& changed_files
+) -> Result<BuildStats>
 {
     // Build temporary path-to-NodeId map for changed file lookup
     // This is O(n) scan but only done once per incremental build
@@ -479,8 +481,11 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
     return {};
 }
 
-auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
-    std::unordered_map<std::string, std::string> const& env_cache) -> JobResult
+auto Scheduler::execute_job(
+    BuildJob const& job,
+    CommandRunner& runner,
+    std::unordered_map<std::string, std::string> const& env_cache
+) -> JobResult
 {
     auto result = JobResult {
         .id = job.id,
@@ -587,7 +592,8 @@ auto Scheduler::execute_job(BuildJob const& job, CommandRunner& runner,
 }
 
 auto Scheduler::build_job_list(
-    graph::BuildGraph const& graph) -> Result<std::vector<BuildJob>>
+    graph::BuildGraph const& graph
+) -> Result<std::vector<BuildJob>>
 {
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
@@ -671,7 +677,8 @@ auto Scheduler::build_job_list(
 
 auto Scheduler::filter_jobs(
     std::vector<BuildJob> const& all_jobs,
-    std::set<NodeId> const& affected_nodes) -> std::vector<BuildJob>
+    std::set<NodeId> const& affected_nodes
+) -> std::vector<BuildJob>
 {
     auto result = std::vector<BuildJob> {};
     result.reserve(all_jobs.size());

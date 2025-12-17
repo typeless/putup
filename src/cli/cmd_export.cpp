@@ -24,7 +24,9 @@ namespace pup::cli {
 namespace {
 
 auto load_index_for_all_deps(
-    Options const& opts, ProjectLayout const& layout) -> std::optional<pup::index::Index>
+    Options const& opts,
+    ProjectLayout const& layout
+) -> std::optional<pup::index::Index>
 {
     if (!opts.include_all_deps) {
         return std::nullopt;
