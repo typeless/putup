@@ -80,7 +80,7 @@ else ifneq ($(PUP_PATH),)
 else
 	@test -d .tup || tup init
 endif
-	@mkdir -p $(BUILD_DIR)
+	@test -f $(BUILD_DIR)/tup.config || pup variant configs/posix.config $(BUILD_DIR)
 	$(BUILD_CMD) $(BUILD_OPTIONS)
 
 test: build
