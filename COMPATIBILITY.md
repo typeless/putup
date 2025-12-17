@@ -251,10 +251,10 @@ Features in pup that extend beyond tup:
 
 | Feature | Description |
 |---------|-------------|
-| Multi-variant `-B` flags | `pup -B build-debug -B build-release` builds multiple variants in parallel |
-| Auto-variant detection | Running `pup` from project root auto-detects and builds all variants |
-| Parallel variant builds | Multiple variants are built concurrently using `std::async` |
-| Verbose variant prefix | With `-v`, output lines are prefixed with `[variant-name]` |
+| Multi-variant `-B` flags | `pup -B build-debug -B build-release` processes multiple variants in parallel |
+| Auto-variant detection | Running `pup` from project root auto-detects all variants |
+| Parallel variant execution | `build`, `clean`, `distclean`, and `parse` run variants concurrently |
+| Variant output prefix | Output lines are prefixed with `[variant-name]` for clarity |
 
 ## Reporting Issues
 

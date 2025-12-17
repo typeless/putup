@@ -77,12 +77,17 @@ Parse and validate all Tupfiles without executing any commands. Useful for check
 **Relevant Options:**
 - `-v` - Show each Tupfile as it's parsed
 - `-S DIR` - Specify source directory
-- `-B DIR` - Specify build directory
+- `-B DIR` - Specify build directory (can use multiple times)
+
+**Multi-Variant Support:**
+- Running from project root auto-detects and parses all variants
+- Use multiple `-B` flags to parse specific variants in parallel
 
 **Examples:**
 ```bash
-pup parse              # Validate all Tupfiles
+pup parse              # Validate all Tupfiles (auto-detects variants)
 pup parse -v           # Show parsing progress
+pup parse -B build-debug -B build-release  # Parse specific variants
 ```
 
 ### 3.4 pup clean
@@ -96,13 +101,18 @@ Remove generated output files tracked in the index. Does not remove `.pup/` or `
 **Relevant Options:**
 - `-n` - Dry-run: show what would be removed
 - `-v` - Verbose: list each file removed
-- `-B DIR` - Clean a variant build directory
+- `-B DIR` - Clean a variant build directory (can use multiple times)
+
+**Multi-Variant Support:**
+- Running from project root auto-detects and cleans all variants
+- Use multiple `-B` flags to clean specific variants in parallel
 
 **Examples:**
 ```bash
-pup clean              # Remove generated files
+pup clean              # Remove generated files (auto-detects variants)
 pup clean -n           # Show what would be removed
-pup clean -B build-release  # Clean variant build
+pup clean -B build-release  # Clean single variant
+pup clean -B build-debug -B build-release  # Clean specific variants
 ```
 
 ### 3.5 pup distclean
@@ -115,12 +125,17 @@ Full reset: remove all generated files, the `.pup/` directory, and `tup.config`.
 
 **Relevant Options:**
 - `-n` - Dry-run: show what would be removed
-- `-B DIR` - Distclean a variant build directory
+- `-B DIR` - Distclean a variant build directory (can use multiple times)
+
+**Multi-Variant Support:**
+- Running from project root auto-detects and distcleans all variants
+- Use multiple `-B` flags to distclean specific variants in parallel
 
 **Examples:**
 ```bash
-pup distclean          # Full reset of in-tree build
-pup distclean -B build-debug  # Remove entire variant directory
+pup distclean          # Full reset (auto-detects variants)
+pup distclean -B build-debug  # Reset single variant
+pup distclean -B build-debug -B build-release  # Reset specific variants
 ```
 
 ### 3.6 pup variant
