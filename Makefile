@@ -36,13 +36,13 @@ ifdef TUP
 	endif
 	INIT_CMD = tup init
 else ifeq ($(PUP_LOCAL),yes)
-	BUILD_CMD = ./$(BUILD_DIR)/pup build -B $(BUILD_DIR)
+	BUILD_CMD = ./$(BUILD_DIR)/pup -B $(BUILD_DIR)
 	ifeq ("$(V)", "1")
 		BUILD_OPTIONS = -v
 	endif
 	INIT_CMD = ./$(BUILD_DIR)/pup init
 else ifneq ($(PUP_PATH),)
-	BUILD_CMD = pup build -B $(BUILD_DIR)
+	BUILD_CMD = pup -B $(BUILD_DIR)
 	ifeq ("$(V)", "1")
 		BUILD_OPTIONS = -v
 	endif

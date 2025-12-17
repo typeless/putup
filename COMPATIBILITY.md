@@ -6,8 +6,8 @@ This document details pup's compatibility with tup, including supported features
 
 | Tup Command | Pup Equivalent | Status |
 |-------------|----------------|--------|
-| `tup` | `pup build` | ✅ Implemented |
-| `tup upd` | `pup build` | ✅ Implemented |
+| `tup` | `pup` | ✅ Implemented |
+| `tup upd` | `pup` | ✅ Implemented |
 | `tup init` | `pup init` | ✅ Implemented |
 | `tup refactor` | `pup parse` | ✅ Implemented |
 | `tup graph` | `pup graph` | ✅ Implemented |

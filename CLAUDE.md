@@ -257,7 +257,7 @@ export PKG_CONFIG_PATH
 
 ```bash
 cd ~/src/castlestech.com/megahunt/PPC_Linux/ctos
-~/src/pup/build/pup build
+~/src/pup/build/pup
 
 # Compare with tup:
 tup

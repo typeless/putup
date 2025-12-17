@@ -15,6 +15,12 @@ namespace {
 
 auto const VERSION = "0.1.0";
 
+auto is_command(std::string_view arg) -> bool
+{
+    return arg == "init" || arg == "parse" || arg == "export" || arg == "clean"
+        || arg == "distclean" || arg == "variant" || arg == "build";
+}
+
 } // namespace
 
 auto parse_args(int argc, char** argv) -> Options
@@ -66,8 +72,11 @@ auto parse_args(int argc, char** argv) -> Options
             opts.include_all_deps = true;
         } else if (arg == "-A" || arg == "--all") {
             opts.all = true;
+        } else if (arg == "--") {
+            for (++i; i < argc; ++i)
+                opts.targets.emplace_back(argv[i]);
         } else if (!arg.starts_with("-")) {
-            if (opts.command.empty()) {
+            if (opts.command.empty() && is_command(arg)) {
                 opts.command = std::string { arg };
             } else if (opts.command == "export" && opts.export_format.empty()) {
                 opts.export_format = std::string { arg };
@@ -77,18 +86,15 @@ auto parse_args(int argc, char** argv) -> Options
         }
     }
 
-    if (opts.command.empty()) {
-        opts.command = "build";
-    }
-
     return opts;
 }
 
 auto print_usage() -> void
 {
     fmt::print("pup - Tup build system reimplementation\n\n"
-               "Usage: pup [OPTIONS] [COMMAND]\n\n"
-               "Running 'pup' with no command executes the build.\n\n"
+               "Usage: pup [OPTIONS] [TARGETS]\n"
+               "       pup [OPTIONS] <command>\n\n"
+               "Running 'pup' executes the build. Use a command for other operations.\n\n"
                "Commands:\n"
                "  init              Initialize .pup directory\n"
                "  parse             Parse and validate Tupfiles\n"
@@ -110,6 +116,7 @@ auto print_usage() -> void
                "  --stat             Print build statistics\n"
                "  -A, --all          Full project build (ignore cwd scoping)\n"
                "  -a, --all-deps     Include implicit deps in graph output\n"
+               "  --                 End of options; remaining args are targets\n"
                "  --version          Print version\n"
                "  -h, --help         Print this help\n"
                "\nEnvironment:\n"

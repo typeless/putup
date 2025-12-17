@@ -32,7 +32,7 @@ auto load_index_for_all_deps(
 
     auto index_path = layout.index_path();
     if (!std::filesystem::exists(index_path)) {
-        fmt::print(stderr, "Warning: No index found - run 'pup build' first\n");
+        fmt::print(stderr, "Warning: No index found - run 'pup' first\n");
         return std::nullopt;
     }
 

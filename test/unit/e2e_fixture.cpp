@@ -146,9 +146,7 @@ auto E2EFixture::init() -> PupResult
 
 auto E2EFixture::build(std::vector<std::string> const& args) -> PupResult
 {
-    auto full_args = std::vector<std::string> { "build" };
-    full_args.insert(full_args.end(), args.begin(), args.end());
-    return run_pup(full_args);
+    return run_pup(args);
 }
 
 auto E2EFixture::clean(std::vector<std::string> const& args) -> PupResult

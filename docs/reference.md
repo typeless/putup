@@ -55,7 +55,7 @@ pup init
 Initialize a `.pup` directory in the current project. Creates the directory structure needed for pup's index and configuration.
 
 **Notes:**
-- Automatically called by `pup build` if `.pup` doesn't exist
+- Automatically called by `pup` if `.pup` doesn't exist
 - Creates `.pup/` in the output root (same as source root for in-tree builds)
 
 ### 3.3 pup parse
@@ -219,6 +219,7 @@ pup export graph --all-deps | dot -Tsvg -o full-deps.svg
 | | `--summary` | Human-readable output (for `export graph`). |
 | | `--version` | Print version information. |
 | `-h` | `--help` | Print help message. |
+| | `--` | End of options; remaining arguments are targets. |
 
 **Option Details:**
 
@@ -255,6 +256,15 @@ These are different options:
 - `-A` / `--all` - Disable scoped builds; check all files regardless of cwd
 - `-a` / `--all-deps` - Include implicit dependencies (headers) in graph export
 
+**`--` (End of Options)**
+
+Signals that all remaining arguments are targets, not options or commands. Useful for building directories whose names conflict with commands.
+
+```bash
+pup -- build      # Build the 'build' directory as a target
+pup -v -- lib     # Verbose build of 'lib' directory
+```
+
 ### 4.2 Environment Variables
 
 | Variable | Description |
@@ -276,10 +286,10 @@ Controls automatic header dependency discovery via `gcc -M` rules.
 
 ```bash
 # Disable implicit dependency generation
-PUP_IMPLICIT_DEPS=0 pup build
+PUP_IMPLICIT_DEPS=0 pup
 
 # Enable (default)
-PUP_IMPLICIT_DEPS=1 pup build
+PUP_IMPLICIT_DEPS=1 pup
 ```
 
 When enabled, pup auto-generates dependency scanning rules for C/C++ compile commands. See Section 8.2 for details.
@@ -929,7 +939,7 @@ Alternative method: let pup auto-generate dependency scanning commands.
 **Setup:**
 
 ```bash
-PUP_IMPLICIT_DEPS=1 pup build
+PUP_IMPLICIT_DEPS=1 pup
 ```
 
 **How it works:**
@@ -1405,7 +1415,7 @@ For source/build directories:
 PUP_SOURCE_DIR=/path/to/src PUP_BUILD_DIR=/path/to/build pup
 
 # Enable implicit dependency scanning
-PUP_IMPLICIT_DEPS=1 pup build
+PUP_IMPLICIT_DEPS=1 pup
 
 # Override via command line (higher priority)
 PUP_SOURCE_DIR=/wrong pup -S /correct  # Uses /correct
