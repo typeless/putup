@@ -9,6 +9,7 @@
 
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 
 using namespace pup;
 using namespace pup::index;
@@ -427,6 +428,176 @@ TEST_CASE("Index reader validation", "[index]")
         (void)writer.write(temp_path, index);
 
         REQUIRE(IndexReader::is_valid_index(temp_path));
+
+        std::filesystem::remove(temp_path);
+    }
+}
+
+TEST_CASE("Index reader malicious data handling", "[index]")
+{
+    // Create a minimal valid index to use as base
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .name = "test.c" });
+    index.add_command(CommandEntry { .id = 10, .command = "gcc test.c" });
+    index.add_edge(EdgeEntry { .from = 1, .to = 10 });
+
+    auto writer = IndexWriter {};
+    auto data = writer.serialize(index);
+    REQUIRE(data.has_value());
+
+    auto temp_path = std::filesystem::temp_directory_path() / "pup_malicious_test";
+
+    SECTION("file_offset beyond file size")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->file_offset = corrupted.size() + 1000;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto files = reader_result->raw_files();
+        REQUIRE(files.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("file_count causes overflow past file end")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->file_count = 0xFFFFFFFF;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto files = reader_result->raw_files();
+        REQUIRE(files.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("command_offset beyond file size")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->command_offset = corrupted.size() + 1000;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto commands = reader_result->raw_commands();
+        REQUIRE(commands.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("command_count causes overflow past file end")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->command_count = 0xFFFFFFFF;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto commands = reader_result->raw_commands();
+        REQUIRE(commands.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("edge_offset beyond file size")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->edge_offset = corrupted.size() + 1000;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto edges = reader_result->raw_edges();
+        REQUIRE(edges.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("edge_count causes overflow past file end")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->edge_count = 0xFFFFFFFF;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto edges = reader_result->raw_edges();
+        REQUIRE(edges.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("offset at boundary but count overflows")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        // Set offset to valid position, but count would overflow
+        hdr->file_offset = sizeof(RawHeader);
+        hdr->file_count = (corrupted.size() / sizeof(RawFileEntry)) + 100;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        auto files = reader_result->raw_files();
+        REQUIRE(files.empty());
+
+        std::filesystem::remove(temp_path);
+    }
+
+    SECTION("string offset beyond file size")
+    {
+        auto corrupted = *data;
+        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
+        hdr->string_offset = corrupted.size() + 1000;
+
+        std::ofstream out { temp_path, std::ios::binary };
+        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+        out.close();
+
+        auto reader_result = IndexReader::open(temp_path);
+        REQUIRE(reader_result.has_value());
+
+        // get_string should return empty for out-of-bounds
+        auto str = reader_result->get_string(0, 10);
+        REQUIRE(str.empty());
 
         std::filesystem::remove(temp_path);
     }
