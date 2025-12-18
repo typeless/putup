@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <ranges>
 
 namespace pup::index {
 

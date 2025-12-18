@@ -4,7 +4,6 @@
 #include "pup/parser/glob.hpp"
 
 #include <algorithm>
-#include <ranges>
 
 namespace pup::parser {
 
