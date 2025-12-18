@@ -413,9 +413,9 @@ auto build_index(
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
 
     auto get_or_create_dir = pup::YCombinator { [&](
-                                                    auto const& self,
-                                                    std::filesystem::path const& dir_path
-                                                ) -> pup::NodeId {
+        auto const& self,
+        std::filesystem::path const& dir_path
+    ) -> pup::NodeId {
         auto normalized = dir_path.lexically_normal();
         auto path_str = normalized.string();
 
@@ -467,9 +467,9 @@ auto build_index(
     } };
 
     auto create_implicit_file = [&](
-                                    std::filesystem::path const& abs_path,
-                                    std::string const& rel_path
-                                ) -> pup::NodeId {
+        std::filesystem::path const& abs_path,
+        std::string const& rel_path
+    ) -> pup::NodeId {
         auto content_hash = pup::Hash256 {};
         auto file_size = std::uint64_t { 0 };
         if (std::filesystem::exists(abs_path)) {

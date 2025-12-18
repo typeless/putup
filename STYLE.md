@@ -1,7 +1,7 @@
 # Modern C++ Style Guide
 
-**Version:** 1.5.0
-**Updated:** 2025-12-16
+**Version:** 1.6.0
+**Updated:** 2025-12-18
 **C++ Standard:** C++20/23
 
 A concise style guide for modern C++ projects.
@@ -10,6 +10,7 @@ A concise style guide for modern C++ projects.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.6.0 | 2025-12-18 | Multiline lambdas: same formatting as functions |
 | 1.5.0 | 2025-12-16 | Multiline declarations: return type follows closing paren |
 | 1.4.0 | 2025-12-14 | Remove explicit type wrapper requirement for function calls |
 | 1.3.0 | 2025-12-10 | Always use braces for if/for/while statements |
@@ -218,8 +219,16 @@ using Token = std::variant<Literal, Identifier, Operator>;
 // std::span for non-owning views
 auto process(std::span<std::byte const> data) -> void;
 
-// Lambdas
+// Lambdas - short form
 auto pred = [&ctx](auto const& item) { return item.matches(ctx); };
+
+// Lambdas - multiline (same formatting as functions)
+auto create_file = [&](
+    std::filesystem::path const& path,
+    std::string const& name
+) -> NodeId {
+    // ...
+};
 
 // Concepts (C++20)
 template<typename T>
