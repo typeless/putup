@@ -52,6 +52,14 @@ auto load_index_for_all_deps(
     return std::move(*index_result);
 }
 
+auto format_node_id(pup::NodeId id) -> std::string
+{
+    if (is_command_id(id)) {
+        return fmt::format("c{}", command_index(id));
+    }
+    return fmt::format("f{}", file_index(id));
+}
+
 auto cmd_export_script(Options const& opts) -> int
 {
     auto ctx_opts = BuildContextOptions {
@@ -188,15 +196,15 @@ auto cmd_export_graph(Options const& opts) -> int
         };
         auto label = escape_dot_label(get_label());
 
-        fmt::print("  n{} [label=\"{}\"];\n", id, label);
+        fmt::print("  {} [label=\"{}\"];\n", format_node_id(id), label);
 
         for (auto input_id : ctx.graph().get_inputs(id)) {
-            fmt::print("  n{} -> n{};\n", input_id, id);
+            fmt::print("  {} -> {};\n", format_node_id(input_id), format_node_id(id));
         }
 
         // Output order-only edges (dotted)
         for (auto oo_id : ctx.graph().get_order_only(id)) {
-            fmt::print("  n{} -> n{} [style=dotted color=\"#0088ff\"];\n", oo_id, id);
+            fmt::print("  {} -> {} [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id), format_node_id(id));
         }
     }
 
@@ -219,12 +227,12 @@ auto cmd_export_graph(Options const& opts) -> int
                 if (implicit_nodes.find(from_id) == implicit_nodes.end()) {
                     implicit_nodes.insert(from_id);
                     auto const* file = index->find_file_by_id(from_id);
-                    auto label = file ? escape_dot_label(file->path) : fmt::format("node_{}", from_id);
-                    fmt::print("  n{} [label=\"{}\" style=filled fillcolor=\"#f0f0f0\"];\n", from_id, label);
+                    auto label = file ? escape_dot_label(file->path) : format_node_id(from_id);
+                    fmt::print("  {} [label=\"{}\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id), label);
                 }
             }
 
-            fmt::print("  n{} -> n{} [style=dashed color=\"#888888\"];\n", from_id, to_id);
+            fmt::print("  {} -> {} [style=dashed color=\"#888888\"];\n", format_node_id(from_id), format_node_id(to_id));
         }
     }
 
