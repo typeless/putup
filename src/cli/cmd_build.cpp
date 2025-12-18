@@ -600,6 +600,7 @@ auto build_single_variant(
         fmt::print(fmt::runtime(fmt_str), std::forward<decltype(args)>(args)...);
     };
 
+    // FIXME: Duplicates scanner setup from cmd_export.cpp:make_scanner_registry()
     auto scanner_registry = std::optional<pup::graph::DepScannerRegistry> {};
     auto implicit_deps_disabled = false;
     if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
