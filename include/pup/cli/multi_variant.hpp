@@ -28,7 +28,8 @@ using VariantHandler = std::function<int(Options const&, std::string_view)>;
 /// @param handler Function to execute for each variant
 /// @param command_name Name for verbose output (e.g., "Building", "Cleaning")
 /// @return EXIT_SUCCESS if all variants succeed, EXIT_FAILURE otherwise
-[[nodiscard]] auto for_each_variant(
+[[nodiscard]]
+auto for_each_variant(
     Options const& opts,
     VariantHandler handler,
     std::string_view command_name = "Processing"

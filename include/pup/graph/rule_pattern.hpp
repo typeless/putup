@@ -71,20 +71,30 @@ public:
     auto register_pattern(RulePattern pattern) -> void;
 
     /// Check if a command matches any pattern and generate rules
-    [[nodiscard]] auto match_and_generate(CommandInfo const& cmd) const
+    [[nodiscard]]
+    auto match_and_generate(CommandInfo const& cmd) const
         -> std::vector<GeneratedRule>;
 
     /// Check if registry has any patterns
-    [[nodiscard]] auto empty() const -> bool { return patterns_.empty(); }
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return patterns_.empty();
+    }
 
     /// Get number of registered patterns
-    [[nodiscard]] auto size() const -> std::size_t { return patterns_.size(); }
+    [[nodiscard]]
+    auto size() const -> std::size_t
+    {
+        return patterns_.size();
+    }
 
 private:
     std::vector<RulePattern> patterns_;
 };
 
 /// Create the GCC/Clang depfile pattern
-[[nodiscard]] auto make_gcc_depfile_pattern() -> RulePattern;
+[[nodiscard]]
+auto make_gcc_depfile_pattern() -> RulePattern;
 
 } // namespace pup::graph

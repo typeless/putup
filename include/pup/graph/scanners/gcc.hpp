@@ -14,16 +14,25 @@ namespace pup::graph::scanners {
 /// and generates -M dependency scan commands.
 class GccScanner : public DepScanner {
 public:
-    [[nodiscard]] auto matches(CommandInfo const& cmd) const -> bool override;
-    [[nodiscard]] auto has_dep_flags(std::string const& cmd) const -> bool override;
-    [[nodiscard]] auto build_dep_command(CommandInfo const& cmd) const
+    [[nodiscard]]
+    auto matches(CommandInfo const& cmd) const -> bool override;
+    [[nodiscard]]
+    auto has_dep_flags(std::string const& cmd) const -> bool override;
+    [[nodiscard]]
+    auto build_dep_command(CommandInfo const& cmd) const
         -> std::optional<std::string> override;
-    [[nodiscard]] auto dep_spec() const -> DepSpec override;
-    [[nodiscard]] auto name() const -> std::string_view override { return "gcc"; }
+    [[nodiscard]]
+    auto dep_spec() const -> DepSpec override;
+    [[nodiscard]]
+    auto name() const -> std::string_view override
+    {
+        return "gcc";
+    }
 };
 
 /// Create a GCC/Clang scanner instance
-[[nodiscard]] auto make_gcc_scanner() -> std::unique_ptr<DepScanner>;
+[[nodiscard]]
+auto make_gcc_scanner() -> std::unique_ptr<DepScanner>;
 
 // TODO: Add MsvcScanner for cl.exe using /showIncludes (stdout) or /sourceDependencies (file)
 

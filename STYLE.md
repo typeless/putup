@@ -1,6 +1,6 @@
 # Modern C++ Style Guide
 
-**Version:** 1.6.0
+**Version:** 1.7.0
 **Updated:** 2025-12-18
 **C++ Standard:** C++20/23
 
@@ -10,6 +10,7 @@ A concise style guide for modern C++ projects.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.7.0 | 2025-12-18 | Attributes on their own line |
 | 1.6.0 | 2025-12-18 | Multiline lambdas: same formatting as functions |
 | 1.5.0 | 2025-12-16 | Multiline declarations: return type follows closing paren |
 | 1.4.0 | 2025-12-14 | Remove explicit type wrapper requirement for function calls |
@@ -118,7 +119,8 @@ auto const INTERNAL_CONST = 42;
 
 ```cpp
 // Use [[nodiscard]] for values that shouldn't be ignored
-[[nodiscard]] auto compute() -> Result<int>;
+[[nodiscard]]
+auto compute() -> Result<int>;
 
 // Parameter passing:
 // - Small types by value: int, bool, enum, NodeId

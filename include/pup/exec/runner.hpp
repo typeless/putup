@@ -47,16 +47,19 @@ public:
     explicit CommandRunner(RunOptions default_options);
 
     /// Run a command and wait for completion
-    [[nodiscard]] auto run(std::string_view command) -> Result<CommandResult>;
+    [[nodiscard]]
+    auto run(std::string_view command) -> Result<CommandResult>;
 
     /// Run a command with specific options
-    [[nodiscard]] auto run(
+    [[nodiscard]]
+    auto run(
         std::string_view command,
         RunOptions const& options
     ) -> Result<CommandResult>;
 
     /// Run a command with real-time output callback
-    [[nodiscard]] auto run_with_output(
+    [[nodiscard]]
+    auto run_with_output(
         std::string_view command,
         OutputCallback const& callback,
         RunOptions const& options = {}
@@ -83,14 +86,18 @@ public:
 private:
     RunOptions default_options_ = {};
 
-    [[nodiscard]] auto merge_options(RunOptions const& options) const -> RunOptions;
-    [[nodiscard]] auto build_env(RunOptions const& options) const -> std::vector<std::string>;
+    [[nodiscard]]
+    auto merge_options(RunOptions const& options) const -> RunOptions;
+    [[nodiscard]]
+    auto build_env(RunOptions const& options) const -> std::vector<std::string>;
 };
 
 /// Parse a command string into shell arguments
-[[nodiscard]] auto parse_command(std::string_view command) -> std::vector<std::string>;
+[[nodiscard]]
+auto parse_command(std::string_view command) -> std::vector<std::string>;
 
 /// Quote a string for shell use
-[[nodiscard]] auto shell_quote(std::string_view str) -> std::string;
+[[nodiscard]]
+auto shell_quote(std::string_view str) -> std::string;
 
 } // namespace pup::exec

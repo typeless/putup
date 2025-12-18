@@ -63,70 +63,91 @@ public:
     auto operator=(BuildGraph&&) noexcept -> BuildGraph&;
 
     /// Add a node to the graph
-    [[nodiscard]] auto add_node(Node node) -> Result<NodeId>;
+    [[nodiscard]]
+    auto add_node(Node node) -> Result<NodeId>;
 
     /// Add an edge between nodes
-    [[nodiscard]] auto add_edge(NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
+    [[nodiscard]]
+    auto add_edge(NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
     /// Add an order-only edge (dependency that doesn't trigger rebuild)
-    [[nodiscard]] auto add_order_only_edge(NodeId from, NodeId to) -> Result<void>;
+    [[nodiscard]]
+    auto add_order_only_edge(NodeId from, NodeId to) -> Result<void>;
 
     /// Get a node by ID
-    [[nodiscard]] auto get_node(NodeId id) -> Node*;
-    [[nodiscard]] auto get_node(NodeId id) const -> Node const*;
+    [[nodiscard]]
+    auto get_node(NodeId id) -> Node*;
+    [[nodiscard]]
+    auto get_node(NodeId id) const -> Node const*;
 
     /// Find a node by parent directory and basename (tup-style lookup)
-    [[nodiscard]] auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
+    [[nodiscard]]
+    auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
         -> std::optional<NodeId>;
 
     /// Find a node by command string
-    [[nodiscard]] auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
+    [[nodiscard]]
+    auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
 
     /// Find a node by path (walks path components using find_by_dir_name)
-    [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
+    [[nodiscard]]
+    auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
 
     /// Get all nodes of a given type
-    [[nodiscard]] auto nodes_of_type(NodeType type) const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto nodes_of_type(NodeType type) const -> std::vector<NodeId>;
 
     /// Get direct dependencies of a node
-    [[nodiscard]] auto get_inputs(NodeId id) const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto get_inputs(NodeId id) const -> std::vector<NodeId>;
 
     /// Get direct dependents of a node
-    [[nodiscard]] auto get_outputs(NodeId id) const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto get_outputs(NodeId id) const -> std::vector<NodeId>;
 
     /// Get order-only dependencies
-    [[nodiscard]] auto get_order_only(NodeId id) const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto get_order_only(NodeId id) const -> std::vector<NodeId>;
 
     /// Get nodes that have this node as an order-only dependency
-    [[nodiscard]] auto get_order_only_dependents(NodeId id) const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto get_order_only_dependents(NodeId id) const -> std::vector<NodeId>;
 
     /// Get all edges
-    [[nodiscard]] auto edges() const -> std::vector<Edge> const&;
+    [[nodiscard]]
+    auto edges() const -> std::vector<Edge> const&;
 
     /// Get total number of nodes
-    [[nodiscard]] auto node_count() const -> std::size_t;
+    [[nodiscard]]
+    auto node_count() const -> std::size_t;
 
     /// Get total number of edges
-    [[nodiscard]] auto edge_count() const -> std::size_t;
+    [[nodiscard]]
+    auto edge_count() const -> std::size_t;
 
     /// Check if graph is empty
-    [[nodiscard]] auto empty() const -> bool;
+    [[nodiscard]]
+    auto empty() const -> bool;
 
     /// Clear the graph
     auto clear() -> void;
 
     /// Get all node IDs
-    [[nodiscard]] auto all_nodes() const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto all_nodes() const -> std::vector<NodeId>;
 
     /// Get root nodes (nodes with no inputs)
-    [[nodiscard]] auto root_nodes() const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto root_nodes() const -> std::vector<NodeId>;
 
     /// Get leaf nodes (nodes with no outputs)
-    [[nodiscard]] auto leaf_nodes() const -> std::vector<NodeId>;
+    [[nodiscard]]
+    auto leaf_nodes() const -> std::vector<NodeId>;
 
     /// Reconstruct full path from (parent_dir, name) chain
     /// Uses internal cache for efficiency. Returns node->path if name is empty (legacy nodes).
-    [[nodiscard]] auto get_full_path(NodeId id) const -> std::string;
+    [[nodiscard]]
+    auto get_full_path(NodeId id) const -> std::string;
 
     /// Invalidate path cache for a node (call when parent_dir or name changes)
     auto invalidate_path_cache(NodeId id) -> void;

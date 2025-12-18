@@ -32,28 +32,44 @@ public:
     explicit Lexer(std::string_view source, std::string_view filename = "<input>");
 
     /// Get next token (advances position)
-    [[nodiscard]] auto next() -> Token;
+    [[nodiscard]]
+    auto next() -> Token;
 
     /// Peek at next token without advancing
-    [[nodiscard]] auto peek() -> Token;
+    [[nodiscard]]
+    auto peek() -> Token;
 
     /// Check if at end of input
-    [[nodiscard]] auto at_end() const -> bool;
+    [[nodiscard]]
+    auto at_end() const -> bool;
 
     /// Get current source location
-    [[nodiscard]] auto location() const -> SourceLocation;
+    [[nodiscard]]
+    auto location() const -> SourceLocation;
 
     /// Get current line number
-    [[nodiscard]] auto line() const -> std::uint32_t { return line_; }
+    [[nodiscard]]
+    auto line() const -> std::uint32_t
+    {
+        return line_;
+    }
 
     /// Get current column number
-    [[nodiscard]] auto column() const -> std::uint32_t { return column_; }
+    [[nodiscard]]
+    auto column() const -> std::uint32_t
+    {
+        return column_;
+    }
 
     /// Set lexing context
     auto set_context(Context ctx) -> void { context_ = ctx; }
 
     /// Get current lexing context
-    [[nodiscard]] auto context() const -> Context { return context_; }
+    [[nodiscard]]
+    auto context() const -> Context
+    {
+        return context_;
+    }
 
     /// Skip to end of current line (for error recovery or comments)
     auto skip_to_eol() -> void;
@@ -62,10 +78,18 @@ public:
     auto skip_whitespace() -> void;
 
     /// Get the full source text
-    [[nodiscard]] auto source() const -> std::string_view { return source_; }
+    [[nodiscard]]
+    auto source() const -> std::string_view
+    {
+        return source_;
+    }
 
     /// Get filename
-    [[nodiscard]] auto filename() const -> std::string_view { return filename_; }
+    [[nodiscard]]
+    auto filename() const -> std::string_view
+    {
+        return filename_;
+    }
 
 private:
     std::string_view source_;
@@ -76,27 +100,42 @@ private:
     Context context_ = Context::LineStart;
     std::optional<Token> peeked_;
 
-    [[nodiscard]] auto peek_char(std::size_t offset = 0) const -> char;
-    [[nodiscard]] auto match(char expected) -> bool;
-    [[nodiscard]] auto match(std::string_view expected) -> bool;
+    [[nodiscard]]
+    auto peek_char(std::size_t offset = 0) const -> char;
+    [[nodiscard]]
+    auto match(char expected) -> bool;
+    [[nodiscard]]
+    auto match(std::string_view expected) -> bool;
     auto advance() -> char;
     auto advance_line() -> void;
     auto putback() -> void;
 
-    [[nodiscard]] auto scan_token() -> Token;
-    [[nodiscard]] auto scan_identifier_or_keyword() -> Token;
-    [[nodiscard]] auto scan_string(char quote) -> Token;
-    [[nodiscard]] auto scan_text() -> Token;
-    [[nodiscard]] auto scan_command_text() -> Token;
+    [[nodiscard]]
+    auto scan_token() -> Token;
+    [[nodiscard]]
+    auto scan_identifier_or_keyword() -> Token;
+    [[nodiscard]]
+    auto scan_string(char quote) -> Token;
+    [[nodiscard]]
+    auto scan_text() -> Token;
+    [[nodiscard]]
+    auto scan_command_text() -> Token;
 
-    [[nodiscard]] auto make_token(TokenType type, std::size_t start) const -> Token;
+    [[nodiscard]]
+    auto make_token(TokenType type, std::size_t start) const -> Token;
 
-    [[nodiscard]] static auto is_identifier_start(char c) -> bool;
-    [[nodiscard]] static auto is_identifier_char(char c) -> bool;
-    [[nodiscard]] static auto is_text_char(char c) -> bool;
-    [[nodiscard]] static auto is_path_char(char c) -> bool;
-    [[nodiscard]] static auto is_delimiter(char c) -> bool;
-    [[nodiscard]] static auto keyword_type(std::string_view text) -> std::optional<TokenType>;
+    [[nodiscard]]
+    static auto is_identifier_start(char c) -> bool;
+    [[nodiscard]]
+    static auto is_identifier_char(char c) -> bool;
+    [[nodiscard]]
+    static auto is_text_char(char c) -> bool;
+    [[nodiscard]]
+    static auto is_path_char(char c) -> bool;
+    [[nodiscard]]
+    static auto is_delimiter(char c) -> bool;
+    [[nodiscard]]
+    static auto keyword_type(std::string_view text) -> std::optional<TokenType>;
 };
 
 } // namespace pup::parser

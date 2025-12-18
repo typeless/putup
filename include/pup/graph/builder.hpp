@@ -87,23 +87,27 @@ public:
     auto operator=(GraphBuilder&&) noexcept -> GraphBuilder&;
 
     /// Build graph from a single Tupfile AST
-    [[nodiscard]] auto build(
+    [[nodiscard]]
+    auto build(
         parser::Tupfile const& tupfile,
         parser::EvalContext& eval
     ) -> Result<BuildGraph>;
 
     /// Add a Tupfile to an existing graph
-    [[nodiscard]] auto add_tupfile(
+    [[nodiscard]]
+    auto add_tupfile(
         BuildGraph& graph,
         parser::Tupfile const& tupfile,
         parser::EvalContext& eval
     ) -> Result<void>;
 
     /// Get build errors
-    [[nodiscard]] auto errors() const -> std::vector<std::string> const&;
+    [[nodiscard]]
+    auto errors() const -> std::vector<std::string> const&;
 
     /// Get build warnings
-    [[nodiscard]] auto warnings() const -> std::vector<std::string> const&;
+    [[nodiscard]]
+    auto warnings() const -> std::vector<std::string> const&;
 
     struct Impl;
 

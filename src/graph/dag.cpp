@@ -42,7 +42,8 @@ struct BuildGraph::Impl {
     NodeId next_file_id = 1;
     NodeId next_command_id = make_command_id(1);
 
-    [[nodiscard]] auto validate_node_id(NodeId id) const -> bool
+    [[nodiscard]]
+    auto validate_node_id(NodeId id) const -> bool
     {
         if (id == 0) {
             return false;

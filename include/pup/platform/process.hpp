@@ -40,17 +40,20 @@ struct ProcessOptions {
 using ProcessOutputCallback = void (*)(std::string_view data, bool is_stderr, void* user_data);
 
 /// Run a process and wait for completion
-[[nodiscard]] auto run_process(ProcessOptions const& opts) -> Result<ProcessResult>;
+[[nodiscard]]
+auto run_process(ProcessOptions const& opts) -> Result<ProcessResult>;
 
 /// Run a process with streaming output callback
-[[nodiscard]] auto run_process_with_callback(
+[[nodiscard]]
+auto run_process_with_callback(
     ProcessOptions const& opts,
     ProcessOutputCallback callback,
     void* user_data
 ) -> Result<ProcessResult>;
 
 /// Build environment variable list from options
-[[nodiscard]] auto build_env_strings(
+[[nodiscard]]
+auto build_env_strings(
     std::vector<std::string> const& extra_env,
     bool inherit_env
 ) -> std::vector<std::string>;

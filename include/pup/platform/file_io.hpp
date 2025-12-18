@@ -18,7 +18,8 @@ struct FileStat {
 };
 
 /// Get file metadata
-[[nodiscard]] auto stat_file(std::filesystem::path const& path) -> Result<FileStat>;
+[[nodiscard]]
+auto stat_file(std::filesystem::path const& path) -> Result<FileStat>;
 
 /// Memory-mapped read-only file (platform-specific data via pimpl)
 class MappedFile {
@@ -33,16 +34,20 @@ public:
     auto operator=(MappedFile&& other) noexcept -> MappedFile&;
 
     /// Open a file for memory-mapped reading
-    [[nodiscard]] static auto open(std::filesystem::path const& path) -> Result<MappedFile>;
+    [[nodiscard]]
+    static auto open(std::filesystem::path const& path) -> Result<MappedFile>;
 
     /// Get pointer to mapped data
-    [[nodiscard]] auto data() const -> std::byte const*;
+    [[nodiscard]]
+    auto data() const -> std::byte const*;
 
     /// Get size of mapped data
-    [[nodiscard]] auto size() const -> std::size_t;
+    [[nodiscard]]
+    auto size() const -> std::size_t;
 
     /// Check if file is open
-    [[nodiscard]] auto is_open() const -> bool;
+    [[nodiscard]]
+    auto is_open() const -> bool;
 
     /// Close the mapped file
     auto close() -> void;
@@ -53,7 +58,8 @@ private:
 };
 
 /// Write data atomically to a file (write to temp, then rename)
-[[nodiscard]] auto atomic_write(
+[[nodiscard]]
+auto atomic_write(
     std::filesystem::path const& path,
     std::span<std::byte const> data
 ) -> Result<void>;

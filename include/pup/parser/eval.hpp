@@ -41,16 +41,19 @@ public:
     auto append(std::string_view name, std::string_view value) -> void;
 
     /// Get a variable value (returns empty if not found)
-    [[nodiscard]] auto get(std::string_view name) const -> std::string_view;
+    [[nodiscard]]
+    auto get(std::string_view name) const -> std::string_view;
 
     /// Check if variable exists
-    [[nodiscard]] auto contains(std::string_view name) const -> bool;
+    [[nodiscard]]
+    auto contains(std::string_view name) const -> bool;
 
     /// Remove a variable
     auto remove(std::string_view name) -> void;
 
     /// Get all variable names
-    [[nodiscard]] auto names() const -> std::vector<std::string_view>;
+    [[nodiscard]]
+    auto names() const -> std::vector<std::string_view>;
 
     /// Clear all variables
     auto clear() -> void;
@@ -106,30 +109,37 @@ public:
     explicit Evaluator(EvalContext* ctx);
 
     /// Expand an expression, replacing variable references with values
-    [[nodiscard]] auto expand(Expression const& expr) -> Result<std::string>;
+    [[nodiscard]]
+    auto expand(Expression const& expr) -> Result<std::string>;
 
     /// Expand a string with variable references
-    [[nodiscard]] auto expand(std::string_view text) -> Result<std::string>;
+    [[nodiscard]]
+    auto expand(std::string_view text) -> Result<std::string>;
 
     /// Expand pattern flags (%f, %o, %B, etc.) in a string
-    [[nodiscard]] auto expand_pattern(
+    [[nodiscard]]
+    auto expand_pattern(
         std::string_view text,
         PatternFlags const& flags
     ) -> Result<std::string>;
 
     /// Expand a path pattern (handles globs, groups, exclusions)
-    [[nodiscard]] auto expand_path(
+    [[nodiscard]]
+    auto expand_path(
         PathPattern const& pattern
     ) -> Result<std::vector<std::string>>;
 
     /// Check if a conditional is true
-    [[nodiscard]] auto evaluate_condition(Conditional const& cond) -> bool;
+    [[nodiscard]]
+    auto evaluate_condition(Conditional const& cond) -> bool;
 
 private:
     EvalContext* ctx_;
 
-    [[nodiscard]] auto expand_var(VarRef const& ref) -> Result<std::string>;
-    [[nodiscard]] auto expand_special_var(std::string_view name) -> std::optional<std::string>;
+    [[nodiscard]]
+    auto expand_var(VarRef const& ref) -> Result<std::string>;
+    [[nodiscard]]
+    auto expand_special_var(std::string_view name) -> std::optional<std::string>;
 };
 
 /// Built-in variable names

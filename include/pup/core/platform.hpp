@@ -40,9 +40,17 @@ inline constexpr auto ARCH = std::string_view { "unknown" };
 #endif
 
 /// Get platform string at runtime
-[[nodiscard]] inline auto get_platform() -> std::string_view { return PLATFORM; }
+[[nodiscard]]
+inline auto get_platform() -> std::string_view
+{
+    return PLATFORM;
+}
 
 /// Get architecture string at runtime
-[[nodiscard]] inline auto get_arch() -> std::string_view { return ARCH; }
+[[nodiscard]]
+inline auto get_arch() -> std::string_view
+{
+    return ARCH;
+}
 
 } // namespace pup

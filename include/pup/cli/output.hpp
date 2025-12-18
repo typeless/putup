@@ -49,9 +49,11 @@ auto remove_empty_directories(
 ) -> std::size_t;
 
 /// Escape string for DOT format (graphviz)
-[[nodiscard]] auto escape_dot_label(std::string_view s) -> std::string;
+[[nodiscard]]
+auto escape_dot_label(std::string_view s) -> std::string;
 
 /// Escape string for JSON (RFC 8259)
-[[nodiscard]] auto escape_json(std::string_view s) -> std::string;
+[[nodiscard]]
+auto escape_json(std::string_view s) -> std::string;
 
 } // namespace pup::cli

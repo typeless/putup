@@ -28,37 +28,54 @@ public:
     auto operator=(IndexReader&& other) noexcept -> IndexReader& = default;
 
     /// Open an index file for reading
-    [[nodiscard]] static auto open(std::filesystem::path const& path) -> Result<IndexReader>;
+    [[nodiscard]]
+    static auto open(std::filesystem::path const& path) -> Result<IndexReader>;
 
     /// Check if a file is a valid index file (checks magic and version)
-    [[nodiscard]] static auto is_valid_index(std::filesystem::path const& path) -> bool;
+    [[nodiscard]]
+    static auto is_valid_index(std::filesystem::path const& path) -> bool;
 
     /// Read the entire index into memory
-    [[nodiscard]] auto read() const -> Result<Index>;
+    [[nodiscard]]
+    auto read() const -> Result<Index>;
 
     /// Get the header
-    [[nodiscard]] auto header() const -> RawHeader const*;
+    [[nodiscard]]
+    auto header() const -> RawHeader const*;
 
     /// Get file entries as raw span
-    [[nodiscard]] auto raw_files() const -> std::span<RawFileEntry const>;
+    [[nodiscard]]
+    auto raw_files() const -> std::span<RawFileEntry const>;
 
     /// Get command entries as raw span
-    [[nodiscard]] auto raw_commands() const -> std::span<RawCommandEntry const>;
+    [[nodiscard]]
+    auto raw_commands() const -> std::span<RawCommandEntry const>;
 
     /// Get edge entries as raw span
-    [[nodiscard]] auto raw_edges() const -> std::span<RawEdge const>;
+    [[nodiscard]]
+    auto raw_edges() const -> std::span<RawEdge const>;
 
     /// Get string from string table (length-prefixed)
-    [[nodiscard]] auto get_string(std::uint32_t offset) const -> std::string_view;
+    [[nodiscard]]
+    auto get_string(std::uint32_t offset) const -> std::string_view;
 
     /// Verify the checksum
-    [[nodiscard]] auto verify_checksum() const -> bool;
+    [[nodiscard]]
+    auto verify_checksum() const -> bool;
 
     /// Get the file size
-    [[nodiscard]] auto file_size() const -> std::size_t { return file_.size(); }
+    [[nodiscard]]
+    auto file_size() const -> std::size_t
+    {
+        return file_.size();
+    }
 
     /// Check if reader is valid
-    [[nodiscard]] auto is_open() const -> bool { return file_.is_open(); }
+    [[nodiscard]]
+    auto is_open() const -> bool
+    {
+        return file_.is_open();
+    }
 
     /// Close the file
     auto close() -> void { file_.close(); }

@@ -46,12 +46,18 @@ public:
     BuildContext(BuildContext&&) noexcept;
     auto operator=(BuildContext&&) noexcept -> BuildContext&;
 
-    [[nodiscard]] auto layout() const -> ProjectLayout const&;
-    [[nodiscard]] auto graph() const -> graph::BuildGraph const&;
-    [[nodiscard]] auto graph() -> graph::BuildGraph&;
-    [[nodiscard]] auto config_vars() const -> parser::VarDb const&;
-    [[nodiscard]] auto vars() const -> parser::VarDb const&;
-    [[nodiscard]] auto parsed_dirs() const -> std::set<std::filesystem::path> const&;
+    [[nodiscard]]
+    auto layout() const -> ProjectLayout const&;
+    [[nodiscard]]
+    auto graph() const -> graph::BuildGraph const&;
+    [[nodiscard]]
+    auto graph() -> graph::BuildGraph&;
+    [[nodiscard]]
+    auto config_vars() const -> parser::VarDb const&;
+    [[nodiscard]]
+    auto vars() const -> parser::VarDb const&;
+    [[nodiscard]]
+    auto parsed_dirs() const -> std::set<std::filesystem::path> const&;
 
     struct Impl;
 
@@ -65,7 +71,8 @@ private:
 };
 
 /// Build the dependency graph from Tupfiles
-[[nodiscard]] auto build_context(
+[[nodiscard]]
+auto build_context(
     Options const& opts,
     BuildContextOptions const& ctx_opts = {}
 ) -> Result<BuildContext>;
@@ -78,7 +85,8 @@ struct CleanContext {
 };
 
 /// Resolve clean context from options
-[[nodiscard]] auto resolve_clean_context(
+[[nodiscard]]
+auto resolve_clean_context(
     Options const& opts
 ) -> std::optional<CleanContext>;
 

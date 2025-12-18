@@ -29,7 +29,8 @@ struct Target {
 /// @param project_root The project root directory
 /// @param target_path The target path to parse (relative to project_root)
 /// @return Parsed Target or error message
-[[nodiscard]] auto parse_target(
+[[nodiscard]]
+auto parse_target(
     std::filesystem::path const& project_root,
     std::string const& target_path
 ) -> expected<Target, std::string>;
@@ -42,7 +43,8 @@ struct Target {
 /// @param project_root The project root directory
 /// @param pattern Glob pattern (e.g., "build-*", "build-*/src/lib")
 /// @return Vector of expanded targets
-[[nodiscard]] auto expand_glob_target(
+[[nodiscard]]
+auto expand_glob_target(
     std::filesystem::path const& project_root,
     std::string const& pattern
 ) -> std::vector<Target>;
@@ -56,7 +58,8 @@ struct Target {
 /// @param project_root The project root directory
 /// @param targets Target paths to validate
 /// @return Vector of parsed targets, or error message
-[[nodiscard]] auto validate_target_consistency(
+[[nodiscard]]
+auto validate_target_consistency(
     std::filesystem::path const& project_root,
     std::vector<std::string> const& targets
 ) -> expected<std::vector<Target>, std::string>;

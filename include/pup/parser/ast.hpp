@@ -59,12 +59,14 @@ struct Expression : AstNode {
 
     std::vector<std::variant<Literal, Variable>> parts;
 
-    [[nodiscard]] auto is_literal() const -> bool
+    [[nodiscard]]
+    auto is_literal() const -> bool
     {
         return parts.size() == 1 && std::holds_alternative<Literal>(parts[0]);
     }
 
-    [[nodiscard]] auto as_literal() const -> std::string_view
+    [[nodiscard]]
+    auto as_literal() const -> std::string_view
     {
         if (is_literal()) {
             return std::get<Literal>(parts[0]).value;
@@ -72,7 +74,11 @@ struct Expression : AstNode {
         return {};
     }
 
-    [[nodiscard]] auto empty() const -> bool { return parts.empty(); }
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return parts.empty();
+    }
 };
 
 /// Input/output path pattern (may include globs, groups, exclusions)
@@ -192,19 +198,22 @@ struct Statement : AstNode {
         content;
 
     template<typename T>
-    [[nodiscard]] auto is() const -> bool
+    [[nodiscard]]
+    auto is() const -> bool
     {
         return std::holds_alternative<T>(content);
     }
 
     template<typename T>
-    [[nodiscard]] auto as() -> T*
+    [[nodiscard]]
+    auto as() -> T*
     {
         return std::get_if<T>(&content);
     }
 
     template<typename T>
-    [[nodiscard]] auto as() const -> T const*
+    [[nodiscard]]
+    auto as() const -> T const*
     {
         return std::get_if<T>(&content);
     }

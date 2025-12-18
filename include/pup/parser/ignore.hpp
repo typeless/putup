@@ -36,13 +36,22 @@ public:
     auto add(std::string_view pattern) -> void;
 
     /// Check if a relative path should be ignored
-    [[nodiscard]] auto is_ignored(std::filesystem::path const& rel_path) const -> bool;
+    [[nodiscard]]
+    auto is_ignored(std::filesystem::path const& rel_path) const -> bool;
 
     /// Check if the list has no patterns
-    [[nodiscard]] auto empty() const -> bool { return patterns_.empty(); }
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return patterns_.empty();
+    }
 
     /// Get number of patterns
-    [[nodiscard]] auto size() const -> std::size_t { return patterns_.size(); }
+    [[nodiscard]]
+    auto size() const -> std::size_t
+    {
+        return patterns_.size();
+    }
 
 private:
     std::vector<IgnorePattern> patterns_;
@@ -51,13 +60,16 @@ private:
     static auto parse_pattern(std::string_view line) -> std::optional<IgnorePattern>;
 
     /// Check if a path matches a pattern
-    [[nodiscard]] auto match_pattern(IgnorePattern const& p, std::filesystem::path const& path) const -> bool;
+    [[nodiscard]]
+    auto match_pattern(IgnorePattern const& p, std::filesystem::path const& path) const -> bool;
 
     /// Match a glob pattern against a string
-    [[nodiscard]] static auto glob_match(std::string_view pattern, std::string_view text) -> bool;
+    [[nodiscard]]
+    static auto glob_match(std::string_view pattern, std::string_view text) -> bool;
 
     /// Recursive glob matching helper
-    [[nodiscard]] static auto glob_match_recursive(std::string_view pattern, std::string_view text) -> bool;
+    [[nodiscard]]
+    static auto glob_match_recursive(std::string_view pattern, std::string_view text) -> bool;
 };
 
 } // namespace pup::parser

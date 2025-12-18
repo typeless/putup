@@ -94,10 +94,12 @@ public:
     auto operator=(Scheduler&&) noexcept -> Scheduler&;
 
     /// Build from a dependency graph
-    [[nodiscard]] auto build(graph::BuildGraph const& graph) -> Result<BuildStats>;
+    [[nodiscard]]
+    auto build(graph::BuildGraph const& graph) -> Result<BuildStats>;
 
     /// Build only the commands that depend on changed files
-    [[nodiscard]] auto build_incremental(
+    [[nodiscard]]
+    auto build_incremental(
         graph::BuildGraph const& graph,
         index::Index const& old_index,
         std::vector<std::string> const& changed_files
@@ -116,10 +118,12 @@ public:
     auto cancel() -> void;
 
     /// Check if build was cancelled
-    [[nodiscard]] auto is_cancelled() const -> bool;
+    [[nodiscard]]
+    auto is_cancelled() const -> bool;
 
     /// Get current statistics
-    [[nodiscard]] auto stats() const -> BuildStats;
+    [[nodiscard]]
+    auto stats() const -> BuildStats;
 
     struct Impl;
 
@@ -133,18 +137,21 @@ private:
     auto execute_job(BuildJob const& job, CommandRunner& runner, std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
 
     /// Build job list from graph in topological order
-    [[nodiscard]] auto build_job_list(
+    [[nodiscard]]
+    auto build_job_list(
         graph::BuildGraph const& graph
     ) -> Result<std::vector<BuildJob>>;
 
     /// Determine which jobs need to run based on changes
-    [[nodiscard]] auto filter_jobs(
+    [[nodiscard]]
+    auto filter_jobs(
         std::vector<BuildJob> const& all_jobs,
         std::set<NodeId> const& affected_nodes
     ) -> std::vector<BuildJob>;
 };
 
 /// Detect number of available CPUs
-[[nodiscard]] auto detect_parallelism() -> std::size_t;
+[[nodiscard]]
+auto detect_parallelism() -> std::size_t;
 
 } // namespace pup::exec

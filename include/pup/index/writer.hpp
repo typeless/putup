@@ -20,26 +20,34 @@ public:
 
     /// Write an index to a file atomically
     /// Uses a temporary file and rename for atomic operation
-    [[nodiscard]] auto write(
+    [[nodiscard]]
+    auto write(
         std::filesystem::path const& path,
         Index const& index
     ) -> Result<void>;
 
     /// Serialize an index to a byte vector
-    [[nodiscard]] auto serialize(Index const& index) -> Result<std::vector<std::byte>>;
+    [[nodiscard]]
+    auto serialize(Index const& index) -> Result<std::vector<std::byte>>;
 
 private:
     /// String table builder
     class StringTable {
     public:
         /// Add a string and return its offset
-        [[nodiscard]] auto add(std::string_view str) -> Result<std::uint32_t>;
+        [[nodiscard]]
+        auto add(std::string_view str) -> Result<std::uint32_t>;
 
         /// Get the table data
-        [[nodiscard]] auto data() const -> std::vector<char> const& { return data_; }
+        [[nodiscard]]
+        auto data() const -> std::vector<char> const&
+        {
+            return data_;
+        }
 
         /// Get the current size
-        [[nodiscard]] auto size() const -> std::uint32_t
+        [[nodiscard]]
+        auto size() const -> std::uint32_t
         {
             return static_cast<std::uint32_t>(data_.size());
         }

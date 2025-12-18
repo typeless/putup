@@ -33,7 +33,8 @@ public:
     auto update(std::string_view data) -> void;
 
     /// Finalize and return the hash
-    [[nodiscard]] auto finalize() -> Hash256;
+    [[nodiscard]]
+    auto finalize() -> Hash256;
 
     /// Reset to initial state for reuse
     auto reset() -> void;
@@ -44,29 +45,36 @@ private:
 };
 
 /// Compute SHA-256 hash of a byte span
-[[nodiscard]] auto sha256(std::span<std::byte const> data) -> Hash256;
+[[nodiscard]]
+auto sha256(std::span<std::byte const> data) -> Hash256;
 
 /// Compute SHA-256 hash of a string
-[[nodiscard]] auto sha256(std::string_view data) -> Hash256;
+[[nodiscard]]
+auto sha256(std::string_view data) -> Hash256;
 
 /// Compute SHA-256 hash of a file
-[[nodiscard]] auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>;
+[[nodiscard]]
+auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>;
 
 /// Convert hash to hex string (lowercase)
-[[nodiscard]] auto hash_to_hex(Hash256 const& hash) -> std::string;
+[[nodiscard]]
+auto hash_to_hex(Hash256 const& hash) -> std::string;
 
 /// Parse hex string to hash
-[[nodiscard]] auto hex_to_hash(std::string_view hex) -> Result<Hash256>;
+[[nodiscard]]
+auto hex_to_hash(std::string_view hex) -> Result<Hash256>;
 
 /// Check if two hashes are equal
-[[nodiscard]] auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool;
+[[nodiscard]]
+auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool;
 
 /// Zero hash constant
 inline constexpr auto ZERO_HASH = Hash256 {};
 
 /// Compute Merkle hash for a directory from sorted children entries
 /// Each entry is (name, type, hash_ptr) - sorted by name before hashing
-[[nodiscard]] auto compute_merkle_hash(
+[[nodiscard]]
+auto compute_merkle_hash(
     std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children
 ) -> Hash256;
 

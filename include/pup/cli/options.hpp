@@ -30,7 +30,8 @@ struct Options {
 };
 
 /// Parse command-line arguments
-[[nodiscard]] auto parse_args(int argc, char** argv) -> Options;
+[[nodiscard]]
+auto parse_args(int argc, char** argv) -> Options;
 
 /// Print usage information to stdout
 auto print_usage() -> void;

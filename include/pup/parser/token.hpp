@@ -74,7 +74,8 @@ enum class TokenType : std::uint8_t {
 };
 
 /// Convert token type to string for debugging
-[[nodiscard]] constexpr auto token_type_name(TokenType type) -> std::string_view
+[[nodiscard]]
+constexpr auto token_type_name(TokenType type) -> std::string_view
 {
     switch (type) {
     case TokenType::Eof:
@@ -175,21 +176,32 @@ struct Token {
     std::string_view text;
     SourceLocation location;
 
-    [[nodiscard]] auto is(TokenType t) const -> bool { return type == t; }
+    [[nodiscard]]
+    auto is(TokenType t) const -> bool
+    {
+        return type == t;
+    }
 
-    [[nodiscard]] auto is_one_of(auto... types) const -> bool { return ((type == types) || ...); }
+    [[nodiscard]]
+    auto is_one_of(auto... types) const -> bool
+    {
+        return ((type == types) || ...);
+    }
 
-    [[nodiscard]] auto is_keyword() const -> bool
+    [[nodiscard]]
+    auto is_keyword() const -> bool
     {
         return type >= TokenType::KwForeach && type <= TokenType::KwGitignore;
     }
 
-    [[nodiscard]] auto is_assignment_op() const -> bool
+    [[nodiscard]]
+    auto is_assignment_op() const -> bool
     {
         return is_one_of(TokenType::Equals, TokenType::ColonEquals, TokenType::PlusEquals);
     }
 
-    [[nodiscard]] auto is_end_of_statement() const -> bool
+    [[nodiscard]]
+    auto is_end_of_statement() const -> bool
     {
         return is_one_of(TokenType::Newline, TokenType::Eof);
     }

@@ -822,8 +822,7 @@ auto build_single_variant(
                     auto rel = std::filesystem::relative(resolved, ctx.layout().source_root, ec);
                     if (ec) {
                         if (opts.verbose) {
-                            fmt::print(stderr, "Warning: Cannot relativize '{}': {}\n",
-                                       resolved.string(), ec.message());
+                            fmt::print(stderr, "Warning: Cannot relativize '{}': {}\n", resolved.string(), ec.message());
                         }
                         continue;
                     }

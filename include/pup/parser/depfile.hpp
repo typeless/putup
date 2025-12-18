@@ -19,9 +19,11 @@ struct Depfile {
 };
 
 /// Parse a dependency file from a filesystem path
-[[nodiscard]] auto parse_depfile(std::filesystem::path const& path) -> Result<Depfile>;
+[[nodiscard]]
+auto parse_depfile(std::filesystem::path const& path) -> Result<Depfile>;
 
 /// Parse a dependency file from string content
-[[nodiscard]] auto parse_depfile(std::string_view content) -> Result<Depfile>;
+[[nodiscard]]
+auto parse_depfile(std::string_view content) -> Result<Depfile>;
 
 } // namespace pup::parser

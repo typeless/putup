@@ -20,9 +20,11 @@ namespace pup::parser {
 ///
 /// The CONFIG_ prefix is stripped when storing, so CONFIG_DEBUG=y
 /// becomes accessible as @(DEBUG) in Tupfiles.
-[[nodiscard]] auto parse_config(std::filesystem::path const& path) -> Result<VarDb>;
+[[nodiscard]]
+auto parse_config(std::filesystem::path const& path) -> Result<VarDb>;
 
 /// Parse config from string content (for testing)
-[[nodiscard]] auto parse_config_string(std::string_view content) -> Result<VarDb>;
+[[nodiscard]]
+auto parse_config_string(std::string_view content) -> Result<VarDb>;
 
 } // namespace pup::parser

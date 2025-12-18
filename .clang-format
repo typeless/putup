@@ -4,6 +4,8 @@
 
 BasedOnStyle: WebKit
 
+BreakAfterAttributes: Always
+
 # Multiline function declarations: closing paren on own line (when manually broken)
 # auto foo(
 #     int a,
