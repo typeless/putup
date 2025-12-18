@@ -75,9 +75,6 @@ public:
     [[nodiscard]] auto get_node(NodeId id) -> Node*;
     [[nodiscard]] auto get_node(NodeId id) const -> Node const*;
 
-    /// Get mutable node by ID (alias for non-const get_node)
-    [[nodiscard]] auto get_node_mut(NodeId id) -> Node* { return get_node(id); }
-
     /// Find a node by parent directory and basename (tup-style lookup)
     [[nodiscard]] auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
         -> std::optional<NodeId>;

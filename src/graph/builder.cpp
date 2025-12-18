@@ -903,7 +903,7 @@ auto GraphBuilder::expand_rule(
         (void)ctx.graph->add_edge(*gen_cmd_id, *cmd_id);
 
         // Store generated rule info on the node for scheduler to handle
-        if (auto* node = ctx.graph->get_node_mut(*gen_cmd_id)) {
+        if (auto* node = ctx.graph->get_node(*gen_cmd_id)) {
             node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
             node->output_action = gen_rule.action;
             node->parent_command = gen_rule.parent_command;

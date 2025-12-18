@@ -466,6 +466,46 @@ auto build_index(
         return dir_id;
     } };
 
+    auto create_implicit_file = [&](
+                                    std::filesystem::path const& abs_path,
+                                    std::string const& rel_path
+                                ) -> pup::NodeId {
+        auto content_hash = pup::Hash256 {};
+        auto file_size = std::uint64_t { 0 };
+        if (std::filesystem::exists(abs_path)) {
+            auto hash_result = pup::sha256_file(abs_path);
+            if (hash_result) {
+                content_hash = *hash_result;
+            }
+
+            auto ec = std::error_code {};
+            file_size = std::filesystem::file_size(abs_path, ec);
+        }
+
+        // Create parent directories first - they get assigned IDs before the file
+        auto fs_path = std::filesystem::path { rel_path };
+        auto parent_id = get_or_create_dir(fs_path.parent_path());
+        auto basename = fs_path.filename().string();
+
+        // Now assign file ID (after directory IDs to maintain consecutive ordering)
+        auto file_id = next_id++;
+
+        auto entry = pup::index::FileEntry {
+            .id = file_id,
+            .parent_id = parent_id,
+            .src_id = 0,
+            .type = pup::NodeType::File,
+            .flags = pup::NodeFlags::None,
+            .name = basename,
+            .path = rel_path,
+            .size = file_size,
+            .content_hash = content_hash,
+        };
+        index.add_file(std::move(entry));
+        path_to_id[rel_path] = file_id;
+        return file_id;
+    };
+
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
             auto abs_path = resolve_path(dep_path, root);
@@ -477,45 +517,8 @@ auto build_index(
                 rel_path = abs_path.string();
             }
 
-            auto dep_id = pup::NodeId { 0 };
             auto it = path_to_id.find(rel_path);
-            if (it != path_to_id.end()) {
-                dep_id = it->second;
-            } else {
-                auto content_hash = pup::Hash256 {};
-                auto file_size = std::uint64_t { 0 };
-                if (std::filesystem::exists(abs_path)) {
-                    auto hash_result = pup::sha256_file(abs_path);
-                    if (hash_result) {
-                        content_hash = *hash_result;
-                    }
-
-                    auto ec = std::error_code {};
-                    file_size = std::filesystem::file_size(abs_path, ec);
-                }
-
-                // Create parent directories first - they get assigned IDs before the file
-                auto fs_path = std::filesystem::path { rel_path };
-                auto parent_id = get_or_create_dir(fs_path.parent_path());
-                auto basename = fs_path.filename().string();
-
-                // Now assign file ID (after directory IDs to maintain consecutive ordering)
-                dep_id = next_id++;
-
-                auto entry = pup::index::FileEntry {
-                    .id = dep_id,
-                    .parent_id = parent_id,
-                    .src_id = 0,
-                    .type = pup::NodeType::File,
-                    .flags = pup::NodeFlags::None,
-                    .name = basename,
-                    .path = rel_path,
-                    .size = file_size,
-                    .content_hash = content_hash,
-                };
-                index.add_file(std::move(entry));
-                path_to_id[rel_path] = dep_id;
-            }
+            auto dep_id = it != path_to_id.end() ? it->second : create_implicit_file(abs_path, rel_path);
 
             auto edge_key = std::pair { dep_id, cmd_id };
             if (added_edges.insert(edge_key).second) {
@@ -558,45 +561,10 @@ auto build_index(
             }
 
             auto new_file_it = path_to_id.find(old_file->path);
-            auto new_from_id = pup::NodeId {};
-            if (new_file_it != path_to_id.end()) {
-                new_from_id = new_file_it->second;
-            } else {
-                auto abs_path = resolve_path(old_file->path, root);
-                auto content_hash = pup::Hash256 {};
-                auto file_size = std::uint64_t { 0 };
-                if (std::filesystem::exists(abs_path)) {
-                    auto hash_result = pup::sha256_file(abs_path);
-                    if (hash_result) {
-                        content_hash = *hash_result;
-                    }
-
-                    auto ec = std::error_code {};
-                    file_size = std::filesystem::file_size(abs_path, ec);
-                }
-
-                // Create parent directories first - they get assigned IDs before the file
-                auto fs_path = std::filesystem::path { old_file->path };
-                auto parent_id = get_or_create_dir(fs_path.parent_path());
-                auto basename = fs_path.filename().string();
-
-                // Now assign file ID (after directory IDs to maintain consecutive ordering)
-                new_from_id = next_id++;
-
-                auto entry = pup::index::FileEntry {
-                    .id = new_from_id,
-                    .parent_id = parent_id,
-                    .src_id = 0,
-                    .type = pup::NodeType::File,
-                    .flags = pup::NodeFlags::None,
-                    .name = basename,
-                    .path = old_file->path,
-                    .size = file_size,
-                    .content_hash = content_hash,
-                };
-                index.add_file(std::move(entry));
-                path_to_id[old_file->path] = new_from_id;
-            }
+            auto abs_path = resolve_path(old_file->path, root);
+            auto new_from_id = new_file_it != path_to_id.end()
+                ? new_file_it->second
+                : create_implicit_file(abs_path, old_file->path);
 
             auto edge_key = std::pair { new_from_id, edge.to };
             if (added_edges.insert(edge_key).second) {

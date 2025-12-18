@@ -122,14 +122,16 @@ auto BuildGraph::add_edge(NodeId from, NodeId to, LinkType type) -> Result<void>
         .type = type,
     });
 
-    auto* from_node = get_node(from);
-    auto* to_node = get_node(to);
-
-    if (from_node) {
-        from_node->outputs.push_back(to);
+    // Direct storage access (IDs validated above)
+    if (is_command_id(from)) {
+        impl_->commands[command_index(from)].outputs.push_back(to);
+    } else {
+        impl_->files[file_index(from)].outputs.push_back(to);
     }
-    if (to_node) {
-        to_node->inputs.push_back(from);
+    if (is_command_id(to)) {
+        impl_->commands[command_index(to)].inputs.push_back(from);
+    } else {
+        impl_->files[file_index(to)].inputs.push_back(from);
     }
 
     return {};
@@ -144,9 +146,11 @@ auto BuildGraph::add_order_only_edge(NodeId from, NodeId to) -> Result<void>
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
-    auto* to_node = get_node(to);
-    if (to_node) {
-        to_node->order_only.push_back(from);
+    // Direct storage access (ID validated above)
+    if (is_command_id(to)) {
+        impl_->commands[command_index(to)].order_only.push_back(from);
+    } else {
+        impl_->files[file_index(to)].order_only.push_back(from);
     }
 
     impl_->order_only_dependents[from].push_back(to);
@@ -156,23 +160,8 @@ auto BuildGraph::add_order_only_edge(NodeId from, NodeId to) -> Result<void>
 
 auto BuildGraph::get_node(NodeId id) -> Node*
 {
-    if (id == 0) {
-        return nullptr;
-    }
-    if (is_command_id(id)) {
-        auto const idx = command_index(id);
-        if (idx == 0 || idx >= impl_->commands.size()) {
-            return nullptr;
-        }
-        auto& node = impl_->commands[idx];
-        return node.id == id ? &node : nullptr;
-    }
-    auto const idx = file_index(id);
-    if (idx >= impl_->files.size()) {
-        return nullptr;
-    }
-    auto& node = impl_->files[idx];
-    return node.id == id ? &node : nullptr;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
+    return const_cast<Node*>(std::as_const(*this).get_node(id));
 }
 
 auto BuildGraph::get_node(NodeId id) const -> Node const*
