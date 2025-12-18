@@ -1,6 +1,6 @@
 # Pup Code Review Summary
 
-Date: 2025-12-11
+Date: 2025-12-18 (Updated)
 
 ## Critical Issues (Fix Now)
 
@@ -9,7 +9,7 @@ Date: 2025-12-11
 | **Scheduler** | Race condition: `stats()` read without mutex (TBD - needs study) | scheduler.cpp:118 |
 | **Scheduler** | Stdin pipe deadlock with large data | runner.cpp:148-156 |
 | **Runner** | ✅ FIXED: `write()` return value ignored | runner.cpp:150 |
-| **Index** | ✅ FIXED: Integer overflow in string table (4GB limit) | writer.cpp:20 |
+| **Index** | ✅ FIXED: Integer overflow in string table (returns `Result<>`) | writer.cpp:33,49 |
 | **Index** | Missing bounds validation on mmap read | reader.cpp:140-171 |
 | **Parser** | ✅ FIXED: O(n²) whitespace trim with `erase(0,1)` | parser.cpp:1017 |
 
@@ -21,8 +21,10 @@ Date: 2025-12-11
 | **Scheduler** | ✅ FIXED: `std::getenv()` not thread-safe | Immutable env cache built before spawning workers |
 | **Scheduler** | ✅ FIXED: Output directory TOCTOU race | Removed exists() check, use idempotent create_directories() |
 | **Parser** | ✅ FIXED: VarDb heterogeneous lookup | Added StringHash with is_transparent |
-| **Main** | God object: 1373 lines | Extract to `pup/commands/` module |
+| **Main** | ✅ FIXED: God object: 1373 lines | Extracted to `src/cli/` module (main.cpp now 59 lines) |
+| **Index** | ✅ FIXED: O(n) lookup in `find_file_by_id()` | Tagged IDs with O(1) array access (format v7) |
 | **Index** | No endianness handling | Won't fix - index files are local artifacts, never shared cross-arch |
+| **Exceptions** | ✅ FIXED: Exceptions used in 7 locations | Removed all, `-fno-exceptions -fno-rtti` enabled |
 
 ## Medium Priority (Performance)
 
@@ -34,6 +36,7 @@ Date: 2025-12-11
 | **Scheduler** | `notify_all()` on every job | Use `notify_one()` |
 | **Topo** | Topological sort recomputed each call | Cache result |
 | **Parser** | Massive switch statement (140 lines) | Dispatch table |
+| **Index** | ✅ FIXED: O(n) linear search in `find_file_by_id()` | Now O(1) via tagged ID spaces |
 
 ## Code Duplication
 
@@ -42,52 +45,51 @@ Date: 2025-12-11
 
 ## Architecture Issues
 
-### main.cpp Refactoring
+### ✅ COMPLETED: main.cpp Refactoring
 
-The file should be ~200 lines, not 1373. Extract into proper modules:
+The file was 1373 lines, now 59 lines. Commands extracted to `src/cli/` module:
 
 ```
-pup/
-├── commands/           # NEW - Command implementations
-│   ├── command.hpp    # Base interface
-│   ├── init.hpp/cpp
-│   ├── build.hpp/cpp
-│   ├── parse.hpp/cpp
-│   ├── graph.hpp/cpp
-│   ├── clean.hpp/cpp
-│   ├── variant.hpp/cpp
-│   └── registry.hpp   # Command registry
-├── core/
-│   ├── constants.hpp  # NEW - All magic strings/numbers
-│   ├── filesystem.hpp # NEW - Path utilities
-│   └── variant.hpp    # NEW - Variant management
-├── parser/
-│   └── discovery.hpp  # NEW - Tupfile discovery/parsing orchestration
-└── index/
-    └── incremental.hpp # NEW - Change detection & incremental build
+src/cli/
+├── cmd_build.cpp      # Build command (835 lines)
+├── cmd_clean.cpp      # Clean/distclean commands
+├── cmd_export.cpp     # Export graph/script/compdb
+├── cmd_init.cpp       # Init command
+├── cmd_parse.cpp      # Parse command
+├── cmd_variant.cpp    # Variant command
+├── context.cpp        # Build context management
+├── multi_variant.cpp  # Multi-variant orchestration
+├── options.cpp        # CLI argument parsing
+├── output.cpp         # Output formatting
+└── target.cpp         # Target parsing (variant/scope/glob)
 ```
 
 ### Testability
 
-Zero functions in main.cpp are testable because:
-1. All utility functions are in anonymous namespace (internal linkage)
-2. Functions directly call `fmt::print(stderr, ...)` instead of returning errors
-3. Heavy coupling to `std::filesystem` (no dependency injection)
-4. Commands call `std::exit()` directly
+✅ IMPROVED: CLI module is now partially testable:
+- `target.cpp` has unit tests in `test/unit/test_target.cpp` (52 assertions)
+- E2E tests cover all commands via `E2EFixture` (9 unified target scenarios)
+- `options.cpp` validates arguments with proper error messages
+
+**Remaining issues:**
+- Heavy coupling to `std::filesystem` (no dependency injection)
+- Commands call `std::exit()` directly in error paths
 
 ### Command-line Parsing
 
-✅ FIXED: `-j abc` now shows proper error message instead of throwing uncaught exception.
+✅ FIXED: `-j abc` now shows proper error message using `std::from_chars` (no exceptions).
 
 ## Positive Observations
 
 - Clean C++20 with proper `auto`, trailing returns, designated initializers
 - Strong types (`NodeId`, `LinkType`) prevent bugs
-- Consistent `Result<T>` error handling
-- Good module separation (core/parser/graph/index/exec)
+- Consistent `Result<T>` error handling (now exception-free with `-fno-exceptions`)
+- Good module separation (core/parser/graph/index/exec/cli)
 - Atomic file writes (temp + rename pattern)
-- Memory-mapped index reader
-- Comprehensive unit tests (855 assertions in 101 test cases)
+- Memory-mapped index reader with O(1) lookup (tagged ID spaces)
+- Comprehensive unit tests (1821 assertions in 235 test cases)
+- Binary size reduced 15% (1.3MB → 1.1MB) via `-fno-exceptions -fno-rtti`
+- Unified CLI with path-based variant selection, glob patterns, single output targets
 
 ## Recommended Priority
 
@@ -97,15 +99,17 @@ Zero functions in main.cpp are testable because:
 3. ✅ DONE: Validate CLI arguments
 
 ### P1 (This week)
-4. Extract commands from main.cpp
+4. ✅ DONE: Extract commands from main.cpp (now `src/cli/` module)
 5. ✅ DONE: Fix O(n²) string operations
 6. ✅ DONE: Add heterogeneous lookup to VarDb
+7. ✅ DONE: Remove exceptions, enable `-fno-exceptions`
+8. ✅ DONE: O(1) lookup for `find_file_by_id()` / `find_command_by_id()`
 
 ### P2 (Tech debt)
-7. Refactor `expand_inputs()`
-8. ✅ DONE: Deduplicate parse_rule/parse_bang_macro (extracted `parse_rule_body()`)
-9. ✅ DONE: Deduplicate topo.cpp cycle detection (extracted `visit_neighbors()`)
-10. Add path normalization consolidation
+9. Refactor `expand_inputs()`
+10. ✅ DONE: Deduplicate parse_rule/parse_bang_macro (extracted `parse_rule_body()`)
+11. ✅ DONE: Deduplicate topo.cpp cycle detection (extracted `visit_neighbors()`)
+12. Add path normalization consolidation
 
 ---
 
@@ -167,22 +171,27 @@ Zero functions in main.cpp are testable because:
 
 ### Index/Core (src/index/, src/core/)
 
-**writer.cpp:20** - ✅ FIXED: Added overflow check - throws `std::overflow_error` if string table exceeds 4GB.
+**writer.cpp:33,49** - ✅ FIXED: Overflow checks return `Result<std::uint32_t>` with `make_error()` (no exceptions).
 
 **reader.cpp:140-171** - `reinterpret_cast` without bounds validation. Check offset + count × size fits in file.
 
 **hash.cpp:15-43** - Uses raw `new`/`delete`. Use `std::unique_ptr`.
 
-**entry.cpp:105-124** - O(n) linear search in `find_file()`. Add hash map index.
+**entry.cpp:110-135** - ✅ FIXED: `find_file_by_id()` and `find_command_by_id()` now O(1) via tagged ID spaces (index format v7).
 
 **No endianness handling** - Won't fix. Index files are local build artifacts in `.pup/index`, never shared across different architectures. Rebuilding the index on a new machine is trivial.
 
 ### Main Entry Point (src/main.cpp)
 
-**Lines 33-1339** - 1300+ lines in anonymous namespace. Extract to proper modules.
+✅ REFACTORED: Entire module extracted to `src/cli/`. main.cpp is now 59 lines.
 
-**Lines 87-130** - ✅ FIXED: `parse_args()` now catches `std::stoi` exceptions and shows proper error.
-
-**Lines 1079-1337** - `cmd_build()` is 258 lines doing everything. Break into pipeline stages.
-
-**Lines 35-36** - Magic constants should be in `pup/core/constants.hpp`.
+**CLI Module (`src/cli/`):**
+- `cmd_build.cpp` - Build command (835 lines, handles incremental builds, scheduling)
+- `cmd_clean.cpp` - Clean/distclean commands
+- `cmd_export.cpp` - Export graph/script/compdb
+- `cmd_parse.cpp` - Parse command (validate Tupfiles)
+- `cmd_variant.cpp` - Variant management
+- `context.cpp` - Build context (source/output roots)
+- `multi_variant.cpp` - Parallel multi-variant orchestration
+- `options.cpp` - CLI parsing with `std::from_chars` (no exceptions)
+- `target.cpp` - Target parsing (variant/scope/glob/output file)
