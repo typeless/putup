@@ -251,9 +251,9 @@ TEST_CASE("Topological sort", "[graph]")
         REQUIRE(result.order.size() == 3);
 
         // a should come before b, b before c
-        auto pos_a = std::find(result.order.begin(), result.order.end(), *id1);
-        auto pos_b = std::find(result.order.begin(), result.order.end(), *id2);
-        auto pos_c = std::find(result.order.begin(), result.order.end(), *id3);
+        auto pos_a = std::ranges::find(result.order, *id1);
+        auto pos_b = std::ranges::find(result.order, *id2);
+        auto pos_c = std::ranges::find(result.order, *id3);
 
         REQUIRE(pos_a < pos_b);
         REQUIRE(pos_b < pos_c);

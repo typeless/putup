@@ -510,8 +510,8 @@ TEST_CASE("Children index", "[merkle]")
 
         auto children = index.get_children(1);
         CHECK(children.size() == 2);
-        CHECK(std::find(children.begin(), children.end(), NodeId { 2 }) != children.end());
-        CHECK(std::find(children.begin(), children.end(), NodeId { 3 }) != children.end());
+        CHECK(std::ranges::find(children, NodeId { 2 }) != children.end());
+        CHECK(std::ranges::find(children, NodeId { 3 }) != children.end());
     }
 
     SECTION("get_children returns empty for leaf directory")
@@ -826,8 +826,8 @@ TEST_CASE("Merkle change detection correctness", "[merkle]")
         auto merkle_result = find_changed_files_merkle(old_index, new_index, nullptr);
         auto legacy_result = find_changed_files_legacy(old_index, new_index, nullptr);
 
-        std::sort(merkle_result.begin(), merkle_result.end());
-        std::sort(legacy_result.begin(), legacy_result.end());
+        std::ranges::sort(merkle_result);
+        std::ranges::sort(legacy_result);
 
         CHECK(merkle_result == legacy_result);
     }

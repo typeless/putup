@@ -47,7 +47,7 @@ auto visit_neighbors(BuildGraph const& graph, NodeId u, auto const& neighbors, D
                 curr = state.parent[curr];
             }
             state.cycle.push_back(v);
-            std::reverse(state.cycle.begin(), state.cycle.end());
+            std::ranges::reverse(state.cycle);
         }
     }
 }
@@ -88,7 +88,7 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
     }
 
     // Reverse for topological order (dependencies first)
-    std::reverse(state.order.begin(), state.order.end());
+    std::ranges::reverse(state.order);
 
     return TopoSortResult {
         .order = std::move(state.order),
@@ -100,7 +100,7 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
 auto reverse_topological_sort(BuildGraph const& graph) -> TopoSortResult
 {
     auto result = TopoSortResult { topological_sort(graph) };
-    std::reverse(result.order.begin(), result.order.end());
+    std::ranges::reverse(result.order);
     return result;
 }
 
@@ -355,7 +355,7 @@ auto critical_path(BuildGraph const& graph) -> std::vector<NodeId>
         curr = pred[curr];
     }
 
-    std::reverse(path.begin(), path.end());
+    std::ranges::reverse(path);
     return path;
 }
 

@@ -181,7 +181,7 @@ auto discover_variants(
     }
 
     // Sort for deterministic order
-    std::sort(result.begin(), result.end());
+    std::ranges::sort(result);
     return result;
 }
 

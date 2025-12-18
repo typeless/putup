@@ -354,7 +354,7 @@ auto build_context(
     auto dirs = std::vector<std::filesystem::path> {
         ctx.impl_->state.available.begin(), ctx.impl_->state.available.end()
     };
-    std::sort(dirs.begin(), dirs.end(), [&root_rel](auto const& a, auto const& b) {
+    std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
         auto is_root_a = (a == root_rel);
         auto is_root_b = (b == root_rel);
         if (is_root_a != is_root_b) {

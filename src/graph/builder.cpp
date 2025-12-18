@@ -1255,10 +1255,7 @@ auto GraphBuilder::expand_inputs(
                             normalized = fs::path { p }.lexically_normal().string();
                         }
 
-                        result.erase(
-                            std::remove(result.begin(), result.end(), normalized),
-                            result.end()
-                        );
+                        std::erase(result, normalized);
                     }
                 }
             } else {
@@ -1270,10 +1267,7 @@ auto GraphBuilder::expand_inputs(
                     normalized_excl = fs::path { excl }.lexically_normal().string();
                 }
 
-                result.erase(
-                    std::remove(result.begin(), result.end(), normalized_excl),
-                    result.end()
-                );
+                std::erase(result, normalized_excl);
             }
         }
     }

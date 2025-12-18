@@ -303,10 +303,7 @@ auto glob_expand_all(
 
     // Remove excluded files from matches
     for (auto const& excl : result.exclusions) {
-        result.matches.erase(
-            std::remove(result.matches.begin(), result.matches.end(), excl),
-            result.matches.end()
-        );
+        std::erase(result.matches, excl);
     }
 
     return result;
