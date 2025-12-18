@@ -10,13 +10,13 @@ This document details pup's compatibility with tup, including supported features
 | `tup upd` | `pup` | ✅ Implemented |
 | `tup init` | `pup init` | ✅ Implemented |
 | `tup refactor` | `pup parse` | ✅ Implemented |
-| `tup graph` | `pup graph` | ✅ Implemented |
+| `tup graph` | `pup export graph` | ✅ Implemented |
+| `tup compiledb` | `pup export compdb` | ✅ Implemented |
 | `tup monitor` | - | ❌ Not planned (no FUSE) |
 | `tup stop` | - | ❌ Not planned (no monitor) |
 | `tup scan` | - | ❌ Not implemented |
 | `tup variant` | `pup variant` | ✅ Implemented |
-| `tup generate` | - | ❌ Not implemented |
-| `tup compiledb` | - | ❌ Not implemented |
+| `tup generate` | `pup export script` | ✅ Implemented |
 | `tup commandline` | - | ❌ Not implemented |
 | `tup todo` | - | ❌ Not implemented |
 | `tup varsed` | - | ❌ Not implemented |
@@ -251,10 +251,15 @@ Features in pup that extend beyond tup:
 
 | Feature | Description |
 |---------|-------------|
-| Multi-variant `-B` flags | `pup -B build-debug -B build-release` processes multiple variants in parallel |
-| Auto-variant detection | Running `pup` from project root auto-detects all variants |
-| Parallel variant execution | `build`, `clean`, `distclean`, and `parse` run variants concurrently |
-| Variant output prefix | Output lines are prefixed with `[variant-name]` for clarity |
+| **Unified target syntax** | `pup build-debug` selects variant by path instead of `-B` flag |
+| **Scoped builds** | `pup build-debug/src/lib` builds only that subdirectory |
+| **Single output targets** | `pup build-debug/src/lib/foo.o` rebuilds one specific output |
+| **Glob patterns** | `pup 'build-*'` matches multiple variants |
+| **Multi-variant parallel** | `pup -B build-debug -B build-release` or `pup build-debug build-release` |
+| **Auto-variant detection** | Running `pup` from project root auto-detects all variants |
+| **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
+| **Export formats** | `pup export graph\|script\|compdb` for different output formats |
+| **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
 
 ## Reporting Issues
 
