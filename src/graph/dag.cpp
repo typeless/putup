@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <unordered_map>
 
@@ -203,6 +204,32 @@ auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<No
         return it->second;
     }
     return std::nullopt;
+}
+
+auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
+{
+    if (path.empty()) {
+        return std::nullopt;
+    }
+
+    auto p = std::filesystem::path { path };
+    auto parent_id = NodeId { 0 };
+
+    for (auto const& component : p) {
+        auto name = component.string();
+        if (name.empty() || name == ".") {
+            continue;
+        }
+
+        auto found = find_by_dir_name(parent_id, name);
+        if (!found) {
+            return std::nullopt;
+        }
+
+        parent_id = *found;
+    }
+
+    return parent_id != 0 ? std::optional { parent_id } : std::nullopt;
 }
 
 auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>

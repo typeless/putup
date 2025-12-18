@@ -26,6 +26,7 @@ struct Options {
     std::string source_dir = {};
     std::vector<std::string> build_dirs = {};
     std::vector<std::string> targets = {};
+    std::vector<std::string> output_targets = {}; // Specific output file targets
 };
 
 /// Parse command-line arguments

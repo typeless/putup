@@ -32,33 +32,6 @@ auto strip_trailing_slashes(std::string str) -> std::string
     return str;
 }
 
-/// Find a node by walking path components using find_by_dir_name
-auto find_node_by_path(BuildGraph const& graph, std::string_view path) -> std::optional<NodeId>
-{
-    if (path.empty()) {
-        return std::nullopt;
-    }
-
-    auto p = fs::path { path };
-    auto parent_id = NodeId { 0 };
-
-    for (auto const& component : p) {
-        auto name = component.string();
-        if (name.empty() || name == ".") {
-            continue;
-        }
-
-        auto found = graph.find_by_dir_name(parent_id, name);
-        if (!found) {
-            return std::nullopt;
-        }
-
-        parent_id = *found;
-    }
-
-    return parent_id != 0 ? std::optional { parent_id } : std::nullopt;
-}
-
 /// Normalize a file path for consistent lookup
 /// - Removes double slashes
 /// - Resolves . and .. components using lexically_normal
@@ -1206,17 +1179,17 @@ auto GraphBuilder::expand_inputs(
                     auto rel_path = fs::path { abs_path }.lexically_relative(ctx.options.source_root).string();
 
                     // First try absolute path (outputs from -B builds use absolute paths)
-                    if (find_node_by_path(*ctx.graph, abs_path)) {
+                    if (ctx.graph->find_by_path(abs_path)) {
                         result.push_back(abs_path);
                     }
                     // Then try project-relative path
-                    else if (find_node_by_path(*ctx.graph, rel_path)) {
+                    else if (ctx.graph->find_by_path(rel_path)) {
                         result.push_back(rel_path);
                     }
                     // Try mapping to output (for simple paths like "foo.o")
                     else {
                         auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
-                        if (find_node_by_path(*ctx.graph, output_path)) {
+                        if (ctx.graph->find_by_path(output_path)) {
                             result.push_back(output_path);
                         } else {
                             // Fall back to project-relative path for error messages

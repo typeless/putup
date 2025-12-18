@@ -20,6 +20,7 @@
 #include "pup/index/writer.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -413,9 +414,9 @@ auto build_index(
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
 
     auto get_or_create_dir = pup::YCombinator { [&](
-        auto const& self,
-        std::filesystem::path const& dir_path
-    ) -> pup::NodeId {
+                                                    auto const& self,
+                                                    std::filesystem::path const& dir_path
+                                                ) -> pup::NodeId {
         auto normalized = dir_path.lexically_normal();
         auto path_str = normalized.string();
 
@@ -467,9 +468,9 @@ auto build_index(
     } };
 
     auto create_implicit_file = [&](
-        std::filesystem::path const& abs_path,
-        std::string const& rel_path
-    ) -> pup::NodeId {
+                                    std::filesystem::path const& abs_path,
+                                    std::string const& rel_path
+                                ) -> pup::NodeId {
         auto content_hash = pup::Hash256 {};
         auto file_size = std::uint64_t { 0 };
         if (std::filesystem::exists(abs_path)) {
@@ -634,6 +635,23 @@ auto build_single_variant(
         return EXIT_SUCCESS;
     }
 
+    // Validate output targets exist in graph
+    for (auto const& target : opts.output_targets) {
+        auto node_id = ctx.graph().find_by_path(target);
+        if (!node_id) {
+            fmt::print(stderr, "Error: {} is not in build graph\n", target);
+            return EXIT_FAILURE;
+        }
+        auto const* node = ctx.graph().get_node(*node_id);
+        if (!node || node->type != pup::NodeType::Generated) {
+            fmt::print(stderr, "Error: {} is not a build output\n", target);
+            return EXIT_FAILURE;
+        }
+        if (opts.verbose) {
+            fmt::print("Output target: {}\n", target);
+        }
+    }
+
     auto index_path = ctx.layout().index_path();
     auto old_index = std::optional<pup::index::Index> {};
     auto use_incremental = false;
@@ -676,6 +694,13 @@ auto build_single_variant(
 
                 changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, scopes, upstream_files, opts.verbose);
                 changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
+
+                // Add output targets to force their rebuild
+                for (auto const& output_path : opts.output_targets) {
+                    if (std::ranges::find(changed_files, output_path) == changed_files.end()) {
+                        changed_files.push_back(output_path);
+                    }
+                }
 
                 // Detect new commands (in fresh graph but not in old index)
                 for (auto id : ctx.graph().all_nodes()) {
@@ -812,7 +837,11 @@ auto build_single_variant(
 
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
-    if (use_incremental && old_index) {
+    if (!opts.output_targets.empty() && !use_incremental) {
+        // Single output targets without old_index - use incremental with just target paths
+        auto empty_index = pup::index::Index {};
+        build_result = scheduler.build_incremental(ctx.graph(), empty_index, opts.output_targets);
+    } else if (use_incremental && old_index) {
         build_result = scheduler.build_incremental(ctx.graph(), *old_index, changed_files);
     } else {
         build_result = scheduler.build(ctx.graph());

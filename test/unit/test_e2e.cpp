@@ -1743,3 +1743,260 @@ SCENARIO("Multi-variant parse", "[e2e][multi-variant]")
         }
     }
 }
+
+// =============================================================================
+// Unified Target Tests
+// =============================================================================
+
+SCENARIO("Unified targets - path-based variant selection", "[e2e][target]")
+{
+    GIVEN("a project with build-debug and build-release variants")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup build-debug is run (path-based variant)")
+        {
+            auto result = f.pup({ "build-debug" });
+
+            THEN("only build-debug variant is built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE_FALSE(f.exists("build-release/hello"));
+            }
+        }
+
+        WHEN("pup build-release is run (path-based variant)")
+        {
+            auto result = f.pup({ "build-release" });
+
+            THEN("only build-release variant is built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-release/hello"));
+                REQUIRE_FALSE(f.exists("build-debug/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - glob pattern variant selection", "[e2e][target]")
+{
+    GIVEN("a project with build-debug and build-release variants")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup 'build-*' is run (glob pattern)")
+        {
+            auto result = f.pup({ "build-*" });
+
+            THEN("all matching variants are built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - explicit multiple variants", "[e2e][target]")
+{
+    GIVEN("a project with build-debug, build-release, and build-custom variants")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.mkdir("build-custom");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+        f.write_file("build-custom/tup.config", "CONFIG_DEBUG=y\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup build-debug build-release is run (explicit multiple)")
+        {
+            auto result = f.pup({ "build-debug", "build-release" });
+
+            THEN("specified variants are built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+
+            THEN("unspecified variant is NOT built")
+            {
+                REQUIRE_FALSE(f.exists("build-custom/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - error on source file target", "[e2e][target]")
+{
+    GIVEN("a project with source files")
+    {
+        auto f = E2EFixture { "multi_variant" };
+        REQUIRE(f.init().success());
+
+        WHEN("pup hello.c is run (source file target)")
+        {
+            auto result = f.pup({ "hello.c" });
+
+            THEN("an error is returned")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("source") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - error on nonexistent path", "[e2e][target]")
+{
+    GIVEN("an initialized project")
+    {
+        auto f = E2EFixture { "multi_variant" };
+        REQUIRE(f.init().success());
+
+        WHEN("pup nonexistent is run")
+        {
+            auto result = f.pup({ "nonexistent" });
+
+            THEN("an error is returned")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("not found") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - error on mixed variant/non-variant targets", "[e2e][target]")
+{
+    GIVEN("a project with build-debug and src directories")
+    {
+        auto f = E2EFixture { "scoped_build" };
+
+        f.mkdir("build-debug");
+        f.write_file("build-debug/tup.config", "");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup build-debug lib is run (mixed targets)")
+        {
+            auto result = f.pup({ "build-debug", "lib" });
+
+            THEN("an error about mixing targets is returned")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("mix") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - single output file target", "[e2e][target]")
+{
+    GIVEN("a project with build-debug variant")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup build-debug/hello is run after full build")
+        {
+            // First do a full build so the output exists
+            REQUIRE(f.build({ "-B", "build-debug" }).success());
+            REQUIRE(f.is_executable("build-debug/hello"));
+
+            // Remove the output to force rebuild
+            f.remove_file("build-debug/hello");
+            REQUIRE_FALSE(f.exists("build-debug/hello"));
+
+            // Build just the single output
+            auto result = f.pup({ "build-debug/hello" });
+
+            THEN("only that output is rebuilt")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - error on nonexistent output in graph", "[e2e][target]")
+{
+    GIVEN("a project with build-debug variant")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup build-debug/nonexistent.o is run")
+        {
+            auto result = f.pup({ "build-debug/nonexistent.o" });
+
+            THEN("an error is returned")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("not in build graph") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Unified targets - B flag with output target", "[e2e][target]")
+{
+    GIVEN("a project with build-debug variant")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("pup -B build-debug build-debug/hello rebuilds deleted output")
+        {
+            // First do a full build
+            REQUIRE(f.build({ "-B", "build-debug" }).success());
+            REQUIRE(f.is_executable("build-debug/hello"));
+
+            // Remove output and rebuild with -B + output target
+            f.remove_file("build-debug/hello");
+            REQUIRE_FALSE(f.exists("build-debug/hello"));
+
+            auto result = f.pup({ "-B", "build-debug", "build-debug/hello" });
+
+            THEN("the output is rebuilt")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+            }
+        }
+    }
+}

@@ -48,6 +48,7 @@ srcs-y += src/cli/context.cpp
 srcs-y += src/cli/multi_variant.cpp
 srcs-y += src/cli/options.cpp
 srcs-y += src/cli/output.cpp
+srcs-y += src/cli/target.cpp
 
 # Platform
 srcs-y += src/platform/process-$(PLATFORM).cpp

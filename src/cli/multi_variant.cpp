@@ -2,15 +2,74 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/cli/multi_variant.hpp"
+#include "pup/cli/target.hpp"
 #include "pup/core/layout.hpp"
 
 #include <cstdlib>
 #include <future>
+#include <set>
 #include <vector>
 
 #include <fmt/core.h>
 
 namespace pup::cli {
+
+namespace {
+
+struct ParsedTargets {
+    std::vector<std::filesystem::path> variants;
+    std::vector<std::string> scopes;
+    std::vector<std::string> output_targets; // Specific output file targets
+    bool has_variant_targets = false;
+};
+
+auto parse_targets_for_variants(
+    std::filesystem::path const& source_root,
+    std::vector<std::string> const& targets
+) -> expected<ParsedTargets, std::string>
+{
+    auto result = ParsedTargets {};
+
+    if (targets.empty()) {
+        return result;
+    }
+
+    auto parsed = validate_target_consistency(source_root, targets);
+    if (!parsed.has_value()) {
+        return unexpected<std::string> { parsed.error() };
+    }
+
+    auto variant_set = std::set<std::string> {};
+    for (auto const& target : *parsed) {
+        if (target.variant.has_value()) {
+            result.has_variant_targets = true;
+            variant_set.insert(target.variant->string());
+            if (!target.scope_or_output.empty()) {
+                if (target.is_output) {
+                    // Full path includes variant prefix (e.g., build-debug/hello)
+                    auto full_path = *target.variant / target.scope_or_output;
+                    result.output_targets.push_back(full_path.string());
+                } else {
+                    result.scopes.push_back(target.scope_or_output.string());
+                }
+            }
+        } else {
+            if (target.is_output) {
+                result.output_targets.push_back(target.scope_or_output.string());
+            } else {
+                result.scopes.push_back(target.scope_or_output.string());
+            }
+        }
+    }
+
+    for (auto const& v : variant_set) {
+        result.variants.emplace_back(v);
+    }
+
+    return result;
+}
+
+} // namespace
 
 auto for_each_variant(
     Options const& opts,
@@ -23,6 +82,7 @@ auto for_each_variant(
     if (!opts.source_dir.empty()) {
         layout_opts.source_dir = std::filesystem::path { opts.source_dir };
     }
+
     if (!opts.build_dirs.empty()) {
         layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
     }
@@ -35,25 +95,48 @@ auto for_each_variant(
 
     auto const& source_root = layout_result->source_root;
 
+    // Parse targets to extract variants and scopes
+    auto parsed_targets = parse_targets_for_variants(source_root, opts.targets);
+    if (!parsed_targets.has_value()) {
+        fmt::print(stderr, "Error: {}\n", parsed_targets.error());
+        return EXIT_FAILURE;
+    }
+
     // Determine variants to process
     auto variants = std::vector<std::filesystem::path> {};
-    if (!opts.build_dirs.empty()) {
+    auto scopes = std::vector<std::string> {};
+    auto output_targets = std::vector<std::string> {};
+
+    if (parsed_targets->has_variant_targets) {
+        variants = parsed_targets->variants;
+        scopes = parsed_targets->scopes;
+        output_targets = parsed_targets->output_targets;
+    } else if (!opts.build_dirs.empty()) {
         for (auto const& dir : opts.build_dirs) {
             variants.emplace_back(dir);
         }
+        scopes = parsed_targets->scopes;
+        output_targets = parsed_targets->output_targets;
     } else {
         variants = discover_variants(source_root);
+        scopes = parsed_targets->scopes;
+        output_targets = parsed_targets->output_targets;
     }
 
     // No variants found - in-tree operation
     if (variants.empty()) {
-        return handler(opts, ".");
+        auto modified_opts = Options { opts };
+        modified_opts.targets = scopes;
+        modified_opts.output_targets = output_targets;
+        return handler(modified_opts, ".");
     }
 
     // Single variant - direct call
     if (variants.size() == 1) {
         auto single_opts = Options { opts };
         single_opts.build_dirs = { variants[0].string() };
+        single_opts.targets = scopes;
+        single_opts.output_targets = output_targets;
         return handler(single_opts, variants[0].filename().string());
     }
 
@@ -67,12 +150,16 @@ auto for_each_variant(
 
     auto futures = std::vector<std::future<int>> {};
     for (auto const& variant : variants) {
-        // Capture variant by value to avoid dangling reference
-        futures.push_back(std::async(std::launch::async, [&opts, &handler, variant = variant] {
-            auto variant_opts = Options { opts };
-            variant_opts.build_dirs = { variant.string() };
-            return handler(variant_opts, variant.filename().string());
-        }));
+        futures.push_back(std::async(
+            std::launch::async,
+            [&opts, &handler, &scopes, &output_targets, variant = variant] {
+                auto variant_opts = Options { opts };
+                variant_opts.build_dirs = { variant.string() };
+                variant_opts.targets = scopes;
+                variant_opts.output_targets = output_targets;
+                return handler(variant_opts, variant.filename().string());
+            }
+        ));
     }
 
     // Collect results

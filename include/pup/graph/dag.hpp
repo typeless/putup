@@ -82,6 +82,9 @@ public:
     /// Find a node by command string
     [[nodiscard]] auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
 
+    /// Find a node by path (walks path components using find_by_dir_name)
+    [[nodiscard]] auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
+
     /// Get all nodes of a given type
     [[nodiscard]] auto nodes_of_type(NodeType type) const -> std::vector<NodeId>;
 

@@ -48,10 +48,16 @@ pup -v                 # Verbose build
 pup lib app            # Build only lib/ and app/ directories
 pup -n                 # Show what would be built
 
-# Multi-variant builds
-pup                              # Auto-build all variants in parallel
-pup -B build-debug               # Build single variant
-pup -B build-debug -B build-release  # Build specific variants in parallel
+# Unified target scheme (path-based variant selection)
+pup build-debug                  # Build single variant (path-based)
+pup build-*                      # Build all variants matching pattern
+pup build-debug build-release    # Build specific variants
+pup build-debug/src/lib          # Variant + scoped build
+pup src/lib                      # Scope applied to all variants
+
+# Legacy -B flag (for creating new variants)
+pup -B /tmp/mybuild              # Create and build out-of-tree
+pup -B build-debug -B build-release  # Multiple -B flags still work
 ```
 
 ### 3.2 pup init
@@ -842,18 +848,42 @@ project/
     └── ...
 ```
 
-**Building variants:**
+**Building variants (path-based selection):**
+
+Specify variant directories directly as targets:
 
 ```bash
-# Method 1: From project root with -B
-pup -B build-debug
-
-# Method 2: cd into variant directory
-cd build-debug && pup
-
-# Method 3: Auto-detect and build all variants in parallel
-pup                    # From project root, builds all variants
+pup build-debug                  # Build single variant
+pup build-debug build-release    # Build multiple variants in parallel
+pup build-*                      # Glob pattern - all matching variants
+pup *-debug                      # Another glob pattern
 ```
+
+**Combining variants with scopes:**
+
+Path-based targets can include both variant and scope:
+
+```bash
+pup build-debug/src/lib          # Variant + directory scope
+pup build-*/src/lib              # Multiple variants + scope
+```
+
+**Auto-detection:**
+
+When no targets are specified, pup auto-detects variant directories:
+
+```bash
+pup                              # Builds all discovered variants in parallel
+cd build-debug && pup            # Builds only this variant
+```
+
+**Legacy -B flag:**
+
+The `-B` flag is still supported for:
+- Creating new out-of-tree builds: `pup -B /tmp/mybuild`
+- Explicit variant selection: `pup -B build-debug -B build-release`
+
+Path-based selection is preferred for existing variants.
 
 **Multiple variants:**
 
@@ -862,14 +892,10 @@ pup variant configs/debug.config       # Creates build-debug/
 pup variant configs/release.config     # Creates build-release/
 pup variant configs/arm.config out-arm # Creates out-arm/
 
-# Build all variants (auto-detected, parallel)
-pup                    # Auto-detects and builds all in parallel
-
-# Build specific variants in parallel
-pup -B build-debug -B build-release
-
-# Build single variant
-pup -B out-arm
+# Build variants
+pup build-debug build-release    # Explicit list
+pup build-*                      # Glob pattern
+pup -B build-debug -B build-release  # Legacy -B flag
 ```
 
 **Parallel variant builds:**
@@ -927,6 +953,33 @@ Use `-A` to ignore scoping and build everything:
 ```bash
 cd project/lib
 pup -A                 # Builds entire project despite cwd
+```
+
+**Scopes with variants:**
+
+Combine variant selection with directory scopes using path syntax:
+
+```bash
+pup build-debug/lib              # Single variant, scoped to lib/
+pup build-*/lib                  # All variants, scoped to lib/
+pup lib                          # All variants, scoped to lib/ (shorthand)
+```
+
+When targets specify a variant prefix (e.g., `build-debug/lib`), only that variant is built. Without a variant prefix (e.g., `lib`), the scope applies to all discovered variants.
+
+**Consistency rule:**
+
+All targets must be the same type - either all have explicit variants, or none do:
+
+```bash
+# OK - all have variants
+pup build-debug/lib build-release/test
+
+# OK - none have variants (applies to all)
+pup lib test
+
+# ERROR - mixing variant and non-variant targets
+pup build-debug/lib test
 ```
 
 **Scope behavior:**
