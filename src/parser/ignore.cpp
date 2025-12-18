@@ -15,8 +15,7 @@ auto IgnoreList::load(std::filesystem::path const& path) -> Result<IgnoreList>
 {
     auto file = std::ifstream { path };
     if (!file) {
-        return make_error<IgnoreList>(ErrorCode::IoError,
-            "Failed to open ignore file: " + path.string());
+        return make_error<IgnoreList>(ErrorCode::IoError, "Failed to open ignore file: " + path.string());
     }
 
     auto list = IgnoreList::with_defaults();
@@ -126,8 +125,7 @@ auto IgnoreList::is_ignored(std::filesystem::path const& rel_path) const -> bool
     return ignored;
 }
 
-auto IgnoreList::match_pattern(IgnorePattern const& p,
-    std::filesystem::path const& path) const -> bool
+auto IgnoreList::match_pattern(IgnorePattern const& p, std::filesystem::path const& path) const -> bool
 {
     auto path_str = path.generic_string();
 

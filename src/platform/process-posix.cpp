@@ -22,7 +22,8 @@ namespace pup::platform {
 
 auto build_env_strings(
     std::vector<std::string> const& extra_env,
-    bool inherit_env) -> std::vector<std::string>
+    bool inherit_env
+) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> {};
 
@@ -63,7 +64,8 @@ auto run_process(ProcessOptions const& opts) -> Result<ProcessResult>
 auto run_process_with_callback(
     ProcessOptions const& opts,
     ProcessOutputCallback callback,
-    void* user_data) -> Result<ProcessResult>
+    void* user_data
+) -> Result<ProcessResult>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
 
@@ -130,8 +132,8 @@ auto run_process_with_callback(
 
         auto cmd_str = std::string { opts.command };
         char* const argv[] = {
-            const_cast<char*>("/bin/sh"),  // NOLINT(cppcoreguidelines-pro-type-const-cast)
-            const_cast<char*>("-c"),       // NOLINT(cppcoreguidelines-pro-type-const-cast)
+            const_cast<char*>("/bin/sh"), // NOLINT(cppcoreguidelines-pro-type-const-cast)
+            const_cast<char*>("-c"),      // NOLINT(cppcoreguidelines-pro-type-const-cast)
             cmd_str.data(),
             nullptr
         };
@@ -213,7 +215,8 @@ auto run_process_with_callback(
                 break;
             }
             timeout_ms = static_cast<int>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
+                std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count()
+            );
         }
 
         auto poll_result = ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms);
@@ -288,7 +291,8 @@ auto run_process_with_callback(
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        end_time - start_time);
+        end_time - start_time
+    );
 
     return result;
 }

@@ -102,8 +102,7 @@ struct Parser::Impl {
     }
 };
 
-Parser::Parser(std::string_view source, std::string_view filename,
-    std::shared_ptr<FileResolver> resolver, Options options)
+Parser::Parser(std::string_view source, std::string_view filename, std::shared_ptr<FileResolver> resolver, Options options)
     : impl_(std::make_unique<Impl>(source, filename))
 {
     impl_->resolver = std::move(resolver);
@@ -157,8 +156,7 @@ auto Parser::parse() -> Result<Tupfile>
     }
 
     if (!impl_->errors.empty()) {
-        return pup::make_error<Tupfile>(ErrorCode::ParseError,
-            "Parse failed with " + std::to_string(impl_->errors.size()) + " error(s)");
+        return pup::make_error<Tupfile>(ErrorCode::ParseError, "Parse failed with " + std::to_string(impl_->errors.size()) + " error(s)");
     }
 
     return tupfile;
@@ -202,8 +200,7 @@ auto Parser::expect(TokenType type, std::string_view message) -> Result<Token>
     if (check(type)) {
         return advance();
     }
-    return pup::make_error<Token>(ErrorCode::UnexpectedToken,
-        std::string { message } + ", got " + std::string { token_type_name(impl_->current.type) });
+    return pup::make_error<Token>(ErrorCode::UnexpectedToken, std::string { message } + ", got " + std::string { token_type_name(impl_->current.type) });
 }
 
 auto Parser::skip_to_next_statement() -> void
@@ -254,8 +251,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         switch (tok.type) {
         case TokenType::KwForeach:
             // foreach is only valid inside a rule
-            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
-                "'foreach' must appear after ':' in a rule");
+            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "'foreach' must appear after ':' in a rule");
 
         case TokenType::KwIncludeRules: {
             advance();
@@ -332,8 +328,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         case TokenType::KwElse:
         case TokenType::KwEndif:
             // These should be handled by parse_conditional
-            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError,
-                "Unexpected '" + std::string { tok.text } + "' without matching if");
+            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "Unexpected '" + std::string { tok.text } + "' without matching if");
 
         case TokenType::KwExport: {
             advance();
@@ -700,8 +695,7 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
     if (kind == Conditional::Kind::Ifdef || kind == Conditional::Kind::Ifndef) {
         // ifdef/ifndef VAR
         if (!check(TokenType::Identifier) && !check(TokenType::Text)) {
-            return pup::make_error<Conditional>(ErrorCode::ParseError,
-                "Expected variable name after ifdef/ifndef");
+            return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected variable name after ifdef/ifndef");
         }
         cond.var_name = std::string { impl_->current.text };
         advance();
@@ -1061,10 +1055,9 @@ auto Parser::parse_path_pattern(bool stop_at_angle) -> Result<PathPattern>
         if (stop_at_angle && t.is(TokenType::OpenAngle)) {
             return true;
         }
-        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow,
-            TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
+        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
     },
-        true);
+                                       true);
     if (!path) {
         return pup::unexpected<Error>(path.error());
     }
@@ -1128,8 +1121,7 @@ auto Parser::parse_command() -> Result<Expression>
 
 auto Parser::make_error(std::string const& message) -> Error
 {
-    return Error::make(ErrorCode::ParseError,
-        std::string { impl_->lexer.filename() } + ":" + std::to_string(impl_->current.location.line) + ":" + std::to_string(impl_->current.location.column) + ": " + message);
+    return Error::make(ErrorCode::ParseError, std::string { impl_->lexer.filename() } + ":" + std::to_string(impl_->current.location.line) + ":" + std::to_string(impl_->current.location.column) + ": " + message);
 }
 
 auto Parser::report_error(std::string const& message) -> void

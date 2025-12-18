@@ -95,7 +95,8 @@ public:
     [[nodiscard]] auto build_incremental(
         graph::BuildGraph const& graph,
         index::Index const& old_index,
-        std::vector<std::string> const& changed_files) -> Result<BuildStats>;
+        std::vector<std::string> const& changed_files
+    ) -> Result<BuildStats>;
 
     /// Set callback for job start
     auto on_job_start(JobStartCallback callback) -> void;
@@ -124,17 +125,18 @@ private:
     auto execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>;
 
     /// Execute a single job
-    auto execute_job(BuildJob const& job, CommandRunner& runner,
-        std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
+    auto execute_job(BuildJob const& job, CommandRunner& runner, std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
 
     /// Build job list from graph in topological order
     [[nodiscard]] auto build_job_list(
-        graph::BuildGraph const& graph) -> Result<std::vector<BuildJob>>;
+        graph::BuildGraph const& graph
+    ) -> Result<std::vector<BuildJob>>;
 
     /// Determine which jobs need to run based on changes
     [[nodiscard]] auto filter_jobs(
         std::vector<BuildJob> const& all_jobs,
-        std::set<NodeId> const& affected_nodes) -> std::vector<BuildJob>;
+        std::set<NodeId> const& affected_nodes
+    ) -> std::vector<BuildJob>;
 };
 
 /// Detect number of available CPUs

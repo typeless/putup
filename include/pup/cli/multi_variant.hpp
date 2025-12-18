@@ -31,6 +31,7 @@ using VariantHandler = std::function<int(Options const&, std::string_view)>;
 [[nodiscard]] auto for_each_variant(
     Options const& opts,
     VariantHandler handler,
-    std::string_view command_name = "Processing") -> int;
+    std::string_view command_name = "Processing"
+) -> int;
 
 } // namespace pup::cli

@@ -52,13 +52,15 @@ public:
     /// Run a command with specific options
     [[nodiscard]] auto run(
         std::string_view command,
-        RunOptions const& options) -> Result<CommandResult>;
+        RunOptions const& options
+    ) -> Result<CommandResult>;
 
     /// Run a command with real-time output callback
     [[nodiscard]] auto run_with_output(
         std::string_view command,
         OutputCallback const& callback,
-        RunOptions const& options = {}) -> Result<CommandResult>;
+        RunOptions const& options = {}
+    ) -> Result<CommandResult>;
 
     /// Set the default working directory
     auto set_working_dir(std::filesystem::path dir) -> void

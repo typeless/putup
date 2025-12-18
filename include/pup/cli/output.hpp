@@ -28,14 +28,16 @@ struct RemoveResult {
 /// Returns true if file was (or would be) removed
 auto remove_file(
     std::filesystem::path const& path,
-    OutputMode mode) -> bool;
+    OutputMode mode
+) -> bool;
 
 /// Remove a directory if empty with dry-run/verbose support
 /// Returns true if directory was (or would be) removed
 auto remove_empty_dir(
     std::filesystem::path const& dir,
     std::filesystem::path const& root_guard,
-    OutputMode mode) -> bool;
+    OutputMode mode
+) -> bool;
 
 /// Remove empty directories from deepest to shallowest
 /// Returns count of directories removed
@@ -43,7 +45,8 @@ auto remove_empty_directories(
     std::set<std::filesystem::path> const& dirs,
     std::filesystem::path const& build_dir,
     std::filesystem::path const& source_dir,
-    OutputMode mode) -> std::size_t;
+    OutputMode mode
+) -> std::size_t;
 
 /// Escape string for DOT format (graphviz)
 [[nodiscard]] auto escape_dot_label(std::string_view s) -> std::string;

@@ -43,7 +43,8 @@ auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view name_str) -> 
 auto CommandEntry::to_raw(
     std::uint32_t cmd_offset,
     std::uint32_t display_offset,
-    std::uint32_t env_offset) const -> RawCommandEntry
+    std::uint32_t env_offset
+) const -> RawCommandEntry
 {
     auto raw = RawCommandEntry {};
     raw.id = id;
@@ -62,7 +63,8 @@ auto CommandEntry::from_raw(
     RawCommandEntry const& raw,
     std::string_view cmd_str,
     std::string_view display_str,
-    std::string_view env_str) -> CommandEntry
+    std::string_view env_str
+) -> CommandEntry
 {
     return CommandEntry {
         .id = raw.id,
@@ -106,22 +108,19 @@ auto Index::add_edge(EdgeEntry entry) -> void
 
 auto Index::find_file(std::string_view path) const -> FileEntry const*
 {
-    auto it = std::find_if(files_.begin(), files_.end(),
-        [path](auto const& f) { return f.path == path; });
+    auto it = std::find_if(files_.begin(), files_.end(), [path](auto const& f) { return f.path == path; });
     return it != files_.end() ? &*it : nullptr;
 }
 
 auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
 {
-    auto it = std::find_if(files_.begin(), files_.end(),
-        [id](auto const& f) { return f.id == id; });
+    auto it = std::find_if(files_.begin(), files_.end(), [id](auto const& f) { return f.id == id; });
     return it != files_.end() ? &*it : nullptr;
 }
 
 auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 {
-    auto it = std::find_if(commands_.begin(), commands_.end(),
-        [id](auto const& c) { return c.id == id; });
+    auto it = std::find_if(commands_.begin(), commands_.end(), [id](auto const& c) { return c.id == id; });
     return it != commands_.end() ? &*it : nullptr;
 }
 

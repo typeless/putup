@@ -19,7 +19,9 @@ auto CommandRunner::run(std::string_view command) -> Result<CommandResult>
 }
 
 auto CommandRunner::run(
-    std::string_view command, RunOptions const& options) -> Result<CommandResult>
+    std::string_view command,
+    RunOptions const& options
+) -> Result<CommandResult>
 {
     return run_with_output(command, nullptr, options);
 }
@@ -43,7 +45,8 @@ void platform_callback(std::string_view data, bool is_stderr, void* user_data)
 auto CommandRunner::run_with_output(
     std::string_view command,
     OutputCallback const& callback,
-    RunOptions const& options) -> Result<CommandResult>
+    RunOptions const& options
+) -> Result<CommandResult>
 {
     auto merged = RunOptions { merge_options(options) };
 
@@ -61,7 +64,8 @@ auto CommandRunner::run_with_output(
     auto platform_result = pup::platform::run_process_with_callback(
         platform_opts,
         callback ? platform_callback : nullptr,
-        callback ? &adapter : nullptr);
+        callback ? &adapter : nullptr
+    );
 
     if (!platform_result) {
         return make_error<CommandResult>(platform_result.error().code, platform_result.error().message);

@@ -24,7 +24,8 @@ auto get_env(char const* name) -> std::optional<std::filesystem::path>
 }
 
 auto find_build_subdir(
-    std::filesystem::path const& root) -> std::optional<std::filesystem::path>
+    std::filesystem::path const& root
+) -> std::optional<std::filesystem::path>
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path { root / name };
@@ -51,7 +52,8 @@ auto find_build_subdir(
 } // namespace
 
 auto find_project_root(
-    std::filesystem::path const& start_dir) -> std::optional<std::filesystem::path>
+    std::filesystem::path const& start_dir
+) -> std::optional<std::filesystem::path>
 {
     auto current = std::filesystem::path { start_dir };
     auto last_tupfile_dir = std::optional<std::filesystem::path> {};
@@ -103,14 +105,16 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!std::filesystem::exists(*opts.source_dir)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Source directory not found: " + opts.source_dir->string());
+                "Source directory not found: " + opts.source_dir->string()
+            );
         }
         layout.source_root = normalize_path(*opts.source_dir);
     } else if (auto env_source = get_env(PUP_SOURCE_DIR_ENV)) {
         if (!std::filesystem::exists(*env_source)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "PUP_SOURCE_DIR not found: " + env_source->string());
+                "PUP_SOURCE_DIR not found: " + env_source->string()
+            );
         }
         layout.source_root = normalize_path(*env_source);
     } else {
@@ -118,7 +122,8 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!root) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Not in a pup/tup project (no Tupfile.ini found)");
+                "Not in a pup/tup project (no Tupfile.ini found)"
+            );
         }
         layout.source_root = normalize_path(*root);
     }
@@ -128,7 +133,8 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         && !std::filesystem::exists(layout.source_root / "Tupfile")) {
         return make_error<ProjectLayout>(
             ErrorCode::NotFound,
-            "Source directory does not contain Tupfile.ini: " + layout.source_root.string());
+            "Source directory does not contain Tupfile.ini: " + layout.source_root.string()
+        );
     }
 
     // Step 2: Determine output_root (where outputs/.pup/tup.config go)
@@ -152,7 +158,8 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
 }
 
 auto discover_variants(
-    std::filesystem::path const& source_root) -> std::vector<std::filesystem::path>
+    std::filesystem::path const& source_root
+) -> std::vector<std::filesystem::path>
 {
     auto result = std::vector<std::filesystem::path> {};
 

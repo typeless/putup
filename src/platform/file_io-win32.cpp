@@ -59,7 +59,8 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
         nullptr,
         OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL,
-        nullptr);
+        nullptr
+    );
 
     if (file.impl_->file_handle == INVALID_HANDLE_VALUE) {
         file.impl_.reset();
@@ -82,7 +83,8 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
             PAGE_READONLY,
             0,
             0,
-            nullptr);
+            nullptr
+        );
 
         if (!file.impl_->mapping_handle) {
             CloseHandle(file.impl_->file_handle);
@@ -91,7 +93,8 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
         }
 
         file.impl_->data = static_cast<std::byte*>(
-            MapViewOfFile(file.impl_->mapping_handle, FILE_MAP_READ, 0, 0, 0));
+            MapViewOfFile(file.impl_->mapping_handle, FILE_MAP_READ, 0, 0, 0)
+        );
 
         if (!file.impl_->data) {
             CloseHandle(file.impl_->mapping_handle);
@@ -140,7 +143,8 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
 
 auto atomic_write(
     std::filesystem::path const& path,
-    std::span<std::byte const> data) -> Result<void>
+    std::span<std::byte const> data
+) -> Result<void>
 {
     auto parent = path.parent_path();
     if (!parent.empty()) {
@@ -168,7 +172,8 @@ auto atomic_write(
         nullptr,
         CREATE_ALWAYS,
         FILE_ATTRIBUTE_NORMAL,
-        nullptr);
+        nullptr
+    );
 
     if (file == INVALID_HANDLE_VALUE) {
         return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");

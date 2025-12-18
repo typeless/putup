@@ -75,7 +75,8 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
     if (file.impl_->size > 0) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         file.impl_->data = reinterpret_cast<std::byte*>(
-            ::mmap(nullptr, file.impl_->size, PROT_READ, MAP_PRIVATE, file.impl_->fd, 0));
+            ::mmap(nullptr, file.impl_->size, PROT_READ, MAP_PRIVATE, file.impl_->fd, 0)
+        );
         if (file.impl_->data == MAP_FAILED) {
             file.impl_->data = nullptr;
             ::close(file.impl_->fd);
@@ -116,7 +117,8 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
 
 auto atomic_write(
     std::filesystem::path const& path,
-    std::span<std::byte const> data) -> Result<void>
+    std::span<std::byte const> data
+) -> Result<void>
 {
     auto parent = path.parent_path();
     if (!parent.empty()) {

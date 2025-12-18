@@ -51,16 +51,13 @@ private:
     static auto parse_pattern(std::string_view line) -> std::optional<IgnorePattern>;
 
     /// Check if a path matches a pattern
-    [[nodiscard]] auto match_pattern(IgnorePattern const& p,
-        std::filesystem::path const& path) const -> bool;
+    [[nodiscard]] auto match_pattern(IgnorePattern const& p, std::filesystem::path const& path) const -> bool;
 
     /// Match a glob pattern against a string
-    [[nodiscard]] static auto glob_match(std::string_view pattern,
-        std::string_view text) -> bool;
+    [[nodiscard]] static auto glob_match(std::string_view pattern, std::string_view text) -> bool;
 
     /// Recursive glob matching helper
-    [[nodiscard]] static auto glob_match_recursive(std::string_view pattern,
-        std::string_view text) -> bool;
+    [[nodiscard]] static auto glob_match_recursive(std::string_view pattern, std::string_view text) -> bool;
 };
 
 } // namespace pup::parser

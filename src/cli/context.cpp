@@ -32,7 +32,8 @@ struct TupfileParseState {
 auto compute_tup_variantdir(
     std::filesystem::path const& source_dir,
     std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root) -> std::string
+    std::filesystem::path const& output_root
+) -> std::string
 {
     if (!output_root.empty() && source_root != output_root) {
         auto output_dir = output_root / source_dir;
@@ -45,7 +46,8 @@ auto compute_tup_variantdir(
 }
 
 auto find_build_subdir(
-    std::filesystem::path const& root) -> std::optional<std::filesystem::path>
+    std::filesystem::path const& root
+) -> std::optional<std::filesystem::path>
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = std::filesystem::path { root / name };
@@ -83,14 +85,16 @@ auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
 
 auto discover_tupfile_dirs(
     std::filesystem::path const& root,
-    pup::parser::IgnoreList const& ignore = {}) -> std::set<std::filesystem::path>
+    pup::parser::IgnoreList const& ignore = {}
+) -> std::set<std::filesystem::path>
 {
     auto dirs = std::set<std::filesystem::path> {};
     auto ec = std::error_code {};
     auto options = std::filesystem::directory_options::skip_permission_denied;
 
     for (auto it = std::filesystem::recursive_directory_iterator(root, options, ec);
-         it != std::filesystem::recursive_directory_iterator(); ++it) {
+         it != std::filesystem::recursive_directory_iterator();
+         ++it) {
         if (ec) {
             break;
         }
@@ -134,7 +138,8 @@ auto parse_directory(
     std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
     pup::parser::VarDb const& config_vars,
-    bool verbose) -> pup::Result<void>
+    bool verbose
+) -> pup::Result<void>
 {
     auto vars = pup::parser::VarDb { base_vars };
     auto normalized_dir = std::filesystem::path {
@@ -148,7 +153,8 @@ auto parse_directory(
     if (state.parsing.contains(normalized_dir)) {
         return pup::make_error<void>(
             pup::ErrorCode::CyclicDependency,
-            fmt::format("Circular Tupfile dependency: {}", normalized_dir.string()));
+            fmt::format("Circular Tupfile dependency: {}", normalized_dir.string())
+        );
     }
 
     state.parsing.insert(normalized_dir);
@@ -166,7 +172,8 @@ auto parse_directory(
         state.parsing.erase(normalized_dir);
         return pup::make_error<void>(
             pup::ErrorCode::IoError,
-            fmt::format("Failed to read {}", tupfile_path.string()));
+            fmt::format("Failed to read {}", tupfile_path.string())
+        );
     }
 
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
@@ -179,7 +186,9 @@ auto parse_directory(
     auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
     auto tup_variantdir = compute_tup_variantdir(
         normalized_dir == "." ? std::filesystem::path {} : rel_dir,
-        root, output_root);
+        root,
+        output_root
+    );
 
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
         return parse_directory(dir, state, builder, graph, root, output_root, base_vars, config_vars, verbose);
@@ -261,7 +270,9 @@ auto BuildContext::parsed_dirs() const -> std::set<std::filesystem::path> const&
 }
 
 auto build_context(
-    Options const& opts, BuildContextOptions const& ctx_opts) -> Result<BuildContext>
+    Options const& opts,
+    BuildContextOptions const& ctx_opts
+) -> Result<BuildContext>
 {
     auto layout_opts = LayoutOptions {};
     if (!opts.source_dir.empty()) {
@@ -296,8 +307,7 @@ auto build_context(
         if (ignore_result) {
             ignore = std::move(*ignore_result);
             if (ctx_opts.verbose) {
-                fmt::print("Loaded {} ignore patterns from {}\n",
-                    ignore.size(), ignore_path.string());
+                fmt::print("Loaded {} ignore patterns from {}\n", ignore.size(), ignore_path.string());
             }
         }
     }
@@ -306,7 +316,8 @@ auto build_context(
 
     if (ctx.impl_->state.available.empty()) {
         return make_error<BuildContext>(
-            ErrorCode::IoError, "No Tupfiles found in project");
+            ErrorCode::IoError, "No Tupfiles found in project"
+        );
     }
 
     if (ctx_opts.verbose) {
@@ -320,8 +331,7 @@ auto build_context(
         if (config_result) {
             ctx.impl_->config_vars = std::move(*config_result);
             if (ctx_opts.verbose) {
-                fmt::print("Loaded {} config variables from {}\n",
-                    ctx.impl_->config_vars.names().size(), config_path.string());
+                fmt::print("Loaded {} config variables from {}\n", ctx.impl_->config_vars.names().size(), config_path.string());
             }
         }
     }
@@ -363,9 +373,7 @@ auto build_context(
             continue;
         }
         auto result = Result<void> {
-            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph,
-                ctx.impl_->layout.source_root, ctx.impl_->layout.output_root,
-                ctx.impl_->vars, ctx.impl_->config_vars, ctx_opts.verbose)
+            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx.impl_->config_vars, ctx_opts.verbose)
         };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
@@ -405,7 +413,7 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
         build_dir = *detected;
         is_in_tree = false;
     } else if (std::filesystem::exists(*root / "tup.config")
-        || std::filesystem::exists(*root / ".pup")) {
+               || std::filesystem::exists(*root / ".pup")) {
         // Fall back to source root for in-tree builds
         build_dir = *root;
         is_in_tree = true;

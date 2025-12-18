@@ -14,8 +14,8 @@ namespace pup::graph {
 namespace {
 
 enum class Color { White,
-    Gray,
-    Black };
+                   Gray,
+                   Black };
 
 struct DfsState {
     std::unordered_map<NodeId, Color> color;

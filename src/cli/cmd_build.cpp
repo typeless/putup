@@ -57,18 +57,15 @@ auto print_stats(
 
     fmt::print("\nStats:\n");
     fmt::print("  Tupfiles parsed:    {:>6}\n", metrics.tupfiles_parsed);
-    fmt::print("  Commands:           {:>6} total, {} executed\n",
-        num_commands, commands_executed);
-    fmt::print("  Files checked:      {:>6} ({} changed)\n",
-        metrics.files_checked, metrics.files_changed);
+    fmt::print("  Commands:           {:>6} total, {} executed\n", num_commands, commands_executed);
+    fmt::print("  Files checked:      {:>6} ({} changed)\n", metrics.files_checked, metrics.files_changed);
     fmt::print("  Files in index:     {:>6}\n", index.file_count());
     fmt::print("  Edges in graph:     {:>6}\n", index.edge_count());
     fmt::print("  Implicit deps:      {:>6}\n", implicit_deps_count);
     fmt::print("  Hash computations:  {:>6}\n", metrics.hash_computations);
     fmt::print("  Stat calls:         {:>6}\n", metrics.stat_calls);
     if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
-        fmt::print("  Index I/O:          {:>6}ms load, {}ms save\n",
-            metrics.index_load_time.count(), metrics.index_save_time.count());
+        fmt::print("  Index I/O:          {:>6}ms load, {}ms save\n", metrics.index_load_time.count(), metrics.index_save_time.count());
     }
 }
 
@@ -417,9 +414,9 @@ auto build_index(
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
 
     auto get_or_create_dir = pup::YCombinator { [&](
-        auto const& self,
-        std::filesystem::path const& dir_path
-    ) -> pup::NodeId {
+                                                    auto const& self,
+                                                    std::filesystem::path const& dir_path
+                                                ) -> pup::NodeId {
         auto normalized = dir_path.lexically_normal();
         auto path_str = normalized.string();
 
@@ -863,11 +860,9 @@ auto build_single_variant(
 
     auto const& stats = *build_result;
     if (stats.failed_jobs > 0) {
-        fmt::print("Build completed: {} commands ({} failed) in {}ms\n",
-            stats.completed_jobs, stats.failed_jobs, duration.count());
+        fmt::print("Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
     } else {
-        fmt::print("Build completed: {} commands in {}ms\n",
-            stats.completed_jobs, duration.count());
+        fmt::print("Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
     }
 
     auto final_index = std::optional<pup::index::Index> {};
@@ -884,8 +879,7 @@ auto build_single_variant(
         if (!write_result) {
             fmt::print(stderr, "Warning: Failed to save index: {}\n", write_result.error().message);
         } else if (opts.verbose) {
-            fmt::print("Saved index: {} files, {} commands, {} edges\n",
-                index.file_count(), index.command_count(), index.edge_count());
+            fmt::print("Saved index: {} files, {} commands, {} edges\n", index.file_count(), index.command_count(), index.edge_count());
         }
         final_index = std::move(index);
     }

@@ -33,7 +33,8 @@ auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
 
 auto IndexWriter::write(
     std::filesystem::path const& path,
-    Index const& index) -> Result<void>
+    Index const& index
+) -> Result<void>
 {
     auto data = Result<std::vector<std::byte>> { serialize(index) };
     if (!data) {
@@ -90,8 +91,8 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
 
     // Build header
     auto header = build_header(
-        index, strings,
-        file_offset, command_offset, edge_offset, string_offset);
+        index, strings, file_offset, command_offset, edge_offset, string_offset
+    );
 
     // Allocate result buffer
     auto result = std::vector<std::byte>(total_size);
@@ -134,7 +135,8 @@ auto IndexWriter::build_header(
     std::uint64_t file_offset,
     std::uint64_t command_offset,
     std::uint64_t edge_offset,
-    std::uint64_t string_offset) -> RawHeader
+    std::uint64_t string_offset
+) -> RawHeader
 {
     return RawHeader {
         .magic = INDEX_MAGIC,

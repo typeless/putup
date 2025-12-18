@@ -9,7 +9,8 @@ namespace pup::platform {
 
 auto build_env_strings(
     std::vector<std::string> const& extra_env,
-    bool inherit_env) -> std::vector<std::string>
+    bool inherit_env
+) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> {};
 
@@ -68,7 +69,8 @@ auto run_process(ProcessOptions const& opts) -> Result<ProcessResult>
 auto run_process_with_callback(
     ProcessOptions const& opts,
     ProcessOutputCallback callback,
-    void* user_data) -> Result<ProcessResult>
+    void* user_data
+) -> Result<ProcessResult>
 {
     auto start_time = std::chrono::steady_clock::now();
 
@@ -159,7 +161,8 @@ auto run_process_with_callback(
         env_block.data(),
         working_dir.empty() ? nullptr : working_dir.c_str(),
         &si,
-        &pi);
+        &pi
+    );
 
     // Close write ends in parent
     if (stdout_write) {
@@ -188,8 +191,7 @@ auto run_process_with_callback(
     // Write stdin data
     if (opts.stdin_data && stdin_write) {
         DWORD written;
-        WriteFile(stdin_write, opts.stdin_data->data(),
-            static_cast<DWORD>(opts.stdin_data->size()), &written, nullptr);
+        WriteFile(stdin_write, opts.stdin_data->data(), static_cast<DWORD>(opts.stdin_data->size()), &written, nullptr);
         CloseHandle(stdin_write);
         stdin_write = nullptr;
     }

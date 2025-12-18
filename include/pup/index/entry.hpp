@@ -50,14 +50,16 @@ struct CommandEntry {
     [[nodiscard]] auto to_raw(
         std::uint32_t cmd_offset,
         std::uint32_t display_offset,
-        std::uint32_t env_offset) const -> RawCommandEntry;
+        std::uint32_t env_offset
+    ) const -> RawCommandEntry;
 
     /// Create from raw format
     [[nodiscard]] static auto from_raw(
         RawCommandEntry const& raw,
         std::string_view cmd_str,
         std::string_view display_str,
-        std::string_view env_str) -> CommandEntry;
+        std::string_view env_str
+    ) -> CommandEntry;
 };
 
 /// In-memory edge

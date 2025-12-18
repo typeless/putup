@@ -19,7 +19,8 @@ auto create_variant(
     std::filesystem::path const& root,
     std::string const& config_arg,
     std::optional<std::string> const& output_dir,
-    bool verbose) -> pup::Result<void>
+    bool verbose
+) -> pup::Result<void>
 {
     auto config_path = std::filesystem::path { config_arg };
     auto abs_config = std::filesystem::path { root / config_path };
@@ -27,7 +28,8 @@ auto create_variant(
     if (!std::filesystem::exists(abs_config)) {
         return pup::make_error<void>(
             pup::ErrorCode::IoError,
-            fmt::format("Config file not found: {}", config_arg));
+            fmt::format("Config file not found: {}", config_arg)
+        );
     }
 
     auto variant_name = std::string {};
@@ -37,21 +39,24 @@ auto create_variant(
         if (variant_name.empty()) {
             return pup::make_error<void>(
                 pup::ErrorCode::InvalidArgument,
-                "Output directory cannot be empty");
+                "Output directory cannot be empty"
+            );
         }
 
         auto test_path = std::filesystem::path { variant_name };
         if (test_path.is_absolute()) {
             return pup::make_error<void>(
                 pup::ErrorCode::InvalidArgument,
-                "Output directory must be relative to project root");
+                "Output directory must be relative to project root"
+            );
         }
 
         for (auto const& part : test_path) {
             if (part == "..") {
                 return pup::make_error<void>(
                     pup::ErrorCode::InvalidArgument,
-                    "Output directory cannot contain '..' components");
+                    "Output directory cannot contain '..' components"
+                );
             }
         }
     } else {
@@ -59,7 +64,8 @@ auto create_variant(
         if (stem.empty()) {
             return pup::make_error<void>(
                 pup::ErrorCode::ParseError,
-                fmt::format("Invalid config filename: {}", config_arg));
+                fmt::format("Invalid config filename: {}", config_arg)
+            );
         }
         variant_name = "build-" + stem;
     }
@@ -71,7 +77,8 @@ auto create_variant(
         if (ec) {
             return pup::make_error<void>(
                 pup::ErrorCode::IoError,
-                fmt::format("Failed to create {}: {}", variant_name, ec.message()));
+                fmt::format("Failed to create {}: {}", variant_name, ec.message())
+            );
         }
     }
 
@@ -91,7 +98,8 @@ auto create_variant(
         if (ec) {
             return pup::make_error<void>(
                 pup::ErrorCode::IoError,
-                fmt::format("Failed to copy config: {}", ec.message()));
+                fmt::format("Failed to copy config: {}", ec.message())
+            );
         }
         display_target = abs_config;
     }
@@ -102,14 +110,16 @@ auto create_variant(
         if (ec) {
             return pup::make_error<void>(
                 pup::ErrorCode::IoError,
-                fmt::format("Failed to compute relative path: {}", ec.message()));
+                fmt::format("Failed to compute relative path: {}", ec.message())
+            );
         }
 
         std::filesystem::create_symlink(rel_config, tup_config, ec);
         if (ec) {
             return pup::make_error<void>(
                 pup::ErrorCode::IoError,
-                fmt::format("Failed to create symlink: {}", ec.message()));
+                fmt::format("Failed to create symlink: {}", ec.message())
+            );
         }
         display_target = rel_config;
     }

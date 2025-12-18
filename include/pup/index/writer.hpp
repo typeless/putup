@@ -22,7 +22,8 @@ public:
     /// Uses a temporary file and rename for atomic operation
     [[nodiscard]] auto write(
         std::filesystem::path const& path,
-        Index const& index) -> Result<void>;
+        Index const& index
+    ) -> Result<void>;
 
     /// Serialize an index to a byte vector
     [[nodiscard]] auto serialize(Index const& index) -> Result<std::vector<std::byte>>;
@@ -54,7 +55,8 @@ private:
         std::uint64_t file_offset,
         std::uint64_t command_offset,
         std::uint64_t edge_offset,
-        std::uint64_t string_offset) -> RawHeader;
+        std::uint64_t string_offset
+    ) -> RawHeader;
 };
 
 } // namespace pup::index

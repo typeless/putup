@@ -46,11 +46,13 @@ using ProcessOutputCallback = void (*)(std::string_view data, bool is_stderr, vo
 [[nodiscard]] auto run_process_with_callback(
     ProcessOptions const& opts,
     ProcessOutputCallback callback,
-    void* user_data) -> Result<ProcessResult>;
+    void* user_data
+) -> Result<ProcessResult>;
 
 /// Build environment variable list from options
 [[nodiscard]] auto build_env_strings(
     std::vector<std::string> const& extra_env,
-    bool inherit_env) -> std::vector<std::string>;
+    bool inherit_env
+) -> std::vector<std::string>;
 
 } // namespace pup::platform

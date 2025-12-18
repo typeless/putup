@@ -33,8 +33,8 @@ struct AstNode {
 /// Variable reference: $(VAR), @(CONFIG), &(NODE)
 struct VarRef : AstNode {
     enum class Kind { Regular,
-        Config,
-        Node };
+                      Config,
+                      Node };
 
     Kind kind = Kind::Regular;
     std::string name;
@@ -117,8 +117,8 @@ struct BangMacro : AstNode {
 /// Variable assignment: VAR = value, VAR += value, VAR := value
 struct Assignment : AstNode {
     enum class Op { Set,
-        Append,
-        Define };
+                    Append,
+                    Define };
 
     Expression name; ///< Variable name (may contain variable refs like foo-$(BAR))
     Op op = Op::Set;
@@ -132,9 +132,9 @@ struct Statement;
 /// Conditional: ifdef, ifndef, ifeq, ifneq
 struct Conditional : AstNode {
     enum class Kind { Ifdef,
-        Ifndef,
-        Ifeq,
-        Ifneq };
+                      Ifndef,
+                      Ifeq,
+                      Ifneq };
 
     Kind kind = Kind::Ifdef;
     std::string var_name; ///< For ifdef/ifndef
@@ -188,8 +188,7 @@ struct Gitignore : AstNode { };
 
 /// Union of all statement types
 struct Statement : AstNode {
-    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, Preload,
-        ErrorDirective, Run, Gitignore>
+    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, Preload, ErrorDirective, Run, Gitignore>
         content;
 
     template<typename T>

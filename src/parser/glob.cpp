@@ -190,7 +190,8 @@ auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
 auto glob_expand(
     std::string_view pattern,
     std::filesystem::path const& base_dir,
-    GlobOptions const& options) -> Result<std::vector<std::string>>
+    GlobOptions const& options
+) -> Result<std::vector<std::string>>
 {
     namespace fs = std::filesystem;
 
@@ -269,7 +270,8 @@ auto glob_expand(
 auto glob_expand_all(
     std::vector<std::string> const& patterns,
     std::filesystem::path const& base_dir,
-    GlobOptions const& options) -> Result<GlobResult>
+    GlobOptions const& options
+) -> Result<GlobResult>
 {
     auto result = GlobResult {};
 
@@ -303,14 +305,16 @@ auto glob_expand_all(
     for (auto const& excl : result.exclusions) {
         result.matches.erase(
             std::remove(result.matches.begin(), result.matches.end(), excl),
-            result.matches.end());
+            result.matches.end()
+        );
     }
 
     return result;
 }
 
 auto glob_split_path(
-    std::string_view pattern) -> std::pair<std::string_view, std::string_view>
+    std::string_view pattern
+) -> std::pair<std::string_view, std::string_view>
 {
     // Find the last / before any glob characters
     auto glob_pos = std::string_view::npos;

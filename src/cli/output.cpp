@@ -34,7 +34,8 @@ auto remove_file(std::filesystem::path const& path, OutputMode mode) -> bool
 auto remove_empty_dir(
     std::filesystem::path const& dir,
     std::filesystem::path const& root_guard,
-    OutputMode mode) -> bool
+    OutputMode mode
+) -> bool
 {
     if (dir == root_guard) {
         return false;
@@ -61,7 +62,8 @@ auto remove_empty_directories(
     std::set<std::filesystem::path> const& output_dirs,
     std::filesystem::path const& build_dir,
     std::filesystem::path const& source_dir,
-    OutputMode mode) -> std::size_t
+    OutputMode mode
+) -> std::size_t
 {
     auto removed = std::size_t { 0 };
 

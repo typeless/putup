@@ -114,11 +114,13 @@ public:
     /// Expand pattern flags (%f, %o, %B, etc.) in a string
     [[nodiscard]] auto expand_pattern(
         std::string_view text,
-        PatternFlags const& flags) -> Result<std::string>;
+        PatternFlags const& flags
+    ) -> Result<std::string>;
 
     /// Expand a path pattern (handles globs, groups, exclusions)
     [[nodiscard]] auto expand_path(
-        PathPattern const& pattern) -> Result<std::vector<std::string>>;
+        PathPattern const& pattern
+    ) -> Result<std::vector<std::string>>;
 
     /// Check if a conditional is true
     [[nodiscard]] auto evaluate_condition(Conditional const& cond) -> bool;

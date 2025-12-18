@@ -202,7 +202,8 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     if (jobs.empty()) {
         auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
         impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end_time - start_time);
+            end_time - start_time
+        );
         return impl_->stats;
     }
 
@@ -211,7 +212,8 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-        end_time - start_time);
+        end_time - start_time
+    );
 
     if (!exec_result && !impl_->options.keep_going) {
         return pup::unexpected<Error>(exec_result.error());
@@ -599,7 +601,8 @@ auto Scheduler::build_job_list(
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
     if (topo_result.has_cycle) {
         return make_error<std::vector<BuildJob>>(
-            ErrorCode::CyclicDependency, "Dependency cycle detected");
+            ErrorCode::CyclicDependency, "Dependency cycle detected"
+        );
     }
 
     auto jobs = std::vector<BuildJob> {};

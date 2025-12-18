@@ -34,7 +34,8 @@ public:
     /// Resolve a path relative to the current file
     [[nodiscard]] virtual auto resolve(
         std::string_view path,
-        std::string_view relative_to) -> Result<std::string> = 0;
+        std::string_view relative_to
+    ) -> Result<std::string> = 0;
 
     /// Read file contents
     [[nodiscard]] virtual auto read_file(std::string_view path) -> Result<std::string> = 0;
@@ -50,7 +51,8 @@ public:
 
     [[nodiscard]] auto resolve(
         std::string_view path,
-        std::string_view relative_to) -> Result<std::string> override;
+        std::string_view relative_to
+    ) -> Result<std::string> override;
     [[nodiscard]] auto read_file(std::string_view path) -> Result<std::string> override;
     [[nodiscard]] auto find_tuprules(std::string_view from_dir) -> Result<std::string> override;
 
@@ -69,8 +71,7 @@ class Parser {
 public:
     using Options = ParserOptions;
 
-    Parser(std::string_view source, std::string_view filename,
-        std::shared_ptr<FileResolver> resolver = nullptr, Options options = Options {});
+    Parser(std::string_view source, std::string_view filename, std::shared_ptr<FileResolver> resolver = nullptr, Options options = Options {});
     ~Parser();
 
     Parser(Parser const&) = delete;
@@ -119,7 +120,8 @@ private:
     [[nodiscard]] auto parse_expression() -> Result<Expression>;
     [[nodiscard]] auto parse_expression_until(
         std::function<bool(Token const&)> const& stop,
-        bool stop_at_gap = false) -> Result<Expression>;
+        bool stop_at_gap = false
+    ) -> Result<Expression>;
     [[nodiscard]] auto parse_path_pattern(bool stop_at_angle = false) -> Result<PathPattern>;
     [[nodiscard]] auto parse_path_list() -> Result<std::vector<PathPattern>>;
     [[nodiscard]] auto parse_path_list_until(TokenType stop) -> Result<std::vector<PathPattern>>;

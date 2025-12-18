@@ -55,14 +55,16 @@ enum class NodeFlags : std::uint16_t {
 [[nodiscard]] constexpr auto operator|(NodeFlags a, NodeFlags b) -> NodeFlags
 {
     return static_cast<NodeFlags>(
-        static_cast<std::uint16_t>(a) | static_cast<std::uint16_t>(b));
+        static_cast<std::uint16_t>(a) | static_cast<std::uint16_t>(b)
+    );
 }
 
 /// Bitwise AND for NodeFlags
 [[nodiscard]] constexpr auto operator&(NodeFlags a, NodeFlags b) -> NodeFlags
 {
     return static_cast<NodeFlags>(
-        static_cast<std::uint16_t>(a) & static_cast<std::uint16_t>(b));
+        static_cast<std::uint16_t>(a) & static_cast<std::uint16_t>(b)
+    );
 }
 
 /// Check if flag is set

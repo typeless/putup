@@ -9,7 +9,8 @@ namespace pup {
 
 auto is_path_under(
     std::filesystem::path const& path,
-    std::filesystem::path const& root) -> bool
+    std::filesystem::path const& root
+) -> bool
 {
     auto path_str = path.string();
     auto root_str = root.string();
@@ -36,7 +37,8 @@ auto is_path_under(
 
 auto relative_to_root(
     std::filesystem::path const& path,
-    std::filesystem::path const& root) -> std::string
+    std::filesystem::path const& root
+) -> std::string
 {
     if (!is_path_under(path, root)) {
         return "";
@@ -61,7 +63,8 @@ auto relative_to_root(
 
 auto is_path_in_scope(
     std::string_view path,
-    std::string_view scope) -> bool
+    std::string_view scope
+) -> bool
 {
     if (scope.empty()) {
         return true;
@@ -82,7 +85,8 @@ auto is_path_in_scope(
 
 auto is_path_in_any_scope(
     std::string_view path,
-    std::vector<std::string> const& scopes) -> bool
+    std::vector<std::string> const& scopes
+) -> bool
 {
     if (scopes.empty()) {
         return true;

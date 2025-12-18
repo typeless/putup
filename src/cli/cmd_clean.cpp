@@ -21,7 +21,8 @@ auto remove_indexed_outputs(
     std::filesystem::path const& index_path,
     std::filesystem::path const& root,
     OutputMode mode,
-    std::string_view variant_name) -> RemoveResult
+    std::string_view variant_name
+) -> RemoveResult
 {
     auto result = RemoveResult {};
 
@@ -93,7 +94,8 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
-        result.output_dirs, ctx->build_dir, ctx->root, mode);
+        result.output_dirs, ctx->build_dir, ctx->root, mode
+    );
 
     if (opts.dry_run) {
         fmt::print("[{}] Would remove {} files, {} directories\n", variant_name, result.removed_count, dirs_removed);

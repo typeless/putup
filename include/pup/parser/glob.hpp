@@ -59,18 +59,21 @@ private:
 [[nodiscard]] auto glob_expand(
     std::string_view pattern,
     std::filesystem::path const& base_dir,
-    GlobOptions const& options = {}) -> Result<std::vector<std::string>>;
+    GlobOptions const& options = {}
+) -> Result<std::vector<std::string>>;
 
 /// Expand multiple patterns, handling exclusions (patterns starting with !)
 [[nodiscard]] auto glob_expand_all(
     std::vector<std::string> const& patterns,
     std::filesystem::path const& base_dir,
-    GlobOptions const& options = {}) -> Result<GlobResult>;
+    GlobOptions const& options = {}
+) -> Result<GlobResult>;
 
 /// Parse a path pattern into directory prefix and glob suffix
 /// e.g., "src/foo/*.c" -> ("src/foo", "*.c")
 [[nodiscard]] auto glob_split_path(
-    std::string_view pattern) -> std::pair<std::string_view, std::string_view>;
+    std::string_view pattern
+) -> std::pair<std::string_view, std::string_view>;
 
 /// Check if a pattern contains glob wildcards
 [[nodiscard]] auto has_glob_chars(std::string_view pattern) -> bool;

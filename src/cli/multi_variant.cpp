@@ -15,7 +15,8 @@ namespace pup::cli {
 auto for_each_variant(
     Options const& opts,
     VariantHandler handler,
-    std::string_view command_name) -> int
+    std::string_view command_name
+) -> int
 {
     // Discover source root
     auto layout_opts = LayoutOptions {};

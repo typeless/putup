@@ -55,6 +55,7 @@ private:
 /// Write data atomically to a file (write to temp, then rename)
 [[nodiscard]] auto atomic_write(
     std::filesystem::path const& path,
-    std::span<std::byte const> data) -> Result<void>;
+    std::span<std::byte const> data
+) -> Result<void>;
 
 } // namespace pup::platform

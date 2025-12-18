@@ -135,7 +135,8 @@ inline auto set_file_size(RawFileEntry& entry, std::uint64_t size) -> void
 [[nodiscard]] inline auto get_node_flags(RawFileEntry const& entry) -> NodeFlags
 {
     return static_cast<NodeFlags>(
-        (static_cast<std::uint16_t>(entry.flags_high) << 8) | entry.flags_low);
+        (static_cast<std::uint16_t>(entry.flags_high) << 8) | entry.flags_low
+    );
 }
 
 /// Helper to set NodeFlags in entry

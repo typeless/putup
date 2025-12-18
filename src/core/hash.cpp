@@ -165,7 +165,8 @@ auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool
 }
 
 auto compute_merkle_hash(
-    std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children) -> Hash256
+    std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children
+) -> Hash256
 {
     // Sort children by name for deterministic ordering
     auto sorted = children;

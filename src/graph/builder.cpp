@@ -293,7 +293,7 @@ auto GraphBuilder::add_tupfile(
 
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
-    ) -> std::vector<std::string> {
+                         ) -> std::vector<std::string> {
         auto it = ctx.groups.find(std::string { name });
         if (it == ctx.groups.end()) {
             return {};
@@ -311,7 +311,7 @@ auto GraphBuilder::add_tupfile(
     // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
     // This is for local group references (no directory prefix) - uses current directory
     eval.resolve_order_only_group = [this, &ctx](std::string_view name
-    ) -> std::vector<std::string> {
+                                    ) -> std::vector<std::string> {
         auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
         auto key = Impl::GroupKey { dir, std::string { name } };
         auto it = impl_->order_only_groups.find(key);
@@ -541,8 +541,7 @@ auto GraphBuilder::process_include(
 
         auto resolved = fs::path { ctx.options.source_root / ctx.current_dir / *path_result };
         if (!fs::exists(resolved)) {
-            return make_error<void>(ErrorCode::IncludeNotFound,
-                "Include file not found: " + *path_result);
+            return make_error<void>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
         }
         include_path = resolved.string();
     }
@@ -563,8 +562,7 @@ auto GraphBuilder::process_include(
     // Read the include file
     auto file = std::ifstream { include_path };
     if (!file) {
-        return make_error<void>(ErrorCode::IoError,
-            "Cannot open include file: " + include_path);
+        return make_error<void>(ErrorCode::IoError, "Cannot open include file: " + include_path);
     }
 
     auto ss = std::stringstream {};
@@ -750,7 +748,7 @@ auto GraphBuilder::expand_rule(
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
     ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &original_resolver](std::string_view name
-    ) -> std::vector<std::string> {
+                                         ) -> std::vector<std::string> {
         // First check groups referenced by this rule (handles cross-directory)
         auto it = rule_order_only_groups.find(std::string { name });
         if (it != rule_order_only_groups.end()) {
@@ -793,8 +791,7 @@ auto GraphBuilder::expand_rule(
 
         auto it = decltype(ctx.macros)::iterator { ctx.macros.find(macro_name) };
         if (it == ctx.macros.end()) {
-            return make_error<void>(ErrorCode::UnknownMacro,
-                "Unknown bang macro: !" + macro_name);
+            return make_error<void>(ErrorCode::UnknownMacro, "Unknown bang macro: !" + macro_name);
         }
 
         macro_ptr = &it->second;
@@ -843,16 +840,13 @@ auto GraphBuilder::expand_rule(
     // Expand order-only inputs early so we can pass them to generated rules
     auto all_order_only = rule.order_only_inputs;
     if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
-        all_order_only.insert(all_order_only.end(),
-            macro_ptr->order_only_inputs.begin(),
-            macro_ptr->order_only_inputs.end());
+        all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
     }
     auto order_only_paths = std::vector<std::string> {};
     for (auto const& pattern : all_order_only) {
         auto order_inputs = Result<std::vector<std::string>> { expand_inputs(ctx, { pattern }) };
         if (order_inputs) {
-            order_only_paths.insert(order_only_paths.end(),
-                order_inputs->begin(), order_inputs->end());
+            order_only_paths.insert(order_only_paths.end(), order_inputs->begin(), order_inputs->end());
         }
     }
 
@@ -1140,8 +1134,7 @@ auto GraphBuilder::expand_inputs(
                     }
 
                     // Map the pattern to output path for matching
-                    auto output_path = map_to_output(path, ctx.current_dir,
-                        ctx.options.source_root, ctx.options.output_root);
+                    auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
                     auto glob = parser::Glob { output_path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         auto node_path = ctx.graph->get_full_path(id);
@@ -1220,8 +1213,7 @@ auto GraphBuilder::expand_inputs(
                     }
                     // Try mapping to output (for simple paths like "foo.o")
                     else {
-                        auto output_path = map_to_output(path, ctx.current_dir,
-                            ctx.options.source_root, ctx.options.output_root);
+                        auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
                         if (find_node_by_path(*ctx.graph, output_path)) {
                             result.push_back(output_path);
                         } else {
@@ -1263,7 +1255,8 @@ auto GraphBuilder::expand_inputs(
 
                         result.erase(
                             std::remove(result.begin(), result.end(), normalized),
-                            result.end());
+                            result.end()
+                        );
                     }
                 }
             } else {
@@ -1277,7 +1270,8 @@ auto GraphBuilder::expand_inputs(
 
                 result.erase(
                     std::remove(result.begin(), result.end(), normalized_excl),
-                    result.end());
+                    result.end()
+                );
             }
         }
     }
@@ -1327,8 +1321,7 @@ auto GraphBuilder::expand_outputs(
             auto output_path = expanded ? *expanded : std::move(path);
 
             // Map to output directory
-            output_path = map_to_output(output_path, ctx.current_dir,
-                ctx.options.source_root, ctx.options.output_root);
+            output_path = map_to_output(output_path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
 
             result.push_back(std::move(output_path));
         }
