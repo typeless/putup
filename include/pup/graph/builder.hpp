@@ -16,8 +16,12 @@
 #include <unordered_set>
 #include <vector>
 
-namespace pup::parser { class EvalContext; }
-namespace pup::parser { class VarDb; }
+namespace pup::parser {
+struct EvalContext;
+}
+namespace pup::parser {
+class VarDb;
+}
 
 namespace pup::graph {
 

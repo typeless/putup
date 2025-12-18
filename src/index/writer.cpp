@@ -12,21 +12,51 @@ namespace pup::index {
 
 auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
 {
+    // Empty strings get offset 0, which has a zero-length entry
     if (str.empty()) {
+        // Ensure offset 0 has a zero-length prefix if this is the first call
+        if (data_.empty()) {
+            data_.push_back(0);
+            data_.push_back(0);
+        }
         return 0;
     }
 
+    // Check for duplicate
     if (auto it = offsets_.find(std::string { str }); it != offsets_.end()) {
         return it->second;
     }
 
+    // Validate string length fits in u16
+    auto constexpr MAX_STRING_LENGTH = std::uint16_t { 0xFFFF };
+    if (str.size() > MAX_STRING_LENGTH) {
+        throw std::overflow_error("String exceeds 64KB limit");
+    }
+
+    // Ensure we have the empty string entry at offset 0 (handles case where
+    // first add() call is a non-empty string - the empty case is handled above)
+    if (data_.empty()) {
+        data_.push_back(0);
+        data_.push_back(0);
+    }
+
+    // Check table size limit (u32 offset max)
     auto constexpr MAX_OFFSET = std::numeric_limits<std::uint32_t>::max();
-    if (data_.size() > MAX_OFFSET - str.size()) {
+    auto const entry_size = sizeof(std::uint16_t) + str.size();
+    if (data_.size() > MAX_OFFSET - entry_size) {
         throw std::overflow_error("String table exceeds 4GB limit");
     }
 
     auto offset = static_cast<std::uint32_t>(data_.size());
+
+    // Write length prefix (u16, little-endian)
+    auto const length = static_cast<std::uint16_t>(str.size());
+    data_.push_back(static_cast<char>(length & 0xFF));
+    data_.push_back(static_cast<char>(length >> 8));
+
+    // Write string data
     data_.insert(data_.end(), str.begin(), str.end());
+
     offsets_.emplace(std::string { str }, offset);
     return offset;
 }
@@ -76,18 +106,31 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
         edge_entries.push_back(edge.to_raw());
     }
 
-    // Calculate offsets
-    auto const header_size = sizeof(RawHeader);
+    // Calculate offsets (all u32, check for overflow)
+    auto constexpr MAX_U32 = std::numeric_limits<std::uint32_t>::max();
+    auto const file_size_64 = file_entries.size() * sizeof(RawFileEntry);
+    auto const command_size_64 = command_entries.size() * sizeof(RawCommandEntry);
+    auto const edge_size_64 = edge_entries.size() * sizeof(RawEdge);
+    auto const total_size_64 = sizeof(RawHeader) + file_size_64 + command_size_64
+        + edge_size_64 + strings.size() + sizeof(RawFooter);
+
+    if (total_size_64 > MAX_U32) {
+        return make_error<std::vector<std::byte>>(
+            ErrorCode::InvalidState, "Index exceeds 4GB limit"
+        );
+    }
+
+    auto const header_size = static_cast<std::uint32_t>(sizeof(RawHeader));
     auto const file_offset = header_size;
-    auto const file_size = file_entries.size() * sizeof(RawFileEntry);
+    auto const file_size = static_cast<std::uint32_t>(file_size_64);
     auto const command_offset = file_offset + file_size;
-    auto const command_size = command_entries.size() * sizeof(RawCommandEntry);
+    auto const command_size = static_cast<std::uint32_t>(command_size_64);
     auto const edge_offset = command_offset + command_size;
-    auto const edge_size = edge_entries.size() * sizeof(RawEdge);
+    auto const edge_size = static_cast<std::uint32_t>(edge_size_64);
     auto const string_offset = edge_offset + edge_size;
     auto const string_size = strings.size();
     auto const footer_offset = string_offset + string_size;
-    auto const total_size = footer_offset + sizeof(RawFooter);
+    auto const total_size = static_cast<std::uint32_t>(total_size_64);
 
     // Build header
     auto header = build_header(
@@ -132,21 +175,19 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
 auto IndexWriter::build_header(
     Index const& index,
     StringTable const& strings,
-    std::uint64_t file_offset,
-    std::uint64_t command_offset,
-    std::uint64_t edge_offset,
-    std::uint64_t string_offset
+    std::uint32_t file_offset,
+    std::uint32_t command_offset,
+    std::uint32_t edge_offset,
+    std::uint32_t string_offset
 ) -> RawHeader
 {
     return RawHeader {
         .magic = INDEX_MAGIC,
         .version = INDEX_VERSION,
-        .flags = 0,
         .file_count = static_cast<std::uint32_t>(index.files().size()),
         .command_count = static_cast<std::uint32_t>(index.commands().size()),
         .edge_count = static_cast<std::uint32_t>(index.edges().size()),
         .string_table_size = strings.size(),
-        .reserved1 = 0,
         .file_offset = file_offset,
         .command_offset = command_offset,
         .edge_offset = edge_offset,

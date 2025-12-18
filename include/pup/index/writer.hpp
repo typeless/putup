@@ -52,10 +52,10 @@ private:
     auto build_header(
         Index const& index,
         StringTable const& strings,
-        std::uint64_t file_offset,
-        std::uint64_t command_offset,
-        std::uint64_t edge_offset,
-        std::uint64_t string_offset
+        std::uint32_t file_offset,
+        std::uint32_t command_offset,
+        std::uint32_t edge_offset,
+        std::uint32_t string_offset
     ) -> RawHeader;
 };
 

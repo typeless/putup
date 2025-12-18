@@ -16,24 +16,24 @@ using namespace pup::index;
 
 TEST_CASE("Index format struct sizes", "[index]")
 {
-    SECTION("RawHeader is 64 bytes")
+    SECTION("RawHeader is 40 bytes")
     {
-        REQUIRE(sizeof(RawHeader) == 64);
+        REQUIRE(sizeof(RawHeader) == 40);
     }
 
-    SECTION("RawFileEntry is 96 bytes")
+    SECTION("RawFileEntry is 64 bytes")
     {
-        REQUIRE(sizeof(RawFileEntry) == 96);
+        REQUIRE(sizeof(RawFileEntry) == 64);
     }
 
-    SECTION("RawCommandEntry is 64 bytes")
+    SECTION("RawCommandEntry is 24 bytes")
     {
-        REQUIRE(sizeof(RawCommandEntry) == 64);
+        REQUIRE(sizeof(RawCommandEntry) == 24);
     }
 
-    SECTION("RawEdge is 24 bytes")
+    SECTION("RawEdge is 16 bytes")
     {
-        REQUIRE(sizeof(RawEdge) == 24);
+        REQUIRE(sizeof(RawEdge) == 16);
     }
 
     SECTION("RawFooter is 32 bytes")
@@ -93,7 +93,6 @@ TEST_CASE("FileEntry conversion", "[index]")
     REQUIRE(raw.type == static_cast<std::uint8_t>(NodeType::File));
     REQUIRE(get_file_size(raw) == 1024);
     REQUIRE(raw.name_offset == 200);
-    REQUIRE(raw.name_length == 8);
     REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
     REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
 
@@ -124,11 +123,8 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.id == 100);
     REQUIRE(raw.dir_id == 5);
     REQUIRE(raw.cmd_offset == 0);
-    REQUIRE(raw.cmd_length == 23);
     REQUIRE(raw.display_offset == 50);
-    REQUIRE(raw.display_length == 9);
     REQUIRE(raw.env_offset == 100);
-    REQUIRE(raw.env_length == 6);
     REQUIRE(raw.flags == 1);
 
     auto restored = CommandEntry::from_raw(raw, cmd.command, cmd.display, cmd.env);
@@ -596,7 +592,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         REQUIRE(reader_result.has_value());
 
         // get_string should return empty for out-of-bounds
-        auto str = reader_result->get_string(0, 10);
+        auto str = reader_result->get_string(0);
         REQUIRE(str.empty());
 
         std::filesystem::remove(temp_path);
@@ -617,8 +613,9 @@ TEST_CASE("StringTable deduplication", "[index]")
         auto data = writer.serialize(index);
         REQUIRE(data.has_value());
 
+        // v6 length-prefixed: 2 (empty) + 2 (length) + 8 (main.cpp) = 12
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
-        REQUIRE(hdr->string_table_size == 8);
+        REQUIRE(hdr->string_table_size == 12);
     }
 
     SECTION("system header paths are deduplicated")
@@ -632,8 +629,9 @@ TEST_CASE("StringTable deduplication", "[index]")
         auto data = writer.serialize(index);
         REQUIRE(data.has_value());
 
+        // v6 length-prefixed: 2 (empty) + 2 (length) + 20 (path) = 24
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
-        REQUIRE(hdr->string_table_size == 20);
+        REQUIRE(hdr->string_table_size == 24);
     }
 
     SECTION("empty strings return offset 0")
@@ -647,7 +645,8 @@ TEST_CASE("StringTable deduplication", "[index]")
         auto data = writer.serialize(index);
         REQUIRE(data.has_value());
 
+        // v6 length-prefixed: 2 (empty) + 2 (length) + 3 (gcc) = 7
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
-        REQUIRE(hdr->string_table_size == 3);
+        REQUIRE(hdr->string_table_size == 7);
     }
 }

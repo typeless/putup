@@ -16,11 +16,10 @@ auto FileEntry::to_raw(std::uint32_t name_offset) const -> RawFileEntry
     raw.id = id;
     raw.parent_id = parent_id;
     raw.src_id = src_id;
+    raw.name_offset = name_offset;
+    raw.size = size;
     raw.type = static_cast<std::uint8_t>(type);
     set_node_flags(raw, flags);
-    raw.size = size;
-    raw.name_offset = name_offset;
-    raw.name_length = static_cast<std::uint32_t>(name.size());
     raw.content_hash = content_hash;
     return raw;
 }
@@ -50,11 +49,8 @@ auto CommandEntry::to_raw(
     raw.id = id;
     raw.dir_id = dir_id;
     raw.cmd_offset = cmd_offset;
-    raw.cmd_length = static_cast<std::uint32_t>(command.size());
     raw.display_offset = display_offset;
-    raw.display_length = static_cast<std::uint32_t>(display.size());
     raw.env_offset = env_offset;
-    raw.env_length = static_cast<std::uint32_t>(env.size());
     raw.flags = flags;
     return raw;
 }
@@ -82,9 +78,8 @@ auto EdgeEntry::to_raw() const -> RawEdge
         .from_id = from,
         .to_id = to,
         .type = static_cast<std::uint8_t>(type),
-        .reserved1 = 0,
-        .reserved2 = 0,
-        .group_cmd_id = static_cast<std::uint32_t>(group_cmd_id),
+        .reserved = {},
+        .group_cmd_id = group_cmd_id,
     };
 }
 

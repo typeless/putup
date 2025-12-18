@@ -475,53 +475,49 @@ struct BuilderContext {
 
 ## Index Module
 
-### Binary Format (v5)
+### Binary Format (v6)
 
 ```
 ┌─────────────────────────────────────┐
-│ Header (64 bytes)                   │
+│ Header (40 bytes)                   │
 │   magic: "PUPI" (4 bytes)           │
-│   version: u32 (currently 5)        │
-│   flags: u32                        │
+│   version: u32 (6)                  │
 │   file_count: u32                   │
 │   command_count: u32                │
 │   edge_count: u32                   │
 │   string_table_size: u32            │
-│   reserved: u32                     │
-│   file_offset: u64                  │
-│   command_offset: u64               │
-│   edge_offset: u64                  │
-│   string_offset: u64                │
+│   file_offset: u32                  │
+│   command_offset: u32               │
+│   edge_offset: u32                  │
+│   string_offset: u32                │
 ├─────────────────────────────────────┤
-│ FileEntry[] (96 bytes each)         │
-│   id: u64                           │
-│   parent_id: u64                    │
-│   src_id: u64                       │
-│   reserved: u64                     │
+│ FileEntry[] (64 bytes each)         │
+│   id: u32                           │
+│   parent_id: u32                    │
+│   src_id: u32                       │
+│   name_offset: u32                  │
 │   size: u64                         │
-│   reserved: u32                     │
-│   type: u8, flags: u16, pad: u8     │
-│   name_offset: u32, name_length: u32│
-│   reserved: u64                     │
+│   type: u8, flags_low/high: u16     │
+│   reserved: 5 bytes                 │
 │   content_hash: [u8; 32]            │
 ├─────────────────────────────────────┤
-│ CommandEntry[] (64 bytes each)      │
-│   id: u64                           │
-│   dir_id: u64                       │
-│   cmd_offset: u32, cmd_length: u32  │
-│   display_offset/length: u32 each   │
-│   env_offset: u32, env_length: u32  │
-│   flags: u8, reserved: 7 bytes      │
-│   reserved: u128                    │
+│ CommandEntry[] (24 bytes each)      │
+│   id: u32                           │
+│   dir_id: u32                       │
+│   cmd_offset: u32                   │
+│   display_offset: u32               │
+│   env_offset: u32                   │
+│   flags: u8, reserved: 3 bytes      │
 ├─────────────────────────────────────┤
-│ Edge[] (24 bytes each)              │
-│   from_id: u64                      │
-│   to_id: u64                        │
-│   type: u8, reserved: u24           │
+│ Edge[] (16 bytes each)              │
+│   from_id: u32                      │
+│   to_id: u32                        │
+│   type: u8, reserved: 3 bytes       │
 │   group_cmd_id: u32                 │
 ├─────────────────────────────────────┤
-│ String Table                        │
-│   Packed strings (not null-term)    │
+│ String Table (length-prefixed)      │
+│   [0]: u16(0) - empty string entry  │
+│   [...]: u16(len) + data bytes      │
 │   Deduplicated via offset reuse     │
 ├─────────────────────────────────────┤
 │ Footer (32 bytes)                   │
@@ -535,14 +531,18 @@ Version history:
 - v3: Removed path field, paths reconstructed from parent chain
 - v4: Directory content_hash stores Merkle hash
 - v5: Removed mtime, change detection uses size + content hash
+- v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
 
 Design principles:
 - Fixed-size entries for O(1) random access
 - Parent-child hierarchy for path storage (like tup)
+- Length-prefixed strings (u16 length, 64KB max per string)
 - String table with deduplication
 - SHA-256 checksum for corruption detection
 - 8-byte aligned structures for efficient memory access
 - Bounds checking on all offset/count fields
+- 32-bit IDs sufficient for ~4B nodes (AOSP has <10M)
+- 32-bit offsets sufficient for 4GB index files
 
 ### IndexReader
 
@@ -554,7 +554,7 @@ class IndexReader {
     auto read() -> Result<Index>;
     auto verify_checksum() -> bool;
     auto header() -> RawHeader const*;
-    auto get_string(offset, length) -> std::string_view;
+    auto get_string(offset) -> std::string_view;  // length from string table
 };
 ```
 

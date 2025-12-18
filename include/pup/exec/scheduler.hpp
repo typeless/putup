@@ -18,8 +18,12 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pup::graph { class BuildGraph; }
-namespace pup::index { class Index; }
+namespace pup::graph {
+class BuildGraph;
+}
+namespace pup::index {
+class Index;
+}
 
 namespace pup::exec {
 

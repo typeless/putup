@@ -48,9 +48,8 @@ public:
     /// Get edge entries as raw span
     [[nodiscard]] auto raw_edges() const -> std::span<RawEdge const>;
 
-    /// Get string from string table
-    [[nodiscard]] auto get_string(std::uint32_t offset, std::uint32_t length) const
-        -> std::string_view;
+    /// Get string from string table (length-prefixed)
+    [[nodiscard]] auto get_string(std::uint32_t offset) const -> std::string_view;
 
     /// Verify the checksum
     [[nodiscard]] auto verify_checksum() const -> bool;

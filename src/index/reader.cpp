@@ -30,8 +30,8 @@ auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
     if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
         return make_error<IndexReader>(ErrorCode::InvalidFormat, "Invalid index file magic");
     }
-    // Support reading older versions (1 and 2)
-    if (hdr->version < 1 || hdr->version > INDEX_VERSION) {
+    // v6 format only (clean break from v5)
+    if (hdr->version != INDEX_VERSION) {
         return make_error<IndexReader>(ErrorCode::InvalidFormat, "Unsupported index version");
     }
 
@@ -52,9 +52,9 @@ auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
         return false;
     }
 
-    // Accept versions 1 and 2
+    // v6 format only
     return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0
-        && header.version >= 1 && header.version <= INDEX_VERSION;
+        && header.version == INDEX_VERSION;
 }
 
 auto IndexReader::read() const -> Result<Index>
@@ -68,7 +68,7 @@ auto IndexReader::read() const -> Result<Index>
     // Read file entries
     auto files = raw_files();
     for (auto const& raw : files) {
-        auto name = get_string(raw.name_offset, raw.name_length);
+        auto name = get_string(raw.name_offset);
         index.add_file(FileEntry::from_raw(raw, name));
     }
 
@@ -78,9 +78,9 @@ auto IndexReader::read() const -> Result<Index>
     // Read command entries
     auto commands = raw_commands();
     for (auto const& raw : commands) {
-        auto cmd = get_string(raw.cmd_offset, raw.cmd_length);
-        auto display = get_string(raw.display_offset, raw.display_length);
-        auto env = get_string(raw.env_offset, raw.env_length);
+        auto cmd = get_string(raw.cmd_offset);
+        auto display = get_string(raw.display_offset);
+        auto env = get_string(raw.env_offset);
         index.add_command(CommandEntry::from_raw(raw, cmd, display, env));
     }
 
@@ -164,20 +164,40 @@ auto IndexReader::raw_edges() const -> std::span<RawEdge const>
     return { edges, hdr->edge_count };
 }
 
-auto IndexReader::get_string(std::uint32_t offset, std::uint32_t length) const -> std::string_view
+auto IndexReader::get_string(std::uint32_t offset) const -> std::string_view
 {
     auto const* hdr = header();
-    if (!hdr || length == 0) {
+    if (!hdr) {
         return {};
     }
 
+    // Length-prefixed strings: <u16 length><data>
     auto const string_start = hdr->string_offset + offset;
-    if (string_start + length > file_.size()) {
+
+    // Need at least 2 bytes for length prefix
+    if (string_start + sizeof(std::uint16_t) > file_.size()) {
         return {};
     }
 
     auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto str_bytes = data.subspan(string_start, length);
+
+    // Read u16 length (little-endian)
+    auto const* len_bytes = data.subspan(string_start, sizeof(std::uint16_t)).data();
+    auto const length = static_cast<std::uint16_t>(
+        static_cast<std::uint8_t>(len_bytes[0]) | (static_cast<std::uint8_t>(len_bytes[1]) << 8)
+    );
+
+    if (length == 0) {
+        return {};
+    }
+
+    // Bounds check string data
+    auto const data_start = string_start + sizeof(std::uint16_t);
+    if (data_start + length > file_.size()) {
+        return {};
+    }
+
+    auto str_bytes = data.subspan(data_start, length);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return { reinterpret_cast<char const*>(str_bytes.data()), length };
 }

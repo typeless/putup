@@ -9,7 +9,8 @@
 namespace pup {
 
 /// Unique identifier for nodes in the dependency graph
-using NodeId = std::uint64_t;
+/// 32-bit is sufficient for ~4 billion nodes (even AOSP has < 10M)
+using NodeId = std::uint32_t;
 
 /// Invalid node ID sentinel
 inline constexpr auto INVALID_NODE_ID = NodeId { 0 };
