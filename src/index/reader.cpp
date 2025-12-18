@@ -111,8 +111,14 @@ auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
         return {};
     }
 
+    // Bounds check: ensure offset and size are within file
+    auto const size = std::size_t { hdr->file_count } * sizeof(RawFileEntry);
+    if (hdr->file_offset > file_.size() || size > file_.size() - hdr->file_offset) {
+        return {};
+    }
+
     auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto file_bytes = data.subspan(hdr->file_offset, hdr->file_count * sizeof(RawFileEntry));
+    auto file_bytes = data.subspan(hdr->file_offset, size);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const* files = reinterpret_cast<RawFileEntry const*>(file_bytes.data());
     return { files, hdr->file_count };
@@ -125,8 +131,14 @@ auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
         return {};
     }
 
+    // Bounds check: ensure offset and size are within file
+    auto const size = std::size_t { hdr->command_count } * sizeof(RawCommandEntry);
+    if (hdr->command_offset > file_.size() || size > file_.size() - hdr->command_offset) {
+        return {};
+    }
+
     auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto cmd_bytes = data.subspan(hdr->command_offset, hdr->command_count * sizeof(RawCommandEntry));
+    auto cmd_bytes = data.subspan(hdr->command_offset, size);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const* commands = reinterpret_cast<RawCommandEntry const*>(cmd_bytes.data());
     return { commands, hdr->command_count };
@@ -139,8 +151,14 @@ auto IndexReader::raw_edges() const -> std::span<RawEdge const>
         return {};
     }
 
+    // Bounds check: ensure offset and size are within file
+    auto const size = std::size_t { hdr->edge_count } * sizeof(RawEdge);
+    if (hdr->edge_offset > file_.size() || size > file_.size() - hdr->edge_offset) {
+        return {};
+    }
+
     auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto edge_bytes = data.subspan(hdr->edge_offset, hdr->edge_count * sizeof(RawEdge));
+    auto edge_bytes = data.subspan(hdr->edge_offset, size);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const* edges = reinterpret_cast<RawEdge const*>(edge_bytes.data());
     return { edges, hdr->edge_count };
