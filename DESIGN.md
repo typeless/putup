@@ -475,42 +475,74 @@ struct BuilderContext {
 
 ## Index Module
 
-### Binary Format
+### Binary Format (v5)
 
 ```
 ┌─────────────────────────────────────┐
 │ Header (64 bytes)                   │
-│   magic: "PUPI"                     │
-│   version: 1                        │
-│   file_count, command_count, ...    │
-│   offsets to each section           │
+│   magic: "PUPI" (4 bytes)           │
+│   version: u32 (currently 5)        │
+│   flags: u32                        │
+│   file_count: u32                   │
+│   command_count: u32                │
+│   edge_count: u32                   │
+│   string_table_size: u32            │
+│   reserved: u32                     │
+│   file_offset: u64                  │
+│   command_offset: u64               │
+│   edge_offset: u64                  │
+│   string_offset: u64                │
 ├─────────────────────────────────────┤
 │ FileEntry[] (96 bytes each)         │
-│   id, parent_id, type, flags        │
-│   path_offset, path_length          │
-│   mtime, size, content_hash         │
+│   id: u64                           │
+│   parent_id: u64                    │
+│   src_id: u64                       │
+│   reserved: u64                     │
+│   size: u64                         │
+│   reserved: u32                     │
+│   type: u8, flags: u16, pad: u8     │
+│   name_offset: u32, name_length: u32│
+│   reserved: u64                     │
+│   content_hash: [u8; 32]            │
 ├─────────────────────────────────────┤
 │ CommandEntry[] (64 bytes each)      │
-│   id, dir_id                        │
-│   cmd_offset, cmd_length            │
-│   display_offset, display_length    │
+│   id: u64                           │
+│   dir_id: u64                       │
+│   cmd_offset: u32, cmd_length: u32  │
+│   display_offset/length: u32 each   │
+│   env_offset: u32, env_length: u32  │
+│   flags: u8, reserved: 7 bytes      │
+│   reserved: u128                    │
 ├─────────────────────────────────────┤
 │ Edge[] (24 bytes each)              │
-│   from_id, to_id, type              │
+│   from_id: u64                      │
+│   to_id: u64                        │
+│   type: u8, reserved: u24           │
+│   group_cmd_id: u32                 │
 ├─────────────────────────────────────┤
 │ String Table                        │
-│   Packed null-terminated strings    │
+│   Packed strings (not null-term)    │
+│   Deduplicated via offset reuse     │
 ├─────────────────────────────────────┤
 │ Footer (32 bytes)                   │
-│   SHA-256 checksum of above         │
+│   checksum: [u8; 32] (SHA-256)      │
 └─────────────────────────────────────┘
 ```
 
+Version history:
+- v1: Initial format with full path strings
+- v2: Added name field for (parent_dir, name) identification
+- v3: Removed path field, paths reconstructed from parent chain
+- v4: Directory content_hash stores Merkle hash
+- v5: Removed mtime, change detection uses size + content hash
+
 Design principles:
 - Fixed-size entries for O(1) random access
-- String table for deduplication
-- Checksum for corruption detection
-- Aligned structures for efficient access
+- Parent-child hierarchy for path storage (like tup)
+- String table with deduplication
+- SHA-256 checksum for corruption detection
+- 8-byte aligned structures for efficient memory access
+- Bounds checking on all offset/count fields
 
 ### IndexReader
 
