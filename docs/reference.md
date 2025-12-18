@@ -29,7 +29,12 @@ The default command. Executes the build by parsing Tupfiles, computing the depen
 **Multi-variant auto-detection:** When run from the project root without `-B` flags, pup automatically discovers all variant directories (subdirectories containing `tup.config` or `.pup/`) and builds them in parallel.
 
 **Arguments:**
-- `TARGETS` - Optional directory paths to scope the build (see Section 7.3)
+- `TARGETS` - Optional paths to scope the build. Can be:
+  - **Variant directory:** `build-debug` (selects variant)
+  - **Scope directory:** `src/lib` (limits to subtree)
+  - **Combined:** `build-debug/src/lib` (variant + scope)
+  - **Glob pattern:** `build-*` (multiple variants)
+  - **Output file:** `build-debug/src/lib/foo.o` (single file rebuild)
 
 **Relevant Options:**
 - `-j N` - Run N jobs in parallel (default: number of CPUs)
@@ -54,6 +59,7 @@ pup build-*                      # Build all variants matching pattern
 pup build-debug build-release    # Build specific variants
 pup build-debug/src/lib          # Variant + scoped build
 pup src/lib                      # Scope applied to all variants
+pup build-debug/src/lib/foo.o    # Rebuild single output file
 
 # Legacy -B flag (for creating new variants)
 pup -B /tmp/mybuild              # Create and build out-of-tree
@@ -75,10 +81,11 @@ Initialize a `.pup` directory in the current project. Creates the directory stru
 ### 3.3 pup parse
 
 ```
-pup parse [OPTIONS]
+pup parse [OPTIONS] [TARGETS...]
 ```
 
 Parse and validate all Tupfiles without executing any commands. Useful for checking syntax errors or seeing what would be built.
+Supports unified target syntax for variant and scope selection.
 
 **Relevant Options:**
 - `-v` - Show each Tupfile as it's parsed
@@ -87,22 +94,26 @@ Parse and validate all Tupfiles without executing any commands. Useful for check
 
 **Multi-Variant Support:**
 - Running from project root auto-detects and parses all variants
-- Use multiple `-B` flags to parse specific variants in parallel
+- Path-based targets: `pup parse build-debug`, `pup parse build-*`
+- Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-pup parse              # Validate all Tupfiles (auto-detects variants)
-pup parse -v           # Show parsing progress
-pup parse -B build-debug -B build-release  # Parse specific variants
+pup parse                  # Validate all Tupfiles (auto-detects variants)
+pup parse -v               # Show parsing progress
+pup parse build-debug      # Parse single variant (path-based)
+pup parse build-*          # Parse all matching variants
+pup parse build-debug/lib  # Parse scoped to lib/ directory
 ```
 
 ### 3.4 pup clean
 
 ```
-pup clean [OPTIONS]
+pup clean [OPTIONS] [TARGETS...]
 ```
 
 Remove generated output files tracked in the index. Does not remove `.pup/` or `tup.config`.
+Supports unified target syntax for variant and scope selection.
 
 **Relevant Options:**
 - `-n` - Dry-run: show what would be removed
@@ -111,23 +122,26 @@ Remove generated output files tracked in the index. Does not remove `.pup/` or `
 
 **Multi-Variant Support:**
 - Running from project root auto-detects and cleans all variants
-- Use multiple `-B` flags to clean specific variants in parallel
+- Path-based targets: `pup clean build-debug`, `pup clean build-*`
+- Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-pup clean              # Remove generated files (auto-detects variants)
-pup clean -n           # Show what would be removed
-pup clean -B build-release  # Clean single variant
-pup clean -B build-debug -B build-release  # Clean specific variants
+pup clean                     # Remove generated files (auto-detects variants)
+pup clean -n                  # Show what would be removed
+pup clean build-debug         # Clean single variant (path-based)
+pup clean build-*             # Clean all matching variants
+pup clean build-debug/src/lib # Clean scoped to src/lib
 ```
 
 ### 3.5 pup distclean
 
 ```
-pup distclean [OPTIONS]
+pup distclean [OPTIONS] [TARGETS...]
 ```
 
 Full reset: remove all generated files, the `.pup/` directory, and `tup.config`. Returns the project to a pristine state.
+Supports unified target syntax for variant selection.
 
 **Relevant Options:**
 - `-n` - Dry-run: show what would be removed
@@ -135,13 +149,14 @@ Full reset: remove all generated files, the `.pup/` directory, and `tup.config`.
 
 **Multi-Variant Support:**
 - Running from project root auto-detects and distcleans all variants
-- Use multiple `-B` flags to distclean specific variants in parallel
+- Path-based targets: `pup distclean build-debug`, `pup distclean build-*`
+- Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-pup distclean          # Full reset (auto-detects variants)
-pup distclean -B build-debug  # Reset single variant
-pup distclean -B build-debug -B build-release  # Reset specific variants
+pup distclean             # Full reset (auto-detects variants)
+pup distclean build-debug # Reset single variant (path-based)
+pup distclean build-*     # Reset all matching variants
 ```
 
 ### 3.6 pup variant
@@ -170,15 +185,22 @@ pup variant configs/release.config out     # Creates out/
 ### 3.7 pup export
 
 ```
-pup export <format> [OPTIONS]
+pup export <format> [OPTIONS] [TARGETS...]
 ```
 
-Export build information in various formats.
+Export build information in various formats. Supports unified target syntax for variant and scope selection.
 
 **Formats:**
 - `script` - Shell script
 - `compdb` - compile_commands.json
 - `graph` - DOT format dependency graph
+
+**Examples with targets:**
+```bash
+pup export graph --summary build-debug    # Single variant
+pup export compdb build-*                 # All matching variants
+pup export graph build-debug/src/lib      # Variant + scope
+```
 
 #### 3.7.1 export script
 
@@ -318,7 +340,7 @@ pup -v -- lib     # Verbose build of 'lib' directory
 |----------|-------------|
 | `PUP_SOURCE_DIR` | Source directory (same as `-S`, lower priority) |
 | `PUP_BUILD_DIR` | Build directory (same as `-B`, lower priority) |
-| `PUP_IMPLICIT_DEPS` | Set to `0` to disable auto-generated dependency rules |
+| `PUP_IMPLICIT_DEPS` | Set to `0` to disable auto-generated dependency rules (default: enabled) |
 
 **Priority Order:**
 
@@ -987,6 +1009,44 @@ pup build-debug/lib test
 - Change detection is project-wide, but only scoped commands execute
 - Useful for large projects where full builds are slow
 
+### 7.4 Single Output Targets
+
+Target a specific output file to rebuild just that file and its dependencies.
+
+**Syntax:**
+```bash
+pup build-debug/src/lib/foo.o    # Rebuild single output
+```
+
+**How it works:**
+
+1. Pup recognizes the path as a build output (not a source file)
+2. Only the command producing that output executes (if inputs changed)
+3. Dependencies are still checked and rebuilt if needed
+
+**Requirements:**
+
+- Path must be under a variant directory (e.g., `build-debug/`)
+- Path must be a known output in the build graph
+- Source files (`.c`, `.cpp`, etc.) are rejected with an error
+
+**Error cases:**
+
+```bash
+pup src/main.c           # Error: "src/main.c is a source file, not a build output"
+pup build-debug/foo.xyz  # Error: "foo.xyz not in build graph"
+```
+
+**Use case:** During development, rebuild just the file you're working on for fast iteration:
+
+```bash
+# Make a change to parser.cpp, rebuild just its object file
+pup build-debug/src/parser.o
+
+# Run the full link step separately if needed
+pup build-debug/myapp
+```
+
 ## 8. Implicit Dependencies
 
 Header files included by C/C++ sources aren't listed in Tupfiles, but changes to them should trigger rebuilds. Pup tracks these "implicit dependencies" automatically.
@@ -1044,12 +1104,12 @@ The parser handles:
 
 ### 8.2 Auto-Generated Dependency Rules
 
-Alternative method: let pup auto-generate dependency scanning commands.
+Pup automatically generates dependency scanning commands for C/C++ compiles (enabled by default).
 
-**Setup:**
+**Disabling:**
 
 ```bash
-PUP_IMPLICIT_DEPS=1 pup
+PUP_IMPLICIT_DEPS=0 pup
 ```
 
 **How it works:**
@@ -1086,10 +1146,10 @@ Preserved flags: `-I`, `-D`, `-U`, `-std=`, `-isystem`, `--sysroot`
 
 | Method | Pros | Cons |
 |--------|------|------|
-| `.d` files (`-MD`) | Standard, reliable, fast | Requires flag in every compile |
-| `PUP_IMPLICIT_DEPS` | Zero Tupfile changes | Slightly slower, pattern-based |
+| `.d` files (`-MD`) | Explicit, standard, efficient | Requires flag in every compile |
+| Auto-gen (default) | Zero Tupfile changes | Slightly slower, pattern-based |
 
-**Recommendation:** Use `-MD` for new projects. Use `PUP_IMPLICIT_DEPS` when adopting existing Tupfiles that don't have `-MD`.
+**Recommendation:** Use `-MD` for new projects. Auto-generation works well for adopting existing Tupfiles that don't have `-MD`.
 
 ## 9. Incremental Builds
 
@@ -1142,11 +1202,11 @@ Binary file at `.pup/index` storing the complete build state.
 
 | Section | Description |
 |---------|-------------|
-| Header (64 bytes) | Magic number, version, counts |
-| File entries (96 bytes each) | ID, parent, name, size, SHA-256 hash |
-| Command entries (64 bytes each) | ID, command string, display text |
-| Edges (24 bytes each) | From, to, link type |
-| String table | Packed strings |
+| Header (40 bytes) | Magic number, version, counts, offsets |
+| File entries (56 bytes each) | Parent, name offset, type, size, SHA-256 hash |
+| Command entries (16 bytes each) | Dir ID, command/display/env offsets |
+| Edges (16 bytes each) | From, to, link type, group cmd ID |
+| String table | Length-prefixed packed strings |
 | Footer (32 bytes) | SHA-256 checksum |
 
 **Link types:**
@@ -1172,6 +1232,14 @@ Paths use a (parent_id, name) model like tup's database:
 - Only basename stored per entry
 - Full paths reconstructed by walking parent chain
 - Enables O(1) lookup by directory + name
+
+**Tagged ID spaces (index format v7):**
+
+Files and commands occupy separate ID spaces for O(1) lookup:
+- File IDs: 1, 2, 3, ... (stored in dense array, ID = array_index + 1)
+- Command IDs: 0x80000001, 0x80000002, ... (high bit set)
+- ID field removed from on-disk format (computed from array position)
+- Lookup: `is_command_id(id) ? commands_[id & ~0x80000000 - 1] : files_[id - 1]`
 
 ### 9.3 Stale Output Cleanup
 
@@ -1731,6 +1799,14 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Parallel builds | ✅ | ✅ | |
 | Incremental builds | ✅ | ✅ | |
 | Cross-platform | ✅ | ✅ | Linux, macOS, Windows |
+| **Pup Extensions** |
+| Path-based variant selection | ❌ | ✅ | `pup build-debug` vs `-B` flag |
+| Glob variant patterns | ❌ | ✅ | `pup build-*` |
+| Single output targets | ❌ | ✅ | `pup build-debug/foo.o` |
+| Multi-variant parallel | ❌ | ✅ | Auto-detect and build variants |
+| export script | ❌ | ✅ | Generate build.sh |
+| export compdb | ❌ | ✅ | compile_commands.json |
+| Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
 
 **Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name
 
@@ -1787,7 +1863,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 |----------|-------------|---------|
 | `PUP_SOURCE_DIR` | Source directory | Auto-detect |
 | `PUP_BUILD_DIR` | Build/output directory | Source dir |
-| `PUP_IMPLICIT_DEPS` | Enable auto dep scanning | `0` (off) |
+| `PUP_IMPLICIT_DEPS` | Enable auto dep scanning | `1` (on) |
 
 **Tupfile Built-ins:**
 
