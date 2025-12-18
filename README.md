@@ -22,16 +22,149 @@ Requirements: C++20 compiler (GCC 11+, Clang 14+)
 ## Quick Start
 
 ```bash
-pup              # Build the project (auto-detects variants)
+pup              # Build the project
 pup -j8          # Build with 8 parallel jobs
 pup -n           # Dry-run: show what would build
 pup clean        # Remove generated files
-
-# Multi-variant builds (auto-detected or explicit)
-pup                          # Auto-build all variants in parallel
-pup -B build-debug           # Build single variant
-pup -B build-debug -B build-release  # Build specific variants
 ```
+
+## Concepts
+
+### Variant Builds
+
+A **variant** is a separate build configuration (debug, release, cross-compile, etc.) with its own output directory. Each variant has a `tup.config` file that defines configuration variables.
+
+```bash
+# Create a debug variant
+pup variant debug.config build-debug
+
+# Build specific variant
+pup build-debug
+
+# Build multiple variants in parallel
+pup build-debug build-release
+
+# Glob pattern for all variants
+pup build-*
+```
+
+Variants keep build outputs isolated - you can switch between configurations without rebuilding from scratch.
+
+### Scoped Builds
+
+A **scoped build** limits the build to a specific subdirectory. Only commands within that scope (and their dependencies) are executed.
+
+```bash
+# Build only src/lib and its deps
+pup src/lib
+
+# Combine with variant
+pup build-debug/src/lib
+```
+
+Scoped builds are useful for large projects where you're working on a specific module. Use `-a` to include upstream dependencies, or `-A` to build the full project.
+
+### Unified Target Syntax
+
+Targets use a unified path-based syntax that combines variant selection and scoping:
+
+```
+[variant/][scope]
+```
+
+Pup interprets a target as follows:
+
+1. **Variant** - A directory containing `tup.config` (e.g., `build-debug/`)
+2. **Scope** - A source subdirectory to limit the build (e.g., `src/lib`)
+3. **Combined** - Variant prefix + scope (e.g., `build-debug/src/lib`)
+
+```bash
+pup build-debug           # Variant only: build everything in build-debug
+pup src/lib               # Scope only: build src/lib across all variants
+pup build-debug/src/lib   # Combined: build src/lib in build-debug variant
+```
+
+Glob patterns work for variant selection:
+
+```bash
+pup build-*               # All variants matching build-*
+pup build-*/src/lib       # Scope src/lib in all matching variants
+```
+
+## CLI Reference
+
+```
+pup [OPTIONS] [TARGETS...]
+pup [OPTIONS] <command> [TARGETS...]
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `clean` | Remove generated files |
+| `distclean` | Full reset: remove `.pup` and variant directory |
+| `variant <config> [dir]` | Create variant build directory |
+| `export <format>` | Export build info (see below) |
+
+### Export Formats
+
+| Format | Description |
+|--------|-------------|
+| `script` | Shell script to run build commands |
+| `compdb` | `compile_commands.json` for IDE integration |
+| `graph` | DOT format dependency graph |
+| `graph --summary` | Human-readable text summary |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-j, --jobs N` | Run N jobs in parallel |
+| `-k, --keep-going` | Continue after failures |
+| `-n, --dry-run` | Print commands without executing |
+| `-v, --verbose` | Verbose output |
+| `-S DIR` | Source directory (default: auto-detect) |
+| `-B DIR` | Build/output directory (can repeat) |
+| `-A, --all` | Full project build (ignore cwd scoping) |
+| `-a, --all-deps` | Include upstream deps in scoped builds |
+| `--stat` | Print build statistics |
+| `--summary` | Human-readable output (for `export graph`) |
+
+### Examples
+
+```bash
+# Basic builds
+pup                      # Build all variants
+pup build-debug          # Build single variant
+pup build-*              # Build all matching variants
+
+# Scoped builds
+pup src/lib              # Build only src/lib across all variants
+pup build-debug/src/lib  # Build src/lib in specific variant
+
+# Export
+pup export compdb        # Generate compile_commands.json
+pup export graph --summary  # Show dependency stats
+
+# Variant management
+pup variant debug.config build-debug  # Create variant directory
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PUP_SOURCE_DIR` | Source directory (overridden by `-S`) |
+| `PUP_BUILD_DIR` | Build directory (overridden by `-B`) |
+| `PUP_IMPLICIT_DEPS` | Set to `0` to disable auto-generated dep rules |
+
+### Miscellaneous Commands
+
+| Command | Description |
+|---------|-------------|
+| `init` | Initialize `.pup` directory |
+| `parse` | Parse and validate Tupfiles |
 
 ## Documentation
 
