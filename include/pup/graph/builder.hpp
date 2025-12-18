@@ -4,6 +4,7 @@
 #pragma once
 
 #include "dag.hpp"
+#include "dep_scanner.hpp"
 #include "pup/core/result.hpp"
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
@@ -28,6 +29,7 @@ struct BuilderOptions {
     bool expand_globs = true;                              ///< Expand glob patterns
     bool validate_inputs = true;                           ///< Check that input files exist
     bool verbose = false;                                  ///< Print verbose output
+    DepScannerRegistry const* scanner_registry = nullptr;  ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr; ///< Optional pattern registry for auto-generated rules
 };
 

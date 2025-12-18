@@ -12,7 +12,9 @@
 #include "pup/core/y_combinator.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
+#include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
+#include "pup/graph/scanners/gcc.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
@@ -629,15 +631,15 @@ auto build_single_variant(
         fmt::print(fmt::runtime(fmt_str), std::forward<decltype(args)>(args)...);
     };
 
-    auto pattern_registry = std::optional<pup::graph::RulePatternRegistry> {};
+    auto scanner_registry = std::optional<pup::graph::DepScannerRegistry> {};
     auto implicit_deps_disabled = false;
     if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
         implicit_deps_disabled = true;
     }
 
     if (!implicit_deps_disabled) {
-        pattern_registry.emplace();
-        pattern_registry->register_pattern(pup::graph::make_gcc_depfile_pattern());
+        scanner_registry.emplace();
+        scanner_registry->register_scanner(pup::graph::scanners::make_gcc_scanner());
         if (opts.verbose) {
             vprint("Implicit dependency tracking enabled\n");
         }
@@ -647,7 +649,7 @@ auto build_single_variant(
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
         .auto_init = true,
-        .pattern_registry = pattern_registry ? &*pattern_registry : nullptr,
+        .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
     };
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };

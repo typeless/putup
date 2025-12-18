@@ -18,6 +18,7 @@ class VarDb;
 }
 namespace graph {
 class BuildGraph;
+class DepScannerRegistry;
 class RulePatternRegistry;
 }
 }
@@ -29,6 +30,7 @@ struct BuildContextOptions {
     bool verbose = false;
     bool keep_going = false;
     bool auto_init = false;
+    graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
 };
 

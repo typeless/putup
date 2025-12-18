@@ -331,6 +331,7 @@ auto build_context(
         .output_root = ctx.impl_->layout.output_root,
         .config_path = config_path,
         .expand_globs = true,
+        .scanner_registry = ctx_opts.scanner_registry,
         .pattern_registry = ctx_opts.pattern_registry,
     };
 

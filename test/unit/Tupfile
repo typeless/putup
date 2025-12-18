@@ -11,6 +11,7 @@ TEST_CXXFLAGS = $(CXXFLAGS) -Wno-maybe-uninitialized
 
 test-srcs-y  = test_bench.cpp
 test-srcs-y += test_builder.cpp
+test-srcs-y += test_dep_scanner.cpp
 test-srcs-y += test_depfile.cpp
 test-srcs-y += test_e2e.cpp
 test-srcs-y += test_eval.cpp
