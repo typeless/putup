@@ -42,7 +42,7 @@ auto VarDb::get(std::string_view name) const -> std::string_view
 
 auto VarDb::contains(std::string_view name) const -> bool
 {
-    return vars_.find(name) != vars_.end(); // Heterogeneous lookup
+    return vars_.contains(name);
 }
 
 auto VarDb::remove(std::string_view name) -> void
