@@ -5,8 +5,6 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
-#include "pup/graph/dag.hpp"
-#include "pup/index/entry.hpp"
 #include "runner.hpp"
 
 #include <atomic>
@@ -19,6 +17,9 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+namespace pup::graph { class BuildGraph; }
+namespace pup::index { class Index; }
 
 namespace pup::exec {
 

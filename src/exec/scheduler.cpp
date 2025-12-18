@@ -3,8 +3,10 @@
 
 #include "pup/exec/scheduler.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
+#include "pup/index/entry.hpp"
 #include "pup/parser/depfile.hpp"
 
 #include <fmt/format.h>

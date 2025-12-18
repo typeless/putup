@@ -4,11 +4,8 @@
 #pragma once
 
 #include "dag.hpp"
-#include "dep_scanner.hpp"
 #include "pup/core/result.hpp"
 #include "pup/parser/ast.hpp"
-#include "pup/parser/eval.hpp"
-#include "rule_pattern.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -19,7 +16,13 @@
 #include <unordered_set>
 #include <vector>
 
+namespace pup::parser { class EvalContext; }
+namespace pup::parser { class VarDb; }
+
 namespace pup::graph {
+
+class DepScannerRegistry;
+class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {

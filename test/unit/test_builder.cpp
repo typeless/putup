@@ -3,6 +3,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/graph/builder.hpp"
+#include "pup/parser/eval.hpp"
 
 #include <filesystem>
 #include <fstream>

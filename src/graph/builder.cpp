@@ -2,7 +2,9 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/graph/builder.hpp"
+#include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
+#include "pup/parser/eval.hpp"
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
 

@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/exec/runner.hpp"
 #include "pup/exec/scheduler.hpp"
+#include "pup/graph/dag.hpp"
 #include "pup/platform/env.hpp"
 
 #include <chrono>
