@@ -1,9 +1,18 @@
 ---
-# clang-format configuration for uld_cpp
-# Based on SerenityOS .clang-format (C++ portion only)
-# https://github.com/SerenityOS/serenity/blob/master/.clang-format
+# clang-format configuration for pup
+# See STYLE.md for rationale
 
 BasedOnStyle: WebKit
+
+# Multiline function declarations: closing paren on own line (when manually broken)
+# auto foo(
+#     int a,
+#     int b
+# ) -> Result<int>;
+AlignAfterOpenBracket: BlockIndent
+BinPackParameters: false
+BinPackArguments: false
+AllowAllParametersOfDeclarationOnNextLine: false
 
 AlignEscapedNewlines: Left
 AlignTrailingComments:
