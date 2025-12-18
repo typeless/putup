@@ -804,23 +804,32 @@ auto build_single_variant(
             auto& deps = discovered_deps[target_id];
 
             for (auto const& dep_path : job_result.discovered_deps) {
-                try {
-                    auto resolved = std::filesystem::path {};
-                    if (std::filesystem::path { dep_path }.is_absolute()) {
-                        resolved = std::filesystem::weakly_canonical(dep_path);
-                    } else {
-                        resolved = std::filesystem::weakly_canonical(job.working_dir / dep_path);
-                    }
-
-                    if (pup::is_path_under(resolved, ctx.layout().source_root)) {
-                        deps.push_back(std::filesystem::relative(resolved, ctx.layout().source_root).string());
-                    } else {
-                        deps.push_back(resolved.string());
-                    }
-                } catch (std::filesystem::filesystem_error const& e) {
+                auto ec = std::error_code {};
+                auto resolved = std::filesystem::path {};
+                if (std::filesystem::path { dep_path }.is_absolute()) {
+                    resolved = std::filesystem::weakly_canonical(dep_path, ec);
+                } else {
+                    resolved = std::filesystem::weakly_canonical(job.working_dir / dep_path, ec);
+                }
+                if (ec) {
                     if (opts.verbose) {
-                        fmt::print(stderr, "Warning: Skipping dependency '{}': {}\n", dep_path, e.what());
+                        fmt::print(stderr, "Warning: Skipping dependency '{}': {}\n", dep_path, ec.message());
                     }
+                    continue;
+                }
+
+                if (pup::is_path_under(resolved, ctx.layout().source_root)) {
+                    auto rel = std::filesystem::relative(resolved, ctx.layout().source_root, ec);
+                    if (ec) {
+                        if (opts.verbose) {
+                            fmt::print(stderr, "Warning: Cannot relativize '{}': {}\n",
+                                       resolved.string(), ec.message());
+                        }
+                        continue;
+                    }
+                    deps.push_back(rel.string());
+                } else {
+                    deps.push_back(resolved.string());
                 }
             }
         }

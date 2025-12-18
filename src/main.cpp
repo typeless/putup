@@ -5,7 +5,6 @@
 #include "pup/cli/options.hpp"
 
 #include <cstdlib>
-#include <exception>
 
 #include <fmt/core.h>
 
@@ -42,27 +41,19 @@ auto dispatch(Options const& opts) -> int
 
 } // namespace pup::cli
 
-auto main(int argc, char** argv) noexcept(false) -> int
+auto main(int argc, char** argv) -> int
 {
-    try {
-        auto opts = pup::cli::Options { pup::cli::parse_args(argc, argv) };
+    auto opts = pup::cli::Options { pup::cli::parse_args(argc, argv) };
 
-        if (opts.help) {
-            pup::cli::print_usage();
-            return EXIT_SUCCESS;
-        }
-
-        if (opts.version) {
-            pup::cli::print_version();
-            return EXIT_SUCCESS;
-        }
-
-        return pup::cli::dispatch(opts);
-    } catch (std::exception const& e) {
-        fmt::print(stderr, "Fatal error: {}\n", e.what());
-        return EXIT_FAILURE;
-    } catch (...) {
-        fmt::print(stderr, "Fatal error: unknown exception\n");
-        return EXIT_FAILURE;
+    if (opts.help) {
+        pup::cli::print_usage();
+        return EXIT_SUCCESS;
     }
+
+    if (opts.version) {
+        pup::cli::print_version();
+        return EXIT_SUCCESS;
+    }
+
+    return pup::cli::dispatch(opts);
 }

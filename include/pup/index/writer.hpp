@@ -33,7 +33,7 @@ private:
     class StringTable {
     public:
         /// Add a string and return its offset
-        auto add(std::string_view str) -> std::uint32_t;
+        [[nodiscard]] auto add(std::string_view str) -> Result<std::uint32_t>;
 
         /// Get the table data
         [[nodiscard]] auto data() const -> std::vector<char> const& { return data_; }

@@ -4,7 +4,9 @@
 #include "pup/cli/options.hpp"
 #include "pup/core/platform.hpp"
 
+#include <charconv>
 #include <cstdlib>
+#include <cstring>
 #include <string_view>
 
 #include <fmt/core.h>
@@ -44,20 +46,24 @@ auto parse_args(int argc, char** argv) -> Options
             opts.keep_going = true;
         } else if (arg == "-j" || arg == "--jobs") {
             if (i + 1 < argc) {
-                try {
-                    opts.jobs = static_cast<std::size_t>(std::stoi(argv[++i]));
-                } catch (std::exception const&) {
-                    fmt::print(stderr, "Error: Invalid job count '{}'\n", argv[i]);
+                auto const* str = argv[++i];
+                auto value = int {};
+                auto [ptr, ec] = std::from_chars(str, str + std::strlen(str), value);
+                if (ec != std::errc {} || *ptr != '\0' || value <= 0) {
+                    fmt::print(stderr, "Error: Invalid job count '{}'\n", str);
                     std::exit(EXIT_FAILURE);
                 }
+                opts.jobs = static_cast<std::size_t>(value);
             }
         } else if (arg.starts_with("-j")) {
-            try {
-                opts.jobs = static_cast<std::size_t>(std::stoi(std::string { arg.substr(2) }));
-            } catch (std::exception const&) {
-                fmt::print(stderr, "Error: Invalid job count '{}'\n", arg.substr(2));
+            auto str = arg.substr(2);
+            auto value = int {};
+            auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
+            if (ec != std::errc {} || ptr != str.data() + str.size() || value <= 0) {
+                fmt::print(stderr, "Error: Invalid job count '{}'\n", str);
                 std::exit(EXIT_FAILURE);
             }
+            opts.jobs = static_cast<std::size_t>(value);
         } else if (arg == "-S") {
             if (i + 1 < argc) {
                 opts.source_dir = std::string { argv[++i] };

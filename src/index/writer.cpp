@@ -10,7 +10,7 @@
 
 namespace pup::index {
 
-auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
+auto IndexWriter::StringTable::add(std::string_view str) -> Result<std::uint32_t>
 {
     // Empty strings get offset 0, which has a zero-length entry
     if (str.empty()) {
@@ -30,7 +30,9 @@ auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
     // Validate string length fits in u16
     auto constexpr MAX_STRING_LENGTH = std::uint16_t { 0xFFFF };
     if (str.size() > MAX_STRING_LENGTH) {
-        throw std::overflow_error("String exceeds 64KB limit");
+        return make_error<std::uint32_t>(
+            ErrorCode::InvalidArgument, "String exceeds 64KB limit"
+        );
     }
 
     // Ensure we have the empty string entry at offset 0 (handles case where
@@ -44,7 +46,9 @@ auto IndexWriter::StringTable::add(std::string_view str) -> std::uint32_t
     auto constexpr MAX_OFFSET = std::numeric_limits<std::uint32_t>::max();
     auto const entry_size = sizeof(std::uint16_t) + str.size();
     if (data_.size() > MAX_OFFSET - entry_size) {
-        throw std::overflow_error("String table exceeds 4GB limit");
+        return make_error<std::uint32_t>(
+            ErrorCode::InvalidArgument, "String table exceeds 4GB limit"
+        );
     }
 
     auto offset = static_cast<std::uint32_t>(data_.size());
@@ -84,7 +88,10 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
 
     for (auto const& file : index.files()) {
         auto name_offset = strings.add(file.name);
-        file_entries.push_back(file.to_raw(name_offset));
+        if (!name_offset) {
+            return pup::unexpected<Error>(name_offset.error());
+        }
+        file_entries.push_back(file.to_raw(*name_offset));
     }
 
     // Build command entries and collect strings
@@ -93,9 +100,18 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
 
     for (auto const& cmd : index.commands()) {
         auto cmd_offset = strings.add(cmd.command);
+        if (!cmd_offset) {
+            return pup::unexpected<Error>(cmd_offset.error());
+        }
         auto display_offset = strings.add(cmd.display);
+        if (!display_offset) {
+            return pup::unexpected<Error>(display_offset.error());
+        }
         auto env_offset = strings.add(cmd.env);
-        command_entries.push_back(cmd.to_raw(cmd_offset, display_offset, env_offset));
+        if (!env_offset) {
+            return pup::unexpected<Error>(env_offset.error());
+        }
+        command_entries.push_back(cmd.to_raw(*cmd_offset, *display_offset, *env_offset));
     }
 
     // Build edge entries

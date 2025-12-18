@@ -17,6 +17,7 @@ CFLAGS = -std=c11 -Wall -Wextra -Werror -fPIC
 CFLAGS += -I$(ROOT)/third_party
 
 CXXFLAGS = -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC
+CXXFLAGS += -fno-exceptions -fno-rtti
 CXXFLAGS += -I$(ROOT)/include -I$(ROOT)/third_party
 CXXFLAGS += -DFMT_HEADER_ONLY -DFMT_USE_LOCALE=0 -DFMT_USE_INT128=0 -DFMT_USE_FLOAT128=0
 
