@@ -251,7 +251,7 @@ Features in pup that extend beyond tup:
 
 | Feature | Description |
 |---------|-------------|
-| **Unified target syntax** | `pup build-debug` selects variant by path instead of `-B` flag |
+| **Path-based variants** | `pup build-debug` instead of `pup -B build-debug` |
 | **Scoped builds** | `pup build-debug/src/lib` builds only that subdirectory |
 | **Single output targets** | `pup build-debug/src/lib/foo.o` rebuilds one specific output |
 | **Glob patterns** | `pup 'build-*'` matches multiple variants |

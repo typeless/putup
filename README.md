@@ -64,9 +64,9 @@ pup build-debug/src/lib
 
 Scoped builds are useful for large projects where you're working on a specific module. Use `-a` to include upstream dependencies, or `-A` to build the full project.
 
-### Unified Target Syntax
+### Target Syntax
 
-Targets use a unified path-based syntax that combines variant selection and scoping:
+Targets are paths that select variants and scopes:
 
 ```
 [variant/][scope]

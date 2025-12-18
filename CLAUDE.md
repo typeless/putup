@@ -51,7 +51,7 @@ make test                                 # Run all tests
 ./build/test/unit/pup_test '[variant]'    # Out-of-tree/variant tests
 ./build/test/unit/pup_test '[multi-variant]' # Multi-variant parallel builds
 ./build/test/unit/pup_test '[scope]'      # Scoped build tests
-./build/test/unit/pup_test '[target]'     # Unified target scheme tests
+./build/test/unit/pup_test '[target]'     # Target parsing tests
 ./build/test/unit/pup_test '[shell]'      # Shell fixture tests
 ```
 

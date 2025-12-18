@@ -53,7 +53,7 @@ pup -v                 # Verbose build
 pup lib app            # Build only lib/ and app/ directories
 pup -n                 # Show what would be built
 
-# Unified target scheme (path-based variant selection)
+# Path-based variant selection
 pup build-debug                  # Build single variant (path-based)
 pup build-*                      # Build all variants matching pattern
 pup build-debug build-release    # Build specific variants
@@ -85,7 +85,7 @@ pup parse [OPTIONS] [TARGETS...]
 ```
 
 Parse and validate all Tupfiles without executing any commands. Useful for checking syntax errors or seeing what would be built.
-Supports unified target syntax for variant and scope selection.
+Supports path-based variant and scope selection.
 
 **Relevant Options:**
 - `-v` - Show each Tupfile as it's parsed
@@ -113,7 +113,7 @@ pup clean [OPTIONS] [TARGETS...]
 ```
 
 Remove generated output files tracked in the index. Does not remove `.pup/` or `tup.config`.
-Supports unified target syntax for variant and scope selection.
+Supports path-based variant and scope selection.
 
 **Relevant Options:**
 - `-n` - Dry-run: show what would be removed
@@ -141,7 +141,7 @@ pup distclean [OPTIONS] [TARGETS...]
 ```
 
 Full reset: remove all generated files, the `.pup/` directory, and `tup.config`. Returns the project to a pristine state.
-Supports unified target syntax for variant selection.
+Supports path-based variant selection.
 
 **Relevant Options:**
 - `-n` - Dry-run: show what would be removed
@@ -188,7 +188,7 @@ pup variant configs/release.config out     # Creates out/
 pup export <format> [OPTIONS] [TARGETS...]
 ```
 
-Export build information in various formats. Supports unified target syntax for variant and scope selection.
+Export build information in various formats. Supports path-based variant and scope selection.
 
 **Formats:**
 - `script` - Shell script
