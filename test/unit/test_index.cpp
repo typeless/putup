@@ -607,6 +607,40 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     }
 }
 
+TEST_CASE("StringTable overflow handling", "[index]")
+{
+    SECTION("string exceeding 64KB limit fails serialization")
+    {
+        auto index = Index {};
+
+        // Create a string larger than 64KB (0xFFFF = 65535 bytes max)
+        auto huge_name = std::string(65536, 'x');
+
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = huge_name });
+
+        auto writer = IndexWriter {};
+        auto result = writer.serialize(index);
+
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(result.error().message.find("64KB") != std::string::npos);
+    }
+
+    SECTION("string at 64KB limit succeeds")
+    {
+        auto index = Index {};
+
+        // Create a string exactly at the 64KB limit (65535 bytes)
+        auto max_name = std::string(65535, 'y');
+
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = max_name });
+
+        auto writer = IndexWriter {};
+        auto result = writer.serialize(index);
+
+        REQUIRE(result.has_value());
+    }
+}
+
 TEST_CASE("StringTable deduplication", "[index]")
 {
     SECTION("identical strings are deduplicated")
