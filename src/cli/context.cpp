@@ -7,11 +7,14 @@
 #include "pup/core/platform.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
+#include "pup/graph/dep_scanner.hpp"
+#include "pup/graph/scanners/gcc.hpp"
 #include "pup/parser/config.hpp"
 #include "pup/parser/ignore.hpp"
 #include "pup/parser/parser.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -19,6 +22,16 @@
 #include <fmt/core.h>
 
 namespace pup::cli {
+
+auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
+{
+    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
+        return std::nullopt;
+    }
+    auto registry = graph::DepScannerRegistry {};
+    registry.register_scanner(graph::scanners::make_gcc_scanner());
+    return registry;
+}
 
 namespace {
 

@@ -10,7 +10,6 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
-#include "pup/graph/scanners/gcc.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"
@@ -61,16 +60,6 @@ auto format_node_id(pup::NodeId id) -> std::string
         return fmt::format("c{}", command_index(id));
     }
     return fmt::format("f{}", file_index(id));
-}
-
-auto make_scanner_registry() -> std::optional<pup::graph::DepScannerRegistry>
-{
-    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
-        return std::nullopt;
-    }
-    auto registry = pup::graph::DepScannerRegistry {};
-    registry.register_scanner(pup::graph::scanners::make_gcc_scanner());
-    return registry;
 }
 
 auto cmd_export_script(Options const& opts, std::string_view variant_name) -> int

@@ -34,6 +34,11 @@ struct BuildContextOptions {
     graph::RulePatternRegistry* pattern_registry = nullptr;
 };
 
+/// Create scanner registry for implicit dependency tracking
+/// Returns nullopt if PUP_IMPLICIT_DEPS=0
+[[nodiscard]]
+auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>;
+
 /// Build context using PIMPL to hide heavy dependencies
 class BuildContext {
 public:

@@ -14,7 +14,6 @@
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
-#include "pup/graph/scanners/gcc.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
@@ -600,19 +599,9 @@ auto build_single_variant(
         fmt::print(fmt::runtime(fmt_str), std::forward<decltype(args)>(args)...);
     };
 
-    // FIXME: Duplicates scanner setup from cmd_export.cpp:make_scanner_registry()
-    auto scanner_registry = std::optional<pup::graph::DepScannerRegistry> {};
-    auto implicit_deps_disabled = false;
-    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
-        implicit_deps_disabled = true;
-    }
-
-    if (!implicit_deps_disabled) {
-        scanner_registry.emplace();
-        scanner_registry->register_scanner(pup::graph::scanners::make_gcc_scanner());
-        if (opts.verbose) {
-            vprint("Implicit dependency tracking enabled\n");
-        }
+    auto scanner_registry = make_scanner_registry();
+    if (scanner_registry && opts.verbose) {
+        vprint("Implicit dependency tracking enabled\n");
     }
 
     auto ctx_opts = BuildContextOptions {
