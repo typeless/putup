@@ -104,7 +104,7 @@ auto Index::add_edge(EdgeEntry entry) -> void
 
 auto Index::find_file(std::string_view path) const -> FileEntry const*
 {
-    auto it = std::find_if(files_.begin(), files_.end(), [path](auto const& f) { return f.path == path; });
+    auto it = std::ranges::find(files_, path, &FileEntry::path);
     return it != files_.end() ? &*it : nullptr;
 }
 
