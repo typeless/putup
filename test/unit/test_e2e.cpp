@@ -1391,6 +1391,109 @@ SCENARIO("Export graph --summary --all-deps shows implicit edge count", "[e2e][e
     }
 }
 
+SCENARIO("Export script generates shell build script", "[e2e][export]")
+{
+    GIVEN("a simple C project")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("export script is run")
+        {
+            auto result = f.pup({ "export", "script" });
+
+            THEN("output is a valid shell script")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("#!/bin/sh") != std::string::npos);
+                REQUIRE(result.stdout_output.find("set -e") != std::string::npos);
+            }
+
+            THEN("script contains the build command")
+            {
+                REQUIRE(result.stdout_output.find("gcc") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Export compdb generates compile_commands.json", "[e2e][export]")
+{
+    GIVEN("a simple C project")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("export compdb is run")
+        {
+            auto result = f.pup({ "export", "compdb" });
+
+            THEN("output is valid JSON array")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("[") != std::string::npos);
+                REQUIRE(result.stdout_output.find("]") != std::string::npos);
+            }
+
+            THEN("entries have required fields")
+            {
+                REQUIRE(result.stdout_output.find("\"directory\"") != std::string::npos);
+                REQUIRE(result.stdout_output.find("\"arguments\"") != std::string::npos);
+                REQUIRE(result.stdout_output.find("\"file\"") != std::string::npos);
+            }
+
+            THEN("source file is referenced")
+            {
+                REQUIRE(result.stdout_output.find("hello.c") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Export with unified variant target", "[e2e][export][target]")
+{
+    GIVEN("a project with a variant directory")
+    {
+        auto f = E2EFixture { "multi_variant" };
+        f.mkdir("build-debug");
+        f.write_file("build-debug/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build-debug" }).success());
+
+        WHEN("export graph --summary is run with variant target")
+        {
+            auto result = f.pup({ "export", "graph", "--summary", "build-debug" });
+
+            THEN("command succeeds with variant prefix in output")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("[build-debug]") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Nodes:") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Export with unknown format fails", "[e2e][export]")
+{
+    GIVEN("an initialized project")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("export is run with unknown format")
+        {
+            auto result = f.pup({ "export", "unknown" });
+
+            THEN("command fails with error message")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unknown export format") != std::string::npos);
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Layout Detection Tests
 // =============================================================================

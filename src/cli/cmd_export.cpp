@@ -3,6 +3,7 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/string_utils.hpp"
@@ -60,7 +61,7 @@ auto format_node_id(pup::NodeId id) -> std::string
     return fmt::format("f{}", file_index(id));
 }
 
-auto cmd_export_script(Options const& opts) -> int
+auto cmd_export_script(Options const& opts, std::string_view variant_name) -> int
 {
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -68,7 +69,7 @@ auto cmd_export_script(Options const& opts) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fmt::print(stderr, "Error: {}\n", result.error().message);
+        fmt::print(stderr, "[{}] Error: {}\n", variant_name, result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -132,7 +133,7 @@ auto cmd_export_script(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
-auto cmd_export_graph(Options const& opts) -> int
+auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 {
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -140,7 +141,7 @@ auto cmd_export_graph(Options const& opts) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fmt::print(stderr, "Error: {}\n", result.error().message);
+        fmt::print(stderr, "[{}] Error: {}\n", variant_name, result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -149,10 +150,10 @@ auto cmd_export_graph(Options const& opts) -> int
 
     if (opts.summary) {
         auto commands = ctx.graph().nodes_of_type(pup::NodeType::Command);
-        fmt::print("Tupfiles: {}\n", ctx.parsed_dirs().size());
-        fmt::print("Nodes: {}\n", ctx.graph().node_count());
-        fmt::print("Edges: {}\n", ctx.graph().edge_count());
-        fmt::print("Commands: {}\n", commands.size());
+        fmt::print("[{}] Tupfiles: {}\n", variant_name, ctx.parsed_dirs().size());
+        fmt::print("[{}] Nodes: {}\n", variant_name, ctx.graph().node_count());
+        fmt::print("[{}] Edges: {}\n", variant_name, ctx.graph().edge_count());
+        fmt::print("[{}] Commands: {}\n", variant_name, commands.size());
 
         if (index) {
             auto implicit_count = std::size_t { 0 };
@@ -161,15 +162,15 @@ auto cmd_export_graph(Options const& opts) -> int
                     ++implicit_count;
                 }
             }
-            fmt::print("Implicit edges: {}\n", implicit_count);
+            fmt::print("[{}] Implicit edges: {}\n", variant_name, implicit_count);
         }
 
         if (opts.verbose) {
-            fmt::print("\nCommands:\n");
+            fmt::print("[{}] Commands:\n", variant_name);
             for (auto id : commands) {
                 if (auto const* node = ctx.graph().get_node(id)) {
                     auto display = node->display.empty() ? node->command : node->display;
-                    fmt::print("  {}\n", display);
+                    fmt::print("[{}]   {}\n", variant_name, display);
                 }
             }
         }
@@ -240,7 +241,7 @@ auto cmd_export_graph(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
-auto cmd_export_compdb(Options const& opts) -> int
+auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> int
 {
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -248,7 +249,7 @@ auto cmd_export_compdb(Options const& opts) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fmt::print(stderr, "Error: {}\n", result.error().message);
+        fmt::print(stderr, "[{}] Error: {}\n", variant_name, result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -330,6 +331,23 @@ auto cmd_export_compdb(Options const& opts) -> int
     return EXIT_SUCCESS;
 }
 
+auto export_single_variant(Options const& opts, std::string_view variant_name) -> int
+{
+    if (opts.export_format == "script") {
+        return cmd_export_script(opts, variant_name);
+    }
+    if (opts.export_format == "compdb") {
+        return cmd_export_compdb(opts, variant_name);
+    }
+    if (opts.export_format == "graph") {
+        return cmd_export_graph(opts, variant_name);
+    }
+
+    fmt::print(stderr, "Unknown export format: {}\n", opts.export_format);
+    fmt::print(stderr, "Formats: script, compdb, graph\n");
+    return EXIT_FAILURE;
+}
+
 } // namespace
 
 auto cmd_export(Options const& opts) -> int
@@ -340,19 +358,7 @@ auto cmd_export(Options const& opts) -> int
         return EXIT_FAILURE;
     }
 
-    if (opts.export_format == "script") {
-        return cmd_export_script(opts);
-    }
-    if (opts.export_format == "compdb") {
-        return cmd_export_compdb(opts);
-    }
-    if (opts.export_format == "graph") {
-        return cmd_export_graph(opts);
-    }
-
-    fmt::print(stderr, "Unknown export format: {}\n", opts.export_format);
-    fmt::print(stderr, "Formats: script, compdb, graph\n");
-    return EXIT_FAILURE;
+    return for_each_variant(opts, export_single_variant, "Exporting");
 }
 
 } // namespace pup::cli
