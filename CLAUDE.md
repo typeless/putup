@@ -1,17 +1,15 @@
 # Pup - Developer Guide
 
-A modern C++20 reimplementation of the [Tup build system](https://gittup.org/tup/).
+A build system using [Tupfile](https://gittup.org/tup/) syntax.
 
-> **User Documentation**: See [docs/reference.md](docs/reference.md) for complete command reference, Tupfile syntax, and configuration.
+> **User Documentation**: See [docs/reference.md](docs/reference.md) for command reference, Tupfile syntax, and configuration.
 
-## Project Goals
+## Design
 
-1. **Compatibility** - Parse existing Tupfile/Tuprules.tup with zero modifications
-2. **Modern C++20** - Minimal third-party dependencies (expected-lite, fmt, Catch2)
-3. **Git-inspired index** - Custom binary format instead of SQLite
-4. **Content hashing** - SHA-256 for precise change detection
-5. **No FUSE** - Compute changes from index comparison
-6. **No Lua** - Traditional Tupfile syntax only
+- Uses Tup's Tupfile/Tuprules.tup format
+- Git-inspired binary index (not SQLite)
+- SHA-256 content hashing
+- No FUSE, no Lua
 
 ## Building & Testing
 

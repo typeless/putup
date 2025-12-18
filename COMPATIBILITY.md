@@ -1,6 +1,6 @@
-# Tup Compatibility Guide
+# Tupfile Compatibility
 
-This document details pup's compatibility with tup, including supported features, known differences, and migration notes.
+Pup uses Tup's Tupfile syntax. This document covers supported features and differences.
 
 ## Commands
 

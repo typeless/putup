@@ -1,13 +1,11 @@
 # Pup
 
-A modern reimplementation of the [Tup build system](https://gittup.org/tup/).
+A build system using the [Tupfile](https://gittup.org/tup/) format.
 
-- **Drop-in compatible** - Parse existing Tupfiles without modification
-- **Content-based** - SHA-256 hashing for precise change detection
-- **No FUSE required** - Index-based tracking instead of filesystem interception
-- **Scalable** - Scoped builds limit scanning to subtrees for fast incremental builds
-
-Pup takes a different approach than tup's "beta build system" (FUSE + SQLite). Instead of monitoring all filesystem access, pup uses an index-based architecture with scoped scanning - trading automatic dependency detection for portability and predictable performance on large projects.
+- **Tupfile-based** - Uses Tup's Tupfile syntax for build rules
+- **Content hashing** - SHA-256 for change detection
+- **Scoped builds** - Limit builds to specific subdirectories
+- **No FUSE** - Index-based tracking, works everywhere
 
 ## Installation
 
