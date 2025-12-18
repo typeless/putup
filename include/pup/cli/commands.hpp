@@ -7,10 +7,6 @@
 
 namespace pup::cli {
 
-/// Initialize .pup directory
-[[nodiscard]]
-auto cmd_init(Options const& opts) -> int;
-
 /// Parse and validate Tupfiles
 [[nodiscard]]
 auto cmd_parse(Options const& opts) -> int;

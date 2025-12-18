@@ -157,13 +157,6 @@ pup variant debug.config build-debug  # Create variant directory
 | `PUP_BUILD_DIR` | Build directory (overridden by `-B`) |
 | `PUP_IMPLICIT_DEPS` | Set to `0` to disable auto-generated dep rules |
 
-### Miscellaneous Commands
-
-| Command | Description |
-|---------|-------------|
-| `init` | Initialize `.pup` directory |
-| `parse` | Parse and validate Tupfiles |
-
 ## Documentation
 
 - **[Reference Manual](docs/reference.md)** - Complete command reference, Tupfile syntax, configuration, and troubleshooting

@@ -2,9 +2,6 @@
 # Test: .pupignore ignores directories during Tupfile discovery
 set -e
 
-# Initialize and get graph output with verbose to see discovered dirs
-$PUP init
-
 # Use 'export graph --summary -v' to get verbose graph output
 output=$($PUP export graph --summary -v 2>&1)
 

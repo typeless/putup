@@ -19,8 +19,8 @@ auto const VERSION = "0.1.0";
 
 auto is_command(std::string_view arg) -> bool
 {
-    return arg == "init" || arg == "parse" || arg == "export" || arg == "clean"
-        || arg == "distclean" || arg == "variant" || arg == "build";
+    return arg == "parse" || arg == "export" || arg == "clean" || arg == "distclean"
+        || arg == "variant";
 }
 
 } // namespace
@@ -98,12 +98,11 @@ auto parse_args(int argc, char** argv) -> Options
 
 auto print_usage() -> void
 {
-    fmt::print("pup - Tup build system reimplementation\n\n"
+    fmt::print("pup - build system using Tupfile format\n\n"
                "Usage: pup [OPTIONS] [TARGETS]\n"
                "       pup [OPTIONS] <command>\n\n"
                "Running 'pup' executes the build. Use a command for other operations.\n\n"
                "Commands:\n"
-               "  init              Initialize .pup directory\n"
                "  parse             Parse and validate Tupfiles\n"
                "  export <format>   Export build info:\n"
                "                      script  - Shell script\n"

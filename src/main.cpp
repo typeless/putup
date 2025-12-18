@@ -15,9 +15,6 @@ auto dispatch(Options const& opts) -> int
     if (opts.command.empty()) {
         return cmd_build(opts);
     }
-    if (opts.command == "init") {
-        return cmd_init(opts);
-    }
     if (opts.command == "parse") {
         return cmd_parse(opts);
     }

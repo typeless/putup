@@ -41,7 +41,6 @@ srcs-y += src/exec/scheduler.cpp
 srcs-y += src/cli/cmd_build.cpp
 srcs-y += src/cli/cmd_clean.cpp
 srcs-y += src/cli/cmd_export.cpp
-srcs-y += src/cli/cmd_init.cpp
 srcs-y += src/cli/cmd_parse.cpp
 srcs-y += src/cli/cmd_variant.cpp
 srcs-y += src/cli/context.cpp

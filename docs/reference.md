@@ -66,19 +66,7 @@ pup -B /tmp/mybuild              # Create and build out-of-tree
 pup -B build-debug -B build-release  # Multiple -B flags still work
 ```
 
-### 3.2 pup init
-
-```
-pup init
-```
-
-Initialize a `.pup` directory in the current project. Creates the directory structure needed for pup's index and configuration.
-
-**Notes:**
-- Automatically called by `pup` if `.pup` doesn't exist
-- Creates `.pup/` in the output root (same as source root for in-tree builds)
-
-### 3.3 pup parse
+### 3.2 pup parse
 
 ```
 pup parse [OPTIONS] [TARGETS...]
@@ -106,7 +94,7 @@ pup parse build-*          # Parse all matching variants
 pup parse build-debug/lib  # Parse scoped to lib/ directory
 ```
 
-### 3.4 pup clean
+### 3.3 pup clean
 
 ```
 pup clean [OPTIONS] [TARGETS...]
@@ -134,7 +122,7 @@ pup clean build-*             # Clean all matching variants
 pup clean build-debug/src/lib # Clean scoped to src/lib
 ```
 
-### 3.5 pup distclean
+### 3.4 pup distclean
 
 ```
 pup distclean [OPTIONS] [TARGETS...]
@@ -159,7 +147,7 @@ pup distclean build-debug # Reset single variant (path-based)
 pup distclean build-*     # Reset all matching variants
 ```
 
-### 3.6 pup variant
+### 3.5 pup variant
 
 ```
 pup variant <config-file> [directory]
@@ -182,7 +170,7 @@ pup variant configs/debug.config           # Creates build-debug/
 pup variant configs/release.config out     # Creates out/
 ```
 
-### 3.7 pup export
+### 3.6 pup export
 
 ```
 pup export <format> [OPTIONS] [TARGETS...]

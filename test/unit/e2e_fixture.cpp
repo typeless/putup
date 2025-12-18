@@ -144,7 +144,13 @@ auto E2EFixture::run_pup(std::vector<std::string> const& args) -> PupResult
 
 auto E2EFixture::init() -> PupResult
 {
-    return run_pup({ "init" });
+    // Create .pup directory (pup auto-initializes on first build, but tests
+    // may want to init without building)
+    auto pup_dir = m_workdir / ".pup";
+    if (!fs::exists(pup_dir)) {
+        fs::create_directories(pup_dir);
+    }
+    return PupResult { .exit_code = 0, .stdout_output = "", .stderr_output = "" };
 }
 
 auto E2EFixture::build(std::vector<std::string> const& args) -> PupResult

@@ -4,7 +4,6 @@ set -e
 
 # Test 1: Default build (USE_GREETING not set, NO_EXTRA not set)
 # Expected: "Goodbye, World!" and "Extra enabled"
-$PUP init
 $PUP -j1
 
 ./program > output.txt
@@ -20,7 +19,6 @@ echo "Default build OK"
 
 # Clean and rebuild with USE_GREETING defined
 rm -rf .pup program *.o
-$PUP init
 
 # Create a modified Tupfile with USE_GREETING defined
 cat > Tupfile << 'EOF'
@@ -58,7 +56,6 @@ echo "USE_GREETING build OK"
 
 # Test 3: With NO_EXTRA defined (should disable extra)
 rm -rf .pup program *.o
-$PUP init
 
 cat > Tupfile << 'EOF'
 CC = gcc
