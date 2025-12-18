@@ -67,9 +67,10 @@ auto IndexReader::read() const -> Result<Index>
 
     // Read file entries
     auto files = raw_files();
-    for (auto const& raw : files) {
+    for (auto i = std::size_t { 0 }; i < files.size(); ++i) {
+        auto const& raw = files[i];
         auto name = get_string(raw.name_offset);
-        index.add_file(FileEntry::from_raw(raw, name));
+        index.add_file(FileEntry::from_raw(raw, name, i));
     }
 
     // Compute paths from parent chain (after all files loaded)
@@ -77,11 +78,12 @@ auto IndexReader::read() const -> Result<Index>
 
     // Read command entries
     auto commands = raw_commands();
-    for (auto const& raw : commands) {
+    for (auto i = std::size_t { 0 }; i < commands.size(); ++i) {
+        auto const& raw = commands[i];
         auto cmd = get_string(raw.cmd_offset);
         auto display = get_string(raw.display_offset);
         auto env = get_string(raw.env_offset);
-        index.add_command(CommandEntry::from_raw(raw, cmd, display, env));
+        index.add_command(CommandEntry::from_raw(raw, cmd, display, env, i));
     }
 
     // Read edges

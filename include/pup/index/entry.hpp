@@ -32,7 +32,12 @@ struct FileEntry {
     [[nodiscard]] auto to_raw(std::uint32_t name_offset) const -> RawFileEntry;
 
     /// Create from raw format (path must be computed separately from parent chain)
-    [[nodiscard]] static auto from_raw(RawFileEntry const& raw, std::string_view name_str) -> FileEntry;
+    /// @param array_index 0-based position in file array (ID = array_index + 1)
+    [[nodiscard]] static auto from_raw(
+        RawFileEntry const& raw,
+        std::string_view name_str,
+        std::size_t array_index
+    ) -> FileEntry;
 };
 
 /// In-memory command entry
@@ -44,8 +49,6 @@ struct CommandEntry {
     std::string display = {}; ///< Display text (from ^ ^ markers)
     std::string env = {};     ///< Environment variables
 
-    std::uint8_t flags = 0;
-
     /// Convert to raw format for serialization
     [[nodiscard]] auto to_raw(
         std::uint32_t cmd_offset,
@@ -54,11 +57,13 @@ struct CommandEntry {
     ) const -> RawCommandEntry;
 
     /// Create from raw format
+    /// @param array_index 0-based position in command array (ID = make_command_id(array_index + 1))
     [[nodiscard]] static auto from_raw(
         RawCommandEntry const& raw,
         std::string_view cmd_str,
         std::string_view display_str,
-        std::string_view env_str
+        std::string_view env_str,
+        std::size_t array_index
     ) -> CommandEntry;
 };
 

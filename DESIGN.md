@@ -475,13 +475,13 @@ struct BuilderContext {
 
 ## Index Module
 
-### Binary Format (v6)
+### Binary Format (v7)
 
 ```
 ┌─────────────────────────────────────┐
 │ Header (40 bytes)                   │
 │   magic: "PUPI" (4 bytes)           │
-│   version: u32 (6)                  │
+│   version: u32 (7)                  │
 │   file_count: u32                   │
 │   command_count: u32                │
 │   edge_count: u32                   │
@@ -491,23 +491,22 @@ struct BuilderContext {
 │   edge_offset: u32                  │
 │   string_offset: u32                │
 ├─────────────────────────────────────┤
-│ FileEntry[] (64 bytes each)         │
-│   id: u32                           │
+│ FileEntry[] (56 bytes each)         │
 │   parent_id: u32                    │
 │   src_id: u32                       │
 │   name_offset: u32                  │
-│   size: u64                         │
 │   type: u8, flags_low/high: u16     │
-│   reserved: 5 bytes                 │
+│   reserved: 1 byte                  │
+│   size: u64                         │
 │   content_hash: [u8; 32]            │
+│   (id computed from array index)    │
 ├─────────────────────────────────────┤
-│ CommandEntry[] (24 bytes each)      │
-│   id: u32                           │
+│ CommandEntry[] (16 bytes each)      │
 │   dir_id: u32                       │
 │   cmd_offset: u32                   │
 │   display_offset: u32               │
 │   env_offset: u32                   │
-│   flags: u8, reserved: 3 bytes      │
+│   (id = index | 0x80000000)         │
 ├─────────────────────────────────────┤
 │ Edge[] (16 bytes each)              │
 │   from_id: u32                      │
@@ -532,6 +531,7 @@ Version history:
 - v4: Directory content_hash stores Merkle hash
 - v5: Removed mtime, change detection uses size + content hash
 - v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
+- v7: Tagged ID spaces (files vs commands), ID computed from array index
 
 Design principles:
 - Fixed-size entries for O(1) random access

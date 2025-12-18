@@ -18,6 +18,33 @@ inline constexpr auto INVALID_NODE_ID = NodeId { 0 };
 /// Root node ID (parent of all top-level entries)
 inline constexpr auto ROOT_NODE_ID = NodeId { 1 };
 
+/// Command ID flag - high bit indicates command (vs file/directory/group)
+inline constexpr auto COMMAND_ID_FLAG = NodeId { 0x80000000 };
+
+/// Check if ID refers to a command (vs file/directory/group)
+[[nodiscard]] constexpr auto is_command_id(NodeId id) -> bool
+{
+    return (id & COMMAND_ID_FLAG) != 0;
+}
+
+/// Get array index for file ID (file IDs start at 1, index 0 unused)
+[[nodiscard]] constexpr auto file_index(NodeId id) -> std::size_t
+{
+    return static_cast<std::size_t>(id);
+}
+
+/// Get array index for command ID (command IDs start at 0x80000001, index 0 unused)
+[[nodiscard]] constexpr auto command_index(NodeId id) -> std::size_t
+{
+    return static_cast<std::size_t>(id & ~COMMAND_ID_FLAG);
+}
+
+/// Create command ID from array index
+[[nodiscard]] constexpr auto make_command_id(std::size_t idx) -> NodeId
+{
+    return static_cast<NodeId>(idx) | COMMAND_ID_FLAG;
+}
+
 /// SHA-256 hash (32 bytes)
 using Hash256 = std::array<std::byte, 32>;
 

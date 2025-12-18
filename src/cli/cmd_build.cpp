@@ -328,14 +328,14 @@ auto build_index(
     auto index = pup::index::Index {};
     auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
 
-    auto max_id = pup::NodeId { 0 };
+    auto max_file_id = pup::NodeId { 0 };
     for (auto id : graph.all_nodes()) {
         auto const* node = graph.get_node(id);
         if (!node) {
             continue;
         }
-        if (id > max_id) {
-            max_id = id;
+        if (!pup::is_command_id(id) && id > max_file_id) {
+            max_file_id = id;
         }
 
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
@@ -395,7 +395,6 @@ auto build_index(
                 .command = node->command,
                 .display = node->display,
                 .env = {},
-                .flags = 0,
             };
             index.add_command(std::move(entry));
         }
@@ -410,7 +409,7 @@ auto build_index(
         });
     }
 
-    auto next_id = pup::NodeId { max_id + 1 };
+    auto next_id = pup::NodeId { max_file_id + 1 };
     auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
 
     auto get_or_create_dir = pup::YCombinator { [&](
@@ -483,8 +482,6 @@ auto build_index(
             if (it != path_to_id.end()) {
                 dep_id = it->second;
             } else {
-                dep_id = next_id++;
-
                 auto content_hash = pup::Hash256 {};
                 auto file_size = std::uint64_t { 0 };
                 if (std::filesystem::exists(abs_path)) {
@@ -497,9 +494,13 @@ auto build_index(
                     file_size = std::filesystem::file_size(abs_path, ec);
                 }
 
+                // Create parent directories first - they get assigned IDs before the file
                 auto fs_path = std::filesystem::path { rel_path };
                 auto parent_id = get_or_create_dir(fs_path.parent_path());
                 auto basename = fs_path.filename().string();
+
+                // Now assign file ID (after directory IDs to maintain consecutive ordering)
+                dep_id = next_id++;
 
                 auto entry = pup::index::FileEntry {
                     .id = dep_id,
@@ -561,8 +562,6 @@ auto build_index(
             if (new_file_it != path_to_id.end()) {
                 new_from_id = new_file_it->second;
             } else {
-                new_from_id = next_id++;
-
                 auto abs_path = resolve_path(old_file->path, root);
                 auto content_hash = pup::Hash256 {};
                 auto file_size = std::uint64_t { 0 };
@@ -576,9 +575,13 @@ auto build_index(
                     file_size = std::filesystem::file_size(abs_path, ec);
                 }
 
+                // Create parent directories first - they get assigned IDs before the file
                 auto fs_path = std::filesystem::path { old_file->path };
                 auto parent_id = get_or_create_dir(fs_path.parent_path());
                 auto basename = fs_path.filename().string();
+
+                // Now assign file ID (after directory IDs to maintain consecutive ordering)
+                new_from_id = next_id++;
 
                 auto entry = pup::index::FileEntry {
                     .id = new_from_id,

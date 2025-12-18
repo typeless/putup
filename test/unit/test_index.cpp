@@ -21,14 +21,14 @@ TEST_CASE("Index format struct sizes", "[index]")
         REQUIRE(sizeof(RawHeader) == 40);
     }
 
-    SECTION("RawFileEntry is 64 bytes")
+    SECTION("RawFileEntry is 56 bytes")
     {
-        REQUIRE(sizeof(RawFileEntry) == 64);
+        REQUIRE(sizeof(RawFileEntry) == 56);
     }
 
-    SECTION("RawCommandEntry is 24 bytes")
+    SECTION("RawCommandEntry is 16 bytes")
     {
-        REQUIRE(sizeof(RawCommandEntry) == 24);
+        REQUIRE(sizeof(RawCommandEntry) == 16);
     }
 
     SECTION("RawEdge is 16 bytes")
@@ -77,18 +77,16 @@ TEST_CASE("FileEntry conversion", "[index]")
         .type = NodeType::File,
         .flags = NodeFlags::Modified,
         .name = "main.cpp",
-        .path = {}, // computed from parent chain, not serialized
+        .path = {},
         .size = 1024,
         .content_hash = {},
     };
 
-    // Set some hash bytes
     file.content_hash[0] = std::byte { 0xAB };
     file.content_hash[31] = std::byte { 0xCD };
 
     auto raw = file.to_raw(200);
 
-    REQUIRE(raw.id == 42);
     REQUIRE(raw.parent_id == 1);
     REQUIRE(raw.type == static_cast<std::uint8_t>(NodeType::File));
     REQUIRE(get_file_size(raw) == 1024);
@@ -96,9 +94,10 @@ TEST_CASE("FileEntry conversion", "[index]")
     REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
     REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
 
-    auto restored = FileEntry::from_raw(raw, "main.cpp");
+    // ID is computed from array index (41 + 1 = 42)
+    auto restored = FileEntry::from_raw(raw, "main.cpp", 41);
 
-    REQUIRE(restored.id == file.id);
+    REQUIRE(restored.id == 42);
     REQUIRE(restored.parent_id == file.parent_id);
     REQUIRE(restored.type == file.type);
     REQUIRE(restored.flags == file.flags);
@@ -110,31 +109,28 @@ TEST_CASE("FileEntry conversion", "[index]")
 TEST_CASE("CommandEntry conversion", "[index]")
 {
     auto cmd = CommandEntry {
-        .id = 100,
+        .id = make_command_id(5),
         .dir_id = 5,
         .command = "gcc -c main.c -o main.o",
         .display = "CC main.c",
         .env = "CC=gcc",
-        .flags = 1,
     };
 
     auto raw = cmd.to_raw(0, 50, 100);
 
-    REQUIRE(raw.id == 100);
     REQUIRE(raw.dir_id == 5);
     REQUIRE(raw.cmd_offset == 0);
     REQUIRE(raw.display_offset == 50);
     REQUIRE(raw.env_offset == 100);
-    REQUIRE(raw.flags == 1);
 
-    auto restored = CommandEntry::from_raw(raw, cmd.command, cmd.display, cmd.env);
+    // ID is computed from array index (4 + 1 = 5, then make_command_id)
+    auto restored = CommandEntry::from_raw(raw, cmd.command, cmd.display, cmd.env, 4);
 
-    REQUIRE(restored.id == cmd.id);
+    REQUIRE(restored.id == make_command_id(5));
     REQUIRE(restored.dir_id == cmd.dir_id);
     REQUIRE(restored.command == cmd.command);
     REQUIRE(restored.display == cmd.display);
     REQUIRE(restored.env == cmd.env);
-    REQUIRE(restored.flags == cmd.flags);
 }
 
 TEST_CASE("EdgeEntry conversion", "[index]")
@@ -218,23 +214,25 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = 10, .command = "gcc foo.c" });
-        index.add_command(CommandEntry { .id = 11, .command = "gcc bar.c" });
+        index.add_command(CommandEntry { .id = make_command_id(1), .command = "gcc foo.c" });
+        index.add_command(CommandEntry { .id = make_command_id(2), .command = "gcc bar.c" });
 
         REQUIRE(index.command_count() == 2);
 
-        auto* found = index.find_command_by_id(10);
+        auto* found = index.find_command_by_id(make_command_id(1));
         REQUIRE(found != nullptr);
         REQUIRE(found->command == "gcc foo.c");
 
-        REQUIRE(index.find_command_by_id(999) == nullptr);
+        REQUIRE(index.find_command_by_id(make_command_id(999)) == nullptr);
     }
 
     SECTION("add and query edges")
     {
-        index.add_edge(EdgeEntry { .from = 1, .to = 10 });
-        index.add_edge(EdgeEntry { .from = 10, .to = 2 });
-        index.add_edge(EdgeEntry { .from = 1, .to = 11 });
+        auto cmd1 = make_command_id(1);
+        auto cmd2 = make_command_id(2);
+        index.add_edge(EdgeEntry { .from = 1, .to = cmd1 });
+        index.add_edge(EdgeEntry { .from = cmd1, .to = 2 });
+        index.add_edge(EdgeEntry { .from = 1, .to = cmd2 });
 
         REQUIRE(index.edge_count() == 3);
 
@@ -243,14 +241,15 @@ TEST_CASE("Index in-memory operations", "[index]")
 
         auto to_2 = index.edges_to(2);
         REQUIRE(to_2.size() == 1);
-        REQUIRE(to_2[0]->from == 10);
+        REQUIRE(to_2[0]->from == cmd1);
     }
 
     SECTION("clear")
     {
+        auto cmd1 = make_command_id(1);
         index.add_file(FileEntry { .id = 1, .name = "test.c" });
-        index.add_command(CommandEntry { .id = 10 });
-        index.add_edge(EdgeEntry { .from = 1, .to = 10 });
+        index.add_command(CommandEntry { .id = cmd1 });
+        index.add_edge(EdgeEntry { .from = 1, .to = cmd1 });
 
         REQUIRE_FALSE(index.empty());
 
@@ -265,61 +264,69 @@ TEST_CASE("Index in-memory operations", "[index]")
 
 TEST_CASE("Index serialization roundtrip", "[index]")
 {
+    // IDs must be consecutive and match array position (id = array_index + 1)
+    // Files: 1, 2, 3, 4, 5 in insertion order
+    // Commands: make_command_id(1)
+    auto const cmd_id = make_command_id(1);
+
     auto index = Index {};
 
     // Add directories first (for parent chain)
+    // File 1: src directory
     index.add_file(FileEntry {
-        .id = 100,
+        .id = 1,
         .parent_id = 0,
         .type = NodeType::Directory,
         .name = "src",
     });
 
+    // File 2: build directory
     index.add_file(FileEntry {
-        .id = 101,
+        .id = 2,
         .parent_id = 0,
         .type = NodeType::Directory,
         .name = "build",
     });
 
-    // Add some files
+    // File 3: main.cpp (parent is src, id=1)
     index.add_file(FileEntry {
-        .id = 1,
-        .parent_id = 100, // src
+        .id = 3,
+        .parent_id = 1,
         .type = NodeType::File,
         .name = "main.cpp",
         .size = 1024,
     });
 
+    // File 4: main.o (parent is build, id=2)
     index.add_file(FileEntry {
-        .id = 2,
-        .parent_id = 101, // build
+        .id = 4,
+        .parent_id = 2,
         .type = NodeType::Generated,
         .name = "main.o",
         .size = 4096,
     });
 
-    // Add a command
-    index.add_command(CommandEntry {
-        .id = 10,
-        .dir_id = 0,
-        .command = "g++ -c src/main.cpp -o build/main.o",
-        .display = "CXX main.cpp",
-    });
-
-    // Add a header file (implicit dependency, root-level with path-like name)
+    // File 5: header file (implicit dependency)
     index.add_file(FileEntry {
-        .id = 3,
+        .id = 5,
         .parent_id = 0,
         .type = NodeType::File,
         .name = "/usr/include/stdio.h",
         .size = 8192,
     });
 
-    // Add edges (including implicit header dependency)
-    index.add_edge(EdgeEntry { .from = 1, .to = 10, .type = LinkType::Normal });
-    index.add_edge(EdgeEntry { .from = 10, .to = 2, .type = LinkType::Normal });
-    index.add_edge(EdgeEntry { .from = 3, .to = 10, .type = LinkType::Implicit });
+    // Command 1
+    index.add_command(CommandEntry {
+        .id = cmd_id,
+        .dir_id = 0,
+        .command = "g++ -c src/main.cpp -o build/main.o",
+        .display = "CXX main.cpp",
+    });
+
+    // Add edges (file 3 -> cmd, cmd -> file 4, file 5 -> cmd implicit)
+    index.add_edge(EdgeEntry { .from = 3, .to = cmd_id, .type = LinkType::Normal });
+    index.add_edge(EdgeEntry { .from = cmd_id, .to = 4, .type = LinkType::Normal });
+    index.add_edge(EdgeEntry { .from = 5, .to = cmd_id, .type = LinkType::Implicit });
 
     // Serialize
     auto writer = IndexWriter {};
@@ -348,7 +355,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(hdr != nullptr);
     REQUIRE(std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) == 0);
     REQUIRE(hdr->version == INDEX_VERSION);
-    REQUIRE(hdr->file_count == 5); // 2 dirs + 3 files
+    REQUIRE(hdr->file_count == 5);
     REQUIRE(hdr->command_count == 1);
     REQUIRE(hdr->edge_count == 3);
 
@@ -367,16 +374,16 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     // Verify file content (paths are computed from parent chain)
     auto* file1 = restored.find_file("src/main.cpp");
     REQUIRE(file1 != nullptr);
-    REQUIRE(file1->id == 1);
+    REQUIRE(file1->id == 3);
     REQUIRE(file1->size == 1024);
 
     auto* file2 = restored.find_file("build/main.o");
     REQUIRE(file2 != nullptr);
-    REQUIRE(file2->id == 2);
+    REQUIRE(file2->id == 4);
     REQUIRE(file2->type == NodeType::Generated);
 
-    // Verify command
-    auto* cmd = restored.find_command_by_id(10);
+    // Verify command (ID computed from position: make_command_id(0 + 1))
+    auto* cmd = restored.find_command_by_id(cmd_id);
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->command == "g++ -c src/main.cpp -o build/main.o");
     REQUIRE(cmd->display == "CXX main.cpp");
@@ -384,16 +391,16 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     // Verify header file (implicit dependency)
     auto* header = restored.find_file("/usr/include/stdio.h");
     REQUIRE(header != nullptr);
-    REQUIRE(header->id == 3);
+    REQUIRE(header->id == 5);
     REQUIRE(header->size == 8192);
 
     // Verify implicit edge
-    auto edges_to_cmd = restored.edges_to(10);
+    auto edges_to_cmd = restored.edges_to(cmd_id);
     REQUIRE(edges_to_cmd.size() == 2);
     auto found_implicit = false;
     for (auto const* edge : edges_to_cmd) {
         if (edge->type == LinkType::Implicit) {
-            REQUIRE(edge->from == 3);
+            REQUIRE(edge->from == 5);
             found_implicit = true;
         }
     }
@@ -432,10 +439,11 @@ TEST_CASE("Index reader validation", "[index]")
 TEST_CASE("Index reader malicious data handling", "[index]")
 {
     // Create a minimal valid index to use as base
+    auto const cmd_id = make_command_id(1);
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .name = "test.c" });
-    index.add_command(CommandEntry { .id = 10, .command = "gcc test.c" });
-    index.add_edge(EdgeEntry { .from = 1, .to = 10 });
+    index.add_command(CommandEntry { .id = cmd_id, .command = "gcc test.c" });
+    index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
     auto writer = IndexWriter {};
     auto data = writer.serialize(index);
@@ -638,8 +646,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = 10, .command = "gcc", .display = "", .env = "" });
-        index.add_command(CommandEntry { .id = 11, .command = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = make_command_id(1), .command = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = make_command_id(2), .command = "gcc", .display = "", .env = "" });
 
         auto writer = IndexWriter {};
         auto data = writer.serialize(index);

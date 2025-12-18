@@ -13,7 +13,6 @@ namespace pup::index {
 auto FileEntry::to_raw(std::uint32_t name_offset) const -> RawFileEntry
 {
     auto raw = RawFileEntry {};
-    raw.id = id;
     raw.parent_id = parent_id;
     raw.src_id = src_id;
     raw.name_offset = name_offset;
@@ -24,16 +23,20 @@ auto FileEntry::to_raw(std::uint32_t name_offset) const -> RawFileEntry
     return raw;
 }
 
-auto FileEntry::from_raw(RawFileEntry const& raw, std::string_view name_str) -> FileEntry
+auto FileEntry::from_raw(
+    RawFileEntry const& raw,
+    std::string_view name_str,
+    std::size_t array_index
+) -> FileEntry
 {
     return FileEntry {
-        .id = raw.id,
+        .id = static_cast<NodeId>(array_index + 1),
         .parent_id = raw.parent_id,
         .src_id = raw.src_id,
         .type = static_cast<NodeType>(raw.type),
         .flags = get_node_flags(raw),
         .name = std::string { name_str },
-        .path = {}, // Computed later from parent chain
+        .path = {},
         .size = raw.size,
         .content_hash = raw.content_hash,
     };
@@ -46,12 +49,10 @@ auto CommandEntry::to_raw(
 ) const -> RawCommandEntry
 {
     auto raw = RawCommandEntry {};
-    raw.id = id;
     raw.dir_id = dir_id;
     raw.cmd_offset = cmd_offset;
     raw.display_offset = display_offset;
     raw.env_offset = env_offset;
-    raw.flags = flags;
     return raw;
 }
 
@@ -59,16 +60,16 @@ auto CommandEntry::from_raw(
     RawCommandEntry const& raw,
     std::string_view cmd_str,
     std::string_view display_str,
-    std::string_view env_str
+    std::string_view env_str,
+    std::size_t array_index
 ) -> CommandEntry
 {
     return CommandEntry {
-        .id = raw.id,
+        .id = make_command_id(array_index + 1),
         .dir_id = raw.dir_id,
         .command = std::string { cmd_str },
         .display = std::string { display_str },
         .env = std::string { env_str },
-        .flags = raw.flags,
     };
 }
 
@@ -109,14 +110,30 @@ auto Index::find_file(std::string_view path) const -> FileEntry const*
 
 auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
 {
-    auto it = std::find_if(files_.begin(), files_.end(), [id](auto const& f) { return f.id == id; });
-    return it != files_.end() ? &*it : nullptr;
+    if (id == 0 || is_command_id(id)) {
+        return nullptr;
+    }
+    auto const idx = file_index(id) - 1;
+    if (idx >= files_.size()) {
+        return nullptr;
+    }
+    return files_[idx].id == id ? &files_[idx] : nullptr;
 }
 
 auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 {
-    auto it = std::find_if(commands_.begin(), commands_.end(), [id](auto const& c) { return c.id == id; });
-    return it != commands_.end() ? &*it : nullptr;
+    if (!is_command_id(id)) {
+        return nullptr;
+    }
+    auto const idx = command_index(id);
+    if (idx == 0) {
+        return nullptr;
+    }
+    auto const vec_idx = idx - 1;
+    if (vec_idx >= commands_.size()) {
+        return nullptr;
+    }
+    return commands_[vec_idx].id == id ? &commands_[vec_idx] : nullptr;
 }
 
 auto Index::find_command_by_command(std::string const& cmd) const -> CommandEntry const*

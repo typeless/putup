@@ -21,7 +21,8 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   4 - Directory content_hash stores Merkle hash for O(log n) change detection
 ///   5 - Removed mtime fields, change detection uses size + content hash only
 ///   6 - Compact format: 32-bit IDs/offsets, length-prefixed strings
-inline constexpr auto INDEX_VERSION = std::uint32_t { 6 };
+///   7 - Separate ID spaces: files 1..N, commands 0x80000001...; ID field removed
+inline constexpr auto INDEX_VERSION = std::uint32_t { 7 };
 
 /// Index file header (40 bytes)
 struct alignas(8) RawHeader {
@@ -39,36 +40,34 @@ struct alignas(8) RawHeader {
 
 static_assert(sizeof(RawHeader) == 40, "RawHeader must be 40 bytes");
 
-/// Raw file entry (64 bytes)
+/// Raw file entry (56 bytes)
 /// Represents source files, generated files, directories, groups, etc.
+/// Node ID is computed from array position: id = array_index (files start at 1)
 struct alignas(8) RawFileEntry {
-    std::uint32_t id = 0;                      ///< Node ID
-    std::uint32_t parent_id = 0;               ///< Parent directory node ID
-    std::uint32_t src_id = 0;                  ///< For generated files: source command ID
-    std::uint32_t name_offset = 0;             ///< Offset into string table (length-prefixed)
-    std::uint64_t size = 0;                    ///< File size
-    std::uint8_t type = 0;                     ///< NodeType
-    std::uint8_t flags_low = 0;                ///< NodeFlags (low byte)
-    std::uint8_t flags_high = 0;               ///< NodeFlags (high byte)
-    std::array<std::uint8_t, 5> reserved = {}; ///< Padding to align content_hash
-    Hash256 content_hash = {};                 ///< SHA-256 content hash
+    std::uint32_t parent_id = 0;    ///< Parent directory node ID
+    std::uint32_t src_id = 0;       ///< For generated files: source command ID
+    std::uint32_t name_offset = 0;  ///< Offset into string table (length-prefixed)
+    std::uint8_t type = 0;          ///< NodeType
+    std::uint8_t flags_low = 0;     ///< NodeFlags (low byte)
+    std::uint8_t flags_high = 0;    ///< NodeFlags (high byte)
+    std::uint8_t reserved_byte = 0; ///< Padding for 8-byte alignment of size
+    std::uint64_t size = 0;         ///< File size
+    Hash256 content_hash = {};      ///< SHA-256 content hash
 };
 
-static_assert(sizeof(RawFileEntry) == 64, "RawFileEntry must be 64 bytes");
+static_assert(sizeof(RawFileEntry) == 56, "RawFileEntry must be 56 bytes");
 
-/// Raw command entry (24 bytes)
+/// Raw command entry (16 bytes)
 /// Represents build commands
+/// Node ID is computed from array position: id = array_index | COMMAND_ID_FLAG
 struct alignas(8) RawCommandEntry {
-    std::uint32_t id = 0;                      ///< Node ID
-    std::uint32_t dir_id = 0;                  ///< Directory where command runs
-    std::uint32_t cmd_offset = 0;              ///< Offset into string table (length-prefixed)
-    std::uint32_t display_offset = 0;          ///< Display text offset (length-prefixed)
-    std::uint32_t env_offset = 0;              ///< Environment variables offset (length-prefixed)
-    std::uint8_t flags = 0;                    ///< Command flags
-    std::array<std::uint8_t, 3> reserved = {}; ///< Padding to 24 bytes
+    std::uint32_t dir_id = 0;         ///< Directory where command runs
+    std::uint32_t cmd_offset = 0;     ///< Offset into string table (length-prefixed)
+    std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
+    std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
 };
 
-static_assert(sizeof(RawCommandEntry) == 24, "RawCommandEntry must be 24 bytes");
+static_assert(sizeof(RawCommandEntry) == 16, "RawCommandEntry must be 16 bytes");
 
 /// Raw edge entry (16 bytes)
 /// Represents dependencies between nodes

@@ -31,20 +31,33 @@ struct DirNameKeyHash {
 } // namespace
 
 struct BuildGraph::Impl {
-    std::deque<Node> nodes;
+    std::deque<Node> files;    // Files, directories, groups (non-command nodes)
+    std::deque<Node> commands; // Command nodes only
     std::vector<Edge> edges;
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
-    std::unordered_map<std::string, NodeId> command_index;
+    std::unordered_map<std::string, NodeId> command_str_index;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
     mutable std::unordered_map<NodeId, std::string> path_cache;
-    NodeId next_id = 1;
+    NodeId next_file_id = 1;
+    NodeId next_command_id = make_command_id(1);
 
     [[nodiscard]] auto validate_node_id(NodeId id) const -> bool
     {
-        if (id == 0 || id >= nodes.size()) {
+        if (id == 0) {
             return false;
         }
-        return nodes[id].id == id;
+        if (is_command_id(id)) {
+            auto idx = command_index(id);
+            if (idx == 0 || idx >= commands.size()) {
+                return false;
+            }
+            return commands[idx].id == id;
+        }
+        auto idx = file_index(id);
+        if (idx >= files.size()) {
+            return false;
+        }
+        return files[idx].id == id;
     }
 };
 
@@ -61,21 +74,35 @@ auto BuildGraph::operator=(BuildGraph&&) noexcept -> BuildGraph& = default;
 
 auto BuildGraph::add_node(Node node) -> Result<NodeId>
 {
-    auto const id = impl_->next_id++;
+    if (node.type == NodeType::Command) {
+        auto const id = impl_->next_command_id++;
+        node.id = id;
+
+        if (!node.command.empty()) {
+            impl_->command_str_index[node.command] = id;
+        }
+
+        auto const idx = command_index(id);
+        if (idx >= impl_->commands.size()) {
+            impl_->commands.resize(idx + 1);
+        }
+        impl_->commands[idx] = std::move(node);
+
+        return id;
+    }
+
+    auto const id = impl_->next_file_id++;
     node.id = id;
 
     if (!node.name.empty()) {
         impl_->dir_name_index[DirNameKey { node.parent_dir, node.name }] = id;
     }
 
-    if (node.type == NodeType::Command && !node.command.empty()) {
-        impl_->command_index[node.command] = id;
+    auto const idx = file_index(id);
+    if (idx >= impl_->files.size()) {
+        impl_->files.resize(idx + 1);
     }
-
-    if (id >= impl_->nodes.size()) {
-        impl_->nodes.resize(id + 1);
-    }
-    impl_->nodes[id] = std::move(node);
+    impl_->files[idx] = std::move(node);
 
     return id;
 }
@@ -129,19 +156,43 @@ auto BuildGraph::add_order_only_edge(NodeId from, NodeId to) -> Result<void>
 
 auto BuildGraph::get_node(NodeId id) -> Node*
 {
-    if (id == 0 || id >= impl_->nodes.size()) {
+    if (id == 0) {
         return nullptr;
     }
-    auto& node = impl_->nodes[id];
+    if (is_command_id(id)) {
+        auto const idx = command_index(id);
+        if (idx == 0 || idx >= impl_->commands.size()) {
+            return nullptr;
+        }
+        auto& node = impl_->commands[idx];
+        return node.id == id ? &node : nullptr;
+    }
+    auto const idx = file_index(id);
+    if (idx >= impl_->files.size()) {
+        return nullptr;
+    }
+    auto& node = impl_->files[idx];
     return node.id == id ? &node : nullptr;
 }
 
 auto BuildGraph::get_node(NodeId id) const -> Node const*
 {
-    if (id == 0 || id >= impl_->nodes.size()) {
+    if (id == 0) {
         return nullptr;
     }
-    auto const& node = impl_->nodes[id];
+    if (is_command_id(id)) {
+        auto const idx = command_index(id);
+        if (idx == 0 || idx >= impl_->commands.size()) {
+            return nullptr;
+        }
+        auto const& node = impl_->commands[idx];
+        return node.id == id ? &node : nullptr;
+    }
+    auto const idx = file_index(id);
+    if (idx >= impl_->files.size()) {
+        return nullptr;
+    }
+    auto const& node = impl_->files[idx];
     return node.id == id ? &node : nullptr;
 }
 
@@ -158,8 +209,8 @@ auto BuildGraph::find_by_dir_name(NodeId parent_dir, std::string_view name) cons
 
 auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
 {
-    auto it = impl_->command_index.find(std::string { cmd });
-    if (it != impl_->command_index.end()) {
+    auto it = impl_->command_str_index.find(std::string { cmd });
+    if (it != impl_->command_str_index.end()) {
         return it->second;
     }
     return std::nullopt;
@@ -168,9 +219,19 @@ auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<No
 auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto i = NodeId { 1 }; i < impl_->nodes.size(); ++i) {
-        if (impl_->nodes[i].id == i && impl_->nodes[i].type == type) {
-            result.push_back(i);
+    if (type == NodeType::Command) {
+        for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+            auto const& node = impl_->commands[i];
+            if (node.id == make_command_id(i)) {
+                result.push_back(node.id);
+            }
+        }
+    } else {
+        for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
+            auto const& node = impl_->files[i];
+            if (node.id == i && node.type == type) {
+                result.push_back(i);
+            }
         }
     }
     return result;
@@ -219,7 +280,9 @@ auto BuildGraph::edges() const -> std::vector<Edge> const&
 
 auto BuildGraph::node_count() const -> std::size_t
 {
-    return impl_->nodes.empty() ? 0 : impl_->nodes.size() - 1;
+    auto file_count = impl_->files.empty() ? std::size_t { 0 } : impl_->files.size() - 1;
+    auto cmd_count = impl_->commands.empty() ? std::size_t { 0 } : impl_->commands.size() - 1;
+    return file_count + cmd_count;
 }
 
 auto BuildGraph::edge_count() const -> std::size_t
@@ -229,27 +292,38 @@ auto BuildGraph::edge_count() const -> std::size_t
 
 auto BuildGraph::empty() const -> bool
 {
-    return impl_->nodes.empty();
+    return impl_->files.size() <= 1 && impl_->commands.size() <= 1;
 }
 
 auto BuildGraph::clear() -> void
 {
-    impl_->nodes.clear();
+    impl_->files.clear();
+    impl_->commands.clear();
     impl_->edges.clear();
     impl_->dir_name_index.clear();
-    impl_->command_index.clear();
+    impl_->command_str_index.clear();
     impl_->order_only_dependents.clear();
     impl_->path_cache.clear();
-    impl_->next_id = 1;
+    impl_->next_file_id = 1;
+    impl_->next_command_id = make_command_id(1);
 }
 
 auto BuildGraph::all_nodes() const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    result.reserve(!impl_->nodes.empty() ? impl_->nodes.size() - 1 : 0);
-    for (auto i = NodeId { 1 }; i < impl_->nodes.size(); ++i) {
-        if (impl_->nodes[i].id == i) {
+    auto file_count = impl_->files.empty() ? std::size_t { 0 } : impl_->files.size() - 1;
+    auto cmd_count = impl_->commands.empty() ? std::size_t { 0 } : impl_->commands.size() - 1;
+    result.reserve(file_count + cmd_count);
+
+    for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
+        if (impl_->files[i].id == i) {
             result.push_back(i);
+        }
+    }
+    for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+        auto const id = make_command_id(i);
+        if (impl_->commands[i].id == id) {
+            result.push_back(id);
         }
     }
     return result;
@@ -258,10 +332,17 @@ auto BuildGraph::all_nodes() const -> std::vector<NodeId>
 auto BuildGraph::root_nodes() const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto i = NodeId { 1 }; i < impl_->nodes.size(); ++i) {
-        auto const& node = impl_->nodes[i];
+    for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
+        auto const& node = impl_->files[i];
         if (node.id == i && node.inputs.empty() && node.order_only.empty()) {
             result.push_back(i);
+        }
+    }
+    for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+        auto const id = make_command_id(i);
+        auto const& node = impl_->commands[i];
+        if (node.id == id && node.inputs.empty() && node.order_only.empty()) {
+            result.push_back(id);
         }
     }
     return result;
@@ -270,10 +351,17 @@ auto BuildGraph::root_nodes() const -> std::vector<NodeId>
 auto BuildGraph::leaf_nodes() const -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto i = NodeId { 1 }; i < impl_->nodes.size(); ++i) {
-        auto const& node = impl_->nodes[i];
+    for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
+        auto const& node = impl_->files[i];
         if (node.id == i && node.outputs.empty()) {
             result.push_back(i);
+        }
+    }
+    for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+        auto const id = make_command_id(i);
+        auto const& node = impl_->commands[i];
+        if (node.id == id && node.outputs.empty()) {
+            result.push_back(id);
         }
     }
     return result;
