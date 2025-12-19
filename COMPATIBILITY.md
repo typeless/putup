@@ -8,7 +8,7 @@ Pup uses Tup's Tupfile syntax. This document covers supported features and diffe
 |-------------|----------------|--------|
 | `tup` | `pup` | ✅ Implemented |
 | `tup upd` | `pup` | ✅ Implemented |
-| `tup init` | `pup init` | ✅ Implemented |
+| `tup init` | (auto) | ✅ Auto-initializes on first build |
 | `tup refactor` | `pup parse` | ✅ Implemented |
 | `tup graph` | `pup export graph` | ✅ Implemented |
 | `tup compiledb` | `pup export compdb` | ✅ Implemented |

@@ -34,19 +34,16 @@ ifdef TUP
 	else
 		BUILD_OPTIONS = --quiet
 	endif
-	INIT_CMD = tup init
 else ifeq ($(PUP_LOCAL),yes)
 	BUILD_CMD = ./$(BUILD_DIR)/pup -B $(BUILD_DIR)
 	ifeq ("$(V)", "1")
 		BUILD_OPTIONS = -v
 	endif
-	INIT_CMD = ./$(BUILD_DIR)/pup init
 else ifneq ($(PUP_PATH),)
 	BUILD_CMD = pup -B $(BUILD_DIR)
 	ifeq ("$(V)", "1")
 		BUILD_OPTIONS = -v
 	endif
-	INIT_CMD = pup init
 else
 	# Bootstrap: no pup available, use tup
 	BUILD_CMD = tup
@@ -55,7 +52,6 @@ else
 	else
 		BUILD_OPTIONS = --quiet
 	endif
-	INIT_CMD = tup init
 endif
 
 # Source files
@@ -73,12 +69,10 @@ all: build
 build:
 ifdef TUP
 	@test -d .tup || tup init
-else ifeq ($(PUP_LOCAL),yes)
-	@test -d .pup || ./$(BUILD_DIR)/pup init
-else ifneq ($(PUP_PATH),)
-	@test -d .pup || pup init
-else
+else ifndef PUP_LOCAL
+ifndef PUP_PATH
 	@test -d .tup || tup init
+endif
 endif
 	@test -f $(BUILD_DIR)/tup.config || pup variant configs/posix.config $(BUILD_DIR)
 	$(BUILD_CMD) $(BUILD_OPTIONS)
