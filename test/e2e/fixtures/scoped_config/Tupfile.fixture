@@ -1,0 +1,2 @@
+# Root Tupfile - uses @(ROOT_VAR)
+: |> echo "@(ROOT_VAR)" > %o |> root.txt

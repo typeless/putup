@@ -1,0 +1,6 @@
+# Rule 1: Generate intermediate file (NOT a config output)
+: |> echo "CONFIG_VALUE=hello" > %o |> intermediate.txt
+
+# Rule 2: Use intermediate to generate config (IS a config output)
+# This depends on Rule 1's output
+: intermediate.txt |> cat %f > %o |> $(TUP_VARIANT_OUTPUTDIR)/../sub/tup.config

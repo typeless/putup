@@ -2197,3 +2197,296 @@ SCENARIO("Unified targets - B flag with output target", "[e2e][target]")
         }
     }
 }
+
+// =============================================================================
+// Scoped tup.config tests
+// =============================================================================
+
+SCENARIO("Subdir uses its own tup.config", "[e2e][scoped-config]")
+{
+    GIVEN("a project with sub/Tupfile using @(SUB_VAR)")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub");
+        f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
+        f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("@(SUB_VAR) resolves to 'from_sub'")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/sub.txt") == "from_sub\n");
+            }
+
+            THEN("@(ROOT_VAR) in sub/ resolves to '' (not inherited)")
+            {
+                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Subdir inherits from parent when no local config", "[e2e][scoped-config]")
+{
+    GIVEN("a project with sub/deep/Tupfile using @(SUB_VAR)")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub/deep");
+        f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
+        f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        // NO build/sub/deep/tup.config
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("@(SUB_VAR) in sub/deep/ resolves to 'from_sub' (found by walking up)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/deep/sub_from_deep.txt") == "from_sub\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Root config used when no intermediate configs", "[e2e][scoped-config]")
+{
+    GIVEN("a project with sub/Tupfile using @(ROOT_VAR)")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub");
+        f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
+        // NO build/sub/tup.config - should inherit from root
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("@(ROOT_VAR) in sub/ resolves to 'from_root'")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "from_root\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Empty subdir config blocks inheritance", "[e2e][scoped-config]")
+{
+    GIVEN("a project with sub/Tupfile using @(ROOT_VAR)")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub");
+        f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
+        f.write_file("build/sub/tup.config", "");  // Empty config blocks lookup
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("@(ROOT_VAR) in sub/ resolves to '' (empty config blocks lookup)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "\n");
+            }
+        }
+    }
+}
+
+// =============================================================================
+// pup configure command tests
+// =============================================================================
+
+SCENARIO("Configure executes config-generating rules only", "[e2e][configure]")
+{
+    GIVEN("a project with config-generating and normal rules")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("sub/tup.config is created")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/sub/tup.config"));
+            }
+
+            THEN("out.txt is NOT created (non-config rule skipped)")
+            {
+                REQUIRE_FALSE(f.exists("build/sub/out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("Configure uses root tup.config only", "[e2e][configure]")
+{
+    GIVEN("a project with configs/Tupfile using @(MACHINE)")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
+        // NO build/configs/tup.config
+        REQUIRE(f.init().success());
+
+        WHEN("pup configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("@(MACHINE) resolves to 'board-xyz' and config is generated")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/sub/tup.config"));
+                auto content = f.read_file("build/sub/tup.config");
+                REQUIRE(content.find("board-xyz") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Configure does not write index", "[e2e][configure]")
+{
+    GIVEN("a fresh project without index")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
+        REQUIRE(f.init().success());
+        // Remove index if it was created by init
+        f.remove_file("build/.pup/index");
+        REQUIRE_FALSE(f.exists("build/.pup/index"));
+
+        WHEN("pup configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("index does NOT exist")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/.pup/index"));
+            }
+        }
+    }
+}
+
+SCENARIO("Configure does not create .pup directory", "[e2e][configure]")
+{
+    GIVEN("a project without .pup directory")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
+        // Do NOT call init - no .pup directory exists
+        REQUIRE_FALSE(f.exists("build/.pup"));
+
+        WHEN("pup configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN(".pup directory is NOT created")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/.pup"));
+            }
+        }
+    }
+}
+
+SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
+{
+    GIVEN("a project where configs/ outputs sub/tup.config")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=hello-world\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup configure runs, then pup runs")
+        {
+            auto configure_result = f.pup({ "configure", "-B", "build" });
+            REQUIRE(configure_result.success());
+
+            auto build_result = f.build({ "-B", "build" });
+
+            THEN("out.txt contains the message from generated config")
+            {
+                REQUIRE(build_result.success());
+                REQUIRE(f.exists("build/sub/out.txt"));
+                auto content = f.read_file("build/sub/out.txt");
+                REQUIRE(content.find("hello-world") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Configure handles config rule depending on non-config rule", "[e2e][configure][deps]")
+{
+    // Bug: build_subset only runs config-output rules, ignoring their dependencies.
+    // If a config rule depends on an intermediate file produced by a non-config rule,
+    // the dependency is not run, causing the config rule to fail.
+
+    GIVEN("a project where config rule depends on intermediate file")
+    {
+        auto f = E2EFixture { "configure_deps" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("pup configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("configure succeeds and config file is created")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                // This test documents the expected behavior:
+                // Configure should run BOTH the intermediate rule AND the config rule
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/sub/tup.config"));
+            }
+        }
+    }
+}
+
+SCENARIO("Configure works with empty .pup directory (no index)", "[e2e][configure][init]")
+{
+    GIVEN("a project with empty .pup directory")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        // Create empty .pup directory (simulating interrupted init or manual mkdir)
+        f.mkdir("build/.pup");
+        REQUIRE(f.exists("build/.pup"));
+        REQUIRE_FALSE(f.exists("build/.pup/index"));
+
+        WHEN("pup configure runs")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("configure succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/sub/tup.config"));
+            }
+        }
+    }
+}

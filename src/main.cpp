@@ -30,6 +30,9 @@ auto dispatch(Options const& opts) -> int
     if (opts.command == "variant") {
         return cmd_variant(opts);
     }
+    if (opts.command == "configure") {
+        return cmd_configure(opts);
+    }
 
     fmt::print(stderr, "Unknown command: {}\n", opts.command);
     print_usage();

@@ -30,6 +30,7 @@ struct BuildContextOptions {
     bool verbose = false;
     bool keep_going = false;
     bool auto_init = false;
+    bool root_config_only = false; // For configure: use only root tup.config
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
 };

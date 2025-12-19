@@ -1,0 +1,3 @@
+# Deep Tupfile - uses @(SUB_VAR) (inherited from sub/) and @(DEEP_VAR)
+: |> echo "@(DEEP_VAR)" > %o |> deep.txt
+: |> echo "@(SUB_VAR)" > %o |> sub_from_deep.txt

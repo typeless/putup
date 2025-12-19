@@ -1,0 +1,2 @@
+# Uses @(VALUE) from generated tup.config
+: |> echo "@(VALUE)" > %o |> output.txt

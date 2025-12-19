@@ -260,6 +260,8 @@ Features in pup that extend beyond tup:
 | **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
 | **Export formats** | `pup export graph\|script\|compdb` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
+| **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
+| **Configure command** | `pup configure` runs only rules outputting `tup.config` files |
 
 ## Reporting Issues
 

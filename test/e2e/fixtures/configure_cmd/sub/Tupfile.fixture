@@ -1,0 +1,2 @@
+# Sub Tupfile - uses @(MSG) from generated tup.config
+: |> echo "@(MSG)" > %o |> out.txt

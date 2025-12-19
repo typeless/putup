@@ -105,6 +105,13 @@ public:
         std::vector<std::string> const& changed_files
     ) -> Result<BuildStats>;
 
+    /// Build only a specific subset of commands
+    [[nodiscard]]
+    auto build_subset(
+        graph::BuildGraph const& graph,
+        std::set<NodeId> const& command_ids
+    ) -> Result<BuildStats>;
+
     /// Set callback for job start
     auto on_job_start(JobStartCallback callback) -> void;
 

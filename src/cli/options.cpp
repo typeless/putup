@@ -20,7 +20,7 @@ auto const VERSION = "0.1.0";
 auto is_command(std::string_view arg) -> bool
 {
     return arg == "parse" || arg == "export" || arg == "clean" || arg == "distclean"
-        || arg == "variant";
+        || arg == "variant" || arg == "configure";
 }
 
 } // namespace
@@ -108,6 +108,7 @@ auto print_usage() -> void
                "                      script  - Shell script\n"
                "                      compdb  - compile_commands.json\n"
                "                      graph   - DOT format (--summary for text)\n"
+               "  configure         Generate tup.config files (two-stage build)\n"
                "  clean             Remove generated files\n"
                "  distclean         Full reset: remove .pup and variant directory\n"
                "  variant <config> [dir]  Create variant build directory\n"

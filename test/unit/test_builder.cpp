@@ -1393,3 +1393,70 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
     // Output should go to variant directory
     CHECK(cmd_node->command.find("build/src/lib/add.o") != std::string::npos);
 }
+
+// =============================================================================
+// Dotdot filename edge cases (Issue #1: fragile ".." detection)
+// =============================================================================
+
+TEST_CASE("GraphBuilder output filename starting with dotdot is not parent reference", "[builder][paths][dotdot]")
+{
+    // Bug: map_to_output() incorrectly treats filenames like "..hidden" as
+    // parent directory references because it only checks path[0]=='.' && path[1]=='.'
+    // without verifying that path[2]=='/' or path=="..".
+    //
+    // Expected: "..hidden" should be treated as a literal filename, not "../hidden"
+
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/input.c");
+    fixture.create_file("src/Tupfile");
+    fs::create_directories(fixture.root() / "build" / "src");
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = fixture.root() / "build",
+        .config_path = {},
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    ctx.tup_variant_outputdir = "../../build/src";
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("src");
+
+    // Rule that outputs a file named "..hidden" (valid filename starting with ..)
+    auto rule = Rule {};
+    rule.inputs.push_back(make_path_pattern("input.c"));
+    rule.command.parts.push_back(Expression::Literal { "gen-hidden %f %o" });
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "..hidden" });
+    rule.outputs.push_back(output);
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    // Find the output node
+    auto generated = graph.nodes_of_type(NodeType::Generated);
+    Node const* output_node = nullptr;
+    for (auto id : generated) {
+        auto const* node = graph.get_node(id);
+        if (node && node->name == "..hidden") {
+            output_node = node;
+            break;
+        }
+    }
+    REQUIRE(output_node != nullptr);
+
+    // The output should be in build/src/..hidden, NOT build/..hidden
+    // If the bug exists, it would incorrectly treat "..hidden" as a parent ref
+    // and might produce "build/..hidden" or worse
+    auto full_path = graph.get_full_path(output_node->id);
+    INFO("Full path: " << full_path);
+    CHECK(full_path == "build/src/..hidden");
+}

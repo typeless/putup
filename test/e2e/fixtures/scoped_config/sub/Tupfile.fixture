@@ -1,0 +1,3 @@
+# Sub Tupfile - uses @(SUB_VAR) and @(ROOT_VAR)
+: |> echo "@(SUB_VAR)" > %o |> sub.txt
+: |> echo "@(ROOT_VAR)" > %o |> root_from_sub.txt

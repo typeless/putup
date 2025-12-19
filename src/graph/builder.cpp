@@ -98,9 +98,26 @@ auto map_to_output(
     // Compute output prefix as relative path from source_root to output_root
     if (!output_root.empty() && source_root != output_root) {
         auto output_prefix = fs::relative(output_root, source_root);
+        auto output_prefix_str = output_prefix.string();
         if (current_dir.empty()) {
             return (output_prefix / path).lexically_normal().string();
         }
+
+        // If path escapes current_dir (starts with ../), resolve it first
+        // to check if it already goes to the output directory
+        // Note: Must check for ".." or "../" specifically, not just ".." prefix
+        // because "..hidden" is a valid filename, not a parent reference
+        auto is_parent_ref = (path == ".." || (path.size() > 2 && path[0] == '.' && path[1] == '.' && path[2] == '/'));
+        if (is_parent_ref) {
+            auto resolved = (current_dir / path).lexically_normal().string();
+            // If resolved path already starts with output_prefix, don't add it again
+            if (resolved.size() >= output_prefix_str.size()
+                && std::string_view { resolved }.substr(0, output_prefix_str.size()) == output_prefix_str
+                && (resolved.size() == output_prefix_str.size() || resolved[output_prefix_str.size()] == '/')) {
+                return resolved;
+            }
+        }
+
         return (output_prefix / current_dir / path).lexically_normal().string();
     }
 

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <vector>
 
@@ -40,6 +41,7 @@ struct TupfileParseState {
     std::set<std::filesystem::path> available;
     std::set<std::filesystem::path> parsed;
     std::set<std::filesystem::path> parsing;
+    std::map<std::filesystem::path, parser::VarDb> scoped_configs; // Cache of per-dir configs
 };
 
 auto compute_tup_variantdir(
@@ -142,6 +144,54 @@ auto discover_tupfile_dirs(
     return dirs;
 }
 
+/// Find the tup.config for a directory by walking up the tree
+/// Returns pointer to the cached VarDb for that directory
+auto find_config_for_dir(
+    std::filesystem::path const& rel_dir,
+    std::filesystem::path const& output_root,
+    TupfileParseState& state
+) -> parser::VarDb const*
+{
+    auto normalized = std::filesystem::path {
+        rel_dir.empty() || rel_dir == "." ? std::filesystem::path {} : rel_dir
+    };
+
+    // Check cache first
+    if (auto it = state.scoped_configs.find(normalized); it != state.scoped_configs.end()) {
+        return &it->second;
+    }
+
+    // Walk up from output_root/dir/ looking for tup.config
+    auto search_path = output_root / normalized;
+    while (true) {
+        auto config_path = search_path / "tup.config";
+        if (std::filesystem::exists(config_path)) {
+            // Found a config - load and cache it
+            auto config_result = parser::parse_config(config_path);
+            if (config_result) {
+                auto [it, _] = state.scoped_configs.emplace(normalized, std::move(*config_result));
+                return &it->second;
+            }
+            // Parse failed - warn user and return empty config (blocks inheritance)
+            fmt::print(stderr, "Warning: Failed to parse {}: {}\n", config_path.string(), config_result.error().message);
+            auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
+            return &it->second;
+        }
+
+        // Check if we've reached the output_root
+        if (search_path == output_root || !search_path.has_parent_path()
+            || search_path.parent_path() == search_path) {
+            break;
+        }
+
+        search_path = search_path.parent_path();
+    }
+
+    // No config found - cache empty config
+    auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
+    return &it->second;
+}
+
 auto parse_directory(
     std::filesystem::path const& rel_dir,
     TupfileParseState& state,
@@ -150,8 +200,8 @@ auto parse_directory(
     std::filesystem::path const& root,
     std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
-    pup::parser::VarDb const& config_vars,
-    bool verbose
+    bool verbose,
+    bool root_config_only = false
 ) -> pup::Result<void>
 {
     auto vars = pup::parser::VarDb { base_vars };
@@ -203,13 +253,21 @@ auto parse_directory(
         output_root
     );
 
+    // Get the scoped config for this directory (walks up tree to find nearest tup.config)
+    // When root_config_only is set (for configure pass), always use root config
+    auto const* scoped_config = find_config_for_dir(
+        root_config_only ? std::filesystem::path {} : rel_dir,
+        output_root,
+        state
+    );
+
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, root, output_root, base_vars, config_vars, verbose);
+        return parse_directory(dir, state, builder, graph, root, output_root, base_vars, verbose, root_config_only);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
-        .config_vars = &config_vars,
+        .config_vars = scoped_config,
         .tup_cwd = tup_cwd,
         .tup_platform = std::string { pup::PLATFORM },
         .tup_arch = std::string { pup::ARCH },
@@ -386,7 +444,7 @@ auto build_context(
             continue;
         }
         auto result = Result<void> {
-            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx.impl_->config_vars, ctx_opts.verbose)
+            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx_opts.verbose, ctx_opts.root_config_only)
         };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
