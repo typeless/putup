@@ -705,6 +705,24 @@ CONFIG_ENABLE_DEBUG=n
 CONFIG_VERSION="0.1.0"
 ```
 
+**Fine-Grained Dependency Tracking:**
+
+Pup tracks which commands use which config variables. When a variable changes, only commands that actually reference it (via `@(VAR)` or `$(CONFIG_VAR)`) are rebuilt.
+
+```tup
+# Command 1: uses @(CC) and @(CFLAGS)
+: foo.c |> @(CC) @(CFLAGS) -c %f -o %o |> foo.o
+
+# Command 2: uses @(CC) and @(LDFLAGS)
+: foo.o |> @(CC) %f -o %o @(LDFLAGS) |> program
+```
+
+If only `CONFIG_CFLAGS` changes:
+- Command 1 rebuilds (uses `@(CFLAGS)`)
+- Command 2 does NOT rebuild (doesn't use `@(CFLAGS)`)
+
+This matches tup's fine-grained variable tracking behavior.
+
 ### 6.2 .pupignore / .tupignore
 
 Ignore files specify directories and files that pup should skip during scanning.
@@ -1151,7 +1169,7 @@ Pup rebuilds only what's necessary by tracking file changes and dependencies in 
 |--------|--------|
 | Source file modified | Commands using it re-run |
 | Tupfile/Tuprules.tup modified | Affected commands re-run |
-| tup.config modified | All commands re-run |
+| Config variable changed | Commands using that variable re-run |
 | Header file modified | Commands with implicit deps re-run |
 | Command string changed | That command re-runs |
 | Output file missing | Command re-runs |
@@ -1202,9 +1220,19 @@ Binary file at `.pup/index` storing the complete build state.
 | Type | Meaning |
 |------|---------|
 | Normal | Input/output relationship |
-| Sticky | Explicit dependency from Tupfile (triggers rebuild on Tupfile change) |
+| Sticky | Explicit dependency from Tupfile or config variable |
 | Group | Membership in output group |
 | Implicit | Header dependency from `.d` file |
+
+**Node types:**
+
+| Type | Description |
+|------|-------------|
+| File | Source file in the project |
+| Generated | Output file produced by a command |
+| Directory | Directory node (parent for path resolution) |
+| Command | Build command to execute |
+| Variable | Config variable from tup.config |
 
 **Key design:**
 
