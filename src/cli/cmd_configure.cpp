@@ -88,7 +88,7 @@ auto configure_single_variant(
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
-        .auto_init = false, // Configure pass should not create .pup
+        .auto_init = false,       // Configure pass should not create .pup
         .root_config_only = true, // Use only root tup.config
     };
 
