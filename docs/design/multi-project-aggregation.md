@@ -1,6 +1,8 @@
 # Multi-Project Aggregation Guide
 
 > **Status: Work in Progress** - This document captures design exploration for multi-project builds. The "Current Pattern" section works today; "Future Enhancement" describes proposed improvements.
+>
+> **Recent Update:** Fine-grained config variable tracking is now implemented. Each `@(VAR)` reference creates a dependency edge, so only commands using changed variables rebuild.
 
 ## Overview
 
@@ -174,6 +176,18 @@ pup clean -B build && pup -B build
 3. **Config conflicts resolved by include order** - Last wins
 4. **Two parsers** - tup.config vs Tupfile syntax requires bridging with `MACHINE = @(MACHINE)`
 
+## Benefits of Fine-Grained Config Tracking
+
+With the implemented `@(VAR)` tracking, multi-project aggregation becomes more practical:
+
+| Scenario | Before | After |
+|----------|--------|-------|
+| Change `CONFIG_LINUX_DEFCONFIG` | ALL commands rebuild | Only linux commands rebuild |
+| Change `CONFIG_UBOOT_BOARD` | ALL commands rebuild | Only uboot commands rebuild |
+| Change `CONFIG_ARCH` | ALL commands rebuild | Commands using `@(ARCH)` rebuild |
+
+This enables efficient iteration on individual subprojects without triggering full rebuilds.
+
 ---
 
 # Future Enhancement: Full Tupfile-Based Configuration
@@ -259,9 +273,18 @@ DEFCONFIG ?= defconfig
 
 ## Rebuild Tracking
 
-Included `.tup` files are automatically tracked as dependencies:
+**Tupfile includes:**
+- Included `.tup` files are tracked as sticky dependencies
 - Change `configs/arch/arm-v7.tup` → pup re-parses, rebuilds affected targets
 - No manual refresh needed
+
+**Config variables (`@()` syntax):**
+- Each `@(VAR)` creates a Variable node in the dependency graph
+- Variable → Command edges track which commands use which variables
+- Change `CONFIG_ARCH` in tup.config → only commands using `@(ARCH)` rebuild
+- Commands using unrelated variables (e.g., `@(DISTRO)`) are NOT rebuilt
+
+This fine-grained tracking is especially valuable for multi-project builds where different subprojects use different subsets of config variables.
 
 ## Remaining Problem: Unmodified Subprojects
 
@@ -270,14 +293,22 @@ Subprojects using `@(DEFCONFIG)` still need per-subproject config resolution. Op
 1. **Nestable tup.config** (requires pup enhancement)
    - `build/linux/tup.config` provides `CONFIG_DEFCONFIG` for linux/ subtree
    - Subproject's `@(DEFCONFIG)` finds it without modification
+   - Fine-grained tracking would apply: changing `CONFIG_DEFCONFIG` only rebuilds linux commands
 
 2. **Wrapper Tuprules.tup** (works today, requires adding file)
    - Add `linux/Tuprules.tup` that bridges: `DEFCONFIG = $(LINUX_DEFCONFIG)`
    - Not truly "unmodified" but minimal change
+   - Note: `$(LINUX_DEFCONFIG)` referencing `$(CONFIG_LINUX_DEFCONFIG)` IS tracked
+
+3. **Per-subproject config prefix** (convention-based)
+   - Use `CONFIG_LINUX_DEFCONFIG`, `CONFIG_UBOOT_DEFCONFIG` in root tup.config
+   - Subprojects include config layer that bridges: `DEFCONFIG = @(LINUX_DEFCONFIG)`
+   - Fine-grained tracking: changing `CONFIG_LINUX_DEFCONFIG` only affects linux
 
 ## Key Points
 
 1. **Tupfile syntax for configs** - One parser, full language, tracked dependencies
 2. **Hierarchical includes** - machine → soc → arch composition
 3. **tup.config still needed** - For variant selection (`CONFIG_MACHINE`)
-4. **Unmodified subprojects** - Still requires nestable tup.config enhancement
+4. **Fine-grained variable tracking** - `@(VAR)` changes only rebuild affected commands
+5. **Unmodified subprojects** - Still requires nestable tup.config or wrapper files
