@@ -2490,3 +2490,28 @@ SCENARIO("Configure works with empty .pup directory (no index)", "[e2e][configur
         }
     }
 }
+
+// =============================================================================
+// Duplicate Output Detection Tests
+// =============================================================================
+
+SCENARIO("Duplicate output detection", "[e2e][duplicate]")
+{
+    GIVEN("a Tupfile with two rules producing the same output")
+    {
+        auto f = E2EFixture { "duplicate_output" };
+
+        WHEN("pup parses the project")
+        {
+            auto result = f.build();
+
+            THEN("build fails with duplicate output error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("already owned") != std::string::npos);
+            }
+        }
+    }
+}

@@ -967,6 +967,23 @@ auto GraphBuilder::expand_rule(
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
         }
+
+        // Check for duplicate output - another command already produces this file
+        auto* output_node = ctx.graph->get_node(*output_id);
+        if (output_node && !output_node->inputs.empty()) {
+            for (auto input_id : output_node->inputs) {
+                if (is_command_id(input_id)) {
+                    auto* existing_cmd = ctx.graph->get_node(input_id);
+                    auto existing_cmd_str = existing_cmd ? existing_cmd->command : "<unknown>";
+                    auto output_path = ctx.graph->get_full_path(*output_id);
+                    return make_error<void>(
+                        ErrorCode::DuplicateNode,
+                        fmt::format("Unable to create output '{}' because it is already owned by command:\n  {}", output_path, existing_cmd_str)
+                    );
+                }
+            }
+        }
+
         auto edge_result = Result<void> { ctx.graph->add_edge(*cmd_id, *output_id) };
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());

@@ -1,0 +1,2 @@
+: |> echo "first" > %o |> output.txt
+: |> echo "second" > %o |> output.txt
