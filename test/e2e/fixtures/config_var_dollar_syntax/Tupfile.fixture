@@ -1,0 +1,2 @@
+# Test $(CONFIG_VAR) syntax for fine-grained tracking
+: main.c |> gcc -DOPT_LEVEL=$(CONFIG_OPT) -o %o %f |> program

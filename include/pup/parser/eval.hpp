@@ -88,6 +88,11 @@ struct EvalContext {
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
     std::set<std::filesystem::path> const* available_tupfile_dirs = nullptr;
+
+    /// Callback for tracking config variable usage (for fine-grained dependency tracking)
+    /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
+    /// a config variable is accessed via @(VAR) or $(CONFIG_VAR).
+    std::function<void(std::string_view name)> on_config_var_used = {};
 };
 
 /// Pattern flags for command/output expansion

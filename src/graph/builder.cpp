@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/graph/builder.hpp"
+#include "pup/core/hash.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/parser/eval.hpp"
@@ -191,6 +192,10 @@ struct GraphBuilder::Impl {
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
     std::unordered_map<GroupKey, std::vector<NodeId>, GroupKeyHash> order_only_groups;
+
+    /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
+    /// Persists across add_tupfile calls to avoid duplicate nodes
+    std::unordered_map<std::string, NodeId> config_var_nodes;
 };
 
 GraphBuilder::GraphBuilder(BuilderOptions options)
@@ -257,14 +262,55 @@ auto GraphBuilder::add_tupfile(
         ctx.sticky_sources.push_back(*tupfile_node_result);
     }
 
-    // Add tup.config as sticky source if it exists (for change detection)
-    if (!impl_->options.config_path.empty() && std::filesystem::exists(impl_->options.config_path)) {
-        auto config_rel = std::filesystem::relative(impl_->options.config_path, impl_->options.source_root).string();
-        auto config_node_result = get_or_create_file_node(ctx, config_rel, NodeType::File);
-        if (config_node_result) {
-            ctx.sticky_sources.push_back(*config_node_result);
+    // Create Variable nodes for fine-grained config dependency tracking
+    // Each config variable becomes a node so commands only depend on variables they use
+    // Only create nodes once (first Tupfile); subsequent Tupfiles reuse existing nodes
+    if (eval.config_vars && impl_->config_var_nodes.empty()) {
+        // Get config directory for Variable node parent (typically the -B directory)
+        auto config_dir_id = NodeId { 0 };
+        if (!impl_->options.config_path.empty()) {
+            auto config_parent = std::filesystem::path { impl_->options.config_path }.parent_path();
+            auto config_dir_rel = std::filesystem::relative(config_parent, impl_->options.source_root).string();
+            if (config_dir_rel.empty() || config_dir_rel == ".") {
+                config_dir_rel = "";
+            }
+            auto dir_result = get_or_create_directory_node(ctx, config_dir_rel);
+            if (dir_result) {
+                config_dir_id = *dir_result;
+            }
+        }
+
+        for (auto const& var_name : eval.config_vars->names()) {
+            // Skip CONFIG_ prefixed names (we store the stripped version)
+            if (var_name.starts_with(parser::builtin_vars::CONFIG_)) {
+                continue;
+            }
+
+            // Check if node already exists (shouldn't happen with empty check above, but defensive)
+            if (auto existing = graph.find_by_dir_name(config_dir_id, var_name)) {
+                impl_->config_var_nodes[std::string { var_name }] = *existing;
+                continue;
+            }
+
+            auto value = eval.config_vars->get(var_name);
+            auto node = Node {
+                .type = NodeType::Variable,
+                .name = std::string { var_name },
+                .parent_dir = config_dir_id,
+                .content_hash = sha256(value),
+            };
+
+            auto var_id_result = graph.add_node(std::move(node));
+            if (var_id_result) {
+                impl_->config_var_nodes[std::string { var_name }] = *var_id_result;
+            }
         }
     }
+
+    // Set up callback to track which config variables are used during expansion
+    eval.on_config_var_used = [&ctx](std::string_view name) {
+        ctx.used_config_vars.insert(std::string { name });
+    };
 
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
@@ -629,6 +675,9 @@ auto GraphBuilder::expand_rule(
     std::vector<std::string> const& inputs
 ) -> Result<void>
 {
+    // Clear used config vars for this rule (fine-grained dependency tracking)
+    ctx.used_config_vars.clear();
+
     // Get the primary input for pattern expansion
     auto primary_input = inputs.empty() ? std::string {} : inputs[0];
 
@@ -1484,6 +1533,14 @@ auto GraphBuilder::create_command_node(
     // Add sticky edges from Tupfile and included files to this command
     for (auto src_id : ctx.sticky_sources) {
         (void)ctx.graph->add_edge(src_id, cmd_id, LinkType::Sticky);
+    }
+
+    // Add sticky edges from used config variables (fine-grained dependency tracking)
+    for (auto const& var_name : ctx.used_config_vars) {
+        auto it = impl_->config_var_nodes.find(var_name);
+        if (it != impl_->config_var_nodes.end()) {
+            (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
+        }
     }
 
     return cmd_id;

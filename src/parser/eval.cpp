@@ -408,19 +408,27 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
         break;
     }
 
-    if (db) {
-        auto value = db->get(ref.name);
-        if (!value.empty()) {
-            return std::string { value };
+    if (db && db->contains(ref.name)) {
+        // Track config variable usage for fine-grained dependency tracking
+        // Track even for empty values - if value changes, command should rebuild
+        if (ref.kind == VarRef::Kind::Config && ctx_->on_config_var_used) {
+            ctx_->on_config_var_used(ref.name);
         }
+        return std::string { db->get(ref.name) };
     }
 
     // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
-    if (ref.kind == VarRef::Kind::Regular && ctx_->config_vars) {
-        auto value = ctx_->config_vars->get(ref.name);
-        if (!value.empty()) {
-            return std::string { value };
+    if (ref.kind == VarRef::Kind::Regular && ctx_->config_vars && ctx_->config_vars->contains(ref.name)) {
+        // Track config variable usage - strip CONFIG_ prefix if present
+        // Track even for empty values - if value changes, command should rebuild
+        if (ctx_->on_config_var_used) {
+            auto name = ref.name;
+            if (name.starts_with(builtin_vars::CONFIG_)) {
+                name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
+            }
+            ctx_->on_config_var_used(name);
         }
+        return std::string { ctx_->config_vars->get(ref.name) };
     }
 
     // Variable not found - return empty string (tup behavior)

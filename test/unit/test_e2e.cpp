@@ -446,6 +446,100 @@ SCENARIO("Config file changes trigger rebuild", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Fine-grained config variable tracking", "[e2e][incremental][config]")
+{
+    GIVEN("a project with multiple config variables where only one is used")
+    {
+        auto f = E2EFixture { "config_var_tracking" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=x\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+            WHEN("an unused config variable changes")
+            {
+                f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=y\n");
+                auto result = f.build({ "-B", "build" });
+
+                THEN("no rebuild occurs because command doesn't use UNUSED")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE(result.is_noop());
+                }
+            }
+
+            WHEN("a used config variable changes")
+            {
+                f.write_file("build/tup.config", "CONFIG_OPT=2\nCONFIG_UNUSED=x\n");
+                auto result = f.build({ "-B", "build" });
+
+                THEN("rebuild occurs")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                }
+
+                THEN("output reflects the new config")
+                {
+                    REQUIRE(f.run("build/program").stdout_output == "Optimization: 2\n");
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("Fine-grained config variable tracking with $(CONFIG_VAR) syntax", "[e2e][incremental][config]")
+{
+    GIVEN("a project using $(CONFIG_VAR) syntax")
+    {
+        auto f = E2EFixture { "config_var_dollar_syntax" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=x\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+            WHEN("an unused config variable changes")
+            {
+                f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=y\n");
+                auto result = f.build({ "-B", "build" });
+
+                THEN("no rebuild occurs because command doesn't use UNUSED")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE(result.is_noop());
+                }
+            }
+
+            WHEN("a used config variable changes")
+            {
+                f.write_file("build/tup.config", "CONFIG_OPT=2\nCONFIG_UNUSED=x\n");
+                auto result = f.build({ "-B", "build" });
+
+                THEN("rebuild occurs")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                }
+
+                THEN("output reflects the new config")
+                {
+                    REQUIRE(f.run("build/program").stdout_output == "Optimization: 2\n");
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Touch does not trigger unnecessary rebuild", "[e2e][incremental]")
 {
     GIVEN("a built project with source files")

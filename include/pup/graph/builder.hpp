@@ -70,6 +70,9 @@ struct BuilderContext {
     std::string current_file = {};
     std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
+    /// Config variables used during current command expansion (cleared per command)
+    std::set<std::string> used_config_vars = {};
+
     std::vector<std::string> errors = {};
     std::vector<std::string> warnings = {};
 };

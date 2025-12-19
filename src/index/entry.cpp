@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <unordered_set>
 
 namespace pup::index {
 
@@ -196,6 +197,7 @@ auto Index::compute_paths() -> void
 
     // Compute path for each file by walking parent chain
     auto path_cache = std::unordered_map<NodeId, std::string> {};
+    auto visiting = std::unordered_set<NodeId> {}; // Cycle detection
 
     std::function<std::string(NodeId)> get_path = [&](NodeId id) -> std::string {
         if (id == 0) {
@@ -206,6 +208,11 @@ auto Index::compute_paths() -> void
             return it->second;
         }
 
+        // Cycle detection: if we're already visiting this node, there's a cycle
+        if (visiting.contains(id)) {
+            return ""; // Break the cycle
+        }
+
         auto file_it = id_to_file.find(id);
         if (file_it == id_to_file.end()) {
             return "";
@@ -213,6 +220,8 @@ auto Index::compute_paths() -> void
 
         auto* file = file_it->second;
         auto path = std::string {};
+
+        visiting.insert(id);
 
         if (file->parent_id != 0) {
             auto parent_path = get_path(file->parent_id);
@@ -230,6 +239,7 @@ auto Index::compute_paths() -> void
             path = file->name;
         }
 
+        visiting.erase(id);
         path_cache[id] = path;
         return path;
     };
