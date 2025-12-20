@@ -173,7 +173,9 @@ pup              # Pass 2: Build with generated configs
 - `-v` - Verbose output
 - `-k` - Continue after failures
 - `-n` - Dry-run: show what would execute
-- `-B DIR` - Specify build directory
+- `-B DIR` - Specify build directory (created automatically if it doesn't exist)
+
+**Note:** The `-B` flag creates the output directory if needed. After configure runs, the directory contains `tup.config` which marks it as a variant for subsequent builds. The `.pup/` index is NOT created during configure (it's created on first build).
 
 **Important:** After running `pup configure`, you must run `pup build` (or just `pup`) to perform the actual build. If you skip the configure step and any rules output `tup.config` files, `pup build` will error:
 
@@ -197,7 +199,7 @@ else
   CONFIG_FILE = posix.config
 endif
 
-: $(CONFIG_FILE) |> install -D %f %o |> $(TUP_VARIANT_OUTPUTDIR)/../tup.config
+: $(CONFIG_FILE) |> install -D %f %o |> ../tup.config
 ```
 
 Build workflow:
@@ -229,8 +231,7 @@ include_rules
 include machine/@(MACHINE).tup
 
 # Copy pre-configured defconfig
-: defconfigs/$(MACHINE)/linux.config |> install -D %f %o |> \
-    $(TUP_VARIANT_OUTPUTDIR)/../linux/tup.config
+: defconfigs/$(MACHINE)/linux.config |> install -D %f %o |> ../linux/tup.config
 ```
 
 ### 3.7 pup export
@@ -931,8 +932,8 @@ CONFIG_CFLAGS=-g -O0 -DDEBUG
 
 2. Create the variant:
 ```bash
-pup variant configs/debug.config
-# Creates build-debug/
+pup configure -B build-debug configs
+# Creates build-debug/ directory and build-debug/tup.config
 ```
 
 **Result:**
@@ -993,14 +994,15 @@ Path-based selection is preferred for existing variants.
 **Multiple variants:**
 
 ```bash
-pup variant configs/debug.config       # Creates build-debug/
-pup variant configs/release.config     # Creates build-release/
-pup variant configs/arm.config out-arm # Creates out-arm/
+# Create variants (directories created automatically)
+pup configure -B build-debug configs
+pup configure -B build-release configs
+pup configure -B out-arm configs
 
 # Build variants
 pup build-debug build-release    # Explicit list
 pup build-*                      # Glob pattern
-pup -B build-debug -B build-release  # Legacy -B flag
+pup -B build-debug -B build-release  # Explicit -B flag
 ```
 
 **Parallel variant builds:**

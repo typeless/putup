@@ -15,7 +15,7 @@ Pup uses Tup's Tupfile syntax. This document covers supported features and diffe
 | `tup monitor` | - | ❌ Not planned (no FUSE) |
 | `tup stop` | - | ❌ Not planned (no monitor) |
 | `tup scan` | - | ❌ Not implemented |
-| `tup variant` | `pup variant` | ✅ Implemented |
+| `tup variant` | `pup configure -B` | ✅ Creates variant dir + runs config rules |
 | `tup generate` | `pup export script` | ✅ Implemented |
 | `tup commandline` | - | ❌ Not implemented |
 | `tup todo` | - | ❌ Not implemented |
