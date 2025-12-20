@@ -305,6 +305,16 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             working_dir /= node->source_dir;
         }
 
+        // Convert project-root-relative paths to working-dir-relative
+        auto source_abs = ctx.layout().source_root / source_file;
+        auto source_rel = std::filesystem::relative(source_abs, working_dir).string();
+
+        auto output_rel = std::string {};
+        if (!output_file.empty()) {
+            auto output_abs = ctx.layout().source_root / output_file;
+            output_rel = std::filesystem::relative(output_abs, working_dir).string();
+        }
+
         auto args = pup::core::tokenize_shell_command(node->command);
         if (args.empty()) {
             continue;
@@ -327,9 +337,9 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         }
         fmt::print("],\n");
 
-        fmt::print("    \"file\": \"{}\"", escape_json(source_file));
-        if (!output_file.empty()) {
-            fmt::print(",\n    \"output\": \"{}\"", escape_json(output_file));
+        fmt::print("    \"file\": \"{}\"", escape_json(source_rel));
+        if (!output_rel.empty()) {
+            fmt::print(",\n    \"output\": \"{}\"", escape_json(output_rel));
         }
         fmt::print("\n  }}");
     }
