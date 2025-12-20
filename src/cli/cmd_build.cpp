@@ -776,6 +776,10 @@ auto build_single_variant(
 
     auto index_path = ctx.layout().index_path();
     auto old_index = std::optional<pup::index::Index> {};
+    // FIXME: Pointer intermediary to work around clang-tidy bugprone-unchecked-optional-access
+    // false positives. The analyzer can't track optional validity through control flow, but
+    // understands pointer null-checks. Remove when clang-tidy improves its analysis.
+    auto const* old_idx_ptr = static_cast<pup::index::Index const*>(nullptr);
     auto use_incremental = false;
     auto changed_files = std::vector<std::string> {};
 
@@ -786,11 +790,12 @@ auto build_single_variant(
             auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
             if (index_result) {
                 old_index = std::move(*index_result);
-                old_index->build_children_index();
+                auto& idx = *old_index;
+                idx.build_children_index();
                 auto index_load_end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
                 pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_load_end - index_load_start);
 
-                if (opts.verbose && old_index->has_merkle_hashes()) {
+                if (opts.verbose && idx.has_merkle_hashes()) {
                     fmt::print("Index has Merkle hashes (v4 format)\n");
                 }
 
@@ -814,8 +819,8 @@ auto build_single_variant(
                     }
                 }
 
-                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, *old_index, scopes, upstream_files, opts.verbose);
-                changed_files = expand_implicit_deps(changed_files, *old_index, ctx.graph());
+                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, idx, scopes, upstream_files, opts.verbose);
+                changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
 
                 // Add output targets to force their rebuild
                 for (auto const& output_path : opts.output_targets) {
@@ -831,7 +836,7 @@ auto build_single_variant(
                         continue;
                     }
 
-                    if (!old_index->find_command_by_command(node->command)) {
+                    if (!idx.find_command_by_command(node->command)) {
                         for (auto output_id : ctx.graph().get_outputs(id)) {
                             auto output_path = ctx.graph().get_full_path(output_id);
                             if (!output_path.empty()) {
@@ -846,13 +851,13 @@ auto build_single_variant(
 
                 // Detect removed commands (in old index but not in fresh graph)
                 // and delete their stale outputs
-                for (auto const& cmd : old_index->commands()) {
+                for (auto const& cmd : idx.commands()) {
                     if (ctx.graph().find_by_command(cmd.command)) {
                         continue;
                     }
 
-                    for (auto const* edge : old_index->edges_from(cmd.id)) {
-                        auto const* file = old_index->find_file_by_id(edge->to);
+                    for (auto const* edge : idx.edges_from(cmd.id)) {
+                        auto const* file = idx.find_file_by_id(edge->to);
                         if (!file || file->type != pup::NodeType::Generated) {
                             continue;
                         }
@@ -880,12 +885,13 @@ auto build_single_variant(
                 if (changed_files.empty()) {
                     fmt::print("Nothing to do (up to date).\n");
                     if (opts.stat) {
-                        print_stats(*old_index, num_commands, 0);
+                        print_stats(idx, num_commands, 0);
                     }
                     return EXIT_SUCCESS;
                 }
 
                 use_incremental = true;
+                old_idx_ptr = &idx;
                 if (opts.verbose) {
                     fmt::print("Incremental build: {} changed files\n", changed_files.size());
                 }
@@ -971,8 +977,8 @@ auto build_single_variant(
         // Single output targets without old_index - use incremental with just target paths
         auto empty_index = pup::index::Index {};
         build_result = scheduler.build_incremental(ctx.graph(), empty_index, opts.output_targets);
-    } else if (use_incremental && old_index) {
-        build_result = scheduler.build_incremental(ctx.graph(), *old_index, changed_files);
+    } else if (use_incremental && old_idx_ptr) {
+        build_result = scheduler.build_incremental(ctx.graph(), *old_idx_ptr, changed_files);
     } else {
         build_result = scheduler.build(ctx.graph());
     }
@@ -997,8 +1003,7 @@ auto build_single_variant(
 
     auto final_index = std::optional<pup::index::Index> {};
     if (stats.failed_jobs == 0 && !opts.dry_run) {
-        auto const* old_index_ptr = old_index ? &*old_index : nullptr;
-        auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, old_index_ptr) };
+        auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, old_idx_ptr) };
         auto writer = pup::index::IndexWriter {};
 
         auto index_save_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
@@ -1017,8 +1022,8 @@ auto build_single_variant(
     if (opts.stat) {
         if (final_index) {
             print_stats(*final_index, num_commands, stats.completed_jobs);
-        } else if (old_index) {
-            print_stats(*old_index, num_commands, stats.completed_jobs);
+        } else if (old_idx_ptr) {
+            print_stats(*old_idx_ptr, num_commands, stats.completed_jobs);
         }
     }
 

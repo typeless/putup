@@ -1,7 +1,7 @@
 # Modern C++ Style Guide
 
-**Version:** 1.7.0
-**Updated:** 2025-12-18
+**Version:** 1.8.0
+**Updated:** 2025-12-20
 **C++ Standard:** C++20/23
 
 A concise style guide for modern C++ projects.
@@ -10,6 +10,7 @@ A concise style guide for modern C++ projects.
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.8.0 | 2025-12-20 | Null pointer initialization: use static_cast for AAA |
 | 1.7.0 | 2025-12-18 | Attributes on their own line |
 | 1.6.0 | 2025-12-18 | Multiline lambdas: same formatting as functions |
 | 1.5.0 | 2025-12-16 | Multiline declarations: return type follows closing paren |
@@ -51,6 +52,9 @@ auto map = std::unordered_map<std::string, int>{};
 // References and pointers
 auto const& ref = container;
 auto* ptr = get_pointer();
+
+// Null pointer initialization - use static_cast for type
+auto const* ptr = static_cast<Foo const*>(nullptr);
 ```
 
 ### Trailing Return Types
