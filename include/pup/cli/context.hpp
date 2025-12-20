@@ -10,6 +10,8 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
+#include <vector>
 
 namespace pup {
 struct ProjectLayout;
@@ -82,6 +84,14 @@ auto build_context(
     Options const& opts,
     BuildContextOptions const& ctx_opts = {}
 ) -> Result<BuildContext>;
+
+/// Compute build scopes from cwd relative to source_root.
+/// Returns empty vector for full project build, or path prefixes for scoped build.
+[[nodiscard]]
+auto compute_build_scopes(
+    Options const& opts,
+    ProjectLayout const& layout
+) -> std::vector<std::string>;
 
 /// Context for clean commands
 struct CleanContext {

@@ -4,6 +4,7 @@
 #include "pup/cli/context.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
+#include "pup/core/path_utils.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
@@ -32,6 +33,39 @@ auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
     auto registry = graph::DepScannerRegistry {};
     registry.register_scanner(graph::scanners::make_gcc_scanner());
     return registry;
+}
+
+auto compute_build_scopes(
+    Options const& opts,
+    ProjectLayout const& layout
+) -> std::vector<std::string>
+{
+    // -A/--all flag forces full project build
+    if (opts.all) {
+        return {};
+    }
+
+    // Explicit targets as scopes
+    if (!opts.targets.empty()) {
+        return opts.targets;
+    }
+
+    // Compute scope from current working directory
+    auto cwd = std::filesystem::current_path();
+    auto source_root = std::filesystem::canonical(layout.source_root);
+
+    // If cwd is source_root, build all
+    if (cwd == source_root) {
+        return {};
+    }
+
+    // Get relative path if cwd is under source_root
+    auto rel = pup::relative_to_root(cwd, source_root);
+    if (rel.empty()) {
+        return {};
+    }
+
+    return std::vector<std::string> { rel };
 }
 
 namespace {

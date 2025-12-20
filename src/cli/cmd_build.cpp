@@ -2,7 +2,6 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/cli/commands.hpp"
-#include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/core/hash.hpp"
@@ -76,41 +75,6 @@ auto is_tupfile(std::string_view path) -> bool
     return path.ends_with("/Tupfile") || path.ends_with("/Tuprules.tup")
         || path == "Tupfile" || path == "Tuprules.tup"
         || path.ends_with("/tup.config") || path == "tup.config";
-}
-
-/// Compute build scopes from cwd relative to source_root.
-/// Returns empty vector for full project build, or path prefixes for scoped build.
-auto compute_build_scopes(
-    Options const& opts,
-    ProjectLayout const& layout
-) -> std::vector<std::string>
-{
-    // -A/--all flag forces full project build
-    if (opts.all) {
-        return {};
-    }
-
-    // Explicit targets as scopes
-    if (!opts.targets.empty()) {
-        return opts.targets;
-    }
-
-    // Compute scope from current working directory
-    auto cwd = std::filesystem::current_path();
-    auto source_root = std::filesystem::canonical(layout.source_root);
-
-    // If cwd is source_root, build all
-    if (cwd == source_root) {
-        return {};
-    }
-
-    // Get relative path if cwd is under source_root
-    auto rel = pup::relative_to_root(cwd, source_root);
-    if (rel.empty()) {
-        return {};
-    }
-
-    return { rel };
 }
 
 /// Collect all upstream input files for commands in the given scopes.
@@ -607,8 +571,6 @@ auto build_single_variant(
     std::string_view variant_name
 ) -> int
 {
-    auto const configure_mode = opts.command == "configure";
-
     // Helper to format output with variant prefix
     auto vprint = [&](std::string_view fmt_str, auto&&... args) {
         if (opts.verbose) {
@@ -619,16 +581,16 @@ auto build_single_variant(
 
     auto scanner_registry = make_scanner_registry();
     auto* const scanner_ptr = scanner_registry ? &*scanner_registry : nullptr;
-    if (scanner_ptr && opts.verbose && !configure_mode) {
+    if (scanner_ptr && opts.verbose) {
         vprint("Implicit dependency tracking enabled\n");
     }
 
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
-        .auto_init = !configure_mode,       // Configure pass should not create .pup
-        .root_config_only = configure_mode, // Configure uses only root tup.config
-        .scanner_registry = configure_mode ? nullptr : scanner_ptr,
+        .auto_init = true,
+        .root_config_only = false,
+        .scanner_registry = scanner_ptr,
     };
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
@@ -639,115 +601,11 @@ auto build_single_variant(
 
     auto& ctx = *result;
 
-    // Build mode requires tup.config (configure creates it)
-    if (!configure_mode) {
-        auto config_path = ctx.layout().output_root / "tup.config";
-        if (!std::filesystem::exists(config_path)) {
-            fmt::print(stderr, "Error: No tup.config found. Run 'pup configure' first.\n");
-            return EXIT_FAILURE;
-        }
-    }
-
-    // Configure mode: run only config-generating rules, skip index
-    if (configure_mode) {
-        // Helper to ensure tup.config exists for variant detection (only on success)
-        auto ensure_config = [&]() {
-            auto config_path = ctx.layout().output_root / "tup.config";
-            if (!std::filesystem::exists(config_path)) {
-                std::filesystem::create_directories(config_path.parent_path());
-                auto ofs = std::ofstream { config_path };
-                ofs.close();
-                fmt::print("Created {}\n", config_path.string());
-            }
-        };
-
-        auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
-        if (configs.empty()) {
-            fmt::print("No config-generating rules found.\n");
-            ensure_config();
-            return EXIT_SUCCESS;
-        }
-
-        // Filter config commands by scope if specified
-        auto scopes = compute_build_scopes(opts, ctx.layout());
-        auto config_commands = std::set<pup::NodeId> {};
-        for (auto const& cfg : configs) {
-            auto const* node = ctx.graph().get_node(cfg.cmd_id);
-            if (!scopes.empty() && node && !pup::is_path_in_any_scope(node->source_dir, scopes)) {
-                continue;
-            }
-            config_commands.insert(cfg.cmd_id);
-            if (opts.verbose) {
-                fmt::print("Config rule: {} -> {}\n", node ? node->display : "<unknown>", cfg.output_path);
-            }
-        }
-
-        if (config_commands.empty()) {
-            fmt::print("No config-generating rules in scope.\n");
-            ensure_config();
-            return EXIT_SUCCESS;
-        }
-
-        auto all_commands = collect_command_dependencies(ctx.graph(), config_commands);
-        auto dep_count = all_commands.size() - config_commands.size();
-        if (dep_count > 0 && opts.verbose) {
-            fmt::print("Config rules depend on {} additional command(s)\n", dep_count);
-        }
-        fmt::print("Found {} config-generating rule(s)\n", config_commands.size());
-
-        auto sched_opts = pup::exec::SchedulerOptions {
-            .jobs = opts.jobs,
-            .keep_going = opts.keep_going,
-            .dry_run = opts.dry_run,
-            .verbose = opts.verbose,
-            .source_root = ctx.layout().source_root,
-            .output_root = ctx.layout().output_root,
-        };
-
-        auto scheduler = pup::exec::Scheduler { sched_opts };
-
-        scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
-            if (opts.verbose || opts.dry_run) {
-                fmt::print("{}\n", job.display);
-            }
-        });
-
-        scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
-            if (!job_result.success) {
-                fmt::print(stderr, "FAILED: {}\n", job.display);
-                if (!job_result.output.empty()) {
-                    fmt::print(stderr, "{}\n", job_result.output);
-                }
-            }
-        });
-
-        scheduler.on_progress([&](std::size_t done, std::size_t total) {
-            if (!opts.verbose) {
-                fmt::print("\r[{}/{}] ", done, total);
-                std::fflush(stdout);
-            }
-        });
-
-        auto build_result = scheduler.build_subset(ctx.graph(), all_commands);
-
-        if (!opts.verbose) {
-            fmt::print("\n");
-        }
-
-        if (!build_result) {
-            fmt::print(stderr, "Configure failed: {}\n", build_result.error().message);
-            return EXIT_FAILURE;
-        }
-
-        auto const& stats = *build_result;
-        if (stats.failed_jobs > 0) {
-            fmt::print("Configure completed: {} commands ({} failed)\n", stats.completed_jobs, stats.failed_jobs);
-            return EXIT_FAILURE;
-        }
-
-        fmt::print("Configure completed: {} commands\n", stats.completed_jobs);
-        ensure_config();
-        return EXIT_SUCCESS;
+    // Build requires tup.config (configure creates it)
+    auto config_path = ctx.layout().output_root / "tup.config";
+    if (!std::filesystem::exists(config_path)) {
+        fmt::print(stderr, "Error: No tup.config found. Run 'pup configure' first.\n");
+        return EXIT_FAILURE;
     }
 
     auto num_commands = std::size_t { ctx.graph().nodes_of_type(pup::NodeType::Command).size() };
@@ -1034,8 +892,7 @@ auto build_single_variant(
 
 auto cmd_build(Options const& opts) -> int
 {
-    auto const* const action = opts.command == "configure" ? "Configuring" : "Building";
-    return for_each_variant(opts, build_single_variant, action);
+    return for_each_variant(opts, build_single_variant, "Building");
 }
 
 } // namespace pup::cli
