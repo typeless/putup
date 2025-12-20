@@ -13,24 +13,25 @@ A build system using [Tupfile](https://gittup.org/tup/) syntax.
 
 ## Building & Testing
 
-Pup builds itself (self-hosting). Use the Makefile for common workflows:
+Pup builds itself (self-hosting). Requires `pup` in PATH.
 
 ```bash
-make              # Build with pup (self-hosting)
+make              # Configure and build (runs pup configure + pup build)
 make V=1          # Build with verbose output
-make TUP=1        # Build with tup (compatibility check)
 make test         # Run unit tests + E2E tests
 make tidy         # Run clang-tidy
 make format       # Format with clang-format
 make check        # Full CI: format-check + tidy + test
 make clean        # Clean build artifacts
+make distclean    # Full reset: remove build/
 ```
 
 Or use pup directly:
 
 ```bash
-pup               # Build (uses existing ./build/pup or pup in PATH)
-./build/pup       # Run the built binary
+pup configure -B build   # Generate build/tup.config from configs/
+pup -B build             # Build
+./build/pup              # Run the built binary
 ```
 
 Build artifacts go to `build/`.

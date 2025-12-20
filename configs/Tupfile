@@ -1,0 +1,9 @@
+# Generate tup.config for the variant build
+
+ifeq ($(TUP_PLATFORM),win32)
+  CONFIG_FILE = win32.config
+else
+  CONFIG_FILE = posix.config
+endif
+
+: $(CONFIG_FILE) |> install -D %f %o |> ../tup.config
