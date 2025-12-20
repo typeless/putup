@@ -20,7 +20,7 @@ auto const VERSION = "0.1.0";
 auto is_command(std::string_view arg) -> bool
 {
     return arg == "parse" || arg == "export" || arg == "clean" || arg == "distclean"
-        || arg == "variant" || arg == "configure";
+        || arg == "configure";
 }
 
 } // namespace
