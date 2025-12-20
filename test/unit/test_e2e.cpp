@@ -680,8 +680,7 @@ SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incr
         auto f = E2EFixture { "new_file_detection" };
         f.write_file("mul.c", "int mul(int a, int b) { return a * b; }\n");
 
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/add.o"));
         REQUIRE(f.exists("build/mul.o"));
@@ -990,8 +989,7 @@ SCENARIO("Clean works for out-of-tree builds", "[e2e][clean][variant]")
     GIVEN("an out-of-tree built project")
     {
         auto f = E2EFixture { "clean_out_of_tree" };
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/hello.o"));
         REQUIRE_FALSE(f.exists("hello.o")); // Not in source dir
@@ -1023,8 +1021,7 @@ SCENARIO("Clean works when running from build directory", "[e2e][clean][variant]
     GIVEN("a project built with -B")
     {
         auto f = E2EFixture { "clean_from_build_dir" };
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/hello.o"));
 
@@ -1112,10 +1109,10 @@ SCENARIO("Distclean dry-run shows what would be removed", "[e2e][clean]")
 
 SCENARIO("Distclean with no index still removes .pup", "[e2e][clean]")
 {
-    GIVEN("an initialized project without builds")
+    GIVEN("a project with .pup directory but no index")
     {
         auto f = E2EFixture { "distclean_no_index" };
-        REQUIRE(f.init().success());
+        f.mkdir(".pup");  // Manually create .pup (simulates interrupted build)
         REQUIRE(f.exists(".pup"));
 
         WHEN("pup distclean is executed")
@@ -1135,8 +1132,7 @@ SCENARIO("Distclean works for out-of-tree builds", "[e2e][clean][variant]")
     GIVEN("an out-of-tree built project")
     {
         auto f = E2EFixture { "distclean_out_of_tree" };
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/hello.o"));
         REQUIRE(f.exists("build/.pup"));
@@ -1168,8 +1164,7 @@ SCENARIO("Distclean works when running from build directory", "[e2e][clean][vari
     GIVEN("a project built with -B")
     {
         auto f = E2EFixture { "distclean_from_build_dir" };
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/.pup"));
 
@@ -1196,11 +1191,10 @@ SCENARIO("Distclean works when running from build directory", "[e2e][clean][vari
 
 SCENARIO("Out-of-tree builds place outputs in build directory", "[e2e][variant]")
 {
-    GIVEN("an initialized out_of_tree project")
+    GIVEN("a configured out_of_tree project")
     {
         auto f = E2EFixture { "out_of_tree" };
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("built with -B build")
         {
@@ -1591,28 +1585,23 @@ SCENARIO("Export with unknown format fails", "[e2e][export]")
 // Layout Detection Tests
 // =============================================================================
 
-SCENARIO("Layout detection finds build directory via .pup", "[e2e][layout]")
+SCENARIO("Layout detection finds build directory via tup.config", "[e2e][layout]")
 {
-    GIVEN("a project with build/.pup but no build/tup.config")
+    GIVEN("a project with build/tup.config")
     {
         auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
         auto f = E2EFixture { "implicit_deps" };
-        REQUIRE(f.init().success());
-        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
 
-        // Remove tup.config if it exists, keeping only .pup
-        if (f.exists("build/tup.config")) {
-            f.remove_file("build/tup.config");
-        }
         REQUIRE(f.exists("build/.pup"));
-        REQUIRE_FALSE(f.exists("build/tup.config"));
+        REQUIRE(f.exists("build/tup.config"));
 
         WHEN("export graph --all-deps is run without -B")
         {
             auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
 
-            THEN("build directory is auto-detected via .pup")
+            THEN("build directory is auto-detected via tup.config")
             {
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
@@ -1665,8 +1654,8 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
         REQUIRE(f.exists(".pup"));
         REQUIRE_FALSE(f.exists(".pup/index"));
 
-        // Build to build/ which creates build/.pup/index
-        f.mkdir("build");
+        // Configure and build to build/ which creates build/.pup/index
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/.pup/index"));
 
@@ -2490,31 +2479,6 @@ SCENARIO("Configure works with empty .pup directory (no index)", "[e2e][configur
     }
 }
 
-SCENARIO("Error when config-generating rules have missing outputs", "[e2e][configure]")
-{
-    GIVEN("a project that generates tup.config but hasn't run configure")
-    {
-        auto f = E2EFixture { "configure_cmd" };
-        f.mkdir("build");
-        f.write_file("build/tup.config", "CONFIG_MACHINE=test\n");
-        // Don't run configure - build/sub/tup.config won't exist
-
-        WHEN("pup build runs")
-        {
-            auto result = f.pup({ "-B", "build" });
-
-            THEN("build fails with error about missing config")
-            {
-                INFO("stdout: " << result.stdout_output);
-                INFO("stderr: " << result.stderr_output);
-                REQUIRE_FALSE(result.success());
-                REQUIRE(result.stderr_output.find("tup.config") != std::string::npos);
-                REQUIRE(result.stderr_output.find("pup configure") != std::string::npos);
-            }
-        }
-    }
-}
-
 SCENARIO("Configure creates empty tup.config when no config rules exist", "[e2e][configure]")
 {
     GIVEN("a project without config-generating rules")
@@ -2532,6 +2496,48 @@ SCENARIO("Configure creates empty tup.config when no config rules exist", "[e2e]
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(f.exists("build-test/tup.config"));
+            }
+        }
+    }
+}
+
+SCENARIO("Build requires tup.config", "[e2e][build][configure]")
+{
+    GIVEN("a project without tup.config")
+    {
+        auto f = E2EFixture { "simple_c" };
+
+        WHEN("pup build is run without configure")
+        {
+            auto result = f.build();
+
+            THEN("it fails with helpful error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("configure") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Build succeeds after configure", "[e2e][build][configure]")
+{
+    GIVEN("a configured project")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.pup({ "configure" }).success());
+
+        WHEN("pup build is run")
+        {
+            auto result = f.build();
+
+            THEN("it succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
             }
         }
     }
