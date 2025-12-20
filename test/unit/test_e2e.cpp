@@ -587,11 +587,10 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
 
             WHEN("an included header is modified")
             {
-                f.write_file("config.h",
-                    "#ifndef CONFIG_H\n"
-                    "#define CONFIG_H\n"
-                    "#define VERSION 2\n"
-                    "#endif\n");
+                f.write_file("config.h", "#ifndef CONFIG_H\n"
+                                         "#define CONFIG_H\n"
+                                         "#define VERSION 2\n"
+                                         "#endif\n");
                 auto result = f.build();
 
                 THEN("rebuild occurs due to implicit dependency")
@@ -2284,7 +2283,7 @@ SCENARIO("Empty subdir config blocks inheritance", "[e2e][scoped-config]")
         auto f = E2EFixture { "scoped_config" };
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
-        f.write_file("build/sub/tup.config", "");  // Empty config blocks lookup
+        f.write_file("build/sub/tup.config", ""); // Empty config blocks lookup
         REQUIRE(f.init().success());
 
         WHEN("pup builds the project")
@@ -2511,6 +2510,28 @@ SCENARIO("Error when config-generating rules have missing outputs", "[e2e][confi
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("tup.config") != std::string::npos);
                 REQUIRE(result.stderr_output.find("pup configure") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Configure creates empty tup.config when no config rules exist", "[e2e][configure]")
+{
+    GIVEN("a project without config-generating rules")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("pup configure -B is run")
+        {
+            auto result = f.pup({ "configure", "-B", "build-test" });
+
+            THEN("it succeeds and creates tup.config")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build-test/tup.config"));
             }
         }
     }

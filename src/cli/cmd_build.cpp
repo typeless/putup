@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <mutex>
 #include <set>
 #include <unordered_map>
@@ -640,9 +641,21 @@ auto build_single_variant(
 
     // Configure mode: run only config-generating rules, skip index
     if (configure_mode) {
+        // Helper to ensure tup.config exists for variant detection (only on success)
+        auto ensure_config = [&]() {
+            auto config_path = ctx.layout().output_root / "tup.config";
+            if (!std::filesystem::exists(config_path)) {
+                std::filesystem::create_directories(config_path.parent_path());
+                auto ofs = std::ofstream { config_path };
+                ofs.close();
+                fmt::print("Created {}\n", config_path.string());
+            }
+        };
+
         auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
         if (configs.empty()) {
             fmt::print("No config-generating rules found.\n");
+            ensure_config();
             return EXIT_SUCCESS;
         }
 
@@ -662,6 +675,7 @@ auto build_single_variant(
 
         if (config_commands.empty()) {
             fmt::print("No config-generating rules in scope.\n");
+            ensure_config();
             return EXIT_SUCCESS;
         }
 
@@ -723,6 +737,7 @@ auto build_single_variant(
         }
 
         fmt::print("Configure completed: {} commands\n", stats.completed_jobs);
+        ensure_config();
         return EXIT_SUCCESS;
     }
 
