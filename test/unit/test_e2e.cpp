@@ -2491,6 +2491,31 @@ SCENARIO("Configure works with empty .pup directory (no index)", "[e2e][configur
     }
 }
 
+SCENARIO("Error when config-generating rules have missing outputs", "[e2e][configure]")
+{
+    GIVEN("a project that generates tup.config but hasn't run configure")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=test\n");
+        // Don't run configure - build/sub/tup.config won't exist
+
+        WHEN("pup build runs")
+        {
+            auto result = f.pup({ "-B", "build" });
+
+            THEN("build fails with error about missing config")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("tup.config") != std::string::npos);
+                REQUIRE(result.stderr_output.find("pup configure") != std::string::npos);
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Duplicate Output Detection Tests
 // =============================================================================

@@ -101,7 +101,9 @@ pup [OPTIONS] <command> [TARGETS...]
 | Command | Description |
 |---------|-------------|
 | `clean` | Remove generated files |
+| `configure` | Run only config-generating rules (outputs `tup.config`) |
 | `distclean` | Full reset: remove `.pup` and variant directory |
+| `parse` | Parse Tupfiles without building |
 | `variant <config> [dir]` | Create variant build directory |
 | `export <format>` | Export build info (see below) |
 

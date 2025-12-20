@@ -44,6 +44,7 @@ srcs-y += src/cli/cmd_configure.cpp
 srcs-y += src/cli/cmd_export.cpp
 srcs-y += src/cli/cmd_parse.cpp
 srcs-y += src/cli/cmd_variant.cpp
+srcs-y += src/cli/config_commands.cpp
 srcs-y += src/cli/context.cpp
 srcs-y += src/cli/multi_variant.cpp
 srcs-y += src/cli/options.cpp

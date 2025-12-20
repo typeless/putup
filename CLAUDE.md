@@ -51,6 +51,7 @@ make test                                 # Run all tests
 ./build/test/unit/pup_test '[scope]'      # Scoped build tests
 ./build/test/unit/pup_test '[target]'     # Target parsing tests
 ./build/test/unit/pup_test '[shell]'      # Shell fixture tests
+./build/test/unit/pup_test '[configure]'  # Two-pass config generation tests
 ```
 
 ### Writing E2E Tests
@@ -80,7 +81,7 @@ SCENARIO("Feature description", "[e2e][tag]")
 ```
 
 **E2EFixture methods:**
-- `init()`, `build()`, `clean()`, `distclean()`, `parse()` - Run pup commands
+- `init()`, `build()`, `clean()`, `distclean()`, `parse()`, `configure()` - Run pup commands
 - `exists()`, `is_file()`, `is_directory()`, `is_executable()` - Check paths
 - `read_file()`, `write_file()`, `append_file()`, `remove_file()` - File I/O
 - `run()` - Execute a program and capture output

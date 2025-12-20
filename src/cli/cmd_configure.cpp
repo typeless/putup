@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/core/layout.hpp"
@@ -17,68 +18,6 @@
 namespace pup::cli {
 
 namespace {
-
-auto is_config_output(std::string const& path) -> bool
-{
-    return path.ends_with("tup.config");
-}
-
-/// Collect all commands that the given commands depend on (transitively).
-/// This ensures that if a config rule depends on an intermediate file,
-/// the command that produces that file is also included.
-auto collect_dependencies(
-    pup::graph::BuildGraph const& graph,
-    std::set<pup::NodeId> const& commands
-) -> std::set<pup::NodeId>
-{
-    auto result = std::set<pup::NodeId> { commands };
-    auto worklist = std::vector<pup::NodeId> { commands.begin(), commands.end() };
-
-    while (!worklist.empty()) {
-        auto cmd_id = worklist.back();
-        worklist.pop_back();
-
-        // Check all inputs of this command
-        for (auto input_id : graph.get_inputs(cmd_id)) {
-            auto const* input_node = graph.get_node(input_id);
-            if (!input_node) {
-                continue;
-            }
-
-            // If input is a command, add it
-            if (input_node->type == pup::NodeType::Command) {
-                if (result.insert(input_id).second) {
-                    worklist.push_back(input_id);
-                }
-                continue;
-            }
-
-            // If input is a file, find the command that produces it
-            for (auto producer_id : graph.get_inputs(input_id)) {
-                auto const* producer = graph.get_node(producer_id);
-                if (producer && producer->type == pup::NodeType::Command) {
-                    if (result.insert(producer_id).second) {
-                        worklist.push_back(producer_id);
-                    }
-                }
-            }
-        }
-
-        // Also check order-only dependencies
-        for (auto oo_id : graph.get_order_only(cmd_id)) {
-            for (auto producer_id : graph.get_inputs(oo_id)) {
-                auto const* producer = graph.get_node(producer_id);
-                if (producer && producer->type == pup::NodeType::Command) {
-                    if (result.insert(producer_id).second) {
-                        worklist.push_back(producer_id);
-                    }
-                }
-            }
-        }
-    }
-
-    return result;
-}
 
 auto configure_single_variant(
     Options const& opts,
@@ -101,34 +40,24 @@ auto configure_single_variant(
     auto& ctx = *result;
 
     // Find commands that output tup.config files
-    auto config_commands = std::set<pup::NodeId> {};
-    for (auto id : ctx.graph().all_nodes()) {
-        auto const* node = ctx.graph().get_node(id);
-        if (!node || node->type != pup::NodeType::Command) {
-            continue;
-        }
-
-        // Check if any output ends with tup.config
-        for (auto output_id : ctx.graph().get_outputs(id)) {
-            auto output_path = ctx.graph().get_full_path(output_id);
-            if (is_config_output(output_path)) {
-                config_commands.insert(id);
-                if (opts.verbose) {
-                    fmt::print("Config rule: {} -> {}\n", node->display, output_path);
-                }
-                break;
-            }
-        }
-    }
-
-    if (config_commands.empty()) {
+    auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
+    if (configs.empty()) {
         fmt::print("No config-generating rules found.\n");
         return EXIT_SUCCESS;
     }
 
+    auto config_commands = std::set<pup::NodeId> {};
+    for (auto const& cfg : configs) {
+        config_commands.insert(cfg.cmd_id);
+        if (opts.verbose) {
+            auto const* node = ctx.graph().get_node(cfg.cmd_id);
+            fmt::print("Config rule: {} -> {}\n", node ? node->display : "<unknown>", cfg.output_path);
+        }
+    }
+
     // Expand to include all transitive dependencies
     // (commands that produce files needed by config rules)
-    auto all_commands = collect_dependencies(ctx.graph(), config_commands);
+    auto all_commands = collect_command_dependencies(ctx.graph(), config_commands);
     auto dep_count = all_commands.size() - config_commands.size();
 
     if (dep_count > 0 && opts.verbose) {
