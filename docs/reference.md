@@ -480,6 +480,20 @@ Rules define how to transform inputs into outputs.
 : {objs} |> gcc %f -o %o |> program
 ```
 
+**Cross-Directory Outputs:**
+
+Output paths can use `..` to write files outside the current directory:
+
+```tup
+# Output to sibling directory
+: foo.c |> gcc -c %f -o %o |> ../build/foo.o
+
+# Output to parent directory
+: posix.config |> install -D %f %o |> ../tup.config
+```
+
+Output paths are relative to the Tupfile's location in the output tree (for variant builds) or the source tree (for in-tree builds).
+
 **Display Text:**
 
 Custom display text replaces the command in output:
