@@ -175,7 +175,7 @@ pup              # Pass 2: Build with generated configs
 - `-n` - Dry-run: show what would execute
 - `-B DIR` - Specify build directory (created automatically if it doesn't exist)
 
-**Note:** The `-B` flag creates the output directory if needed. After configure runs, the directory contains `tup.config` which marks it as a variant for subsequent builds. The `.pup/` index is NOT created during configure (it's created on first build).
+**Note:** The `-B` flag creates the output directory if needed. After configure runs, the directory contains `tup.config` which marks it as a variant for subsequent builds. If no config-generating rules exist, an empty `tup.config` is created automatically. The `.pup/` index is NOT created during configure (it's created on first build).
 
 **Important:** After running `pup configure`, you must run `pup build` (or just `pup`) to perform the actual build. If you skip the configure step and any rules output `tup.config` files, `pup build` will error:
 

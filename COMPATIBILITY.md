@@ -15,7 +15,7 @@ Pup uses Tup's Tupfile syntax. This document covers supported features and diffe
 | `tup monitor` | - | ❌ Not planned (no FUSE) |
 | `tup stop` | - | ❌ Not planned (no monitor) |
 | `tup scan` | - | ❌ Not implemented |
-| `tup variant` | `pup configure -B` | ✅ Creates variant dir + runs config rules |
+| `tup variant` | `pup configure -B` | ✅ Creates variant dir + tup.config |
 | `tup generate` | `pup export script` | ✅ Implemented |
 | `tup commandline` | - | ❌ Not implemented |
 | `tup todo` | - | ❌ Not implemented |
@@ -261,7 +261,7 @@ Features in pup that extend beyond tup:
 | **Export formats** | `pup export graph\|script\|compdb` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
-| **Configure command** | `pup configure` runs only rules outputting `tup.config` files |
+| **Configure command** | `pup configure` runs config rules and ensures `tup.config` exists |
 
 ## Reporting Issues
 
