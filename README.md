@@ -33,9 +33,6 @@ pup clean        # Remove generated files
 A **variant** is a separate build configuration (debug, release, cross-compile, etc.) with its own output directory. Each variant has a `tup.config` file that defines configuration variables.
 
 ```bash
-# Create a debug variant
-pup variant debug.config build-debug
-
 # Build specific variant
 pup build-debug
 
@@ -104,7 +101,6 @@ pup [OPTIONS] <command> [TARGETS...]
 | `configure` | Run only config-generating rules (outputs `tup.config`) |
 | `distclean` | Full reset: remove `.pup` and variant directory |
 | `parse` | Parse Tupfiles without building |
-| `variant <config> [dir]` | Create variant build directory |
 | `export <format>` | Export build info (see below) |
 
 ### Export Formats
@@ -146,9 +142,6 @@ pup build-debug/src/lib  # Build src/lib in specific variant
 # Export
 pup export compdb        # Generate compile_commands.json
 pup export graph --summary  # Show dependency stats
-
-# Variant management
-pup variant debug.config build-debug  # Create variant directory
 ```
 
 ### Environment Variables

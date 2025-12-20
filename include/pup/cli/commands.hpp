@@ -27,10 +27,6 @@ auto cmd_clean(Options const& opts) -> int;
 [[nodiscard]]
 auto cmd_distclean(Options const& opts) -> int;
 
-/// Create variant build directory
-[[nodiscard]]
-auto cmd_variant(Options const& opts) -> int;
-
 /// Execute config-generating rules (outputs tup.config files)
 [[nodiscard]]
 auto cmd_configure(Options const& opts) -> int;

@@ -147,30 +147,7 @@ pup distclean build-debug # Reset single variant (path-based)
 pup distclean build-*     # Reset all matching variants
 ```
 
-### 3.5 pup variant
-
-```
-pup variant <config-file> [directory]
-```
-
-Create a variant (out-of-tree) build directory from a configuration file.
-
-**Arguments:**
-- `config-file` - Path to a tup.config file (e.g., `configs/release.config`)
-- `directory` - Optional output directory name (default: derived from config filename)
-
-**What it creates:**
-- A new directory with symlinks to source Tupfiles
-- A `tup.config` copied from the specified config file
-- A `.pup/` directory for the variant's index
-
-**Examples:**
-```bash
-pup variant configs/debug.config           # Creates build-debug/
-pup variant configs/release.config out     # Creates out/
-```
-
-### 3.6 pup configure
+### 3.5 pup configure
 
 ```
 pup configure [OPTIONS] [TARGETS...]

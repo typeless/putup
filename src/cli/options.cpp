@@ -111,7 +111,6 @@ auto print_usage() -> void
                "  configure         Generate tup.config files (two-stage build)\n"
                "  clean             Remove generated files\n"
                "  distclean         Full reset: remove .pup and variant directory\n"
-               "  variant <config> [dir]  Create variant build directory\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
                "  -k, --keep-going   Continue after failures\n"

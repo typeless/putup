@@ -27,9 +27,6 @@ auto dispatch(Options const& opts) -> int
     if (opts.command == "distclean") {
         return cmd_distclean(opts);
     }
-    if (opts.command == "variant") {
-        return cmd_variant(opts);
-    }
     if (opts.command == "configure") {
         return cmd_configure(opts);
     }
