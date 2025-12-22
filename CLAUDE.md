@@ -11,6 +11,8 @@ A build system using [Tupfile](https://gittup.org/tup/) syntax.
 - SHA-256 content hashing
 - No FUSE, no Lua
 
+> **Architecture Details**: See [DESIGN.md](DESIGN.md) for internal architecture, data structures, and design rationale.
+
 ## Building & Testing
 
 Pup builds itself (self-hosting). Requires `pup` in PATH.

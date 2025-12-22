@@ -1109,7 +1109,7 @@ import VAR[=default]
 | Variable | Description |
 |----------|-------------|
 | `TUP_CWD` | Current Tupfile directory |
-| `TUP_PLATFORM` | Operating system |
+| `TUP_PLATFORM` | Operating system (overridable via env var) |
 | `TUP_ARCH` | CPU architecture |
 | `TUP_VARIANTDIR` | Relative path to variant |
 | `TUP_VARIANT_OUTPUTDIR` | Absolute variant path |
