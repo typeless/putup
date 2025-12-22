@@ -1625,16 +1625,16 @@ srcs-y  = core.cpp
 srcs-y += parser.cpp
 
 # Platform-specific (see 11.2)
-srcs-y += platform-$(PLATFORM).cpp
+srcs-y += platform-$(OS_API).cpp
 ```
 
 ### 11.2 Platform Selection via Source Names
 
-Use `$(PLATFORM)` variable substitution in source filenames instead of `ifdef` conditionals.
+Use `$(OS_API)` variable substitution in source filenames instead of `ifdef` conditionals.
 
 **Avoid:**
 ```tup
-ifeq ($(PLATFORM),win32)
+ifeq ($(OS_API),win32)
   : src/platform_win32.cpp |> !cxx |> platform.o
 else
   : src/platform_posix.cpp |> !cxx |> platform.o
@@ -1643,10 +1643,10 @@ endif
 
 **Prefer:**
 ```tup
-# In tup.config: CONFIG_PLATFORM=posix (or win32)
-PLATFORM = @(PLATFORM)
+# In tup.config: CONFIG_OS_API=posix (or win32)
+OS_API = @(OS_API)
 
-srcs-y += src/platform-$(PLATFORM).cpp
+srcs-y += src/platform-$(OS_API).cpp
 
 : foreach $(srcs-y) |> !cxx |> {objs}
 ```
@@ -1696,17 +1696,17 @@ LDFLAGS += @(PLATFORM_LDFLAGS)
 
 ```ini
 # configs/debug.config
-CONFIG_PLATFORM=posix
+CONFIG_OS_API=posix
 CONFIG_DEBUG_CFLAGS=-g -O0 -fsanitize=address,undefined
 CONFIG_DEBUG_LDFLAGS=-fsanitize=address,undefined
 
 # configs/release.config
-CONFIG_PLATFORM=posix
+CONFIG_OS_API=posix
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG -ffunction-sections -fdata-sections
 CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 
 # configs/win32.config
-CONFIG_PLATFORM=win32
+CONFIG_OS_API=win32
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
 CONFIG_PLATFORM_LDFLAGS=-static
 ```
@@ -1778,8 +1778,8 @@ pup variant configs/win32.config      # Creates build-win32/
 # configs/example.config
 # Build description
 
-# Platform selection (posix or win32)
-CONFIG_PLATFORM=posix
+# OS API selection (posix or win32)
+CONFIG_OS_API=posix
 
 # Build mode flags (mutually exclusive - set one pair)
 CONFIG_DEBUG_CFLAGS=-g -O0
@@ -1830,9 +1830,9 @@ Putting it all together - a well-structured project:
 ```tup
 ROOT = $(TUP_CWD)
 
-# Platform
-PLATFORM = @(PLATFORM)
-PLATFORM ?= posix
+# OS API
+OS_API = @(OS_API)
+OS_API ?= posix
 
 # Toolchain
 import CROSS_COMPILE=
@@ -1863,7 +1863,7 @@ include_rules
 srcs-y  = src/main.cpp
 srcs-y += src/parser.cpp
 srcs-y += src/lexer.cpp
-srcs-y += src/platform-$(PLATFORM).cpp
+srcs-y += src/platform-$(OS_API).cpp
 
 # Build
 : foreach $(srcs-y) |> !cxx |> {objs}
@@ -1872,7 +1872,7 @@ srcs-y += src/platform-$(PLATFORM).cpp
 
 **configs/default.config:**
 ```ini
-CONFIG_PLATFORM=posix
+CONFIG_OS_API=posix
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
 CONFIG_RELEASE_CXXFLAGS=-O2 -DNDEBUG
 CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections

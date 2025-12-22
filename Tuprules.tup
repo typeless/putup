@@ -2,9 +2,9 @@
 
 ROOT = $(TUP_CWD)
 
-# Platform (posix or win32)
-PLATFORM = @(PLATFORM)
-PLATFORM ?= posix
+# OS API (posix or win32)
+OS_API = @(OS_API)
+OS_API ?= posix
 
 # Toolchain
 import CROSS_COMPILE=

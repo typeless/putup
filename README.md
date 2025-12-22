@@ -17,6 +17,23 @@ make
 
 Requirements: C++20 compiler (GCC 11+, Clang 14+)
 
+### Bootstrapping
+
+Pup is self-hosting (builds itself), but bootstrap scripts are provided for initial installation:
+
+```bash
+./bootstrap-linux.sh    # Linux
+./bootstrap-macos.sh    # macOS
+./bootstrap-win32.sh    # Windows (MSYS2/MinGW)
+```
+
+To regenerate bootstrap scripts after changes:
+```bash
+pup show script -B build > bootstrap-linux.sh
+TUP_PLATFORM=macos pup show script -B build > bootstrap-macos.sh
+TUP_PLATFORM=win32 pup show script -B build > bootstrap-win32.sh
+```
+
 ## Quick Start
 
 Create a simple project:
