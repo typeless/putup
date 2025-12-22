@@ -1,7 +1,5 @@
 # Makefile - Wrapper around pup for orchestration tasks
 #
-# Prerequisites: pup must be installed in PATH
-#
 # Usage:
 #   make              # Configure and build
 #   make test         # Run unit and E2E tests
@@ -12,6 +10,7 @@
 #   make distclean    # Full reset: remove build directory
 
 PREFIX ?= $(HOME)
+PUP := $(PREFIX)/bin/pup
 BUILD_DIR := build
 
 # Detect mold linker
@@ -33,11 +32,11 @@ all: build
 
 # Configure: generate tup.config (pup skips if already up-to-date)
 configure:
-	pup configure -B $(BUILD_DIR) $(BUILD_OPTIONS)
+	$(PUP) configure -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
 # Build: configure first, then build
 build: configure
-	pup -B $(BUILD_DIR) $(BUILD_OPTIONS)
+	$(PUP) -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
 test: build
 	./$(BUILD_DIR)/test/unit/pup_test
@@ -49,7 +48,7 @@ install: build
 
 compdb: configure
 	@echo "Generating compile_commands.json..."
-	@pup show compdb -B $(BUILD_DIR) > $(COMPDB)
+	@$(PUP) show compdb -B $(BUILD_DIR) > $(COMPDB)
 
 tidy: compdb
 	@echo "Running clang-tidy..."
@@ -71,7 +70,7 @@ check: format-check tidy test
 	@echo "All checks passed."
 
 clean:
-	pup clean -B $(BUILD_DIR)
+	$(PUP) clean -B $(BUILD_DIR)
 
 distclean:
-	pup distclean -B $(BUILD_DIR)
+	$(PUP) distclean -B $(BUILD_DIR)
