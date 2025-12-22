@@ -19,8 +19,32 @@ Requirements: C++20 compiler (GCC 11+, Clang 14+)
 
 ## Quick Start
 
+Create a simple project:
+
 ```bash
-pup              # Build the project
+mkdir hello && cd hello
+```
+
+**Tupfile** - defines how to build:
+```tup
+: hello.c |> gcc %f -o %o |> hello
+```
+
+**hello.c** - your source:
+```c
+#include <stdio.h>
+int main() { printf("Hello, world!\n"); return 0; }
+```
+
+Build it:
+```bash
+pup configure    # Set up build (creates tup.config)
+pup              # Build
+./hello          # Run it
+```
+
+Common commands:
+```bash
 pup -j8          # Build with 8 parallel jobs
 pup -n           # Dry-run: show what would build
 pup clean        # Remove generated files
@@ -44,6 +68,32 @@ pup build-*
 ```
 
 Variants keep build outputs isolated - you can switch between configurations without rebuilding from scratch.
+
+### Configure Workflow
+
+Pup uses a two-pass workflow: **configure** sets up the build environment, then **build** executes.
+
+```bash
+pup configure    # Pass 1: Create tup.config
+pup              # Pass 2: Build
+```
+
+The `configure` command:
+- Runs only rules that output `tup.config` files
+- Creates an empty `tup.config` if no config rules exist
+- Does NOT create the `.pup/` index (that happens on first build)
+
+For variant builds, use `-B` to specify the output directory:
+
+```bash
+pup configure -B build-debug    # Creates build-debug/tup.config
+pup build-debug                 # Build the variant
+```
+
+If you skip configure, build will error:
+```
+Error: No tup.config found. Run 'pup configure' first.
+```
 
 ### Scoped Builds
 
