@@ -15,9 +15,9 @@ auto cmd_parse(Options const& opts) -> int;
 [[nodiscard]]
 auto cmd_build(Options const& opts) -> int;
 
-/// Export build info (script, compdb, graph)
+/// Show build info (script, compdb, graph)
 [[nodiscard]]
-auto cmd_export(Options const& opts) -> int;
+auto cmd_show(Options const& opts) -> int;
 
 /// Remove generated files
 [[nodiscard]]

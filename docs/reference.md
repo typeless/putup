@@ -233,13 +233,13 @@ include machine/@(MACHINE).tup
 : defconfigs/$(MACHINE)/linux.config |> install -D %f %o |> ../linux/tup.config
 ```
 
-### 3.7 pup export
+### 3.7 pup show
 
 ```
-pup export <format> [OPTIONS] [TARGETS...]
+pup show <format> [OPTIONS] [TARGETS...]
 ```
 
-Export build information in various formats. Supports path-based variant and scope selection.
+Show build information in various formats. Supports path-based variant and scope selection.
 
 **Formats:**
 - `script` - Shell script
@@ -248,25 +248,25 @@ Export build information in various formats. Supports path-based variant and sco
 
 **Examples with targets:**
 ```bash
-pup export graph --summary build-debug    # Single variant
-pup export compdb build-*                 # All matching variants
-pup export graph build-debug/src/lib      # Variant + scope
+pup show graph --summary build-debug    # Single variant
+pup show compdb build-*                 # All matching variants
+pup show graph build-debug/src/lib      # Variant + scope
 ```
 
-#### 3.7.1 export script
+#### 3.7.1 show script
 
 ```
-pup export script > build.sh
+pup show script > build.sh
 ```
 
 Generate a shell script that runs all build commands in topological order. Useful for environments where pup isn't available or for debugging.
 
 **Output:** Shell script to stdout
 
-#### 3.7.2 export compdb
+#### 3.7.2 show compdb
 
 ```
-pup export compdb > compile_commands.json
+pup show compdb > compile_commands.json
 ```
 
 Generate a [compilation database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) for IDE integration. Works with clangd, ccls, and other tools.
@@ -275,17 +275,17 @@ Generate a [compilation database](https://clang.llvm.org/docs/JSONCompilationDat
 
 **Example usage with clangd:**
 ```bash
-pup export compdb > compile_commands.json
+pup show compdb > compile_commands.json
 # IDE now has full code intelligence
 ```
 
-#### 3.7.3 export graph
+#### 3.7.3 show graph
 
 ```
-pup export graph [OPTIONS]
+pup show graph [OPTIONS]
 ```
 
-Export the dependency graph for visualization or analysis.
+Show the dependency graph for visualization or analysis.
 
 **Options:**
 - `--summary` - Human-readable text output instead of DOT
@@ -294,13 +294,13 @@ Export the dependency graph for visualization or analysis.
 **Examples:**
 ```bash
 # Generate PNG visualization
-pup export graph | dot -Tpng -o deps.png
+pup show graph | dot -Tpng -o deps.png
 
 # Text summary
-pup export graph --summary
+pup show graph --summary
 
 # Include header dependencies
-pup export graph --all-deps | dot -Tsvg -o full-deps.svg
+pup show graph --all-deps | dot -Tsvg -o full-deps.svg
 ```
 
 ## 4. Command-Line Options
@@ -318,7 +318,7 @@ pup export graph --all-deps | dot -Tsvg -o full-deps.svg
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
 | | `--stat` | Print build statistics after completion. |
-| | `--summary` | Human-readable output (for `export graph`). |
+| | `--summary` | Human-readable output (for `show graph`). |
 | | `--version` | Print version information. |
 | `-h` | `--help` | Print help message. |
 | | `--` | End of options; remaining arguments are targets. |
@@ -1396,7 +1396,7 @@ Error: Circular dependency: a.o -> b.o -> a.o
 
 Cause: Rules create a dependency cycle.
 
-Fix: Review rules to break the cycle. Use `pup export graph` to visualize.
+Fix: Review rules to break the cycle. Use `pup show graph` to visualize.
 
 ---
 
@@ -1509,19 +1509,19 @@ Shows:
 - Commands executed
 - Build time
 
-**Graph export**
+**Graph visualization**
 
 Visualize dependencies:
 
 ```bash
 # DOT format for graphviz
-pup export graph | dot -Tpng -o deps.png
+pup show graph | dot -Tpng -o deps.png
 
 # Text summary
-pup export graph --summary
+pup show graph --summary
 
 # Include header dependencies
-pup export graph --all-deps
+pup show graph --all-deps
 ```
 
 ### 10.3 Debug Techniques
@@ -1553,10 +1553,10 @@ pup -v -n
 
 ```bash
 # Text summary of all rules
-pup export graph --summary
+pup show graph --summary
 
 # Visual graph (requires graphviz)
-pup export graph | dot -Tsvg -o graph.svg
+pup show graph | dot -Tsvg -o graph.svg
 ```
 
 **Force full rebuild:**
@@ -1909,7 +1909,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | upd | ✅ | ➡️ | Alias for build |
 | variant | ✅ | ✅ | |
 | monitor | ✅ | ❌ | Filesystem watch daemon |
-| graph | ✅ | ✅ | Via `export graph` |
+| graph | ✅ | ✅ | Via `show graph` |
 | **Features** |
 | FUSE sandbox | ✅ | ❌ | Pup uses index-based tracking |
 | Lua scripting | ✅ | ❌ | Not planned |
@@ -1922,8 +1922,8 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Glob variant patterns | ❌ | ✅ | `pup build-*` |
 | Single output targets | ❌ | ✅ | `pup build-debug/foo.o` |
 | Multi-variant parallel | ❌ | ✅ | Auto-detect and build variants |
-| export script | ❌ | ✅ | Generate build.sh |
-| export compdb | ❌ | ✅ | compile_commands.json |
+| show script | ❌ | ✅ | Generate build.sh |
+| show compdb | ❌ | ✅ | compile_commands.json |
 | Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
 
 **Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name

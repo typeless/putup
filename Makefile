@@ -49,7 +49,7 @@ install: build
 
 compdb: configure
 	@echo "Generating compile_commands.json..."
-	@pup export compdb -B $(BUILD_DIR) > $(COMPDB)
+	@pup show compdb -B $(BUILD_DIR) > $(COMPDB)
 
 tidy: compdb
 	@echo "Running clang-tidy..."

@@ -1371,10 +1371,10 @@ SCENARIO("Pupignore test via shell fixture", "[e2e][shell]")
 }
 
 // =============================================================================
-// Export Command Tests
+// Show Command Tests
 // =============================================================================
 
-SCENARIO("Export graph shows only declared deps by default", "[e2e][export]")
+SCENARIO("Show graph shows only declared deps by default", "[e2e][show]")
 {
     GIVEN("a built implicit_deps project")
     {
@@ -1383,9 +1383,9 @@ SCENARIO("Export graph shows only declared deps by default", "[e2e][export]")
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        WHEN("export graph is run without --all")
+        WHEN("show graph is run without --all")
         {
-            auto result = f.pup({ "export", "graph" });
+            auto result = f.pup({ "show", "graph" });
 
             THEN("output is valid DOT format")
             {
@@ -1402,7 +1402,7 @@ SCENARIO("Export graph shows only declared deps by default", "[e2e][export]")
     }
 }
 
-SCENARIO("Export graph --all includes implicit deps", "[e2e][export]")
+SCENARIO("Show graph --all includes implicit deps", "[e2e][show]")
 {
     GIVEN("a built implicit_deps project")
     {
@@ -1411,9 +1411,9 @@ SCENARIO("Export graph --all includes implicit deps", "[e2e][export]")
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        WHEN("export graph --all-deps is run")
+        WHEN("show graph --all-deps is run")
         {
-            auto result = f.pup({ "export", "graph", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--all-deps" });
 
             THEN("output is valid DOT format")
             {
@@ -1430,16 +1430,16 @@ SCENARIO("Export graph --all includes implicit deps", "[e2e][export]")
     }
 }
 
-SCENARIO("Export graph --all-deps with no index warns", "[e2e][export]")
+SCENARIO("Show graph --all-deps with no index warns", "[e2e][show]")
 {
     GIVEN("an initialized but NOT built project")
     {
         auto f = E2EFixture { "implicit_deps" };
         REQUIRE(f.init().success());
 
-        WHEN("export graph --all-deps is run")
+        WHEN("show graph --all-deps is run")
         {
-            auto result = f.pup({ "export", "graph", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--all-deps" });
 
             THEN("command succeeds with warning")
             {
@@ -1456,7 +1456,7 @@ SCENARIO("Export graph --all-deps with no index warns", "[e2e][export]")
     }
 }
 
-SCENARIO("Export graph --summary --all-deps shows implicit edge count", "[e2e][export]")
+SCENARIO("Show graph --summary --all-deps shows implicit edge count", "[e2e][show]")
 {
     GIVEN("a built implicit_deps project")
     {
@@ -1465,9 +1465,9 @@ SCENARIO("Export graph --summary --all-deps shows implicit edge count", "[e2e][e
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        WHEN("export graph --summary --all-deps is run")
+        WHEN("show graph --summary --all-deps is run")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
 
             THEN("output shows implicit edge count")
             {
@@ -1478,16 +1478,16 @@ SCENARIO("Export graph --summary --all-deps shows implicit edge count", "[e2e][e
     }
 }
 
-SCENARIO("Export script generates shell build script", "[e2e][export]")
+SCENARIO("Show script generates shell build script", "[e2e][show]")
 {
     GIVEN("a simple C project")
     {
         auto f = E2EFixture { "simple_c" };
         REQUIRE(f.init().success());
 
-        WHEN("export script is run")
+        WHEN("show script is run")
         {
-            auto result = f.pup({ "export", "script" });
+            auto result = f.pup({ "show", "script" });
 
             THEN("output is a valid shell script")
             {
@@ -1504,16 +1504,16 @@ SCENARIO("Export script generates shell build script", "[e2e][export]")
     }
 }
 
-SCENARIO("Export compdb generates compile_commands.json", "[e2e][export]")
+SCENARIO("Show compdb generates compile_commands.json", "[e2e][show]")
 {
     GIVEN("a simple C project")
     {
         auto f = E2EFixture { "simple_c" };
         REQUIRE(f.init().success());
 
-        WHEN("export compdb is run")
+        WHEN("show compdb is run")
         {
-            auto result = f.pup({ "export", "compdb" });
+            auto result = f.pup({ "show", "compdb" });
 
             THEN("output is valid JSON array")
             {
@@ -1537,7 +1537,7 @@ SCENARIO("Export compdb generates compile_commands.json", "[e2e][export]")
     }
 }
 
-SCENARIO("Export with unified variant target", "[e2e][export][target]")
+SCENARIO("Show with unified variant target", "[e2e][show][target]")
 {
     GIVEN("a project with a variant directory")
     {
@@ -1547,9 +1547,9 @@ SCENARIO("Export with unified variant target", "[e2e][export][target]")
         REQUIRE(f.init().success());
         REQUIRE(f.build({ "-B", "build-debug" }).success());
 
-        WHEN("export graph --summary is run with variant target")
+        WHEN("show graph --summary is run with variant target")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "build-debug" });
+            auto result = f.pup({ "show", "graph", "--summary", "build-debug" });
 
             THEN("command succeeds with variant prefix in output")
             {
@@ -1561,21 +1561,21 @@ SCENARIO("Export with unified variant target", "[e2e][export][target]")
     }
 }
 
-SCENARIO("Export with unknown format fails", "[e2e][export]")
+SCENARIO("Show with unknown format fails", "[e2e][show]")
 {
     GIVEN("an initialized project")
     {
         auto f = E2EFixture { "simple_c" };
         REQUIRE(f.init().success());
 
-        WHEN("export is run with unknown format")
+        WHEN("show is run with unknown format")
         {
-            auto result = f.pup({ "export", "unknown" });
+            auto result = f.pup({ "show", "unknown" });
 
             THEN("command fails with error message")
             {
                 REQUIRE_FALSE(result.success());
-                REQUIRE(result.stderr_output.find("Unknown export format") != std::string::npos);
+                REQUIRE(result.stderr_output.find("Unknown show format") != std::string::npos);
             }
         }
     }
@@ -1597,9 +1597,9 @@ SCENARIO("Layout detection finds build directory via tup.config", "[e2e][layout]
         REQUIRE(f.exists("build/.pup"));
         REQUIRE(f.exists("build/tup.config"));
 
-        WHEN("export graph --all-deps is run without -B")
+        WHEN("show graph --all-deps is run without -B")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
 
             THEN("build directory is auto-detected via tup.config")
             {
@@ -1629,9 +1629,9 @@ SCENARIO("Layout detection prefers tup.config over .pup", "[e2e][layout]")
         REQUIRE(f.exists("build/.pup"));
         REQUIRE(f.exists("build/tup.config"));
 
-        WHEN("export graph --all-deps is run without -B")
+        WHEN("show graph --all-deps is run without -B")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
 
             THEN("build directory is detected")
             {
@@ -1670,9 +1670,9 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
             }
         }
 
-        WHEN("export graph --all-deps is run without -B")
+        WHEN("show graph --all-deps is run without -B")
         {
-            auto result = f.pup({ "export", "graph", "--summary", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
 
             THEN("it finds build/.pup/index")
             {

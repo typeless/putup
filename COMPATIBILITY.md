@@ -10,13 +10,13 @@ Pup uses Tup's Tupfile syntax. This document covers supported features and diffe
 | `tup upd` | `pup` | ✅ Implemented |
 | `tup init` | (auto) | ✅ Auto-initializes on first build |
 | `tup refactor` | `pup parse` | ✅ Implemented |
-| `tup graph` | `pup export graph` | ✅ Implemented |
-| `tup compiledb` | `pup export compdb` | ✅ Implemented |
+| `tup graph` | `pup show graph` | ✅ Implemented |
+| `tup compiledb` | `pup show compdb` | ✅ Implemented |
 | `tup monitor` | - | ❌ Not planned (no FUSE) |
 | `tup stop` | - | ❌ Not planned (no monitor) |
 | `tup scan` | - | ❌ Not implemented |
 | `tup variant` | `pup configure -B` | ✅ Creates variant dir + tup.config |
-| `tup generate` | `pup export script` | ✅ Implemented |
+| `tup generate` | `pup show script` | ✅ Implemented |
 | `tup commandline` | - | ❌ Not implemented |
 | `tup todo` | - | ❌ Not implemented |
 | `tup varsed` | - | ❌ Not implemented |
@@ -258,7 +258,7 @@ Features in pup that extend beyond tup:
 | **Multi-variant parallel** | `pup -B build-debug -B build-release` or `pup build-debug build-release` |
 | **Auto-variant detection** | Running `pup` from project root auto-detects all variants |
 | **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
-| **Export formats** | `pup export graph\|script\|compdb` for different output formats |
+| **Show formats** | `pup show graph\|script\|compdb` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
 | **Configure command** | `pup configure` runs config rules and ensures `tup.config` exists |

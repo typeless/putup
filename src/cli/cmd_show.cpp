@@ -348,34 +348,34 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     return EXIT_SUCCESS;
 }
 
-auto export_single_variant(Options const& opts, std::string_view variant_name) -> int
+auto show_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
-    if (opts.export_format == "script") {
+    if (opts.show_format == "script") {
         return cmd_export_script(opts, variant_name);
     }
-    if (opts.export_format == "compdb") {
+    if (opts.show_format == "compdb") {
         return cmd_export_compdb(opts, variant_name);
     }
-    if (opts.export_format == "graph") {
+    if (opts.show_format == "graph") {
         return cmd_export_graph(opts, variant_name);
     }
 
-    fmt::print(stderr, "Unknown export format: {}\n", opts.export_format);
+    fmt::print(stderr, "Unknown show format: {}\n", opts.show_format);
     fmt::print(stderr, "Formats: script, compdb, graph\n");
     return EXIT_FAILURE;
 }
 
 } // namespace
 
-auto cmd_export(Options const& opts) -> int
+auto cmd_show(Options const& opts) -> int
 {
-    if (opts.export_format.empty()) {
-        fmt::print(stderr, "Usage: pup export <format>\n");
+    if (opts.show_format.empty()) {
+        fmt::print(stderr, "Usage: pup show <format>\n");
         fmt::print(stderr, "Formats: script, compdb, graph\n");
         return EXIT_FAILURE;
     }
 
-    return for_each_variant(opts, export_single_variant, "Exporting");
+    return for_each_variant(opts, show_single_variant, "Showing");
 }
 
 } // namespace pup::cli

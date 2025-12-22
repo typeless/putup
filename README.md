@@ -151,9 +151,9 @@ pup [OPTIONS] <command> [TARGETS...]
 | `configure` | Run only config-generating rules (outputs `tup.config`) |
 | `distclean` | Full reset: remove `.pup` and variant directory |
 | `parse` | Parse Tupfiles without building |
-| `export <format>` | Export build info (see below) |
+| `show <format>` | Show build info (see below) |
 
-### Export Formats
+### Show Formats
 
 | Format | Description |
 |--------|-------------|
@@ -175,7 +175,7 @@ pup [OPTIONS] <command> [TARGETS...]
 | `-A, --all` | Full project build (ignore cwd scoping) |
 | `-a, --all-deps` | Include upstream deps in scoped builds |
 | `--stat` | Print build statistics |
-| `--summary` | Human-readable output (for `export graph`) |
+| `--summary` | Human-readable output (for `show graph`) |
 
 ### Examples
 
@@ -189,9 +189,9 @@ pup build-*              # Build all matching variants
 pup src/lib              # Build only src/lib across all variants
 pup build-debug/src/lib  # Build src/lib in specific variant
 
-# Export
-pup export compdb        # Generate compile_commands.json
-pup export graph --summary  # Show dependency stats
+# Show build info
+pup show compdb          # Generate compile_commands.json
+pup show graph --summary # Show dependency stats
 ```
 
 ### Environment Variables

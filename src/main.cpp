@@ -18,8 +18,8 @@ auto dispatch(Options const& opts) -> int
     if (opts.command == "parse") {
         return cmd_parse(opts);
     }
-    if (opts.command == "export") {
-        return cmd_export(opts);
+    if (opts.command == "show") {
+        return cmd_show(opts);
     }
     if (opts.command == "clean") {
         return cmd_clean(opts);

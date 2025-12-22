@@ -2,8 +2,8 @@
 # Test: .pupignore ignores directories during Tupfile discovery
 set -e
 
-# Use 'export graph --summary -v' to get verbose graph output
-output=$($PUP export graph --summary -v 2>&1)
+# Use 'show graph --summary -v' to get verbose graph output
+output=$($PUP show graph --summary -v 2>&1)
 
 # Should find 2 directories (. and src), NOT 3 (ignored/ should be skipped)
 if echo "$output" | grep -q "Found 2 directories"; then

@@ -19,7 +19,7 @@ auto const VERSION = "0.1.0";
 
 auto is_command(std::string_view arg) -> bool
 {
-    return arg == "parse" || arg == "export" || arg == "clean" || arg == "distclean"
+    return arg == "parse" || arg == "show" || arg == "clean" || arg == "distclean"
         || arg == "configure";
 }
 
@@ -85,8 +85,8 @@ auto parse_args(int argc, char** argv) -> Options
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty() && is_command(arg)) {
                 opts.command = std::string { arg };
-            } else if (opts.command == "export" && opts.export_format.empty()) {
-                opts.export_format = std::string { arg };
+            } else if (opts.command == "show" && opts.show_format.empty()) {
+                opts.show_format = std::string { arg };
             } else {
                 opts.targets.emplace_back(arg);
             }
@@ -103,14 +103,14 @@ auto print_usage() -> void
                "       pup [OPTIONS] <command>\n\n"
                "Running 'pup' executes the build. Use a command for other operations.\n\n"
                "Commands:\n"
-               "  parse             Parse and validate Tupfiles\n"
-               "  export <format>   Export build info:\n"
-               "                      script  - Shell script\n"
-               "                      compdb  - compile_commands.json\n"
-               "                      graph   - DOT format (--summary for text)\n"
                "  configure         Generate tup.config files (two-stage build)\n"
                "  clean             Remove generated files\n"
                "  distclean         Full reset: remove .pup and variant directory\n"
+               "  parse             Parse and validate Tupfiles\n"
+               "  show <format>     Show build info:\n"
+               "                      script  - Shell script\n"
+               "                      compdb  - compile_commands.json\n"
+               "                      graph   - DOT format (--summary for text)\n"
                "\nOptions:\n"
                "  -j, --jobs N       Run N jobs in parallel\n"
                "  -k, --keep-going   Continue after failures\n"
@@ -118,7 +118,7 @@ auto print_usage() -> void
                "  -v, --verbose      Verbose output\n"
                "  -S DIR             Source directory (default: auto-detect)\n"
                "  -B DIR             Build/output directory (can use multiple times)\n"
-               "  --summary          Human-readable output (for export graph)\n"
+               "  --summary          Human-readable output (for show graph)\n"
                "  --stat             Print build statistics\n"
                "  -A, --all          Full project build (ignore cwd scoping)\n"
                "  -a, --all-deps     Include upstream deps in scoped builds\n"
