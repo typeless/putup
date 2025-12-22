@@ -7,7 +7,7 @@ include_rules
 : e2e_fixture.cpp |> !cxx |> e2e_fixture.o {test_support}
 
 # Test sources
-TEST_CXXFLAGS = $(CXXFLAGS) -Wno-maybe-uninitialized
+TEST_CXXFLAGS = $(CXXFLAGS)
 
 test-srcs-y  = test_bench.cpp
 test-srcs-y += test_builder.cpp

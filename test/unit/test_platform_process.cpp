@@ -12,15 +12,11 @@ namespace {
 
 #ifdef _WIN32
 auto const ECHO_CMD = std::string { "cmd /c echo" };
-auto const TRUE_CMD = std::string { "cmd /c exit 0" };
 auto const FALSE_CMD = std::string { "cmd /c exit 1" };
-auto const EXIT_CMD = std::string { "cmd /c exit" };
 auto const CAT_CMD = std::string { "cmd /c type CON" };
 #else
 auto const ECHO_CMD = std::string { "echo" };
-auto const TRUE_CMD = std::string { "true" };
 auto const FALSE_CMD = std::string { "false" };
-auto const EXIT_CMD = std::string { "exit" };
 auto const CAT_CMD = std::string { "cat" };
 #endif
 

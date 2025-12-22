@@ -18,6 +18,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#ifdef __APPLE__
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#endif
+
 namespace pup::platform {
 
 auto build_env_strings(
