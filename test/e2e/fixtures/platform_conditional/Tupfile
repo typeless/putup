@@ -1,0 +1,9 @@
+# Test platform-conditional rules via TUP_PLATFORM env var
+
+ifeq ($(TUP_PLATFORM),win32)
+  PLATFORM_FILE = win32.txt
+else
+  PLATFORM_FILE = posix.txt
+endif
+
+: |> echo $(TUP_PLATFORM) > %o |> $(PLATFORM_FILE)

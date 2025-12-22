@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cstdlib>
+#include <string>
 #include <string_view>
 
 namespace pup {
@@ -39,11 +41,14 @@ inline constexpr auto ARCH = std::string_view { "riscv" };
 inline constexpr auto ARCH = std::string_view { "unknown" };
 #endif
 
-/// Get platform string at runtime
+/// Get platform string at runtime (checks TUP_PLATFORM env var first)
 [[nodiscard]]
-inline auto get_platform() -> std::string_view
+inline auto get_platform() -> std::string
 {
-    return PLATFORM;
+    if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+        return std::string { env };
+    }
+    return std::string { PLATFORM };
 }
 
 /// Get architecture string at runtime

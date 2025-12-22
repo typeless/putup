@@ -2567,3 +2567,53 @@ SCENARIO("Duplicate output detection", "[e2e][duplicate]")
         }
     }
 }
+
+// =============================================================================
+// Platform Conditional Tests
+// =============================================================================
+
+SCENARIO("TUP_PLATFORM env var controls platform conditionals", "[e2e][platform]")
+{
+    GIVEN("a Tupfile with platform-conditional rules")
+    {
+        auto f = E2EFixture { "platform_conditional" };
+
+        WHEN("built with default platform (linux)")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds and creates posix.txt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("posix.txt"));
+                REQUIRE_FALSE(f.exists("win32.txt"));
+                REQUIRE(f.read_file("posix.txt").find("linux") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a Tupfile with platform-conditional rules and TUP_PLATFORM=win32")
+    {
+        auto env = EnvGuard { "TUP_PLATFORM", "win32" };
+        auto f = E2EFixture { "platform_conditional" };
+
+        WHEN("built with TUP_PLATFORM=win32")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds and creates win32.txt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("win32.txt"));
+                REQUIRE_FALSE(f.exists("posix.txt"));
+                REQUIRE(f.read_file("win32.txt").find("win32") != std::string::npos);
+            }
+        }
+    }
+}

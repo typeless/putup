@@ -303,7 +303,7 @@ auto parse_directory(
         .vars = &vars,
         .config_vars = scoped_config,
         .tup_cwd = tup_cwd,
-        .tup_platform = std::string { pup::PLATFORM },
+        .tup_platform = pup::get_platform(),
         .tup_arch = std::string { pup::ARCH },
         .tup_variantdir = tup_variantdir,
         .tup_variant_outputdir = tup_variantdir,

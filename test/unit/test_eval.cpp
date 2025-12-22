@@ -2,9 +2,12 @@
 // Copyright (c) 2024 pup authors
 
 #include "catch_amalgamated.hpp"
+#include "e2e_fixture.hpp"
+#include "pup/core/platform.hpp"
 #include "pup/parser/eval.hpp"
 
 using namespace pup::parser;
+using pup::test::EnvGuard;
 
 TEST_CASE("VarDb basic operations", "[eval]")
 {
@@ -195,6 +198,29 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
         auto result = eval.expand(expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "linux");
+    }
+}
+
+TEST_CASE("get_platform() respects TUP_PLATFORM env var", "[eval][platform]")
+{
+    SECTION("returns compile-time default when env var not set")
+    {
+        auto platform = pup::get_platform();
+        REQUIRE(platform == pup::PLATFORM);
+    }
+
+    SECTION("returns env var value when TUP_PLATFORM is set")
+    {
+        auto env = EnvGuard { "TUP_PLATFORM", "win32" };
+        auto platform = pup::get_platform();
+        REQUIRE(platform == "win32");
+    }
+
+    SECTION("returns env var for custom platform names")
+    {
+        auto env = EnvGuard { "TUP_PLATFORM", "custom-platform" };
+        auto platform = pup::get_platform();
+        REQUIRE(platform == "custom-platform");
     }
 }
 
