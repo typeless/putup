@@ -1,0 +1,6 @@
+# Test projects - have their own Tupfile.ini
+test-spos/
+test-busybox/
+
+# Example projects - require external dependencies
+examples/
