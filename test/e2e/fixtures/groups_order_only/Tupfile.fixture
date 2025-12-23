@@ -1,9 +1,11 @@
-# Test order-only groups: <gen-headers> ensures ordering without triggering rebuilds
+# Test order-only groups: <gen-headers> ensures ordering
+# Order-only inputs DO trigger rebuilds (like regular inputs)
+# The only difference is %f expansion (order-only not included)
 
 CC = gcc
 
 # Generate config header - outputs to <gen-headers> group
-: |> ./gen_config.sh > %o |> config.h <gen-headers>
+: gen_config.sh |> ./%f > %o |> config.h <gen-headers>
 
 # Test %<group> pattern expansion in command body
 : | <gen-headers> |> echo %<gen-headers> > %o |> headers.txt

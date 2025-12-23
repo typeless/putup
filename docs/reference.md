@@ -429,7 +429,7 @@ Rules define how to transform inputs into outputs.
 - `:` - Rule start marker
 - `foreach` - Optional; creates one command per input file
 - `inputs` - Source files (globs allowed)
-- `| order-only` - Dependencies that don't trigger rebuilds
+- `| order-only` - Dependencies not included in `%f` (still trigger rebuilds)
 - `|>` - Section separator
 - `command` - Shell command to execute
 - `outputs` - Generated files
@@ -447,7 +447,7 @@ Rules define how to transform inputs into outputs.
 # Multiple inputs
 : foo.o bar.o |> gcc %f -o %o |> program
 
-# Order-only dependency (doesn't trigger rebuild)
+# Order-only dependency (not included in %f, but still triggers rebuild)
 : main.c | config.h |> gcc -c %f -o %o |> main.o
 
 # Output to a group

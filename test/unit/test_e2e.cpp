@@ -200,6 +200,32 @@ SCENARIO("Order-only groups ensure build ordering", "[e2e][groups]")
                 REQUIRE(result.is_noop());
             }
         }
+
+        WHEN("the generator script is modified to output a new value")
+        {
+            (void)f.build({ "-j1" });
+            // Modify gen_config.sh which outputs config.h
+            // This tests: gen_config.sh -> config.h -> (order-only) -> main.o -> program
+            f.write_file("gen_config.sh", "#!/bin/sh\necho '#define CONFIG_VALUE 99'\n");
+            auto result = f.build({ "-j1" });
+
+            THEN("config.h is regenerated")
+            {
+                auto content = f.read_file("config.h");
+                REQUIRE(content.find("CONFIG_VALUE 99") != std::string::npos);
+            }
+
+            THEN("order-only dependent commands rebuild")
+            {
+                REQUIRE(!result.is_noop());
+            }
+
+            THEN("program outputs the new value")
+            {
+                auto output = f.run("program").stdout_output;
+                REQUIRE(output.find("CONFIG_VALUE=99") != std::string::npos);
+            }
+        }
     }
 }
 
