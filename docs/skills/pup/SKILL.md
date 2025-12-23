@@ -202,6 +202,86 @@ CONFIG_PLATFORM_LDFLAGS=-static
 
 ## Common Patterns
 
+### Generated Headers with Order-Only Groups
+
+For projects with generated headers, use order-only groups to ensure headers exist before compilation:
+
+```tup
+# include/Tupfile - Generate headers
+: ../.config |> ^ GEN autoconf.h^ ./gen_autoconf.sh %f %o |> autoconf.h <gen-headers>
+: ../.config |> ^ GEN config.h^ ./gen_config.sh %f %o |> config.h <gen-headers>
+
+# src/Tupfile - Compile with dependency on headers
+: foreach *.c | ../include/<gen-headers> |> !cc |> {objs}
+```
+
+For chained dependencies (one generated file needs another):
+
+```tup
+# Generate applets.h first
+: ../.config |> ^ GEN applets.h^ ./gen_applets.sh |> applets.h <gen-headers>
+
+# embedded_scripts.h needs applets.h (use order-only dep)
+: ../.config | applets.h autoconf.h |> ^ GEN embedded.h^ ./gen_embedded.sh |> embedded.h <gen-headers>
+```
+
+### Running Scripts from Subdirectory Tupfiles
+
+When a Tupfile in a subdirectory needs to run scripts from project root:
+
+```tup
+# include/Tupfile running scripts from ../scripts/
+: ../.config |> ^ GEN header.h^ cd .. && ./scripts/gen_header.sh include/header.h |> header.h
+```
+
+For scripts needing environment variables:
+
+```tup
+: ../.config |> ^ GEN header.h^ cd .. && srctree=. HOSTCC=gcc ./scripts/gen_header.sh |> header.h
+```
+
+### Extracting Source Lists from Existing Builds
+
+When migrating, extract the actual source list from a working build:
+
+```bash
+# From Make builds
+make V=1 2>&1 | grep -oE '[a-zA-Z0-9_/]+\.c' | sort -u > sources.txt
+
+# Generate Tupfile rules
+while read src; do
+  dir=$(dirname "$src")
+  echo ": $src | include/<gen-headers> |> ^ CC %f^ \$(CC) \$(CFLAGS) -c %f -o %o |> build/$dir/$(basename "$src" .c).o {objs}"
+done < sources.txt
+```
+
+### Makefile.pup Wrapper
+
+Provide a familiar make interface for projects migrated to pup:
+
+```makefile
+# Makefile.pup
+.PHONY: all build clean distclean
+
+all: build
+
+build: .config
+	pup configure -B build
+	pup build -j$$(nproc)
+
+clean:
+	pup clean
+
+distclean:
+	pup distclean
+	rm -f .config include/*.h  # Clean generated files
+
+.config:
+	@echo "Run 'make defconfig' first" && exit 1
+```
+
+Usage: `make -f Makefile.pup`
+
 ### Explicit Source Lists (srcs-y pattern)
 
 Prefer explicit lists over globs for visibility and control:
@@ -316,6 +396,29 @@ pup show graph --summary   # Human-readable summary
 - [ ] Run `pup` to build
 - [ ] Run `pup show compdb > compile_commands.json` for IDE integration
 - [ ] Verify incremental builds work (change a file, rebuild)
+
+## Real-World Example: Busybox
+
+See `examples/busybox/` for a complete migration of Busybox (582 source files, 6 generated headers):
+
+```bash
+# Download busybox
+wget https://busybox.net/downloads/busybox-1.38.0.tar.bz2
+tar xjf busybox-1.38.0.tar.bz2 && cd busybox-1.38.0
+
+# Overlay pup build files
+rsync -av /path/to/pup/examples/busybox/ ./
+
+# Build
+make -f Makefile.pup defconfig
+make -f Makefile.pup
+```
+
+Key patterns demonstrated:
+- Order-only `<gen-headers>` group for 6 generated headers
+- Chained header generation (embedded_scripts.h depends on applets.h)
+- Running kconfig tools from include/Tupfile
+- Makefile.pup wrapper for familiar interface
 
 ## Quick Start Example
 
