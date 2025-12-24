@@ -1,0 +1,7 @@
+# Compile program that depends on generated header via cross-directory group
+CC = gcc
+
+# For in-tree builds TUP_VARIANT_OUTPUTDIR is ".", for variant builds it's "../build/src"
+# So $(TUP_VARIANT_OUTPUTDIR)/../include resolves to "../include" or "../build/include" respectively
+: main.c | ../include/<gen-headers> |> $(CC) -I$(TUP_VARIANT_OUTPUTDIR)/../include -c %f -o %o |> main.o
+: main.o |> $(CC) %f -o %o |> program

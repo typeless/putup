@@ -271,6 +271,63 @@ SCENARIO("Cross-directory order-only groups", "[e2e][groups]")
     }
 }
 
+SCENARIO("Cross-directory order-only groups work in-tree", "[e2e][build][groups]")
+{
+    GIVEN("a project with generated headers in include/ referenced from src/")
+    {
+        auto f = E2EFixture { "groups_cross_dir_variant" };
+        REQUIRE(f.init().success());
+
+        WHEN("building in-tree")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds with correct dependency ordering")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("include/version.h"));
+                REQUIRE(f.exists("src/main.o"));
+                REQUIRE(f.is_executable("src/program"));
+            }
+
+            THEN("program uses generated version")
+            {
+                auto output = f.run("src/program").stdout_output;
+                REQUIRE(output.find("Version: 1.0.0") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Cross-directory order-only groups work in variant builds", "[e2e][variant][groups]")
+{
+    GIVEN("a project with generated headers in include/ referenced from src/")
+    {
+        auto f = E2EFixture { "groups_cross_dir_variant" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_CC=gcc\n");
+
+        WHEN("building as a variant with -B build")
+        {
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("build succeeds with correct dependency ordering")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/include/version.h"));
+                REQUIRE(f.exists("build/src/main.o"));
+                REQUIRE(f.is_executable("build/src/program"));
+            }
+
+            THEN("program uses generated version")
+            {
+                auto output = f.run("build/src/program").stdout_output;
+                REQUIRE(output.find("Version: 1.0.0") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Groups defined in included files are visible", "[e2e][groups]")
 {
     GIVEN("a Tupfile that includes gen.tup (defines group) and build.tup (references group)")
