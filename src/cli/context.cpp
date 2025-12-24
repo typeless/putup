@@ -485,6 +485,16 @@ auto build_context(
         }
     }
 
+    // Resolve order-only edges that couldn't be created during parsing due to
+    // circular Tupfile dependencies (e.g., A references B's group, B's parsing
+    // triggers A's parsing before B's group is registered)
+    (void)builder.resolve_deferred_order_only_edges(ctx.impl_->graph);
+
+    // Surface any warnings from graph building (e.g., undefined order-only groups)
+    for (auto const& warning : builder.warnings()) {
+        fmt::print(stderr, "warning: {}\n", warning);
+    }
+
     if (ctx_opts.verbose) {
         fmt::print("Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
     }

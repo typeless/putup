@@ -112,6 +112,12 @@ public:
     [[nodiscard]]
     auto warnings() const -> std::vector<std::string> const&;
 
+    /// Resolve deferred order-only edges after all Tupfiles are parsed
+    /// This handles circular parsing situations where groups weren't registered
+    /// at the time they were referenced.
+    [[nodiscard]]
+    auto resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>;
+
     struct Impl;
 
 private:

@@ -1,0 +1,7 @@
+# TOROOT pattern for relative path resolution
+TOROOT ?= .
+CC = gcc
+
+# Bang macro with order-only group reference - key test case
+# The group is defined in include/Tupfile, referenced via TOROOT
+!cc = | $(TOROOT)/include/<gen-headers> |> ^ CC %b^ $(CC) -I$(TOROOT)/include -c %f -o %o |> %B.o

@@ -194,6 +194,10 @@ struct GraphBuilder::Impl {
         std::string name;
 
         auto operator==(GroupKey const& other) const -> bool = default;
+        auto operator<(GroupKey const& other) const -> bool
+        {
+            return std::tie(directory, name) < std::tie(other.directory, other.name);
+        }
     };
 
     struct GroupKeyHash {
@@ -205,10 +209,25 @@ struct GraphBuilder::Impl {
         }
     };
 
+    /// Deferred order-only edge reference for circular parsing situations
+    struct DeferredOrderOnlyEdge {
+        GroupKey group_key;
+        NodeId command_id;
+
+        auto operator<(DeferredOrderOnlyEdge const& other) const -> bool
+        {
+            return std::tie(group_key, command_id) < std::tie(other.group_key, other.command_id);
+        }
+    };
+
     BuilderOptions options;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
     std::unordered_map<GroupKey, std::vector<NodeId>, GroupKeyHash> order_only_groups;
+
+    /// Deferred edges to resolve after all Tupfiles are parsed
+    /// Using set to avoid duplicate edges when same group referenced multiple times
+    std::set<DeferredOrderOnlyEdge> deferred_edges;
 
     /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
     /// Persists across add_tupfile calls to avoid duplicate nodes
@@ -698,6 +717,41 @@ auto GraphBuilder::expand_rule(
     // Get the primary input for pattern expansion
     auto primary_input = inputs.empty() ? std::string {} : inputs[0];
 
+    // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
+    auto macro_name = std::string {};
+    BangMacroDef const* macro_ptr = nullptr;
+
+    {
+        // Expand the command to detect if it's a macro reference
+        auto expanded_cmd = Result<std::string> { expand_command(ctx, rule.command, inputs, {}) };
+        if (!expanded_cmd) {
+            return pup::unexpected<Error>(expanded_cmd.error());
+        }
+
+        auto cmd_str = std::string { *expanded_cmd };
+        // Trim whitespace
+        while (!cmd_str.empty() && (cmd_str.front() == ' ' || cmd_str.front() == '\t')) {
+            cmd_str.erase(0, 1);
+        }
+
+        if (!cmd_str.empty() && cmd_str[0] == '!') {
+            // Bang macro reference - extract just the macro name (first word after !)
+            auto name_end = cmd_str.find_first_of(" \t", 1);
+            if (name_end == std::string::npos) {
+                macro_name = cmd_str.substr(1);
+            } else {
+                macro_name = cmd_str.substr(1, name_end - 1);
+            }
+
+            auto it = decltype(ctx.macros)::iterator { ctx.macros.find(macro_name) };
+            if (it == ctx.macros.end()) {
+                return make_error<void>(ErrorCode::UnknownMacro, "Unknown bang macro: !" + macro_name);
+            }
+
+            macro_ptr = &it->second;
+        }
+    }
+
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     auto rule_order_only_groups = std::unordered_map<std::string, std::vector<std::string>> {};
@@ -705,11 +759,19 @@ auto GraphBuilder::expand_rule(
     auto source_to_root = compute_source_to_root(ctx.current_dir);
     auto current_dir_str = ctx.current_dir.string();
 
+    // Track group keys that couldn't be resolved (for deferred resolution)
+    // Use set to avoid duplicate deferred edges when same group referenced multiple times
+    auto unfound_groups = std::set<Impl::GroupKey> {};
+
     // Also check regular inputs for order-only group references
     // In tup, <group> references are always order-only even when in the inputs section
+    // Include macro's order_only_inputs to trigger demand-driven parsing
     auto all_inputs = std::vector<parser::PathPattern> {};
     all_inputs.insert(all_inputs.end(), rule.inputs.begin(), rule.inputs.end());
     all_inputs.insert(all_inputs.end(), rule.order_only_inputs.begin(), rule.order_only_inputs.end());
+    if (macro_ptr) {
+        all_inputs.insert(all_inputs.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
+    }
 
     for (auto const& pattern : all_inputs) {
         if (pattern.is_order_only_group) {
@@ -742,6 +804,9 @@ auto GraphBuilder::expand_rule(
                         paths.push_back(make_source_relative(path, source_to_root, current_dir_str));
                     }
                 }
+            } else {
+                // Group not found - defer resolution for after all Tupfiles are parsed
+                unfound_groups.insert(key);
             }
         } else if (!pattern.path.empty()) {
             // Path expression that may contain <group> suffix: ../include/<gen-headers>
@@ -765,6 +830,8 @@ auto GraphBuilder::expand_rule(
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                 if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                     if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
+                        // Note: Circular dependency errors are NOT fatal - the group may be
+                        // registered after the current parsing context completes.
                         (void)ctx.eval->request_directory(dir_path);
                     }
                 }
@@ -779,6 +846,9 @@ auto GraphBuilder::expand_rule(
                             paths.push_back(make_source_relative(p, source_to_root, current_dir_str));
                         }
                     }
+                } else {
+                    // Group not found - defer resolution for after all Tupfiles are parsed
+                    unfound_groups.insert(key);
                 }
             }
         }
@@ -802,45 +872,14 @@ auto GraphBuilder::expand_rule(
         return {};
     };
 
-    // Check if command is a bang macro reference
+    // Command expansion variables
     auto cmd_text = std::string {};
     auto display = std::string {};
     auto outputs_patterns = rule.outputs;
-    auto macro_name = std::string {};
-    BangMacroDef const* macro_ptr = nullptr;
 
-    // First expand the command to see if it's a macro reference
-    auto expanded_cmd = Result<std::string> { expand_command(ctx, rule.command, inputs, {}) };
-    if (!expanded_cmd) {
-        return pup::unexpected<Error>(expanded_cmd.error());
-    }
-
-    auto cmd_str = std::string { *expanded_cmd };
-    // Trim whitespace
-    while (!cmd_str.empty() && (cmd_str.front() == ' ' || cmd_str.front() == '\t')) {
-        cmd_str.erase(0, 1);
-    }
-
-    if (!cmd_str.empty() && cmd_str[0] == '!') {
-        // Bang macro reference - extract just the macro name (first word after !)
-        auto name_end = cmd_str.find_first_of(" \t", 1);
-        if (name_end == std::string::npos) {
-            macro_name = cmd_str.substr(1);
-        } else {
-            macro_name = cmd_str.substr(1, name_end - 1);
-        }
-
-        auto it = decltype(ctx.macros)::iterator { ctx.macros.find(macro_name) };
-        if (it == ctx.macros.end()) {
-            return make_error<void>(ErrorCode::UnknownMacro, "Unknown bang macro: !" + macro_name);
-        }
-
-        macro_ptr = &it->second;
-
-        // Use macro's outputs if rule doesn't specify any
-        if (outputs_patterns.empty()) {
-            outputs_patterns = macro_ptr->outputs;
-        }
+    // Use macro's outputs if rule doesn't specify any (macro_ptr set earlier)
+    if (macro_ptr && outputs_patterns.empty()) {
+        outputs_patterns = macro_ptr->outputs;
     }
 
     // Expand outputs
@@ -1048,6 +1087,12 @@ auto GraphBuilder::expand_rule(
         }
     }
 
+    // Store deferred edges for groups that weren't found during parsing
+    // These will be resolved after all Tupfiles are parsed
+    for (auto const& key : unfound_groups) {
+        impl_->deferred_edges.insert({ key, *cmd_id });
+    }
+
     return {};
 }
 
@@ -1093,10 +1138,9 @@ auto GraphBuilder::expand_inputs(
                     // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
-                            auto req_result = Result<void> { ctx.eval->request_directory(dir_path) };
-                            if (!req_result) {
-                                return pup::unexpected<Error>(req_result.error());
-                            }
+                            // Note: Circular dependency errors are NOT fatal - the group may be
+                            // registered after the current parsing context completes.
+                            (void)ctx.eval->request_directory(dir_path);
                         }
                     }
                 }
@@ -1141,10 +1185,9 @@ auto GraphBuilder::expand_inputs(
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                 if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                     if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
-                        auto req_result = Result<void> { ctx.eval->request_directory(dir_path) };
-                        if (!req_result) {
-                            return pup::unexpected<Error>(req_result.error());
-                        }
+                        // Note: Circular dependency errors are NOT fatal - the group may be
+                        // registered after the current parsing context completes.
+                        (void)ctx.eval->request_directory(dir_path);
                     }
                 }
 
@@ -1184,10 +1227,9 @@ auto GraphBuilder::expand_inputs(
                     auto abs_pattern_dir = fs::path { (ctx.current_dir / pattern_dir).lexically_normal() };
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(abs_pattern_dir)) {
-                            auto req_result = Result<void> { ctx.eval->request_directory(abs_pattern_dir) };
-                            if (!req_result) {
-                                return pup::unexpected<Error>(req_result.error());
-                            }
+                            // Note: Circular dependency errors are NOT fatal - the generated files
+                            // may be registered after the current parsing context completes.
+                            (void)ctx.eval->request_directory(abs_pattern_dir);
                         }
                     }
 
@@ -1250,9 +1292,10 @@ auto GraphBuilder::expand_inputs(
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(source_dir)) {
                             auto req_result = Result<void> { ctx.eval->request_directory(source_dir) };
-                            if (!req_result) {
-                                return pup::unexpected<Error>(req_result.error());
-                            }
+                            // Note: Circular dependency errors are NOT fatal here - they just mean
+                            // the directory is already being parsed and we should continue.
+                            // The generated file will be found in the graph after parsing completes.
+                            (void)req_result;
                         }
                     }
 
@@ -1578,6 +1621,32 @@ auto GraphBuilder::create_command_node(
     }
 
     return cmd_id;
+}
+
+auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>
+{
+    // Resolve deferred order-only edges that couldn't be created during parsing
+    // due to circular Tupfile dependencies
+    for (auto const& edge : impl_->deferred_edges) {
+        auto it = impl_->order_only_groups.find(edge.group_key);
+        if (it != impl_->order_only_groups.end()) {
+            for (auto output_id : it->second) {
+                (void)graph.add_order_only_edge(output_id, edge.command_id);
+            }
+        } else {
+            // Group still not found after all Tupfiles parsed - likely a typo or missing definition
+            impl_->warnings.push_back(fmt::format(
+                "order-only group <{}> in directory '{}' was never defined",
+                edge.group_key.name,
+                edge.group_key.directory
+            ));
+        }
+    }
+
+    // Clear deferred edges after resolution
+    impl_->deferred_edges.clear();
+
+    return {};
 }
 
 } // namespace pup::graph

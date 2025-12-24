@@ -299,6 +299,31 @@ SCENARIO("Cross-directory order-only groups work in-tree", "[e2e][build][groups]
     }
 }
 
+SCENARIO("Bang macro order-only groups trigger demand-driven parsing", "[e2e][build][groups][bang]")
+{
+    GIVEN("a project with a bang macro that references an order-only group in another directory")
+    {
+        // This test verifies that order-only group references embedded in bang macros
+        // correctly trigger demand-driven parsing of the directory containing the group.
+        // Bug: the group reference in !cc = | $(TOROOT)/include/<gen-headers> |> ...
+        // was not triggering parsing of include/Tupfile before looking up the group.
+        auto f = E2EFixture { "groups_bang_macro_cross_dir" };
+        REQUIRE(f.init().success());
+
+        WHEN("building in-tree")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds with correct dependency ordering")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("include/version.h"));
+                REQUIRE(f.exists("src/main.o"));
+            }
+        }
+    }
+}
+
 SCENARIO("Cross-directory order-only groups work in variant builds", "[e2e][variant][groups]")
 {
     GIVEN("a project with generated headers in include/ referenced from src/")

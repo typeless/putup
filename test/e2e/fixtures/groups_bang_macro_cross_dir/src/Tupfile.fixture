@@ -1,0 +1,4 @@
+# Uses the !cc macro which has order-only reference to ../include/<gen-headers>
+TOROOT = ..
+include_rules
+: foreach *.c |> !cc |>
