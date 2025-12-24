@@ -353,6 +353,35 @@ SCENARIO("Cross-directory order-only groups work in variant builds", "[e2e][vari
     }
 }
 
+SCENARIO("Bang macro order-only groups work in variant builds", "[e2e][variant][groups][bang]")
+{
+    GIVEN("a project with a bang macro that references an order-only group across directories")
+    {
+        // This test verifies that order-only group references in bang macros work correctly
+        // in variant builds. The bug was that DEP (implicit dep scanning) commands were not
+        // inheriting the order-only edges from their parent compile commands when using
+        // bang macros with TOROOT-based group references like:
+        //   !cc = | $(TOROOT)/include/<gen-headers> |> ...
+        // This caused DEP commands to run before headers were generated.
+        auto f = E2EFixture { "groups_bang_macro_variant" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_CC=gcc\n");
+
+        WHEN("building as a variant with -B build")
+        {
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("build succeeds with correct dependency ordering")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/include/version.h"));
+                REQUIRE(f.exists("build/src/main.o"));
+                REQUIRE(f.exists("build/src/lib/add.o"));
+            }
+        }
+    }
+}
+
 SCENARIO("Groups defined in included files are visible", "[e2e][groups]")
 {
     GIVEN("a Tupfile that includes gen.tup (defines group) and build.tup (references group)")
@@ -1220,7 +1249,7 @@ SCENARIO("Distclean with no index still removes .pup", "[e2e][clean]")
     GIVEN("a project with .pup directory but no index")
     {
         auto f = E2EFixture { "distclean_no_index" };
-        f.mkdir(".pup");  // Manually create .pup (simulates interrupted build)
+        f.mkdir(".pup"); // Manually create .pup (simulates interrupted build)
         REQUIRE(f.exists(".pup"));
 
         WHEN("pup distclean is executed")

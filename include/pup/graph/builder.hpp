@@ -199,6 +199,12 @@ private:
         NodeType type = NodeType::File
     ) -> Result<NodeId>;
 
+    auto get_or_create_group_node(
+        BuilderContext& ctx,
+        std::string const& directory,
+        std::string const& name
+    ) -> Result<NodeId>;
+
     auto create_command_node(
         BuilderContext& ctx,
         std::string const& command,

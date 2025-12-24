@@ -22,6 +22,9 @@ namespace pup::graph {
 
 namespace fs = std::filesystem;
 
+// Debug output for order-only group registration
+constexpr bool DEBUG_OO_GROUPS = false;
+
 namespace {
 
 /// Strip trailing slashes from a path string
@@ -167,6 +170,15 @@ auto compute_source_to_root(fs::path const& current_dir) -> std::string
     return result;
 }
 
+/// Get all files that are members of a group (via file → group edges)
+/// Returns file NodeIds by finding all input edges to the group node
+auto get_group_members(BuildGraph& graph, NodeId group_id) -> std::vector<NodeId>
+{
+    // Files point TO groups via Group edges (file → group)
+    // So group.inputs contains the member files
+    return graph.get_inputs(group_id);
+}
+
 /// RAII scope guard for cleanup on scope exit
 struct ScopeGuard {
     std::function<void()> cleanup;
@@ -210,20 +222,24 @@ struct GraphBuilder::Impl {
     };
 
     /// Deferred order-only edge reference for circular parsing situations
+    /// Stores group NodeId (not GroupKey) for direct edge creation
     struct DeferredOrderOnlyEdge {
-        GroupKey group_key;
+        NodeId group_id;
         NodeId command_id;
 
         auto operator<(DeferredOrderOnlyEdge const& other) const -> bool
         {
-            return std::tie(group_key, command_id) < std::tie(other.group_key, other.command_id);
+            return std::tie(group_id, command_id) < std::tie(other.group_id, other.command_id);
         }
     };
 
     BuilderOptions options;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
-    std::unordered_map<GroupKey, std::vector<NodeId>, GroupKeyHash> order_only_groups;
+
+    /// Group node lookup: (directory, name) → NodeId
+    /// Used for quick lookup when groups are referenced before creation
+    std::unordered_map<GroupKey, NodeId, GroupKeyHash> group_nodes;
 
     /// Deferred edges to resolve after all Tupfiles are parsed
     /// Using set to avoid duplicate edges when same group referenced multiple times
@@ -367,16 +383,18 @@ auto GraphBuilder::add_tupfile(
 
     // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
     // This is for local group references (no directory prefix) - uses current directory
+    // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [this, &ctx](std::string_view name
                                     ) -> std::vector<std::string> {
         auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
         auto key = Impl::GroupKey { dir, std::string { name } };
-        auto it = impl_->order_only_groups.find(key);
-        if (it == impl_->order_only_groups.end()) {
+        auto it = impl_->group_nodes.find(key);
+        if (it == impl_->group_nodes.end()) {
             return {};
         }
         auto paths = std::vector<std::string> {};
-        for (auto id : it->second) {
+        auto members = get_group_members(*ctx.graph, it->second);
+        for (auto id : members) {
             auto path = ctx.graph->get_full_path(id);
             if (!path.empty()) {
                 paths.push_back(std::move(path));
@@ -759,9 +777,9 @@ auto GraphBuilder::expand_rule(
     auto source_to_root = compute_source_to_root(ctx.current_dir);
     auto current_dir_str = ctx.current_dir.string();
 
-    // Track group keys that couldn't be resolved (for deferred resolution)
-    // Use set to avoid duplicate deferred edges when same group referenced multiple times
-    auto unfound_groups = std::set<Impl::GroupKey> {};
+    // Track group NodeIds for deferred edge creation
+    // Groups are first-class nodes; edges created after all Tupfiles are parsed
+    auto deferred_group_ids = std::set<NodeId> {};
 
     // Also check regular inputs for order-only group references
     // In tup, <group> references are always order-only even when in the inputs section
@@ -794,20 +812,34 @@ auto GraphBuilder::expand_rule(
                 }
             }
 
-            auto key = Impl::GroupKey { group_dir, pattern.group_name };
-            auto it = impl_->order_only_groups.find(key);
-            if (it != impl_->order_only_groups.end()) {
+            // Get or create the Group node (groups are first-class nodes)
+            auto group_id_result = get_or_create_group_node(ctx, group_dir, pattern.group_name);
+            if (!group_id_result) {
+                continue;
+            }
+            auto group_id = *group_id_result;
+
+            // Get files that are members of this group (via file → group edges)
+            auto members = get_group_members(*ctx.graph, group_id);
+            if (!members.empty()) {
+                if constexpr (DEBUG_OO_GROUPS) {
+                    fmt::print(stderr, "[DEBUG OO GROUP] Lookup FOUND: <{}/{}> ({} members)\n", group_dir, pattern.group_name, members.size());
+                }
+                // Populate rule_order_only_groups for %<group> command expansion
                 auto& paths = rule_order_only_groups[pattern.group_name];
-                for (auto id : it->second) {
+                for (auto id : members) {
                     auto path = ctx.graph->get_full_path(id);
                     if (!path.empty()) {
                         paths.push_back(make_source_relative(path, source_to_root, current_dir_str));
                     }
                 }
             } else {
-                // Group not found - defer resolution for after all Tupfiles are parsed
-                unfound_groups.insert(key);
+                if constexpr (DEBUG_OO_GROUPS) {
+                    fmt::print(stderr, "[DEBUG OO GROUP] Lookup DEFERRED: <{}/{}>\n", group_dir, pattern.group_name);
+                }
             }
+            // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
+            deferred_group_ids.insert(group_id);
         } else if (!pattern.path.empty()) {
             // Path expression that may contain <group> suffix: ../include/<gen-headers>
             auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
@@ -836,20 +868,34 @@ auto GraphBuilder::expand_rule(
                     }
                 }
 
-                auto key = Impl::GroupKey { group_dir, group_name };
-                auto it = impl_->order_only_groups.find(key);
-                if (it != impl_->order_only_groups.end()) {
+                // Get or create the Group node (groups are first-class nodes)
+                auto group_id_result = get_or_create_group_node(ctx, group_dir, group_name);
+                if (!group_id_result) {
+                    continue;
+                }
+                auto group_id = *group_id_result;
+
+                // Get files that are members of this group (via file → group edges)
+                auto members = get_group_members(*ctx.graph, group_id);
+                if (!members.empty()) {
+                    if constexpr (DEBUG_OO_GROUPS) {
+                        fmt::print(stderr, "[DEBUG OO GROUP] Path lookup FOUND: <{}/{}> ({} members) from {}\n", group_dir, group_name, members.size(), ctx.current_dir.string());
+                    }
+                    // Populate rule_order_only_groups for %<group> command expansion
                     auto& paths = rule_order_only_groups[group_name];
-                    for (auto id : it->second) {
+                    for (auto id : members) {
                         auto p = ctx.graph->get_full_path(id);
                         if (!p.empty()) {
                             paths.push_back(make_source_relative(p, source_to_root, current_dir_str));
                         }
                     }
                 } else {
-                    // Group not found - defer resolution for after all Tupfiles are parsed
-                    unfound_groups.insert(key);
+                    if constexpr (DEBUG_OO_GROUPS) {
+                        fmt::print(stderr, "[DEBUG OO GROUP] Path lookup DEFERRED: <{}/{}> from {}\n", group_dir, group_name, ctx.current_dir.string());
+                    }
                 }
+                // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
+                deferred_group_ids.insert(group_id);
             }
         }
     }
@@ -970,10 +1016,35 @@ auto GraphBuilder::expand_rule(
         }
 
         // Create order-only edges for generated command (e.g., gen-headers)
+        // For group references, defer to resolve_deferred_order_only_edges()
+        if constexpr (DEBUG_OO_GROUPS) {
+            fmt::print(stderr, "[DEBUG OO GROUP] GenRule {} has {} order_only_inputs\n", gen_rule.command, gen_rule.order_only_inputs.size());
+            for (auto const& oi : gen_rule.order_only_inputs) {
+                fmt::print(stderr, "[DEBUG OO GROUP]   oi: '{}'\n", oi);
+            }
+        }
         for (auto const& oi : gen_rule.order_only_inputs) {
-            auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
-            if (oi_id) {
-                (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
+            // Check for path/<group> pattern
+            auto lt_pos = oi.rfind('<');
+            auto gt_pos = oi.rfind('>');
+            if (lt_pos != std::string::npos && gt_pos != std::string::npos && gt_pos == oi.size() - 1 && gt_pos > lt_pos) {
+                // This is a group reference - get/create group node and defer edge
+                auto group_name = oi.substr(lt_pos + 1, gt_pos - lt_pos - 1);
+                auto dir_part = oi.substr(0, lt_pos);
+                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.source_root);
+                auto group_id_result = get_or_create_group_node(ctx, group_dir, group_name);
+                if (group_id_result) {
+                    impl_->deferred_edges.insert({ *group_id_result, *gen_cmd_id });
+                    if constexpr (DEBUG_OO_GROUPS) {
+                        fmt::print(stderr, "[DEBUG OO GROUP] Generated cmd: deferred <{}/{}> (group_id={})\n", group_dir, group_name, *group_id_result);
+                    }
+                }
+            } else {
+                // Regular file path - create edge directly
+                auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
+                if (oi_id) {
+                    (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
+                }
             }
         }
 
@@ -1074,23 +1145,36 @@ auto GraphBuilder::expand_rule(
                 dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
             }
 
-            auto key = Impl::GroupKey { dir, *output_oo_group };
-            impl_->order_only_groups[key].push_back(*output_id);
+            // Create or get the Group node
+            auto group_id_result = get_or_create_group_node(ctx, dir, *output_oo_group);
+            if (group_id_result) {
+                // Add edge: file → group (file is member of group)
+                (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
+                if constexpr (DEBUG_OO_GROUPS) {
+                    auto output_path = ctx.graph->get_full_path(*output_id);
+                    fmt::print(stderr, "[DEBUG OO GROUP] Registered: <{}/{}> = {} (id={}) -> group {}\n", dir, *output_oo_group, output_path, *output_id, *group_id_result);
+                }
+            }
         }
     }
 
     // Create order-only edges from the pre-expanded paths
+    // Skip group reference strings (they use deferred edge creation)
     for (auto const& oi : order_only_paths) {
+        // Skip group references - these are handled by deferred edge resolution
+        if (oi.find('<') != std::string::npos && oi.back() == '>') {
+            continue;
+        }
         auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
         if (oi_id) {
             (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
         }
     }
 
-    // Store deferred edges for groups that weren't found during parsing
-    // These will be resolved after all Tupfiles are parsed
-    for (auto const& key : unfound_groups) {
-        impl_->deferred_edges.insert({ key, *cmd_id });
+    // Store deferred edges for groups
+    // These will be resolved after all Tupfiles are parsed (group might grow)
+    for (auto group_id : deferred_group_ids) {
+        impl_->deferred_edges.insert({ group_id, *cmd_id });
     }
 
     return {};
@@ -1148,16 +1232,11 @@ auto GraphBuilder::expand_inputs(
                 group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
             }
 
-            auto key = Impl::GroupKey { group_dir, pattern.group_name };
-            auto it = impl_->order_only_groups.find(key);
-            if (it != impl_->order_only_groups.end()) {
-                for (auto id : it->second) {
-                    auto path = ctx.graph->get_full_path(id);
-                    if (!path.empty()) {
-                        result.push_back(std::move(path));
-                    }
-                }
-            }
+            // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
+            // Edges are created by resolve_deferred_order_only_edges() after all Tupfiles are parsed.
+            auto group_ref = group_dir.empty() ? "<" + pattern.group_name + ">"
+                                               : group_dir + "/<" + pattern.group_name + ">";
+            result.push_back(group_ref);
             continue;
         }
 
@@ -1191,17 +1270,9 @@ auto GraphBuilder::expand_inputs(
                     }
                 }
 
-                // Look up the group
-                auto key = Impl::GroupKey { group_dir, group_name };
-                auto it = impl_->order_only_groups.find(key);
-                if (it != impl_->order_only_groups.end()) {
-                    for (auto id : it->second) {
-                        auto path = ctx.graph->get_full_path(id);
-                        if (!path.empty()) {
-                            result.push_back(std::move(path));
-                        }
-                    }
-                }
+                // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
+                // Edges are created by resolve_deferred_order_only_edges() after all Tupfiles are parsed.
+                result.push_back(path);
                 continue;
             }
             // Expand globs if enabled
@@ -1586,6 +1657,48 @@ auto GraphBuilder::get_or_create_file_node(
     return ctx.graph->add_node(std::move(node));
 }
 
+auto GraphBuilder::get_or_create_group_node(
+    BuilderContext& ctx,
+    std::string const& directory,
+    std::string const& name
+) -> Result<NodeId>
+{
+    // Check cache first (fast path)
+    auto key = Impl::GroupKey { directory, name };
+    auto it = impl_->group_nodes.find(key);
+    if (it != impl_->group_nodes.end()) {
+        return it->second;
+    }
+
+    // Get or create parent directory node
+    auto parent_id_result = get_or_create_directory_node(ctx, directory);
+    if (!parent_id_result) {
+        return parent_id_result;
+    }
+    auto parent_id = *parent_id_result;
+
+    // Check if group node already exists in graph (e.g., from previous Tupfile)
+    // Group nodes are stored with angle-bracket name like "<gen-headers>"
+    auto group_basename = "<" + name + ">";
+    if (auto existing = ctx.graph->find_by_dir_name(parent_id, group_basename)) {
+        impl_->group_nodes[key] = *existing;
+        return *existing;
+    }
+
+    // Create new group node
+    auto node = Node {
+        .type = NodeType::Group,
+        .name = group_basename,
+        .parent_dir = parent_id,
+    };
+
+    auto result = ctx.graph->add_node(std::move(node));
+    if (result) {
+        impl_->group_nodes[key] = *result;
+    }
+    return result;
+}
+
 auto GraphBuilder::create_command_node(
     BuilderContext& ctx,
     std::string const& command,
@@ -1625,20 +1738,39 @@ auto GraphBuilder::create_command_node(
 
 auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>
 {
-    // Resolve deferred order-only edges that couldn't be created during parsing
-    // due to circular Tupfile dependencies
+    if constexpr (DEBUG_OO_GROUPS) {
+        fmt::print(stderr, "[DEBUG OO GROUP] Resolving {} deferred edges\n", impl_->deferred_edges.size());
+    }
+    // Resolve deferred order-only edges
+    // With groups as first-class nodes, we create a single edge: group → command
     for (auto const& edge : impl_->deferred_edges) {
-        auto it = impl_->order_only_groups.find(edge.group_key);
-        if (it != impl_->order_only_groups.end()) {
-            for (auto output_id : it->second) {
-                (void)graph.add_order_only_edge(output_id, edge.command_id);
+        // Verify group node exists and has members
+        auto const* group_node = graph.get_node(edge.group_id);
+        if (!group_node || group_node->type != NodeType::Group) {
+            if constexpr (DEBUG_OO_GROUPS) {
+                fmt::print(stderr, "[DEBUG OO GROUP] Deferred INVALID: group_id={} not a group\n", edge.group_id);
             }
+            continue;
+        }
+
+        auto members = get_group_members(graph, edge.group_id);
+        if (!members.empty()) {
+            if constexpr (DEBUG_OO_GROUPS) {
+                auto group_path = graph.get_full_path(edge.group_id);
+                fmt::print(stderr, "[DEBUG OO GROUP] Deferred RESOLVED: {} -> cmd {} ({} members)\n", group_path, edge.command_id, members.size());
+            }
+            // Create single order-only edge: group → command
+            (void)graph.add_order_only_edge(edge.group_id, edge.command_id);
         } else {
-            // Group still not found after all Tupfiles parsed - likely a typo or missing definition
+            if constexpr (DEBUG_OO_GROUPS) {
+                auto group_path = graph.get_full_path(edge.group_id);
+                fmt::print(stderr, "[DEBUG OO GROUP] Deferred EMPTY: {} has no members\n", group_path);
+            }
+            // Group exists but has no members - warn about potential typo
+            auto group_path = graph.get_full_path(edge.group_id);
             impl_->warnings.push_back(fmt::format(
-                "order-only group <{}> in directory '{}' was never defined",
-                edge.group_key.name,
-                edge.group_key.directory
+                "order-only group {} has no members",
+                group_path
             ));
         }
     }

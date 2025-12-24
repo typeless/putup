@@ -368,6 +368,20 @@ auto build_index(
                 .content_hash = node->content_hash,
             };
             index.add_file(std::move(entry));
+        } else if (node->type == pup::NodeType::Group) {
+            // Group nodes must be in index to maintain consecutive ID sequence
+            auto entry = pup::index::FileEntry {
+                .id = id,
+                .parent_id = node->parent_dir,
+                .src_id = 0,
+                .type = node->type,
+                .flags = node->flags,
+                .name = node->name,
+                .path = {},
+                .size = 0,
+                .content_hash = {},
+            };
+            index.add_file(std::move(entry));
         } else if (node->type == pup::NodeType::Command) {
             auto entry = pup::index::CommandEntry {
                 .id = id,

@@ -48,6 +48,7 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 ///          dependents[i] = list of jobs that depend on job i
 ///
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
+constexpr bool DEBUG_DEP_MAP = false;
 auto build_dependency_map(
     std::vector<BuildJob> const& jobs,
     graph::BuildGraph const& graph
@@ -75,6 +76,9 @@ auto build_dependency_map(
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
         auto dependencies = std::set<std::size_t> {};
         auto cmd_id = jobs[j].id;
+        if constexpr (DEBUG_DEP_MAP) {
+            fmt::print(stderr, "job[{}]: {} (node {})\n", j, jobs[j].display, cmd_id);
+        }
 
         // Check regular inputs - traverse graph edges
         for (auto input_id : graph.get_inputs(cmd_id)) {
@@ -102,24 +106,69 @@ auto build_dependency_map(
             }
         }
 
-        // Check order-only inputs - these may be outputs of other commands or groups
+        // Check order-only inputs - these may be files or groups
         for (auto oo_id : graph.get_order_only(cmd_id)) {
-            // Check if order-only input is a direct output of another job
-            if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j) {
-                dependencies.insert(it->second);
+            if constexpr (DEBUG_DEP_MAP) {
+                fmt::print(stderr, "  job[{}] order-only input: {} (path: {})\n", j, oo_id, graph.get_full_path(oo_id));
             }
 
-            // Also check for group producers (groups have commands as inputs)
-            for (auto producer_id : graph.get_inputs(oo_id)) {
-                auto const* producer = graph.get_node(producer_id);
-                if (producer && producer->type == NodeType::Command) {
-                    if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
-                        dependencies.insert(it2->second);
+            auto const* oo_node = graph.get_node(oo_id);
+            if (!oo_node) {
+                continue;
+            }
+
+            // For Group nodes, get member files and find their producers
+            if (oo_node->type == NodeType::Group) {
+                // Group members are found via file → group edges (group.inputs = files)
+                for (auto member_id : graph.get_inputs(oo_id)) {
+                    // Check if member is a direct output of another job
+                    if (auto it = output_to_job.find(member_id); it != output_to_job.end() && it->second != j) {
+                        if constexpr (DEBUG_DEP_MAP) {
+                            fmt::print(stderr, "    -> depends on job[{}] (via group member)\n", it->second);
+                        }
+                        dependencies.insert(it->second);
+                    }
+
+                    // Also check for commands that produce this member file
+                    for (auto producer_id : graph.get_inputs(member_id)) {
+                        auto const* producer = graph.get_node(producer_id);
+                        if (producer && producer->type == NodeType::Command) {
+                            if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
+                                if constexpr (DEBUG_DEP_MAP) {
+                                    fmt::print(stderr, "    -> depends on job[{}] (via group member producer)\n", it2->second);
+                                }
+                                dependencies.insert(it2->second);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Regular file - check if it's a direct output of another job
+                if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j) {
+                    if constexpr (DEBUG_DEP_MAP) {
+                        fmt::print(stderr, "    -> depends on job[{}]\n", it->second);
+                    }
+                    dependencies.insert(it->second);
+                }
+
+                // Check for commands that produce this file
+                for (auto producer_id : graph.get_inputs(oo_id)) {
+                    auto const* producer = graph.get_node(producer_id);
+                    if (producer && producer->type == NodeType::Command) {
+                        if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
+                            if constexpr (DEBUG_DEP_MAP) {
+                                fmt::print(stderr, "    -> depends on job[{}] (via producer)\n", it2->second);
+                            }
+                            dependencies.insert(it2->second);
+                        }
                     }
                 }
             }
         }
 
+        if constexpr (DEBUG_DEP_MAP) {
+            fmt::print(stderr, "  job[{}] total deps: {}\n", j, dependencies.size());
+        }
         in_degree[j] = dependencies.size();
         for (auto dep : dependencies) {
             dependents[dep].push_back(j);
@@ -690,10 +739,26 @@ auto Scheduler::build_job_list(
         }
 
         // Collect order-only input paths
+        // For Group nodes, expand to member file paths
         for (auto oi_id : graph.get_order_only(id)) {
-            auto oi_path = graph.get_full_path(oi_id);
-            if (!oi_path.empty()) {
-                job.order_only_inputs.push_back(std::move(oi_path));
+            auto const* oi_node = graph.get_node(oi_id);
+            if (!oi_node) {
+                continue;
+            }
+
+            if (oi_node->type == NodeType::Group) {
+                // Group nodes: collect member file paths
+                for (auto member_id : graph.get_inputs(oi_id)) {
+                    auto member_path = graph.get_full_path(member_id);
+                    if (!member_path.empty()) {
+                        job.order_only_inputs.push_back(std::move(member_path));
+                    }
+                }
+            } else {
+                auto oi_path = graph.get_full_path(oi_id);
+                if (!oi_path.empty()) {
+                    job.order_only_inputs.push_back(std::move(oi_path));
+                }
             }
         }
 

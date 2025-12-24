@@ -39,8 +39,9 @@ auto make_order_only_group_pattern(std::string_view name, std::string_view path 
     auto pattern = PathPattern {};
     pattern.is_order_only_group = true;
     pattern.group_name = std::string { name };
-    if (!path.empty())
+    if (!path.empty()) {
         pattern.path.parts.push_back(Expression::Literal { std::string { path } });
+    }
     return pattern;
 }
 
@@ -51,8 +52,9 @@ auto make_order_only_group_var_pattern(std::string_view name, std::string_view v
     pattern.is_order_only_group = true;
     pattern.group_name = std::string { name };
     pattern.path.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, std::string { var_name }, {} } });
-    if (!suffix.empty())
+    if (!suffix.empty()) {
         pattern.path.parts.push_back(Expression::Literal { std::string { suffix } });
+    }
     return pattern;
 }
 
@@ -100,8 +102,9 @@ public:
     /// Create a Tupfile path for the given directory (relative to test root)
     auto tupfile_path(std::string_view dir) const -> std::string
     {
-        if (dir.empty() || dir == ".")
+        if (dir.empty() || dir == ".") {
             return (test_root_ / "Tupfile").string();
+        }
         return (test_root_ / dir / "Tupfile").string();
     }
 
@@ -362,8 +365,9 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
             auto o_count = 0;
             for (auto input_id : inputs) {
                 auto const* input_node = graph.get_node(input_id);
-                if (input_node && graph.get_full_path(input_node->id).find(".o") != std::string::npos)
+                if (input_node && graph.get_full_path(input_node->id).find(".o") != std::string::npos) {
                     ++o_count;
+                }
             }
             REQUIRE(o_count == 2);
             ++link_cmd_count;
@@ -557,8 +561,9 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[builder][exclusio
             auto const* node = graph.get_node(out_id);
             if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (graph.get_full_path(node->id).find("baz.o") != std::string::npos)
+                if (graph.get_full_path(node->id).find("baz.o") != std::string::npos) {
                     has_baz = true;
+                }
             }
         }
     }
@@ -620,8 +625,9 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion
             auto const* node = graph.get_node(out_id);
             if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (graph.get_full_path(node->id).find("test_") != std::string::npos)
+                if (graph.get_full_path(node->id).find("test_") != std::string::npos) {
                     has_test = true;
+                }
             }
         }
     }
@@ -687,8 +693,9 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[builder][exclus
             auto const* node = graph.get_node(out_id);
             if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (graph.get_full_path(node->id).find("helper_impl") != std::string::npos)
+                if (graph.get_full_path(node->id).find("helper_impl") != std::string::npos) {
                     has_helper = true;
+                }
             }
         }
     }
@@ -756,6 +763,10 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 
     auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
     REQUIRE(r2.has_value());
+
+    // Resolve deferred order-only edges (required after all tupfiles are parsed)
+    auto resolve_result = builder.resolve_deferred_order_only_edges(graph);
+    REQUIRE(resolve_result.has_value());
 
     // Verify the kernel.o command has an order-only dependency on config.h
     auto found = false;
@@ -838,6 +849,10 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
     auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
     REQUIRE(r2.has_value());
 
+    // Resolve deferred order-only edges (required after all tupfiles are parsed)
+    auto resolve_result = builder.resolve_deferred_order_only_edges(graph);
+    REQUIRE(resolve_result.has_value());
+
     // The critical verification: check that the group WAS found
     // If normalize_group_dir("") returns "." then it will match
     // If it returns current_dir ("modules/kernel") then it won't match
@@ -846,8 +861,9 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
         auto const* node = graph.get_node(id);
         if (node && node->command.find("compile") != std::string::npos) {
             auto order_only = graph.get_order_only(id);
-            if (!order_only.empty())
+            if (!order_only.empty()) {
                 found_order_only = true;
+            }
             break;
         }
     }
