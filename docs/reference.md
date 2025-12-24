@@ -1828,7 +1828,9 @@ Putting it all together - a well-structured project:
 
 **Tuprules.tup:**
 ```tup
-ROOT = $(TUP_CWD)
+# S/B Convention: auto-compute source and build root paths
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
 
 # OS API
 OS_API = @(OS_API)
@@ -1840,9 +1842,9 @@ import CC=$(CROSS_COMPILE)gcc
 import CXX=$(CROSS_COMPILE)g++
 import AR=$(CROSS_COMPILE)ar
 
-# Flags
+# Flags (use S for source tree, B for build tree)
 CFLAGS = -std=c11 -Wall -Wextra -Werror
-CXXFLAGS = -std=c++20 -Wall -Wextra -Werror -I$(ROOT)/include
+CXXFLAGS = -std=c++20 -Wall -Wextra -Werror -I$(S)/include
 
 CFLAGS += @(DEBUG_CFLAGS) @(RELEASE_CFLAGS)
 CXXFLAGS += @(DEBUG_CXXFLAGS) @(RELEASE_CXXFLAGS)

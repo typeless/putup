@@ -96,7 +96,7 @@ Headers generated at build time must be available before compilation:
 : .config |> scripts/gen_build_files.sh |> applets.h usage.h <gen-headers>
 
 # subsystem/Tupfile - depends on generated headers
-: foreach $(srcs) | $(ROOT)/include/<gen-headers> |> !cc |> {objs}
+: foreach $(srcs) | $(S)/include/<gen-headers> |> !cc |> {objs}
 ```
 
 **The `|` separator**: Inputs after `|` are order-only (must exist before command runs, but changes don't trigger rebuild).
@@ -105,7 +105,7 @@ Headers generated at build time must be available before compilation:
 
 ```tup
 # subsystem/Tupfile - outputs to shared group
-: {objs} |> !ar |> lib.a $(ROOT)/<libs>
+: {objs} |> !ar |> lib.a $(S)/<libs>
 
 # root/Tupfile - consumes from group
 : <libs> |> $(CC) -Wl,--start-group %f -Wl,--end-group -o %o |> binary
@@ -116,8 +116,13 @@ Headers generated at build time must be available before compilation:
 ## Tuprules.tup Template
 
 ```tup
-# Path to project root
-ROOT = $(TUP_CWD)
+# S/B Convention (Yocto-inspired):
+#   S = source root path (auto-computed via TUP_CWD during includes)
+#   B = build root path (derived from TUP_VARIANT_OUTPUTDIR)
+#
+# Subdirectory Tupfiles just need: include_rules
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
 
 # Toolchain (importable from environment for cross-compilation)
 import CC=gcc
@@ -130,8 +135,9 @@ srctree = .
 export srctree
 
 # Flags
+# Use $(S) for source tree paths, $(B) for build tree paths (generated headers)
 CFLAGS = -Wall -Os
-CPPFLAGS = -I$(ROOT)/include -include $(ROOT)/include/autoconf.h
+CPPFLAGS = -I$(B)/include -I$(S)/include -include $(B)/include/autoconf.h
 
 # Optional config-based flags
 ifeq (@(DEBUG),y)
@@ -143,10 +149,26 @@ LDFLAGS += -static
 endif
 
 # Bang macros
-!cc = |> ^ CC %b^ $(CC) $(CFLAGS) $(CPPFLAGS) -c %f -o %o |> %B.o
+# Order-only dependency on gen-headers (path relative to source root)
+!cc = | $(S)/include/<gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) $(CPPFLAGS) -c %f -o %o |> %B.o
 !ar = |> ^ AR %o^ $(AR) rcs %o %f |>
 !hostcc = |> ^ HOSTCC %b^ $(HOSTCC) -Wall -O2 -c %f -o %o |> %B.o
 ```
+
+### S/B Convention Explained
+
+The `S` and `B` variables automatically compute paths to source and build roots:
+
+- **S (Source root)**: Uses `TUP_CWD` which changes during includes to give the path back to the directory containing Tuprules.tup
+- **B (Build root)**: Combines `TUP_VARIANT_OUTPUTDIR` (path to variant output) with `S` to get the build tree root
+
+**Example from `src/lib/Tupfile`** (with `-B build` variant):
+- `TUP_CWD` = `../..` (path from src/lib to root, computed during include)
+- `S` = `../..`
+- `TUP_VARIANT_OUTPUTDIR` = `../../build/src/lib`
+- `B` = `../../build/src/lib/../..` = `../../build`
+
+This eliminates the need for manual `TOROOT` or `ROOT` variables in each subdirectory.
 
 ---
 
@@ -158,16 +180,16 @@ For projects with code generation (config headers, table generators):
 # include/Tupfile
 
 # 1. Generate config header from kconfig
-: $(ROOT)/.config $(ROOT)/Config.in |> ^ GEN autoconf.h^ cd $(ROOT) && scripts/conf -s Config.in |> autoconf.h <gen-headers>
+: $(S)/.config $(S)/Config.in |> ^ GEN autoconf.h^ cd $(S) && scripts/conf -s Config.in |> autoconf.h <gen-headers>
 
 # 2. Build host tool that generates tables
-: $(ROOT)/tools/gen_tables.c | autoconf.h |> ^ HOSTCC gen_tables^ $(HOSTCC) -I. %f -o %o |> gen_tables
+: $(S)/tools/gen_tables.c | autoconf.h |> ^ HOSTCC gen_tables^ $(HOSTCC) -I. %f -o %o |> gen_tables
 
 # 3. Run host tool to generate header
 : gen_tables |> ^ GEN tables.h^ ./gen_tables %o |> tables.h <gen-headers>
 
 # 4. Scripts that need environment variables
-: $(ROOT)/.config | autoconf.h |> ^ GEN embedded.h^ cd $(ROOT) && srctree=. scripts/gen_embedded include/embedded.h |> embedded.h <gen-headers>
+: $(S)/.config | autoconf.h |> ^ GEN embedded.h^ cd $(S) && srctree=. scripts/gen_embedded include/embedded.h |> embedded.h <gen-headers>
 ```
 
 **Common pitfall**: Scripts that use `$srctree` or similar environment variables need explicit assignment in the tup rule.
