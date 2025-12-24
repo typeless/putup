@@ -306,7 +306,7 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
     auto const env_cache = build_env_cache(jobs);
 
     if (impl_->options.jobs == 1 || jobs.size() == 1) {
-        // Sequential execution
+        // Sequential execution with dependency ordering
         auto runner = CommandRunner {};
         if (!impl_->options.source_root.empty()) {
             runner.set_working_dir(impl_->options.source_root);
@@ -316,10 +316,25 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
             runner.set_timeout(*impl_->options.timeout); // NOLINT(bugprone-unchecked-optional-access)
         }
 
-        for (auto const& job : jobs) {
+        // Build dependency map - same as parallel path
+        auto [in_degree, dependents] = build_dependency_map(jobs, graph);
+
+        // Process jobs in dependency order using a ready queue
+        auto ready_queue = std::queue<std::size_t> {};
+        for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
+            if (in_degree[i] == 0) {
+                ready_queue.push(i);
+            }
+        }
+
+        while (!ready_queue.empty()) {
             if (impl_->cancelled.load()) {
                 break;
             }
+
+            auto const job_idx = ready_queue.front();
+            ready_queue.pop();
+            auto const& job = jobs[job_idx];
 
             if (impl_->on_start) {
                 impl_->on_start(job);
@@ -331,8 +346,16 @@ auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::Build
                 impl_->on_complete(job, result);
             }
 
+            impl_->stats.build_time += result.duration;
+
             if (result.success) {
                 ++impl_->stats.completed_jobs;
+                // Unblock dependent jobs
+                for (auto dep_idx : dependents[job_idx]) {
+                    if (--in_degree[dep_idx] == 0) {
+                        ready_queue.push(dep_idx);
+                    }
+                }
             } else {
                 ++impl_->stats.failed_jobs;
                 if (!impl_->options.keep_going) {
