@@ -630,6 +630,73 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion
     CHECK_FALSE(has_test);
 }
 
+TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[builder][exclusion][foreach]")
+{
+    // Tests that ^ prefix works as exclusion in input patterns (tup uses ^ for foreach exclusions)
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/main.c");
+    fixture.create_file("src/util.c");
+    fixture.create_file("src/helper_impl.c"); // Will be excluded - gets #included
+
+    auto graph = BuildGraph {};
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = fixture.root(),
+        .output_root = {},
+        .config_path = {},
+        .expand_globs = true,
+        .validate_inputs = false,
+    };
+    auto builder = GraphBuilder { options };
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = fixture.tupfile_path("src");
+    fixture.create_file("src/Tupfile");
+
+    auto rule = Rule {};
+    rule.foreach_ = true;
+    rule.command.parts.push_back(Expression::Literal { "cc -c %f -o %o" });
+
+    // Input pattern: *.c
+    auto input = make_path_pattern("*.c");
+    rule.inputs.push_back(input);
+
+    // Caret exclusion pattern - exclude helper_impl.c (like tup's foreach ^pattern)
+    auto excl = make_path_pattern("helper_impl.c");
+    excl.is_output_exclusion = true; // ^ prefix sets is_output_exclusion
+    rule.inputs.push_back(excl);
+
+    auto output = PathPattern {};
+    output.path.parts.push_back(Expression::Literal { "%B.o" });
+    rule.outputs.push_back(output);
+
+    tupfile.statements.push_back(make_rule_statement(std::move(rule)));
+
+    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    REQUIRE(result.has_value());
+
+    // Count .o outputs - helper_impl.c should be excluded
+    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto compile_count = 0;
+    auto has_helper = false;
+    for (auto id : commands) {
+        auto outputs = graph.get_outputs(id);
+        for (auto out_id : outputs) {
+            auto const* node = graph.get_node(out_id);
+            if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
+                ++compile_count;
+                if (graph.get_full_path(node->id).find("helper_impl") != std::string::npos)
+                    has_helper = true;
+            }
+        }
+    }
+    // Should have 2 compiles (main.c, util.c), helper_impl.c excluded via ^
+    CHECK(compile_count == 2);
+    CHECK_FALSE(has_helper);
+}
+
 // =============================================================================
 // Cross-directory group reference tests
 // =============================================================================

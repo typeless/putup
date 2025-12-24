@@ -1105,8 +1105,8 @@ auto GraphBuilder::expand_inputs(
     auto evaluator = parser::Evaluator { ctx.eval };
 
     for (auto const& pattern : patterns) {
-        if (pattern.is_exclusion) {
-            continue; // Handle exclusions later
+        if (pattern.is_exclusion || pattern.is_output_exclusion) {
+            continue; // Handle exclusions later (! for inputs, ^ for foreach)
         }
 
         if (pattern.is_group) {
@@ -1327,9 +1327,9 @@ auto GraphBuilder::expand_inputs(
         }
     }
 
-    // Handle exclusions
+    // Handle exclusions (! for regular inputs, ^ for foreach exclusions)
     for (auto const& pattern : patterns) {
-        if (!pattern.is_exclusion) {
+        if (!pattern.is_exclusion && !pattern.is_output_exclusion) {
             continue;
         }
 
