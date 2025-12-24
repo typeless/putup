@@ -238,7 +238,8 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
 
         if (is_dep_relevant_flag(w)) {
             dep_cmd << ' ' << shell_quote(normalize_flag_path(w));
-            if (w == "-include") {
+            if (w == "-I" || w == "-D" || w == "-U" || w == "-include"
+                || w == "-isystem" || w == "-iquote" || w == "-isysroot") {
                 skip_next = true;
             }
             continue;

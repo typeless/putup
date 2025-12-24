@@ -284,7 +284,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};
 
-    SECTION("preserves include paths")
+    SECTION("preserves include paths (combined form)")
     {
         auto cmd = CommandInfo {
             .node_id = 1,
@@ -299,6 +299,23 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
         REQUIRE(*dep_cmd == "gcc -M -I../include -I/usr/local/include foo.c");
+    }
+
+    SECTION("preserves include paths (separate argument form)")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 10,
+            .command = "gcc -I include -I ../lib -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = { "foo.c" },
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto dep_cmd = scanner.build_dep_command(cmd);
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == "gcc -M -I include -I ../lib foo.c");
     }
 
     SECTION("preserves defines")
