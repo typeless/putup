@@ -1,0 +1,9 @@
+# Shared rules with bang macro that includes order-only group reference
+TOROOT ?= .
+CC = gcc
+# OBJTREE points to the build tree root from the current source dir
+OBJTREE = $(TUP_VARIANT_OUTPUTDIR)/$(TOROOT)
+
+# Bang macro with order-only group reference using TOROOT
+# Uses OBJTREE for generated headers in variant builds
+!cc = | $(TOROOT)/include/<gen-headers> |> ^ CC %b^ $(CC) -I$(OBJTREE)/include -c %f -o %o |> %B.o

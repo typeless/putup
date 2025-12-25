@@ -1,0 +1,2 @@
+# Generate version header
+: |> echo '#define VERSION 42' > %o |> version.h <gen-headers>

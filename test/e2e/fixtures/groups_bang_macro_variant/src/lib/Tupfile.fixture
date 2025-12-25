@@ -1,0 +1,3 @@
+TOROOT = ../..
+include_rules
+: add.c |> !cc |>
