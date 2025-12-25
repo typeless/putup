@@ -648,6 +648,13 @@ auto GraphBuilder::process_include(
     auto parser = parser::Parser { source, include_path };
     auto parse_result = Result<parser::Tupfile> { parser.parse() };
     if (!parse_result) {
+        for (auto const& err : parser.errors()) {
+            fmt::print(stderr, "{}:{}:{}: error: {}\n",
+                include_path,
+                err.location.line,
+                err.location.column,
+                err.message);
+        }
         return pup::unexpected<Error>(parse_result.error());
     }
 

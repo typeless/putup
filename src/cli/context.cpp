@@ -277,6 +277,13 @@ auto parse_directory(
     auto parse_result = pup::Result<pup::parser::Tupfile> { parser.parse() };
     if (!parse_result) {
         state.parsing.erase(normalized_dir);
+        for (auto const& err : parser.errors()) {
+            fmt::print(stderr, "{}:{}:{}: error: {}\n",
+                tupfile_path.string(),
+                err.location.line,
+                err.location.column,
+                err.message);
+        }
         return pup::unexpected<pup::Error>(parse_result.error());
     }
 
