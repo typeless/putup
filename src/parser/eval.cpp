@@ -414,6 +414,11 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
         if (ref.kind == VarRef::Kind::Config && ctx_->on_config_var_used) {
             ctx_->on_config_var_used(ref.name);
         }
+        // Track imported env variable usage for fine-grained dependency tracking
+        if (ref.kind == VarRef::Kind::Regular && ctx_->imported_vars
+            && ctx_->imported_vars->contains(ref.name) && ctx_->on_env_var_used) {
+            ctx_->on_env_var_used(ref.name);
+        }
         return std::string { db->get(ref.name) };
     }
 

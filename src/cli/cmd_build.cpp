@@ -15,7 +15,6 @@
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/index/entry.hpp"
-#include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -647,127 +646,111 @@ auto build_single_variant(
     }
 
     auto index_path = ctx.layout().index_path();
-    auto old_index = std::optional<pup::index::Index> {};
-    // FIXME: Pointer intermediary to work around clang-tidy bugprone-unchecked-optional-access
-    // false positives. The analyzer can't track optional validity through control flow, but
-    // understands pointer null-checks. Remove when clang-tidy improves its analysis.
-    auto const* old_idx_ptr = static_cast<pup::index::Index const*>(nullptr);
+    auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
     auto changed_files = std::vector<std::string> {};
 
-    if (std::filesystem::exists(index_path)) {
-        auto index_load_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-        auto reader_result = pup::Result<pup::index::IndexReader> { pup::index::IndexReader::open(index_path) };
-        if (reader_result) {
-            auto index_result = pup::Result<pup::index::Index> { reader_result->read() };
-            if (index_result) {
-                old_index = std::move(*index_result);
-                auto& idx = *old_index;
-                idx.build_children_index();
-                auto index_load_end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-                pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_load_end - index_load_start);
+    if (old_idx_ptr) {
+        auto const& idx = *old_idx_ptr;
 
-                if (opts.verbose && idx.has_merkle_hashes()) {
-                    fmt::print("Index has Merkle hashes (v4 format)\n");
+        if (opts.verbose && idx.has_merkle_hashes()) {
+            fmt::print("Index has Merkle hashes (v4 format)\n");
+        }
+
+        auto scopes = compute_build_scopes(opts, ctx.layout());
+        auto upstream_files = std::set<std::string> {};
+        if (opts.include_all_deps && !scopes.empty()) {
+            upstream_files = collect_upstream_files(ctx.graph(), scopes);
+        }
+        if (opts.verbose) {
+            if (scopes.empty()) {
+                fmt::print("Full project build\n");
+            } else {
+                fmt::print("Scoped build:");
+                for (auto const& s : scopes) {
+                    fmt::print(" {}", s);
                 }
-
-                auto scopes = compute_build_scopes(opts, ctx.layout());
-                auto upstream_files = std::set<std::string> {};
-                if (opts.include_all_deps && !scopes.empty()) {
-                    upstream_files = collect_upstream_files(ctx.graph(), scopes);
+                if (opts.include_all_deps) {
+                    fmt::print(" (+{} upstream deps)", upstream_files.size());
                 }
-                if (opts.verbose) {
-                    if (scopes.empty()) {
-                        fmt::print("Full project build\n");
-                    } else {
-                        fmt::print("Scoped build:");
-                        for (auto const& s : scopes) {
-                            fmt::print(" {}", s);
-                        }
-                        if (opts.include_all_deps) {
-                            fmt::print(" (+{} upstream deps)", upstream_files.size());
-                        }
-                        fmt::print("\n");
-                    }
-                }
+                fmt::print("\n");
+            }
+        }
 
-                changed_files = find_changed_files_with_implicit(ctx.layout().source_root, idx, scopes, upstream_files, opts.verbose);
-                changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
+        changed_files = find_changed_files_with_implicit(ctx.layout().source_root, idx, scopes, upstream_files, opts.verbose);
+        changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
 
-                // Add output targets to force their rebuild
-                for (auto const& output_path : opts.output_targets) {
-                    if (std::ranges::find(changed_files, output_path) == changed_files.end()) {
+        // Add output targets to force their rebuild
+        for (auto const& output_path : opts.output_targets) {
+            if (std::ranges::find(changed_files, output_path) == changed_files.end()) {
+                changed_files.push_back(output_path);
+            }
+        }
+
+        // Detect new commands (in fresh graph but not in old index)
+        for (auto id : ctx.graph().all_nodes()) {
+            auto const* node = ctx.graph().get_node(id);
+            if (!node || node->type != pup::NodeType::Command) {
+                continue;
+            }
+
+            if (!idx.find_command_by_command(node->command)) {
+                for (auto output_id : ctx.graph().get_outputs(id)) {
+                    auto output_path = ctx.graph().get_full_path(output_id);
+                    if (!output_path.empty()) {
                         changed_files.push_back(output_path);
                     }
                 }
-
-                // Detect new commands (in fresh graph but not in old index)
-                for (auto id : ctx.graph().all_nodes()) {
-                    auto const* node = ctx.graph().get_node(id);
-                    if (!node || node->type != pup::NodeType::Command) {
-                        continue;
-                    }
-
-                    if (!idx.find_command_by_command(node->command)) {
-                        for (auto output_id : ctx.graph().get_outputs(id)) {
-                            auto output_path = ctx.graph().get_full_path(output_id);
-                            if (!output_path.empty()) {
-                                changed_files.push_back(output_path);
-                            }
-                        }
-                        if (opts.verbose) {
-                            fmt::print("  New command: {}\n", node->display);
-                        }
-                    }
-                }
-
-                // Detect removed commands (in old index but not in fresh graph)
-                // and delete their stale outputs
-                for (auto const& cmd : idx.commands()) {
-                    if (ctx.graph().find_by_command(cmd.command)) {
-                        continue;
-                    }
-
-                    for (auto const* edge : idx.edges_from(cmd.id)) {
-                        auto const* file = idx.find_file_by_id(edge->to);
-                        if (!file || file->type != pup::NodeType::Generated) {
-                            continue;
-                        }
-
-                        auto abs_path = ctx.layout().source_root / file->path;
-                        if (std::filesystem::exists(abs_path)) {
-                            if (opts.dry_run) {
-                                fmt::print("Would remove stale: {}\n", file->path);
-                            } else {
-                                auto ec = std::error_code {};
-                                if (std::filesystem::remove(abs_path, ec)) {
-                                    if (opts.verbose) {
-                                        fmt::print("  Removed stale: {}\n", file->path);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (opts.verbose) {
-                        fmt::print("  Removed command: {}\n", cmd.display);
-                    }
-                }
-
-                if (changed_files.empty()) {
-                    fmt::print("Nothing to do (up to date).\n");
-                    if (opts.stat) {
-                        print_stats(idx, num_commands, 0);
-                    }
-                    return EXIT_SUCCESS;
-                }
-
-                use_incremental = true;
-                old_idx_ptr = &idx;
                 if (opts.verbose) {
-                    fmt::print("Incremental build: {} changed files\n", changed_files.size());
+                    fmt::print("  New command: {}\n", node->display);
                 }
             }
+        }
+
+        // Detect removed commands (in old index but not in fresh graph)
+        // and delete their stale outputs
+        for (auto const& cmd : idx.commands()) {
+            if (ctx.graph().find_by_command(cmd.command)) {
+                continue;
+            }
+
+            for (auto const* edge : idx.edges_from(cmd.id)) {
+                auto const* file = idx.find_file_by_id(edge->to);
+                if (!file || file->type != pup::NodeType::Generated) {
+                    continue;
+                }
+
+                auto abs_path = ctx.layout().source_root / file->path;
+                if (std::filesystem::exists(abs_path)) {
+                    if (opts.dry_run) {
+                        fmt::print("Would remove stale: {}\n", file->path);
+                    } else {
+                        auto ec = std::error_code {};
+                        if (std::filesystem::remove(abs_path, ec)) {
+                            if (opts.verbose) {
+                                fmt::print("  Removed stale: {}\n", file->path);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (opts.verbose) {
+                fmt::print("  Removed command: {}\n", cmd.display);
+            }
+        }
+
+        if (changed_files.empty()) {
+            fmt::print("Nothing to do (up to date).\n");
+            if (opts.stat) {
+                print_stats(idx, num_commands, 0);
+            }
+            return EXIT_SUCCESS;
+        }
+
+        use_incremental = true;
+        if (opts.verbose) {
+            fmt::print("Incremental build: {} changed files\n", changed_files.size());
         }
     }
 

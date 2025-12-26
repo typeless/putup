@@ -19,8 +19,8 @@
 #include <unistd.h>
 
 #ifdef __APPLE__
-#include <crt_externs.h>
-#define environ (*_NSGetEnviron())
+#    include <crt_externs.h>
+#    define environ (*_NSGetEnviron())
 #endif
 
 namespace pup::platform {

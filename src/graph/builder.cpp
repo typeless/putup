@@ -248,6 +248,16 @@ struct GraphBuilder::Impl {
     /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
     /// Persists across add_tupfile calls to avoid duplicate nodes
     std::unordered_map<std::string, NodeId> config_var_nodes;
+
+    /// Virtual $ directory for imported environment variables (like tup's env_dt)
+    NodeId env_var_dir_id = INVALID_NODE_ID;
+
+    /// Imported environment variable nodes (var_name -> NodeId)
+    /// Node name encodes "key=value" for persistence
+    std::unordered_map<std::string, NodeId> imported_env_var_nodes;
+
+    /// Set of imported variable names (for tracking which vars are imported)
+    std::unordered_set<std::string> imported_var_names;
 };
 
 GraphBuilder::GraphBuilder(BuilderOptions options)
@@ -359,9 +369,35 @@ auto GraphBuilder::add_tupfile(
         }
     }
 
+    // Create/find virtual $ directory for imported env vars (like tup's env_dt)
+    // Only initialize once; subsequent Tupfiles reuse existing nodes
+    if (impl_->env_var_dir_id == INVALID_NODE_ID) {
+        // Check if $ directory already exists in graph (from same build session)
+        if (auto existing = graph.find_by_dir_name(NodeId { 0 }, "$")) {
+            impl_->env_var_dir_id = *existing;
+        } else {
+            // Create new $ directory under root
+            auto env_dir_node = Node {
+                .type = NodeType::Directory,
+                .name = "$",
+                .parent_dir = NodeId { 0 },
+            };
+            auto result = graph.add_node(std::move(env_dir_node));
+            if (result) {
+                impl_->env_var_dir_id = *result;
+            }
+        }
+    }
+
     // Set up callback to track which config variables are used during expansion
     eval.on_config_var_used = [&ctx](std::string_view name) {
         ctx.used_config_vars.insert(std::string { name });
+    };
+
+    // Set up callback to track which imported env variables are used during expansion
+    eval.imported_vars = &impl_->imported_var_names;
+    eval.on_env_var_used = [&ctx](std::string_view name) {
+        ctx.used_env_vars.insert(std::string { name });
     };
 
     // Set up resolve_group callback for {group} pattern expansion
@@ -649,11 +685,7 @@ auto GraphBuilder::process_include(
     auto parse_result = Result<parser::Tupfile> { parser.parse() };
     if (!parse_result) {
         for (auto const& err : parser.errors()) {
-            fmt::print(stderr, "{}:{}:{}: error: {}\n",
-                include_path,
-                err.location.line,
-                err.location.column,
-                err.message);
+            fmt::print(stderr, "{}:{}:{}: error: {}\n", include_path, err.location.line, err.location.column, err.message);
         }
         return pup::unexpected<Error>(parse_result.error());
     }
@@ -698,11 +730,17 @@ auto GraphBuilder::process_import(
     // of the environment variable"
     auto value = std::string {};
 
-    // Try environment first
+    // 1. Try environment first
     if (auto const* env_val = std::getenv(imp.var_name.c_str())) {
         value = env_val;
-    } else if (imp.default_value) {
-        // Expand default value expression
+    }
+    // 2. Fall back to cached value from previous build (passed via options)
+    else if (auto it = impl_->options.cached_env_vars.find(imp.var_name);
+             it != impl_->options.cached_env_vars.end()) {
+        value = it->second;
+    }
+    // 3. Fall back to default value
+    else if (imp.default_value) {
         auto evaluator = parser::Evaluator { ctx.eval };
         auto expanded = Result<std::string> { evaluator.expand(*imp.default_value) };
         if (!expanded) {
@@ -710,11 +748,43 @@ auto GraphBuilder::process_import(
         }
         value = *expanded;
     }
-    // If no env and no default, variable remains empty (tup behavior)
+    // If no env, no cache, and no default, variable remains empty (tup behavior)
+
+    // Create/update Variable node under $ directory for persistence
+    if (impl_->env_var_dir_id != INVALID_NODE_ID) {
+        auto node_name = imp.var_name + "=" + value;
+        auto content_hash = sha256(value);
+
+        // Check if we already have a node for this variable (from same build session)
+        auto it = impl_->imported_env_var_nodes.find(imp.var_name);
+        if (it != impl_->imported_env_var_nodes.end()) {
+            // Update existing node in-place if value changed
+            auto* existing = ctx.graph->get_node(it->second);
+            if (existing && existing->name != node_name) {
+                existing->name = node_name;
+                existing->content_hash = content_hash;
+            }
+        } else {
+            // Create new Variable node
+            auto node = Node {
+                .type = NodeType::Variable,
+                .name = node_name,
+                .parent_dir = impl_->env_var_dir_id,
+                .content_hash = content_hash,
+            };
+            auto result = ctx.graph->add_node(std::move(node));
+            if (result) {
+                impl_->imported_env_var_nodes[imp.var_name] = *result;
+            }
+        }
+    }
 
     if (ctx.vars) {
         ctx.vars->set(imp.var_name, value);
     }
+
+    // Track this as an imported variable for fine-grained dependency tracking
+    impl_->imported_var_names.insert(imp.var_name);
 
     return {};
 }
@@ -736,8 +806,9 @@ auto GraphBuilder::expand_rule(
     std::vector<std::string> const& inputs
 ) -> Result<void>
 {
-    // Clear used config vars for this rule (fine-grained dependency tracking)
+    // Clear used vars for this rule (fine-grained dependency tracking)
     ctx.used_config_vars.clear();
+    ctx.used_env_vars.clear();
 
     // Get the primary input for pattern expansion
     auto primary_input = inputs.empty() ? std::string {} : inputs[0];
@@ -1736,6 +1807,14 @@ auto GraphBuilder::create_command_node(
     for (auto const& var_name : ctx.used_config_vars) {
         auto it = impl_->config_var_nodes.find(var_name);
         if (it != impl_->config_var_nodes.end()) {
+            (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
+        }
+    }
+
+    // Add sticky edges from used imported env variables (fine-grained dependency tracking)
+    for (auto const& var_name : ctx.used_env_vars) {
+        auto it = impl_->imported_env_var_nodes.find(var_name);
+        if (it != impl_->imported_env_var_nodes.end()) {
             (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
         }
     }

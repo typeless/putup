@@ -23,6 +23,9 @@ class BuildGraph;
 class DepScannerRegistry;
 class RulePatternRegistry;
 }
+namespace index {
+class Index;
+}
 }
 
 namespace pup::cli {
@@ -66,6 +69,11 @@ public:
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
     auto parsed_dirs() const -> std::set<std::filesystem::path> const&;
+
+    /// Get the old index loaded from disk (if any)
+    /// Returns nullptr if no index exists or failed to load
+    [[nodiscard]]
+    auto old_index() const -> index::Index const*;
 
     struct Impl;
 

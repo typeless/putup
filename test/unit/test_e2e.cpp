@@ -2755,3 +2755,153 @@ SCENARIO("TUP_PLATFORM env var controls platform conditionals", "[e2e][platform]
         }
     }
 }
+
+SCENARIO("Imported env vars persist across builds", "[e2e][import]")
+{
+    GIVEN("a project with import directive")
+    {
+        auto f = E2EFixture { "env_var_persist" };
+
+        WHEN("building with env var set")
+        {
+            auto env = EnvGuard { "MY_VAR", "first_value" };
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds and output contains the env var value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.txt"));
+                REQUIRE(f.read_file("out.txt") == "first_value\n");
+            }
+        }
+    }
+
+    GIVEN("a project already built with env var")
+    {
+        auto f = E2EFixture { "env_var_persist" };
+        {
+            auto env = EnvGuard { "MY_VAR", "first_value" };
+            REQUIRE(f.init().success());
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "first_value\n");
+        }
+
+        WHEN("rebuilding without env var set")
+        {
+            // MY_VAR not in environment (EnvGuard out of scope)
+            auto result = f.build();
+
+            THEN("cached value is used, no rebuild triggered")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "first_value\n");
+            }
+        }
+
+        WHEN("rebuilding with changed env var")
+        {
+            auto env = EnvGuard { "MY_VAR", "new_value" };
+            auto result = f.build();
+
+            THEN("rebuild is triggered with new value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "new_value\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Imported env vars with equals in value", "[e2e][import]")
+{
+    GIVEN("a project with import directive")
+    {
+        auto f = E2EFixture { "env_var_persist" };
+
+        WHEN("env var value contains equals signs")
+        {
+            auto env = EnvGuard { "MY_VAR", "foo=bar=baz" };
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("full value is preserved including equals signs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "foo=bar=baz\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Only commands using changed env var rebuild", "[e2e][import]")
+{
+    GIVEN("a project already built with two env vars")
+    {
+        auto f = E2EFixture { "env_var_fine_grained" };
+
+        {
+            auto env_cc = EnvGuard { "CC", "gcc" };
+            auto env_cflags = EnvGuard { "CFLAGS", "-O2" };
+            REQUIRE(f.init().success());
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("cc_out.txt") == "gcc\n");
+            REQUIRE(f.read_file("cflags_out.txt") == "-O2\n");
+            REQUIRE(f.build().is_noop());
+        }
+
+        WHEN("only CC env var changes")
+        {
+            auto env_cc = EnvGuard { "CC", "clang" };
+            auto env_cflags = EnvGuard { "CFLAGS", "-O2" };
+            auto result = f.build({ "-v" });
+
+            THEN("build succeeds and is not a noop")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+
+            THEN("only cc_out.txt command runs, not cflags_out.txt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("cc_out.txt") != std::string::npos);
+                REQUIRE(result.stdout_output.find("cflags_out.txt") == std::string::npos);
+            }
+
+            THEN("cc_out.txt has new value, cflags_out.txt unchanged")
+            {
+                REQUIRE(f.read_file("cc_out.txt") == "clang\n");
+                REQUIRE(f.read_file("cflags_out.txt") == "-O2\n");
+            }
+        }
+
+        WHEN("only CFLAGS env var changes")
+        {
+            auto env_cc = EnvGuard { "CC", "gcc" };
+            auto env_cflags = EnvGuard { "CFLAGS", "-O3" };
+            auto result = f.build({ "-v" });
+
+            THEN("only cflags_out.txt command runs, not cc_out.txt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(result.stdout_output.find("cflags_out.txt") != std::string::npos);
+                REQUIRE(result.stdout_output.find("cc_out.txt") == std::string::npos);
+            }
+        }
+    }
+}

@@ -10,6 +10,7 @@
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
+#include "pup/index/reader.hpp"
 #include "pup/parser/config.hpp"
 #include "pup/parser/ignore.hpp"
 #include "pup/parser/parser.hpp"
@@ -278,11 +279,7 @@ auto parse_directory(
     if (!parse_result) {
         state.parsing.erase(normalized_dir);
         for (auto const& err : parser.errors()) {
-            fmt::print(stderr, "{}:{}:{}: error: {}\n",
-                tupfile_path.string(),
-                err.location.line,
-                err.location.column,
-                err.message);
+            fmt::print(stderr, "{}:{}:{}: error: {}\n", tupfile_path.string(), err.location.line, err.location.column, err.message);
         }
         return pup::unexpected<pup::Error>(parse_result.error());
     }
@@ -338,6 +335,7 @@ struct BuildContext::Impl {
     parser::VarDb vars;
     graph::BuildGraph graph;
     TupfileParseState state;
+    std::optional<index::Index> old_index;
 };
 
 BuildContext::BuildContext()
@@ -379,6 +377,11 @@ auto BuildContext::vars() const -> parser::VarDb const&
 auto BuildContext::parsed_dirs() const -> std::set<std::filesystem::path> const&
 {
     return impl_->state.parsed;
+}
+
+auto BuildContext::old_index() const -> index::Index const*
+{
+    return impl_->old_index ? &*impl_->old_index : nullptr;
 }
 
 auto build_context(
@@ -448,6 +451,46 @@ auto build_context(
         }
     }
 
+    // Load old index for incremental builds and cached env vars
+    auto cached_env_vars = std::unordered_map<std::string, std::string> {};
+    auto index_path = ctx.impl_->layout.output_root / ".pup" / "index";
+    constexpr auto ENV_VAR_DIR_PREFIX = std::string_view { "$/" };
+    if (std::filesystem::exists(index_path)) {
+        auto index_load_start = std::chrono::steady_clock::now();
+        auto reader_result = index::IndexReader::open(index_path);
+        if (reader_result) {
+            auto index_result = reader_result->read();
+            if (index_result) {
+                ctx.impl_->old_index = std::move(*index_result);
+                ctx.impl_->old_index->build_children_index();
+                auto index_load_end = std::chrono::steady_clock::now();
+                thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    index_load_end - index_load_start
+                );
+
+                // Extract cached env vars from index
+                for (auto const& file : ctx.impl_->old_index->files()) {
+                    if (file.type != NodeType::Variable) {
+                        continue;
+                    }
+                    if (!file.path.starts_with(ENV_VAR_DIR_PREFIX)) {
+                        continue;
+                    }
+
+                    // Extract "KEY=value" from "$/KEY=value"
+                    auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
+                    auto eq_pos = key_value.find('=');
+                    if (eq_pos != std::string::npos) {
+                        cached_env_vars[std::string { key_value.substr(0, eq_pos) }] = std::string { key_value.substr(eq_pos + 1) };
+                    }
+                }
+                if (ctx_opts.verbose && !cached_env_vars.empty()) {
+                    fmt::print("Loaded {} cached env vars from index\n", cached_env_vars.size());
+                }
+            }
+        }
+    }
+
     auto builder_opts = graph::BuilderOptions {
         .source_root = ctx.impl_->layout.source_root,
         .output_root = ctx.impl_->layout.output_root,
@@ -455,6 +498,7 @@ auto build_context(
         .expand_globs = true,
         .scanner_registry = ctx_opts.scanner_registry,
         .pattern_registry = ctx_opts.pattern_registry,
+        .cached_env_vars = std::move(cached_env_vars),
     };
 
     auto builder = graph::GraphBuilder { builder_opts };

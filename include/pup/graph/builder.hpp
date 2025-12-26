@@ -30,14 +30,15 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    std::filesystem::path source_root;                     ///< Source tree root (where Tupfile.ini lives)
-    std::filesystem::path output_root;                     ///< Output tree root (where outputs/.pup go)
-    std::filesystem::path config_path;                     ///< Path to tup.config (for sticky edge tracking)
-    bool expand_globs = true;                              ///< Expand glob patterns
-    bool validate_inputs = true;                           ///< Check that input files exist
-    bool verbose = false;                                  ///< Print verbose output
-    DepScannerRegistry const* scanner_registry = nullptr;  ///< Optional scanner registry for implicit deps
-    RulePatternRegistry const* pattern_registry = nullptr; ///< Optional pattern registry for auto-generated rules
+    std::filesystem::path source_root;                                 ///< Source tree root (where Tupfile.ini lives)
+    std::filesystem::path output_root;                                 ///< Output tree root (where outputs/.pup go)
+    std::filesystem::path config_path;                                 ///< Path to tup.config (for sticky edge tracking)
+    bool expand_globs = true;                                          ///< Expand glob patterns
+    bool validate_inputs = true;                                       ///< Check that input files exist
+    bool verbose = false;                                              ///< Print verbose output
+    DepScannerRegistry const* scanner_registry = nullptr;              ///< Optional scanner registry for implicit deps
+    RulePatternRegistry const* pattern_registry = nullptr;             ///< Optional pattern registry for auto-generated rules
+    std::unordered_map<std::string, std::string> cached_env_vars = {}; ///< Cached env vars from previous build
 };
 
 /// Bang macro definition
@@ -72,6 +73,9 @@ struct BuilderContext {
 
     /// Config variables used during current command expansion (cleared per command)
     std::set<std::string> used_config_vars = {};
+
+    /// Env variables used during current command expansion (cleared per command)
+    std::set<std::string> used_env_vars = {};
 
     std::vector<std::string> errors = {};
     std::vector<std::string> warnings = {};

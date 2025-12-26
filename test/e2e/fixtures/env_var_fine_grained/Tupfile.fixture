@@ -1,0 +1,4 @@
+import CC
+import CFLAGS
+: |> echo $(CC) > %o |> cc_out.txt
+: |> echo $(CFLAGS) > %o |> cflags_out.txt

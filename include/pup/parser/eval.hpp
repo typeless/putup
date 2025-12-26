@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pup::parser {
@@ -93,6 +94,13 @@ struct EvalContext {
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
     /// a config variable is accessed via @(VAR) or $(CONFIG_VAR).
     std::function<void(std::string_view name)> on_config_var_used = {};
+
+    /// Set of imported environment variable names (for tracking which vars are imported)
+    std::unordered_set<std::string> const* imported_vars = nullptr;
+
+    /// Callback for tracking imported env variable usage (for fine-grained dependency tracking)
+    /// Called with the variable name when an imported env var is accessed via $(VAR).
+    std::function<void(std::string_view name)> on_env_var_used = {};
 };
 
 /// Pattern flags for command/output expansion
