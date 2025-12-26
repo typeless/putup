@@ -1,0 +1,19 @@
+include_rules
+
+# Shared shell components (needed by ASH, HUSH)
+srcs-y += shell_common.c
+srcs-y += match.c
+
+# Math support (enabled by FEATURE_SH_MATH)
+srcs-@(FEATURE_SH_MATH) += math.c
+
+# Random support (enabled by ASH_RANDOM_SUPPORT or HUSH_RANDOM_SUPPORT)
+srcs-y += random.c
+
+srcs-@(SHELL_ASH) += ash.c
+srcs-@(SHELL_ASH) += ash_ptr_hack.c
+srcs-@(CTTYHACK) += cttyhack.c
+srcs-@(SHELL_HUSH) += hush.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libshell.a

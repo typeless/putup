@@ -1,0 +1,7 @@
+include_rules
+
+srcs-@(LPD) += lpd.c
+srcs-@(LPR) += lpr.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libprintutils.a

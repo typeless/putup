@@ -1,0 +1,9 @@
+include_rules
+
+srcs-@(PIPE_PROGRESS) += pipe_progress.c
+srcs-@(RUN_PARTS) += run_parts.c
+srcs-@(START_STOP_DAEMON) += start_stop_daemon.c
+srcs-@(WHICH) += which.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libdebianutils.a

@@ -1,0 +1,3 @@
+# Default config with CONFIG_TC disabled
+# TC requires kernel headers not available on all systems
+# CONFIG_TC is not set

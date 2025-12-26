@@ -1,0 +1,8 @@
+include_rules
+
+# Password/group utilities (always built)
+srcs-y += uidgid_get.c
+srcs-y += pwd_grp.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> liblibpwdgrp.a

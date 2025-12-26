@@ -1,0 +1,10 @@
+include_rules
+
+srcs-@(CHPST) += chpst.c
+srcs-@(RUNSV) += runsv.c
+srcs-@(RUNSVDIR) += runsvdir.c
+srcs-@(SV) += sv.c
+srcs-@(SVLOGD) += svlogd.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> librunit.a

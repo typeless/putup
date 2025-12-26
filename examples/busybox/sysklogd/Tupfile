@@ -1,0 +1,8 @@
+include_rules
+
+srcs-@(KLOGD) += klogd.c
+srcs-@(LOGREAD) += logread.c
+srcs-@(SYSLOGD) += syslogd_and_logger.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libsysklogd.a

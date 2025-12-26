@@ -1,0 +1,8 @@
+include_rules
+
+srcs-@(BOOTCHARTD) += bootchartd.c
+srcs-@(HALT) += halt.c
+srcs-@(INIT) += init.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libinit.a

@@ -1,0 +1,68 @@
+include_rules
+
+# Shared interface code (needed by ARP, IFCONFIG, IFENSLAVE)
+srcs-y += interface.c
+
+# Shared identd server (needed by FAKEIDENTD)
+srcs-y += isrv.c
+srcs-y += isrv_identd.c
+
+# Shared FTP parser (needed by FTPGET, FTPPUT, WGET)
+srcs-y += parse_pasv_epsv.c
+
+# Shared TCP/UDP handler (needed by TCPSVD, UDPSVD)
+srcs-y += tcpudp.c
+srcs-y += tcpudp_perhost.c
+
+# TLS support (enabled by CONFIG_TLS)
+srcs-@(TLS) += tls.c
+srcs-@(TLS) += tls_aes.c
+srcs-@(TLS) += tls_aesgcm.c
+srcs-@(TLS) += tls_fe.c
+srcs-@(TLS) += tls_pstm.c
+srcs-@(TLS) += tls_pstm_montgomery_reduce.c
+srcs-@(TLS) += tls_pstm_mul_comba.c
+srcs-@(TLS) += tls_pstm_sqr_comba.c
+srcs-@(TLS) += tls_rsa.c
+srcs-@(TLS) += tls_sp_c32.c
+
+srcs-@(ARP) += arp.c
+srcs-@(ARPING) += arping.c
+srcs-@(BRCTL) += brctl.c
+srcs-@(DNSD) += dnsd.c
+srcs-@(ETHER_WAKE) += ether-wake.c
+srcs-@(FTPD) += ftpd.c
+srcs-@(FTPGET) += ftpgetput.c
+srcs-@(HOSTNAME) += hostname.c
+srcs-@(HTTPD) += httpd.c
+srcs-@(IFCONFIG) += ifconfig.c
+srcs-@(IFENSLAVE) += ifenslave.c
+srcs-@(IFPLUGD) += ifplugd.c
+srcs-@(IFUP) += ifupdown.c
+srcs-@(INETD) += inetd.c
+srcs-@(IP) += ip.c
+srcs-@(IPCALC) += ipcalc.c
+srcs-@(NAMEIF) += nameif.c
+srcs-@(NBDCLIENT) += nbd-client.c
+srcs-@(NC) += nc.c
+srcs-@(NETSTAT) += netstat.c
+srcs-@(NSLOOKUP) += nslookup.c
+srcs-@(NTPD) += ntpd.c
+srcs-@(PING) += ping.c
+srcs-@(PSCAN) += pscan.c
+srcs-@(ROUTE) += route.c
+srcs-@(SLATTACH) += slattach.c
+srcs-@(SSL_CLIENT) += ssl_client.c
+srcs-@(TC) += tc.c
+srcs-@(TELNET) += telnet.c
+srcs-@(TELNETD) += telnetd.c
+srcs-@(TFTP) += tftp.c
+srcs-@(TRACEROUTE) += traceroute.c
+srcs-@(TUNCTL) += tunctl.c
+srcs-@(VCONFIG) += vconfig.c
+srcs-@(WGET) += wget.c
+srcs-@(WHOIS) += whois.c
+srcs-@(ZCIP) += zcip.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libnetworking.a

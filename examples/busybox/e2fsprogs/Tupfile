@@ -1,0 +1,12 @@
+include_rules
+
+# Shared e2fs library (needed by CHATTR, LSATTR)
+srcs-y += e2fs_lib.c
+
+srcs-@(CHATTR) += chattr.c
+srcs-@(FSCK) += fsck.c
+srcs-@(LSATTR) += lsattr.c
+srcs-@(TUNE2FS) += tune2fs.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libe2fsprogs.a

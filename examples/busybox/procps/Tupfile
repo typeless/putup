@@ -1,0 +1,24 @@
+include_rules
+
+srcs-@(FREE) += free.c
+srcs-@(FUSER) += fuser.c
+srcs-@(IOSTAT) += iostat.c
+srcs-@(KILL) += kill.c
+srcs-@(LSOF) += lsof.c
+srcs-@(MPSTAT) += mpstat.c
+srcs-@(NMETER) += nmeter.c
+srcs-@(PGREP) += pgrep.c
+srcs-@(PIDOF) += pidof.c
+srcs-@(PMAP) += pmap.c
+srcs-@(POWERTOP) += powertop.c
+srcs-@(PS) += ps.c
+srcs-@(PSTREE) += pstree.c
+srcs-@(PWDX) += pwdx.c
+srcs-@(SMEMCAP) += smemcap.c
+srcs-@(BB_SYSCTL) += sysctl.c
+srcs-@(TOP) += top.c
+srcs-@(UPTIME) += uptime.c
+srcs-@(WATCH) += watch.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libprocps.a

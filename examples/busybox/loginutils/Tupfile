@@ -1,0 +1,17 @@
+include_rules
+
+srcs-@(ADD_SHELL) += add-remove-shell.c
+srcs-@(ADDGROUP) += addgroup.c
+srcs-@(ADDUSER) += adduser.c
+srcs-@(CHPASSWD) += chpasswd.c
+srcs-@(CRYPTPW) += cryptpw.c
+srcs-@(DELUSER) += deluser.c
+srcs-@(GETTY) += getty.c
+srcs-@(LOGIN) += login.c
+srcs-@(PASSWD) += passwd.c
+srcs-@(SU) += su.c
+srcs-@(SULOGIN) += sulogin.c
+srcs-@(VLOCK) += vlock.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libloginutils.a

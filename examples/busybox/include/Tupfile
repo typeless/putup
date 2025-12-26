@@ -1,0 +1,16 @@
+include_rules
+
+# Generated headers for busybox
+# Rules 3 & 4 stay here because they depend on host binaries built in applets/
+# (Rules 1, 2, 5, 6, 7 are in root Tupfile)
+
+# B = build root (e.g., ../build from include/)
+# S = source root (e.g., .. from include/)
+
+# Rule 3: applet_tables.h, NUM_APPLETS.h
+# applet_tables binary takes output paths as arguments
+: | $(B)/applets/applet_tables applets.h |> ^ GEN applet_tables.h NUM_APPLETS.h^ $(B)/applets/applet_tables $(TUP_VARIANT_OUTPUTDIR)/applet_tables.h $(TUP_VARIANT_OUTPUTDIR)/NUM_APPLETS.h |> applet_tables.h NUM_APPLETS.h <gen-headers>
+
+# Rule 4: usage_compressed.h
+# usage_compressed script takes: output_file build_dir
+: | $(B)/applets/usage $(S)/applets/usage_compressed applets.h |> ^ GEN usage_compressed.h^ $(S)/applets/usage_compressed %o $(B)/applets |> usage_compressed.h <gen-headers>

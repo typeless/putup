@@ -1,0 +1,15 @@
+include_rules
+
+# Shared module utilities (needed by DEPMOD, INSMOD, LSMOD, MODINFO, MODPROBE, RMMOD)
+srcs-y += modutils.c
+
+srcs-@(FEATURE_2_4_MODULES) += modutils-24.c
+srcs-@(DEPMOD) += depmod.c
+srcs-@(INSMOD) += insmod.c
+srcs-@(LSMOD) += lsmod.c
+srcs-@(MODINFO) += modinfo.c
+srcs-@(MODPROBE) += modprobe.c
+srcs-@(RMMOD) += rmmod.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libmodutils.a

@@ -1,0 +1,51 @@
+# Makefile.pup - Build busybox with pup
+#
+# Usage:
+#   make -f Makefile.pup                              # Build with default config
+#   make -f Makefile.pup CONFIG=android_defconfig     # Build with Android config
+#   make -f Makefile.pup clean                        # Clean build artifacts
+#   make -f Makefile.pup distclean                    # Full clean (single variant)
+#   make -f Makefile.pup distclean-all                # Full clean (all variants)
+#
+# Multi-variant builds:
+#   CONFIG=android_defconfig make -f Makefile.pup BUILD=build-android
+#   CONFIG=freebsd_defconfig make -f Makefile.pup BUILD=build-freebsd
+#   pup build-android build-freebsd                   # Build both
+
+.PHONY: all build configure menuconfig clean distclean distclean-all
+
+# Configuration
+CONFIG ?= defconfig
+BUILD ?= build
+
+# Default target
+all: build
+
+# Configure and build - pup generates .config from defconfig automatically
+build:
+	CONFIG=$(CONFIG) pup configure -B $(BUILD)
+	pup build -B $(BUILD) -j$$(nproc)
+
+# Just configure (create build directory and generate .config)
+configure:
+	CONFIG=$(CONFIG) pup configure -B $(BUILD)
+
+# Interactive configuration (requires building kconfig tools first)
+menuconfig: scripts/kconfig/mconf
+	./scripts/kconfig/mconf Config.in
+
+# Build mconf for menuconfig
+scripts/kconfig/mconf:
+	$(MAKE) scripts/kconfig/mconf
+
+# Clean build artifacts
+clean:
+	pup clean -B $(BUILD)
+
+# Full clean including generated files
+distclean:
+	pup distclean -B $(BUILD)
+
+# Clean all variants
+distclean-all:
+	pup distclean

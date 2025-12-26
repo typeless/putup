@@ -1,0 +1,12 @@
+include_rules
+
+srcs-@(AWK) += awk.c
+srcs-@(CMP) += cmp.c
+srcs-@(DIFF) += diff.c
+srcs-@(ED) += ed.c
+srcs-@(PATCH) += patch.c
+srcs-@(SED) += sed.c
+srcs-@(VI) += vi.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libeditors.a

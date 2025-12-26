@@ -1,0 +1,75 @@
+# Tuprules.tup - Busybox build rules for pup
+#
+# Kbuild-style distributed build: each module has its own Tupfile
+#
+# S/B Convention (Yocto-inspired):
+#   S = source root path (auto-computed via TUP_CWD during includes)
+#   B = build root path (derived from TUP_VARIANT_OUTPUTDIR)
+#
+# Subdirectory Tupfiles just need: include_rules
+
+# S = path back to source root (auto-computed during includes)
+S = $(TUP_CWD)
+
+# Toolchain
+import CC=gcc
+import AR=ar
+
+# Extra flags from environment (like original Makefile)
+import EXTRA_CFLAGS=
+import EXTRA_LDFLAGS=
+import EXTRA_LDLIBS=
+
+# Version
+BB_VER = 1.38.0
+
+# B = path to build root (for generated headers in variant builds)
+# Formula: TUP_VARIANT_OUTPUTDIR + S = build root
+# From archival/: ../build/archival + .. = ../build
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
+
+# Base CFLAGS from busybox build system
+# Use $(S) for source tree, $(B) for build tree (generated headers)
+CFLAGS  = -std=gnu99
+CFLAGS += -I$(B)/include -I$(S)/include -I$(S)/libbb
+CFLAGS += -include $(B)/include/autoconf.h
+CFLAGS += -D_GNU_SOURCE -DNDEBUG
+CFLAGS += -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64
+CFLAGS += -D_TIME_BITS=64
+CFLAGS += -DBB_VER='"$(BB_VER)"'
+
+# Warning flags
+CFLAGS += -Wall -Wshadow -Wwrite-strings -Wundef
+CFLAGS += -Wstrict-prototypes -Wunused -Wunused-parameter
+CFLAGS += -Wunused-function -Wunused-value
+CFLAGS += -Wmissing-prototypes -Wmissing-declarations
+CFLAGS += -Wno-format-security -Wdeclaration-after-statement
+CFLAGS += -Wold-style-definition
+
+# Optimization flags
+CFLAGS += -Os
+CFLAGS += -finline-limit=0 -fno-builtin-strlen
+CFLAGS += -fomit-frame-pointer -ffunction-sections -fdata-sections
+CFLAGS += -fno-guess-branch-probability -funsigned-char
+CFLAGS += -falign-functions=1 -falign-jumps=1 -falign-labels=1 -falign-loops=1
+CFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
+CFLAGS += -fno-builtin-printf
+
+# User-provided extra flags
+CFLAGS += $(EXTRA_CFLAGS)
+
+# Linker flags
+LDFLAGS = -Wl,--gc-sections
+LDFLAGS += $(EXTRA_LDFLAGS)
+
+# Libraries
+LIBS = -lm -lresolv
+LIBS += $(EXTRA_LDLIBS)
+
+# Bang macros
+# !cc - compile a C file, depends on generated headers
+# Order-only dependency on generated headers (path relative to source root)
+!cc = | $(S)/include/<gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o {objs}
+# Output to root-level <archives> order-only group for linking
+!ar = |> ^ AR %o^ $(AR) rcs %o %f |> $(S)/<archives>
+!link = |> ^ LINK %o^ $(CC) %f -o %o $(LDFLAGS) $(LIBS) |>

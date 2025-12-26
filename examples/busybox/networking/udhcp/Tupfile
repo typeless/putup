@@ -1,0 +1,33 @@
+include_rules
+
+# UDHCP common infrastructure (shared by client, server, relay)
+srcs-y += common.c
+srcs-y += packet.c
+srcs-y += signalpipe.c
+srcs-y += socket.c
+
+# UDHCP client
+srcs-y += dhcpc.c
+
+# UDHCP server
+srcs-y += dhcpd.c
+srcs-y += arpping.c
+
+# DHCP relay
+srcs-y += dhcprelay.c
+
+# Dumpleases
+srcs-y += dumpleases.c
+
+# Features
+srcs-y += domain_codec.c
+
+# DHCPv6 support
+srcs-y += d6_dhcpc.c
+srcs-y += d6_packet.c
+srcs-y += d6_socket.c
+
+: foreach $(srcs-y) |> !cc |>
+
+# Create archive from all objects in this module
+: {objs} |> !ar |> libnetworking_udhcp.a

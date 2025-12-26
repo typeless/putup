@@ -1,0 +1,26 @@
+include_rules
+
+# Build kconfig conf tool for generating .config from defconfig
+#
+# By default uses _shipped pre-generated files (no bison/flex/gperf needed).
+# Set LKC_GENPARSER=1 to regenerate from source:
+#   LKC_GENPARSER=1 pup configure -B build
+
+HOSTCC = gcc
+
+import LKC_GENPARSER
+
+ifeq ($(LKC_GENPARSER),1)
+# Generate parser files from source (requires bison, flex, gperf)
+: zconf.gperf |> ^ GPERF %o^ gperf < %f > %o |> zconf.hash.c
+: zconf.l |> ^ FLEX %o^ flex -L -Pzconf -o%o %f |> lex.zconf.c
+: zconf.y |> ^ BISON %o^ bison -l -b zconf -p zconf %f && mv zconf.tab.c %o |> zconf.tab.c
+else
+# Use pre-generated shipped files (default)
+: zconf.hash.c_shipped |> cp %f %o |> zconf.hash.c
+: lex.zconf.c_shipped |> cp %f %o |> lex.zconf.c
+: zconf.tab.c_shipped |> cp %f %o |> zconf.tab.c
+endif
+
+# Include path: current dir for conf.c, TUP_VARIANT_OUTPUTDIR for generated files
+: conf.c zconf.tab.c | zconf.hash.c lex.zconf.c |> ^ HOSTCC conf^ $(HOSTCC) -I. -I$(TUP_VARIANT_OUTPUTDIR) -DKBUILD_NO_NLS %f -o %o |> conf

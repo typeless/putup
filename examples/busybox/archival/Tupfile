@@ -1,0 +1,21 @@
+include_rules
+
+# Shared decompression driver (needed by ZCAT, GUNZIP, BZCAT, BUNZIP2, etc.)
+srcs-y += bbunzip.c
+
+# Shared tar header writer (needed by FEATURE_TAR_CREATE, SMEMCAP)
+srcs-y += chksum_and_xwrite_tar_header.c
+
+srcs-@(AR) += ar.c
+srcs-@(BZIP2) += bzip2.c
+srcs-@(CPIO) += cpio.c
+srcs-@(DPKG) += dpkg.c
+srcs-@(DPKG_DEB) += dpkg_deb.c
+srcs-@(GZIP) += gzip.c
+srcs-@(LZOP) += lzop.c
+srcs-@(RPM) += rpm.c
+srcs-@(TAR) += tar.c
+srcs-@(UNZIP) += unzip.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libarchival.a

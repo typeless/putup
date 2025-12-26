@@ -1,0 +1,8 @@
+include_rules
+
+srcs-@(FIND) += find.c
+srcs-@(GREP) += grep.c
+srcs-@(XARGS) += xargs.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libfindutils.a

@@ -1,0 +1,20 @@
+include_rules
+
+srcs-@(CHVT) += chvt.c
+srcs-@(CLEAR) += clear.c
+srcs-@(DEALLOCVT) += deallocvt.c
+srcs-@(DUMPKMAP) += dumpkmap.c
+srcs-@(FGCONSOLE) += fgconsole.c
+srcs-@(KBD_MODE) += kbd_mode.c
+srcs-@(LOADFONT) += loadfont.c
+srcs-@(LOADKMAP) += loadkmap.c
+srcs-@(OPENVT) += openvt.c
+srcs-@(RESET) += reset.c
+srcs-@(RESIZE) += resize.c
+srcs-@(SETCONSOLE) += setconsole.c
+srcs-@(SETKEYCODES) += setkeycodes.c
+srcs-@(SETLOGCONS) += setlogcons.c
+srcs-@(SHOWKEY) += showkey.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libconsole-tools.a

@@ -1,0 +1,7 @@
+include_rules
+
+srcs-@(NUKE) += nuke.c
+srcs-@(RESUME) += resume.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libklibc-utils.a

@@ -1,0 +1,39 @@
+include_rules
+
+# Volume ID detection infrastructure (shared by blkid, findfs, mount)
+srcs-y += volume_id.c
+srcs-y += util.c
+srcs-y += get_devname.c
+
+# Individual filesystem detectors
+srcs-y += bcache.c
+srcs-y += btrfs.c
+srcs-y += cramfs.c
+srcs-y += erofs.c
+srcs-y += exfat.c
+srcs-y += ext.c
+srcs-y += f2fs.c
+srcs-y += fat.c
+srcs-y += hfs.c
+srcs-y += iso9660.c
+srcs-y += jfs.c
+srcs-y += lfs.c
+srcs-y += linux_raid.c
+srcs-y += linux_swap.c
+srcs-y += luks.c
+srcs-y += minix.c
+srcs-y += nilfs.c
+srcs-y += ntfs.c
+srcs-y += ocfs2.c
+srcs-y += reiserfs.c
+srcs-y += romfs.c
+srcs-y += squashfs.c
+srcs-y += sysv.c
+srcs-y += ubifs.c
+srcs-y += udf.c
+srcs-y += xfs.c
+
+: foreach $(srcs-y) |> !cc |>
+
+# Create archive from all objects in this module
+: {objs} |> !ar |> libutil-linux_volume_id.a

@@ -1,0 +1,66 @@
+include_rules
+
+srcs-@(ACPID) += acpid.c
+srcs-@(BLKDISCARD) += blkdiscard.c
+srcs-@(BLKID) += blkid.c
+srcs-@(BLOCKDEV) += blockdev.c
+srcs-@(CAL) += cal.c
+srcs-@(CHRT) += chrt.c
+srcs-@(DMESG) += dmesg.c
+srcs-@(EJECT) += eject.c
+srcs-@(FALLOCATE) += fallocate.c
+srcs-@(FATATTR) += fatattr.c
+srcs-@(FBSET) += fbset.c
+srcs-@(FDFORMAT) += fdformat.c
+srcs-@(FDISK) += fdisk.c
+srcs-@(FINDFS) += findfs.c
+srcs-@(FLOCK) += flock.c
+srcs-@(FREERAMDISK) += freeramdisk.c
+srcs-@(FSCK_MINIX) += fsck_minix.c
+srcs-@(FSFREEZE) += fsfreeze.c
+srcs-@(FSTRIM) += fstrim.c
+srcs-@(GETOPT) += getopt.c
+srcs-@(HEXDUMP) += hexdump.c
+srcs-@(XXD) += hexdump_xxd.c
+srcs-@(HWCLOCK) += hwclock.c
+srcs-@(IONICE) += ionice.c
+srcs-@(IPCRM) += ipcrm.c
+srcs-@(IPCS) += ipcs.c
+srcs-@(LAST) += last.c
+srcs-@(LOSETUP) += losetup.c
+srcs-@(LSPCI) += lspci.c
+srcs-@(LSUSB) += lsusb.c
+srcs-@(MDEV) += mdev.c
+srcs-@(MESG) += mesg.c
+srcs-@(MKE2FS) += mkfs_ext2.c
+srcs-@(MKFS_MINIX) += mkfs_minix.c
+srcs-@(MKFS_REISER) += mkfs_reiser.c
+srcs-@(MKDOSFS) += mkfs_vfat.c
+srcs-@(MKSWAP) += mkswap.c
+srcs-@(MORE) += more.c
+srcs-@(MOUNT) += mount.c
+srcs-@(MOUNTPOINT) += mountpoint.c
+srcs-@(NOLOGIN) += nologin.c
+srcs-@(NSENTER) += nsenter.c
+srcs-@(PIVOT_ROOT) += pivot_root.c
+srcs-@(RDATE) += rdate.c
+srcs-@(RDEV) += rdev.c
+srcs-@(READPROFILE) += readprofile.c
+srcs-@(RENICE) += renice.c
+srcs-@(REV) += rev.c
+srcs-@(RTCWAKE) += rtcwake.c
+srcs-@(SCRIPT) += script.c
+srcs-@(SCRIPTREPLAY) += scriptreplay.c
+srcs-@(SETARCH) += setarch.c
+srcs-@(SETPRIV) += setpriv.c
+srcs-@(SETSID) += setsid.c
+srcs-@(SWAPON) += swaponoff.c
+srcs-@(SWITCH_ROOT) += switch_root.c
+srcs-@(TASKSET) += taskset.c
+srcs-@(UEVENT) += uevent.c
+srcs-@(UMOUNT) += umount.c
+srcs-@(UNSHARE) += unshare.c
+srcs-@(WALL) += wall.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libutil-linux.a

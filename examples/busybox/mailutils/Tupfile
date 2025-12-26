@@ -1,0 +1,12 @@
+include_rules
+
+# Shared mail utilities (needed by MAKEMIME, POPMAILDIR, REFORMIME, SENDMAIL)
+srcs-y += mail.c
+
+srcs-@(MAKEMIME) += makemime.c
+srcs-@(POPMAILDIR) += popmaildir.c
+srcs-@(REFORMIME) += reformime.c
+srcs-@(SENDMAIL) += sendmail.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libmailutils.a

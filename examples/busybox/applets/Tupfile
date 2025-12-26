@@ -1,0 +1,18 @@
+include_rules
+
+# Host programs for generating headers (run during build)
+HOSTCC = gcc
+
+: applet_tables.c | $(B)/include/autoconf.h $(B)/include/applets.h \
+|> ^ HOSTCC %o^ $(HOSTCC) -I$(B)/include -o %o %f \
+|> applet_tables
+
+: usage.c | $(B)/include/autoconf.h $(B)/include/applets.h \
+|> ^ HOSTCC %o^ $(HOSTCC) -I$(B)/include -o %o %f \
+|> usage
+
+# Applet table (always built)
+srcs-y += applets.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libapplets.a

@@ -1,0 +1,47 @@
+include_rules
+
+# Common archive handling files
+srcs-y += common.c
+srcs-y += data_align.c
+srcs-y += data_extract_all.c
+srcs-y += data_extract_to_command.c
+srcs-y += data_extract_to_stdout.c
+srcs-y += data_skip.c
+srcs-y += decompress_bunzip2.c
+srcs-y += decompress_gunzip.c
+srcs-y += decompress_uncompress.c
+srcs-y += decompress_unlzma.c
+srcs-y += decompress_unxz.c
+srcs-y += filter_accept_all.c
+srcs-y += filter_accept_list.c
+srcs-y += filter_accept_list_reassign.c
+srcs-y += filter_accept_reject_list.c
+srcs-y += find_list_entry.c
+srcs-y += get_header_ar.c
+srcs-y += get_header_cpio.c
+srcs-y += get_header_tar.c
+srcs-y += get_header_tar_bz2.c
+srcs-y += get_header_tar_gz.c
+srcs-y += get_header_tar_lzma.c
+srcs-y += get_header_tar_xz.c
+srcs-y += header_list.c
+srcs-y += header_skip.c
+srcs-y += header_verbose_list.c
+srcs-y += init_handle.c
+srcs-y += open_transformer.c
+srcs-y += seek_by_jump.c
+srcs-y += seek_by_read.c
+srcs-y += unsafe_prefix.c
+srcs-y += unsafe_symlink_target.c
+srcs-y += unpack_ar_archive.c
+
+# LZO compression
+srcs-y += lzo1x_1.c
+srcs-y += lzo1x_1o.c
+srcs-y += lzo1x_9x.c
+srcs-y += lzo1x_d.c
+
+: foreach $(srcs-y) |> !cc |>
+
+# Create archive from all objects in this module
+: {objs} |> !ar |> libarchival_libarchive.a

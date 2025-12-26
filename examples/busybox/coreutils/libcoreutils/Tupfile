@@ -1,0 +1,10 @@
+include_rules
+
+# Coreutils library helpers (shared by multiple applets)
+srcs-y += getopt_mk_fifo_nod.c
+srcs-y += cp_mv_stat.c
+
+: foreach $(srcs-y) |> !cc |>
+
+# Create archive from all objects in this module
+: {objs} |> !ar |> libcoreutils_libcoreutils.a

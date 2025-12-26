@@ -1,0 +1,50 @@
+include_rules
+
+srcs-@(ADJTIMEX) += adjtimex.c
+srcs-@(ASCII) += ascii.c
+srcs-@(BBCONFIG) += bbconfig.c
+srcs-@(BC) += bc.c
+srcs-@(BEEP) += beep.c
+srcs-@(CHAT) += chat.c
+srcs-@(CONSPY) += conspy.c
+srcs-@(CROND) += crond.c
+srcs-@(CRONTAB) += crontab.c
+srcs-@(DEVFSD) += devfsd.c
+srcs-@(DEVMEM) += devmem.c
+srcs-@(FBSPLASH) += fbsplash.c
+srcs-@(FLASH_ERASEALL) += flash_eraseall.c
+srcs-@(FLASH_LOCK) += flash_lock_unlock.c
+srcs-@(FLASHCP) += flashcp.c
+srcs-@(GETFATTR) += getfattr.c
+srcs-@(HDPARM) += hdparm.c
+srcs-@(HEXEDIT) += hexedit.c
+srcs-@(I2CGET) += i2c_tools.c
+srcs-@(INOTIFYD) += inotifyd.c
+srcs-@(LESS) += less.c
+srcs-@(LSSCSI) += lsscsi.c
+srcs-@(MAKEDEVS) += makedevs.c
+srcs-@(MAN) += man.c
+srcs-@(MICROCOM) += microcom.c
+srcs-@(MT) += mt.c
+srcs-@(NANDWRITE) += nandwrite.c
+srcs-@(PARTPROBE) += partprobe.c
+srcs-@(RAIDAUTORUN) += raidautorun.c
+srcs-@(READAHEAD) += readahead.c
+srcs-@(RFKILL) += rfkill.c
+srcs-@(RUNLEVEL) += runlevel.c
+srcs-@(RX) += rx.c
+srcs-@(SEEDRNG) += seedrng.c
+srcs-@(SETFATTR) += setfattr.c
+srcs-@(SETSERIAL) += setserial.c
+srcs-@(STRINGS) += strings.c
+srcs-@(TIME) += time.c
+srcs-@(TREE) += tree.c
+srcs-@(TS) += ts.c
+srcs-@(TTYSIZE) += ttysize.c
+srcs-@(UBIATTACH) += ubi_tools.c
+srcs-@(UBIRENAME) += ubirename.c
+srcs-@(VOLNAME) += volname.c
+srcs-@(WATCHDOG) += watchdog.c
+
+: foreach $(srcs-y) |> !cc |> {objs}
+: {objs} |> !ar |> libmiscutils.a

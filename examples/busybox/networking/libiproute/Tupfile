@@ -1,0 +1,24 @@
+include_rules
+
+# IP routing library (shared infrastructure for ip, tc, slattach)
+# These files are used by multiple CONFIG options, so build unconditionally
+srcs-y += ip_parse_common_args.c
+srcs-y += ipaddress.c
+srcs-y += iplink.c
+srcs-y += ipneigh.c
+srcs-y += iproute.c
+srcs-y += iprule.c
+srcs-y += iptunnel.c
+srcs-y += libnetlink.c
+srcs-y += ll_addr.c
+srcs-y += ll_map.c
+srcs-y += ll_proto.c
+srcs-y += ll_types.c
+srcs-y += rt_names.c
+srcs-y += rtm_map.c
+srcs-y += utils.c
+
+: foreach $(srcs-y) |> !cc |>
+
+# Create archive from all objects in this module
+: {objs} |> !ar |> libnetworking_libiproute.a
