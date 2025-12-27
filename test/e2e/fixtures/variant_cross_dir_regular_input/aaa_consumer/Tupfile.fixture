@@ -1,0 +1,5 @@
+include_rules
+
+# Reference generated file from zzz_producer using source-relative path
+# Ghost should be created at build/zzz_producer/helper.c and upgraded when zzz_producer is parsed
+: ../zzz_producer/helper.c |> gcc -c %f -o %o |> helper.o

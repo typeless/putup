@@ -1,0 +1,6 @@
+include_rules
+
+# Consumer references the generated header using source-relative path
+# Order-only dep uses source-relative path that should resolve to
+# the Generated node at build/include/header.h
+: main.c | ../include/header.h |> gcc -I$(B)/include -c %f -o %o |> main.o

@@ -1,0 +1,4 @@
+include_rules
+
+# Generate header in include/ subdirectory (output becomes build/include/header.h)
+: |> echo '#define GENERATED_VALUE 42' > %o |> include/header.h

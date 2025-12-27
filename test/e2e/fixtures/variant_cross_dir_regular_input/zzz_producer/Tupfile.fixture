@@ -1,0 +1,4 @@
+include_rules
+
+# Generate a source file that will be compiled by aaa_consumer
+: |> echo 'int get_value(void) { return 42; }' > %o |> helper.c

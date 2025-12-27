@@ -1,0 +1,3 @@
+# B = path to build root from any Tupfile (like busybox's $(B))
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
