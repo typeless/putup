@@ -283,6 +283,7 @@ tup
 - ✅ `import` directive
 - ✅ `export` directive
 - ✅ Bang macros
+- ✅ Ghost nodes for cross-directory generated file dependencies
 
 ## Implementation Phases
 
@@ -366,3 +367,24 @@ Pup uses a layered path architecture with clear separation between storage and p
 - `graph.get_full_path(id)` - Reconstruct path from (parent_dir, name) chain
 - `graph.find_by_dir_name(parent_id, name)` - O(1) lookup by parent + basename
 - `expand_command()` - Translates index paths to Tupfile-relative paths
+
+### Ghost Node Semantics
+
+Ghost nodes handle cross-directory dependencies in variant builds where parse order matters.
+
+**Problem**: Directories are parsed alphabetically. If `aaa_consumer/Tupfile` references `../zzz_producer/helper.c` (a generated file), the producer hasn't been parsed yet.
+
+**Solution**:
+1. `resolve_input_node()` creates a Ghost node for non-existent files
+2. Dependency edges are established from command → ghost
+3. When `zzz_producer` is parsed, Ghost upgrades to Generated
+4. **Critical**: Edges are preserved during upgrade (not deleted)
+
+**Key implementation files**:
+- `src/graph/builder.cpp`: `resolve_input_node()` creates ghosts, `get_or_create_file_node()` handles upgrade
+- `src/exec/scheduler.cpp`: Validates no unresolved ghosts before build
+- `src/cli/cmd_build.cpp`: Skips ghosts during index serialization
+
+**Difference from Tup**: Tup deletes edges during Ghost→Generated upgrade and re-parses dependent Tupfiles. Pup preserves edges because it parses all Tupfiles fresh each build—the edges are already correct.
+
+**Testing**: See `test/e2e/fixtures/variant_cross_dir_*` fixtures and `[variant]` test tag.

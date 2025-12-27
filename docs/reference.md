@@ -1308,9 +1308,12 @@ Binary file at `.pup/index` storing the complete build state.
 |------|-------------|
 | File | Source file in the project |
 | Generated | Output file produced by a command |
+| Ghost | Placeholder for file referenced before it exists (cross-directory dependencies) |
 | Directory | Directory node (parent for path resolution) |
 | Command | Build command to execute |
 | Variable | Config variable from tup.config |
+
+**Note on Ghost nodes:** Ghosts are created during parsing when a rule references a file that doesn't exist yet (common in variant builds where directories are parsed alphabetically). When the producing rule is later parsed, the Ghost is upgraded to Generated. Ghosts are never written to the index—they're transient during parsing only.
 
 **Key design:**
 
