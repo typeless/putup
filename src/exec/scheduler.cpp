@@ -679,6 +679,18 @@ auto Scheduler::build_job_list(
         );
     }
 
+    // Validate no unrealized ghost nodes remain (missing inputs)
+    for (auto id : topo_result.order) {
+        auto const* node = graph.get_node(id);
+        if (node && node->type == NodeType::Ghost && !node->outputs.empty()) {
+            auto path = graph.get_full_path(id);
+            return make_error<std::vector<BuildJob>>(
+                ErrorCode::ParseError,
+                "Missing input file (unresolved ghost): " + path
+            );
+        }
+    }
+
     auto jobs = std::vector<BuildJob> {};
 
     for (auto id : topo_result.order) {

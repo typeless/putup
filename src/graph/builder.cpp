@@ -1087,7 +1087,7 @@ auto GraphBuilder::expand_rule(
 
         // Create edges from inputs to generated command
         for (auto const& input : gen_rule.inputs) {
-            auto input_id = Result<NodeId> { get_or_create_file_node(ctx, input, NodeType::File) };
+            auto input_id = Result<NodeId> { resolve_input_node(ctx, input) };
             if (input_id) {
                 (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
             }
@@ -1119,7 +1119,7 @@ auto GraphBuilder::expand_rule(
                 }
             } else {
                 // Regular file path - create edge directly
-                auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
+                auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
                 if (oi_id) {
                     (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
                 }
@@ -1139,7 +1139,7 @@ auto GraphBuilder::expand_rule(
 
     // Create edges from inputs to command
     for (auto const& input : inputs) {
-        auto input_id = Result<NodeId> { get_or_create_file_node(ctx, input, NodeType::File) };
+        auto input_id = Result<NodeId> { resolve_input_node(ctx, input) };
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }
@@ -1243,7 +1243,7 @@ auto GraphBuilder::expand_rule(
         if (oi.find('<') != std::string::npos && oi.back() == '>') {
             continue;
         }
-        auto oi_id = Result<NodeId> { get_or_create_file_node(ctx, oi, NodeType::File) };
+        auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
         if (oi_id) {
             (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
         }
@@ -1722,6 +1722,15 @@ auto GraphBuilder::get_or_create_file_node(
 
     // Check if node already exists
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename)) {
+        if (type == NodeType::Generated) {
+            auto* node = ctx.graph->get_node(*existing);
+            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                // Ghost/File→Generated: upgrade type, preserve edges
+                // Unlike Tup (which re-parses after upgrade), pup parses once
+                // so existing edges from commands to this node are valid
+                node->type = NodeType::Generated;
+            }
+        }
         return *existing;
     }
 
@@ -1733,6 +1742,58 @@ auto GraphBuilder::get_or_create_file_node(
     };
 
     return ctx.graph->add_node(std::move(node));
+}
+
+auto GraphBuilder::resolve_input_node(
+    BuilderContext& ctx,
+    std::string const& path
+) -> Result<NodeId>
+{
+    // In variant builds, check if input path references a generated output
+    // This handles paths like "include/header.h" that should resolve to
+    // "build/include/header.h" when that's where the generated output lives
+    if (ctx.options.source_root != ctx.options.output_root) {
+        auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root).string();
+
+        // If path already starts with output prefix, it's already mapped
+        if (path.starts_with(output_prefix + "/") || path == output_prefix) {
+            if (auto existing = ctx.graph->find_by_path(path)) {
+                auto* node = ctx.graph->get_node(*existing);
+                if (node && node->type == NodeType::Generated) {
+                    return *existing;
+                }
+            }
+            return get_or_create_file_node(ctx, path, NodeType::File);
+        }
+
+        // Map source-relative path to output path
+        auto mapped = map_to_output(path, fs::path {}, ctx.options.source_root, ctx.options.output_root);
+
+        // Check if a Generated node exists at the mapped path
+        if (auto existing = ctx.graph->find_by_path(mapped)) {
+            return *existing;
+        }
+
+        // Check if the source file actually exists on disk
+        auto source_path = ctx.options.source_root / path;
+        if (fs::exists(source_path)) {
+            return get_or_create_file_node(ctx, path, NodeType::File);
+        }
+
+        // File doesn't exist - create Ghost at mapped output path
+        // Ghost nodes are placeholders that will be upgraded to Generated
+        // when the output rule is processed
+        return get_or_create_file_node(ctx, mapped, NodeType::Ghost);
+    }
+
+    // In-tree build: check if source file exists
+    auto source_path = ctx.options.source_root / path;
+    if (fs::exists(source_path)) {
+        return get_or_create_file_node(ctx, path, NodeType::File);
+    }
+
+    // File doesn't exist - create Ghost node
+    return get_or_create_file_node(ctx, path, NodeType::Ghost);
 }
 
 auto GraphBuilder::get_or_create_group_node(

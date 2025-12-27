@@ -303,6 +303,12 @@ auto build_index(
             max_file_id = id;
         }
 
+        // Skip ghost nodes - they're transient placeholders that should have been
+        // upgraded to Generated or caught as errors during build
+        if (node->type == pup::NodeType::Ghost) {
+            continue;
+        }
+
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
             auto node_path = graph.get_full_path(id);
             if (node_path.empty()) {

@@ -203,6 +203,16 @@ private:
         NodeType type = NodeType::File
     ) -> Result<NodeId>;
 
+    /// Resolve input path to node, checking variant-mapped path first
+    /// In variant builds, if a Generated node exists at the mapped output path,
+    /// use that instead of creating a new File node at the source path.
+    /// This prevents duplicate nodes when order-only deps reference source paths
+    /// that have corresponding outputs in the variant directory.
+    auto resolve_input_node(
+        BuilderContext& ctx,
+        std::string const& path
+    ) -> Result<NodeId>;
+
     auto get_or_create_group_node(
         BuilderContext& ctx,
         std::string const& directory,
