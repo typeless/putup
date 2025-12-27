@@ -25,8 +25,6 @@ auto configure_single_variant(
     std::string_view variant_name
 ) -> int
 {
-    (void)variant_name; // Used for multi-variant output prefix if needed
-
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
@@ -37,7 +35,7 @@ auto configure_single_variant(
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fmt::print(stderr, "Error: {}\n", result.error().message);
+        fmt::print(stderr, "[{}] Error: {}\n", variant_name, result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -50,13 +48,13 @@ auto configure_single_variant(
             std::filesystem::create_directories(config_path.parent_path());
             auto ofs = std::ofstream { config_path };
             ofs.close();
-            fmt::print("Created {}\n", config_path.string());
+            fmt::print("[{}] Created {}\n", variant_name, config_path.string());
         }
     };
 
     auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
     if (configs.empty()) {
-        fmt::print("No config-generating rules found.\n");
+        fmt::print("[{}] No config-generating rules found.\n", variant_name);
         ensure_config();
         return EXIT_SUCCESS;
     }
@@ -71,12 +69,12 @@ auto configure_single_variant(
         }
         config_commands.insert(cfg.cmd_id);
         if (opts.verbose) {
-            fmt::print("Config rule: {} -> {}\n", node ? node->display : "<unknown>", cfg.output_path);
+            fmt::print("[{}] Config rule: {} -> {}\n", variant_name, node ? node->display : "<unknown>", cfg.output_path);
         }
     }
 
     if (config_commands.empty()) {
-        fmt::print("No config-generating rules in scope.\n");
+        fmt::print("[{}] No config-generating rules in scope.\n", variant_name);
         ensure_config();
         return EXIT_SUCCESS;
     }
@@ -84,9 +82,9 @@ auto configure_single_variant(
     auto all_commands = collect_command_dependencies(ctx.graph(), config_commands);
     auto dep_count = all_commands.size() - config_commands.size();
     if (dep_count > 0 && opts.verbose) {
-        fmt::print("Config rules depend on {} additional command(s)\n", dep_count);
+        fmt::print("[{}] Config rules depend on {} additional command(s)\n", variant_name, dep_count);
     }
-    fmt::print("Found {} config-generating rule(s)\n", config_commands.size());
+    fmt::print("[{}] Found {} config-generating rule(s)\n", variant_name, config_commands.size());
 
     auto sched_opts = pup::exec::SchedulerOptions {
         .jobs = opts.jobs,
@@ -101,22 +99,22 @@ auto configure_single_variant(
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
-            fmt::print("{}\n", job.display);
+            fmt::print("[{}] {}\n", variant_name, job.display);
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
-            fmt::print(stderr, "FAILED: {}\n", job.display);
+            fmt::print(stderr, "[{}] FAILED: {}\n", variant_name, job.display);
             if (!job_result.output.empty()) {
-                fmt::print(stderr, "{}\n", job_result.output);
+                fmt::print(stderr, "[{}] {}\n", variant_name, job_result.output);
             }
         }
     });
 
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         if (!opts.verbose) {
-            fmt::print("\r[{}/{}] ", done, total);
+            fmt::print("[{}] [{}/{}] ", variant_name, done, total);
             std::fflush(stdout);
         }
     });
@@ -128,17 +126,17 @@ auto configure_single_variant(
     }
 
     if (!build_result) {
-        fmt::print(stderr, "Configure failed: {}\n", build_result.error().message);
+        fmt::print(stderr, "[{}] Configure failed: {}\n", variant_name, build_result.error().message);
         return EXIT_FAILURE;
     }
 
     auto const& stats = *build_result;
     if (stats.failed_jobs > 0) {
-        fmt::print("Configure completed: {} commands ({} failed)\n", stats.completed_jobs, stats.failed_jobs);
+        fmt::print("[{}] Configure completed: {} commands ({} failed)\n", variant_name, stats.completed_jobs, stats.failed_jobs);
         return EXIT_FAILURE;
     }
 
-    fmt::print("Configure completed: {} commands\n", stats.completed_jobs);
+    fmt::print("[{}] Configure completed: {} commands\n", variant_name, stats.completed_jobs);
     ensure_config();
     return EXIT_SUCCESS;
 }
