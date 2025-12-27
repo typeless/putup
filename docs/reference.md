@@ -1771,9 +1771,9 @@ project/
 
 **Creating variants:**
 ```bash
-pup variant configs/debug.config      # Creates build-debug/
-pup variant configs/release.config    # Creates build-release/
-pup variant configs/win32.config      # Creates build-win32/
+pup configure -B build-debug      # Creates build-debug/tup.config
+pup configure -B build-release    # Creates build-release/tup.config
+pup configure -B build-win32      # Creates build-win32/tup.config
 ```
 
 **Config file template:**

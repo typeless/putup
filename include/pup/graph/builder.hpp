@@ -68,7 +68,7 @@ struct BuilderContext {
     std::set<std::string> exported_vars = {}; ///< Environment variables to export to commands
 
     std::filesystem::path current_dir = {};
-    std::string current_file = {};
+    std::filesystem::path current_file = {};
     std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     /// Config variables used during current command expansion (cleared per command)

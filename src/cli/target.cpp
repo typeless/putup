@@ -49,10 +49,10 @@ auto fnmatch_simple(std::string const& pattern, std::string const& name) -> bool
 auto parse_target(
     fs::path const& project_root,
     std::string const& target_path
-) -> expected<Target, std::string>
+) -> Result<Target>
 {
     if (target_path.empty()) {
-        return unexpected<std::string> { "empty target path" };
+        return unexpected<Error> { Error { ErrorCode::InvalidArgument, "empty target path" } };
     }
 
     auto full_path = project_root / target_path;
@@ -80,7 +80,7 @@ auto parse_target(
     if (fs::exists(full_path)) {
         if (fs::is_regular_file(full_path)) {
             if (is_source_file(full_path)) {
-                return unexpected<std::string> { "source file, not build output: " + target_path };
+                return unexpected<Error> { Error { ErrorCode::InvalidArgument, "source file, not build output: " + target_path } };
             }
 
             target.is_output = true;
@@ -89,19 +89,19 @@ auto parse_target(
         // Path doesn't exist but is under a variant - check if parent exists
         auto parent = full_path.parent_path();
         if (!parent.empty() && !fs::exists(parent)) {
-            return unexpected<std::string> { "path not found: " + target_path };
+            return unexpected<Error> { Error { ErrorCode::NotFound, "path not found: " + target_path } };
         }
 
         // Reject source file extensions even for non-existent files
         if (is_source_file(full_path)) {
-            return unexpected<std::string> { "source file, not build output: " + target_path };
+            return unexpected<Error> { Error { ErrorCode::InvalidArgument, "source file, not build output: " + target_path } };
         }
 
         // Parent exists - assume output file (validate in cmd_build.cpp after graph is built)
         target.is_output = true;
     } else {
         // Non-variant path doesn't exist - error
-        return unexpected<std::string> { "path not found: " + target_path };
+        return unexpected<Error> { Error { ErrorCode::NotFound, "path not found: " + target_path } };
     }
 
     return target;
@@ -187,7 +187,7 @@ auto is_glob_pattern(std::string const& s) -> bool
 auto validate_target_consistency(
     fs::path const& project_root,
     std::vector<std::string> const& targets
-) -> expected<std::vector<Target>, std::string>
+) -> Result<std::vector<Target>>
 {
     auto result = std::vector<Target> {};
 
@@ -199,12 +199,12 @@ auto validate_target_consistency(
         if (is_glob_pattern(target_str)) {
             parsed_targets = expand_glob_target(project_root, target_str);
             if (parsed_targets.empty()) {
-                return unexpected<std::string> { "no variants match pattern: " + target_str };
+                return unexpected<Error> { Error { ErrorCode::NotFound, "no variants match pattern: " + target_str } };
             }
         } else {
             auto parsed = parse_target(project_root, target_str);
             if (!parsed.has_value()) {
-                return unexpected<std::string> { parsed.error() };
+                return unexpected<Error> { parsed.error() };
             }
             parsed_targets.push_back(*parsed);
         }
@@ -215,9 +215,7 @@ auto validate_target_consistency(
             if (!has_variant.has_value()) {
                 has_variant = this_has_variant;
             } else if (*has_variant != this_has_variant) {
-                return unexpected<std::string> {
-                    "cannot mix variant-specific and all-variant targets"
-                };
+                return unexpected<Error> { Error { ErrorCode::InvalidArgument, "cannot mix variant-specific and all-variant targets" } };
             }
 
             result.push_back(target);

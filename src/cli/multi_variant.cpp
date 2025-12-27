@@ -4,6 +4,7 @@
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/target.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/result.hpp"
 
 #include <cstdlib>
 #include <future>
@@ -26,7 +27,7 @@ struct ParsedTargets {
 auto parse_targets_for_variants(
     std::filesystem::path const& source_root,
     std::vector<std::string> const& targets
-) -> expected<ParsedTargets, std::string>
+) -> pup::Result<ParsedTargets>
 {
     auto result = ParsedTargets {};
 
@@ -36,7 +37,7 @@ auto parse_targets_for_variants(
 
     auto parsed = validate_target_consistency(source_root, targets);
     if (!parsed.has_value()) {
-        return unexpected<std::string> { parsed.error() };
+        return pup::unexpected<pup::Error> { parsed.error() };
     }
 
     auto variant_set = std::set<std::string> {};
@@ -98,7 +99,7 @@ auto for_each_variant(
     // Parse targets to extract variants and scopes
     auto parsed_targets = parse_targets_for_variants(source_root, opts.targets);
     if (!parsed_targets.has_value()) {
-        fmt::print(stderr, "Error: {}\n", parsed_targets.error());
+        fmt::print(stderr, "Error: {}\n", parsed_targets.error().message);
         return EXIT_FAILURE;
     }
 

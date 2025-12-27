@@ -592,9 +592,7 @@ auto build_single_variant(
 {
     // Helper to format output with variant prefix
     auto vprint = [&](std::string_view fmt_str, auto&&... args) {
-        if (opts.verbose) {
-            fmt::print("[{}] ", variant_name);
-        }
+        fmt::print("[{}] ", variant_name);
         fmt::print(fmt::runtime(fmt_str), std::forward<decltype(args)>(args)...);
     };
 
@@ -614,7 +612,7 @@ auto build_single_variant(
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fmt::print(stderr, "Error: {}\n", result.error().message);
+        fmt::print(stderr, "[{}] Error: {}\n", variant_name, result.error().message);
         return EXIT_FAILURE;
     }
 
@@ -623,14 +621,14 @@ auto build_single_variant(
     // Build requires tup.config (configure creates it)
     auto config_path = ctx.layout().output_root / "tup.config";
     if (!std::filesystem::exists(config_path)) {
-        fmt::print(stderr, "Error: No tup.config found. Run 'pup configure' first.\n");
+        fmt::print(stderr, "[{}] Error: No tup.config found. Run 'pup configure' first.\n", variant_name);
         return EXIT_FAILURE;
     }
 
     auto num_commands = std::size_t { ctx.graph().nodes_of_type(pup::NodeType::Command).size() };
 
     if (num_commands == 0) {
-        fmt::print("Nothing to do.\n");
+        vprint("Nothing to do.\n");
         return EXIT_SUCCESS;
     }
 
@@ -638,16 +636,16 @@ auto build_single_variant(
     for (auto const& target : opts.output_targets) {
         auto node_id = ctx.graph().find_by_path(target);
         if (!node_id) {
-            fmt::print(stderr, "Error: {} is not in build graph\n", target);
+            fmt::print(stderr, "[{}] Error: {} is not in build graph\n", variant_name, target);
             return EXIT_FAILURE;
         }
         auto const* node = ctx.graph().get_node(*node_id);
         if (!node || node->type != pup::NodeType::Generated) {
-            fmt::print(stderr, "Error: {} is not a build output\n", target);
+            fmt::print(stderr, "[{}] Error: {} is not a build output\n", variant_name, target);
             return EXIT_FAILURE;
         }
         if (opts.verbose) {
-            fmt::print("Output target: {}\n", target);
+            vprint("Output target: {}\n", target);
         }
     }
 
@@ -660,7 +658,7 @@ auto build_single_variant(
         auto const& idx = *old_idx_ptr;
 
         if (opts.verbose && idx.has_merkle_hashes()) {
-            fmt::print("Index has Merkle hashes (v4 format)\n");
+            vprint("Index has Merkle hashes (v4 format)\n");
         }
 
         auto scopes = compute_build_scopes(opts, ctx.layout());
@@ -670,9 +668,9 @@ auto build_single_variant(
         }
         if (opts.verbose) {
             if (scopes.empty()) {
-                fmt::print("Full project build\n");
+                vprint("Full project build\n");
             } else {
-                fmt::print("Scoped build:");
+                fmt::print("[{}] Scoped build:", variant_name);
                 for (auto const& s : scopes) {
                     fmt::print(" {}", s);
                 }
@@ -708,7 +706,7 @@ auto build_single_variant(
                     }
                 }
                 if (opts.verbose) {
-                    fmt::print("  New command: {}\n", node->display);
+                    vprint("  New command: {}\n", node->display);
                 }
             }
         }
@@ -729,12 +727,12 @@ auto build_single_variant(
                 auto abs_path = ctx.layout().source_root / file->path;
                 if (std::filesystem::exists(abs_path)) {
                     if (opts.dry_run) {
-                        fmt::print("Would remove stale: {}\n", file->path);
+                        vprint("Would remove stale: {}\n", file->path);
                     } else {
                         auto ec = std::error_code {};
                         if (std::filesystem::remove(abs_path, ec)) {
                             if (opts.verbose) {
-                                fmt::print("  Removed stale: {}\n", file->path);
+                                vprint("  Removed stale: {}\n", file->path);
                             }
                         }
                     }
@@ -742,12 +740,12 @@ auto build_single_variant(
             }
 
             if (opts.verbose) {
-                fmt::print("  Removed command: {}\n", cmd.display);
+                vprint("  Removed command: {}\n", cmd.display);
             }
         }
 
         if (changed_files.empty()) {
-            fmt::print("Nothing to do (up to date).\n");
+            vprint("Nothing to do (up to date).\n");
             if (opts.stat) {
                 print_stats(idx, num_commands, 0);
             }
@@ -756,7 +754,7 @@ auto build_single_variant(
 
         use_incremental = true;
         if (opts.verbose) {
-            fmt::print("Incremental build: {} changed files\n", changed_files.size());
+            vprint("Incremental build: {} changed files\n", changed_files.size());
         }
     }
 
@@ -775,15 +773,15 @@ auto build_single_variant(
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
-            fmt::print("{}\n", job.display);
+            fmt::print("[{}] {}\n", variant_name, job.display);
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
-            fmt::print(stderr, "FAILED: {}\n", job.display);
+            fmt::print(stderr, "[{}] FAILED: {}\n", variant_name, job.display);
             if (!job_result.output.empty()) {
-                fmt::print(stderr, "{}\n", job_result.output);
+                fmt::print(stderr, "[{}] {}\n", variant_name, job_result.output);
             }
         } else if (!job_result.discovered_deps.empty()) {
             auto lock = std::lock_guard { deps_mutex };
@@ -827,7 +825,7 @@ auto build_single_variant(
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         completed = done;
         if (!opts.verbose) {
-            fmt::print("\r[{}/{}] ", done, total);
+            fmt::print("\r[{}] [{}/{}] ", variant_name, done, total);
             std::fflush(stdout);
         }
     });
@@ -851,15 +849,15 @@ auto build_single_variant(
     }
 
     if (!build_result) {
-        fmt::print(stderr, "Build failed: {}\n", build_result.error().message);
+        fmt::print(stderr, "[{}] Build failed: {}\n", variant_name, build_result.error().message);
         return EXIT_FAILURE;
     }
 
     auto const& stats = *build_result;
     if (stats.failed_jobs > 0) {
-        fmt::print("Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
+        vprint("Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
     } else {
-        fmt::print("Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
+        vprint("Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
     }
 
     auto final_index = std::optional<pup::index::Index> {};
@@ -873,9 +871,9 @@ auto build_single_variant(
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
-            fmt::print(stderr, "Warning: Failed to save index: {}\n", write_result.error().message);
+            fmt::print(stderr, "[{}] Warning: Failed to save index: {}\n", variant_name, write_result.error().message);
         } else if (opts.verbose) {
-            fmt::print("Saved index: {} files, {} commands, {} edges\n", index.file_count(), index.command_count(), index.edge_count());
+            vprint("Saved index: {} files, {} commands, {} edges\n", index.file_count(), index.command_count(), index.edge_count());
         }
         final_index = std::move(index);
     }

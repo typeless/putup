@@ -208,7 +208,7 @@ SCENARIO("Target parsing - error cases", "[target]")
             THEN("returns error: source file not build output")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().find("source") != std::string::npos);
+                REQUIRE(result.error().message.find("source") != std::string::npos);
             }
         }
     }
@@ -225,7 +225,7 @@ SCENARIO("Target parsing - error cases", "[target]")
             THEN("returns error: path not found")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().find("not found") != std::string::npos);
+                REQUIRE(result.error().message.find("not found") != std::string::npos);
             }
         }
     }
@@ -252,7 +252,7 @@ SCENARIO("Target parsing - consistency rule", "[target]")
             THEN("returns error: cannot mix variant-specific and all-variant targets")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().find("mix") != std::string::npos);
+                REQUIRE(result.error().message.find("mix") != std::string::npos);
             }
         }
 
@@ -264,7 +264,7 @@ SCENARIO("Target parsing - consistency rule", "[target]")
             THEN("returns error: cannot mix variant-specific and all-variant targets")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().find("mix") != std::string::npos);
+                REQUIRE(result.error().message.find("mix") != std::string::npos);
             }
         }
 

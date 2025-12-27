@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/expected.hpp"
+#include "pup/core/result.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -28,12 +28,12 @@ struct Target {
 ///
 /// @param project_root The project root directory
 /// @param target_path The target path to parse (relative to project_root)
-/// @return Parsed Target or error message
+/// @return Parsed Target or error
 [[nodiscard]]
 auto parse_target(
     std::filesystem::path const& project_root,
     std::string const& target_path
-) -> expected<Target, std::string>;
+) -> Result<Target>;
 
 /// Expand a glob pattern into multiple targets
 ///
@@ -57,11 +57,11 @@ auto expand_glob_target(
 ///
 /// @param project_root The project root directory
 /// @param targets Target paths to validate
-/// @return Vector of parsed targets, or error message
+/// @return Vector of parsed targets, or error
 [[nodiscard]]
 auto validate_target_consistency(
     std::filesystem::path const& project_root,
     std::vector<std::string> const& targets
-) -> expected<std::vector<Target>, std::string>;
+) -> Result<std::vector<Target>>;
 
 } // namespace pup
