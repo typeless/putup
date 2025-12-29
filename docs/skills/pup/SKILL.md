@@ -88,15 +88,24 @@ project/
 ### Variables
 
 ```tup
-CC = gcc
+CC = gcc                  # Set
 CFLAGS = -Wall -O2
 CFLAGS += -g              # Append
+CC ?= clang               # Soft set: only if undefined (first wins)
+FALLBACK ??= -O0          # Weak set: deferred default (last wins)
 
 $(CC)                     # Regular variable
 @(CONFIG_VAR)             # From tup.config (reads CONFIG_CONFIG_VAR)
 $(TUP_CWD)                # Built-in: current directory
 $(TUP_PLATFORM)           # Built-in: linux, macosx, win32
 ```
+
+| Operator | Name | Behavior |
+|----------|------|----------|
+| `=` | Set | Always sets |
+| `+=` | Append | Appends to existing value |
+| `?=` | Soft set | Sets only if undefined (first wins) |
+| `??=` | Weak set | Deferred default (last wins, applied before rules) |
 
 ### Bang Macros
 
