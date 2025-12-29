@@ -120,11 +120,15 @@ struct BangMacro : AstNode {
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
-/// Variable assignment: VAR = value, VAR += value, VAR := value
+/// Variable assignment: VAR = value, VAR += value, VAR := value, VAR ?= value, VAR ??= value
 struct Assignment : AstNode {
-    enum class Op { Set,
-                    Append,
-                    Define };
+    enum class Op {
+        Set,     // =
+        Append,  // +=
+        Define,  // :=
+        SoftSet, // ?=  - set if unset (immediate, first wins)
+        WeakSet  // ??= - set if unset (deferred, last wins)
+    };
 
     Expression name; ///< Variable name (may contain variable refs like foo-$(BAR))
     Op op = Op::Set;

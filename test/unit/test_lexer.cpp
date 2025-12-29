@@ -51,6 +51,14 @@ TEST_CASE("Lexer basic tokens", "[lexer]")
         REQUIRE(lexer.next().is(TokenType::PlusEquals));
     }
 
+    SECTION("conditional assignment operators")
+    {
+        // Use ?\?= to avoid trigraph interpretation (??= -> #)
+        auto lexer = Lexer{"?= ?\?="};
+        REQUIRE(lexer.next().is(TokenType::QuestionEquals));
+        REQUIRE(lexer.next().is(TokenType::DoubleQuestionEquals));
+    }
+
     SECTION("comments")
     {
         auto lexer = Lexer{"# this is a comment\nfoo"};

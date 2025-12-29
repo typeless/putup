@@ -449,6 +449,18 @@ auto GraphBuilder::add_tupfile(
         }
     }
 
+    // Apply pending weak assignments (??=) - last wins
+    // Process in reverse order so earlier assignments are checked against later ones
+    if (ctx.vars && !ctx.pending_weak_assignments.empty()) {
+        for (auto it = ctx.pending_weak_assignments.rbegin();
+             it != ctx.pending_weak_assignments.rend();
+             ++it) {
+            if (!ctx.vars->contains(it->first)) {
+                ctx.vars->set(it->first, it->second);
+            }
+        }
+    }
+
     // Copy errors and warnings
     for (auto& err : ctx.errors) {
         impl_->errors.push_back(std::move(err));
@@ -502,6 +514,19 @@ auto GraphBuilder::process_rule(
     parser::Rule const& rule
 ) -> Result<void>
 {
+    // Apply any pending weak assignments (??=) before expanding commands
+    // This ensures ??= assignments that precede rules take effect
+    if (ctx.vars && !ctx.pending_weak_assignments.empty()) {
+        for (auto it = ctx.pending_weak_assignments.rbegin();
+             it != ctx.pending_weak_assignments.rend();
+             ++it) {
+            if (!ctx.vars->contains(it->first)) {
+                ctx.vars->set(it->first, it->second);
+            }
+        }
+        ctx.pending_weak_assignments.clear();
+    }
+
     // Expand input patterns
     auto inputs = Result<std::vector<std::string>> { expand_inputs(ctx, rule.inputs) };
     if (!inputs) {
@@ -588,6 +613,16 @@ auto GraphBuilder::process_assignment(
     case parser::Assignment::Op::Define:
         // := means no further expansion
         db->set(*name, *value);
+        break;
+    case parser::Assignment::Op::SoftSet:
+        // ?= - set only if variable is not already defined (first wins)
+        if (!db->contains(*name)) {
+            db->set(*name, *value);
+        }
+        break;
+    case parser::Assignment::Op::WeakSet:
+        // ??= - deferred assignment, applied at end of Tupfile (last wins)
+        ctx.pending_weak_assignments.emplace_back(*name, *value);
         break;
     }
 

@@ -45,6 +45,8 @@ Pup uses Tup's Tupfile syntax. This document covers supported features and diffe
 | `VAR = value` | Assignment | ✅ |
 | `VAR += value` | Append | ✅ |
 | `VAR := value` | Immediate (no expansion) | ✅ |
+| `VAR ?= value` | Soft set (if undefined, first wins) | ✅ (pup extension) |
+| `VAR ??= value` | Weak set (deferred default, last wins) | ✅ (pup extension) |
 | `$(VAR)` | Variable reference | ✅ |
 | `@(VAR)` | Config variable from tup.config | ✅ |
 | `&(VAR)` | Node variable | ✅ |
@@ -251,6 +253,7 @@ Features in pup that extend beyond tup:
 
 | Feature | Description |
 |---------|-------------|
+| **Conditional assignments** | `?=` (soft set) and `??=` (weak set) operators |
 | **Path-based variants** | `pup build-debug` instead of `pup -B build-debug` |
 | **Scoped builds** | `pup build-debug/src/lib` builds only that subdirectory |
 | **Single output targets** | `pup build-debug/src/lib/foo.o` rebuilds one specific output |

@@ -24,28 +24,30 @@ enum class TokenType : std::uint8_t {
     Whitespace,
 
     // Delimiters
-    Colon,        // :
-    Pipe,         // |
-    PipeArrow,    // |>
-    OpenParen,    // (
-    CloseParen,   // )
-    OpenBrace,    // {
-    CloseBrace,   // }
-    OpenBracket,  // [
-    CloseBracket, // ]
-    OpenAngle,    // <
-    CloseAngle,   // >
-    Comma,        // ,
-    Equals,       // =
-    ColonEquals,  // :=
-    PlusEquals,   // +=
-    Bang,         // !
-    At,           // @
-    Ampersand,    // &
-    Dollar,       // $
-    Percent,      // %
-    Caret,        // ^
-    Hash,         // #
+    Colon,                // :
+    Pipe,                 // |
+    PipeArrow,            // |>
+    OpenParen,            // (
+    CloseParen,           // )
+    OpenBrace,            // {
+    CloseBrace,           // }
+    OpenBracket,          // [
+    CloseBracket,         // ]
+    OpenAngle,            // <
+    CloseAngle,           // >
+    Comma,                // ,
+    Equals,               // =
+    ColonEquals,          // :=
+    PlusEquals,           // +=
+    QuestionEquals,       // ?=
+    DoubleQuestionEquals, // ??=
+    Bang,                 // !
+    At,                   // @
+    Ampersand,            // &
+    Dollar,               // $
+    Percent,              // %
+    Caret,                // ^
+    Hash,                 // #
 
     // Literals
     Identifier, // variable names, paths, filenames
@@ -114,6 +116,10 @@ constexpr auto token_type_name(TokenType type) -> std::string_view
         return "ColonEquals";
     case TokenType::PlusEquals:
         return "PlusEquals";
+    case TokenType::QuestionEquals:
+        return "QuestionEquals";
+    case TokenType::DoubleQuestionEquals:
+        return "DoubleQuestionEquals";
     case TokenType::Bang:
         return "Bang";
     case TokenType::At:
@@ -197,7 +203,9 @@ struct Token {
     [[nodiscard]]
     auto is_assignment_op() const -> bool
     {
-        return is_one_of(TokenType::Equals, TokenType::ColonEquals, TokenType::PlusEquals);
+        return is_one_of(
+            TokenType::Equals, TokenType::ColonEquals, TokenType::PlusEquals, TokenType::QuestionEquals, TokenType::DoubleQuestionEquals
+        );
     }
 
     [[nodiscard]]

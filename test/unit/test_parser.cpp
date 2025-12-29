@@ -65,6 +65,35 @@ TEST_CASE("Parser simple assignment", "[parser]")
         auto const* assign = result->statements[0]->as<Assignment>();
         REQUIRE(assign->op == Assignment::Op::Define);
     }
+
+    SECTION("soft set (?=)")
+    {
+        auto parser = Parser{"FOO ?= default", "test.tup"};
+        auto result = parser.parse();
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->statements.size() == 1);
+
+        auto const* assign = result->statements[0]->as<Assignment>();
+        REQUIRE(assign->name.as_literal() == "FOO");
+        REQUIRE(assign->op == Assignment::Op::SoftSet);
+        REQUIRE(assign->value.as_literal() == "default");
+    }
+
+    SECTION("weak set (?\?=)")
+    {
+        // Use ?\?= to avoid trigraph interpretation (??= -> #)
+        auto parser = Parser{"BAR ?\?= fallback", "test.tup"};
+        auto result = parser.parse();
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->statements.size() == 1);
+
+        auto const* assign = result->statements[0]->as<Assignment>();
+        REQUIRE(assign->name.as_literal() == "BAR");
+        REQUIRE(assign->op == Assignment::Op::WeakSet);
+        REQUIRE(assign->value.as_literal() == "fallback");
+    }
 }
 
 TEST_CASE("Parser variable references in assignment", "[parser]")

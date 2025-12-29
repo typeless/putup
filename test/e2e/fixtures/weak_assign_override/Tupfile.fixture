@@ -1,0 +1,4 @@
+# Test that = overrides ??=
+VAR = explicit
+VAR ??= fallback
+: |> echo $(VAR) > %o |> result.txt

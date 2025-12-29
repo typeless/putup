@@ -672,6 +672,10 @@ auto Parser::parse_assignment(Expression name_expr) -> Result<Assignment>
         assign.op = Assignment::Op::Append;
     } else if (match(TokenType::ColonEquals)) {
         assign.op = Assignment::Op::Define;
+    } else if (match(TokenType::QuestionEquals)) {
+        assign.op = Assignment::Op::SoftSet;
+    } else if (match(TokenType::DoubleQuestionEquals)) {
+        assign.op = Assignment::Op::WeakSet;
     } else {
         return pup::make_error<Assignment>(ErrorCode::ParseError, "Expected assignment operator");
     }

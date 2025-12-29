@@ -3058,3 +3058,104 @@ SCENARIO("Only commands using changed env var rebuild", "[e2e][import]")
         }
     }
 }
+
+// =============================================================================
+// Conditional Assignment Operators Tests
+// =============================================================================
+
+SCENARIO("?= soft assignment - first wins", "[e2e][assignment]")
+{
+    GIVEN("a Tupfile with multiple ?= assignments")
+    {
+        auto f = E2EFixture { "soft_assign" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("first ?= value is used")
+            {
+                REQUIRE(f.read_file("result.txt") == "first\n");
+            }
+        }
+    }
+}
+
+SCENARIO("?= soft assignment - = takes precedence", "[e2e][assignment]")
+{
+    GIVEN("a Tupfile where = precedes ?=")
+    {
+        auto f = E2EFixture { "soft_assign_override" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("= value is used, ?= is ignored")
+            {
+                REQUIRE(f.read_file("result.txt") == "explicit\n");
+            }
+        }
+    }
+}
+
+// Use ?\?= in strings to avoid trigraph interpretation (??= -> #)
+SCENARIO("?\?= weak assignment - last wins", "[e2e][assignment]")
+{
+    GIVEN("a Tupfile with multiple ?\?= assignments")
+    {
+        auto f = E2EFixture { "weak_assign" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("last ?\?= value is used")
+            {
+                REQUIRE(f.read_file("result.txt") == "second\n");
+            }
+        }
+    }
+}
+
+SCENARIO("?\?= weak assignment - = takes precedence", "[e2e][assignment]")
+{
+    GIVEN("a Tupfile where = precedes ?\?=")
+    {
+        auto f = E2EFixture { "weak_assign_override" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("= value is used, ?\?= is ignored")
+            {
+                REQUIRE(f.read_file("result.txt") == "explicit\n");
+            }
+        }
+    }
+}

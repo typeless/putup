@@ -79,6 +79,9 @@ struct BuilderContext {
 
     std::vector<std::string> errors = {};
     std::vector<std::string> warnings = {};
+
+    /// Pending weak (??=) assignments - applied at end of Tupfile, last wins
+    std::vector<std::pair<std::string, std::string>> pending_weak_assignments = {};
 };
 
 /// Build graph from a parsed Tupfile (PIMPL for compile-time isolation)

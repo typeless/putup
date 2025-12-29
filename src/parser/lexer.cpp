@@ -247,6 +247,24 @@ auto Lexer::scan_token() -> Token
         return scan_text();
     }
 
+    if (c == '?') {
+        if (match('?')) {
+            if (match('=')) {
+                return make_token(TokenType::DoubleQuestionEquals, start);
+            }
+            // ?? without = is not a valid token, treat as text
+            putback();
+            putback();
+            return scan_text();
+        }
+        if (match('=')) {
+            return make_token(TokenType::QuestionEquals, start);
+        }
+        // ? alone is part of text (glob pattern)
+        putback();
+        return scan_text();
+    }
+
     if (c == '=') {
         return make_token(TokenType::Equals, start);
     }

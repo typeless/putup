@@ -1,0 +1,4 @@
+# Test ??= (weak assignment) - last wins
+VAR ??= first
+VAR ??= second
+: |> echo $(VAR) > %o |> result.txt

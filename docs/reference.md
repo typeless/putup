@@ -487,7 +487,41 @@ CC = gcc
 CFLAGS = -Wall -O2
 CFLAGS += -g          # Append
 LITERAL := $(VAR)     # No expansion (literal string)
+DEFAULT ?= value      # Soft set (if undefined, first wins)
+FALLBACK ??= value    # Weak set (if undefined, last wins)
 ```
+
+**Assignment Operators:**
+
+| Operator | Name | Description |
+|----------|------|-------------|
+| `=` | Set | Assign value (replaces existing) |
+| `+=` | Append | Append to existing value (space-separated) |
+| `:=` | Define | Assign literal string (no variable expansion) |
+| `?=` | Soft Set | Set only if variable is undefined (first wins) |
+| `??=` | Weak Set | Deferred default - set at end if undefined (last wins) |
+
+**Conditional Assignment Examples:**
+```tup
+# Soft set - first assignment wins
+CC ?= gcc           # Sets CC to "gcc" if not already defined
+CC ?= clang         # Ignored - CC already defined
+
+# Weak set - last assignment wins, applied before rules
+CFLAGS ??= -O0      # Fallback if nothing else sets CFLAGS
+CFLAGS ??= -O2      # This wins (last ??= wins)
+
+# Explicit assignment always wins
+CC = clang          # Always sets, ignores any ?= or ??=
+```
+
+> **Note:** `?=` and `??=` check if a variable is *defined*, not if it's *empty*.
+> An empty string counts as "defined". To provide a default for empty values, use `ifeq`:
+> ```tup
+> ifeq (@(OS_API),)
+> OS_API = posix
+> endif
+> ```
 
 **Reference:**
 ```tup
