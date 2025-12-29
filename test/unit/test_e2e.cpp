@@ -1617,6 +1617,37 @@ SCENARIO("Subdirectory builds with cross-directory dependencies", "[e2e][variant
     }
 }
 
+SCENARIO("Variant-only files are found via generalized path resolution", "[e2e][variant][fallback]")
+{
+    GIVEN("a project with a subdirectory referencing a file only in variant")
+    {
+        auto f = E2EFixture { "variant_fallback" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "# Variant config\n");
+        // Create config.txt ONLY in the variant directory, not in source
+        f.write_file("build/config.txt", "variant-only-content\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built with -B build")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds finding the variant-only file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("output contains the variant file content")
+            {
+                REQUIRE(f.exists("build/src/output.txt"));
+                REQUIRE(f.read_file("build/src/output.txt") == "variant-only-content\n");
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Shell Fixture Tests (wrapped)
 // =============================================================================

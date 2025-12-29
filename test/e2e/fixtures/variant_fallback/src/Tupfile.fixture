@@ -1,0 +1,5 @@
+# Test: Reference a file that only exists in variant directory (not source)
+# This tests the generalized variant-first resolution (not just tup.config)
+
+# Reference ../config.txt which will only exist in the variant directory
+: ../config.txt |> cat %f > %o |> output.txt

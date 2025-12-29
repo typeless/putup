@@ -1440,70 +1440,72 @@ auto GraphBuilder::expand_inputs(
                     } else {
                         result.push_back(std::move(path));
                     }
-                } else if (full_path.filename() == "tup.config" && ctx.options.source_root != ctx.options.output_root) {
-                    // Special case: tup.config lives in output directory, not source root
-                    auto out_config = ctx.options.output_root / "tup.config";
-                    if (fs::exists(out_config)) {
-                        // Return relative path from SOURCE working dir to OUTPUT tup.config
-                        // NOTE: We manually compute the relative path to avoid fs::relative()
-                        // which resolves symlinks (tup.config is often a symlink to configs/*.config)
-                        auto src_dir = ctx.options.source_root / ctx.current_dir;
-                        auto rel_to_root = fs::relative(ctx.options.source_root, src_dir);
-                        auto rel_output = fs::relative(ctx.options.output_root, ctx.options.source_root);
-                        auto rel = rel_to_root / rel_output / "tup.config";
-                        result.push_back(rel.lexically_normal().string());
-                    } else {
-                        result.push_back(std::move(path));
-                    }
                 } else {
-                    // Not on disk - try demand-driven parsing of the file's directory
-                    auto file_dir = fs::path { path }.parent_path();
-                    auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
-
-                    // If path references the build output, map back to source for Tupfile lookup
-                    // E.g., "../../build-s1f3/modules/kernel" -> "modules/kernel"
-                    auto source_dir = abs_file_dir;
+                    // File not in source - check variant directory first (if variant build)
+                    auto found_in_variant = false;
                     if (ctx.options.source_root != ctx.options.output_root) {
-                        auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root).string();
-                        auto abs_dir_str = abs_file_dir.string();
-                        if (abs_dir_str.starts_with(output_prefix + "/")) {
-                            source_dir = fs::path { abs_dir_str.substr(output_prefix.size() + 1) };
-                        } else if (abs_dir_str == output_prefix) {
-                            source_dir = fs::path { "." };
+                        auto normalized = (ctx.current_dir / path).lexically_normal();
+                        auto variant_path = ctx.options.output_root / normalized;
+                        if (fs::exists(variant_path)) {
+                            // File exists in variant - return project-root-relative path
+                            // which includes the output prefix (e.g., "build/config.txt")
+                            auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root);
+                            auto project_rel = (output_prefix / normalized).lexically_normal();
+                            result.push_back(project_rel.string());
+                            found_in_variant = true;
                         }
                     }
 
-                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                        if (ctx.eval->available_tupfile_dirs->contains(source_dir)) {
-                            auto req_result = Result<void> { ctx.eval->request_directory(source_dir) };
-                            // Note: Circular dependency errors are NOT fatal here - they just mean
-                            // the directory is already being parsed and we should continue.
-                            // The generated file will be found in the graph after parsing completes.
-                            (void)req_result;
+                    if (!found_in_variant) {
+                        // Not on disk - try demand-driven parsing of the file's directory
+                        auto file_dir = fs::path { path }.parent_path();
+                        auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
+
+                        // If path references the build output, map back to source for Tupfile lookup
+                        // E.g., "../../build-s1f3/modules/kernel" -> "modules/kernel"
+                        auto source_dir = abs_file_dir;
+                        if (ctx.options.source_root != ctx.options.output_root) {
+                            auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root).string();
+                            auto abs_dir_str = abs_file_dir.string();
+                            if (abs_dir_str.starts_with(output_prefix + "/")) {
+                                source_dir = fs::path { abs_dir_str.substr(output_prefix.size() + 1) };
+                            } else if (abs_dir_str == output_prefix) {
+                                source_dir = fs::path { "." };
+                            }
                         }
-                    }
 
-                    // Check for generated file in build output
-                    // Try multiple path formats in order of likelihood
-                    auto abs_path = full_path.lexically_normal().string();
-                    auto rel_path = fs::path { abs_path }.lexically_relative(ctx.options.source_root).string();
+                        if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                            if (ctx.eval->available_tupfile_dirs->contains(source_dir)) {
+                                auto req_result = Result<void> { ctx.eval->request_directory(source_dir) };
+                                // Note: Circular dependency errors are NOT fatal here - they just mean
+                                // the directory is already being parsed and we should continue.
+                                // The generated file will be found in the graph after parsing completes.
+                                (void)req_result;
+                            }
+                        }
 
-                    // First try absolute path (outputs from -B builds use absolute paths)
-                    if (ctx.graph->find_by_path(abs_path)) {
-                        result.push_back(abs_path);
-                    }
-                    // Then try project-relative path
-                    else if (ctx.graph->find_by_path(rel_path)) {
-                        result.push_back(rel_path);
-                    }
-                    // Try mapping to output (for simple paths like "foo.o")
-                    else {
-                        auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
-                        if (ctx.graph->find_by_path(output_path)) {
-                            result.push_back(output_path);
-                        } else {
-                            // Fall back to project-relative path for error messages
+                        // Check for generated file in build output
+                        // Try multiple path formats in order of likelihood
+                        auto abs_path = full_path.lexically_normal().string();
+                        auto rel_path = fs::path { abs_path }.lexically_relative(ctx.options.source_root).string();
+
+                        // First try absolute path (outputs from -B builds use absolute paths)
+                        if (ctx.graph->find_by_path(abs_path)) {
+                            result.push_back(abs_path);
+                        }
+                        // Then try project-relative path
+                        else if (ctx.graph->find_by_path(rel_path)) {
                             result.push_back(rel_path);
+                        }
+                        // Try mapping to output (for simple paths like "foo.o")
+                        else {
+                            auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
+                            if (ctx.graph->find_by_path(output_path)) {
+                                result.push_back(output_path);
+                            } else {
+                                // Fall back to project-relative path for error messages
+                                result.push_back(rel_path);
+                            }
                         }
                     }
                 }
