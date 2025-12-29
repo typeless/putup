@@ -3,8 +3,11 @@
 
 #include "pup/parser/eval.hpp"
 
+#include "pup/core/platform.hpp"
+
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
 #include <filesystem>
 
 namespace pup::parser {
@@ -390,7 +393,21 @@ auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
 
 auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
 {
-    // First check for special built-in variables
+    // TUP_PLATFORM and TUP_ARCH have special priority: env > config > default
+    // Check env var first (highest priority)
+    if (ref.name == builtin_vars::TUP_PLATFORM) {
+        if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+            return std::string { env };
+        }
+    }
+    if (ref.name == builtin_vars::TUP_ARCH) {
+        if (auto const* env = std::getenv("TUP_ARCH"); env && *env) {
+            return std::string { env };
+        }
+    }
+
+    // Check for context-computed special variables (TUP_CWD, TUP_VARIANTDIR, etc.)
+    // These are NOT overridable via config
     if (auto special = expand_special_var(ref.name)) {
         return *special;
     }
@@ -436,20 +453,23 @@ auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
         return std::string { ctx_->config_vars->get(ref.name) };
     }
 
+    // Fall back to compile-time default for TUP_PLATFORM/TUP_ARCH
+    if (ref.name == builtin_vars::TUP_PLATFORM) {
+        return std::string { pup::PLATFORM };
+    }
+    if (ref.name == builtin_vars::TUP_ARCH) {
+        return std::string { pup::ARCH };
+    }
+
     // Variable not found - return empty string (tup behavior)
     return std::string {};
 }
 
 auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::string>
 {
+    // Context-computed special variables - NOT overridable via config
     if (name == builtin_vars::TUP_CWD) {
         return ctx_->tup_cwd;
-    }
-    if (name == builtin_vars::TUP_PLATFORM) {
-        return ctx_->tup_platform;
-    }
-    if (name == builtin_vars::TUP_ARCH) {
-        return ctx_->tup_arch;
     }
     if (name == builtin_vars::TUP_VARIANTDIR) {
         return ctx_->tup_variantdir;
@@ -457,6 +477,9 @@ auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::
     if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
         return ctx_->tup_variant_outputdir;
     }
+
+    // TUP_PLATFORM and TUP_ARCH are handled in expand_var() with proper priority:
+    // env > config > default
 
     return std::nullopt;
 }

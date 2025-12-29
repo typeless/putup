@@ -224,6 +224,100 @@ TEST_CASE("get_platform() respects TUP_PLATFORM env var", "[eval][platform]")
     }
 }
 
+TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][platform]")
+{
+    auto vars = VarDb {};
+    auto config_vars = VarDb {};
+    auto ctx = EvalContext {
+        .vars = &vars,
+        .config_vars = &config_vars,
+        .tup_platform = std::string { pup::PLATFORM }, // compile-time default
+    };
+    auto eval = Evaluator { &ctx };
+
+    SECTION("returns compile-time default when config not set")
+    {
+        auto expr = Expression {};
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
+
+        auto result = eval.expand(expr);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == pup::PLATFORM);
+    }
+
+    SECTION("returns config value when CONFIG_TUP_PLATFORM is set")
+    {
+        config_vars.set("TUP_PLATFORM", "win32");
+
+        auto expr = Expression {};
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
+
+        auto result = eval.expand(expr);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "win32");
+    }
+
+    SECTION("env var takes highest priority over config")
+    {
+        auto env = EnvGuard { "TUP_PLATFORM", "env-platform" };
+        config_vars.set("TUP_PLATFORM", "config-platform");
+
+        auto expr = Expression {};
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
+
+        auto result = eval.expand(expr);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "env-platform");
+    }
+}
+
+TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
+{
+    auto vars = VarDb {};
+    auto config_vars = VarDb {};
+    auto ctx = EvalContext {
+        .vars = &vars,
+        .config_vars = &config_vars,
+        .tup_arch = std::string { pup::ARCH }, // compile-time default
+    };
+    auto eval = Evaluator { &ctx };
+
+    SECTION("returns compile-time default when config not set")
+    {
+        auto expr = Expression {};
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
+
+        auto result = eval.expand(expr);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == pup::ARCH);
+    }
+
+    SECTION("returns config value when CONFIG_TUP_ARCH is set")
+    {
+        config_vars.set("TUP_ARCH", "arm64");
+
+        auto expr = Expression {};
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
+
+        auto result = eval.expand(expr);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "arm64");
+    }
+
+    SECTION("env var takes highest priority over config")
+    {
+        auto env = EnvGuard { "TUP_ARCH", "env-arch" };
+        config_vars.set("TUP_ARCH", "config-arch");
+
+        auto expr = Expression {};
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
+
+        auto result = eval.expand(expr);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "env-arch");
+    }
+}
+
 TEST_CASE("Evaluator pattern expansion", "[eval]")
 {
     auto vars = VarDb {};
