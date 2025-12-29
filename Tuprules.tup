@@ -2,10 +2,6 @@
 
 ROOT = $(TUP_CWD)
 
-# OS API (posix or win32)
-OS_API = @(OS_API)
-OS_API ?= posix
-
 # Toolchain
 import CROSS_COMPILE=
 import CC=$(CROSS_COMPILE)gcc
