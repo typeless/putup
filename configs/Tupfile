@@ -1,2 +1,3 @@
 # Generate tup.config for the variant build
-: @(TUP_PLATFORM).config |> cp %f %o |> ../tup.config
+import CONFIG=@(TUP_PLATFORM)
+: $(CONFIG).config |> cp %f %o |> ../tup.config

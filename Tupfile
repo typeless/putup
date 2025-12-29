@@ -51,9 +51,9 @@ srcs-y += src/cli/output.cpp
 srcs-y += src/cli/target.cpp
 
 # Platform
-srcs-y += src/platform/process-@(OS_API).cpp
-srcs-y += src/platform/file_io-@(OS_API).cpp
-srcs-y += src/platform/env-@(OS_API).cpp
+srcs-y += src/platform/process-$(_os_api).cpp
+srcs-y += src/platform/file_io-$(_os_api).cpp
+srcs-y += src/platform/env-$(_os_api).cpp
 
 # Compile
 : foreach $(c-srcs-y) |> !cc |> {lib_objs}

@@ -2,6 +2,13 @@
 
 ROOT = $(TUP_CWD)
 
+# OS API (posix or win32) - fallback for configure pass when no tup.config exists
+ifeq (@(OS_API),)
+_os_api = posix
+else
+_os_api = @(OS_API)
+endif
+
 # Toolchain
 import CROSS_COMPILE=
 import CC=$(CROSS_COMPILE)gcc

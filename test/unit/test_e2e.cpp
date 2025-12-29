@@ -3159,3 +3159,48 @@ SCENARIO("?\?= weak assignment - = takes precedence", "[e2e][assignment]")
         }
     }
 }
+
+SCENARIO("import with @-var default", "[e2e][import]")
+{
+    GIVEN("a Tupfile with import VAR=@(CONFIG_VAR)")
+    {
+        auto f = E2EFixture { "import_atvar_default" };
+
+        WHEN("env var is not set")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("@-var default from tup.config is used")
+            {
+                REQUIRE(f.read_file("out.txt") == "from_config\n");
+            }
+        }
+
+        WHEN("env var is set")
+        {
+            auto env = EnvGuard { "MY_VAR", "from_env" };
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("env var value takes precedence over @-var default")
+            {
+                REQUIRE(f.read_file("out.txt") == "from_env\n");
+            }
+        }
+    }
+}

@@ -1,0 +1,3 @@
+# Test import with @-var default
+import MY_VAR=@(DEFAULT_VALUE)
+: |> echo $(MY_VAR) > %o |> out.txt
