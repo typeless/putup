@@ -2,5 +2,8 @@
 test-spos/
 test-busybox/
 
+# E2E test fixtures - managed by test framework
+test/e2e/fixtures/
+
 # Example projects - require external dependencies
 examples/

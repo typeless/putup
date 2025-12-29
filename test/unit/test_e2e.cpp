@@ -708,10 +708,47 @@ SCENARIO("Touch does not trigger unnecessary rebuild", "[e2e][incremental]")
     }
 }
 
-// TODO: Test for partial failure with -k needs investigation
-// The following test was removed because it exposes a pre-existing bug
-// unrelated to the variant path resolution fix. The bug is that after a
-// partial build failure, ALL commands re-run on rebuild, not just the failed ones.
+SCENARIO("Partial failure with -k saves successful outputs", "[e2e][keep-going]")
+{
+    GIVEN("a project where one command will fail")
+    {
+        auto f = E2EFixture { "partial_failure" };
+        REQUIRE(f.init().success());
+
+        WHEN("building with -k flag")
+        {
+            auto result1 = f.build({ "-k" });
+
+            THEN("build fails but successful command's output exists")
+            {
+                REQUIRE_FALSE(result1.success());
+                REQUIRE(f.exists("good.o"));
+                REQUIRE_FALSE(f.exists("bad.o"));
+            }
+
+            AND_WHEN("fixing the failing source and rebuilding")
+            {
+                f.write_file("bad.c", "int bad_func(void) { return 0; }\n");
+                auto result2 = f.build({ "-v" });
+
+                THEN("build succeeds")
+                {
+                    REQUIRE(result2.success());
+                    REQUIRE(f.exists("good.o"));
+                    REQUIRE(f.exists("bad.o"));
+                }
+
+                THEN("only the fixed command runs, not the already-successful one")
+                {
+                    // The output should show only bad.c being compiled, not good.c
+                    // If good.c is recompiled, the bug is present
+                    REQUIRE(result2.stdout_output.find("good.c") == std::string::npos);
+                    REQUIRE(result2.stdout_output.find("bad.c") != std::string::npos);
+                }
+            }
+        }
+    }
+}
 
 SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
 {

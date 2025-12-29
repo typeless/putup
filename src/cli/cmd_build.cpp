@@ -861,7 +861,10 @@ auto build_single_variant(
     }
 
     auto final_index = std::optional<pup::index::Index> {};
-    if (stats.failed_jobs == 0 && !opts.dry_run) {
+    if (!opts.dry_run) {
+        // Save index even after partial failures - successful outputs are recorded
+        // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
+        // and they'll be detected as changed on next build.
         auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, old_idx_ptr) };
         auto writer = pup::index::IndexWriter {};
 

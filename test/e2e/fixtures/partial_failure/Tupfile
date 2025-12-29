@@ -1,0 +1,2 @@
+: good.c |> gcc -c -o %o %f |> good.o
+: bad.c |> gcc -c -o %o %f |> bad.o
