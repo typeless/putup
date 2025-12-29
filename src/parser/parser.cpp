@@ -846,8 +846,8 @@ auto Parser::parse_import() -> Result<Import>
     imp.var_name = std::string { impl_->current.text };
     advance();
 
-    // Optional default value
-    if (match(TokenType::Equals)) {
+    // Optional default value (=, ?=, and ??= are all equivalent for import)
+    if (match(TokenType::Equals) || match(TokenType::QuestionEquals) || match(TokenType::DoubleQuestionEquals)) {
         auto value = parse_expression();
         if (!value) {
             return pup::unexpected<Error>(value.error());

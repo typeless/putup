@@ -3204,3 +3204,48 @@ SCENARIO("import with @-var default", "[e2e][import]")
         }
     }
 }
+
+SCENARIO("import with ?= operator", "[e2e][import]")
+{
+    GIVEN("a Tupfile with import VAR ?= default")
+    {
+        auto f = E2EFixture { "import_soft_set" };
+
+        WHEN("env var is not set")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("default value is used")
+            {
+                REQUIRE(f.read_file("out.txt") == "default_value\n");
+            }
+        }
+
+        WHEN("env var is set")
+        {
+            auto env = EnvGuard { "MY_VAR", "from_env" };
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("env var takes precedence")
+            {
+                REQUIRE(f.read_file("out.txt") == "from_env\n");
+            }
+        }
+    }
+}
