@@ -208,6 +208,15 @@ auto Evaluator::expand_pattern(
                 continue;
             }
 
+            if (end < text.size() && text[end] == 'o') {
+                // %No - N-th output file
+                if (num > 0 && static_cast<std::size_t>(num) <= flags.all_outputs.size()) {
+                    result += flags.all_outputs[static_cast<std::size_t>(num - 1)];
+                }
+                pos = end + 1;
+                continue;
+            }
+
             // Not a valid pattern, output as-is
             result += '%';
             pos = percent + 1;

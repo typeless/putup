@@ -402,6 +402,64 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
     // Note: %i is for order-only inputs, not yet implemented
 }
 
+TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto eval = Evaluator { &ctx };
+
+    SECTION("%No - N-th output (multiple)")
+    {
+        auto flags = PatternFlags {
+            .output = "a.o",
+            .output_base = "a.o",
+            .all_outputs = { "a.o", "b.o", "c.o" },
+        };
+
+        auto result = eval.expand_pattern("%1o %2o %3o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "a.o b.o c.o");
+    }
+
+    SECTION("%No - single output")
+    {
+        auto flags = PatternFlags {
+            .output = "out.o",
+            .output_base = "out.o",
+            .all_outputs = { "out.o" },
+        };
+
+        auto result = eval.expand_pattern("%1o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "out.o");
+    }
+
+    SECTION("%No - out of bounds produces empty")
+    {
+        auto flags = PatternFlags {
+            .all_outputs = { "only.o" },
+        };
+
+        auto result = eval.expand_pattern("%2o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "");
+    }
+
+    SECTION("%No - mixed with other flags")
+    {
+        auto flags = PatternFlags {
+            .input = "src.c",
+            .output = "a.o",
+            .all_inputs = { "src.c" },
+            .all_outputs = { "a.o", "b.o" },
+        };
+
+        auto result = eval.expand_pattern("gen %f -o %1o %2o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "gen src.c -o a.o b.o");
+    }
+}
+
 TEST_CASE("Evaluator conditionals", "[eval]")
 {
     auto vars = VarDb {};

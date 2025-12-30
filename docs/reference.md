@@ -600,11 +600,13 @@ Pattern flags are placeholders expanded at build time.
 | `%e` | Extension only (foreach) | `foo.c` → `c` |
 | `%d` | Directory name | `src/foo.c` → `src` |
 
-**Numbered Inputs:**
+**Numbered Inputs/Outputs:**
 | Flag | Description |
 |------|-------------|
 | `%1f` | First input file |
 | `%2f` | Second input file |
+| `%1o` | First output file |
+| `%2o` | Second output file |
 
 **Examples:**
 
@@ -615,6 +617,9 @@ Pattern flags are placeholders expanded at build time.
 
 # Multiple inputs with numbered flags
 : header.h template.c |> gen %1f %2f -o %o |> output.c
+
+# Multiple outputs with numbered flags
+: input.dat |> split %f -a %1o -b %2o |> part_a.dat part_b.dat
 
 # Using %d for directory-aware output
 : foreach src/*.c |> gcc -c %f -o %o |> %d/%B.o
@@ -1995,6 +2000,9 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%1f` | First input |
 | `%2f` | Second input |
 | `%3f` | Third input (etc.) |
+| `%1o` | First output |
+| `%2o` | Second output |
+| `%3o` | Third output (etc.) |
 
 **Usage Examples:**
 

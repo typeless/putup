@@ -102,12 +102,16 @@ auto env = EnvGuard { "VAR_NAME", "value" };  // RAII - auto-restores on scope e
 
 ## Development Workflow
 
-This project follows **Test-Driven Development (TDD)** with **BDD-style** tests:
+This project follows **Test-Driven Development (TDD)** with **BDD-style** tests.
+
+**Tests come first. Always.**
 
 1. **Write a failing test first** - Define expected behavior before implementation
-2. **Make it pass** - Write minimal code to satisfy the test
-3. **Refactor** - Clean up while keeping tests green
-4. **Format and lint** - Run clang-format and clang-tidy before committing
+2. **Run the test** - Verify it fails for the right reason
+3. **Write minimal code** - Just enough to make the test pass
+4. **Run the test** - Verify it passes
+5. **Refactor** - Clean up while keeping tests green
+6. **Format and lint** - Run clang-format and clang-tidy before committing
 
 ```bash
 # TDD cycle
@@ -119,9 +123,9 @@ make format                                  # Format code
 make tidy                                    # Run clang-tidy
 ```
 
-For bug fixes, write a test that reproduces the bug first, then fix.
+**For bug fixes:** Write a test that reproduces the bug first, then fix.
 
-For new features, use BDD-style SCENARIO/GIVEN/WHEN/THEN to express behavior.
+**For new features:** Write tests expressing the expected behavior before any implementation. Use BDD-style SCENARIO/GIVEN/WHEN/THEN for E2E tests.
 
 Always run `make format` and `make tidy` before finalizing changes.
 

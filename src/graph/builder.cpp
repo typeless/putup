@@ -1667,6 +1667,7 @@ auto GraphBuilder::expand_command(
         .output_base = std::string { parser::path_basename(primary_output) },
         .input_dir = current_dir_name,
         .all_inputs = cmd_inputs,
+        .all_outputs = cmd_outputs,
     };
 
     // Expand pattern flags and return
