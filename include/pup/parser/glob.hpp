@@ -117,4 +117,12 @@ auto path_extension(std::string_view path) -> std::string_view;
 [[nodiscard]]
 auto path_directory(std::string_view path) -> std::string_view;
 
+/// Extract the portion of filename that matched the * in a glob pattern.
+/// Returns empty string if pattern doesn't match or has no wildcard.
+/// Example: pattern="*_test.c", filename="foo_test.c" -> "foo"
+/// Example: pattern="*.c", filename="hello.c" -> "hello"
+/// For path patterns, matches against basename only.
+[[nodiscard]]
+auto glob_match_extract(std::string_view pattern, std::string_view filename) -> std::string;
+
 } // namespace pup::parser

@@ -6,6 +6,7 @@
 #include "dag.hpp"
 #include "pup/core/result.hpp"
 #include "pup/parser/ast.hpp"
+#include "pup/parser/eval.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -184,13 +185,13 @@ private:
     auto expand_outputs(
         BuilderContext& ctx,
         std::vector<parser::PathPattern> const& patterns,
-        std::string const& input
+        parser::PatternFlags const& flags
     ) -> Result<std::vector<std::string>>;
 
     auto expand_command(
         BuilderContext& ctx,
         parser::Expression const& cmd,
-        std::vector<std::string> const& inputs,
+        parser::PatternFlags flags,
         std::vector<std::string> const& outputs
     ) -> Result<std::string>;
 

@@ -166,3 +166,52 @@ TEST_CASE("has_glob_chars", "[glob]")
     REQUIRE_FALSE(has_glob_chars("foo.c"));
     REQUIRE_FALSE(has_glob_chars("src/foo.c"));
 }
+
+TEST_CASE("glob_match_extract", "[glob]")
+{
+    SECTION("simple extension pattern")
+    {
+        REQUIRE(glob_match_extract("*.c", "hello.c") == "hello");
+        REQUIRE(glob_match_extract("*.cpp", "foo.cpp") == "foo");
+    }
+
+    SECTION("suffix pattern")
+    {
+        REQUIRE(glob_match_extract("*_test.c", "foo_test.c") == "foo");
+        REQUIRE(glob_match_extract("*_test.c", "bar_baz_test.c") == "bar_baz");
+    }
+
+    SECTION("prefix pattern")
+    {
+        REQUIRE(glob_match_extract("test_*.c", "test_foo.c") == "foo");
+        REQUIRE(glob_match_extract("lib*.so", "libfoo.so") == "foo");
+    }
+
+    SECTION("prefix and suffix pattern")
+    {
+        REQUIRE(glob_match_extract("test_*.out", "test_hello.out") == "hello");
+    }
+
+    SECTION("path-based patterns")
+    {
+        REQUIRE(glob_match_extract("src/*.c", "src/foo.c") == "foo");
+        REQUIRE(glob_match_extract("lib/*_test.c", "lib/bar_test.c") == "bar");
+    }
+
+    SECTION("no wildcard returns empty")
+    {
+        REQUIRE(glob_match_extract("foo.c", "foo.c") == "");
+        REQUIRE(glob_match_extract("src/bar.c", "src/bar.c") == "");
+    }
+
+    SECTION("non-matching returns empty")
+    {
+        REQUIRE(glob_match_extract("*.c", "foo.cpp") == "");
+        REQUIRE(glob_match_extract("test_*.c", "foo.c") == "");
+    }
+
+    SECTION("double star treated as single")
+    {
+        REQUIRE(glob_match_extract("**.c", "foo.c") == "foo");
+    }
+}

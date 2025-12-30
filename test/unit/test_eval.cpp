@@ -460,6 +460,61 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
     }
 }
 
+TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto eval = Evaluator { &ctx };
+
+    SECTION("%g - simple glob match")
+    {
+        auto flags = PatternFlags {
+            .input = "hello.c",
+            .glob_match = "hello",
+        };
+        auto result = eval.expand_pattern("%g", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "hello");
+    }
+
+    SECTION("%g - suffix pattern match")
+    {
+        // Pattern: *_test.c, Input: foo_test.c, Match: foo
+        auto flags = PatternFlags {
+            .input = "foo_test.c",
+            .glob_match = "foo",
+        };
+        auto result = eval.expand_pattern("%g.o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "foo.o");
+    }
+
+    SECTION("%g - empty when not set")
+    {
+        auto flags = PatternFlags {
+            .input = "file.c",
+        };
+        auto result = eval.expand_pattern("%g", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "");
+    }
+
+    SECTION("%g - combined with other flags")
+    {
+        auto flags = PatternFlags {
+            .input = "foo_test.c",
+            .input_base = "foo_test.c",
+            .input_noext = "foo_test",
+            .output = "foo.o",
+            .glob_match = "foo",
+            .all_inputs = { "foo_test.c" },
+        };
+        auto result = eval.expand_pattern("compile %f -DNAME=%g -o %o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == "compile foo_test.c -DNAME=foo -o foo.o");
+    }
+}
+
 TEST_CASE("Evaluator conditionals", "[eval]")
 {
     auto vars = VarDb {};

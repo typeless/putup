@@ -385,4 +385,51 @@ auto path_directory(std::string_view path) -> std::string_view
     return path.substr(0, last_slash);
 }
 
+auto glob_match_extract(std::string_view pattern, std::string_view filename) -> std::string
+{
+    // For path patterns (containing /), extract basename of both
+    auto pattern_base = path_basename(pattern);
+    if (pattern_base.empty()) {
+        pattern_base = pattern;
+    }
+
+    auto filename_base = path_basename(filename);
+    if (filename_base.empty()) {
+        filename_base = filename;
+    }
+
+    // Find the * in the pattern
+    auto star_pos = pattern_base.find('*');
+    if (star_pos == std::string_view::npos) {
+        return {};
+    }
+
+    // Get prefix (before *) and suffix (after *)
+    auto prefix = pattern_base.substr(0, star_pos);
+    auto suffix = pattern_base.substr(star_pos + 1);
+
+    // Handle ** by treating as single *
+    if (!suffix.empty() && suffix[0] == '*') {
+        suffix = suffix.substr(1);
+    }
+
+    // Verify filename starts with prefix and ends with suffix
+    if (!filename_base.starts_with(prefix)) {
+        return {};
+    }
+    if (!filename_base.ends_with(suffix)) {
+        return {};
+    }
+
+    // Extract the middle portion
+    auto match_start = prefix.size();
+    auto match_end = filename_base.size() - suffix.size();
+
+    if (match_start > match_end) {
+        return {};
+    }
+
+    return std::string { filename_base.substr(match_start, match_end - match_start) };
+}
+
 } // namespace pup::parser

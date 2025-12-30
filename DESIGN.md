@@ -482,11 +482,17 @@ Rule { inputs: ["*.c"], outputs: ["%B.o"], foreach: true }
     │
     ▼ For each input (foreach=true):
     │
+    ├── Build PatternFlags once:
+    │   - Transform inputs to Tupfile-relative paths
+    │   - Extract glob_match (%g) from pattern + primary input
+    │   - Populate input fields (%f, %B, %b, %e, %g)
+    │
     ├── expand_outputs() with PatternFlags
     │   %B.o → main.o
     │
-    ├── expand_command() with substitution
-    │   gcc -c %f -o %o → gcc -c main.c -o main.o
+    ├── expand_command() with PatternFlags + outputs
+    │   - Augment flags with output fields (%o, %O)
+    │   - gcc -c %f -o %o → gcc -c main.c -o main.o
     │
     ├── Create nodes:
     │   - File node for main.c
@@ -976,30 +982,60 @@ Output goes to: project/build-debug/src/foo.o
 
 ### Path Transformation Pipeline
 
+Commands execute from the Tupfile's source directory, so all paths must be transformed
+from project-root-relative (how nodes are stored) to Tupfile-relative (what commands see).
+
+**PathTransformContext** centralizes transformation parameters, computed once per rule:
+
+```cpp
+struct PathTransformContext {
+    std::string source_to_root;   // "../" prefix sequence to reach project root
+    std::string current_dir_str;  // Current Tupfile directory
+    bool is_variant_build;        // Whether output_root != source_root
+    fs::path source_root;         // Source tree root
+    fs::path output_root;         // Output tree root (variant directory)
+};
+```
+
+**Pipeline stages:**
+
 1. **Input expansion** (`expand_inputs`):
    - Glob patterns resolved against source directory
    - Results stored as project-root-relative paths
 
-2. **Output expansion** (`expand_outputs`):
-   - Outputs prefixed with variant directory
-   - `foo.o` → `build-debug/src/foo.o`
+2. **PatternFlags construction** (in `expand_rule`):
+   - Inputs transformed to Tupfile-relative paths
+   - Glob match (`%g`) extracted from pattern + primary input
+   - Single PatternFlags built and reused for both outputs and command
 
-3. **Command generation** (`expand_command`):
-   - Pattern flags (`%f`, `%o`) substituted
-   - Paths transformed from project-root-relative to source-dir-relative:
+3. **Output expansion** (`expand_outputs`):
+   - Receives pre-built PatternFlags with input fields populated
+   - Pattern substitution (`%B.o` → `main.o`)
+   - Results stored as project-root-relative paths
 
-   ```cpp
-   // From src/ (depth=1), accessing build-debug/src/foo.o:
-   // Path: "build-debug/src/foo.o" → "../build-debug/src/foo.o"
+4. **Command generation** (`expand_command`):
+   - Receives PatternFlags, augments with output fields
+   - Outputs transformed to Tupfile-relative paths
+   - Pattern flags (`%f`, `%o`, `%g`) substituted
 
-   auto make_source_relative = [&](std::string const& path) {
-       if (path.empty() || source_to_root.empty())
-           return path;
-       if (path starts with "../")  // Already relative
-           return path;
-       return source_to_root + path;  // e.g., "../" + path
-   };
-   ```
+**Path transformation helpers:**
+
+```cpp
+// Transform input path: variant mapping + source-relative conversion
+auto transform_input_path(ctx, tc, "src/foo.c") -> "foo.c"
+
+// Transform output path: variant mapping + source-relative conversion
+auto transform_output_path(tc, "src/foo.o") -> "../build/src/foo.o"
+
+// Core conversion: project-root-relative → Tupfile-relative
+auto make_source_relative(path, source_to_root, current_dir) {
+    if (path starts with current_dir + "/")
+        return path without prefix;  // Local file
+    if (path starts with "../")
+        return path;  // Already relative
+    return source_to_root + path;  // Cross-directory reference
+}
+```
 
 ### tup.config Handling
 

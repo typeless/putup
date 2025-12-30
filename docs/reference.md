@@ -599,6 +599,7 @@ Pattern flags are placeholders expanded at build time.
 | `%B` | Basename without extension | `foo.c` → `foo` |
 | `%e` | Extension only (foreach) | `foo.c` → `c` |
 | `%d` | Directory name | `src/foo.c` → `src` |
+| `%g` | Glob match portion (foreach) | `*_test.c` + `foo_test.c` → `foo` |
 
 **Numbered Inputs/Outputs:**
 | Flag | Description |
@@ -623,6 +624,10 @@ Pattern flags are placeholders expanded at build time.
 
 # Using %d for directory-aware output
 : foreach src/*.c |> gcc -c %f -o %o |> %d/%B.o
+
+# Using %g for glob match portion
+: foreach *_test.c |> run_test %f -o %o |> %g_result.txt
+# foo_test.c → run_test foo_test.c -o foo_result.txt
 ```
 
 ### 5.5 Conditionals
@@ -1985,6 +1990,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%B` | Basename no ext | `src/foo.c` | `foo` |
 | `%e` | Extension only | `foo.c` | `c` |
 | `%d` | Directory | `src/foo.c` | `src` |
+| `%g` | Glob match (foreach) | `*_test.c` + `foo_test.c` | `foo` |
 
 **Output Flags:**
 

@@ -112,6 +112,7 @@ struct PatternFlags {
     std::string output = {};                   ///< %o - output filename
     std::string output_base = {};              ///< %O - output basename (no path)
     std::string input_dir = {};                ///< %d - input directory
+    std::string glob_match = {};               ///< %g - portion matched by * in foreach glob
     int input_index = 0;                       ///< For %Nf patterns (1-indexed)
     std::vector<std::string> all_inputs = {};  ///< All inputs for %Nf expansion
     std::vector<std::string> all_outputs = {}; ///< All outputs for %No expansion

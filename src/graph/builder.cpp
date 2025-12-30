@@ -174,6 +174,85 @@ auto compute_source_to_root(fs::path const& current_dir) -> std::string
     return result;
 }
 
+/// Context for transforming paths to Tupfile-relative coordinates.
+///
+/// Commands execute from the Tupfile's source directory, so all paths in commands
+/// must be relative to that directory. This requires:
+/// 1. Mapping variant outputs to the output directory (e.g., build/src/foo.o)
+/// 2. Converting project-root-relative paths to Tupfile-relative (e.g., ../lib/bar.c)
+///
+/// This context is computed once per rule and reused for both inputs and outputs,
+/// avoiding redundant computation of source_to_root and variant detection.
+struct PathTransformContext {
+    std::string source_to_root;
+    std::string current_dir_str;
+    bool is_variant_build;
+    fs::path source_root;
+    fs::path output_root;
+};
+
+auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
+{
+    return PathTransformContext {
+        .source_to_root = compute_source_to_root(ctx.current_dir),
+        .current_dir_str = ctx.current_dir.string(),
+        .is_variant_build = ctx.options.source_root != ctx.options.output_root,
+        .source_root = ctx.options.source_root,
+        .output_root = ctx.options.output_root,
+    };
+}
+
+/// Transform an input path to Tupfile-relative, applying variant mapping if needed
+auto transform_input_path(
+    BuilderContext& ctx,
+    PathTransformContext const& tc,
+    std::string const& inp
+) -> std::string
+{
+    auto path = inp;
+    if (tc.is_variant_build) {
+        auto needs_mapping = false;
+        if (auto node_id = ctx.graph->find_by_path(inp)) {
+            auto* node = ctx.graph->get_node(*node_id);
+            if (node) {
+                if (node->type == NodeType::Generated) {
+                    needs_mapping = true;
+                } else if (node->type == NodeType::File) {
+                    auto source_path = tc.source_root / inp;
+                    if (!fs::exists(source_path)) {
+                        needs_mapping = true;
+                    }
+                }
+            }
+        } else {
+            auto source_path = tc.source_root / inp;
+            if (!fs::exists(source_path)) {
+                auto variant_path = tc.output_root / inp;
+                if (fs::exists(variant_path)) {
+                    needs_mapping = true;
+                }
+            }
+        }
+        if (needs_mapping) {
+            path = map_to_output(inp, fs::path {}, tc.source_root, tc.output_root);
+        }
+    }
+    return make_source_relative(path, tc.source_to_root, tc.current_dir_str);
+}
+
+/// Transform an output path to Tupfile-relative, applying variant mapping if needed
+auto transform_output_path(
+    PathTransformContext const& tc,
+    std::string const& out
+) -> std::string
+{
+    auto path = out;
+    if (tc.is_variant_build) {
+        path = map_to_output(out, fs::path {}, tc.source_root, tc.output_root);
+    }
+    return make_source_relative(path, tc.source_to_root, tc.current_dir_str);
+}
+
 /// Get all files that are members of a group (via file → group edges)
 /// Returns file NodeIds by finding all input edges to the group node
 auto get_group_members(BuildGraph& graph, NodeId group_id) -> std::vector<NodeId>
@@ -538,9 +617,23 @@ auto GraphBuilder::process_rule(
     }
 
     if (rule.foreach_) {
-        // Foreach rule: create one command per input
-        for (auto const& input : *inputs) {
-            auto result = Result<void> { expand_rule(ctx, rule, { input }) };
+        // Separate glob patterns from files
+        // expand_inputs() now returns [pattern, file1, file2, ...] for globs
+        auto patterns = std::vector<std::string> {};
+        auto files = std::vector<std::string> {};
+        for (auto const& inp : *inputs) {
+            if (parser::has_glob_chars(inp)) {
+                patterns.push_back(inp);
+            } else {
+                files.push_back(inp);
+            }
+        }
+
+        // Foreach rule: create one command per file, include patterns for %g
+        for (auto const& file : files) {
+            auto iter_inputs = patterns;
+            iter_inputs.push_back(file);
+            auto result = Result<void> { expand_rule(ctx, rule, iter_inputs) };
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
@@ -849,8 +942,43 @@ auto GraphBuilder::expand_rule(
     ctx.used_config_vars.clear();
     ctx.used_env_vars.clear();
 
-    // Get the primary input for pattern expansion
-    auto primary_input = inputs.empty() ? std::string {} : inputs[0];
+    // Separate glob patterns from file inputs
+    // For foreach rules, inputs may contain [pattern, file] where pattern has glob chars
+    auto glob_pattern = std::string {};
+    auto file_inputs = std::vector<std::string> {};
+    for (auto const& inp : inputs) {
+        if (parser::has_glob_chars(inp)) {
+            glob_pattern = inp;
+        } else {
+            file_inputs.push_back(inp);
+        }
+    }
+
+    // Transform inputs to Tupfile-relative paths (where commands execute from)
+    auto tc = make_transform_context(ctx);
+    auto cmd_inputs = std::vector<std::string> {};
+    cmd_inputs.reserve(file_inputs.size());
+    for (auto const& inp : file_inputs) {
+        cmd_inputs.push_back(transform_input_path(ctx, tc, inp));
+    }
+
+    // Build PatternFlags once (input fields only, output fields added later)
+    auto primary_input = cmd_inputs.empty() ? std::string {} : cmd_inputs[0];
+    auto current_dir_name = ctx.current_dir.empty()
+        ? std::string { "." }
+        : ctx.current_dir.filename().string();
+    auto glob_match = glob_pattern.empty() ? std::string {}
+                                           : parser::glob_match_extract(glob_pattern, primary_input);
+
+    auto flags = parser::PatternFlags {
+        .input = primary_input,
+        .input_base = std::string { parser::path_basename(primary_input) },
+        .input_noext = std::string { parser::path_stem(primary_input) },
+        .input_ext = std::string { parser::path_extension(primary_input) },
+        .input_dir = current_dir_name,
+        .glob_match = glob_match,
+        .all_inputs = cmd_inputs,
+    };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
     auto macro_name = std::string {};
@@ -858,7 +986,7 @@ auto GraphBuilder::expand_rule(
 
     {
         // Expand the command to detect if it's a macro reference
-        auto expanded_cmd = Result<std::string> { expand_command(ctx, rule.command, inputs, {}) };
+        auto expanded_cmd = Result<std::string> { expand_command(ctx, rule.command, flags, {}) };
         if (!expanded_cmd) {
             return pup::unexpected<Error>(expanded_cmd.error());
         }
@@ -891,8 +1019,6 @@ auto GraphBuilder::expand_rule(
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     auto rule_order_only_groups = std::unordered_map<std::string, std::vector<std::string>> {};
     auto evaluator = parser::Evaluator { ctx.eval };
-    auto source_to_root = compute_source_to_root(ctx.current_dir);
-    auto current_dir_str = ctx.current_dir.string();
 
     // Track group NodeIds for deferred edge creation
     // Groups are first-class nodes; edges created after all Tupfiles are parsed
@@ -947,7 +1073,7 @@ auto GraphBuilder::expand_rule(
                 for (auto id : members) {
                     auto path = ctx.graph->get_full_path(id);
                     if (!path.empty()) {
-                        paths.push_back(make_source_relative(path, source_to_root, current_dir_str));
+                        paths.push_back(make_source_relative(path, tc.source_to_root, tc.current_dir_str));
                     }
                 }
             } else {
@@ -1003,7 +1129,7 @@ auto GraphBuilder::expand_rule(
                     for (auto id : members) {
                         auto p = ctx.graph->get_full_path(id);
                         if (!p.empty()) {
-                            paths.push_back(make_source_relative(p, source_to_root, current_dir_str));
+                            paths.push_back(make_source_relative(p, tc.source_to_root, tc.current_dir_str));
                         }
                     }
                 } else {
@@ -1046,34 +1172,34 @@ auto GraphBuilder::expand_rule(
     }
 
     // Expand outputs
-    auto outputs = Result<std::vector<std::string>> { expand_outputs(ctx, outputs_patterns, primary_input) };
+    auto outputs = Result<std::vector<std::string>> { expand_outputs(ctx, outputs_patterns, flags) };
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
     }
 
     // Now expand command with actual outputs for %o substitution
     if (macro_ptr) {
-        auto macro_cmd = Result<std::string> { expand_command(ctx, macro_ptr->command, inputs, *outputs) };
+        auto macro_cmd = Result<std::string> { expand_command(ctx, macro_ptr->command, flags, *outputs) };
         if (!macro_cmd) {
             return pup::unexpected<Error>(macro_cmd.error());
         }
         cmd_text = *macro_cmd;
 
         if (macro_ptr->display) {
-            auto disp_result = Result<std::string> { expand_command(ctx, *macro_ptr->display, inputs, *outputs) };
+            auto disp_result = Result<std::string> { expand_command(ctx, *macro_ptr->display, flags, *outputs) };
             if (disp_result) {
                 display = *disp_result;
             }
         }
     } else {
-        auto full_cmd = Result<std::string> { expand_command(ctx, rule.command, inputs, *outputs) };
+        auto full_cmd = Result<std::string> { expand_command(ctx, rule.command, flags, *outputs) };
         if (!full_cmd) {
             return pup::unexpected<Error>(full_cmd.error());
         }
         cmd_text = *full_cmd;
 
         if (rule.display) {
-            auto disp_result = Result<std::string> { expand_command(ctx, *rule.display, inputs, *outputs) };
+            auto disp_result = Result<std::string> { expand_command(ctx, *rule.display, flags, *outputs) };
             if (disp_result) {
                 display = *disp_result;
             }
@@ -1100,11 +1226,12 @@ auto GraphBuilder::expand_rule(
     }
 
     // Check for scanner/pattern matches and generate additional rules (e.g., DEP commands)
+    // Use file_inputs (excludes glob patterns) for scanner matching
     auto cmd_info = CommandInfo {
         .node_id = *cmd_id,
         .command = cmd_text,
         .display = display,
-        .inputs = inputs,
+        .inputs = file_inputs,
         .order_only_inputs = order_only_paths,
         .outputs = *outputs,
         .working_dir = ctx.current_dir.string(),
@@ -1156,8 +1283,8 @@ auto GraphBuilder::expand_rule(
                         fmt::print(stderr, "[DEBUG OO GROUP] Generated cmd: deferred <{}/{}> (group_id={})\n", group_dir, group_name, *group_id_result);
                     }
                 }
-            } else {
-                // Regular file path - create edge directly
+            } else if (!parser::has_glob_chars(oi)) {
+                // Regular file path - create edge directly (skip glob patterns)
                 auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
                 if (oi_id) {
                     (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
@@ -1177,8 +1304,9 @@ auto GraphBuilder::expand_rule(
     }
 
     // Create edges from inputs to command
+    // Use file_inputs (excludes glob patterns which aren't valid paths)
     // Skip group references - they are handled by deferred edge resolution (order-only)
-    for (auto const& input : inputs) {
+    for (auto const& input : file_inputs) {
         if (input.find('<') != std::string::npos && input.back() == '>') {
             continue;
         }
@@ -1280,10 +1408,12 @@ auto GraphBuilder::expand_rule(
     }
 
     // Create order-only edges from the pre-expanded paths
-    // Skip group reference strings (they use deferred edge creation)
+    // Skip group references (deferred edge creation) and glob patterns (not valid paths)
     for (auto const& oi : order_only_paths) {
-        // Skip group references - these are handled by deferred edge resolution
         if (oi.find('<') != std::string::npos && oi.back() == '>') {
+            continue;
+        }
+        if (parser::has_glob_chars(oi)) {
             continue;
         }
         auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
@@ -1396,7 +1526,15 @@ auto GraphBuilder::expand_inputs(
                 result.push_back(path);
                 continue;
             }
-            // Expand globs if enabled
+            // Include the path (pattern or literal)
+            // For globs, this preserves the pattern for %g expansion in foreach rules
+            if (!ctx.current_dir.empty()) {
+                result.push_back((ctx.current_dir / path).lexically_normal().string());
+            } else {
+                result.push_back(path);
+            }
+
+            // Expand globs if enabled - add matched files after the pattern
             if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
                 auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.source_root
                                                                             : ctx.options.source_root / ctx.current_dir };
@@ -1435,34 +1573,19 @@ auto GraphBuilder::expand_inputs(
                         }
                     }
                 }
-            } else {
-                // Non-glob path: check if file exists on disk, or find in graph
+            } else if (!parser::has_glob_chars(path)) {
+                // Non-glob path: trigger demand-driven parsing if file doesn't exist
+                // (path already added above, but we may need to request cross-directory Tupfile)
                 auto full_path = std::filesystem::path { ctx.options.source_root / ctx.current_dir / path };
-                if (std::filesystem::exists(full_path)) {
-                    // Resolve path relative to current_dir and normalize to project-root-relative
-                    // This handles paths like "../../include/foo.h" from "modules/kernel"
-                    // -> "modules/kernel/../../include/foo.h" -> "include/foo.h"
-                    if (!ctx.current_dir.empty()) {
-                        auto resolved = (ctx.current_dir / path).lexically_normal();
-                        result.push_back(resolved.string());
-                    } else {
-                        result.push_back(std::move(path));
-                    }
-                } else {
-                    // File not in source - try demand-driven parsing then graph lookup
+                if (!std::filesystem::exists(full_path)) {
                     auto file_dir = fs::path { path }.parent_path();
                     auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
 
                     if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
                         if (ctx.eval->available_tupfile_dirs->contains(abs_file_dir)) {
-                            // Note: Circular dependency errors are NOT fatal here
                             (void)ctx.eval->request_directory(abs_file_dir);
                         }
                     }
-
-                    // Normalize to source-root-relative path
-                    auto normalized = (ctx.current_dir / path).lexically_normal().string();
-                    result.push_back(normalized);
                 }
             }
         }
@@ -1518,25 +1641,11 @@ auto GraphBuilder::expand_inputs(
 auto GraphBuilder::expand_outputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns,
-    std::string const& input
+    parser::PatternFlags const& flags
 ) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
     auto evaluator = parser::Evaluator { ctx.eval };
-
-    // Build pattern flags from input
-    // For outputs, %d is the current directory basename (where the Tupfile is),
-    // NOT the directory of the input file. This matches tup's behavior.
-    auto current_dir_name = ctx.current_dir.empty()
-        ? std::string { "." }
-        : ctx.current_dir.filename().string();
-    auto flags = parser::PatternFlags {
-        .input = input,
-        .input_base = std::string { parser::path_basename(input) },
-        .input_noext = std::string { parser::path_stem(input) },
-        .input_ext = std::string { parser::path_extension(input) },
-        .input_dir = current_dir_name,
-    };
 
     for (auto const& pattern : patterns) {
         if (pattern.is_group) {
@@ -1572,103 +1681,36 @@ auto GraphBuilder::expand_outputs(
 auto GraphBuilder::expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
-    std::vector<std::string> const& inputs,
+    parser::PatternFlags flags,
     std::vector<std::string> const& outputs
 ) -> Result<std::string>
 {
     auto evaluator = parser::Evaluator { ctx.eval };
 
-    // First get literal text from expression
+    // Expand the command expression (variable expansion)
     auto literal = Result<std::string> { evaluator.expand(cmd) };
     if (!literal) {
         return pup::unexpected<Error>(literal.error());
     }
 
-    // Now expand variables in the literal text (handles $(VAR) references)
     auto expanded = Result<std::string> { evaluator.expand(std::string_view { *literal }) };
     if (!expanded) {
         return pup::unexpected<Error>(expanded.error());
     }
 
-    // Transform paths to be relative to source directory (where command runs)
-    // Input/output paths are source-root-relative, but commands run from source_dir
-    // For variant builds, Generated nodes need variant mapping before making relative
-    auto source_to_root = compute_source_to_root(ctx.current_dir);
-    auto current_dir_str = ctx.current_dir.string();
-    auto is_variant_build = ctx.options.source_root != ctx.options.output_root;
-
-    auto cmd_inputs = std::vector<std::string> {};
-    cmd_inputs.reserve(inputs.size());
-    for (auto const& inp : inputs) {
-        auto path = inp;
-        // For variant builds, apply variant mapping for:
-        // - Generated nodes (outputs from other rules)
-        // - File nodes that only exist in variant directory (e.g., tup.config)
-        if (is_variant_build) {
-            auto needs_mapping = false;
-            if (auto node_id = ctx.graph->find_by_path(inp)) {
-                auto* node = ctx.graph->get_node(*node_id);
-                if (node) {
-                    if (node->type == NodeType::Generated) {
-                        needs_mapping = true;
-                    } else if (node->type == NodeType::File) {
-                        // Check if file exists in source; if not, use variant path
-                        auto source_path = ctx.options.source_root / inp;
-                        if (!fs::exists(source_path)) {
-                            needs_mapping = true;
-                        }
-                    }
-                }
-            } else {
-                // Node not in graph yet - check filesystem directly
-                // (nodes are created after command expansion)
-                auto source_path = ctx.options.source_root / inp;
-                if (!fs::exists(source_path)) {
-                    auto variant_path = ctx.options.output_root / inp;
-                    if (fs::exists(variant_path)) {
-                        needs_mapping = true;
-                    }
-                }
-            }
-            if (needs_mapping) {
-                path = map_to_output(inp, fs::path {}, ctx.options.source_root, ctx.options.output_root);
-            }
-        }
-        cmd_inputs.push_back(make_source_relative(path, source_to_root, current_dir_str));
-    }
-
+    // Transform outputs to Tupfile-relative paths and augment flags
+    auto tc = make_transform_context(ctx);
     auto cmd_outputs = std::vector<std::string> {};
     cmd_outputs.reserve(outputs.size());
     for (auto const& out : outputs) {
-        auto path = out;
-        // For variant builds, outputs go to variant directory
-        if (is_variant_build) {
-            path = map_to_output(out, fs::path {}, ctx.options.source_root, ctx.options.output_root);
-        }
-        cmd_outputs.push_back(make_source_relative(path, source_to_root, current_dir_str));
+        cmd_outputs.push_back(transform_output_path(tc, out));
     }
 
-    // Build pattern flags
-    auto primary_input = cmd_inputs.empty() ? std::string {} : cmd_inputs[0];
+    // Augment flags with output fields
     auto primary_output = cmd_outputs.empty() ? std::string {} : cmd_outputs[0];
-
-    // %d is the current directory basename (where the Tupfile is),
-    // NOT the directory of the input file. This matches tup's behavior.
-    auto current_dir_name = ctx.current_dir.empty()
-        ? std::string { "." }
-        : ctx.current_dir.filename().string();
-
-    auto flags = parser::PatternFlags {
-        .input = primary_input,
-        .input_base = std::string { parser::path_basename(primary_input) },
-        .input_noext = std::string { parser::path_stem(primary_input) },
-        .input_ext = std::string { parser::path_extension(primary_input) },
-        .output = primary_output,
-        .output_base = std::string { parser::path_basename(primary_output) },
-        .input_dir = current_dir_name,
-        .all_inputs = cmd_inputs,
-        .all_outputs = cmd_outputs,
-    };
+    flags.output = primary_output;
+    flags.output_base = std::string { parser::path_basename(primary_output) };
+    flags.all_outputs = cmd_outputs;
 
     // Expand pattern flags and return
     return evaluator.expand_pattern(*expanded, flags);

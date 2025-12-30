@@ -277,7 +277,7 @@ auto Evaluator::expand_pattern(
             result += flags.input_dir;
             break;
         case 'g':
-            // %g - group outputs (placeholder)
+            result += flags.glob_match;
             break;
         case 'i':
             // %i - all inputs space-separated
