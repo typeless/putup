@@ -592,19 +592,19 @@ Pattern flags are placeholders expanded at build time.
 | Flag | Description | Example |
 |------|-------------|---------|
 | `%f` | All input files | `gcc %f` → `gcc foo.c bar.c` |
+| `%i` | All inputs (alias for %f) | `gcc %i` → `gcc foo.c bar.c` |
 | `%o` | All output files | `-o %o` → `-o foo.o` |
+| `%O` | Output basename | `foo.o` → `foo` |
 | `%b` | Basename with extension | `foo.c` → `foo.c` |
 | `%B` | Basename without extension | `foo.c` → `foo` |
 | `%e` | Extension only (foreach) | `foo.c` → `c` |
 | `%d` | Directory name | `src/foo.c` → `src` |
-| `%g` | Glob match portion | `*.c` matching `foo.c` → `foo.c` |
 
 **Numbered Inputs:**
 | Flag | Description |
 |------|-------------|
 | `%1f` | First input file |
 | `%2f` | Second input file |
-| `%1o` | First output file |
 
 **Examples:**
 
@@ -1943,9 +1943,10 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | .gitignore | ✅ | ✅ | |
 | **Commands** |
 | build | ✅ | ✅ | |
-| init | ✅ | ✅ | |
+| configure | ❌ | ✅ | Two-pass config generation |
+| init | ✅ | ❌ | Pup initializes via configure |
 | parse | ✅ | ✅ | |
-| upd | ✅ | ➡️ | Alias for build |
+| upd | ✅ | ❌ | Use build instead |
 | variant | ✅ | ✅ | |
 | monitor | ✅ | ❌ | Filesystem watch daemon |
 | graph | ✅ | ✅ | Via `show graph` |
@@ -1974,17 +1975,18 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Flag | Description | Example Input | Result |
 |------|-------------|---------------|--------|
 | `%f` | All inputs | `foo.c bar.c` | `foo.c bar.c` |
+| `%i` | All inputs (alias) | `foo.c bar.c` | `foo.c bar.c` |
 | `%b` | Basename with ext | `src/foo.c` | `foo.c` |
 | `%B` | Basename no ext | `src/foo.c` | `foo` |
 | `%e` | Extension only | `foo.c` | `c` |
 | `%d` | Directory | `src/foo.c` | `src` |
-| `%g` | Glob match | `*.c` → `foo.c` | `foo.c` |
 
 **Output Flags:**
 
 | Flag | Description |
 |------|-------------|
 | `%o` | All outputs |
+| `%O` | Output basename (without extension) |
 
 **Numbered Flags:**
 
@@ -1993,8 +1995,6 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%1f` | First input |
 | `%2f` | Second input |
 | `%3f` | Third input (etc.) |
-| `%1o` | First output |
-| `%2o` | Second output (etc.) |
 
 **Usage Examples:**
 

@@ -98,15 +98,6 @@ constexpr NodeId ROOT_NODE_ID = 1;
 using Hash256 = std::array<std::byte, 32>;  // SHA-256
 ```
 
-### File Timestamps
-
-```cpp
-struct FileTime {
-    std::int64_t seconds;
-    std::int32_t nanoseconds;
-};
-```
-
 ### Node Classification
 
 ```cpp
@@ -226,8 +217,10 @@ struct Expression {
 struct PathPattern {
     Expression path;
     bool is_foreach;
-    bool is_exclusion;      // !pattern
-    bool is_group;          // {name}
+    bool is_exclusion;          // !pattern for input exclusion
+    bool is_output_exclusion;   // ^pattern for output exclusion (regex)
+    bool is_group;              // {binname} - tup calls these "bins"
+    bool is_order_only_group;   // <groupname> for order-only groups
     std::string group_name;
 };
 ```
@@ -240,9 +233,12 @@ struct Rule {
     std::vector<PathPattern> inputs;
     std::vector<PathPattern> order_only_inputs;
     Expression command;
-    Expression display;     // From ^ ^ markers
+    std::optional<Expression> display;  // From ^ ^ markers
     std::vector<PathPattern> outputs;
-    std::optional<std::string> output_group;
+    std::vector<PathPattern> extra_outputs;
+    std::optional<std::string> output_group;               // {binname} at end
+    std::optional<std::string> output_order_only_group;    // <groupname> at end
+    std::optional<Expression> output_order_only_group_dir; // path/ prefix for <group>
 };
 ```
 
@@ -252,9 +248,14 @@ struct Rule {
 struct BangMacro {
     std::string name;       // !cc
     bool foreach_;
+    std::vector<PathPattern> order_only_inputs;
     Expression command;
-    Expression display;
+    std::optional<Expression> display;
     std::vector<PathPattern> outputs;
+    std::vector<PathPattern> extra_outputs;
+    std::optional<std::string> output_group;               // {binname} at end
+    std::optional<std::string> output_order_only_group;    // <groupname> at end
+    std::optional<Expression> output_order_only_group_dir; // path/ prefix for <group>
 };
 ```
 
@@ -294,11 +295,22 @@ class VarDb {
 };
 
 struct EvalContext {
-    VarDb* vars;          // $(VAR)
-    VarDb* config_vars;   // @(VAR)
-    VarDb* node_vars;     // &(VAR)
+    VarDb* vars;                // $(VAR)
+    VarDb const* config_vars;   // @(VAR) - read-only
+    VarDb* node_vars;           // &(VAR)
     std::string tup_cwd, tup_platform, tup_arch;
     std::string tup_variantdir, tup_variant_outputdir;
+
+    // Callbacks for cross-directory resolution
+    std::function<std::vector<std::string>(std::string_view)> resolve_group;           // {groupname}
+    std::function<std::vector<std::string>(std::string_view)> resolve_order_only_group; // <groupname>
+    std::function<Result<void>(std::filesystem::path const&)> request_directory;       // Demand-driven parsing
+    std::set<std::filesystem::path> const* available_tupfile_dirs;
+
+    // Callbacks for fine-grained dependency tracking
+    std::function<void(std::string_view)> on_config_var_used;
+    std::unordered_set<std::string> const* imported_vars;
+    std::function<void(std::string_view)> on_env_var_used;
 };
 ```
 
@@ -307,7 +319,9 @@ struct EvalContext {
 | Flag | Meaning | Example |
 |------|---------|---------|
 | `%f` | All inputs | `main.c util.c` |
+| `%i` | All inputs (alias) | `main.c util.c` |
 | `%o` | All outputs | `main.o` |
+| `%O` | Output basename | `main` |
 | `%b` | Basename with ext | `main.c` |
 | `%B` | Basename no ext | `main` |
 | `%e` | Extension | `c` |
@@ -356,12 +370,16 @@ struct Node {
     std::string name;       // Basename only (tup-style identification)
     std::string command;    // For commands
     std::string display;    // Display text
+    std::string source_dir; // For commands: Tupfile directory (relative to root)
     NodeId parent_dir;      // Parent directory node (used with name for lookup)
     Hash256 content_hash;
-    FileTime mtime;
     std::vector<NodeId> inputs;
     std::vector<NodeId> outputs;
     std::vector<NodeId> order_only;
+    std::set<std::string> exported_vars;  // Env vars to export to command
+    std::optional<GeneratedOutput> generated_output;  // Output specification
+    OutputAction output_action;           // What to do with output
+    NodeId parent_command;                // Parent command for InjectImplicitDeps
 };
 
 struct Edge {
@@ -609,26 +627,34 @@ Write process:
 
 ```cpp
 struct CommandResult {
-    int exit_code;
-    std::string stdout_output;
-    std::string stderr_output;
-    std::chrono::milliseconds duration;
-    bool timed_out;
-    bool signaled;
-    int signal;
+    int exit_code = 0;
+    std::string stdout_output = {};
+    std::string stderr_output = {};
+    std::chrono::milliseconds duration = {};
+    bool timed_out = false;
+    bool signaled = false;
+    int signal = 0;
 };
 
 struct RunOptions {
-    std::filesystem::path working_dir;
-    std::vector<std::string> env;
-    bool inherit_env;
-    std::optional<std::chrono::seconds> timeout;
-    bool capture_stdout, capture_stderr;
+    std::filesystem::path working_dir = {};
+    std::vector<std::string> env = {};           // Additional environment variables
+    bool inherit_env = true;                     // Inherit parent environment
+    std::optional<std::chrono::seconds> timeout = {};
+    bool capture_stdout = true;
+    bool capture_stderr = true;
+    std::optional<std::string> stdin_data = {};  // Data to pipe to stdin
 };
+
+using OutputCallback = std::function<void(std::string_view, bool is_stderr)>;
 
 class CommandRunner {
     auto run(command) -> Result<CommandResult>;
     auto run(command, options) -> Result<CommandResult>;
+    auto run_with_output(command, callback, options) -> Result<CommandResult>;
+    auto set_working_dir(dir) -> void;
+    auto add_env(var) -> void;
+    auto set_timeout(timeout) -> void;
 };
 ```
 
@@ -636,29 +662,64 @@ class CommandRunner {
 
 ```cpp
 struct BuildJob {
-    NodeId id;
-    std::string command;
-    std::string display;
-    std::filesystem::path working_dir;
-    std::vector<std::string> inputs;
-    std::vector<std::string> outputs;
-    std::vector<std::string> order_only_inputs;
+    NodeId id = 0;
+    std::string command = {};
+    std::string display = {};
+    std::filesystem::path working_dir = {};
+    std::vector<std::string> inputs = {};
+    std::vector<std::string> outputs = {};
+    std::vector<std::string> order_only_inputs = {};  // Order-only dependencies
+    std::set<std::string> exported_vars = {};         // Env vars to export to command
+
+    // For auto-generated rules (from pattern matching)
+    bool capture_stdout = false;             // Capture stdout for depfile parsing
+    bool inject_implicit_deps = false;       // Parse stdout as depfile
+    NodeId parent_command = INVALID_NODE_ID; // Parent command for implicit deps
+};
+
+struct JobResult {
+    NodeId id = 0;
+    bool success = false;
+    int exit_code = 0;
+    std::string output = {};
+    std::chrono::milliseconds duration = {};
+    std::vector<std::string> discovered_deps = {};  // Implicit deps from .d files
+    NodeId deps_for_command = INVALID_NODE_ID;      // If set, deps belong to this command (not id)
+};
+
+struct BuildStats {
+    std::size_t total_jobs = 0;
+    std::size_t completed_jobs = 0;
+    std::size_t failed_jobs = 0;
+    std::size_t skipped_jobs = 0;
+    std::chrono::milliseconds total_time = {};
+    std::chrono::milliseconds build_time = {};  // Time spent in commands
 };
 
 struct SchedulerOptions {
-    std::size_t jobs;       // 0 = auto-detect
-    bool keep_going;
-    bool dry_run;
-    bool verbose;
-    std::optional<std::chrono::seconds> timeout;
+    std::size_t jobs = 0;                             // 0 = auto-detect
+    bool keep_going = false;                          // Continue after failures
+    bool dry_run = false;                             // Print commands without executing
+    bool verbose = false;                             // Print commands as they run
+    std::filesystem::path source_root = {};           // Source tree root (where Tupfile.ini lives)
+    std::filesystem::path output_root = {};           // Output tree root (where outputs/.pup go)
+    std::optional<std::chrono::seconds> timeout = {}; // Per-command timeout
 };
+
+using JobStartCallback = std::function<void(BuildJob const&)>;
+using JobCompleteCallback = std::function<void(BuildJob const&, JobResult const&)>;
+using ProgressCallback = std::function<void(std::size_t completed, std::size_t total)>;
 
 class Scheduler {
     auto build(graph) -> Result<BuildStats>;
     auto build_incremental(graph, old_index, changed) -> Result<BuildStats>;
+    auto build_subset(graph, command_ids) -> Result<BuildStats>;
     auto on_job_start(callback) -> void;
     auto on_job_complete(callback) -> void;
+    auto on_progress(callback) -> void;
     auto cancel() -> void;
+    auto is_cancelled() const -> bool;
+    auto stats() const -> BuildStats;
 };
 ```
 
@@ -1123,9 +1184,11 @@ The `find_by_path()` method remains for compatibility, but internally derives fr
 ### Variables
 
 ```
-VAR = value           # Assignment
-VAR += value          # Append
-VAR := value          # No expansion
+VAR = value           # Assignment (expands RHS)
+VAR += value          # Append (space-separated)
+VAR := value          # Literal assignment (no expansion)
+VAR ?= value          # Soft set (set if unset, immediate eval, first wins)
+VAR ??= value         # Weak set (set if unset, deferred eval, last wins)
 $(VAR)                # Regular reference
 @(CONFIG_VAR)         # Config reference
 &(NODE_VAR)           # Node reference
@@ -1152,10 +1215,14 @@ endif
 ### Directives
 
 ```
-include path
-include_rules
-export VAR
-import VAR[=default]
+include path          # Include another Tupfile
+include_rules         # Include Tuprules.tup from ancestor directories
+export VAR            # Export environment variable to subprocesses
+import VAR[=default]  # Import environment variable
+preload path          # Preload directory for dependency tracking
+error message         # Emit error and stop parsing
+run script            # Execute shell script during parse
+.gitignore            # Generate .gitignore for outputs
 ```
 
 ### Built-in Variables

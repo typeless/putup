@@ -84,12 +84,11 @@ test/e2e/fixtures/
 auto f = E2EFixture { "fixture_name" };  // Copies to temp dir
 
 // Pup commands
-f.init()           // pup configure
+f.init()           // pup configure (initializes .pup directory)
 f.build()          // pup build
 f.clean()          // pup clean
 f.parse()          // pup parse
-f.configure()      // pup configure
-f.pup({ args })    // pup <args>
+f.pup({ args })    // pup <args> (generic command)
 
 // Filesystem checks
 f.exists("path")

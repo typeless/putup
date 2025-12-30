@@ -88,7 +88,7 @@ SCENARIO("Feature description", "[e2e][tag]")
 ```
 
 **E2EFixture methods:**
-- `init()`, `build()`, `clean()`, `distclean()`, `parse()`, `configure()` - Run pup commands
+- `init()`, `build()`, `clean()`, `distclean()`, `parse()`, `pup()` - Run pup commands
 - `exists()`, `is_file()`, `is_directory()`, `is_executable()` - Check paths
 - `read_file()`, `write_file()`, `append_file()`, `remove_file()` - File I/O
 - `run()` - Execute a program and capture output
@@ -200,6 +200,7 @@ pup/
 │   ├── pup             # Main binary
 │   └── test/unit/pup_test
 ├── include/pup/
+│   ├── cli/            # Command-line interface, options, output
 │   ├── core/           # Core types, hash, result, platform
 │   ├── parser/         # Lexer, parser, AST, evaluator, depfile
 │   ├── graph/          # Dependency DAG, builder, topological sort, rule patterns
