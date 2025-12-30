@@ -47,9 +47,8 @@ auto parse_targets_for_variants(
             variant_set.insert(target.variant->string());
             if (!target.scope_or_output.empty()) {
                 if (target.is_output) {
-                    // Full path includes variant prefix (e.g., build-debug/hello)
-                    auto full_path = *target.variant / target.scope_or_output;
-                    result.output_targets.push_back(full_path.string());
+                    // Store source-root-relative path (graph uses source-root-relative)
+                    result.output_targets.push_back(target.scope_or_output.string());
                 } else {
                     result.scopes.push_back(target.scope_or_output.string());
                 }

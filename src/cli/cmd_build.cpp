@@ -144,7 +144,8 @@ auto collect_upstream_files(
 }
 
 auto find_changed_files_with_implicit(
-    std::filesystem::path const& root,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& output_root,
     pup::index::Index const& old_index,
     std::vector<std::string> const& scopes,
     std::set<std::string> const& upstream_files,
@@ -167,6 +168,8 @@ auto find_changed_files_with_implicit(
         }
 
         ++metrics.files_checked;
+        // Source files use source_root, generated outputs use output_root
+        auto const& root = (file.type == pup::NodeType::Generated) ? output_root : source_root;
         auto path = resolve_path(file.path, root);
 
         ++metrics.stat_calls;
@@ -286,7 +289,8 @@ auto expand_implicit_deps(
 auto build_index(
     pup::graph::BuildGraph const& graph,
     std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
-    std::filesystem::path const& root,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& output_root,
     pup::index::Index const* old_index = nullptr
 ) -> pup::index::Index
 {
@@ -315,6 +319,8 @@ auto build_index(
                 continue;
             }
 
+            // Source files use source_root, generated outputs use output_root
+            auto const& root = (node->type == pup::NodeType::Generated) ? output_root : source_root;
             auto file_path = std::filesystem::path { root / node_path };
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
@@ -507,11 +513,12 @@ auto build_index(
 
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
-            auto abs_path = resolve_path(dep_path, root);
+            // Implicit deps (from -MD) are source headers
+            auto abs_path = resolve_path(dep_path, source_root);
 
             auto rel_path = std::string {};
-            if (pup::is_path_under(abs_path, root)) {
-                rel_path = std::filesystem::relative(abs_path, root).string();
+            if (pup::is_path_under(abs_path, source_root)) {
+                rel_path = std::filesystem::relative(abs_path, source_root).string();
             } else {
                 rel_path = abs_path.string();
             }
@@ -560,7 +567,8 @@ auto build_index(
             }
 
             auto new_file_it = path_to_id.find(old_file->path);
-            auto abs_path = resolve_path(old_file->path, root);
+            // Old implicit deps are source headers
+            auto abs_path = resolve_path(old_file->path, source_root);
             auto new_from_id = new_file_it != path_to_id.end()
                 ? new_file_it->second
                 : create_implicit_file(abs_path, old_file->path);
@@ -681,7 +689,7 @@ auto build_single_variant(
             }
         }
 
-        changed_files = find_changed_files_with_implicit(ctx.layout().source_root, idx, scopes, upstream_files, opts.verbose);
+        changed_files = find_changed_files_with_implicit(ctx.layout().source_root, ctx.layout().output_root, idx, scopes, upstream_files, opts.verbose);
         changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
 
         // Add output targets to force their rebuild
@@ -724,7 +732,7 @@ auto build_single_variant(
                     continue;
                 }
 
-                auto abs_path = ctx.layout().source_root / file->path;
+                auto abs_path = ctx.layout().output_root / file->path;
                 if (std::filesystem::exists(abs_path)) {
                     if (opts.dry_run) {
                         vprint("Would remove stale: {}\n", file->path);
@@ -865,7 +873,7 @@ auto build_single_variant(
         // Save index even after partial failures - successful outputs are recorded
         // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
         // and they'll be detected as changed on next build.
-        auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, old_idx_ptr) };
+        auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, ctx.layout().output_root, old_idx_ptr) };
         auto writer = pup::index::IndexWriter {};
 
         auto index_save_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };

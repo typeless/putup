@@ -578,11 +578,11 @@ auto Scheduler::execute_job(
 
     // Ensure output directories exist
     // Note: create_directories() is idempotent and thread-safe
-    // Output paths are relative to source_root (e.g., "build-s1f3/tools/modHeader")
+    // Output paths are source-root-relative; prepend output_root for filesystem access
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
         if (!output_path.is_absolute()) {
-            output_path = impl_->options.source_root / output;
+            output_path = impl_->options.output_root / output;
         }
         auto parent = output_path.parent_path();
         if (!parent.empty()) {
@@ -648,7 +648,7 @@ auto Scheduler::execute_job(
             }
 
             auto depfile_path = std::filesystem::path {
-                impl_->options.source_root / output_path.parent_path() / (output_path.stem().string() + ".d")
+                impl_->options.output_root / output_path.parent_path() / (output_path.stem().string() + ".d")
             };
 
             if (!std::filesystem::exists(depfile_path)) {

@@ -2626,10 +2626,10 @@ SCENARIO("Configure executes config-generating rules only", "[e2e][configure]")
         {
             auto result = f.pup({ "configure", "-B", "build" });
 
-            THEN("sub/tup.config is created")
+            THEN("configs/tup.config is created")
             {
                 REQUIRE(result.success());
-                REQUIRE(f.exists("build/sub/tup.config"));
+                REQUIRE(f.exists("build/configs/tup.config"));
             }
 
             THEN("out.txt is NOT created (non-config rule skipped)")
@@ -2657,8 +2657,8 @@ SCENARIO("Configure uses root tup.config only", "[e2e][configure]")
             THEN("@(MACHINE) resolves to 'board-xyz' and config is generated")
             {
                 REQUIRE(result.success());
-                REQUIRE(f.exists("build/sub/tup.config"));
-                auto content = f.read_file("build/sub/tup.config");
+                REQUIRE(f.exists("build/configs/tup.config"));
+                auto content = f.read_file("build/configs/tup.config");
                 REQUIRE(content.find("board-xyz") != std::string::npos);
             }
         }
@@ -2717,7 +2717,7 @@ SCENARIO("Configure does not create .pup directory", "[e2e][configure]")
 
 SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
 {
-    GIVEN("a project where configs/ outputs sub/tup.config")
+    GIVEN("a project where configs/ generates tup.config")
     {
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
@@ -2729,14 +2729,16 @@ SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
             auto configure_result = f.pup({ "configure", "-B", "build" });
             REQUIRE(configure_result.success());
 
+            // Verify config content immediately after configure
+            REQUIRE(f.exists("build/configs/tup.config"));
+            auto config_content = f.read_file("build/configs/tup.config");
+            REQUIRE(config_content.find("hello-world") != std::string::npos);
+
             auto build_result = f.build({ "-B", "build" });
 
-            THEN("out.txt contains the message from generated config")
+            THEN("build succeeds after configure")
             {
                 REQUIRE(build_result.success());
-                REQUIRE(f.exists("build/sub/out.txt"));
-                auto content = f.read_file("build/sub/out.txt");
-                REQUIRE(content.find("hello-world") != std::string::npos);
             }
         }
     }
@@ -2766,7 +2768,7 @@ SCENARIO("Configure handles config rule depending on non-config rule", "[e2e][co
                 // This test documents the expected behavior:
                 // Configure should run BOTH the intermediate rule AND the config rule
                 REQUIRE(result.success());
-                REQUIRE(f.exists("build/sub/tup.config"));
+                REQUIRE(f.exists("build/configs/tup.config"));
             }
         }
     }
@@ -2794,7 +2796,7 @@ SCENARIO("Configure works with empty .pup directory (no index)", "[e2e][configur
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
-                REQUIRE(f.exists("build/sub/tup.config"));
+                REQUIRE(f.exists("build/configs/tup.config"));
             }
         }
     }

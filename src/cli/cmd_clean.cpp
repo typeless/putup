@@ -91,7 +91,8 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-    auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
+    // Use build_dir for outputs (source-root-relative paths stored in index)
+    auto result = remove_indexed_outputs(index_path, ctx->build_dir, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
         result.output_dirs, ctx->build_dir, ctx->root, mode
@@ -121,7 +122,8 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
     if (std::filesystem::exists(index_path)) {
-        auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
+        // Use build_dir for outputs (source-root-relative paths stored in index)
+        auto result = remove_indexed_outputs(index_path, ctx->build_dir, mode, variant_name);
         error_count += result.error_count;
         output_dirs = std::move(result.output_dirs);
     }

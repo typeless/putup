@@ -72,7 +72,11 @@ auto normalize_group_dir(
         }
     }
 
-    return path.empty() ? "." : path.string();
+    auto result = path.empty() ? "." : path.string();
+    if constexpr (DEBUG_OO_GROUPS) {
+        fmt::print(stderr, "[DEBUG] normalize_group_dir({}, {}) -> {}\n", path_str, current_dir.string(), result);
+    }
+    return result;
 }
 
 /// Map an output path to the output directory.
@@ -1173,7 +1177,11 @@ auto GraphBuilder::expand_rule(
     }
 
     // Create edges from inputs to command
+    // Skip group references - they are handled by deferred edge resolution (order-only)
     for (auto const& input : inputs) {
+        if (input.find('<') != std::string::npos && input.back() == '>') {
+            continue;
+        }
         auto input_id = Result<NodeId> { resolve_input_node(ctx, input) };
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
@@ -1417,9 +1425,9 @@ auto GraphBuilder::expand_inputs(
                         }
                     }
 
-                    // Map the pattern to output path for matching
-                    auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
-                    auto glob = parser::Glob { output_path };
+                    // Match glob pattern against Generated nodes (stored at source-root-relative paths)
+                    auto pattern_path = ctx.current_dir.empty() ? path : (ctx.current_dir / path).lexically_normal().string();
+                    auto glob = parser::Glob { pattern_path };
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         auto node_path = ctx.graph->get_full_path(id);
                         if (!node_path.empty() && glob.matches(node_path)) {
@@ -1441,73 +1449,20 @@ auto GraphBuilder::expand_inputs(
                         result.push_back(std::move(path));
                     }
                 } else {
-                    // File not in source - check variant directory first (if variant build)
-                    auto found_in_variant = false;
-                    if (ctx.options.source_root != ctx.options.output_root) {
-                        auto normalized = (ctx.current_dir / path).lexically_normal();
-                        auto variant_path = ctx.options.output_root / normalized;
-                        if (fs::exists(variant_path)) {
-                            // File exists in variant - return project-root-relative path
-                            // which includes the output prefix (e.g., "build/config.txt")
-                            auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root);
-                            auto project_rel = (output_prefix / normalized).lexically_normal();
-                            result.push_back(project_rel.string());
-                            found_in_variant = true;
+                    // File not in source - try demand-driven parsing then graph lookup
+                    auto file_dir = fs::path { path }.parent_path();
+                    auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
+
+                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
+                        if (ctx.eval->available_tupfile_dirs->contains(abs_file_dir)) {
+                            // Note: Circular dependency errors are NOT fatal here
+                            (void)ctx.eval->request_directory(abs_file_dir);
                         }
                     }
 
-                    if (!found_in_variant) {
-                        // Not on disk - try demand-driven parsing of the file's directory
-                        auto file_dir = fs::path { path }.parent_path();
-                        auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
-
-                        // If path references the build output, map back to source for Tupfile lookup
-                        // E.g., "../../build-s1f3/modules/kernel" -> "modules/kernel"
-                        auto source_dir = abs_file_dir;
-                        if (ctx.options.source_root != ctx.options.output_root) {
-                            auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root).string();
-                            auto abs_dir_str = abs_file_dir.string();
-                            if (abs_dir_str.starts_with(output_prefix + "/")) {
-                                source_dir = fs::path { abs_dir_str.substr(output_prefix.size() + 1) };
-                            } else if (abs_dir_str == output_prefix) {
-                                source_dir = fs::path { "." };
-                            }
-                        }
-
-                        if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                            if (ctx.eval->available_tupfile_dirs->contains(source_dir)) {
-                                auto req_result = Result<void> { ctx.eval->request_directory(source_dir) };
-                                // Note: Circular dependency errors are NOT fatal here - they just mean
-                                // the directory is already being parsed and we should continue.
-                                // The generated file will be found in the graph after parsing completes.
-                                (void)req_result;
-                            }
-                        }
-
-                        // Check for generated file in build output
-                        // Try multiple path formats in order of likelihood
-                        auto abs_path = full_path.lexically_normal().string();
-                        auto rel_path = fs::path { abs_path }.lexically_relative(ctx.options.source_root).string();
-
-                        // First try absolute path (outputs from -B builds use absolute paths)
-                        if (ctx.graph->find_by_path(abs_path)) {
-                            result.push_back(abs_path);
-                        }
-                        // Then try project-relative path
-                        else if (ctx.graph->find_by_path(rel_path)) {
-                            result.push_back(rel_path);
-                        }
-                        // Try mapping to output (for simple paths like "foo.o")
-                        else {
-                            auto output_path = map_to_output(path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
-                            if (ctx.graph->find_by_path(output_path)) {
-                                result.push_back(output_path);
-                            } else {
-                                // Fall back to project-relative path for error messages
-                                result.push_back(rel_path);
-                            }
-                        }
-                    }
+                    // Normalize to source-root-relative path
+                    auto normalized = (ctx.current_dir / path).lexically_normal().string();
+                    result.push_back(normalized);
                 }
             }
         }
@@ -1601,8 +1556,11 @@ auto GraphBuilder::expand_outputs(
             auto expanded = Result<std::string> { evaluator.expand_pattern(path, flags) };
             auto output_path = expanded ? *expanded : std::move(path);
 
-            // Map to output directory
-            output_path = map_to_output(output_path, ctx.current_dir, ctx.options.source_root, ctx.options.output_root);
+            // Store at source-root-relative path (current_dir / output)
+            // Variant mapping is applied only at I/O time (expand_command)
+            if (!ctx.current_dir.empty()) {
+                output_path = (ctx.current_dir / output_path).lexically_normal().string();
+            }
 
             result.push_back(std::move(output_path));
         }
@@ -1633,20 +1591,61 @@ auto GraphBuilder::expand_command(
     }
 
     // Transform paths to be relative to source directory (where command runs)
-    // Input/output paths are project-root-relative, but commands run from source_dir
+    // Input/output paths are source-root-relative, but commands run from source_dir
+    // For variant builds, Generated nodes need variant mapping before making relative
     auto source_to_root = compute_source_to_root(ctx.current_dir);
     auto current_dir_str = ctx.current_dir.string();
+    auto is_variant_build = ctx.options.source_root != ctx.options.output_root;
 
     auto cmd_inputs = std::vector<std::string> {};
     cmd_inputs.reserve(inputs.size());
     for (auto const& inp : inputs) {
-        cmd_inputs.push_back(make_source_relative(inp, source_to_root, current_dir_str));
+        auto path = inp;
+        // For variant builds, apply variant mapping for:
+        // - Generated nodes (outputs from other rules)
+        // - File nodes that only exist in variant directory (e.g., tup.config)
+        if (is_variant_build) {
+            auto needs_mapping = false;
+            if (auto node_id = ctx.graph->find_by_path(inp)) {
+                auto* node = ctx.graph->get_node(*node_id);
+                if (node) {
+                    if (node->type == NodeType::Generated) {
+                        needs_mapping = true;
+                    } else if (node->type == NodeType::File) {
+                        // Check if file exists in source; if not, use variant path
+                        auto source_path = ctx.options.source_root / inp;
+                        if (!fs::exists(source_path)) {
+                            needs_mapping = true;
+                        }
+                    }
+                }
+            } else {
+                // Node not in graph yet - check filesystem directly
+                // (nodes are created after command expansion)
+                auto source_path = ctx.options.source_root / inp;
+                if (!fs::exists(source_path)) {
+                    auto variant_path = ctx.options.output_root / inp;
+                    if (fs::exists(variant_path)) {
+                        needs_mapping = true;
+                    }
+                }
+            }
+            if (needs_mapping) {
+                path = map_to_output(inp, fs::path {}, ctx.options.source_root, ctx.options.output_root);
+            }
+        }
+        cmd_inputs.push_back(make_source_relative(path, source_to_root, current_dir_str));
     }
 
     auto cmd_outputs = std::vector<std::string> {};
     cmd_outputs.reserve(outputs.size());
     for (auto const& out : outputs) {
-        cmd_outputs.push_back(make_source_relative(out, source_to_root, current_dir_str));
+        auto path = out;
+        // For variant builds, outputs go to variant directory
+        if (is_variant_build) {
+            path = map_to_output(out, fs::path {}, ctx.options.source_root, ctx.options.output_root);
+        }
+        cmd_outputs.push_back(make_source_relative(path, source_to_root, current_dir_str));
     }
 
     // Build pattern flags
@@ -1786,50 +1785,33 @@ auto GraphBuilder::resolve_input_node(
     std::string const& path
 ) -> Result<NodeId>
 {
-    // In variant builds, check if input path references a generated output
-    // This handles paths like "include/header.h" that should resolve to
-    // "build/include/header.h" when that's where the generated output lives
-    if (ctx.options.source_root != ctx.options.output_root) {
-        auto output_prefix = fs::relative(ctx.options.output_root, ctx.options.source_root).string();
+    // Unified source-root-relative storage:
+    // All nodes (File, Ghost, Generated) are stored at source-root-relative paths.
+    // Variant mapping is applied only at I/O time (expand_command, file operations).
 
-        // If path already starts with output prefix, it's already mapped
-        if (path.starts_with(output_prefix + "/") || path == output_prefix) {
-            if (auto existing = ctx.graph->find_by_path(path)) {
-                auto* node = ctx.graph->get_node(*existing);
-                if (node && node->type == NodeType::Generated) {
-                    return *existing;
-                }
-            }
-            return get_or_create_file_node(ctx, path, NodeType::File);
-        }
-
-        // Map source-relative path to output path
-        auto mapped = map_to_output(path, fs::path {}, ctx.options.source_root, ctx.options.output_root);
-
-        // Check if a Generated node exists at the mapped path
-        if (auto existing = ctx.graph->find_by_path(mapped)) {
-            return *existing;
-        }
-
-        // Check if the source file actually exists on disk
-        auto source_path = ctx.options.source_root / path;
-        if (fs::exists(source_path)) {
-            return get_or_create_file_node(ctx, path, NodeType::File);
-        }
-
-        // File doesn't exist - create Ghost at mapped output path
-        // Ghost nodes are placeholders that will be upgraded to Generated
-        // when the output rule is processed
-        return get_or_create_file_node(ctx, mapped, NodeType::Ghost);
+    // Check if node already exists at this path (from earlier parsing)
+    if (auto existing = ctx.graph->find_by_path(path)) {
+        return *existing;
     }
 
-    // In-tree build: check if source file exists
+    // Check if source file exists on disk
     auto source_path = ctx.options.source_root / path;
     if (fs::exists(source_path)) {
         return get_or_create_file_node(ctx, path, NodeType::File);
     }
 
-    // File doesn't exist - create Ghost node
+    // For variant builds, also check if file exists only in variant directory
+    // (e.g., tup.config, or files created during configure step)
+    if (ctx.options.source_root != ctx.options.output_root) {
+        auto variant_path = ctx.options.output_root / path;
+        if (fs::exists(variant_path)) {
+            return get_or_create_file_node(ctx, path, NodeType::File);
+        }
+    }
+
+    // File doesn't exist - create Ghost at source-root-relative path
+    // Ghost nodes are placeholders that will be upgraded to Generated
+    // when the output rule is processed (same path, in-place upgrade)
     return get_or_create_file_node(ctx, path, NodeType::Ghost);
 }
 

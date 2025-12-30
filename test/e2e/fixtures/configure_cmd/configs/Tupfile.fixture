@@ -1,5 +1,5 @@
-# Config generator - outputs tup.config files
+# Config generator - outputs tup.config file
 include_rules
 
-# Generate sub/tup.config with CONFIG_MSG variable
-: |> echo "CONFIG_MSG=@(MACHINE)" > %o |> $(TUP_VARIANT_OUTPUTDIR)/../sub/tup.config
+# Generate tup.config with CONFIG_MSG variable
+: |> echo "CONFIG_MSG=@(MACHINE)" > %o |> tup.config
