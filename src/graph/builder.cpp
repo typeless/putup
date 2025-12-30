@@ -182,11 +182,11 @@ auto compute_source_to_root(fs::path const& current_dir) -> std::string
 /// 2. Converting project-root-relative paths to Tupfile-relative (e.g., ../lib/bar.c)
 ///
 /// This context is computed once per rule and reused for both inputs and outputs,
-/// avoiding redundant computation of source_to_root and variant detection.
+/// avoiding redundant computation of source_to_root. The distinction between variant
+/// and non-variant builds is handled by map_to_output() checking source_root == output_root.
 struct PathTransformContext {
     std::string source_to_root;
     std::string current_dir_str;
-    bool is_variant_build;
     fs::path source_root;
     fs::path output_root;
 };
@@ -196,13 +196,14 @@ auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
     return PathTransformContext {
         .source_to_root = compute_source_to_root(ctx.current_dir),
         .current_dir_str = ctx.current_dir.string(),
-        .is_variant_build = ctx.options.source_root != ctx.options.output_root,
         .source_root = ctx.options.source_root,
         .output_root = ctx.options.output_root,
     };
 }
 
-/// Transform an input path to Tupfile-relative, applying variant mapping if needed
+/// Transform an input path to Tupfile-relative, applying variant mapping if needed.
+/// Generated nodes are mapped to the output directory; source files are not.
+/// For unknown paths, check filesystem: if file exists only in variant, map it.
 auto transform_input_path(
     BuilderContext& ctx,
     PathTransformContext const& tc,
@@ -210,46 +211,40 @@ auto transform_input_path(
 ) -> std::string
 {
     auto path = inp;
-    if (tc.is_variant_build) {
-        auto needs_mapping = false;
-        if (auto node_id = ctx.graph->find_by_path(inp)) {
-            auto* node = ctx.graph->get_node(*node_id);
-            if (node) {
-                if (node->type == NodeType::Generated) {
-                    needs_mapping = true;
-                } else if (node->type == NodeType::File) {
-                    auto source_path = tc.source_root / inp;
-                    if (!fs::exists(source_path)) {
-                        needs_mapping = true;
-                    }
-                }
-            }
-        } else {
-            auto source_path = tc.source_root / inp;
-            if (!fs::exists(source_path)) {
-                auto variant_path = tc.output_root / inp;
-                if (fs::exists(variant_path)) {
-                    needs_mapping = true;
-                }
-            }
+    auto needs_mapping = false;
+
+    if (auto node_id = ctx.graph->find_by_path(inp)) {
+        // Known node - map if generated
+        auto* node = ctx.graph->get_node(*node_id);
+        if (node && node->type == NodeType::Generated) {
+            needs_mapping = true;
         }
-        if (needs_mapping) {
-            path = map_to_output(inp, fs::path {}, tc.source_root, tc.output_root);
+    } else {
+        // Unknown path - check filesystem for variant-only files
+        auto source_path = tc.source_root / inp;
+        if (!fs::exists(source_path)) {
+            auto variant_path = tc.output_root / inp;
+            if (fs::exists(variant_path)) {
+                needs_mapping = true;
+            }
         }
     }
+
+    if (needs_mapping) {
+        path = map_to_output(inp, fs::path {}, tc.source_root, tc.output_root);
+    }
+
     return make_source_relative(path, tc.source_to_root, tc.current_dir_str);
 }
 
-/// Transform an output path to Tupfile-relative, applying variant mapping if needed
+/// Transform an output path to Tupfile-relative, applying variant mapping.
+/// map_to_output handles both variant (S!=B) and non-variant (S==B) cases.
 auto transform_output_path(
     PathTransformContext const& tc,
     std::string const& out
 ) -> std::string
 {
-    auto path = out;
-    if (tc.is_variant_build) {
-        path = map_to_output(out, fs::path {}, tc.source_root, tc.output_root);
-    }
+    auto path = map_to_output(out, fs::path {}, tc.source_root, tc.output_root);
     return make_source_relative(path, tc.source_to_root, tc.current_dir_str);
 }
 
