@@ -11,6 +11,8 @@ A build system using [Tupfile](https://gittup.org/tup/) syntax.
 - SHA-256 content hashing
 - No FUSE, no Lua
 
+**Design Coherence**: Ensure consistency between design documentation and implementation. No special-case handling or workarounds—if something doesn't fit the architecture, fix the design.
+
 > **Architecture Details**: See [DESIGN.md](DESIGN.md) for internal architecture, data structures, and design rationale.
 
 ## Building & Testing
