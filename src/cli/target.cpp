@@ -85,10 +85,13 @@ auto parse_target(
 
             target.is_output = true;
         }
-    } else if (target.variant.has_value()) {
-        // Path doesn't exist but is under a variant - check if parent exists
+    } else {
+        // Path doesn't exist - check if parent exists (output target for from-scratch build)
         auto parent = full_path.parent_path();
-        if (!parent.empty() && !fs::exists(parent)) {
+        if (parent.empty()) {
+            parent = project_root;
+        }
+        if (!fs::exists(parent)) {
             return unexpected<Error> { Error { ErrorCode::NotFound, "path not found: " + target_path } };
         }
 
@@ -99,9 +102,6 @@ auto parse_target(
 
         // Parent exists - assume output file (validate in cmd_build.cpp after graph is built)
         target.is_output = true;
-    } else {
-        // Non-variant path doesn't exist - error
-        return unexpected<Error> { Error { ErrorCode::NotFound, "path not found: " + target_path } };
     }
 
     return target;

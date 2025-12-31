@@ -112,6 +112,14 @@ public:
         std::set<NodeId> const& command_ids
     ) -> Result<BuildStats>;
 
+    /// Build specific targets and all required dependencies.
+    /// Uses reverse traversal to find commands needed.
+    [[nodiscard]]
+    auto build_targets(
+        graph::BuildGraph const& graph,
+        std::vector<NodeId> const& target_ids
+    ) -> Result<BuildStats>;
+
     /// Set callback for job start
     auto on_job_start(JobStartCallback callback) -> void;
 

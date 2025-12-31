@@ -674,8 +674,9 @@ auto build_single_variant(
         return EXIT_SUCCESS;
     }
 
-    // Validate output targets exist in graph
+    // Validate output targets exist in graph and collect their NodeIds
     // Generated outputs are stored under BUILD_ROOT_ID, not SOURCE_ROOT_ID
+    auto target_node_ids = std::vector<pup::NodeId> {};
     for (auto const& target : opts.output_targets) {
         auto node_id = ctx.graph().find_by_path(target, pup::BUILD_ROOT_ID);
         if (!node_id) {
@@ -687,6 +688,7 @@ auto build_single_variant(
             fmt::print(stderr, "[{}] Error: {} is not a build output\n", variant_name, target);
             return EXIT_FAILURE;
         }
+        target_node_ids.push_back(*node_id);
         if (opts.verbose) {
             vprint("Output target: {}\n", target);
         }
@@ -732,7 +734,13 @@ auto build_single_variant(
         // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
         auto build_root_name = std::string { ctx.graph().get_build_root_name() };
         for (auto const& output_path : opts.output_targets) {
-            auto prefixed = build_root_name.empty() ? output_path : (build_root_name + "/" + output_path);
+            auto prefixed = std::string {};
+            if (!build_root_name.empty()) {
+                prefixed.reserve(build_root_name.size() + 1 + output_path.size());
+                prefixed.append(build_root_name).append("/").append(output_path);
+            } else {
+                prefixed = output_path;
+            }
             if (std::ranges::find(changed_files, prefixed) == changed_files.end()) {
                 changed_files.push_back(prefixed);
             }
@@ -880,21 +888,9 @@ auto build_single_variant(
 
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
-    if (!opts.output_targets.empty() && !use_incremental) {
-        // Single output targets without old_index - use incremental with just target paths
-        // Output targets are source-relative (e.g., "hello"), but get_full_path returns
-        // paths with build root prefix (e.g., "build/hello"). Add the prefix.
-        auto build_root_name = std::string { ctx.graph().get_build_root_name() };
-        auto prefixed_targets = std::vector<std::string> {};
-        for (auto const& target : opts.output_targets) {
-            if (!build_root_name.empty()) {
-                prefixed_targets.push_back(build_root_name + "/" + target);
-            } else {
-                prefixed_targets.push_back(target);
-            }
-        }
-        auto empty_index = pup::index::Index {};
-        build_result = scheduler.build_incremental(ctx.graph(), empty_index, prefixed_targets);
+    if (!target_node_ids.empty() && !use_incremental) {
+        // Target-based build: use reverse traversal to find required commands
+        build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
     } else if (use_incremental && old_idx_ptr) {
         build_result = scheduler.build_incremental(ctx.graph(), *old_idx_ptr, changed_files);
     } else {

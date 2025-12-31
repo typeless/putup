@@ -213,7 +213,24 @@ SCENARIO("Target parsing - error cases", "[target]")
         }
     }
 
-    GIVEN("a nonexistent path")
+    GIVEN("a nonexistent path with nonexistent parent")
+    {
+        auto tmp = TempDir {};
+        tmp.create_file("Tupfile.ini");
+
+        WHEN("parsing 'no_such_dir/nonexistent'")
+        {
+            auto result = pup::parse_target(tmp.path(), "no_such_dir/nonexistent");
+
+            THEN("returns error: path not found")
+            {
+                REQUIRE_FALSE(result.has_value());
+                REQUIRE(result.error().message.find("not found") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a nonexistent path with existing parent")
     {
         auto tmp = TempDir {};
         tmp.create_file("Tupfile.ini");
@@ -222,10 +239,10 @@ SCENARIO("Target parsing - error cases", "[target]")
         {
             auto result = pup::parse_target(tmp.path(), "nonexistent");
 
-            THEN("returns error: path not found")
+            THEN("treats as potential output target (validation deferred to build)")
             {
-                REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().message.find("not found") != std::string::npos);
+                REQUIRE(result.has_value());
+                REQUIRE(result->is_output);
             }
         }
     }

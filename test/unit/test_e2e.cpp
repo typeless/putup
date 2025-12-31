@@ -2435,10 +2435,10 @@ SCENARIO("Unified targets - error on nonexistent path", "[e2e][target]")
         {
             auto result = f.pup({ "nonexistent" });
 
-            THEN("an error is returned")
+            THEN("an error is returned (target not in build graph)")
             {
                 REQUIRE_FALSE(result.success());
-                REQUIRE(result.stderr_output.find("not found") != std::string::npos);
+                REQUIRE(result.stderr_output.find("is not in build graph") != std::string::npos);
             }
         }
     }
@@ -2552,6 +2552,77 @@ SCENARIO("Unified targets - B flag with output target", "[e2e][target]")
             {
                 REQUIRE(result.success());
                 REQUIRE(f.is_executable("build-debug/hello"));
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Target-based build (from scratch) tests
+// =============================================================================
+
+SCENARIO("Target-based build from scratch", "[e2e][target]")
+{
+    GIVEN("an initialized multi_file project")
+    {
+        auto f = E2EFixture { "multi_file" };
+        REQUIRE(f.init().success());
+
+        WHEN("building a specific output target from scratch")
+        {
+            auto result = f.pup({ "calc" });
+
+            THEN("target and all dependencies are built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("calc"));
+                REQUIRE(f.exists("add.o"));
+                REQUIRE(f.exists("main.o"));
+                REQUIRE(f.exists("multiply.o"));
+            }
+        }
+    }
+}
+
+SCENARIO("Target-based build of single object", "[e2e][target]")
+{
+    GIVEN("an initialized multi_file project")
+    {
+        auto f = E2EFixture { "multi_file" };
+        REQUIRE(f.init().success());
+
+        WHEN("building just one object file")
+        {
+            auto result = f.pup({ "add.o" });
+
+            THEN("only that object is built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("add.o"));
+                REQUIRE_FALSE(f.exists("calc"));
+                REQUIRE_FALSE(f.exists("main.o"));
+                REQUIRE_FALSE(f.exists("multiply.o"));
+            }
+        }
+    }
+}
+
+SCENARIO("Target-based build with variant", "[e2e][target][variant]")
+{
+    GIVEN("an initialized out_of_tree project with variant")
+    {
+        auto f = E2EFixture { "out_of_tree" };
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("building a specific output target from scratch with -B")
+        {
+            auto result = f.pup({ "-B", "build", "hello" });
+
+            THEN("target and all dependencies are built in variant dir")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build/hello"));
+                REQUIRE(f.exists("build/hello.o"));
             }
         }
     }

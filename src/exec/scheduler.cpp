@@ -155,6 +155,50 @@ auto build_dependency_map(
     return { std::move(in_degree), std::move(dependents) };
 }
 
+/// Collect all commands required to build the given target nodes.
+/// Uses reverse traversal: starts at targets, walks backward through inputs.
+auto collect_required_commands(
+    graph::BuildGraph const& graph,
+    std::vector<NodeId> const& target_ids
+) -> std::set<NodeId>
+{
+    auto visited = std::set<NodeId> {};
+    auto commands = std::set<NodeId> {};
+
+    auto walk_backward = std::function<void(NodeId)> {};
+    walk_backward = [&](NodeId id) {
+        if (visited.contains(id)) {
+            return;
+        }
+        visited.insert(id);
+
+        auto const* node = graph.get_node(id);
+        if (!node) {
+            return;
+        }
+
+        if (node->type == NodeType::Command) {
+            commands.insert(id);
+        }
+
+        // Walk to inputs (upstream dependencies)
+        for (auto input_id : graph.get_inputs(id)) {
+            walk_backward(input_id);
+        }
+
+        // Include order-only dependencies
+        for (auto dep_id : graph.get_order_only(id)) {
+            walk_backward(dep_id);
+        }
+    };
+
+    for (auto target_id : target_ids) {
+        walk_backward(target_id);
+    }
+
+    return commands;
+}
+
 } // namespace
 
 struct Scheduler::Impl {
@@ -813,6 +857,50 @@ auto Scheduler::build_subset(
     }
 
     auto jobs = filter_jobs(*all_jobs, command_ids);
+    impl_->stats.total_jobs = jobs.size();
+    impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
+
+    if (jobs.empty()) {
+        auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+            end_time - start_time
+        );
+        return impl_->stats;
+    }
+
+    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
+
+    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_time - start_time
+    );
+
+    if (!exec_result && !impl_->options.keep_going) {
+        return pup::unexpected<Error>(exec_result.error());
+    }
+
+    return impl_->stats;
+}
+
+auto Scheduler::build_targets(
+    graph::BuildGraph const& graph,
+    std::vector<NodeId> const& target_ids
+) -> Result<BuildStats>
+{
+    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    impl_->cancelled.store(false);
+    impl_->stats = BuildStats {};
+
+    // Collect all commands needed to build these targets via reverse traversal
+    auto required_cmds = std::set<NodeId> { collect_required_commands(graph, target_ids) };
+
+    // Build all jobs, then filter to required commands
+    auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
+    if (!all_jobs) {
+        return pup::unexpected<Error>(all_jobs.error());
+    }
+
+    auto jobs = filter_jobs(*all_jobs, required_cmds);
     impl_->stats.total_jobs = jobs.size();
     impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 
