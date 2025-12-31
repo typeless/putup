@@ -1,0 +1,4 @@
+# Test: cyclic dependency detection
+# a.txt depends on b.txt, and b.txt depends on a.txt
+: b.txt |> cat %f > %o |> a.txt
+: a.txt |> cat %f > %o |> b.txt

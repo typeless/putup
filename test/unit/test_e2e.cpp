@@ -3403,3 +3403,50 @@ SCENARIO("import with ?= operator", "[e2e][import]")
         }
     }
 }
+
+// =============================================================================
+// Error Handling Tests
+// =============================================================================
+
+SCENARIO("Cyclic dependency detection", "[e2e][error]")
+{
+    GIVEN("a project with circular dependencies")
+    {
+        auto f = E2EFixture { "cycle" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("build fails with cycle error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("cycle") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Missing include file detection", "[e2e][error]")
+{
+    GIVEN("a project with a missing include directive")
+    {
+        auto f = E2EFixture { "missing_include" };
+
+        WHEN("the project is initialized")
+        {
+            auto result = f.init();
+
+            THEN("initialization fails with include error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("not found") != std::string::npos);
+            }
+        }
+    }
+}

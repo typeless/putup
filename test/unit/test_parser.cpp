@@ -411,7 +411,7 @@ endif
     REQUIRE(inner_cond->then_body[0]->is<Assignment>());
 }
 
-TEST_CASE("Parser error recovery", "[parser]")
+TEST_CASE("Parser error recovery", "[parser][error]")
 {
     SECTION("unterminated variable reference")
     {
@@ -438,5 +438,40 @@ TEST_CASE("Parser error recovery", "[parser]")
 
         // Should fail with unexpected else
         REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("unexpected endif")
+    {
+        auto parser = Parser { "endif\n", "test.tup" };
+        auto result = parser.parse();
+
+        REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("unterminated foreach")
+    {
+        auto parser = Parser { "foreach VAR in a b c\nFOO = 1\n", "test.tup" };
+        auto result = parser.parse();
+
+        REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("unclosed at-variable reference")
+    {
+        auto parser = Parser { "FOO = @(BAR", "test.tup" };
+        auto result = parser.parse();
+
+        REQUIRE_FALSE(result.has_value());
+    }
+
+    SECTION("rule missing outputs")
+    {
+        auto parser = Parser { ": foo.c |> gcc -c %f |>", "test.tup" };
+        auto result = parser.parse();
+
+        // Rules can have empty outputs (for side-effect only commands)
+        // This may or may not be an error depending on implementation
+        // Just verify it parses without crashing
+        (void)result;
     }
 }

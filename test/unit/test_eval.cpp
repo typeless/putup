@@ -778,3 +778,32 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
         CHECK(*result == "CWD=../../rules VARIANTDIR=../../build/rules OUTPUTDIR=../../build/sub/dir");
     }
 }
+
+TEST_CASE("Evaluator undefined variable handling", "[eval][error]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto eval = Evaluator { &ctx };
+
+    SECTION("undefined variable expands to empty string")
+    {
+        auto result = eval.expand("prefix_$(UNDEFINED)_suffix");
+        REQUIRE(result.has_value());
+        CHECK(*result == "prefix__suffix");
+    }
+
+    SECTION("multiple undefined variables")
+    {
+        auto result = eval.expand("$(A)$(B)$(C)");
+        REQUIRE(result.has_value());
+        CHECK(*result == "");
+    }
+
+    SECTION("mixed defined and undefined")
+    {
+        vars.set("DEFINED", "value");
+        auto result = eval.expand("$(DEFINED)-$(UNDEFINED)");
+        REQUIRE(result.has_value());
+        CHECK(*result == "value-");
+    }
+}

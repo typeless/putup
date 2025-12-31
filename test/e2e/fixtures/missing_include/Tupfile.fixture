@@ -1,0 +1,3 @@
+# Test: missing include file detection
+include nonexistent.tup
+: hello.c |> gcc -c %f -o %o |> hello.o
