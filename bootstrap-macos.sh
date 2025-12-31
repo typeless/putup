@@ -5,15 +5,6 @@ cd "$(dirname "$0")"
 
 # Create output directories
 mkdir -p "build"
-mkdir -p "build/test/e2e/fixtures/platform_conditional"
-mkdir -p "build/test/e2e/fixtures/pupignore"
-mkdir -p "build/test/e2e/fixtures/pupignore/ignored"
-mkdir -p "build/test/e2e/fixtures/pupignore/src"
-mkdir -p "build/test/e2e/fixtures/scoped_build/app"
-mkdir -p "build/test/e2e/fixtures/scoped_build/lib"
-mkdir -p "build/test/e2e/fixtures/scoped_upstream/lib"
-mkdir -p "build/test/e2e/fixtures/scoped_upstream/lib2"
-mkdir -p "build/test/e2e/fixtures/subdirectory/src/lib"
 mkdir -p "build/test/unit"
 
 (cd "configs" && cp macosx.config ../build/tup.config)
@@ -152,17 +143,3 @@ mkdir -p "build/test/unit"
 (cd "test/unit" && g++ -M -std=c++20 -I../../include -I../../third_party -DFMT_HEADER_ONLY -DFMT_USE_LOCALE=0 -DFMT_USE_INT128=0 -DFMT_USE_FLOAT128=0 -DNDEBUG ../../third_party/catch_amalgamated.cpp)
 (cd "test/unit" && g++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I../../include -I../../third_party -DFMT_HEADER_ONLY -DFMT_USE_LOCALE=0 -DFMT_USE_INT128=0 -DFMT_USE_FLOAT128=0  -O2 -DNDEBUG -ffunction-sections -fdata-sections -Wno-error -c ../../third_party/catch_amalgamated.cpp -o ../../build/test/unit/catch_amalgamated.o)
 (cd "test/unit" && g++ ../../build/test/unit/test_bench.o ../../build/test/unit/test_builder.o ../../build/test/unit/test_dep_scanner.o ../../build/test/unit/test_depfile.o ../../build/test/unit/test_e2e.o ../../build/test/unit/test_eval.o ../../build/test/unit/test_exec.o ../../build/test/unit/test_glob.o ../../build/test/unit/test_graph.o ../../build/test/unit/test_hash.o ../../build/test/unit/test_ignore.o ../../build/test/unit/test_index.o ../../build/test/unit/test_layout.o ../../build/test/unit/test_lexer.o ../../build/test/unit/test_main.o ../../build/test/unit/test_merkle.o ../../build/test/unit/test_parser.o ../../build/test/unit/test_path_utils.o ../../build/test/unit/test_platform_file_io.o ../../build/test/unit/test_platform_process.o ../../build/test/unit/test_rule_pattern.o ../../build/test/unit/test_string_utils.o ../../build/test/unit/test_target.o ../../build/test/unit/test_types.o ../../build/test/unit/catch_amalgamated.o ../../build/test/unit/e2e_fixture.o ../../build/libpup.a -o ../../build/test/unit/pup_test -Wl,-dead_strip )
-(cd "test/e2e/fixtures/pupignore" && echo "root" > ../../../../build/test/e2e/fixtures/pupignore/root.txt)
-(cd "test/e2e/fixtures/platform_conditional" && echo macosx > ../../../../build/test/e2e/fixtures/platform_conditional/posix.txt)
-(cd "test/e2e/fixtures/scoped_upstream/lib2" && gcc -M bar.c)
-(cd "test/e2e/fixtures/scoped_upstream/lib2" && gcc -c bar.c -o ../../../../../build/test/e2e/fixtures/scoped_upstream/lib2/bar.o)
-(cd "test/e2e/fixtures/scoped_upstream/lib" && gcc -M -I../include foo.c)
-(cd "test/e2e/fixtures/scoped_upstream/lib" && gcc -I../include -c foo.c -o ../../../../../build/test/e2e/fixtures/scoped_upstream/lib/foo.o)
-(cd "test/e2e/fixtures/scoped_build/lib" && gcc -M foo.c)
-(cd "test/e2e/fixtures/scoped_build/lib" && gcc -c foo.c -o ../../../../../build/test/e2e/fixtures/scoped_build/lib/foo.o)
-(cd "test/e2e/fixtures/scoped_build/app" && gcc main.c ../../../../../build/test/e2e/fixtures/scoped_build/lib/foo.o -o ../../../../../build/test/e2e/fixtures/scoped_build/app/app)
-(cd "test/e2e/fixtures/pupignore/src" && echo "src" > ../../../../../build/test/e2e/fixtures/pupignore/src/src.txt)
-(cd "test/e2e/fixtures/pupignore/ignored" && echo "ignored" > ../../../../../build/test/e2e/fixtures/pupignore/ignored/ignored.txt)
-(cd "test/e2e/fixtures/subdirectory/src/lib" && gcc -M -I../../include main.c)
-(cd "test/e2e/fixtures/subdirectory/src/lib" && gcc -I../../include -c main.c -o ../../../../../../build/test/e2e/fixtures/subdirectory/src/lib/main.o)
-(cd "test/e2e/fixtures/subdirectory/src/lib" && gcc ../../../../../../build/test/e2e/fixtures/subdirectory/src/lib/main.o -o ../../../../../../build/test/e2e/fixtures/subdirectory/src/lib/program)
