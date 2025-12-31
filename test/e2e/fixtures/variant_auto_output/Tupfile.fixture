@@ -1,0 +1,5 @@
+include_rules
+
+# Generate a header file - output should automatically go to build/include/
+# In variant builds, "include/header.h" should map to "build/include/header.h"
+: |> echo '#define VALUE 42' > %o |> include/header.h

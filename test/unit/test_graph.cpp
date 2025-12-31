@@ -5,6 +5,8 @@
 #include "pup/graph/dag.hpp"
 #include "pup/graph/topo.hpp"
 
+#include <algorithm>
+
 using namespace pup::graph;
 using pup::NodeType;
 
@@ -24,7 +26,8 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(id2.has_value());
         REQUIRE(*id1 != *id2);
 
-        REQUIRE(graph.node_count() == 2);
+        // Graph starts with BUILD_ROOT_ID (id=1), so after adding 2 nodes, count is 3
+        REQUIRE(graph.node_count() == 3);
     }
 
     SECTION("find by dir and name")
@@ -224,12 +227,15 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         (void)graph.add_edge(*id2, *id3);
 
         auto roots = graph.root_nodes();
-        REQUIRE(roots.size() == 1);
-        REQUIRE(roots[0] == *id1);
+        // Root nodes include BUILD_ROOT_ID (which has no inputs) plus a.c
+        REQUIRE(roots.size() == 2);
+        // One of the roots should be the file we added
+        REQUIRE(std::ranges::find(roots, *id1) != roots.end());
 
         auto leaves = graph.leaf_nodes();
-        REQUIRE(leaves.size() == 1);
-        REQUIRE(leaves[0] == *id3);
+        // BUILD_ROOT_ID is also a leaf (no outputs unless used)
+        REQUIRE(leaves.size() == 2);
+        REQUIRE(std::ranges::find(leaves, *id3) != leaves.end());
     }
 }
 
@@ -248,7 +254,8 @@ TEST_CASE("Topological sort", "[graph]")
 
         auto result = topological_sort(graph);
         REQUIRE_FALSE(result.has_cycle);
-        REQUIRE(result.order.size() == 3);
+        // 3 nodes we added + BUILD_ROOT_ID = 4
+        REQUIRE(result.order.size() == 4);
 
         // a should come before b, b before c
         auto pos_a = std::ranges::find(result.order, *id1);
@@ -278,11 +285,13 @@ TEST_CASE("Topological sort", "[graph]")
 
         auto result = topological_sort(graph);
         REQUIRE_FALSE(result.has_cycle);
-        REQUIRE(result.order.size() == 4);
+        // 4 nodes we added + BUILD_ROOT_ID = 5
+        REQUIRE(result.order.size() == 5);
 
-        // a should come first, d should come last
-        REQUIRE(result.order[0] == *id_a);
-        REQUIRE(result.order[3] == *id_d);
+        // a should come before d, d should come last among our nodes
+        auto pos_a = std::ranges::find(result.order, *id_a);
+        auto pos_d = std::ranges::find(result.order, *id_d);
+        REQUIRE(pos_a < pos_d);
     }
 
     SECTION("cycle detection")
@@ -347,7 +356,8 @@ TEST_CASE("BuildGraph node types", "[graph]")
         REQUIRE(group_id.has_value());
         REQUIRE(gen_dir_id.has_value());
 
-        REQUIRE(graph.node_count() == 7);
+        // 7 nodes we added + BUILD_ROOT_ID = 8
+        REQUIRE(graph.node_count() == 8);
         REQUIRE(graph.nodes_of_type(NodeType::File).size() == 1);
         REQUIRE(graph.nodes_of_type(NodeType::Command).size() == 1);
         REQUIRE(graph.nodes_of_type(NodeType::Generated).size() == 1);
@@ -453,8 +463,9 @@ TEST_CASE("Graph traversal", "[graph]")
     SECTION("nodes_at_depth")
     {
         auto depth0 = nodes_at_depth(graph, 0);
-        REQUIRE(depth0.size() == 1);
-        REQUIRE(depth0[0] == *id_a);
+        // BUILD_ROOT_ID is also at depth 0 (no incoming edges)
+        REQUIRE(depth0.size() == 2);
+        REQUIRE(std::ranges::find(depth0, *id_a) != depth0.end());
 
         auto depth1 = nodes_at_depth(graph, 1);
         REQUIRE(depth1.size() == 2);

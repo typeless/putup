@@ -48,7 +48,6 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 ///          dependents[i] = list of jobs that depend on job i
 ///
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
-constexpr bool DEBUG_DEP_MAP = false;
 auto build_dependency_map(
     std::vector<BuildJob> const& jobs,
     graph::BuildGraph const& graph
@@ -76,9 +75,6 @@ auto build_dependency_map(
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
         auto dependencies = std::set<std::size_t> {};
         auto cmd_id = jobs[j].id;
-        if constexpr (DEBUG_DEP_MAP) {
-            fmt::print(stderr, "job[{}]: {} (node {})\n", j, jobs[j].display, cmd_id);
-        }
 
         // Check regular inputs - traverse graph edges
         for (auto input_id : graph.get_inputs(cmd_id)) {
@@ -108,10 +104,6 @@ auto build_dependency_map(
 
         // Check order-only inputs - these may be files or groups
         for (auto oo_id : graph.get_order_only(cmd_id)) {
-            if constexpr (DEBUG_DEP_MAP) {
-                fmt::print(stderr, "  job[{}] order-only input: {} (path: {})\n", j, oo_id, graph.get_full_path(oo_id));
-            }
-
             auto const* oo_node = graph.get_node(oo_id);
             if (!oo_node) {
                 continue;
@@ -123,9 +115,6 @@ auto build_dependency_map(
                 for (auto member_id : graph.get_inputs(oo_id)) {
                     // Check if member is a direct output of another job
                     if (auto it = output_to_job.find(member_id); it != output_to_job.end() && it->second != j) {
-                        if constexpr (DEBUG_DEP_MAP) {
-                            fmt::print(stderr, "    -> depends on job[{}] (via group member)\n", it->second);
-                        }
                         dependencies.insert(it->second);
                     }
 
@@ -134,9 +123,6 @@ auto build_dependency_map(
                         auto const* producer = graph.get_node(producer_id);
                         if (producer && producer->type == NodeType::Command) {
                             if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
-                                if constexpr (DEBUG_DEP_MAP) {
-                                    fmt::print(stderr, "    -> depends on job[{}] (via group member producer)\n", it2->second);
-                                }
                                 dependencies.insert(it2->second);
                             }
                         }
@@ -145,9 +131,6 @@ auto build_dependency_map(
             } else {
                 // Regular file - check if it's a direct output of another job
                 if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j) {
-                    if constexpr (DEBUG_DEP_MAP) {
-                        fmt::print(stderr, "    -> depends on job[{}]\n", it->second);
-                    }
                     dependencies.insert(it->second);
                 }
 
@@ -156,9 +139,6 @@ auto build_dependency_map(
                     auto const* producer = graph.get_node(producer_id);
                     if (producer && producer->type == NodeType::Command) {
                         if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
-                            if constexpr (DEBUG_DEP_MAP) {
-                                fmt::print(stderr, "    -> depends on job[{}] (via producer)\n", it2->second);
-                            }
                             dependencies.insert(it2->second);
                         }
                     }
@@ -166,9 +146,6 @@ auto build_dependency_map(
             }
         }
 
-        if constexpr (DEBUG_DEP_MAP) {
-            fmt::print(stderr, "  job[{}] total deps: {}\n", j, dependencies.size());
-        }
         in_degree[j] = dependencies.size();
         for (auto dep : dependencies) {
             dependents[dep].push_back(j);
@@ -578,11 +555,28 @@ auto Scheduler::execute_job(
 
     // Ensure output directories exist
     // Note: create_directories() is idempotent and thread-safe
-    // Output paths are source-root-relative; prepend output_root for filesystem access
+    // Output paths may be:
+    // - Absolute: use as-is
+    // - Already variant-mapped (starts with relative output_root prefix): use source_root as base
+    // - Source-relative: prepend output_root
+    auto source_root = impl_->options.source_root;
+    auto relative_output_root = std::filesystem::relative(
+        impl_->options.output_root,
+        source_root
+    );
+    auto output_root_prefix = relative_output_root.string();
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
         if (!output_path.is_absolute()) {
-            output_path = impl_->options.output_root / output;
+            // Check if path already starts with relative output_root prefix (variant-mapped)
+            auto output_str = output_path.string();
+            if (!output_root_prefix.empty() && output_str.starts_with(output_root_prefix)
+                && (output_str.size() == output_root_prefix.size() || output_str[output_root_prefix.size()] == '/')) {
+                // Already variant-mapped, use source_root as base
+                output_path = source_root / output;
+            } else {
+                output_path = impl_->options.output_root / output;
+            }
         }
         auto parent = output_path.parent_path();
         if (!parent.empty()) {
@@ -647,9 +641,17 @@ auto Scheduler::execute_job(
                 continue;
             }
 
-            auto depfile_path = std::filesystem::path {
-                impl_->options.output_root / output_path.parent_path() / (output_path.stem().string() + ".d")
-            };
+            // Compute filesystem path for the .d file
+            // Handle both source-relative and variant-mapped paths
+            auto output_str = output_path.string();
+            auto base_path = std::filesystem::path {};
+            if (!output_root_prefix.empty() && output_str.starts_with(output_root_prefix)
+                && (output_str.size() == output_root_prefix.size() || output_str[output_root_prefix.size()] == '/')) {
+                base_path = source_root / output_path.parent_path();
+            } else {
+                base_path = impl_->options.output_root / output_path.parent_path();
+            }
+            auto depfile_path = base_path / (output_path.stem().string() + ".d");
 
             if (!std::filesystem::exists(depfile_path)) {
                 continue;
@@ -680,10 +682,25 @@ auto Scheduler::build_job_list(
     }
 
     // Validate no unrealized ghost nodes remain (missing inputs)
+    // Exception: Ghost nodes whose files actually exist on disk are valid
+    // non-generated input files (e.g., tup.config, manually-created config files)
     for (auto id : topo_result.order) {
         auto const* node = graph.get_node(id);
         if (node && node->type == NodeType::Ghost && !node->outputs.empty()) {
             auto path = graph.get_full_path(id);
+            // Check if file exists - if so, it's a valid input (not missing)
+            auto build_root_name = std::string { graph.get_build_root_name() };
+            auto file_path = impl_->options.output_root / path;
+            // Strip build prefix from path if present (for consistent file lookup)
+            auto lookup_path = path;
+            auto build_prefix = build_root_name + "/";
+            if (!build_root_name.empty() && path.starts_with(build_prefix)) {
+                lookup_path = path.substr(build_prefix.size());
+                file_path = impl_->options.output_root / lookup_path;
+            }
+            if (std::filesystem::exists(file_path)) {
+                continue; // File exists, not a missing input
+            }
             return make_error<std::vector<BuildJob>>(
                 ErrorCode::ParseError,
                 "Missing input file (unresolved ghost): " + path

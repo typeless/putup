@@ -1,0 +1,5 @@
+# S/B convention for variant builds (like busybox)
+# S = path to source root (via TUP_CWD during include)
+# B = path to build root
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)

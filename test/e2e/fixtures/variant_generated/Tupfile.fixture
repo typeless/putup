@@ -1,0 +1,12 @@
+# Test: variant build with generated header
+# The generated header goes to build dir, but source files include it
+
+# Generate a header file
+: |> echo '#define VERSION 1' > %o |> version.h
+
+# Compile using the generated header (implicit dep via -MD)
+CFLAGS = -MD -I$(TUP_VARIANT_OUTPUTDIR)
+: main.c | version.h |> gcc $(CFLAGS) -c %f -o %o |> main.o
+
+# Link
+: main.o |> gcc %f -o %o |> program

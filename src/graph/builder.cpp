@@ -22,9 +22,6 @@ namespace pup::graph {
 
 namespace fs = std::filesystem;
 
-// Debug output for order-only group registration
-constexpr bool DEBUG_OO_GROUPS = false;
-
 namespace {
 
 /// Strip trailing slashes from a path string
@@ -48,7 +45,7 @@ auto normalize_path(std::string const& path_str) -> std::string
     return path.string();
 }
 
-/// Normalize a directory path for group key lookup
+/// Normalize a directory path for group key lookup.
 /// - Strips trailing slashes
 /// - Converts absolute paths to project-relative
 /// - Resolves parent references (..) against current_dir
@@ -72,67 +69,7 @@ auto normalize_group_dir(
         }
     }
 
-    auto result = path.empty() ? "." : path.string();
-    if constexpr (DEBUG_OO_GROUPS) {
-        fmt::print(stderr, "[DEBUG] normalize_group_dir({}, {}) -> {}\n", path_str, current_dir.string(), result);
-    }
-    return result;
-}
-
-/// Map an output path to the output directory.
-/// All paths are project-relative (tup-style), never absolute.
-/// For in-tree builds: current_dir/path (e.g., "src/lib/foo.o")
-/// For out-of-tree builds: output_prefix/current_dir/path (e.g., "build/src/lib/foo.o")
-auto map_to_output(
-    std::string const& path,
-    std::filesystem::path const& current_dir,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root
-) -> std::string
-{
-    auto p = std::filesystem::path { path };
-
-    // If path is already absolute, make it relative to source_root
-    if (p.is_absolute()) {
-        auto rel = fs::relative(p, source_root);
-        if (!rel.empty() && rel.string()[0] != '.') {
-            return rel.lexically_normal().string();
-        }
-        return p.lexically_normal().string();
-    }
-
-    // Out-of-tree build: outputs go to output_root
-    // Compute output prefix as relative path from source_root to output_root
-    if (!output_root.empty() && source_root != output_root) {
-        auto output_prefix = fs::relative(output_root, source_root);
-        auto output_prefix_str = output_prefix.string();
-        if (current_dir.empty()) {
-            return (output_prefix / path).lexically_normal().string();
-        }
-
-        // If path escapes current_dir (starts with ../), resolve it first
-        // to check if it already goes to the output directory
-        // Note: Must check for ".." or "../" specifically, not just ".." prefix
-        // because "..hidden" is a valid filename, not a parent reference
-        auto is_parent_ref = (path == ".." || (path.size() > 2 && path[0] == '.' && path[1] == '.' && path[2] == '/'));
-        if (is_parent_ref) {
-            auto resolved = (current_dir / path).lexically_normal().string();
-            // If resolved path already starts with output_prefix, don't add it again
-            if (resolved.size() >= output_prefix_str.size()
-                && std::string_view { resolved }.substr(0, output_prefix_str.size()) == output_prefix_str
-                && (resolved.size() == output_prefix_str.size() || resolved[output_prefix_str.size()] == '/')) {
-                return resolved;
-            }
-        }
-
-        return (output_prefix / current_dir / path).lexically_normal().string();
-    }
-
-    // In-tree build: paths are project-relative
-    if (current_dir.empty()) {
-        return path;
-    }
-    return (current_dir / path).lexically_normal().string();
+    return path.empty() ? "." : path.string();
 }
 
 /// Transform a project-root-relative path to be relative to source directory
@@ -177,13 +114,10 @@ auto compute_source_to_root(fs::path const& current_dir) -> std::string
 /// Context for transforming paths to Tupfile-relative coordinates.
 ///
 /// Commands execute from the Tupfile's source directory, so all paths in commands
-/// must be relative to that directory. This requires:
-/// 1. Mapping variant outputs to the output directory (e.g., build/src/foo.o)
-/// 2. Converting project-root-relative paths to Tupfile-relative (e.g., ../lib/bar.c)
-///
-/// This context is computed once per rule and reused for both inputs and outputs,
-/// avoiding redundant computation of source_to_root. The distinction between variant
-/// and non-variant builds is handled by map_to_output() checking source_root == output_root.
+/// must be relative to that directory. With node traversal:
+/// - Outputs are already variant-mapped (e.g., "build/src/foo.o")
+/// - Inputs are source-root-relative (e.g., "src/lib/bar.c")
+/// The transform functions below convert both to Tupfile-relative paths.
 struct PathTransformContext {
     std::string source_to_root;
     std::string current_dir_str;
@@ -201,51 +135,50 @@ auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
     };
 }
 
-/// Transform an input path to Tupfile-relative, applying variant mapping if needed.
-/// Generated nodes are mapped to the output directory; source files are not.
-/// For unknown paths, check filesystem: if file exists only in variant, map it.
+/// Transform an input path to Tupfile-relative for command expansion.
+/// Input paths are source-relative. For Generated/Ghost files under BUILD_ROOT_ID,
+/// we need to use get_full_path() to get the path including the build root prefix.
 auto transform_input_path(
-    BuilderContext& ctx,
+    BuildGraph& graph,
     PathTransformContext const& tc,
     std::string const& inp
 ) -> std::string
 {
-    auto path = inp;
-    auto needs_mapping = false;
-
-    if (auto node_id = ctx.graph->find_by_path(inp)) {
-        // Known node - map if generated
-        auto* node = ctx.graph->get_node(*node_id);
-        if (node && node->type == NodeType::Generated) {
-            needs_mapping = true;
-        }
-    } else {
-        // Unknown path - check filesystem for variant-only files
-        auto source_path = tc.source_root / inp;
-        if (!fs::exists(source_path)) {
-            auto variant_path = tc.output_root / inp;
-            if (fs::exists(variant_path)) {
-                needs_mapping = true;
-            }
+    // Check if this input refers to a Generated/Ghost file under BUILD_ROOT_ID
+    // If so, its full path includes the build root prefix (e.g., "build/include/header.h")
+    if (auto node_id = graph.find_by_path(inp, BUILD_ROOT_ID)) {
+        auto full_path = graph.get_full_path(*node_id);
+        if (!full_path.empty()) {
+            return make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
         }
     }
 
-    if (needs_mapping) {
-        path = map_to_output(inp, fs::path {}, tc.source_root, tc.output_root);
+    // Node may not exist yet (transform happens before resolve_input_node creates it).
+    // Check if file exists in build directory - if so, use variant-prefixed path.
+    auto build_root_name = std::string { graph.get_build_root_name() };
+    if (!build_root_name.empty()) {
+        auto build_path = tc.output_root / inp;
+        if (fs::exists(build_path)) {
+            auto full_path = build_root_name + "/" + inp;
+            return make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
+        }
     }
 
-    return make_source_relative(path, tc.source_to_root, tc.current_dir_str);
+    // Source file or not found - use path as-is
+    return make_source_relative(inp, tc.source_to_root, tc.current_dir_str);
 }
 
-/// Transform an output path to Tupfile-relative, applying variant mapping.
-/// map_to_output handles both variant (S!=B) and non-variant (S==B) cases.
+/// Transform an output path to Tupfile-relative for command expansion.
+/// Outputs are already stored at variant-mapped paths (e.g., "build/src/main.o").
+/// This function just converts to Tupfile-relative (e.g., "../../build/src/main.o").
 auto transform_output_path(
     PathTransformContext const& tc,
     std::string const& out
 ) -> std::string
 {
-    auto path = map_to_output(out, fs::path {}, tc.source_root, tc.output_root);
-    return make_source_relative(path, tc.source_to_root, tc.current_dir_str);
+    // Outputs are already variant-mapped (stored under BUILD_ROOT_ID by expand_outputs).
+    // Just make the path relative to the Tupfile directory.
+    return make_source_relative(out, tc.source_to_root, tc.current_dir_str);
 }
 
 /// Get all files that are members of a group (via file → group edges)
@@ -255,6 +188,124 @@ auto get_group_members(BuildGraph& graph, NodeId group_id) -> std::vector<NodeId
     // Files point TO groups via Group edges (file → group)
     // So group.inputs contains the member files
     return graph.get_inputs(group_id);
+}
+
+// ============================================================================
+// Node-Traversal Path Resolution
+// ============================================================================
+// Path resolution uses graph traversal instead of string manipulation:
+// - ".." → walk to parent node
+// - "name" → find/create child node
+//
+// This naturally unifies input and output path resolution because both traverse
+// to the same node when the paths are equivalent (e.g., $(B)/include/header.h
+// from an input and the variant-mapped output both resolve to the same node).
+
+/// Walk a path from a starting directory node, creating intermediate directories.
+/// Returns the final directory node.
+///
+/// @param graph The build graph
+/// @param start_dir_id Starting directory node (typically Tupfile's parent)
+/// @param path Path to walk (already variable-expanded)
+/// @return NodeId of the final directory
+auto walk_path_to_directory(
+    BuildGraph& graph,
+    NodeId start_dir_id,
+    std::string_view path
+) -> NodeId
+{
+    if (path.empty() || path == ".") {
+        return start_dir_id;
+    }
+
+    auto current_id = start_dir_id;
+    auto p = fs::path { path };
+
+    for (auto const& component : p) {
+        auto comp_str = component.string();
+        if (comp_str.empty() || comp_str == ".") {
+            continue;
+        }
+
+        if (comp_str == "..") {
+            // Walk to parent - node's parent_dir points to parent (0 = root)
+            // Only go up if we're not already at root
+            if (current_id != NodeId { 0 }) {
+                auto* node = graph.get_node(current_id);
+                if (node) {
+                    current_id = node->parent_dir;
+                }
+            }
+            // If already at root (current_id == 0), stay at root
+        } else {
+            // Find or create child directory
+            if (auto child = graph.find_by_dir_name(current_id, comp_str)) {
+                current_id = *child;
+            } else {
+                // Create new directory node
+                auto node = Node {
+                    .type = NodeType::Directory,
+                    .name = comp_str,
+                    .parent_dir = current_id,
+                };
+                auto result = graph.add_node(std::move(node));
+                if (result) {
+                    current_id = *result;
+                }
+            }
+        }
+    }
+
+    return current_id;
+}
+
+/// Walk a path and create/find the file node at the end.
+/// @param graph The build graph
+/// @param start_id Starting node (BUILD_ROOT_ID for generated, SOURCE_ROOT_ID for source)
+/// @param path Path to the file (relative to start_id)
+/// @param type NodeType for the file node
+/// @return NodeId of the file node
+auto walk_to_file_node(
+    BuildGraph& graph,
+    NodeId start_id,
+    std::string_view path,
+    NodeType type
+) -> Result<NodeId>
+{
+    if (path.empty()) {
+        return make_error<NodeId>(ErrorCode::InvalidArgument, "Empty path");
+    }
+
+    // Walk the path components
+    auto p = fs::path { path };
+    auto parent_path = p.parent_path();
+    auto basename = p.filename().string();
+
+    // Walk to parent directory
+    auto target_dir_id = start_id;
+    if (!parent_path.empty() && parent_path != ".") {
+        target_dir_id = walk_path_to_directory(graph, start_id, parent_path.string());
+    }
+
+    // Find or create the file node
+    if (auto existing = graph.find_by_dir_name(target_dir_id, basename)) {
+        // Handle type upgrade (Ghost → Generated, File → Generated)
+        if (type == NodeType::Generated) {
+            auto* node = graph.get_node(*existing);
+            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                node->type = NodeType::Generated;
+            }
+        }
+        return *existing;
+    }
+
+    // Create new node
+    auto node = Node {
+        .type = type,
+        .name = basename,
+        .parent_dir = target_dir_id,
+    };
+    return graph.add_node(std::move(node));
 }
 
 /// RAII scope guard for cleanup on scope exit
@@ -311,6 +362,19 @@ struct GraphBuilder::Impl {
         }
     };
 
+    /// Deferred file-based order-only edge for variant builds
+    /// Stores source-relative path for resolution after all Tupfiles are parsed
+    struct DeferredFileOrderOnlyEdge {
+        std::string path;       ///< Source-relative path (e.g., "include/header.h")
+        std::string source_dir; ///< Tupfile directory for context
+        NodeId command_id;
+
+        auto operator<(DeferredFileOrderOnlyEdge const& other) const -> bool
+        {
+            return std::tie(path, command_id) < std::tie(other.path, other.command_id);
+        }
+    };
+
     BuilderOptions options;
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
@@ -322,6 +386,10 @@ struct GraphBuilder::Impl {
     /// Deferred edges to resolve after all Tupfiles are parsed
     /// Using set to avoid duplicate edges when same group referenced multiple times
     std::set<DeferredOrderOnlyEdge> deferred_edges;
+
+    /// Deferred file-based order-only edges for variant builds
+    /// Resolved after all Tupfiles parsed so Generated nodes exist
+    std::set<DeferredFileOrderOnlyEdge> deferred_file_edges;
 
     /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
     /// Persists across add_tupfile calls to avoid duplicate nodes
@@ -366,6 +434,15 @@ auto GraphBuilder::build(
 ) -> Result<BuildGraph>
 {
     auto graph = BuildGraph {};
+
+    // Set build root name: relative path from source to output root.
+    // For in-tree builds (source == output), this is empty.
+    // For variant builds (-B build), this is "build".
+    if (impl_->options.source_root != impl_->options.output_root) {
+        auto build_root_name = fs::relative(impl_->options.output_root, impl_->options.source_root).string();
+        graph.set_build_root_name(std::move(build_root_name));
+    }
+
     auto result = Result<void> { add_tupfile(graph, tupfile, eval) };
     if (!result) {
         return pup::unexpected<Error>(result.error());
@@ -954,7 +1031,7 @@ auto GraphBuilder::expand_rule(
     auto cmd_inputs = std::vector<std::string> {};
     cmd_inputs.reserve(file_inputs.size());
     for (auto const& inp : file_inputs) {
-        cmd_inputs.push_back(transform_input_path(ctx, tc, inp));
+        cmd_inputs.push_back(transform_input_path(*ctx.graph, tc, inp));
     }
 
     // Build PatternFlags once (input fields only, output fields added later)
@@ -1060,20 +1137,15 @@ auto GraphBuilder::expand_rule(
             // Get files that are members of this group (via file → group edges)
             auto members = get_group_members(*ctx.graph, group_id);
             if (!members.empty()) {
-                if constexpr (DEBUG_OO_GROUPS) {
-                    fmt::print(stderr, "[DEBUG OO GROUP] Lookup FOUND: <{}/{}> ({} members)\n", group_dir, pattern.group_name, members.size());
-                }
                 // Populate rule_order_only_groups for %<group> command expansion
+                // Group members are outputs, so use transform_output_path for variant mapping
                 auto& paths = rule_order_only_groups[pattern.group_name];
                 for (auto id : members) {
                     auto path = ctx.graph->get_full_path(id);
                     if (!path.empty()) {
-                        paths.push_back(make_source_relative(path, tc.source_to_root, tc.current_dir_str));
+                        auto transformed = transform_output_path(tc, path);
+                        paths.push_back(std::move(transformed));
                     }
-                }
-            } else {
-                if constexpr (DEBUG_OO_GROUPS) {
-                    fmt::print(stderr, "[DEBUG OO GROUP] Lookup DEFERRED: <{}/{}>\n", group_dir, pattern.group_name);
                 }
             }
             // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
@@ -1116,21 +1188,20 @@ auto GraphBuilder::expand_rule(
                 // Get files that are members of this group (via file → group edges)
                 auto members = get_group_members(*ctx.graph, group_id);
                 if (!members.empty()) {
-                    if constexpr (DEBUG_OO_GROUPS) {
-                        fmt::print(stderr, "[DEBUG OO GROUP] Path lookup FOUND: <{}/{}> ({} members) from {}\n", group_dir, group_name, members.size(), ctx.current_dir.string());
-                    }
                     // Populate rule_order_only_groups for %<group> command expansion
+                    // Group members are outputs, so use transform_output_path for variant mapping
                     auto& paths = rule_order_only_groups[group_name];
                     for (auto id : members) {
                         auto p = ctx.graph->get_full_path(id);
                         if (!p.empty()) {
-                            paths.push_back(make_source_relative(p, tc.source_to_root, tc.current_dir_str));
+                            auto transformed = transform_output_path(tc, p);
+                            paths.push_back(std::move(transformed));
                         }
                     }
                 } else {
-                    if constexpr (DEBUG_OO_GROUPS) {
-                        fmt::print(stderr, "[DEBUG OO GROUP] Path lookup DEFERRED: <{}/{}> from {}\n", group_dir, group_name, ctx.current_dir.string());
-                    }
+                    // Preserve %<group> pattern literally - will be expanded in resolve_deferred_order_only_edges()
+                    // This ensures the pattern isn't lost during command expansion
+                    rule_order_only_groups[group_name] = { fmt::format("%<{}>", group_name) };
                 }
                 // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
                 deferred_group_ids.insert(group_id);
@@ -1256,12 +1327,6 @@ auto GraphBuilder::expand_rule(
 
         // Create order-only edges for generated command (e.g., gen-headers)
         // For group references, defer to resolve_deferred_order_only_edges()
-        if constexpr (DEBUG_OO_GROUPS) {
-            fmt::print(stderr, "[DEBUG OO GROUP] GenRule {} has {} order_only_inputs\n", gen_rule.command, gen_rule.order_only_inputs.size());
-            for (auto const& oi : gen_rule.order_only_inputs) {
-                fmt::print(stderr, "[DEBUG OO GROUP]   oi: '{}'\n", oi);
-            }
-        }
         for (auto const& oi : gen_rule.order_only_inputs) {
             // Check for path/<group> pattern
             auto lt_pos = oi.rfind('<');
@@ -1274,9 +1339,6 @@ auto GraphBuilder::expand_rule(
                 auto group_id_result = get_or_create_group_node(ctx, group_dir, group_name);
                 if (group_id_result) {
                     impl_->deferred_edges.insert({ *group_id_result, *gen_cmd_id });
-                    if constexpr (DEBUG_OO_GROUPS) {
-                        fmt::print(stderr, "[DEBUG OO GROUP] Generated cmd: deferred <{}/{}> (group_id={})\n", group_dir, group_name, *group_id_result);
-                    }
                 }
             } else if (!parser::has_glob_chars(oi)) {
                 // Regular file path - create edge directly (skip glob patterns)
@@ -1373,15 +1435,9 @@ auto GraphBuilder::expand_rule(
                 auto evaluator = parser::Evaluator { ctx.eval };
                 auto expanded = evaluator.expand(*group_dir_expr);
                 if (expanded) {
-                    // Remove trailing slash and normalize
-                    auto dir_path = std::string { *expanded };
-                    while (!dir_path.empty() && dir_path.back() == '/') {
-                        dir_path.pop_back();
-                    }
-
-                    // Resolve relative to current_dir
-                    auto resolved = fs::path { ctx.current_dir } / dir_path;
-                    dir = resolved.lexically_normal().string();
+                    // Use normalize_group_dir for consistent handling with input groups
+                    // This strips variant prefix and resolves relative paths
+                    dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
                 }
             }
 
@@ -1394,10 +1450,6 @@ auto GraphBuilder::expand_rule(
             if (group_id_result) {
                 // Add edge: file → group (file is member of group)
                 (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
-                if constexpr (DEBUG_OO_GROUPS) {
-                    auto output_path = ctx.graph->get_full_path(*output_id);
-                    fmt::print(stderr, "[DEBUG OO GROUP] Registered: <{}/{}> = {} (id={}) -> group {}\n", dir, *output_oo_group, output_path, *output_id, *group_id_result);
-                }
             }
         }
     }
@@ -1660,13 +1712,28 @@ auto GraphBuilder::expand_outputs(
             auto expanded = Result<std::string> { evaluator.expand_pattern(path, flags) };
             auto output_path = expanded ? *expanded : std::move(path);
 
-            // Store at source-root-relative path (current_dir / output)
-            // Variant mapping is applied only at I/O time (expand_command)
-            if (!ctx.current_dir.empty()) {
-                output_path = (ctx.current_dir / output_path).lexically_normal().string();
+            // Combine with current directory and normalize
+            // Output paths are relative to Tupfile directory
+            auto full_output_path = (ctx.current_dir / output_path).lexically_normal().string();
+
+            // All outputs go under BUILD_ROOT_ID.
+            // This ensures Ghost nodes (created for inputs referencing not-yet-generated files)
+            // unify with Generated nodes when the output is created.
+            auto node_id = walk_to_file_node(
+                *ctx.graph,
+                BUILD_ROOT_ID,
+                full_output_path,
+                NodeType::Generated
+            );
+
+            if (!node_id) {
+                return pup::unexpected<Error>(node_id.error());
             }
 
-            result.push_back(std::move(output_path));
+            // Get the full path from the node
+            auto full_path = ctx.graph->get_full_path(*node_id);
+
+            result.push_back(std::move(full_path));
         }
     }
 
@@ -1783,6 +1850,23 @@ auto GraphBuilder::get_or_create_file_node(
 
     // Normalize path for consistent lookup (handles //, ., ..)
     auto normalized = normalize_path(resolved);
+
+    // For Generated nodes, first check if node was already created under BUILD_ROOT_ID
+    // by expand_outputs. This ensures we find the correct node rather than creating
+    // a duplicate under SOURCE_ROOT_ID.
+    if (type == NodeType::Generated) {
+        // The path may include the build root name (e.g., "build/src/main.o").
+        // Strip it to get the source-relative path for lookup under BUILD_ROOT_ID.
+        auto lookup_path = normalized;
+        auto build_root_name = std::string { ctx.graph->get_build_root_name() };
+        if (!build_root_name.empty() && normalized.starts_with(build_root_name + "/")) {
+            lookup_path = normalized.substr(build_root_name.size() + 1);
+        }
+        if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
+            return *existing;
+        }
+    }
+
     auto fs_path = fs::path { normalized };
     auto basename = fs_path.filename().string();
 
@@ -1823,34 +1907,51 @@ auto GraphBuilder::resolve_input_node(
     std::string const& path
 ) -> Result<NodeId>
 {
-    // Unified source-root-relative storage:
-    // All nodes (File, Ghost, Generated) are stored at source-root-relative paths.
-    // Variant mapping is applied only at I/O time (expand_command, file operations).
+    // Input paths are already source-relative from expand_inputs() which normalizes them
+    // by combining with current_dir. No further normalization needed here.
 
-    // Check if node already exists at this path (from earlier parsing)
-    if (auto existing = ctx.graph->find_by_path(path)) {
+    // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
+    // already have the build root prefix. Strip it to get source-relative paths.
+    auto normalized_path = std::string { path };
+    auto build_root_name = std::string { ctx.graph->get_build_root_name() };
+    auto build_prefix = build_root_name + "/";
+    if (!build_root_name.empty() && normalized_path.starts_with(build_prefix)) {
+        normalized_path = normalized_path.substr(build_prefix.size());
+    }
+
+    // With BUILD_ROOT_ID model:
+    // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths
+    // - Generated/Ghost files are under BUILD_ROOT_ID at source-relative paths
+
+    // First check if node exists under BUILD_ROOT_ID (generated files)
+    if (auto existing = ctx.graph->find_by_path(normalized_path, BUILD_ROOT_ID)) {
         return *existing;
     }
 
-    // Check if source file exists on disk
-    auto source_path = ctx.options.source_root / path;
+    // Check under SOURCE_ROOT_ID (source files)
+    if (auto existing = ctx.graph->find_by_path(normalized_path, SOURCE_ROOT_ID)) {
+        return *existing;
+    }
+
+    // Node doesn't exist - check filesystem to determine type
+    auto source_path = ctx.options.source_root / normalized_path;
     if (fs::exists(source_path)) {
-        return get_or_create_file_node(ctx, path, NodeType::File);
+        // Source file exists - create File node under SOURCE_ROOT_ID
+        return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
     }
 
-    // For variant builds, also check if file exists only in variant directory
-    // (e.g., tup.config, or files created during configure step)
-    if (ctx.options.source_root != ctx.options.output_root) {
-        auto variant_path = ctx.options.output_root / path;
-        if (fs::exists(variant_path)) {
-            return get_or_create_file_node(ctx, path, NodeType::File);
-        }
+    // Check if file exists in build directory (e.g., tup.config, or already-generated files)
+    auto build_path = ctx.options.output_root / normalized_path;
+    if (fs::exists(build_path)) {
+        // File exists in build dir but not source - it's a Generated output from a previous build.
+        // Create as Ghost so the rule that generates it can upgrade it to Generated.
+        // (If the rule no longer generates it, the Ghost remains and causes an error.)
+        return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
     }
 
-    // File doesn't exist - create Ghost at source-root-relative path
-    // Ghost nodes are placeholders that will be upgraded to Generated
-    // when the output rule is processed (same path, in-place upgrade)
-    return get_or_create_file_node(ctx, path, NodeType::Ghost);
+    // File doesn't exist anywhere - create Ghost node under BUILD_ROOT_ID
+    // Ghost nodes represent not-yet-generated files, which will be under build root
+    return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
 }
 
 auto GraphBuilder::get_or_create_group_node(
@@ -1942,34 +2043,69 @@ auto GraphBuilder::create_command_node(
 
 auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>
 {
-    if constexpr (DEBUG_OO_GROUPS) {
-        fmt::print(stderr, "[DEBUG OO GROUP] Resolving {} deferred edges\n", impl_->deferred_edges.size());
-    }
     // Resolve deferred order-only edges
     // With groups as first-class nodes, we create a single edge: group → command
     for (auto const& edge : impl_->deferred_edges) {
         // Verify group node exists and has members
         auto const* group_node = graph.get_node(edge.group_id);
         if (!group_node || group_node->type != NodeType::Group) {
-            if constexpr (DEBUG_OO_GROUPS) {
-                fmt::print(stderr, "[DEBUG OO GROUP] Deferred INVALID: group_id={} not a group\n", edge.group_id);
-            }
             continue;
         }
 
         auto members = get_group_members(graph, edge.group_id);
         if (!members.empty()) {
-            if constexpr (DEBUG_OO_GROUPS) {
-                auto group_path = graph.get_full_path(edge.group_id);
-                fmt::print(stderr, "[DEBUG OO GROUP] Deferred RESOLVED: {} -> cmd {} ({} members)\n", group_path, edge.command_id, members.size());
-            }
             // Create single order-only edge: group → command
             (void)graph.add_order_only_edge(edge.group_id, edge.command_id);
-        } else {
-            if constexpr (DEBUG_OO_GROUPS) {
-                auto group_path = graph.get_full_path(edge.group_id);
-                fmt::print(stderr, "[DEBUG OO GROUP] Deferred EMPTY: {} has no members\n", group_path);
+
+            // Expand %<group> pattern in command string (was preserved during parsing)
+            // Extract group name from node's basename (e.g., "<archives>" -> "archives")
+            auto const& group_basename = group_node->name;
+            if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
+                auto group_name = group_basename.substr(1, group_basename.size() - 2);
+                auto pattern = fmt::format("%<{}>", group_name);
+
+                // Get command node and check if pattern exists
+                auto* cmd_node = graph.get_node(edge.command_id);
+                if (cmd_node && cmd_node->command.find(pattern) != std::string::npos) {
+                    // Construct path transform context from command's source_dir
+                    auto current_dir = fs::path { cmd_node->source_dir };
+                    auto tc = PathTransformContext {
+                        .source_to_root = compute_source_to_root(current_dir),
+                        .current_dir_str = cmd_node->source_dir,
+                        .source_root = impl_->options.source_root,
+                        .output_root = impl_->options.output_root,
+                    };
+
+                    // Transform member paths and build replacement string
+                    auto replacement = std::string {};
+                    for (auto id : members) {
+                        auto p = graph.get_full_path(id);
+                        if (!p.empty()) {
+                            if (!replacement.empty()) {
+                                replacement += ' ';
+                            }
+                            replacement += transform_output_path(tc, p);
+                        }
+                    }
+
+                    // Replace pattern in command
+                    auto pos = cmd_node->command.find(pattern);
+                    while (pos != std::string::npos) {
+                        cmd_node->command.replace(pos, pattern.size(), replacement);
+                        pos = cmd_node->command.find(pattern, pos + replacement.size());
+                    }
+
+                    // Also update display if it contains the pattern
+                    if (cmd_node->display.find(pattern) != std::string::npos) {
+                        pos = cmd_node->display.find(pattern);
+                        while (pos != std::string::npos) {
+                            cmd_node->display.replace(pos, pattern.size(), replacement);
+                            pos = cmd_node->display.find(pattern, pos + replacement.size());
+                        }
+                    }
+                }
             }
+        } else {
             // Group exists but has no members - warn about potential typo
             auto group_path = graph.get_full_path(edge.group_id);
             impl_->warnings.push_back(fmt::format(

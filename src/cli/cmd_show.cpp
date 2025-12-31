@@ -311,7 +311,8 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 
         auto output_rel = std::string {};
         if (!output_file.empty()) {
-            auto output_abs = ctx.layout().source_root / output_file;
+            // Generated files exist at output_root
+            auto output_abs = ctx.layout().output_root / output_file;
             output_rel = std::filesystem::relative(output_abs, working_dir).string();
         }
 

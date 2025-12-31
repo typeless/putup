@@ -1,0 +1,6 @@
+include_rules
+
+# Compile main.c with generated header from build dir
+# B expands to "../build" from src/, so $(B)/include/header.h = "../build/include/header.h"
+: main.c | $(B)/include/header.h |> gcc -I$(B)/include -c %f -o %o |> main.o
+: main.o |> gcc %f -o %o |> program

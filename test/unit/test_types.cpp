@@ -7,7 +7,8 @@
 TEST_CASE("NodeId constants", "[types]")
 {
     REQUIRE(pup::INVALID_NODE_ID == 0);
-    REQUIRE(pup::ROOT_NODE_ID == 1);
+    REQUIRE(pup::SOURCE_ROOT_ID == 0);  // Source root is sentinel value
+    REQUIRE(pup::BUILD_ROOT_ID == 1);   // Build root is pre-allocated
 }
 
 TEST_CASE("NodeFlags bitwise operations", "[types]")

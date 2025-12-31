@@ -12,11 +12,12 @@ namespace pup {
 /// 32-bit is sufficient for ~4 billion nodes (even AOSP has < 10M)
 using NodeId = std::uint32_t;
 
-/// Invalid node ID sentinel
+/// Sentinel for "no node exists" / "no parent" (top-level nodes have parent_dir = 0)
 inline constexpr auto INVALID_NODE_ID = NodeId { 0 };
+inline constexpr auto SOURCE_ROOT_ID = INVALID_NODE_ID;
 
-/// Root node ID (parent of all top-level entries)
-inline constexpr auto ROOT_NODE_ID = NodeId { 1 };
+/// Build root node ID (parent of Generated/Ghost nodes in variant builds)
+inline constexpr auto BUILD_ROOT_ID = NodeId { 1 };
 
 /// Command ID flag - high bit indicates command (vs file/directory/group)
 inline constexpr auto COMMAND_ID_FLAG = NodeId { 0x80000000 };

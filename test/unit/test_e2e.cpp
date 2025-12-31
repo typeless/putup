@@ -1482,6 +1482,56 @@ SCENARIO("Order-only deps on generated outputs resolve correctly in variants", "
     }
 }
 
+SCENARIO("Variant outputs are automatically mapped to build directory", "[e2e][variant]")
+{
+    // This tests that output paths are automatically mapped to the variant directory.
+    // Pattern from busybox:
+    //   Root Tupfile: : |> ... |> include/header.h  # should become build/include/header.h
+    //   src/Tupfile:  | $(B)/include/header.h       # references build/include/header.h
+    // Without automatic mapping, the output creates a node at "include/header.h" (source),
+    // but the dependency references "build/include/header.h" (variant) - creating two nodes.
+    GIVEN("a variant build with S/B convention like busybox")
+    {
+        auto f = E2EFixture { "variant_auto_output" };
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built with -B build")
+        {
+            auto result = f.build({ "-B", "build" });
+            INFO("stdout: " << result.stdout_output);
+            INFO("stderr: " << result.stderr_output);
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("generated header is in build directory")
+            {
+                REQUIRE(f.exists("build/include/header.h"));
+                REQUIRE_FALSE(f.exists("include/header.h"));
+            }
+
+            THEN("program is in build directory and works")
+            {
+                REQUIRE(f.is_executable("build/src/program"));
+                auto output = f.run("build/src/program").stdout_output;
+                REQUIRE(output.find("Value: 42") != std::string::npos);
+            }
+
+            THEN("rebuild is a no-op (no ghost nodes)")
+            {
+                // If output was mapped incorrectly, there would be a ghost node
+                // at build/include/header.h that never gets satisfied
+                auto rebuild = f.build({ "-B", "build" });
+                INFO("rebuild stdout: " << rebuild.stdout_output);
+                REQUIRE(rebuild.success());
+                REQUIRE(rebuild.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Cross-directory regular inputs work in variant builds", "[e2e][variant]")
 {
     // Similar to order-only test but with regular input dependency

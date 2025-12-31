@@ -1207,8 +1207,8 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][variant][critical]")
 {
     // Based on tup test t8108-variant-outputdir.sh
-    // With source-root-relative storage, graph nodes are at "sub/dir/out.txt",
-    // variant mapping ("build/sub/dir/out.txt") is applied at command expansion time
+    // Outputs are stored at source-relative paths (same as inputs).
+    // Variant mapping happens at command expansion time via transform_output_path().
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
@@ -1228,6 +1228,9 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
         .validate_inputs = false,
     };
     auto builder = GraphBuilder { options };
+
+    // Set build root name for variant build (normally done by builder.build())
+    graph.set_build_root_name("build");
 
     // Set TUP_VARIANT_OUTPUTDIR as tup would for sub/dir Tupfile with build variant
     // From sub/dir, path to build/sub/dir is ../../build/sub/dir
@@ -1260,10 +1263,9 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
     }
     REQUIRE(output_node != nullptr);
 
-    // The output node is at source-root-relative path "sub/dir/out.txt"
-    // Variant mapping to "build/sub/dir/out.txt" happens at command expansion time
+    // Output is stored at variant-mapped path (via walk_to_file_node with variant_output_dir)
     auto full_path = graph.get_full_path(output_node->id);
-    CHECK(full_path == "sub/dir/out.txt");
+    CHECK(full_path == "build/sub/dir/out.txt");
 }
 
 // =============================================================================
@@ -1448,6 +1450,9 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
     };
     auto builder = GraphBuilder { options };
 
+    // Set build root name for variant build (normally done by builder.build())
+    graph.set_build_root_name("build");
+
     ctx.tup_variant_outputdir = "../../build/src/lib";
 
     auto tupfile = Tupfile {};
@@ -1486,11 +1491,9 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
 
 TEST_CASE("GraphBuilder output filename starting with dotdot is not parent reference", "[builder][paths][dotdot]")
 {
-    // Bug: map_to_output() incorrectly treats filenames like "..hidden" as
-    // parent directory references because it only checks path[0]=='.' && path[1]=='.'
-    // without verifying that path[2]=='/' or path=="..".
-    //
-    // Expected: "..hidden" should be treated as a literal filename, not "../hidden"
+    // Regression test: filenames like "..hidden" must be treated as literal filenames,
+    // not as parent directory references. Node traversal handles this correctly because
+    // only a path component equal to ".." is treated as parent traversal.
 
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/input.c");
@@ -1498,6 +1501,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     fs::create_directories(fixture.root() / "build" / "src");
 
     auto graph = BuildGraph {};
+    graph.set_build_root_name("build");
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1539,10 +1543,9 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     }
     REQUIRE(output_node != nullptr);
 
-    // The output should be in src/..hidden (source-root-relative)
-    // If the bug exists, it would incorrectly treat "..hidden" as a parent ref
-    // and might produce just "..hidden" or worse
+    // In variant build, output goes to build/src/..hidden
+    // The key check is that "..hidden" is treated as a literal filename, not "../hidden"
     auto full_path = graph.get_full_path(output_node->id);
     INFO("Full path: " << full_path);
-    CHECK(full_path == "src/..hidden");
+    CHECK(full_path == "build/src/..hidden");
 }

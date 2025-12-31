@@ -87,10 +87,15 @@ Output files
 ### Identifiers
 
 ```cpp
-using NodeId = std::uint64_t;
-constexpr NodeId INVALID_NODE_ID = 0;
-constexpr NodeId ROOT_NODE_ID = 1;
+using NodeId = std::uint32_t;
+constexpr NodeId INVALID_NODE_ID = 0;  // Sentinel for "no parent" (source root level)
+constexpr NodeId SOURCE_ROOT_ID = 0;   // Parent of source files and directories
+constexpr NodeId BUILD_ROOT_ID = 1;    // Parent of Generated/Ghost nodes (variant builds)
 ```
+
+Note: `INVALID_NODE_ID` and `SOURCE_ROOT_ID` are both 0, used interchangeably. Top-level
+source files have parent=0, meaning they're at source root level. For variant builds,
+Generated/Ghost nodes are stored under `BUILD_ROOT_ID` at source-relative paths.
 
 ### Content Hash
 
@@ -983,25 +988,45 @@ Output goes to: project/build-debug/src/foo.o
 ### Path Transformation Pipeline
 
 Commands execute from the Tupfile's source directory, so all paths must be transformed
-from project-root-relative (how nodes are stored) to Tupfile-relative (what commands see).
+to Tupfile-relative coordinates (what commands see).
 
-**PathTransformContext** centralizes transformation parameters, computed once per rule:
+**Node-traversal approach**: Instead of string manipulation, path resolution traverses
+the graph structure:
+- `".."` → walk to parent node
+- `"name"` → find/create child node
+
+This naturally unifies input and output path resolution because both traverse to the
+same node when paths are equivalent (e.g., `$(B)/include/header.h` from an input and
+the variant-mapped output both resolve to the same node).
+
+**PathTransformContext** centralizes transformation parameters for command expansion:
 
 ```cpp
 struct PathTransformContext {
     std::string source_to_root;   // "../" prefix sequence to reach project root
     std::string current_dir_str;  // Current Tupfile directory
-    bool is_variant_build;        // Whether output_root != source_root
     fs::path source_root;         // Source tree root
     fs::path output_root;         // Output tree root (variant directory)
 };
 ```
 
+**Dual-root architecture:**
+
+The graph has two root hierarchies for variant builds:
+- `SOURCE_ROOT_ID` (0): Parent of source files, directories, and Commands
+- `BUILD_ROOT_ID` (1): Parent of Generated and Ghost nodes
+
+This separation enables Ghost→Generated node unification. When a consumer references
+`../producer/header.h` before the producer is parsed, a Ghost node is created under
+BUILD_ROOT_ID. Later, when the producer's output `header.h` is expanded, it finds and
+upgrades the Ghost to Generated—because both use the same source-relative path under
+the same root.
+
 **Pipeline stages:**
 
 1. **Input expansion** (`expand_inputs`):
    - Glob patterns resolved against source directory
-   - Results stored as project-root-relative paths
+   - Results stored as source-root-relative paths
 
 2. **PatternFlags construction** (in `expand_rule`):
    - Inputs transformed to Tupfile-relative paths
@@ -1009,23 +1034,29 @@ struct PathTransformContext {
    - Single PatternFlags built and reused for both outputs and command
 
 3. **Output expansion** (`expand_outputs`):
-   - Receives pre-built PatternFlags with input fields populated
+   - Uses node traversal under BUILD_ROOT_ID
    - Pattern substitution (`%B.o` → `main.o`)
-   - Results stored as project-root-relative paths
+   - Results stored as source-relative paths (e.g., `src/main.o`) under BUILD_ROOT_ID
 
 4. **Command generation** (`expand_command`):
    - Receives PatternFlags, augments with output fields
-   - Outputs transformed to Tupfile-relative paths
+   - All paths transformed to Tupfile-relative via `make_source_relative()`
+   - Output paths get variant prefix (e.g., `src/main.o` → `../../build/src/main.o`)
    - Pattern flags (`%f`, `%o`, `%g`) substituted
 
 **Path transformation helpers:**
 
 ```cpp
-// Transform input path: variant mapping + source-relative conversion
+// Transform paths to Tupfile-relative for command expansion
+// Inputs: source-root-relative (e.g., "src/foo.c") → "foo.c"
+// Outputs: source-root-relative (e.g., "src/foo.o") → "../../build/src/foo.o"
+//
+// For outputs, transform_output_path adds the variant prefix automatically:
+//   1. Compute variant_prefix = relative(output_root, source_root)  // e.g., "build"
+//   2. Prepend: "src/foo.o" → "build/src/foo.o"
+//   3. Apply make_source_relative: "build/src/foo.o" → "../../build/src/foo.o"
 auto transform_input_path(ctx, tc, "src/foo.c") -> "foo.c"
-
-// Transform output path: variant mapping + source-relative conversion
-auto transform_output_path(tc, "src/foo.o") -> "../build/src/foo.o"
+auto transform_output_path(tc, "src/foo.o") -> "../../build/src/foo.o"
 
 // Core conversion: project-root-relative → Tupfile-relative
 auto make_source_relative(path, source_to_root, current_dir) {
@@ -1077,8 +1108,10 @@ Variables:
 Generated command (runs from project/src/):
 gcc -c foo.c -o ../build-debug/src/foo.o
 
-Output path in graph:
-build-debug/src/foo.o  (project-root-relative)
+Graph storage:
+- foo.o stored at "src/foo.o" under BUILD_ROOT_ID (source-relative)
+- get_full_path() returns "build-debug/src/foo.o" (adds build root name)
+- File exists at: project/build-debug/src/foo.o
 ```
 
 ---

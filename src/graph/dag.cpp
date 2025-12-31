@@ -66,6 +66,18 @@ struct BuildGraph::Impl {
 BuildGraph::BuildGraph()
     : impl_(std::make_unique<Impl>())
 {
+    // Reserve BUILD_ROOT_ID (1) for the build root node.
+    // All Generated/Ghost nodes will be parented under this node.
+    // The build root's filesystem location is determined at build time
+    // (source_root for in-tree, output_root for variant builds).
+    impl_->files.resize(2); // Index 0 unused, index 1 = build root
+    impl_->files[1] = Node {
+        .id = BUILD_ROOT_ID,
+        .type = NodeType::Directory,
+        .name = {}, // Name set by set_build_root_name()
+        .parent_dir = SOURCE_ROOT_ID,
+    };
+    impl_->next_file_id = 2; // Start regular nodes at ID 2
 }
 
 BuildGraph::~BuildGraph() = default;
@@ -209,12 +221,17 @@ auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<No
 
 auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
 {
+    return find_by_path(path, SOURCE_ROOT_ID);
+}
+
+auto BuildGraph::find_by_path(std::string_view path, NodeId root) const -> std::optional<NodeId>
+{
     if (path.empty()) {
         return std::nullopt;
     }
 
     auto p = std::filesystem::path { path };
-    auto parent_id = NodeId { 0 };
+    auto parent_id = root;
 
     for (auto const& component : p) {
         auto name = component.string();
@@ -230,7 +247,12 @@ auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<Node
         parent_id = *found;
     }
 
-    return parent_id != 0 ? std::optional { parent_id } : std::nullopt;
+    // For root=0, we need parent_id != 0 to be valid
+    // For root=BUILD_ROOT_ID, any result is valid (including BUILD_ROOT_ID itself if path is empty after normalization)
+    if (root == SOURCE_ROOT_ID) {
+        return parent_id != SOURCE_ROOT_ID ? std::optional { parent_id } : std::nullopt;
+    }
+    return parent_id != root ? std::optional { parent_id } : std::nullopt;
 }
 
 auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>
@@ -314,6 +336,9 @@ auto BuildGraph::empty() const -> bool
 
 auto BuildGraph::clear() -> void
 {
+    // Preserve build root name before clearing
+    auto build_root_name = std::move(impl_->files[BUILD_ROOT_ID].name);
+
     impl_->files.clear();
     impl_->commands.clear();
     impl_->edges.clear();
@@ -321,7 +346,16 @@ auto BuildGraph::clear() -> void
     impl_->command_str_index.clear();
     impl_->order_only_dependents.clear();
     impl_->path_cache.clear();
-    impl_->next_file_id = 1;
+
+    // Reinitialize build root node (same as constructor)
+    impl_->files.resize(2);
+    impl_->files[1] = Node {
+        .id = BUILD_ROOT_ID,
+        .type = NodeType::Directory,
+        .name = std::move(build_root_name),
+        .parent_dir = SOURCE_ROOT_ID,
+    };
+    impl_->next_file_id = 2;
     impl_->next_command_id = make_command_id(1);
 }
 
@@ -436,6 +470,33 @@ auto BuildGraph::invalidate_path_cache(NodeId id) -> void
 auto BuildGraph::clear_path_cache() -> void
 {
     impl_->path_cache.clear();
+}
+
+auto BuildGraph::set_build_root_name(std::string name) -> void
+{
+    impl_->files[BUILD_ROOT_ID].name = std::move(name);
+    impl_->path_cache.clear(); // Invalidate all cached paths
+}
+
+auto BuildGraph::get_build_root_name() const -> std::string_view
+{
+    return impl_->files[BUILD_ROOT_ID].name;
+}
+
+auto BuildGraph::is_under_build_root(NodeId id) const -> bool
+{
+    if (id == 0 || id == BUILD_ROOT_ID) {
+        return id == BUILD_ROOT_ID;
+    }
+
+    auto const* node = get_node(id);
+    while (node && node->parent_dir != SOURCE_ROOT_ID) {
+        if (node->parent_dir == BUILD_ROOT_ID) {
+            return true;
+        }
+        node = get_node(node->parent_dir);
+    }
+    return false;
 }
 
 } // namespace pup::graph

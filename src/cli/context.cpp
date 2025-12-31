@@ -405,6 +405,18 @@ auto build_context(
     auto ctx = BuildContext {};
     ctx.impl_->layout = std::move(*layout_result);
 
+    // Set build root name for variant builds.
+    // This must be done before any Tupfiles are parsed so that Generated nodes
+    // created under BUILD_ROOT_ID get correct full paths including the build prefix.
+    if (ctx.impl_->layout.source_root != ctx.impl_->layout.output_root) {
+        auto build_root_name = std::filesystem::relative(
+                                   ctx.impl_->layout.output_root,
+                                   ctx.impl_->layout.source_root
+        )
+                                   .string();
+        ctx.impl_->graph.set_build_root_name(std::move(build_root_name));
+    }
+
     if (ctx_opts.auto_init) {
         auto pup_dir = ctx.impl_->layout.pup_dir();
         if (!std::filesystem::exists(pup_dir)) {

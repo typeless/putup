@@ -90,8 +90,13 @@ public:
     auto find_by_command(std::string_view cmd) const -> std::optional<NodeId>;
 
     /// Find a node by path (walks path components using find_by_dir_name)
+    /// Starts from SOURCE_ROOT_ID (0) by default
     [[nodiscard]]
     auto find_by_path(std::string_view path) const -> std::optional<NodeId>;
+
+    /// Find a node by path starting from a specific root node
+    [[nodiscard]]
+    auto find_by_path(std::string_view path, NodeId root) const -> std::optional<NodeId>;
 
     /// Get all nodes of a given type
     [[nodiscard]]
@@ -154,6 +159,18 @@ public:
 
     /// Clear the entire path cache
     auto clear_path_cache() -> void;
+
+    /// Set the build root name (relative path from source root to build root)
+    /// For in-tree builds, this should be empty. For variant builds, e.g. "build".
+    auto set_build_root_name(std::string name) -> void;
+
+    /// Get the build root name
+    [[nodiscard]]
+    auto get_build_root_name() const -> std::string_view;
+
+    /// Check if a node is under the build root (Generated/Ghost files)
+    [[nodiscard]]
+    auto is_under_build_root(NodeId id) const -> bool;
 
     struct Impl;
 

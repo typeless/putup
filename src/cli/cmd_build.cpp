@@ -168,12 +168,15 @@ auto find_changed_files_with_implicit(
         }
 
         ++metrics.files_checked;
-        // Source files use source_root, generated outputs use output_root
+
+        // File resolution:
+        // Paths are source-relative. Generated files exist at output_root,
+        // source files exist at source_root.
         auto const& root = (file.type == pup::NodeType::Generated) ? output_root : source_root;
         auto path = resolve_path(file.path, root);
-
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
+
         if (!stat_result) {
             if (verbose) {
                 fmt::print("  Changed (stat failed): {}\n", file.path);
@@ -319,9 +322,20 @@ auto build_index(
                 continue;
             }
 
-            // Source files use source_root, generated outputs use output_root
-            auto const& root = (node->type == pup::NodeType::Generated) ? output_root : source_root;
-            auto file_path = std::filesystem::path { root / node_path };
+            // For Generated nodes under BUILD_ROOT_ID, get_full_path returns
+            // the path WITH the build root name (e.g., "build/src/main.o").
+            // Strip it to get the source-relative path (e.g., "src/main.o").
+            auto build_root_name = std::string { graph.get_build_root_name() };
+            if (node->type == pup::NodeType::Generated && !build_root_name.empty() && node_path.starts_with(build_root_name + "/")) {
+                node_path = node_path.substr(build_root_name.size() + 1);
+            }
+
+            // Paths are source-relative. Generated files exist at output_root,
+            // source files exist at source_root.
+            auto file_path = (node->type == pup::NodeType::Generated)
+                ? output_root / node_path
+                : source_root / node_path;
+
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
 
@@ -350,13 +364,24 @@ auto build_index(
             path_to_id[node_path] = id;
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = graph.get_full_path(id);
+            // For GeneratedDir nodes under BUILD_ROOT_ID, strip the build root name
+            auto build_root_name = std::string { graph.get_build_root_name() };
+            if (node->type == pup::NodeType::GeneratedDir && !build_root_name.empty() && node_path.starts_with(build_root_name + "/")) {
+                node_path = node_path.substr(build_root_name.size() + 1);
+            }
+
+            // For BUILD_ROOT_ID itself, store empty name so it doesn't contribute
+            // to path reconstruction during index loading. This is essential for
+            // variant builds where Generated files should have source-relative paths.
+            auto entry_name = (id == pup::BUILD_ROOT_ID) ? std::string {} : node->name;
+
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = node->parent_dir,
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = node->name,
+                .name = entry_name,
                 .path = node_path,
                 .size = 0,
                 .content_hash = {},
@@ -523,6 +548,15 @@ auto build_index(
                 rel_path = abs_path.string();
             }
 
+            // For variant builds, implicit deps from the build directory (e.g., "build/include/header.h")
+            // need to be normalized to source-relative paths (e.g., "include/header.h") to match
+            // how Generated nodes are stored in the index.
+            auto build_root_name = graph.get_build_root_name();
+            auto build_prefix = std::string { build_root_name } + "/";
+            if (!build_root_name.empty() && rel_path.starts_with(build_prefix)) {
+                rel_path = rel_path.substr(build_prefix.size());
+            }
+
             auto it = path_to_id.find(rel_path);
             auto dep_id = it != path_to_id.end() ? it->second : create_implicit_file(abs_path, rel_path);
 
@@ -641,8 +675,9 @@ auto build_single_variant(
     }
 
     // Validate output targets exist in graph
+    // Generated outputs are stored under BUILD_ROOT_ID, not SOURCE_ROOT_ID
     for (auto const& target : opts.output_targets) {
-        auto node_id = ctx.graph().find_by_path(target);
+        auto node_id = ctx.graph().find_by_path(target, pup::BUILD_ROOT_ID);
         if (!node_id) {
             fmt::print(stderr, "[{}] Error: {} is not in build graph\n", variant_name, target);
             return EXIT_FAILURE;
@@ -693,9 +728,13 @@ auto build_single_variant(
         changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
 
         // Add output targets to force their rebuild
+        // Output targets are source-relative (e.g., "hello"), but changed_files uses
+        // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
+        auto build_root_name = std::string { ctx.graph().get_build_root_name() };
         for (auto const& output_path : opts.output_targets) {
-            if (std::ranges::find(changed_files, output_path) == changed_files.end()) {
-                changed_files.push_back(output_path);
+            auto prefixed = build_root_name.empty() ? output_path : (build_root_name + "/" + output_path);
+            if (std::ranges::find(changed_files, prefixed) == changed_files.end()) {
+                changed_files.push_back(prefixed);
             }
         }
 
@@ -732,6 +771,7 @@ auto build_single_variant(
                     continue;
                 }
 
+                // Paths are source-relative. Generated files exist at output_root.
                 auto abs_path = ctx.layout().output_root / file->path;
                 if (std::filesystem::exists(abs_path)) {
                     if (opts.dry_run) {
@@ -842,8 +882,19 @@ auto build_single_variant(
     auto build_result = pup::Result<pup::exec::BuildStats> {};
     if (!opts.output_targets.empty() && !use_incremental) {
         // Single output targets without old_index - use incremental with just target paths
+        // Output targets are source-relative (e.g., "hello"), but get_full_path returns
+        // paths with build root prefix (e.g., "build/hello"). Add the prefix.
+        auto build_root_name = std::string { ctx.graph().get_build_root_name() };
+        auto prefixed_targets = std::vector<std::string> {};
+        for (auto const& target : opts.output_targets) {
+            if (!build_root_name.empty()) {
+                prefixed_targets.push_back(build_root_name + "/" + target);
+            } else {
+                prefixed_targets.push_back(target);
+            }
+        }
         auto empty_index = pup::index::Index {};
-        build_result = scheduler.build_incremental(ctx.graph(), empty_index, opts.output_targets);
+        build_result = scheduler.build_incremental(ctx.graph(), empty_index, prefixed_targets);
     } else if (use_incremental && old_idx_ptr) {
         build_result = scheduler.build_incremental(ctx.graph(), *old_idx_ptr, changed_files);
     } else {

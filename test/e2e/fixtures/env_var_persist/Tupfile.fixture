@@ -1,0 +1,2 @@
+import MY_VAR
+: |> echo $(MY_VAR) > %o |> out.txt
