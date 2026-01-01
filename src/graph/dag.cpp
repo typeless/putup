@@ -29,6 +29,20 @@ struct DirNameKeyHash {
     }
 };
 
+struct StringHash {
+    using is_transparent = void;
+
+    auto operator()(std::string_view sv) const noexcept -> std::size_t
+    {
+        return std::hash<std::string_view> {}(sv);
+    }
+
+    auto operator()(std::string const& s) const noexcept -> std::size_t
+    {
+        return std::hash<std::string_view> {}(s);
+    }
+};
+
 } // namespace
 
 struct BuildGraph::Impl {
@@ -36,7 +50,7 @@ struct BuildGraph::Impl {
     std::deque<Node> commands; // Command nodes only
     std::vector<Edge> edges;
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
-    std::unordered_map<std::string, NodeId> command_str_index;
+    std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
     mutable std::unordered_map<NodeId, std::string> path_cache;
     NodeId next_file_id = 1;
@@ -212,7 +226,7 @@ auto BuildGraph::find_by_dir_name(NodeId parent_dir, std::string_view name) cons
 
 auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
 {
-    auto it = impl_->command_str_index.find(std::string { cmd });
+    auto it = impl_->command_str_index.find(cmd);
     if (it != impl_->command_str_index.end()) {
         return it->second;
     }

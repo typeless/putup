@@ -19,6 +19,7 @@
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace pup::exec {
 
@@ -73,7 +74,7 @@ auto build_dependency_map(
 
     // For each job, find dependencies via input edges
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
-        auto dependencies = std::set<std::size_t> {};
+        auto dependencies = std::unordered_set<std::size_t> {};
         auto cmd_id = jobs[j].id;
 
         // Check regular inputs - traverse graph edges

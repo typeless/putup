@@ -4,6 +4,7 @@
 #include "pup/parser/glob.hpp"
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace pup::parser {
 
@@ -300,9 +301,14 @@ auto glob_expand_all(
         }
     }
 
-    // Remove excluded files from matches
-    for (auto const& excl : result.exclusions) {
-        std::erase(result.matches, excl);
+    // Remove excluded files from matches in a single pass
+    if (!result.exclusions.empty()) {
+        auto excl_set = std::unordered_set<std::string> {
+            result.exclusions.begin(), result.exclusions.end()
+        };
+        std::erase_if(result.matches, [&excl_set](auto const& m) {
+            return excl_set.contains(m);
+        });
     }
 
     return result;
