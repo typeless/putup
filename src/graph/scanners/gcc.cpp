@@ -149,6 +149,7 @@ auto is_source_file(std::string const& word) -> bool
     }
     auto ext = word.substr(dot_pos);
     return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".C" || ext == ".c++"
+        || ext == ".m" || ext == ".mm"
         || ext == ".S" || ext == ".s" || ext == ".asm";
 }
 

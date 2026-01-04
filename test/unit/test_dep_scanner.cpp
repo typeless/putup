@@ -370,6 +370,45 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
     }
 }
 
+TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("build_dep_command handles Objective-C files")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 1,
+            .command = "clang -c foo.m -o foo.o",
+            .display = "CC foo.o",
+            .inputs = { "foo.m" },
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto dep_cmd = scanner.build_dep_command(cmd);
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == "clang -M foo.m");
+    }
+
+    SECTION("build_dep_command handles Objective-C++ files")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 2,
+            .command = "clang++ -c bar.mm -o bar.o",
+            .display = "CXX bar.o",
+            .inputs = { "bar.mm" },
+            .order_only_inputs = {},
+            .outputs = { "bar.o" },
+            .working_dir = ".",
+        };
+
+        auto dep_cmd = scanner.build_dep_command(cmd);
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == "clang++ -M bar.mm");
+    }
+}
+
 TEST_CASE("make_gcc_scanner factory", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::make_gcc_scanner();
