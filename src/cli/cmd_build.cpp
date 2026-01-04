@@ -2,6 +2,7 @@
 // Copyright (c) 2024 pup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/core/hash.hpp"
@@ -886,9 +887,26 @@ auto build_single_variant(
         }
     });
 
+    // Identify config-generating commands to exclude from regular build
+    // (config rules should only run during 'pup configure')
+    auto config_cmd_ids = std::set<NodeId> {};
+    for (auto const& cfg : find_config_commands(ctx.graph(), ctx.layout().source_root)) {
+        config_cmd_ids.insert(cfg.cmd_id);
+    }
+
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
-    if (!target_node_ids.empty() && !use_incremental) {
+    if (!config_cmd_ids.empty()) {
+        // Exclude config-generating commands from build
+        auto non_config_cmds = std::set<NodeId> {};
+        for (auto id : ctx.graph().all_nodes()) {
+            auto const* node = ctx.graph().get_node(id);
+            if (node && node->type == NodeType::Command && !config_cmd_ids.contains(id)) {
+                non_config_cmds.insert(id);
+            }
+        }
+        build_result = scheduler.build_subset(ctx.graph(), non_config_cmds);
+    } else if (!target_node_ids.empty() && !use_incremental) {
         // Target-based build: use reverse traversal to find required commands
         build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
     } else if (use_incremental && old_idx_ptr) {

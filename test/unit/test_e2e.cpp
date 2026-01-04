@@ -2987,6 +2987,85 @@ SCENARIO("Build succeeds after configure", "[e2e][build][configure]")
     }
 }
 
+SCENARIO("Config selection persists across multiple builds", "[e2e][configure]")
+{
+    GIVEN("a project with config selected via tup.config")
+    {
+        // Use simple_c fixture which has no config-generating rules
+        auto f = E2EFixture { "simple_c" };
+        f.mkdir("build");
+        // Write config that would be selected via environment variable
+        // (e.g., user sets CONFIG_BOARD=my-board based on env var)
+        f.write_file("build/tup.config", "CONFIG_OPT=fast\nCONFIG_DEBUG=0\n");
+
+        WHEN("pup configure runs and then pup build runs multiple times")
+        {
+            auto configure_result = f.pup({ "configure", "-B", "build" });
+            INFO("configure stdout: " << configure_result.stdout_output);
+            INFO("configure stderr: " << configure_result.stderr_output);
+            REQUIRE(configure_result.success());
+
+            // First build
+            auto build1 = f.build({ "-B", "build" });
+            INFO("build1 stdout: " << build1.stdout_output);
+            INFO("build1 stderr: " << build1.stderr_output);
+            REQUIRE(build1.success());
+            REQUIRE(f.is_executable("build/hello"));
+
+            // Second build should succeed
+            auto build2 = f.build({ "-B", "build" });
+            INFO("build2 stdout: " << build2.stdout_output);
+            INFO("build2 stderr: " << build2.stderr_output);
+            REQUIRE(build2.success());
+
+            // Third build should be no-op (nothing changed)
+            auto build3 = f.build({ "-B", "build" });
+            INFO("build3 stdout: " << build3.stdout_output);
+            INFO("build3 stderr: " << build3.stderr_output);
+            REQUIRE(build3.success());
+            REQUIRE(build3.is_noop());
+
+            THEN("builds are stable and config persists")
+            {
+                // Config file should still exist with original values
+                auto config = f.read_file("build/tup.config");
+                REQUIRE(config.find("CONFIG_OPT=fast") != std::string::npos);
+                REQUIRE(config.find("CONFIG_DEBUG=0") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Build skips config-generating rules", "[e2e][configure][build]")
+{
+    GIVEN("a project with config-generating and normal rules")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=test-value\n");
+
+        // Run configure first
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        auto config_after_configure = f.read_file("build/configs/tup.config");
+        REQUIRE(config_after_configure.find("test-value") != std::string::npos);
+
+        WHEN("pup build runs")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("config-generating rules are NOT re-run and config is preserved")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                // Config should be unchanged from configure
+                auto config_after_build = f.read_file("build/configs/tup.config");
+                REQUIRE(config_after_build == config_after_configure);
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Duplicate Output Detection Tests
 // =============================================================================
