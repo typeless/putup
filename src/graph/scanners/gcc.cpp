@@ -137,6 +137,22 @@ auto is_dep_relevant_flag(std::string const& flag) -> bool
     return false;
 }
 
+/// Check if a word looks like a source file
+auto is_source_file(std::string const& word) -> bool
+{
+    if (word.empty() || word[0] == '-') {
+        return false;
+    }
+    auto dot_pos = word.rfind('.');
+    if (dot_pos == std::string::npos) {
+        return false;
+    }
+    auto ext = word.substr(dot_pos);
+    return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".C" || ext == ".c++"
+        || ext == ".m" || ext == ".mm"
+        || ext == ".S" || ext == ".s" || ext == ".asm";
+}
+
 /// Regex to match GCC/Clang compile commands
 auto gcc_pattern() -> std::regex const&
 {
@@ -230,8 +246,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
             continue;
         }
 
-        // Any non-flag argument is assumed to be a source file
-        if (!w.empty() && w[0] != '-') {
+        if (is_source_file(w)) {
             source_files.push_back(w);
         }
     }
