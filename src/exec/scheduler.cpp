@@ -331,7 +331,10 @@ auto Scheduler::build_incremental(
     }
 
     // Expand to include all dependent commands (including order-only)
+    // get_outputs() excludes sticky edges by design (Tupfile/config dependencies
+    // are parse-time deps, not build-time deps)
     auto to_process = std::vector<NodeId>(affected.begin(), affected.end());
+
     while (!to_process.empty()) {
         auto id = NodeId { to_process.back() };
         to_process.pop_back();

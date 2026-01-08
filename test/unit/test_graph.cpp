@@ -556,3 +556,124 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
         REQUIRE(result.has_cycle);
     }
 }
+
+// Regression test: get_outputs() must exclude sticky edges
+//
+// Background: Sticky edges connect Tupfile/config nodes to commands they define.
+// These are parse-time dependencies (if Tupfile changes, reparse to see if command
+// changed), NOT build-time dependencies (don't rebuild command just because Tupfile
+// was touched).
+//
+// Bug: Previously get_outputs() returned ALL edges including sticky. During
+// incremental builds, the expansion loop followed get_outputs() transitively,
+// causing a cascade through shared Tupfile nodes to ALL commands.
+//
+// Fix: Separate storage - sticky edges go to sticky_outputs, get_outputs()
+// returns only non-sticky edges (matching tup's design).
+//
+// This test would FAIL with the old implementation where get_outputs()
+// included sticky edges.
+TEST_CASE("get_outputs excludes sticky edges", "[graph][regression]")
+{
+    using pup::LinkType;
+    auto graph = BuildGraph {};
+
+    // Scenario: Tupfile defines a command, source.c is input
+    //
+    // Tupfile ---(sticky)---> cmd ---(normal)---> output.o
+    //                          ^
+    // source.c ---(normal)-----+
+
+    auto tupfile_id = graph.add_node(Node { .type = NodeType::File, .name = "Tupfile" });
+    auto source_id = graph.add_node(Node { .type = NodeType::File, .name = "source.c" });
+    auto cmd_id = graph.add_node(Node { .type = NodeType::Command, .command = "gcc source.c" });
+    auto output_id = graph.add_node(Node { .type = NodeType::Generated, .name = "output.o" });
+
+    (void)graph.add_edge(*source_id, *cmd_id, LinkType::Normal);
+    (void)graph.add_edge(*cmd_id, *output_id, LinkType::Normal);
+    (void)graph.add_edge(*tupfile_id, *cmd_id, LinkType::Sticky);
+
+    // THE KEY ASSERTION: Tupfile's get_outputs() must NOT include the command
+    // Old behavior: tupfile_outputs contained cmd_id (WRONG - causes cascade)
+    // New behavior: tupfile_outputs is empty (CORRECT - sticky edges excluded)
+    auto tupfile_outputs = graph.get_outputs(*tupfile_id);
+    REQUIRE(tupfile_outputs.empty());
+
+    // Normal edges still work as expected
+    auto source_outputs = graph.get_outputs(*source_id);
+    REQUIRE(source_outputs.size() == 1);
+    REQUIRE(source_outputs[0] == *cmd_id);
+
+    auto cmd_outputs = graph.get_outputs(*cmd_id);
+    REQUIRE(cmd_outputs.size() == 1);
+    REQUIRE(cmd_outputs[0] == *output_id);
+}
+
+TEST_CASE("Sticky edge API", "[graph]")
+{
+    using pup::LinkType;
+    auto graph = BuildGraph {};
+
+    auto tupfile_id = graph.add_node(Node { .type = NodeType::File, .name = "Tupfile" });
+    auto source_id = graph.add_node(Node { .type = NodeType::File, .name = "source.c" });
+    auto cmd_id = graph.add_node(Node { .type = NodeType::Command, .command = "gcc source.c" });
+    auto output_id = graph.add_node(Node { .type = NodeType::Generated, .name = "output.o" });
+
+    (void)graph.add_edge(*source_id, *cmd_id, LinkType::Normal);
+    (void)graph.add_edge(*cmd_id, *output_id, LinkType::Normal);
+    (void)graph.add_edge(*tupfile_id, *cmd_id, LinkType::Sticky);
+
+    SECTION("get_sticky_outputs returns only sticky edges")
+    {
+        auto tupfile_sticky = graph.get_sticky_outputs(*tupfile_id);
+        REQUIRE(tupfile_sticky.size() == 1);
+        REQUIRE(tupfile_sticky[0] == *cmd_id);
+
+        REQUIRE(graph.get_sticky_outputs(*source_id).empty());
+        REQUIRE(graph.get_sticky_outputs(*cmd_id).empty());
+    }
+
+    SECTION("inputs include all edge types")
+    {
+        auto cmd_inputs = graph.get_inputs(*cmd_id);
+        REQUIRE(cmd_inputs.size() == 2);
+        REQUIRE(std::ranges::find(cmd_inputs, *tupfile_id) != cmd_inputs.end());
+        REQUIRE(std::ranges::find(cmd_inputs, *source_id) != cmd_inputs.end());
+    }
+
+    SECTION("edges() returns all edges including sticky")
+    {
+        REQUIRE(graph.edge_count() == 3);
+
+        auto edges = graph.edges();
+        auto sticky_edge = std::ranges::find_if(edges, [](auto const& e) {
+            return e.type == LinkType::Sticky;
+        });
+        REQUIRE(sticky_edge != edges.end());
+        REQUIRE(sticky_edge->from == *tupfile_id);
+        REQUIRE(sticky_edge->to == *cmd_id);
+    }
+
+    SECTION("multiple sticky edges from same node")
+    {
+        auto cmd2_id = graph.add_node(Node { .type = NodeType::Command, .command = "gcc other.c" });
+        (void)graph.add_edge(*tupfile_id, *cmd2_id, LinkType::Sticky);
+
+        REQUIRE(graph.get_sticky_outputs(*tupfile_id).size() == 2);
+        REQUIRE(graph.get_outputs(*tupfile_id).empty());
+    }
+
+    SECTION("mixed edge types from same node")
+    {
+        auto cmd2_id = graph.add_node(Node { .type = NodeType::Command, .command = "lint source.c" });
+        (void)graph.add_edge(*source_id, *cmd2_id, LinkType::Sticky);
+
+        auto source_outputs = graph.get_outputs(*source_id);
+        REQUIRE(source_outputs.size() == 1);
+        REQUIRE(source_outputs[0] == *cmd_id);
+
+        auto source_sticky = graph.get_sticky_outputs(*source_id);
+        REQUIRE(source_sticky.size() == 1);
+        REQUIRE(source_sticky[0] == *cmd2_id);
+    }
+}

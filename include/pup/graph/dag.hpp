@@ -39,8 +39,9 @@ struct Node {
     NodeId parent_dir = 0;         ///< Parent directory node (used with name for lookup)
     Hash256 content_hash = { {} }; ///< Content hash for files (double braces force zero-init)
 
-    std::vector<NodeId> inputs = {};          ///< Input edges (dependencies)
-    std::vector<NodeId> outputs = {};         ///< Output edges (dependents)
+    std::vector<NodeId> inputs = {};          ///< Input edges (all types)
+    std::vector<NodeId> outputs = {};         ///< Output edges (non-sticky only)
+    std::vector<NodeId> sticky_outputs = {};  ///< Sticky edges (Tupfile/config deps)
     std::vector<NodeId> order_only = {};      ///< Order-only dependencies
     std::set<std::string> exported_vars = {}; ///< Env vars to export to command
 
@@ -106,9 +107,15 @@ public:
     [[nodiscard]]
     auto get_inputs(NodeId id) const -> std::vector<NodeId>;
 
-    /// Get direct dependents of a node
+    /// Get direct dependents of a node (excludes sticky edges)
+    /// For build-time dependency traversal, use this method.
     [[nodiscard]]
     auto get_outputs(NodeId id) const -> std::vector<NodeId>;
+
+    /// Get sticky dependents of a node (Tupfile/config dependencies)
+    /// Sticky edges are parse-time dependencies - use for reparse decisions, not rebuilds.
+    [[nodiscard]]
+    auto get_sticky_outputs(NodeId id) const -> std::vector<NodeId>;
 
     /// Get order-only dependencies
     [[nodiscard]]

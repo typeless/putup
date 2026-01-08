@@ -150,12 +150,16 @@ auto BuildGraph::add_edge(NodeId from, NodeId to, LinkType type) -> Result<void>
         .type = type,
     });
 
-    // Direct storage access (IDs validated above)
-    if (is_command_id(from)) {
-        impl_->commands[command_index(from)].outputs.push_back(to);
-    } else {
-        impl_->files[file_index(from)].outputs.push_back(to);
-    }
+    // Route to appropriate output vector based on edge type
+    // Sticky edges go to sticky_outputs, all others to outputs
+    auto& target_vector = (type == LinkType::Sticky)
+        ? (is_command_id(from) ? impl_->commands[command_index(from)].sticky_outputs
+                               : impl_->files[file_index(from)].sticky_outputs)
+        : (is_command_id(from) ? impl_->commands[command_index(from)].outputs
+                               : impl_->files[file_index(from)].outputs);
+    target_vector.push_back(to);
+
+    // Inputs receive all edge types
     if (is_command_id(to)) {
         impl_->commands[command_index(to)].inputs.push_back(from);
     } else {
@@ -306,6 +310,15 @@ auto BuildGraph::get_outputs(NodeId id) const -> std::vector<NodeId>
         return {};
     }
     return node->outputs;
+}
+
+auto BuildGraph::get_sticky_outputs(NodeId id) const -> std::vector<NodeId>
+{
+    auto const* node = get_node(id);
+    if (!node) {
+        return {};
+    }
+    return node->sticky_outputs;
 }
 
 auto BuildGraph::get_order_only(NodeId id) const -> std::vector<NodeId>
