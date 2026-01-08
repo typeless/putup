@@ -896,8 +896,16 @@ auto build_single_variant(
 
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
-    if (!config_cmd_ids.empty()) {
-        // Exclude config-generating commands from build
+
+    if (!target_node_ids.empty() && !use_incremental) {
+        // Target-based build: use reverse traversal to find required commands
+        build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
+    } else if (use_incremental && old_idx_ptr) {
+        // Incremental build takes priority - config commands are inherently
+        // excluded since they're not in the dependency chain of changed files
+        build_result = scheduler.build_incremental(ctx.graph(), *old_idx_ptr, changed_files);
+    } else if (!config_cmd_ids.empty()) {
+        // Exclude config-generating commands from full build
         auto non_config_cmds = std::set<NodeId> {};
         for (auto id : ctx.graph().all_nodes()) {
             auto const* node = ctx.graph().get_node(id);
@@ -906,11 +914,6 @@ auto build_single_variant(
             }
         }
         build_result = scheduler.build_subset(ctx.graph(), non_config_cmds);
-    } else if (!target_node_ids.empty() && !use_incremental) {
-        // Target-based build: use reverse traversal to find required commands
-        build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
-    } else if (use_incremental && old_idx_ptr) {
-        build_result = scheduler.build_incremental(ctx.graph(), *old_idx_ptr, changed_files);
     } else {
         build_result = scheduler.build(ctx.graph());
     }
