@@ -45,9 +45,6 @@ auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
         if (spec.output_mode == DepOutputMode::Stdout) {
             outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = {} });
         }
-        // TODO: Handle DepOutputMode::File for:
-        // - GCC/Clang with -MD (writes .d file alongside output)
-        // - MSVC with /sourceDependencies (writes JSON dep file)
 
         result.push_back(GeneratedRule {
             .inputs = cmd.inputs,

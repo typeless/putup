@@ -21,51 +21,6 @@ struct ParseError {
     std::string message;
 };
 
-/// File resolver interface for include directives
-class FileResolver {
-public:
-    virtual ~FileResolver() = default;
-    FileResolver() = default;
-    FileResolver(FileResolver const&) = delete;
-    auto operator=(FileResolver const&) -> FileResolver& = delete;
-    FileResolver(FileResolver&&) = delete;
-    auto operator=(FileResolver&&) -> FileResolver& = delete;
-
-    /// Resolve a path relative to the current file
-    [[nodiscard]]
-    virtual auto resolve(
-        std::string_view path,
-        std::string_view relative_to
-    ) -> Result<std::string> = 0;
-
-    /// Read file contents
-    [[nodiscard]]
-    virtual auto read_file(std::string_view path) -> Result<std::string> = 0;
-
-    /// Find Tuprules.tup by searching parent directories
-    [[nodiscard]]
-    virtual auto find_tuprules(std::string_view from_dir) -> Result<std::string> = 0;
-};
-
-/// Default file resolver using filesystem
-class DefaultFileResolver : public FileResolver {
-public:
-    explicit DefaultFileResolver(std::string_view root_dir);
-
-    [[nodiscard]]
-    auto resolve(
-        std::string_view path,
-        std::string_view relative_to
-    ) -> Result<std::string> override;
-    [[nodiscard]]
-    auto read_file(std::string_view path) -> Result<std::string> override;
-    [[nodiscard]]
-    auto find_tuprules(std::string_view from_dir) -> Result<std::string> override;
-
-private:
-    std::string root_dir_;
-};
-
 /// Parser options
 struct ParserOptions {
     bool process_includes = true;
@@ -77,7 +32,7 @@ class Parser {
 public:
     using Options = ParserOptions;
 
-    Parser(std::string_view source, std::string_view filename, std::shared_ptr<FileResolver> resolver = nullptr, Options options = Options {});
+    Parser(std::string_view source, std::string_view filename, Options options = Options {});
     ~Parser();
 
     Parser(Parser const&) = delete;
@@ -89,10 +44,6 @@ public:
     /// Parse complete Tupfile
     [[nodiscard]]
     auto parse() -> Result<Tupfile>;
-
-    /// Parse single statement (for testing)
-    [[nodiscard]]
-    auto parse_statement() -> Result<std::unique_ptr<Statement>>;
 
     /// Get all parse errors
     [[nodiscard]]

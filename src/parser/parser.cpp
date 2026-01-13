@@ -3,77 +3,7 @@
 
 #include "pup/parser/parser.hpp"
 
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-
 namespace pup::parser {
-
-// =============================================================================
-// DefaultFileResolver
-// =============================================================================
-
-DefaultFileResolver::DefaultFileResolver(std::string_view root_dir)
-    : root_dir_(root_dir)
-{
-}
-
-auto DefaultFileResolver::resolve(
-    std::string_view path,
-    std::string_view relative_to
-) -> Result<std::string>
-{
-    namespace fs = std::filesystem;
-
-    auto const rel_path = fs::path { fs::path { relative_to }.parent_path() / path };
-    if (fs::exists(rel_path)) {
-        return rel_path.string();
-    }
-
-    auto const abs_path = fs::path { fs::path { root_dir_ } / path };
-    if (fs::exists(abs_path)) {
-        return abs_path.string();
-    }
-
-    return pup::make_error<std::string>(ErrorCode::IncludeNotFound, "Include file not found: " + std::string { path });
-}
-
-auto DefaultFileResolver::read_file(std::string_view path) -> Result<std::string>
-{
-    auto file = std::ifstream { std::string { path } };
-    if (!file) {
-        return pup::make_error<std::string>(ErrorCode::IoError, "Cannot open file: " + std::string { path });
-    }
-
-    auto ss = std::stringstream {};
-    ss << file.rdbuf();
-    return ss.str();
-}
-
-auto DefaultFileResolver::find_tuprules(std::string_view from_dir) -> Result<std::string>
-{
-    namespace fs = std::filesystem;
-
-    auto dir = fs::path { fs::path { from_dir } };
-    auto const root = fs::path { fs::path { root_dir_ } };
-
-    while (dir >= root) {
-        auto const tuprules = fs::path { dir / "Tuprules.tup" };
-        if (fs::exists(tuprules)) {
-            return tuprules.string();
-        }
-        if (dir == root) {
-            break;
-        }
-        dir = dir.parent_path();
-    }
-
-    return pup::make_error<std::string>(ErrorCode::IncludeNotFound, "Tuprules.tup not found");
-}
-
-// =============================================================================
-// Parser
-// =============================================================================
 
 struct Parser::RuleBody {
     Expression command;
@@ -87,7 +17,6 @@ struct Parser::RuleBody {
 
 struct Parser::Impl {
     Lexer lexer;
-    std::shared_ptr<FileResolver> resolver;
     Options options;
     std::vector<ParseError> errors;
     std::unordered_set<std::string> included_files;
@@ -102,10 +31,9 @@ struct Parser::Impl {
     }
 };
 
-Parser::Parser(std::string_view source, std::string_view filename, std::shared_ptr<FileResolver> resolver, Options options)
+Parser::Parser(std::string_view source, std::string_view filename, Options options)
     : impl_(std::make_unique<Impl>(source, filename))
 {
-    impl_->resolver = std::move(resolver);
     impl_->options = options;
     advance(); // Prime the parser with first token
 }
@@ -160,18 +88,6 @@ auto Parser::parse() -> Result<Tupfile>
     }
 
     return tupfile;
-}
-
-auto Parser::parse_statement() -> Result<std::unique_ptr<Statement>>
-{
-    while (match(TokenType::Newline) || match(TokenType::Hash)) {
-    }
-
-    if (check(TokenType::Eof)) {
-        return nullptr;
-    }
-
-    return parse_line();
 }
 
 auto Parser::advance() -> Token

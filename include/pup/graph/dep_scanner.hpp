@@ -16,13 +16,11 @@ namespace pup::graph {
 /// How to capture dependency output from a tool
 enum class DepOutputMode : std::uint8_t {
     Stdout, ///< Parse stdout as depfile (e.g., gcc -M)
-    File,   ///< Read .d file alongside output (e.g., gcc -MD)
 };
 
 /// Specification for dependency extraction
 struct DepSpec {
     DepOutputMode output_mode = DepOutputMode::Stdout;
-    std::string depfile_suffix = ".d"; ///< For File mode: suffix relative to output
 };
 
 /// Abstract interface for dependency scanners.

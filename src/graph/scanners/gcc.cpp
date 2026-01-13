@@ -262,7 +262,6 @@ auto GccScanner::dep_spec() const -> DepSpec
 {
     return DepSpec {
         .output_mode = DepOutputMode::Stdout,
-        .depfile_suffix = ".d",
     };
 }
 

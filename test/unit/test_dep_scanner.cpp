@@ -141,7 +141,6 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
     {
         auto spec = scanner.dep_spec();
         REQUIRE(spec.output_mode == DepOutputMode::Stdout);
-        REQUIRE(spec.depfile_suffix == ".d");
     }
 
     SECTION("matches gcc compile command")

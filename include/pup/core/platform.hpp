@@ -51,11 +51,4 @@ inline auto get_platform() -> std::string
     return std::string { PLATFORM };
 }
 
-/// Get architecture string at runtime
-[[nodiscard]]
-inline auto get_arch() -> std::string_view
-{
-    return ARCH;
-}
-
 } // namespace pup
