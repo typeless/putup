@@ -208,6 +208,13 @@ auto find_changed_files_with_implicit(
                 ++metrics.files_changed;
                 changed.push_back(file.path);
             }
+        } else {
+            // ZERO_HASH indicates hash wasn't computed - treat as changed to be safe
+            if (verbose) {
+                fmt::print("  Changed (no hash): {}\n", file.path);
+            }
+            ++metrics.files_changed;
+            changed.push_back(file.path);
         }
     }
 
@@ -311,12 +318,6 @@ auto build_index(
             max_file_id = id;
         }
 
-        // Skip ghost nodes - they're transient placeholders that should have been
-        // upgraded to Generated or caught as errors during build
-        if (node->type == pup::NodeType::Ghost) {
-            continue;
-        }
-
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
             auto node_path = graph.get_full_path(id);
             if (node_path.empty()) {
@@ -407,6 +408,20 @@ auto build_index(
             index.add_file(std::move(entry));
         } else if (node->type == pup::NodeType::Group) {
             // Group nodes must be in index to maintain consecutive ID sequence
+            auto entry = pup::index::FileEntry {
+                .id = id,
+                .parent_id = node->parent_dir,
+                .src_id = 0,
+                .type = node->type,
+                .flags = node->flags,
+                .name = node->name,
+                .path = {},
+                .size = 0,
+                .content_hash = {},
+            };
+            index.add_file(std::move(entry));
+        } else if (node->type == pup::NodeType::Ghost) {
+            // Ghost nodes must be in index to maintain consecutive ID sequence
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = node->parent_dir,

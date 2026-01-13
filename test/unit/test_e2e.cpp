@@ -880,6 +880,47 @@ SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incr
     }
 }
 
+SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][incremental][variant]")
+{
+    GIVEN("a variant build with cross-directory dependencies")
+    {
+        // scoped_build has: app -> lib cross-directory dep
+        // app/Tupfile is parsed first (alphabetically), references ../lib/foo.o
+        // This may create Ghost nodes, testing the ID contiguity fix
+        auto f = E2EFixture { "scoped_build" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.is_executable("build/app/app"));
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            auto noop = f.build({ "-B", "build" });
+            REQUIRE(noop.success());
+            REQUIRE(noop.is_noop());
+
+            WHEN("source file content is modified without size change")
+            {
+                // Modify "42" to "99" - same size (2 chars), different content
+                auto content = f.read_file("lib/foo.c");
+                auto pos = content.find("42");
+                REQUIRE(pos != std::string::npos);
+                content.replace(pos, 2, "99");
+                f.write_file("lib/foo.c", content);
+
+                auto result = f.build({ "-B", "build" });
+
+                THEN("rebuild occurs due to content hash change")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                }
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Scoped Build Tests
 // =============================================================================

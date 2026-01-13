@@ -410,6 +410,85 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     std::filesystem::remove(temp_path);
 }
 
+TEST_CASE("Index ID contiguity requirement", "[index]")
+{
+    // This test documents a design constraint: IDs must be contiguous when
+    // stored in the index. The index format assigns IDs from array position
+    // on load (id = array_index + 1), so if there are gaps in stored IDs,
+    // parent_id references will be broken after round-trip.
+    //
+    // The build system ensures ID contiguity by storing ALL node types
+    // (including Ghost, Variable, Group) rather than skipping them.
+    // This test verifies the consequence of violating this constraint.
+
+    auto index = Index {};
+
+    // Create entries with consecutive IDs (no gaps)
+    index.add_file(FileEntry {
+        .id = 1,
+        .parent_id = 0,
+        .type = NodeType::Directory,
+        .name = "src",
+    });
+
+    index.add_file(FileEntry {
+        .id = 2,
+        .parent_id = 0,
+        .type = NodeType::Directory,
+        .name = "build",
+    });
+
+    // ID 3: placeholder (like a Ghost node would be stored)
+    index.add_file(FileEntry {
+        .id = 3,
+        .parent_id = 0,
+        .type = NodeType::Ghost,
+        .name = "placeholder",
+    });
+
+    // ID 4: subdirectory under src (parent=1)
+    index.add_file(FileEntry {
+        .id = 4,
+        .parent_id = 1,
+        .type = NodeType::Directory,
+        .name = "lib",
+    });
+
+    // ID 5: file under lib (parent=4)
+    index.add_file(FileEntry {
+        .id = 5,
+        .parent_id = 4,
+        .type = NodeType::File,
+        .name = "foo.c",
+        .size = 100,
+    });
+
+    // Serialize and read back
+    auto temp_path = std::filesystem::temp_directory_path() / "pup_test_contiguous";
+    auto writer = IndexWriter {};
+    auto write_result = writer.write(temp_path, index);
+    REQUIRE(write_result.has_value());
+
+    auto reader_result = IndexReader::open(temp_path);
+    REQUIRE(reader_result.has_value());
+
+    auto read_result = reader_result->read();
+    REQUIRE(read_result.has_value());
+
+    auto& restored = *read_result;
+
+    // With consecutive IDs, path reconstruction works correctly
+    auto* foo = restored.find_file("src/lib/foo.c");
+    REQUIRE(foo != nullptr);
+    REQUIRE(foo->size == 100);
+
+    auto* lib = restored.find_file("src/lib");
+    REQUIRE(lib != nullptr);
+    REQUIRE(lib->type == NodeType::Directory);
+
+    std::filesystem::remove(temp_path);
+}
+
 TEST_CASE("Index reader validation", "[index]")
 {
     SECTION("non-existent file")
