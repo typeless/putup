@@ -59,6 +59,15 @@ auto compute_build_scopes(
         return {};
     }
 
+    // If cwd is under or equals output_root (but not source_root for in-tree builds),
+    // build all. The user is in the build directory, not a source subdirectory.
+    // Source files are under source_root, not output_root, so scoping to output_root
+    // would incorrectly skip all source file change detection.
+    auto output_root = std::filesystem::canonical(layout.output_root);
+    if (source_root != output_root && pup::is_path_under(cwd, output_root)) {
+        return {};
+    }
+
     // Get relative path if cwd is under source_root
     auto rel = pup::relative_to_root(cwd, source_root);
     if (rel.empty()) {

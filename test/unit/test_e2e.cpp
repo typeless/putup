@@ -510,6 +510,36 @@ SCENARIO("Incremental rebuilds detect header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Incremental rebuilds work when running from build directory", "[e2e][incremental][variant]")
+{
+    GIVEN("a built out-of-tree project")
+    {
+        auto f = E2EFixture { "incremental_from_build_dir" };
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/main.o"));
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            auto noop = f.run_pup_in_dir("build", {});
+            REQUIRE(noop.success());
+            REQUIRE(noop.is_noop());
+
+            WHEN("a source file is modified and pup is run from build directory")
+            {
+                f.write_file("main.c", "int main(void) { return 1; }\n");
+                auto result = f.run_pup_in_dir("build", {});
+
+                THEN("rebuild occurs (change is detected)")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Tupfile changes trigger rebuild", "[e2e][incremental]")
 {
     GIVEN("a built project")

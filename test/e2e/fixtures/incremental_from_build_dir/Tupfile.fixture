@@ -1,0 +1,1 @@
+: main.c |> cc -c -o %o %f |> main.o

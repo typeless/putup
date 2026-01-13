@@ -4,6 +4,7 @@
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/target.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/path_utils.hpp"
 #include "pup/core/result.hpp"
 
 #include <cstdio>
@@ -128,6 +129,28 @@ auto for_each_variant(
         modified_opts.targets = scopes;
         modified_opts.output_targets = output_targets;
         return handler(modified_opts, ".");
+    }
+
+    // Check if cwd is inside one of the discovered variants.
+    // If so, let discover_layout detect it via its cwd/tup.config logic
+    // instead of setting build_dirs (which would resolve relative to cwd).
+    auto cwd = std::filesystem::current_path();
+    auto cwd_variant = std::optional<std::filesystem::path> {};
+    for (auto const& variant : variants) {
+        auto variant_abs = source_root / variant;
+        if (pup::is_path_under(cwd, variant_abs)) {
+            cwd_variant = variant;
+            break;
+        }
+    }
+
+    // If cwd is inside a variant, use that variant without setting build_dirs
+    if (cwd_variant) {
+        auto single_opts = Options { opts };
+        // Don't set build_dirs - let discover_layout detect via cwd/tup.config
+        single_opts.targets = scopes;
+        single_opts.output_targets = output_targets;
+        return handler(single_opts, cwd_variant->filename().string());
     }
 
     // Single variant - direct call
