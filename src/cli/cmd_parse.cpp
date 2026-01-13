@@ -8,9 +8,8 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 
+#include <cstdio>
 #include <cstdlib>
-
-#include <fmt/core.h>
 
 namespace pup::cli {
 
@@ -24,35 +23,47 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fmt::print(stderr, "[{}] Error: {}\n", variant_name, result.error().message);
+        fprintf(stderr, "[%.*s] Error: %s\n",
+            static_cast<int>(variant_name.size()), variant_name.data(),
+            result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
     auto& ctx = *result;
 
     if (opts.verbose) {
-        fmt::print("[{}] Project root: \"{}\"\n", variant_name, ctx.layout().source_root.string());
-        fmt::print("[{}] Tupfiles:\n", variant_name);
+        printf("[%.*s] Project root: \"%s\"\n",
+            static_cast<int>(variant_name.size()), variant_name.data(),
+            ctx.layout().source_root.string().c_str());
+        printf("[%.*s] Tupfiles:\n",
+            static_cast<int>(variant_name.size()), variant_name.data());
         for (auto const& dir : ctx.parsed_dirs()) {
             auto tupfile_path = (dir == "." || dir.empty())
                 ? ctx.layout().source_root / "Tupfile"
                 : ctx.layout().source_root / dir / "Tupfile";
-            fmt::print("[{}]   {}\n", variant_name, tupfile_path.string());
+            printf("[%.*s]   %s\n",
+                static_cast<int>(variant_name.size()), variant_name.data(),
+                tupfile_path.string().c_str());
         }
     }
 
     auto commands = ctx.graph().nodes_of_type(pup::NodeType::Command);
 
     if (opts.verbose && !commands.empty()) {
-        fmt::print("[{}] Commands:\n", variant_name);
+        printf("[%.*s] Commands:\n",
+            static_cast<int>(variant_name.size()), variant_name.data());
         for (auto id : commands) {
             if (auto const* node = ctx.graph().get_node(id)) {
-                fmt::print("[{}]   {}\n", variant_name, node->display.empty() ? node->command : node->display);
+                printf("[%.*s]   %s\n",
+                    static_cast<int>(variant_name.size()), variant_name.data(),
+                    (node->display.empty() ? node->command : node->display).c_str());
             }
         }
     }
 
-    fmt::print("[{}] Parsed {} Tupfile(s), {} commands\n", variant_name, ctx.parsed_dirs().size(), commands.size());
+    printf("[%.*s] Parsed %zu Tupfile(s), %zu commands\n",
+        static_cast<int>(variant_name.size()), variant_name.data(),
+        ctx.parsed_dirs().size(), commands.size());
 
     return EXIT_SUCCESS;
 }

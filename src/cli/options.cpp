@@ -5,11 +5,10 @@
 #include "pup/core/platform.hpp"
 
 #include <charconv>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string_view>
-
-#include <fmt/core.h>
 
 namespace pup::cli {
 
@@ -50,7 +49,7 @@ auto parse_args(int argc, char** argv) -> Options
                 auto value = int {};
                 auto [ptr, ec] = std::from_chars(str, str + std::strlen(str), value);
                 if (ec != std::errc {} || *ptr != '\0' || value <= 0) {
-                    fmt::print(stderr, "Error: Invalid job count '{}'\n", str);
+                    fprintf(stderr, "Error: Invalid job count '%s'\n", str);
                     std::exit(EXIT_FAILURE);
                 }
                 opts.jobs = static_cast<std::size_t>(value);
@@ -60,7 +59,8 @@ auto parse_args(int argc, char** argv) -> Options
             auto value = int {};
             auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
             if (ec != std::errc {} || ptr != str.data() + str.size() || value <= 0) {
-                fmt::print(stderr, "Error: Invalid job count '{}'\n", str);
+                fprintf(stderr, "Error: Invalid job count '%.*s'\n",
+                    static_cast<int>(str.size()), str.data());
                 std::exit(EXIT_FAILURE);
             }
             opts.jobs = static_cast<std::size_t>(value);
@@ -98,57 +98,57 @@ auto parse_args(int argc, char** argv) -> Options
 
 auto print_usage() -> void
 {
-    fmt::print("pup - build system using Tupfile format\n\n"
-               "Usage: pup [OPTIONS] [TARGETS]\n"
-               "       pup [OPTIONS] <command>\n\n"
-               "Running 'pup' executes the build. Use a command for other operations.\n\n"
-               "Commands:\n"
-               "  configure         Generate tup.config files (two-stage build)\n"
-               "  clean             Remove generated files\n"
-               "  distclean         Full reset: remove .pup and variant directory\n"
-               "  parse             Parse and validate Tupfiles\n"
-               "  show <format>     Show build info:\n"
-               "                      script  - Shell script\n"
-               "                      compdb  - compile_commands.json\n"
-               "                      graph   - DOT format (--summary for text)\n"
-               "\nOptions:\n"
-               "  -j, --jobs N       Run N jobs in parallel\n"
-               "  -k, --keep-going   Continue after failures\n"
-               "  -n, --dry-run      Print commands without executing\n"
-               "  -v, --verbose      Verbose output\n"
-               "  -S DIR             Source directory (default: auto-detect)\n"
-               "  -B DIR             Build/output directory (can use multiple times)\n"
-               "  --summary          Human-readable output (for show graph)\n"
-               "  --stat             Print build statistics\n"
-               "  -A, --all          Full project build (ignore cwd scoping)\n"
-               "  -a, --all-deps     Include upstream deps in scoped builds\n"
-               "  --                 End of options; remaining args are targets\n"
-               "  --version          Print version\n"
-               "  -h, --help         Print this help\n"
-               "\nTargets:\n"
-               "  A variant is a directory containing tup.config. Anything else is a scope.\n\n"
-               "  TARGET              VARIANT       SCOPE\n"
-               "  build               build         (all)       # if build/tup.config exists\n"
-               "  build/src/lib       build         src/lib\n"
-               "  src/lib             (none)        src/lib     # no tup.config in src/\n"
-               "  build/foo.o         build         foo.o       # single output rebuild\n"
-               "  build-*             (glob)        (all)       # multiple variants\n"
-               "\nExamples:\n"
-               "  pup                Build all variants\n"
-               "  pup build-debug    Build single variant\n"
-               "  pup build-*        Build all matching variants\n"
-               "  pup src/lib        Scoped build across all variants\n"
-               "\nEnvironment:\n"
-               "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
-               "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
-               "  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)\n");
+    printf("pup - build system using Tupfile format\n\n"
+           "Usage: pup [OPTIONS] [TARGETS]\n"
+           "       pup [OPTIONS] <command>\n\n"
+           "Running 'pup' executes the build. Use a command for other operations.\n\n"
+           "Commands:\n"
+           "  configure         Generate tup.config files (two-stage build)\n"
+           "  clean             Remove generated files\n"
+           "  distclean         Full reset: remove .pup and variant directory\n"
+           "  parse             Parse and validate Tupfiles\n"
+           "  show <format>     Show build info:\n"
+           "                      script  - Shell script\n"
+           "                      compdb  - compile_commands.json\n"
+           "                      graph   - DOT format (--summary for text)\n"
+           "\nOptions:\n"
+           "  -j, --jobs N       Run N jobs in parallel\n"
+           "  -k, --keep-going   Continue after failures\n"
+           "  -n, --dry-run      Print commands without executing\n"
+           "  -v, --verbose      Verbose output\n"
+           "  -S DIR             Source directory (default: auto-detect)\n"
+           "  -B DIR             Build/output directory (can use multiple times)\n"
+           "  --summary          Human-readable output (for show graph)\n"
+           "  --stat             Print build statistics\n"
+           "  -A, --all          Full project build (ignore cwd scoping)\n"
+           "  -a, --all-deps     Include upstream deps in scoped builds\n"
+           "  --                 End of options; remaining args are targets\n"
+           "  --version          Print version\n"
+           "  -h, --help         Print this help\n"
+           "\nTargets:\n"
+           "  A variant is a directory containing tup.config. Anything else is a scope.\n\n"
+           "  TARGET              VARIANT       SCOPE\n"
+           "  build               build         (all)       # if build/tup.config exists\n"
+           "  build/src/lib       build         src/lib\n"
+           "  src/lib             (none)        src/lib     # no tup.config in src/\n"
+           "  build/foo.o         build         foo.o       # single output rebuild\n"
+           "  build-*             (glob)        (all)       # multiple variants\n"
+           "\nExamples:\n"
+           "  pup                Build all variants\n"
+           "  pup build-debug    Build single variant\n"
+           "  pup build-*        Build all matching variants\n"
+           "  pup src/lib        Scoped build across all variants\n"
+           "\nEnvironment:\n"
+           "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
+           "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
+           "  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)\n");
 }
 
 auto print_version() -> void
 {
-    fmt::print("pup {}\n", VERSION);
-    fmt::print("Platform: {}\n", pup::PLATFORM);
-    fmt::print("Architecture: {}\n", pup::ARCH);
+    printf("pup %s\n", VERSION);
+    printf("Platform: %.*s\n", static_cast<int>(pup::PLATFORM.size()), pup::PLATFORM.data());
+    printf("Architecture: %.*s\n", static_cast<int>(pup::ARCH.size()), pup::ARCH.data());
 }
 
 } // namespace pup::cli

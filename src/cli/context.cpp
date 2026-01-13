@@ -16,13 +16,12 @@
 #include "pup/parser/parser.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
 #include <vector>
-
-#include <fmt/core.h>
 
 namespace pup::cli {
 
@@ -208,7 +207,8 @@ auto find_config_for_dir(
                 return &it->second;
             }
             // Parse failed - warn user and return empty config (blocks inheritance)
-            fmt::print(stderr, "Warning: Failed to parse {}: {}\n", config_path.string(), config_result.error().message);
+            fprintf(stderr, "Warning: Failed to parse %s: %s\n",
+                config_path.string().c_str(), config_result.error().message.c_str());
             auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
             return &it->second;
         }
@@ -225,6 +225,20 @@ auto find_config_for_dir(
     // No config found - cache empty config
     auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
     return &it->second;
+}
+
+auto make_circular_dep_error(std::filesystem::path const& dir) -> pup::Error
+{
+    char buf[512];
+    snprintf(buf, sizeof(buf), "Circular Tupfile dependency: %s", dir.string().c_str());
+    return pup::Error { pup::ErrorCode::CyclicDependency, std::string { buf } };
+}
+
+auto make_read_error(std::filesystem::path const& path) -> pup::Error
+{
+    char buf[512];
+    snprintf(buf, sizeof(buf), "Failed to read %s", path.string().c_str());
+    return pup::Error { pup::ErrorCode::IoError, std::string { buf } };
 }
 
 auto parse_directory(
@@ -249,10 +263,7 @@ auto parse_directory(
     }
 
     if (state.parsing.contains(normalized_dir)) {
-        return pup::make_error<void>(
-            pup::ErrorCode::CyclicDependency,
-            fmt::format("Circular Tupfile dependency: {}", normalized_dir.string())
-        );
+        return pup::unexpected<pup::Error>(make_circular_dep_error(normalized_dir));
     }
 
     state.parsing.insert(normalized_dir);
@@ -262,16 +273,13 @@ auto parse_directory(
     };
 
     if (verbose) {
-        fmt::print("Parsing: {}\n", tupfile_path.string());
+        printf("Parsing: %s\n", tupfile_path.string().c_str());
     }
 
     auto source = read_file(tupfile_path);
     if (!source) {
         state.parsing.erase(normalized_dir);
-        return pup::make_error<void>(
-            pup::ErrorCode::IoError,
-            fmt::format("Failed to read {}", tupfile_path.string())
-        );
+        return pup::unexpected<pup::Error>(make_read_error(tupfile_path));
     }
 
     auto parser = pup::parser::Parser { *source, tupfile_path.string() };
@@ -279,7 +287,9 @@ auto parse_directory(
     if (!parse_result) {
         state.parsing.erase(normalized_dir);
         for (auto const& err : parser.errors()) {
-            fmt::print(stderr, "{}:{}:{}: error: {}\n", tupfile_path.string(), err.location.line, err.location.column, err.message);
+            fprintf(stderr, "%s:%u:%u: error: %s\n",
+                tupfile_path.string().c_str(), err.location.line, err.location.column,
+                err.message.c_str());
         }
         return pup::unexpected<pup::Error>(parse_result.error());
     }
@@ -422,7 +432,7 @@ auto build_context(
         if (!std::filesystem::exists(pup_dir)) {
             if (std::filesystem::exists(ctx.impl_->layout.source_root / "Tupfile.ini")) {
                 std::filesystem::create_directories(pup_dir);
-                fmt::print("Initialized pup in \"{}\"\n", pup_dir.string());
+                printf("Initialized pup in \"%s\"\n", pup_dir.string().c_str());
             }
         }
     }
@@ -434,7 +444,8 @@ auto build_context(
         if (ignore_result) {
             ignore = std::move(*ignore_result);
             if (ctx_opts.verbose) {
-                fmt::print("Loaded {} ignore patterns from {}\n", ignore.size(), ignore_path.string());
+                printf("Loaded %zu ignore patterns from %s\n",
+                    ignore.size(), ignore_path.string().c_str());
             }
         }
     }
@@ -448,7 +459,7 @@ auto build_context(
     }
 
     if (ctx_opts.verbose) {
-        fmt::print("Found {} directories with Tupfiles\n", ctx.impl_->state.available.size());
+        printf("Found %zu directories with Tupfiles\n", ctx.impl_->state.available.size());
     }
 
     // tup.config lives in output_root (variant or -B directory)
@@ -458,7 +469,8 @@ auto build_context(
         if (config_result) {
             ctx.impl_->config_vars = std::move(*config_result);
             if (ctx_opts.verbose) {
-                fmt::print("Loaded {} config variables from {}\n", ctx.impl_->config_vars.names().size(), config_path.string());
+                printf("Loaded %zu config variables from %s\n",
+                    ctx.impl_->config_vars.names().size(), config_path.string().c_str());
             }
         }
     }
@@ -497,7 +509,7 @@ auto build_context(
                     }
                 }
                 if (ctx_opts.verbose && !cached_env_vars.empty()) {
-                    fmt::print("Loaded {} cached env vars from index\n", cached_env_vars.size());
+                    printf("Loaded %zu cached env vars from index\n", cached_env_vars.size());
                 }
             }
         }
@@ -555,11 +567,11 @@ auto build_context(
 
     // Surface any warnings from graph building (e.g., undefined order-only groups)
     for (auto const& warning : builder.warnings()) {
-        fmt::print(stderr, "warning: {}\n", warning);
+        fprintf(stderr, "warning: %s\n", warning.c_str());
     }
 
     if (ctx_opts.verbose) {
-        fmt::print("Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
+        printf("Parsed %zu Tupfiles\n", ctx.impl_->state.parsed.size());
     }
 
     return ctx;

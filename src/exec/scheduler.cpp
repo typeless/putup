@@ -9,7 +9,7 @@
 #include "pup/index/entry.hpp"
 #include "pup/parser/depfile.hpp"
 
-#include <fmt/format.h>
+#include <cstdio>
 
 #include <algorithm>
 #include <condition_variable>

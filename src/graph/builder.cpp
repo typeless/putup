@@ -9,7 +9,7 @@
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
 
-#include <fmt/core.h>
+#include <cstdio>
 
 #include <algorithm>
 #include <atomic>
@@ -889,7 +889,8 @@ auto GraphBuilder::process_include(
     auto parse_result = Result<parser::Tupfile> { parser.parse() };
     if (!parse_result) {
         for (auto const& err : parser.errors()) {
-            fmt::print(stderr, "{}:{}:{}: error: {}\n", include_path, err.location.line, err.location.column, err.message);
+            fprintf(stderr, "%s:%d:%d: error: %s\n",
+                include_path.c_str(), err.location.line, err.location.column, err.message.c_str());
         }
         return pup::unexpected<Error>(parse_result.error());
     }
@@ -1201,7 +1202,9 @@ auto GraphBuilder::expand_rule(
                 } else {
                     // Preserve %<group> pattern literally - will be expanded in resolve_deferred_order_only_edges()
                     // This ensures the pattern isn't lost during command expansion
-                    rule_order_only_groups[group_name] = { fmt::format("%<{}>", group_name) };
+                    char pattern_buf[256];
+                    snprintf(pattern_buf, sizeof(pattern_buf), "%%<%s>", group_name.c_str());
+                    rule_order_only_groups[group_name] = { std::string { pattern_buf } };
                 }
                 // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
                 deferred_group_ids.insert(group_id);
@@ -1392,10 +1395,11 @@ auto GraphBuilder::expand_rule(
                     auto* existing_cmd = ctx.graph->get_node(input_id);
                     auto existing_cmd_str = existing_cmd ? existing_cmd->command : "<unknown>";
                     auto output_path = ctx.graph->get_full_path(*output_id);
-                    return make_error<void>(
-                        ErrorCode::DuplicateNode,
-                        fmt::format("Unable to create output '{}' because it is already owned by command:\n  {}", output_path, existing_cmd_str)
-                    );
+                    char err_buf[1024];
+                    snprintf(err_buf, sizeof(err_buf),
+                        "Unable to create output '%s' because it is already owned by command:\n  %s",
+                        output_path.c_str(), existing_cmd_str.c_str());
+                    return make_error<void>(ErrorCode::DuplicateNode, std::string { err_buf });
                 }
             }
         }
@@ -2062,7 +2066,9 @@ auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Resul
             auto const& group_basename = group_node->name;
             if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
                 auto group_name = group_basename.substr(1, group_basename.size() - 2);
-                auto pattern = fmt::format("%<{}>", group_name);
+                char pattern_buf[256];
+                snprintf(pattern_buf, sizeof(pattern_buf), "%%<%s>", group_name.c_str());
+                auto pattern = std::string { pattern_buf };
 
                 // Get command node and check if pattern exists
                 auto* cmd_node = graph.get_node(edge.command_id);
@@ -2108,10 +2114,9 @@ auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Resul
         } else {
             // Group exists but has no members - warn about potential typo
             auto group_path = graph.get_full_path(edge.group_id);
-            impl_->warnings.push_back(fmt::format(
-                "order-only group {} has no members",
-                group_path
-            ));
+            char warn_buf[512];
+            snprintf(warn_buf, sizeof(warn_buf), "order-only group %s has no members", group_path.c_str());
+            impl_->warnings.push_back(std::string { warn_buf });
         }
     }
 

@@ -6,12 +6,11 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/result.hpp"
 
+#include <cstdio>
 #include <cstdlib>
 #include <future>
 #include <set>
 #include <vector>
-
-#include <fmt/core.h>
 
 namespace pup::cli {
 
@@ -89,7 +88,7 @@ auto for_each_variant(
 
     auto layout_result = Result<ProjectLayout> { discover_layout(layout_opts) };
     if (!layout_result) {
-        fmt::print(stderr, "Error: {}\n", layout_result.error().message);
+        fprintf(stderr, "Error: %s\n", layout_result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -98,7 +97,7 @@ auto for_each_variant(
     // Parse targets to extract variants and scopes
     auto parsed_targets = parse_targets_for_variants(source_root, opts.targets);
     if (!parsed_targets.has_value()) {
-        fmt::print(stderr, "Error: {}\n", parsed_targets.error().message);
+        fprintf(stderr, "Error: %s\n", parsed_targets.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -142,9 +141,11 @@ auto for_each_variant(
 
     // Multiple variants - parallel execution
     if (opts.verbose) {
-        fmt::print("{} {} variants in parallel:\n", command_name, variants.size());
+        printf("%.*s %zu variants in parallel:\n",
+            static_cast<int>(command_name.size()), command_name.data(),
+            variants.size());
         for (auto const& v : variants) {
-            fmt::print("  {}\n", v.string());
+            printf("  %s\n", v.string().c_str());
         }
     }
 
@@ -171,7 +172,7 @@ auto for_each_variant(
     }
 
     if (failed > 0) {
-        fmt::print(stderr, "{} of {} variants failed\n", failed, variants.size());
+        fprintf(stderr, "%d of %zu variants failed\n", failed, variants.size());
         return EXIT_FAILURE;
     }
 

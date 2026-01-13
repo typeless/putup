@@ -9,7 +9,7 @@
 #include "pup/graph/topo.hpp"
 #include "pup/parser/glob.hpp"
 
-#include <fmt/format.h>
+#include <cstdio>
 
 using namespace pup::graph;
 using namespace pup::parser;
@@ -33,8 +33,10 @@ auto generate_linear_graph(std::size_t n) -> BuildGraph
 {
     auto graph = BuildGraph {};
     for (auto i = std::size_t { 0 }; i < n; ++i) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "file_%zu.c", i);
         (void)graph.add_node(Node { .type = NodeType::File,
-            .name = fmt::format("file_{}.c", i) });
+            .name = std::string { buf } });
     }
     return graph;
 }
@@ -47,8 +49,10 @@ auto generate_order_only_graph(
     auto header = graph.add_node(Node { .type = NodeType::File, .name = "common.h" });
 
     for (auto i = std::size_t { 0 }; i < n_commands; ++i) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "gcc_%zu", i);
         auto cmd = graph.add_node(Node { .type = NodeType::Command,
-            .command = fmt::format("gcc_{}", i) });
+            .command = std::string { buf } });
         (void)graph.add_order_only_edge(*header, *cmd);
     }
     return { std::move(graph), *header };
@@ -66,8 +70,10 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
     for (auto w = std::size_t { 0 }; w < width; ++w) {
         auto prev = std::optional<pup::NodeId> {};
         for (auto d = std::size_t { 0 }; d < depth; ++d) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "cmd_%zu_%zu", w, d);
             auto node_result = graph.add_node(Node { .type = NodeType::Command,
-                .command = fmt::format("cmd_{}_{}", w, d) });
+                .command = std::string { buf } });
             auto node = *node_result;
 
             // Connect to previous in chain
@@ -282,8 +288,11 @@ TEST_CASE("Benchmark: glob match iteration", "[.benchmark][glob]")
     BENCHMARK_ADVANCED("match 1k paths")(Catch::Benchmark::Chronometer meter)
     {
         auto paths = std::vector<std::string> {};
-        for (auto i = 0; i < 1000; ++i)
-            paths.push_back(fmt::format("file_{}.c", i));
+        for (auto i = 0; i < 1000; ++i) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "file_%d.c", i);
+            paths.push_back(std::string { buf });
+        }
 
         auto glob = Glob { pattern };
         meter.measure([&] {
@@ -299,8 +308,11 @@ TEST_CASE("Benchmark: glob match iteration", "[.benchmark][glob]")
     BENCHMARK_ADVANCED("match 10k paths")(Catch::Benchmark::Chronometer meter)
     {
         auto paths = std::vector<std::string> {};
-        for (auto i = 0; i < 10000; ++i)
-            paths.push_back(fmt::format("file_{}.c", i));
+        for (auto i = 0; i < 10000; ++i) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "file_%d.c", i);
+            paths.push_back(std::string { buf });
+        }
 
         auto glob = Glob { pattern };
         meter.measure([&] {

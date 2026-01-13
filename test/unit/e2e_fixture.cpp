@@ -8,7 +8,7 @@
 #include <random>
 #include <sstream>
 
-#include <fmt/core.h>
+#include <cstdio>
 
 namespace pup::test {
 
@@ -70,7 +70,8 @@ E2EFixture::E2EFixture(std::string_view name)
     , m_pup_binary { get_pup_binary() }
 {
     if (!fs::exists(m_fixture_dir)) {
-        fmt::print(stderr, "Fixture not found: {}\n", name);
+        fprintf(stderr, "Fixture not found: %.*s\n",
+            static_cast<int>(name.size()), name.data());
         std::abort();
     }
 
@@ -376,7 +377,7 @@ auto get_pup_binary() -> fs::path
             return fs::canonical(candidate);
     }
 
-    fmt::print(stderr, "pup binary not found. Set PUP environment variable.\n");
+    fprintf(stderr, "pup binary not found. Set PUP environment variable.\n");
     std::abort();
 }
 
@@ -400,7 +401,7 @@ auto get_fixtures_dir() -> fs::path
             return fs::canonical(candidate);
     }
 
-    fmt::print(stderr, "E2E fixtures not found. Set E2E_FIXTURES environment variable.\n");
+    fprintf(stderr, "E2E fixtures not found. Set E2E_FIXTURES environment variable.\n");
     std::abort();
 }
 

@@ -4,11 +4,10 @@
 #include "pup/cli/output.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <functional>
 #include <ranges>
 #include <vector>
-
-#include <fmt/core.h>
 
 namespace pup::cli {
 
@@ -19,12 +18,12 @@ auto remove_file(std::filesystem::path const& path, OutputMode mode) -> bool
     }
 
     if (mode.dry_run) {
-        fmt::print("Would remove: {}\n", path.string());
+        printf("Would remove: %s\n", path.string().c_str());
         return true;
     }
 
     if (mode.verbose) {
-        fmt::print("Removing: {}\n", path.string());
+        printf("Removing: %s\n", path.string().c_str());
     }
 
     auto ec = std::error_code {};
@@ -46,12 +45,12 @@ auto remove_empty_dir(
     }
 
     if (mode.dry_run) {
-        fmt::print("Would remove empty dir: {}\n", dir.string());
+        printf("Would remove empty dir: %s\n", dir.string().c_str());
         return true;
     }
 
     if (mode.verbose) {
-        fmt::print("Removing empty dir: {}\n", dir.string());
+        printf("Removing empty dir: %s\n", dir.string().c_str());
     }
 
     auto ec = std::error_code {};
@@ -87,12 +86,12 @@ auto remove_empty_directories(
         }
 
         if (mode.dry_run) {
-            fmt::print("Would remove empty dir: {}\n", dir.string());
+            printf("Would remove empty dir: %s\n", dir.string().c_str());
         } else {
             std::filesystem::remove(dir);
             ++removed;
             if (mode.verbose) {
-                fmt::print("Removed empty dir: {}\n", dir.string());
+                printf("Removed empty dir: %s\n", dir.string().c_str());
             }
         }
     }

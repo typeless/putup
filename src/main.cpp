@@ -4,9 +4,8 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/options.hpp"
 
+#include <cstdio>
 #include <cstdlib>
-
-#include <fmt/core.h>
 
 namespace pup::cli {
 
@@ -31,7 +30,7 @@ auto dispatch(Options const& opts) -> int
         return cmd_configure(opts);
     }
 
-    fmt::print(stderr, "Unknown command: {}\n", opts.command);
+    fprintf(stderr, "Unknown command: %s\n", opts.command.c_str());
     print_usage();
     return EXIT_FAILURE;
 }
