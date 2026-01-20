@@ -74,11 +74,6 @@ auto Parser::parse() -> Result<Tupfile>
         }
 
         if (*stmt) {
-            // Handle gitignore flag
-            if ((*stmt)->is<Gitignore>()) {
-                tupfile.has_gitignore = true;
-            }
-
             tupfile.statements.push_back(std::move(*stmt));
         }
     }
@@ -267,14 +262,6 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             auto stmt = std::make_unique<Statement>();
             stmt->location = start_loc;
             stmt->content = std::move(*imp);
-            return stmt;
-        }
-
-        case TokenType::KwGitignore: {
-            advance();
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = Gitignore {};
             return stmt;
         }
 

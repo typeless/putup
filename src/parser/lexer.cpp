@@ -163,17 +163,8 @@ auto Lexer::scan_token() -> Token
         return scan_command_text();
     }
 
-    // Handle .gitignore specially - starts with dot
+    // Dot starts a path
     if (c == '.') {
-        // Check if this is .gitignore
-        if (source_.substr(pos_ - 1).starts_with(".gitignore")) {
-            // Consume the rest
-            for (auto i = std::size_t { 1 }; i < 10; ++i) {
-                advance();
-            }
-            return make_token(TokenType::KwGitignore, start);
-        }
-        // Otherwise treat as start of path (put back the '.')
         putback();
         return scan_text();
     }
@@ -504,9 +495,6 @@ auto Lexer::keyword_type(std::string_view text) -> std::optional<TokenType>
     }
     if (text == "import") {
         return TokenType::KwImport;
-    }
-    if (text == ".gitignore") {
-        return TokenType::KwGitignore;
     }
     return std::nullopt;
 }

@@ -178,12 +178,9 @@ struct Import : AstNode {
     std::optional<Expression> default_value;
 };
 
-/// .gitignore directive
-struct Gitignore : AstNode { };
-
 /// Union of all statement types
 struct Statement : AstNode {
-    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, Gitignore>
+    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import>
         content;
 
     template<typename T>
@@ -213,7 +210,6 @@ struct Tupfile : AstNode {
     std::string filename;
     std::vector<std::unique_ptr<Statement>> statements;
     std::vector<std::string> included_files;
-    bool has_gitignore = false;
 };
 
 } // namespace pup::parser

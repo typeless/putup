@@ -336,17 +336,6 @@ TEST_CASE("Parser bang macro", "[parser]")
     REQUIRE(macro->outputs.size() == 1);
 }
 
-TEST_CASE("Parser .gitignore directive", "[parser]")
-{
-    auto parser = Parser{".gitignore", "test.tup"};
-    auto result = parser.parse();
-
-    REQUIRE(result.has_value());
-    REQUIRE(result->statements.size() == 1);
-    REQUIRE(result->statements[0]->is<Gitignore>());
-    REQUIRE(result->has_gitignore);
-}
-
 TEST_CASE("Parser multiple statements", "[parser]")
 {
     auto source = R"(

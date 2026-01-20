@@ -72,7 +72,7 @@ TEST_CASE("Lexer basic tokens", "[lexer]")
 
 TEST_CASE("Lexer keywords", "[lexer]")
 {
-    auto lexer = Lexer{"foreach include include_rules ifdef ifndef ifeq ifneq else endif export import .gitignore"};
+    auto lexer = Lexer{"foreach include include_rules ifdef ifndef ifeq ifneq else endif export import"};
 
     REQUIRE(lexer.next().is(TokenType::KwForeach));
     REQUIRE(lexer.next().is(TokenType::KwInclude));
@@ -85,7 +85,6 @@ TEST_CASE("Lexer keywords", "[lexer]")
     REQUIRE(lexer.next().is(TokenType::KwEndif));
     REQUIRE(lexer.next().is(TokenType::KwExport));
     REQUIRE(lexer.next().is(TokenType::KwImport));
-    REQUIRE(lexer.next().is(TokenType::KwGitignore));
 }
 
 TEST_CASE("Lexer identifiers", "[lexer]")

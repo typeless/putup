@@ -66,7 +66,6 @@ enum class TokenType : std::uint8_t {
     KwEndif,        // endif
     KwExport,       // export
     KwImport,       // import
-    KwGitignore,    // .gitignore
 
     // Error
     Invalid,
@@ -159,8 +158,6 @@ constexpr auto token_type_name(TokenType type) -> std::string_view
         return "KwExport";
     case TokenType::KwImport:
         return "KwImport";
-    case TokenType::KwGitignore:
-        return "KwGitignore";
     case TokenType::Invalid:
         return "Invalid";
     }
@@ -188,7 +185,7 @@ struct Token {
     [[nodiscard]]
     auto is_keyword() const -> bool
     {
-        return type >= TokenType::KwForeach && type <= TokenType::KwGitignore;
+        return type >= TokenType::KwForeach && type <= TokenType::KwImport;
     }
 
     [[nodiscard]]
