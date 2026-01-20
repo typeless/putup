@@ -39,13 +39,6 @@ TEST_CASE("VarDb basic operations", "[eval]")
         REQUIRE(db.get("NEW") == "value");
     }
 
-    SECTION("remove")
-    {
-        db.set("FOO", "bar");
-        db.remove("FOO");
-        REQUIRE_FALSE(db.contains("FOO"));
-    }
-
     SECTION("clear")
     {
         db.set("A", "1");

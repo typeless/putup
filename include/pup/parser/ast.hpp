@@ -178,27 +178,12 @@ struct Import : AstNode {
     std::optional<Expression> default_value;
 };
 
-/// Preload directive: preload path
-struct Preload : AstNode {
-    Expression path;
-};
-
-/// Error directive: error message
-struct ErrorDirective : AstNode {
-    Expression message;
-};
-
-/// Run directive: run script
-struct Run : AstNode {
-    Expression script;
-};
-
 /// .gitignore directive
 struct Gitignore : AstNode { };
 
 /// Union of all statement types
 struct Statement : AstNode {
-    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, Preload, ErrorDirective, Run, Gitignore>
+    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, Gitignore>
         content;
 
     template<typename T>

@@ -14,10 +14,8 @@ namespace pup::parser {
 
 /// Options for glob expansion
 struct GlobOptions {
-    bool include_hidden = false;   ///< Include files starting with '.'
-    bool follow_symlinks = true;   ///< Follow symbolic links
-    bool case_insensitive = false; ///< Case-insensitive matching (Windows)
-    bool recursive = true;         ///< Expand ** patterns recursively
+    bool include_hidden = false; ///< Include files starting with '.'
+    bool recursive = true;       ///< Expand ** patterns recursively
 };
 
 /// Result of glob expansion

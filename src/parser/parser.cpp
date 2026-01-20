@@ -270,42 +270,6 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             return stmt;
         }
 
-        case TokenType::KwPreload: {
-            advance();
-            auto pre = parse_preload();
-            if (!pre) {
-                return pup::unexpected<Error>(pre.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*pre);
-            return stmt;
-        }
-
-        case TokenType::KwError: {
-            advance();
-            auto err = parse_error_directive();
-            if (!err) {
-                return pup::unexpected<Error>(err.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*err);
-            return stmt;
-        }
-
-        case TokenType::KwRun: {
-            advance();
-            auto run = parse_run();
-            if (!run) {
-                return pup::unexpected<Error>(run.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*run);
-            return stmt;
-        }
-
         case TokenType::KwGitignore: {
             advance();
             auto stmt = std::make_unique<Statement>();
@@ -772,48 +736,6 @@ auto Parser::parse_import() -> Result<Import>
     }
 
     return imp;
-}
-
-auto Parser::parse_preload() -> Result<Preload>
-{
-    auto pre = Preload {};
-    pre.location = impl_->previous.location;
-
-    auto path = parse_expression();
-    if (!path) {
-        return pup::unexpected<Error>(path.error());
-    }
-    pre.path = std::move(*path);
-
-    return pre;
-}
-
-auto Parser::parse_error_directive() -> Result<ErrorDirective>
-{
-    auto err = ErrorDirective {};
-    err.location = impl_->previous.location;
-
-    auto msg = parse_expression();
-    if (!msg) {
-        return pup::unexpected<Error>(msg.error());
-    }
-    err.message = std::move(*msg);
-
-    return err;
-}
-
-auto Parser::parse_run() -> Result<Run>
-{
-    auto run = Run {};
-    run.location = impl_->previous.location;
-
-    auto script = parse_expression();
-    if (!script) {
-        return pup::unexpected<Error>(script.error());
-    }
-    run.script = std::move(*script);
-
-    return run;
 }
 
 auto Parser::parse_expression() -> Result<Expression>

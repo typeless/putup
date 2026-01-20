@@ -48,11 +48,6 @@ auto VarDb::contains(std::string_view name) const -> bool
     return vars_.contains(name);
 }
 
-auto VarDb::remove(std::string_view name) -> void
-{
-    vars_.erase(std::string { name });
-}
-
 auto VarDb::names() const -> std::vector<std::string_view>
 {
     auto result = std::vector<std::string_view> {};

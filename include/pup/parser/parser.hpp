@@ -83,12 +83,6 @@ private:
     auto parse_export() -> Result<Export>;
     [[nodiscard]]
     auto parse_import() -> Result<Import>;
-    [[nodiscard]]
-    auto parse_preload() -> Result<Preload>;
-    [[nodiscard]]
-    auto parse_error_directive() -> Result<ErrorDirective>;
-    [[nodiscard]]
-    auto parse_run() -> Result<Run>;
 
     // Expression parsing
     [[nodiscard]]

@@ -17,8 +17,9 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
 auto Lexer::next() -> Token
 {
     if (peeked_) {
-        // FIXME: False positive - optional is checked on previous line
-        return *std::exchange(peeked_, std::nullopt); // NOLINT(bugprone-unchecked-optional-access)
+        auto token = *peeked_;
+        peeked_.reset();
+        return token;
     }
     return scan_token();
 }
@@ -503,15 +504,6 @@ auto Lexer::keyword_type(std::string_view text) -> std::optional<TokenType>
     }
     if (text == "import") {
         return TokenType::KwImport;
-    }
-    if (text == "preload") {
-        return TokenType::KwPreload;
-    }
-    if (text == "error") {
-        return TokenType::KwError;
-    }
-    if (text == "run") {
-        return TokenType::KwRun;
     }
     if (text == ".gitignore") {
         return TokenType::KwGitignore;

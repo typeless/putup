@@ -49,9 +49,6 @@ public:
     [[nodiscard]]
     auto contains(std::string_view name) const -> bool;
 
-    /// Remove a variable
-    auto remove(std::string_view name) -> void;
-
     /// Get all variable names
     [[nodiscard]]
     auto names() const -> std::vector<std::string_view>;

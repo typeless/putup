@@ -660,7 +660,6 @@ auto GraphBuilder::process_statement(
         return process_export(ctx, *exp);
     }
 
-    // Other directives (preload, run, error) not yet implemented
     return {};
 }
 
@@ -889,8 +888,7 @@ auto GraphBuilder::process_include(
     auto parse_result = Result<parser::Tupfile> { parser.parse() };
     if (!parse_result) {
         for (auto const& err : parser.errors()) {
-            fprintf(stderr, "%s:%d:%d: error: %s\n",
-                include_path.c_str(), err.location.line, err.location.column, err.message.c_str());
+            fprintf(stderr, "%s:%d:%d: error: %s\n", include_path.c_str(), err.location.line, err.location.column, err.message.c_str());
         }
         return pup::unexpected<Error>(parse_result.error());
     }
@@ -1396,9 +1394,7 @@ auto GraphBuilder::expand_rule(
                     auto existing_cmd_str = existing_cmd ? existing_cmd->command : "<unknown>";
                     auto output_path = ctx.graph->get_full_path(*output_id);
                     char err_buf[1024];
-                    snprintf(err_buf, sizeof(err_buf),
-                        "Unable to create output '%s' because it is already owned by command:\n  %s",
-                        output_path.c_str(), existing_cmd_str.c_str());
+                    snprintf(err_buf, sizeof(err_buf), "Unable to create output '%s' because it is already owned by command:\n  %s", output_path.c_str(), existing_cmd_str.c_str());
                     return make_error<void>(ErrorCode::DuplicateNode, std::string { err_buf });
                 }
             }

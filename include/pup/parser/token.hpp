@@ -66,9 +66,6 @@ enum class TokenType : std::uint8_t {
     KwEndif,        // endif
     KwExport,       // export
     KwImport,       // import
-    KwPreload,      // preload
-    KwError,        // error
-    KwRun,          // run
     KwGitignore,    // .gitignore
 
     // Error
@@ -162,12 +159,6 @@ constexpr auto token_type_name(TokenType type) -> std::string_view
         return "KwExport";
     case TokenType::KwImport:
         return "KwImport";
-    case TokenType::KwPreload:
-        return "KwPreload";
-    case TokenType::KwError:
-        return "KwError";
-    case TokenType::KwRun:
-        return "KwRun";
     case TokenType::KwGitignore:
         return "KwGitignore";
     case TokenType::Invalid:
