@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "token.hpp"
+#include "pup/core/source_location.hpp"
 
 #include <memory>
 #include <optional>
@@ -12,6 +12,8 @@
 #include <vector>
 
 namespace pup::parser {
+
+using pup::SourceLocation;
 
 /// Base for all AST nodes with source location tracking
 struct AstNode {
