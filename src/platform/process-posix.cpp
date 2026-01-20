@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2024 pup authors
+// Copyright (c) 2024 Putup authors
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)

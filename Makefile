@@ -1,4 +1,4 @@
-# Makefile - Wrapper around pup for orchestration tasks
+# Makefile - Wrapper around putup for orchestration tasks
 #
 # Usage:
 #   make              # Configure and build
@@ -10,7 +10,7 @@
 #   make distclean    # Full reset: remove build directory
 
 PREFIX ?= $(HOME)
-PUP := $(PREFIX)/bin/pup
+PUTUP := $(PREFIX)/bin/putup
 BUILD_DIR := build
 
 # Detect mold linker
@@ -30,25 +30,26 @@ COMPDB := compile_commands.json
 
 all: build
 
-# Configure: generate tup.config (pup skips if already up-to-date)
+# Configure: generate tup.config (putup skips if already up-to-date)
 configure:
-	$(PUP) configure -B $(BUILD_DIR) $(BUILD_OPTIONS)
+	$(PUTUP) configure -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
 # Build: configure first, then build
 build: configure
-	$(PUP) -B $(BUILD_DIR) $(BUILD_OPTIONS)
+	$(PUTUP) -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
 test: build
-	./$(BUILD_DIR)/test/unit/pup_test
+	./$(BUILD_DIR)/test/unit/putup_test
 
 install: build
 	@mkdir -p $(PREFIX)/bin
-	install -m 755 $(BUILD_DIR)/pup $(PREFIX)/bin/pup
-	@echo "Installed pup to $(PREFIX)/bin/pup"
+	install -m 755 $(BUILD_DIR)/putup $(PREFIX)/bin/putup
+	ln -sf putup $(PREFIX)/bin/pup
+	@echo "Installed putup to $(PREFIX)/bin/putup (with pup symlink)"
 
 compdb: configure
 	@echo "Generating compile_commands.json..."
-	@$(PUP) show compdb -B $(BUILD_DIR) > $(COMPDB)
+	@$(PUTUP) show compdb -B $(BUILD_DIR) > $(COMPDB)
 
 tidy: compdb
 	@echo "Running clang-tidy..."
@@ -70,7 +71,7 @@ check: format-check tidy test
 	@echo "All checks passed."
 
 clean:
-	$(PUP) clean -B $(BUILD_DIR)
+	$(PUTUP) clean -B $(BUILD_DIR)
 
 distclean:
-	$(PUP) distclean -B $(BUILD_DIR)
+	$(PUTUP) distclean -B $(BUILD_DIR)

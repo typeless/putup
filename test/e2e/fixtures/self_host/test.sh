@@ -1,14 +1,14 @@
 #!/bin/bash
-# Test: pup can parse its own Tupfile
+# Test: putup can parse its own Tupfile
 set -e
 
-# Get the pup source root (one level up from build directory)
+# Get the putup source root (one level up from build directory)
 PUP_ROOT="$(cd "$(dirname "$PUP")/.." && pwd)"
 
-# Parse pup's own Tupfile
+# Parse putup's own Tupfile
 cd "$PUP_ROOT"
 
-echo "Parsing pup's Tupfile..."
+echo "Parsing putup's Tupfile..."
 $PUP parse -v
 
 # Note: Building the graph requires include_rules support (for Tuprules.tup)

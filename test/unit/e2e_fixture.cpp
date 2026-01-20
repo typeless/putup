@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2024 pup authors
+// Copyright (c) 2024 Putup authors
 
 #include "e2e_fixture.hpp"
 
@@ -366,10 +366,10 @@ auto get_pup_binary() -> fs::path
 
     // Try to find relative to current executable or common paths
     auto candidates = std::vector<fs::path> {
-        "./build/pup",
-        "../build/pup",
-        "../../build/pup",
-        "../../../build/pup",
+        "./build/putup",
+        "../build/putup",
+        "../../build/putup",
+        "../../../build/putup",
     };
 
     for (auto const& candidate : candidates) {
@@ -377,7 +377,7 @@ auto get_pup_binary() -> fs::path
             return fs::canonical(candidate);
     }
 
-    fprintf(stderr, "pup binary not found. Set PUP environment variable.\n");
+    fprintf(stderr, "putup binary not found. Set PUP environment variable.\n");
     std::abort();
 }
 

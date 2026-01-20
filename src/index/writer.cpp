@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2024 pup authors
+// Copyright (c) 2024 Putup authors
 
 #include "pup/index/writer.hpp"
 #include "pup/core/hash.hpp"

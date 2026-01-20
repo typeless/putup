@@ -38,4 +38,4 @@ test-srcs-y += test_types.cpp
 : foreach $(test-srcs-y) |> ^ CXX %f^ $(CXX) $(TEST_CXXFLAGS) -c %f -o %o |> %B.o {test_objs}
 
 # Link test runner
-: {test_objs} {test_support} $(ROOT)/libpup.a |> !link |> pup_test
+: {test_objs} {test_support} $(ROOT)/libputup.a |> !link |> putup_test

@@ -1,8 +1,8 @@
-# Pup Examples
+# Putup Examples
 
 ## Busybox
 
-Build [Busybox](https://busybox.net/) using pup. Files in `busybox/`.
+Build [Busybox](https://busybox.net/) using putup. Files in `busybox/`.
 
 ## Quick Start
 
@@ -12,8 +12,8 @@ wget https://busybox.net/downloads/busybox-1.38.0.tar.bz2
 tar xjf busybox-1.38.0.tar.bz2
 cd busybox-1.38.0
 
-# 2. Copy pup build files
-rsync -av /path/to/pup/examples/busybox/ ./
+# 2. Copy putup build files
+rsync -av /path/to/putup/examples/busybox/ ./
 
 # 3. Build (generates .config automatically from defconfig)
 make -f Makefile.pup
@@ -25,9 +25,9 @@ Or with a specific configuration:
 # Android config
 CONFIG=android_defconfig make -f Makefile.pup
 
-# Or use pup directly
-CONFIG=android_defconfig pup configure -B build-android
-pup -B build-android
+# Or use putup directly
+CONFIG=android_defconfig putup configure -B build-android
+putup -B build-android
 ```
 
 ## Multi-Variant Builds
@@ -37,14 +37,14 @@ Build multiple configurations in parallel:
 ```bash
 CONFIG=android_defconfig make -f Makefile.pup BUILD=build-android configure
 CONFIG=freebsd_defconfig make -f Makefile.pup BUILD=build-freebsd configure
-pup build-android build-freebsd -j$(nproc)
+putup build-android build-freebsd -j$(nproc)
 ```
 
 ## Files (in `busybox/`)
 
 | File | Purpose |
 |------|---------|
-| `Makefile.pup` | Make wrapper for pup commands |
+| `Makefile.pup` | Make wrapper for putup commands |
 | `Tupfile.ini` | Project root marker |
 | `Tuprules.tup` | Compiler flags and macros |
 | `Tupfile` | Config generation + source compilation rules |
@@ -74,8 +74,8 @@ The build generates these headers from `.config`:
 - Requires: gcc, bzip2, od (for embedded scripts)
 - If the build fails with TC errors (missing kernel headers), use `notc_defconfig`:
   ```bash
-  CONFIG=notc_defconfig pup configure -B build
-  CONFIG=notc_defconfig pup -B build
+  CONFIG=notc_defconfig putup configure -B build
+  CONFIG=notc_defconfig putup -B build
   ```
 - **With `PUP_IMPLICIT_DEPS=1`**: Pass CONFIG in both configure and build phases.
   Implicit deps re-parses Tupfiles after discovering dependencies, and CONFIG must

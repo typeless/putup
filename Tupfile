@@ -60,8 +60,8 @@ srcs-y += src/platform/env-$(_os_api).cpp
 : foreach $(srcs-y) |> !cxx |> {lib_objs}
 
 # Static library
-: {lib_objs} |> !ar |> libpup.a
+: {lib_objs} |> !ar |> libputup.a
 
 # Main executable
 : src/main.cpp |> !cxx |> main.o
-: {lib_objs} main.o |> !link |> pup
+: {lib_objs} main.o |> !link |> putup

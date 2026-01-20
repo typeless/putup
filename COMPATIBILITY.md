@@ -1,22 +1,22 @@
 # Tupfile Compatibility
 
-Pup uses Tup's Tupfile syntax. This document covers supported features and differences.
+Putup uses Tup's Tupfile syntax. This document covers supported features and differences.
 
 ## Commands
 
-| Tup Command | Pup Equivalent | Status |
+| Tup Command | Putup Equivalent | Status |
 |-------------|----------------|--------|
-| `tup` | `pup` | ✅ Implemented |
-| `tup upd` | `pup` | ✅ Implemented |
+| `tup` | `putup` | ✅ Implemented |
+| `tup upd` | `putup` | ✅ Implemented |
 | `tup init` | (auto) | ✅ Auto-initializes on first build |
-| `tup refactor` | `pup parse` | ✅ Implemented |
-| `tup graph` | `pup show graph` | ✅ Implemented |
-| `tup compiledb` | `pup show compdb` | ✅ Implemented |
+| `tup refactor` | `putup parse` | ✅ Implemented |
+| `tup graph` | `putup show graph` | ✅ Implemented |
+| `tup compiledb` | `putup show compdb` | ✅ Implemented |
 | `tup monitor` | - | ❌ Not planned (no FUSE) |
 | `tup stop` | - | ❌ Not planned (no monitor) |
 | `tup scan` | - | ❌ Not implemented |
-| `tup variant` | `pup configure -B` | ✅ Creates variant dir + tup.config |
-| `tup generate` | `pup show script` | ✅ Implemented |
+| `tup variant` | `putup configure -B` | ✅ Creates variant dir + tup.config |
+| `tup generate` | `putup show script` | ✅ Implemented |
 | `tup commandline` | - | ❌ Not implemented |
 | `tup todo` | - | ❌ Not implemented |
 | `tup varsed` | - | ❌ Not implemented |
@@ -150,7 +150,7 @@ Pup uses Tup's Tupfile syntax. This document covers supported features and diffe
 | `include_rules` inheritance | ✅ |
 | Circular dependency detection | ✅ |
 
-Pup fully supports projects with Tupfiles in multiple subdirectories:
+Putup fully supports projects with Tupfiles in multiple subdirectories:
 ```
 project/
 ├── Tuprules.tup        # Shared macros
@@ -164,13 +164,13 @@ project/
 
 ### Change Detection
 
-| Aspect | Tup | Pup |
+| Aspect | Tup | Putup |
 |--------|-----|-----|
 | Primary method | FUSE interception | Index comparison |
 | Fallback | mtime | mtime → size → SHA-256 |
 | Implicit deps | Automatic via FUSE | Requires `-MD` flag |
 
-Pup's change detection algorithm:
+Putup's change detection algorithm:
 1. If mtime differs from index → rebuild
 2. If mtime matches but size differs → rebuild
 3. If size matches → compute SHA-256, rebuild if different
@@ -179,18 +179,18 @@ Pup's change detection algorithm:
 
 Tup uses FUSE to intercept file accesses and automatically discover dependencies.
 
-Pup requires explicit `.d` file generation:
+Putup requires explicit `.d` file generation:
 
 ```tup
 CFLAGS += -MD  # Generate foo.d alongside foo.o
 : foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 ```
 
-Pup tracks **all headers** including system headers (`/usr/include/*`).
+Putup tracks **all headers** including system headers (`/usr/include/*`).
 
 ### Database Format
 
-| Aspect | Tup | Pup |
+| Aspect | Tup | Putup |
 |--------|-----|-----|
 | Format | SQLite database | Binary index file |
 | Location | `.tup/db` | `.pup/index` |
@@ -199,7 +199,7 @@ Pup tracks **all headers** including system headers (`/usr/include/*`).
 ### Directory Structure
 
 ```
-# Tup                    # Pup
+# Tup                    # Putup
 .tup/                    .pup/
 ├── db                   └── index
 ├── object/
@@ -211,7 +211,7 @@ Pup tracks **all headers** including system headers (`/usr/include/*`).
 ### Basic Migration
 
 1. Most Tupfiles work unchanged
-2. Replace `tup` with `pup` in scripts
+2. Replace `tup` with `putup` in scripts
 3. Add `-MD` to compiler flags for header tracking
 
 ### Feature Workarounds
@@ -230,7 +230,7 @@ Workaround: Run the script manually before building, or use a rule:
 
 ## Testing Compatibility
 
-Pup includes E2E tests that verify tup-compatible behavior:
+Putup includes E2E tests that verify tup-compatible behavior:
 
 ```bash
 ./test/e2e/run_tests.sh
@@ -247,28 +247,28 @@ Test fixtures cover:
 - Multi-variant parallel builds
 - Multi-directory projects (tested with ctos - 75 Tupfiles, 681 commands)
 
-## Pup-Specific Features
+## Putup-Specific Features
 
-Features in pup that extend beyond tup:
+Features in putup that extend beyond tup:
 
 | Feature | Description |
 |---------|-------------|
 | **Conditional assignments** | `?=` (soft set) and `??=` (weak set) operators |
-| **Path-based variants** | `pup build-debug` instead of `pup -B build-debug` |
-| **Scoped builds** | `pup build-debug/src/lib` builds only that subdirectory |
-| **Single output targets** | `pup build-debug/src/lib/foo.o` rebuilds one specific output |
-| **Glob patterns** | `pup 'build-*'` matches multiple variants |
-| **Multi-variant parallel** | `pup -B build-debug -B build-release` or `pup build-debug build-release` |
-| **Auto-variant detection** | Running `pup` from project root auto-detects all variants |
+| **Path-based variants** | `putup build-debug` instead of `putup -B build-debug` |
+| **Scoped builds** | `putup build-debug/src/lib` builds only that subdirectory |
+| **Single output targets** | `putup build-debug/src/lib/foo.o` rebuilds one specific output |
+| **Glob patterns** | `putup 'build-*'` matches multiple variants |
+| **Multi-variant parallel** | `putup -B build-debug -B build-release` or `putup build-debug build-release` |
+| **Auto-variant detection** | Running `putup` from project root auto-detects all variants |
 | **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
-| **Show formats** | `pup show graph\|script\|compdb` for different output formats |
+| **Show formats** | `putup show graph\|script\|compdb` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
-| **Configure command** | `pup configure` runs config rules and ensures `tup.config` exists |
+| **Configure command** | `putup configure` runs config rules and ensures `tup.config` exists |
 
 ## Reporting Issues
 
-If you find a Tupfile that works with tup but not pup:
+If you find a Tupfile that works with tup but not putup:
 
 1. Minimize the reproducer
 2. Check if the feature is listed as "not implemented"

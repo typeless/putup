@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2024 pup authors
+// Copyright (c) 2024 Putup authors
 //
 // Benchmarks for worst-case algorithmic scenarios.
 // Run with: ./build/test/unit/pup_test "[.benchmark]"

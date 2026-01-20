@@ -1,8 +1,8 @@
-# Pup Reference Manual
+# Putup Reference Manual
 
 ## 1. Introduction
 
-### 1.1 What is Pup?
+### 1.1 What is Putup?
 
 ### 1.2 Compatibility with Tup
 
@@ -18,15 +18,15 @@
 
 ## 3. Command Reference
 
-### 3.1 pup (build)
+### 3.1 putup (build)
 
 ```
-pup [OPTIONS] [TARGETS...]
+putup [OPTIONS] [TARGETS...]
 ```
 
 The default command. Executes the build by parsing Tupfiles, computing the dependency graph, and running commands for changed files.
 
-**Multi-variant auto-detection:** When run from the project root without `-B` flags, pup automatically discovers all variant directories (subdirectories containing `tup.config` or `.pup/`) and builds them in parallel.
+**Multi-variant auto-detection:** When run from the project root without `-B` flags, putup automatically discovers all variant directories (subdirectories containing `tup.config` or `.pup/`) and builds them in parallel.
 
 **Arguments:**
 - `TARGETS` - Optional paths to scope the build. Can be:
@@ -47,29 +47,29 @@ The default command. Executes the build by parsing Tupfiles, computing the depen
 
 **Examples:**
 ```bash
-pup                    # Build from current directory (auto-detects variants)
-pup -j8                # Build with 8 parallel jobs
-pup -v                 # Verbose build
-pup lib app            # Build only lib/ and app/ directories
-pup -n                 # Show what would be built
+putup                    # Build from current directory (auto-detects variants)
+putup -j8                # Build with 8 parallel jobs
+putup -v                 # Verbose build
+putup lib app            # Build only lib/ and app/ directories
+putup -n                 # Show what would be built
 
 # Path-based variant selection
-pup build-debug                  # Build single variant (path-based)
-pup build-*                      # Build all variants matching pattern
-pup build-debug build-release    # Build specific variants
-pup build-debug/src/lib          # Variant + scoped build
-pup src/lib                      # Scope applied to all variants
-pup build-debug/src/lib/foo.o    # Rebuild single output file
+putup build-debug                  # Build single variant (path-based)
+putup build-*                      # Build all variants matching pattern
+putup build-debug build-release    # Build specific variants
+putup build-debug/src/lib          # Variant + scoped build
+putup src/lib                      # Scope applied to all variants
+putup build-debug/src/lib/foo.o    # Rebuild single output file
 
 # Explicit -B flag (requires prior configure -B)
-pup -B build-debug               # Build specific variant
-pup -B build-debug -B build-release  # Multiple -B flags
+putup -B build-debug               # Build specific variant
+putup -B build-debug -B build-release  # Multiple -B flags
 ```
 
-### 3.2 pup parse
+### 3.2 putup parse
 
 ```
-pup parse [OPTIONS] [TARGETS...]
+putup parse [OPTIONS] [TARGETS...]
 ```
 
 Parse and validate all Tupfiles without executing any commands. Useful for checking syntax errors or seeing what would be built.
@@ -82,22 +82,22 @@ Supports path-based variant and scope selection.
 
 **Multi-Variant Support:**
 - Running from project root auto-detects and parses all variants
-- Path-based targets: `pup parse build-debug`, `pup parse build-*`
+- Path-based targets: `putup parse build-debug`, `putup parse build-*`
 - Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-pup parse                  # Validate all Tupfiles (auto-detects variants)
-pup parse -v               # Show parsing progress
-pup parse build-debug      # Parse single variant (path-based)
-pup parse build-*          # Parse all matching variants
-pup parse build-debug/lib  # Parse scoped to lib/ directory
+putup parse                  # Validate all Tupfiles (auto-detects variants)
+putup parse -v               # Show parsing progress
+putup parse build-debug      # Parse single variant (path-based)
+putup parse build-*          # Parse all matching variants
+putup parse build-debug/lib  # Parse scoped to lib/ directory
 ```
 
-### 3.3 pup clean
+### 3.3 putup clean
 
 ```
-pup clean [OPTIONS] [TARGETS...]
+putup clean [OPTIONS] [TARGETS...]
 ```
 
 Remove generated output files tracked in the index. Does not remove `.pup/` or `tup.config`.
@@ -110,22 +110,22 @@ Supports path-based variant and scope selection.
 
 **Multi-Variant Support:**
 - Running from project root auto-detects and cleans all variants
-- Path-based targets: `pup clean build-debug`, `pup clean build-*`
+- Path-based targets: `putup clean build-debug`, `putup clean build-*`
 - Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-pup clean                     # Remove generated files (auto-detects variants)
-pup clean -n                  # Show what would be removed
-pup clean build-debug         # Clean single variant (path-based)
-pup clean build-*             # Clean all matching variants
-pup clean build-debug/src/lib # Clean scoped to src/lib
+putup clean                     # Remove generated files (auto-detects variants)
+putup clean -n                  # Show what would be removed
+putup clean build-debug         # Clean single variant (path-based)
+putup clean build-*             # Clean all matching variants
+putup clean build-debug/src/lib # Clean scoped to src/lib
 ```
 
-### 3.4 pup distclean
+### 3.4 putup distclean
 
 ```
-pup distclean [OPTIONS] [TARGETS...]
+putup distclean [OPTIONS] [TARGETS...]
 ```
 
 Full reset: remove all generated files, the `.pup/` directory, and `tup.config`. Returns the project to a pristine state.
@@ -137,20 +137,20 @@ Supports path-based variant selection.
 
 **Multi-Variant Support:**
 - Running from project root auto-detects and distcleans all variants
-- Path-based targets: `pup distclean build-debug`, `pup distclean build-*`
+- Path-based targets: `putup distclean build-debug`, `putup distclean build-*`
 - Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-pup distclean             # Full reset (auto-detects variants)
-pup distclean build-debug # Reset single variant (path-based)
-pup distclean build-*     # Reset all matching variants
+putup distclean             # Full reset (auto-detects variants)
+putup distclean build-debug # Reset single variant (path-based)
+putup distclean build-*     # Reset all matching variants
 ```
 
-### 3.5 pup configure
+### 3.5 putup configure
 
 ```
-pup configure [OPTIONS] [TARGETS...]
+putup configure [OPTIONS] [TARGETS...]
 ```
 
 Execute only rules that output `tup.config` files. Used for two-pass config deployment workflows where config files are generated before the main build.
@@ -159,8 +159,8 @@ Execute only rules that output `tup.config` files. Used for two-pass config depl
 
 **Workflow:**
 ```bash
-pup configure    # Pass 1: Generate tup.config files
-pup              # Pass 2: Build with generated configs
+putup configure    # Pass 1: Generate tup.config files
+putup              # Pass 2: Build with generated configs
 ```
 
 **How it works:**
@@ -177,17 +177,17 @@ pup              # Pass 2: Build with generated configs
 
 **Note:** The `-B` flag creates the output directory if needed. After configure runs, the directory contains `tup.config` which marks it as a variant for subsequent builds. If no config-generating rules exist, an empty `tup.config` is created automatically. The `.pup/` index is NOT created during configure (it's created on first build).
 
-**Important:** You must run `pup configure` before `pup build`. If you skip the configure step, `pup build` will error:
+**Important:** You must run `putup configure` before `putup build`. If you skip the configure step, `putup build` will error:
 
 ```
-Error: No tup.config found. Run 'pup configure' first.
+Error: No tup.config found. Run 'putup configure' first.
 ```
 
 This ensures a consistent workflow: configure sets up the build environment, then build executes.
 
-**Example: Pup's own build**
+**Example: Putup's own build**
 
-Pup uses `pup configure` for its own build. The `configs/Tupfile` generates `build/tup.config`:
+Putup uses `putup configure` for its own build. The `configs/Tupfile` generates `build/tup.config`:
 
 ```tup
 # configs/Tupfile - Generate tup.config for the variant build
@@ -203,8 +203,8 @@ endif
 
 Build workflow:
 ```bash
-pup configure -B build   # Generate build/tup.config from configs/posix.config
-pup -B build             # Build with generated config
+putup configure -B build   # Generate build/tup.config from configs/posix.config
+putup -B build             # Build with generated config
 ```
 
 **Example: Multi-project with per-directory configs**
@@ -233,10 +233,10 @@ include machine/@(MACHINE).tup
 : defconfigs/$(MACHINE)/linux.config |> install -D %f %o |> ../linux/tup.config
 ```
 
-### 3.7 pup show
+### 3.7 putup show
 
 ```
-pup show <format> [OPTIONS] [TARGETS...]
+putup show <format> [OPTIONS] [TARGETS...]
 ```
 
 Show build information in various formats. Supports path-based variant and scope selection.
@@ -248,25 +248,25 @@ Show build information in various formats. Supports path-based variant and scope
 
 **Examples with targets:**
 ```bash
-pup show graph --summary build-debug    # Single variant
-pup show compdb build-*                 # All matching variants
-pup show graph build-debug/src/lib      # Variant + scope
+putup show graph --summary build-debug    # Single variant
+putup show compdb build-*                 # All matching variants
+putup show graph build-debug/src/lib      # Variant + scope
 ```
 
 #### 3.7.1 show script
 
 ```
-pup show script > build.sh
+putup show script > build.sh
 ```
 
-Generate a shell script that runs all build commands in topological order. Useful for environments where pup isn't available or for debugging.
+Generate a shell script that runs all build commands in topological order. Useful for environments where putup isn't available or for debugging.
 
 **Output:** Shell script to stdout
 
 #### 3.7.2 show compdb
 
 ```
-pup show compdb > compile_commands.json
+putup show compdb > compile_commands.json
 ```
 
 Generate a [compilation database](https://clang.llvm.org/docs/JSONCompilationDatabase.html) for IDE integration. Works with clangd, ccls, and other tools.
@@ -275,14 +275,14 @@ Generate a [compilation database](https://clang.llvm.org/docs/JSONCompilationDat
 
 **Example usage with clangd:**
 ```bash
-pup show compdb > compile_commands.json
+putup show compdb > compile_commands.json
 # IDE now has full code intelligence
 ```
 
 #### 3.7.3 show graph
 
 ```
-pup show graph [OPTIONS]
+putup show graph [OPTIONS]
 ```
 
 Show the dependency graph for visualization or analysis.
@@ -294,13 +294,13 @@ Show the dependency graph for visualization or analysis.
 **Examples:**
 ```bash
 # Generate PNG visualization
-pup show graph | dot -Tpng -o deps.png
+putup show graph | dot -Tpng -o deps.png
 
 # Text summary
-pup show graph --summary
+putup show graph --summary
 
 # Include header dependencies
-pup show graph --all-deps | dot -Tsvg -o full-deps.svg
+putup show graph --all-deps | dot -Tsvg -o full-deps.svg
 ```
 
 ## 4. Command-Line Options
@@ -327,20 +327,20 @@ pup show graph --all-deps | dot -Tsvg -o full-deps.svg
 
 **`-j, --jobs N`**
 
-Controls parallel execution. Pup runs independent commands concurrently up to the specified limit.
+Controls parallel execution. Putup runs independent commands concurrently up to the specified limit.
 
 ```bash
-pup -j1      # Sequential build
-pup -j8      # 8 parallel jobs
-pup -j$(nproc)  # Use all cores (default behavior)
+putup -j1      # Sequential build
+putup -j8      # 8 parallel jobs
+putup -j$(nproc)  # Use all cores (default behavior)
 ```
 
 **`-S DIR` (Source Directory)**
 
-Override automatic project root detection. Useful when running pup from outside the project.
+Override automatic project root detection. Useful when running putup from outside the project.
 
 ```bash
-pup -S /path/to/project
+putup -S /path/to/project
 ```
 
 **`-B DIR` (Build Directory)**
@@ -348,14 +348,14 @@ pup -S /path/to/project
 Specify an out-of-tree build directory. All outputs and `.pup/` go here instead of the source tree. Can be specified multiple times to build multiple variants in parallel.
 
 ```bash
-pup -B build-release    # Build into build-release/
-pup clean -B build-release  # Clean that variant
+putup -B build-release    # Build into build-release/
+putup clean -B build-release  # Clean that variant
 
 # Multiple variants (built in parallel)
-pup -B build-debug -B build-release
+putup -B build-debug -B build-release
 ```
 
-**Auto-detection:** Without `-B` flags, pup auto-detects variant directories (subdirs with `tup.config` or `.pup/`) and builds them all in parallel.
+**Auto-detection:** Without `-B` flags, putup auto-detects variant directories (subdirs with `tup.config` or `.pup/`) and builds them all in parallel.
 
 **`-A, --all` vs `-a, --all-deps`**
 
@@ -365,24 +365,24 @@ These are different options:
 
 **Scoped Build Behavior (AOSP-style mm/mma):**
 
-By default, scoped builds only check files within the scope directory (like AOSP's `mm`). With `-a`, pup also checks upstream dependencies (like AOSP's `mma`):
+By default, scoped builds only check files within the scope directory (like AOSP's `mm`). With `-a`, putup also checks upstream dependencies (like AOSP's `mma`):
 
 ```bash
-pup lib        # mm behavior: only check lib/, fast
-pup -a lib     # mma behavior: check lib/ + its dependencies
+putup lib        # mm behavior: only check lib/, fast
+putup -a lib     # mma behavior: check lib/ + its dependencies
 ```
 
 Example: If `lib/foo.c` includes `../include/header.h`:
-- `pup lib` - changes to `header.h` are ignored
-- `pup -a lib` - changes to `header.h` trigger rebuild
+- `putup lib` - changes to `header.h` are ignored
+- `putup -a lib` - changes to `header.h` trigger rebuild
 
 **`--` (End of Options)**
 
 Signals that all remaining arguments are targets, not options or commands. Useful for building directories whose names conflict with commands.
 
 ```bash
-pup -- build      # Build the 'build' directory as a target
-pup -v -- lib     # Verbose build of 'lib' directory
+putup -- build      # Build the 'build' directory as a target
+putup -v -- lib     # Verbose build of 'lib' directory
 ```
 
 ### 4.2 Environment Variables
@@ -406,13 +406,13 @@ Controls automatic header dependency discovery via `gcc -M` rules.
 
 ```bash
 # Disable implicit dependency generation
-PUP_IMPLICIT_DEPS=0 pup
+PUP_IMPLICIT_DEPS=0 putup
 
 # Enable (default)
-PUP_IMPLICIT_DEPS=1 pup
+PUP_IMPLICIT_DEPS=1 putup
 ```
 
-When enabled, pup auto-generates dependency scanning rules for C/C++ compile commands. See Section 8.2 for details.
+When enabled, putup auto-generates dependency scanning rules for C/C++ compile commands. See Section 8.2 for details.
 
 ## 5. Tupfile Syntax
 
@@ -846,7 +846,7 @@ This matches tup's fine-grained variable tracking behavior.
 
 ### 6.2 .pupignore / .tupignore
 
-Ignore files specify directories and files that pup should skip during scanning.
+Ignore files specify directories and files that putup should skip during scanning.
 
 **Location:** Project root (`.pupignore` or `.tupignore`)
 
@@ -919,7 +919,7 @@ The `Tupfile.ini` file marks the project root. It's the authoritative root marke
 ```
 
 **Purpose:**
-1. **Root detection** - Pup walks up from cwd looking for `Tupfile.ini`
+1. **Root detection** - Putup walks up from cwd looking for `Tupfile.ini`
 2. **Boundary marker** - Prevents accidental builds in parent directories
 3. **Required for out-of-tree builds** - Variant directories reference the source root
 
@@ -950,9 +950,9 @@ project/
 **Usage:**
 
 ```bash
-pup                    # Build
-pup clean              # Remove outputs
-pup distclean          # Full reset
+putup                    # Build
+putup clean              # Remove outputs
+putup distclean          # Full reset
 ```
 
 **When to use:**
@@ -975,7 +975,7 @@ CONFIG_CFLAGS=-g -O0 -DDEBUG
 
 2. Create the variant:
 ```bash
-pup configure -B build-debug configs
+putup configure -B build-debug configs
 # Creates build-debug/ directory and build-debug/tup.config
 ```
 
@@ -1002,10 +1002,10 @@ project/
 Specify variant directories directly as targets:
 
 ```bash
-pup build-debug                  # Build single variant
-pup build-debug build-release    # Build multiple variants in parallel
-pup build-*                      # Glob pattern - all matching variants
-pup *-debug                      # Another glob pattern
+putup build-debug                  # Build single variant
+putup build-debug build-release    # Build multiple variants in parallel
+putup build-*                      # Glob pattern - all matching variants
+putup *-debug                      # Another glob pattern
 ```
 
 **Combining variants with scopes:**
@@ -1013,24 +1013,24 @@ pup *-debug                      # Another glob pattern
 Path-based targets can include both variant and scope:
 
 ```bash
-pup build-debug/src/lib          # Variant + directory scope
-pup build-*/src/lib              # Multiple variants + scope
+putup build-debug/src/lib          # Variant + directory scope
+putup build-*/src/lib              # Multiple variants + scope
 ```
 
 **Auto-detection:**
 
-When no targets are specified, pup auto-detects variant directories:
+When no targets are specified, putup auto-detects variant directories:
 
 ```bash
-pup                              # Builds all discovered variants in parallel
-cd build-debug && pup            # Builds only this variant
+putup                              # Builds all discovered variants in parallel
+cd build-debug && putup            # Builds only this variant
 ```
 
 **Legacy -B flag:**
 
 The `-B` flag is still supported for:
-- Creating new out-of-tree builds: `pup -B /tmp/mybuild`
-- Explicit variant selection: `pup -B build-debug -B build-release`
+- Creating new out-of-tree builds: `putup -B /tmp/mybuild`
+- Explicit variant selection: `putup -B build-debug -B build-release`
 
 Path-based selection is preferred for existing variants.
 
@@ -1038,19 +1038,19 @@ Path-based selection is preferred for existing variants.
 
 ```bash
 # Create variants (directories created automatically)
-pup configure -B build-debug configs
-pup configure -B build-release configs
-pup configure -B out-arm configs
+putup configure -B build-debug configs
+putup configure -B build-release configs
+putup configure -B out-arm configs
 
 # Build variants
-pup build-debug build-release    # Explicit list
-pup build-*                      # Glob pattern
-pup -B build-debug -B build-release  # Explicit -B flag
+putup build-debug build-release    # Explicit list
+putup build-*                      # Glob pattern
+putup -B build-debug -B build-release  # Explicit -B flag
 ```
 
 **Parallel variant builds:**
 
-When run from the project root without `-B` flags, pup automatically:
+When run from the project root without `-B` flags, putup automatically:
 1. Discovers all variant directories (subdirs with `tup.config` or `.pup/`)
 2. Builds them in parallel using `std::async`
 3. Reports combined results
@@ -1060,8 +1060,8 @@ In verbose mode (`-v`), output lines are prefixed with `[variant-name]` to disti
 **Cleaning variants:**
 
 ```bash
-pup clean -B build-debug      # Remove outputs only
-pup distclean -B build-debug  # Remove entire variant directory
+putup clean -B build-debug      # Remove outputs only
+putup distclean -B build-debug  # Remove entire variant directory
 ```
 
 ### 7.3 Scoped Builds
@@ -1070,7 +1070,7 @@ Limit builds to specific directories for faster iteration during development.
 
 **How scoping works:**
 
-When you run `pup` from a subdirectory, only rules affecting that directory and its children are considered:
+When you run `putup` from a subdirectory, only rules affecting that directory and its children are considered:
 
 ```
 project/
@@ -1084,7 +1084,7 @@ project/
 
 ```bash
 cd project/lib
-pup                    # Only builds lib/ outputs
+putup                    # Only builds lib/ outputs
 ```
 
 **Explicit scopes:**
@@ -1092,8 +1092,8 @@ pup                    # Only builds lib/ outputs
 Specify directories as targets:
 
 ```bash
-pup lib app            # Build lib/ and app/ only
-pup test               # Build test/ only
+putup lib app            # Build lib/ and app/ only
+putup test               # Build test/ only
 ```
 
 **Full builds:**
@@ -1102,7 +1102,7 @@ Use `-A` to ignore scoping and build everything:
 
 ```bash
 cd project/lib
-pup -A                 # Builds entire project despite cwd
+putup -A                 # Builds entire project despite cwd
 ```
 
 **Scopes with variants:**
@@ -1110,9 +1110,9 @@ pup -A                 # Builds entire project despite cwd
 Combine variant selection with directory scopes using path syntax:
 
 ```bash
-pup build-debug/lib              # Single variant, scoped to lib/
-pup build-*/lib                  # All variants, scoped to lib/
-pup lib                          # All variants, scoped to lib/ (shorthand)
+putup build-debug/lib              # Single variant, scoped to lib/
+putup build-*/lib                  # All variants, scoped to lib/
+putup lib                          # All variants, scoped to lib/ (shorthand)
 ```
 
 When targets specify a variant prefix (e.g., `build-debug/lib`), only that variant is built. Without a variant prefix (e.g., `lib`), the scope applies to all discovered variants.
@@ -1123,13 +1123,13 @@ All targets must be the same type - either all have explicit variants, or none d
 
 ```bash
 # OK - all have variants
-pup build-debug/lib build-release/test
+putup build-debug/lib build-release/test
 
 # OK - none have variants (applies to all)
-pup lib test
+putup lib test
 
 # ERROR - mixing variant and non-variant targets
-pup build-debug/lib test
+putup build-debug/lib test
 ```
 
 **Scope behavior:**
@@ -1143,12 +1143,12 @@ Target a specific output file to rebuild just that file and its dependencies.
 
 **Syntax:**
 ```bash
-pup build-debug/src/lib/foo.o    # Rebuild single output
+putup build-debug/src/lib/foo.o    # Rebuild single output
 ```
 
 **How it works:**
 
-1. Pup recognizes the path as a build output (not a source file)
+1. Putup recognizes the path as a build output (not a source file)
 2. Only the command producing that output executes (if inputs changed)
 3. Dependencies are still checked and rebuilt if needed
 
@@ -1161,23 +1161,23 @@ pup build-debug/src/lib/foo.o    # Rebuild single output
 **Error cases:**
 
 ```bash
-pup src/main.c           # Error: "src/main.c is a source file, not a build output"
-pup build-debug/foo.xyz  # Error: "foo.xyz not in build graph"
+putup src/main.c           # Error: "src/main.c is a source file, not a build output"
+putup build-debug/foo.xyz  # Error: "foo.xyz not in build graph"
 ```
 
 **Use case:** During development, rebuild just the file you're working on for fast iteration:
 
 ```bash
 # Make a change to parser.cpp, rebuild just its object file
-pup build-debug/src/parser.o
+putup build-debug/src/parser.o
 
 # Run the full link step separately if needed
-pup build-debug/myapp
+putup build-debug/myapp
 ```
 
 ## 8. Implicit Dependencies
 
-Header files included by C/C++ sources aren't listed in Tupfiles, but changes to them should trigger rebuilds. Pup tracks these "implicit dependencies" automatically.
+Header files included by C/C++ sources aren't listed in Tupfiles, but changes to them should trigger rebuilds. Putup tracks these "implicit dependencies" automatically.
 
 ### 8.1 Compiler .d Files
 
@@ -1200,7 +1200,7 @@ CFLAGS = -Wall -O2 -MD
    foo.o: foo.c include/header.h /usr/include/stdio.h
    ```
 
-2. After successful compilation, pup parses the `.d` file
+2. After successful compilation, putup parses the `.d` file
 
 3. Discovered headers stored as implicit edges in the index
 
@@ -1232,17 +1232,17 @@ The parser handles:
 
 ### 8.2 Auto-Generated Dependency Rules
 
-Pup automatically generates dependency scanning commands for C/C++ compiles (enabled by default).
+Putup automatically generates dependency scanning commands for C/C++ compiles (enabled by default).
 
 **Disabling:**
 
 ```bash
-PUP_IMPLICIT_DEPS=0 pup
+PUP_IMPLICIT_DEPS=0 putup
 ```
 
 **How it works:**
 
-1. Pup pattern-matches C/C++ compile commands
+1. Putup pattern-matches C/C++ compile commands
 
 2. Auto-generates `gcc -M` rules to discover dependencies
 
@@ -1257,7 +1257,7 @@ PUP_IMPLICIT_DEPS=0 pup
 : foo.c |> gcc -c %f -o %o |> foo.o
 ```
 
-Pup generates an internal dependency-scanning rule equivalent to:
+Putup generates an internal dependency-scanning rule equivalent to:
 ```bash
 gcc -M -MT foo.o foo.c
 ```
@@ -1281,7 +1281,7 @@ Preserved flags: `-I`, `-D`, `-U`, `-std=`, `-isystem`, `--sysroot`
 
 ## 9. Incremental Builds
 
-Pup rebuilds only what's necessary by tracking file changes and dependencies in a persistent index.
+Putup rebuilds only what's necessary by tracking file changes and dependencies in a persistent index.
 
 ### 9.1 Change Detection
 
@@ -1384,11 +1384,11 @@ Files and commands occupy separate ID spaces for O(1) lookup:
 
 ### 9.3 Stale Output Cleanup
 
-When rules are removed or outputs change, pup automatically cleans up stale files.
+When rules are removed or outputs change, putup automatically cleans up stale files.
 
 **Detection:**
 
-During the DIFF phase, pup identifies:
+During the DIFF phase, putup identifies:
 - Commands in index but not in new DAG (rule removed)
 - Outputs in index but not in new DAG (output changed)
 
@@ -1410,23 +1410,23 @@ During the DIFF phase, pup identifies:
 : foo.c |> gcc -c %f -o %o |> foo.o
 ```
 
-Pup detects `bar.o` is stale and removes it.
+Putup detects `bar.o` is stale and removes it.
 
 **Manual cleanup:**
 
 ```bash
-pup clean              # Remove all generated files
-pup clean -n           # Dry-run: show what would be removed
+putup clean              # Remove all generated files
+putup clean -n           # Dry-run: show what would be removed
 ```
 
 ## 10. Troubleshooting
 
 ### 10.1 Common Errors
 
-**"Not in a pup/tup project"**
+**"Not in a putup/tup project"**
 
 ```
-Error: Not in a pup/tup project (no Tupfile.ini found)
+Error: Not in a putup/tup project (no Tupfile.ini found)
 ```
 
 Cause: No `Tupfile.ini` or `Tupfile` found in current or parent directories.
@@ -1443,7 +1443,7 @@ Error: Circular dependency: a.o -> b.o -> a.o
 
 Cause: Rules create a dependency cycle.
 
-Fix: Review rules to break the cycle. Use `pup show graph` to visualize.
+Fix: Review rules to break the cycle. Use `putup show graph` to visualize.
 
 ---
 
@@ -1486,23 +1486,23 @@ Fix: Ensure rules outputting to the group are in scope.
 **"No tup.config found"**
 
 ```
-Error: No tup.config found. Run 'pup configure' first.
+Error: No tup.config found. Run 'putup configure' first.
 ```
 
-Cause: You ran `pup build` without first running `pup configure`.
+Cause: You ran `putup build` without first running `putup configure`.
 
-Fix: Run `pup configure` before building:
+Fix: Run `putup configure` before building:
 
 ```bash
-pup configure    # Creates tup.config (runs config rules if any)
-pup              # Build
+putup configure    # Creates tup.config (runs config rules if any)
+putup              # Build
 ```
 
 For variant builds:
 
 ```bash
-pup configure -B build-debug    # Creates build-debug/tup.config
-pup build-debug                 # Build the variant
+putup configure -B build-debug    # Creates build-debug/tup.config
+putup build-debug                 # Build the variant
 ```
 
 ---
@@ -1511,7 +1511,7 @@ pup build-debug                 # Build the variant
 
 Cause: Previous partial build left output file.
 
-Fix: Run `pup clean` then rebuild, or delete the output manually.
+Fix: Run `putup clean` then rebuild, or delete the output manually.
 
 ### 10.2 Diagnostic Options
 
@@ -1520,7 +1520,7 @@ Fix: Run `pup clean` then rebuild, or delete the output manually.
 Shows detailed information during build:
 
 ```bash
-pup -v
+putup -v
 ```
 
 Output includes:
@@ -1534,7 +1534,7 @@ Output includes:
 Print commands without executing:
 
 ```bash
-pup -n
+putup -n
 ```
 
 Useful for:
@@ -1547,7 +1547,7 @@ Useful for:
 Print build statistics:
 
 ```bash
-pup --stat
+putup --stat
 ```
 
 Shows:
@@ -1562,13 +1562,13 @@ Visualize dependencies:
 
 ```bash
 # DOT format for graphviz
-pup show graph | dot -Tpng -o deps.png
+putup show graph | dot -Tpng -o deps.png
 
 # Text summary
-pup show graph --summary
+putup show graph --summary
 
 # Include header dependencies
-pup show graph --all-deps
+putup show graph --all-deps
 ```
 
 ### 10.3 Debug Techniques
@@ -1577,33 +1577,33 @@ pup show graph --all-deps
 
 ```bash
 # Build single directory
-pup lib/
+putup lib/
 
 # Build with single job (sequential)
-pup -j1
+putup -j1
 
 # Clean and rebuild
-pup clean && pup
+putup clean && putup
 ```
 
 **Check what changed:**
 
 ```bash
 # Dry-run shows what would rebuild
-pup -n
+putup -n
 
 # Verbose shows why
-pup -v -n
+putup -v -n
 ```
 
 **Inspect the graph:**
 
 ```bash
 # Text summary of all rules
-pup show graph --summary
+putup show graph --summary
 
 # Visual graph (requires graphviz)
-pup show graph | dot -Tsvg -o graph.svg
+putup show graph | dot -Tsvg -o graph.svg
 ```
 
 **Force full rebuild:**
@@ -1613,14 +1613,14 @@ pup show graph | dot -Tsvg -o graph.svg
 rm -rf .pup/index
 
 # Or clean everything
-pup distclean && pup
+putup distclean && putup
 ```
 
 **Check variable expansion:**
 
 ```bash
 # Parse only, verbose
-pup parse -v
+putup parse -v
 ```
 
 **Compare with tup:**
@@ -1628,13 +1628,13 @@ pup parse -v
 If migrating from tup, run both and compare:
 
 ```bash
-# Build with pup
-pup -n > pup-commands.txt
+# Build with putup
+putup -n > putup-commands.txt
 
 # Build with tup (if available)
 tup -n > tup-commands.txt
 
-diff pup-commands.txt tup-commands.txt
+diff putup-commands.txt tup-commands.txt
 ```
 
 ## 11. Style Guide
@@ -1931,7 +1931,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 
 ### A. Tup Compatibility Matrix
 
-| Feature | Tup | Pup | Notes |
+| Feature | Tup | Putup | Notes |
 |---------|-----|-----|-------|
 | **Core Syntax** |
 | Basic rules | ✅ | ✅ | |
@@ -1954,23 +1954,23 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | **Commands** |
 | build | ✅ | ✅ | |
 | configure | ❌ | ✅ | Two-pass config generation |
-| init | ✅ | ❌ | Pup initializes via configure |
+| init | ✅ | ❌ | Putup initializes via configure |
 | parse | ✅ | ✅ | |
 | upd | ✅ | ❌ | Use build instead |
 | variant | ✅ | ✅ | |
 | monitor | ✅ | ❌ | Filesystem watch daemon |
 | graph | ✅ | ✅ | Via `show graph` |
 | **Features** |
-| FUSE sandbox | ✅ | ❌ | Pup uses index-based tracking |
+| FUSE sandbox | ✅ | ❌ | Putup uses index-based tracking |
 | Lua scripting | ✅ | ❌ | Not planned |
-| SQLite database | ✅ | ❌ | Pup uses binary index |
+| SQLite database | ✅ | ❌ | Putup uses binary index |
 | Parallel builds | ✅ | ✅ | |
 | Incremental builds | ✅ | ✅ | |
 | Cross-platform | ✅ | ✅ | Linux, macOS, Windows |
-| **Pup Extensions** |
-| Path-based variant selection | ❌ | ✅ | `pup build-debug` vs `-B` flag |
-| Glob variant patterns | ❌ | ✅ | `pup build-*` |
-| Single output targets | ❌ | ✅ | `pup build-debug/foo.o` |
+| **Putup Extensions** |
+| Path-based variant selection | ❌ | ✅ | `putup build-debug` vs `-B` flag |
+| Glob variant patterns | ❌ | ✅ | `putup build-*` |
+| Single output targets | ❌ | ✅ | `putup build-debug/foo.o` |
 | Multi-variant parallel | ❌ | ✅ | Auto-detect and build variants |
 | show script | ❌ | ✅ | Generate build.sh |
 | show compdb | ❌ | ✅ | compile_commands.json |
@@ -2057,11 +2057,11 @@ For source/build directories:
 
 ```bash
 # Build with specific directories
-PUP_SOURCE_DIR=/path/to/src PUP_BUILD_DIR=/path/to/build pup
+PUP_SOURCE_DIR=/path/to/src PUP_BUILD_DIR=/path/to/build putup
 
 # Enable implicit dependency scanning
-PUP_IMPLICIT_DEPS=1 pup
+PUP_IMPLICIT_DEPS=1 putup
 
 # Override via command line (higher priority)
-PUP_SOURCE_DIR=/wrong pup -S /correct  # Uses /correct
+PUP_SOURCE_DIR=/wrong putup -S /correct  # Uses /correct
 ```

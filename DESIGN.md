@@ -1,4 +1,4 @@
-# Pup Design Document
+# Putup Design Document
 
 A reimplementation of the [Tup build system](https://gittup.org/tup/).
 
@@ -20,7 +20,7 @@ A reimplementation of the [Tup build system](https://gittup.org/tup/).
 
 ## Overview
 
-Pup reimplements tup with these goals:
+Putup reimplements tup with these goals:
 
 - **Compatibility** - Parse existing Tupfiles without modification
 - **Content hashing** - SHA-256 for precise change detection
@@ -1156,7 +1156,7 @@ All entities (files, commands, directories, groups) as nodes:
 
 ### Why No FUSE?
 
-Original tup uses FUSE to intercept file access. Pup instead:
+Original tup uses FUSE to intercept file access. Putup instead:
 
 - Computes dependencies from Tupfile declarations
 - Uses content hashing for change detection
@@ -1174,7 +1174,7 @@ project/
 └── build/           # Variant directory
     ├── tup.config   # Variant configuration
     ├── *.o          # Build artifacts
-    └── pup          # Output binary
+    └── putup        # Output binary
 ```
 
 Benefits:
@@ -1204,11 +1204,11 @@ Unlike some build systems that filter out system headers:
 
 ### Why Preserve Edges During Ghost→Generated Upgrade?
 
-When a Ghost node is upgraded to Generated (because a rule now declares it as output), pup preserves all existing dependency edges rather than deleting them:
+When a Ghost node is upgraded to Generated (because a rule now declares it as output), putup preserves all existing dependency edges rather than deleting them:
 
 **Tup's approach**: Tup deletes edges when upgrading a ghost, then re-parses dependent Tupfiles to recreate the edges. This works because tup maintains a persistent database and can track which Tupfiles referenced the ghost.
 
-**Pup's approach**: Pup parses all Tupfiles fresh each build. When a consumer references `../producer/file.c` before the producer is parsed:
+**Putup's approach**: Putup parses all Tupfiles fresh each build. When a consumer references `../producer/file.c` before the producer is parsed:
 1. A Ghost node is created with the dependency edge
 2. Later, the producer's rule creates the output, upgrading Ghost→Generated
 3. The edge is already correct—it just needed the ghost to become real

@@ -251,7 +251,7 @@ Tup detects cycles. If you see cycle errors:
 ```bash
 # Clean build
 rm -rf .pup **/*.o **/*.a output_binary
-pup
+putup
 
 # Verify binary works
 ./output_binary --help

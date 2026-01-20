@@ -1,19 +1,19 @@
 ---
-name: pup
-description: Set up pup-based build systems. Migrate projects from Make/CMake/tup to pup.
+name: putup
+description: Set up putup-based build systems. Migrate projects from Make/CMake/tup to putup.
 ---
 
-# Pup Build System
+# Putup Build System
 
 Build system using Tupfile syntax with content-based incremental builds.
 
 ## When to Invoke Me
 
-- Setting up new pup projects
+- Setting up new putup projects
 - Migrating from Make/CMake/tup
 - Writing Tupfiles and Tuprules.tup
 - Configuring variant builds (debug/release/cross-compile)
-- Troubleshooting pup build issues
+- Troubleshooting putup build issues
 
 ## Project Structure
 
@@ -266,7 +266,7 @@ done < sources.txt
 
 ### Makefile.pup Wrapper
 
-Provide a familiar make interface for projects migrated to pup:
+Provide a familiar make interface for projects migrated to putup:
 
 ```makefile
 # Makefile.pup
@@ -275,14 +275,14 @@ Provide a familiar make interface for projects migrated to pup:
 all: build
 
 build: .config
-	pup configure -B build
-	pup build -j$$(nproc)
+	putup configure -B build
+	putup build -j$$(nproc)
 
 clean:
-	pup clean
+	putup clean
 
 distclean:
-	pup distclean
+	putup distclean
 	rm -f .config include/*.h  # Clean generated files
 
 .config:
@@ -326,7 +326,7 @@ srcs-@(ENABLE_DEBUG) += src/debug.cpp    # Only if CONFIG_ENABLE_DEBUG=y
 
 ### Implicit Dependencies
 
-Header dependencies are detected automatically by pup. No special flags needed.
+Header dependencies are detected automatically by putup. No special flags needed.
 
 ### Ignoring Files
 
@@ -343,21 +343,21 @@ build/
 ### Essential Commands
 
 ```bash
-pup configure -B build     # Create variant, generate tup.config
-pup                        # Build (auto-detects variants)
-pup build-debug            # Build specific variant
-pup clean                  # Remove generated files
-pup distclean              # Full reset (removes .pup/ and tup.config)
-pup parse                  # Validate Tupfiles without building
+putup configure -B build     # Create variant, generate tup.config
+putup                        # Build (auto-detects variants)
+putup build-debug            # Build specific variant
+putup clean                  # Remove generated files
+putup distclean              # Full reset (removes .pup/ and tup.config)
+putup parse                  # Validate Tupfiles without building
 ```
 
 ### Diagnostic Commands
 
 ```bash
-pup show script            # Generate build.sh
-pup show compdb            # Generate compile_commands.json
-pup show graph             # DOT format dependency graph
-pup show graph --summary   # Human-readable summary
+putup show script            # Generate build.sh
+putup show compdb            # Generate compile_commands.json
+putup show graph             # DOT format dependency graph
+putup show graph --summary   # Human-readable summary
 ```
 
 ### Common Options
@@ -400,10 +400,10 @@ pup show graph --summary   # Human-readable summary
 
 ### Phase 4: Testing
 
-- [ ] Run `pup parse` to validate syntax
-- [ ] Run `pup -n` to see commands without executing
-- [ ] Run `pup` to build
-- [ ] Run `pup show compdb > compile_commands.json` for IDE integration
+- [ ] Run `putup parse` to validate syntax
+- [ ] Run `putup -n` to see commands without executing
+- [ ] Run `putup` to build
+- [ ] Run `putup show compdb > compile_commands.json` for IDE integration
 - [ ] Verify incremental builds work (change a file, rebuild)
 
 ## Real-World Example: Busybox
@@ -415,8 +415,8 @@ See `examples/busybox/` for a complete migration of Busybox (582 source files, 6
 wget https://busybox.net/downloads/busybox-1.38.0.tar.bz2
 tar xjf busybox-1.38.0.tar.bz2 && cd busybox-1.38.0
 
-# Overlay pup build files
-rsync -av /path/to/pup/examples/busybox/ ./
+# Overlay putup build files
+rsync -av /path/to/putup/examples/busybox/ ./
 
 # Build
 make -f Makefile.pup defconfig
@@ -454,5 +454,5 @@ CONFIG_RELEASE_CXXFLAGS=-O2
 EOF
 
 # 5. Build
-pup configure && pup
+putup configure && putup
 ```

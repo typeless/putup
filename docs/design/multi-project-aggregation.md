@@ -87,11 +87,11 @@ UBOOT_BOARD = xyz
 ## Two-Stage Build
 
 ```bash
-pup configure     # Stage 1: Execute rules that output tup.config files
-pup               # Stage 2: Normal build (configs now exist)
+putup configure     # Stage 1: Execute rules that output tup.config files
+putup               # Stage 2: Normal build (configs now exist)
 ```
 
-### `pup configure` Command
+### `putup configure` Command
 
 Dedicated command for the config generation pass:
 
@@ -102,8 +102,8 @@ Dedicated command for the config generation pass:
 
 **Why this works:**
 - Config-generating rules only use @() from root tup.config (always exists)
-- After `pup configure`, subproject tup.configs exist
-- `pup` then parses everything with proper scoped configs
+- After `putup configure`, subproject tup.configs exist
+- `putup` then parses everything with proper scoped configs
 
 **Detection heuristic:** Output path ends with `tup.config`
 
@@ -135,7 +135,7 @@ auto config_path = ctx.impl_->layout.output_root / "tup.config";
 
 **Complexity:** Medium
 
-### Required: `pup configure` Command
+### Required: `putup configure` Command
 
 **Files:**
 - `src/cli/commands.hpp` - Add `cmd_configure` declaration
@@ -152,13 +152,13 @@ auto config_path = ctx.impl_->layout.output_root / "tup.config";
 **Key difference from normal build:**
 - Uses only root tup.config (ignores missing subproject configs)
 - Executes subset of rules (config-generating only)
-- Does NOT write index (avoids conflict with subsequent `pup` run)
+- Does NOT write index (avoids conflict with subsequent `putup` run)
 - Config rules always execute (typically few and fast: install, cp, cat)
 
-**What `pup` does with config rules:**
+**What `putup` does with config rules:**
 - Config-generating rules are in the graph like any other rule
-- First `pup` after `configure`: may re-run them to record in index (harmless, they're fast)
-- Subsequent `pup` runs: normal incremental logic applies
+- First `putup` after `configure`: may re-run them to record in index (harmless, they're fast)
+- Subsequent `putup` runs: normal incremental logic applies
 
 **Complexity:** Medium (filtering + partial execution)
 

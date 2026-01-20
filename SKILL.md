@@ -1,4 +1,4 @@
-# Pup - Testing Skills
+# Putup - Testing Skills
 
 Quick reference for testing workflows and conventions.
 
@@ -6,10 +6,10 @@ Quick reference for testing workflows and conventions.
 
 ```bash
 make test                                 # All tests
-./build/test/unit/pup_test                # Direct execution
-./build/test/unit/pup_test -s             # Verbose output
-./build/test/unit/pup_test '[e2e]'        # E2E tests only
-./build/test/unit/pup_test '[tag]'        # Specific tag
+./build/test/unit/putup_test                # Direct execution
+./build/test/unit/putup_test -s             # Verbose output
+./build/test/unit/putup_test '[e2e]'        # E2E tests only
+./build/test/unit/putup_test '[tag]'        # Specific tag
 ```
 
 ### Unit Test Tags
@@ -70,7 +70,7 @@ test/e2e/fixtures/
 │       └── Tupfile.fixture
 ```
 
-**Why?** The `copy_fixture()` function copies fixtures to temp directories and renames `Tupfile.fixture` → `Tupfile`. This prevents fixtures from being parsed as part of pup's own build.
+**Why?** The `copy_fixture()` function copies fixtures to temp directories and renames `Tupfile.fixture` → `Tupfile`. This prevents fixtures from being parsed as part of putup's own build.
 
 ### Fixture Types
 
@@ -83,12 +83,12 @@ test/e2e/fixtures/
 ```cpp
 auto f = E2EFixture { "fixture_name" };  // Copies to temp dir
 
-// Pup commands
-f.init()           // pup configure (initializes .pup directory)
-f.build()          // pup build
-f.clean()          // pup clean
-f.parse()          // pup parse
-f.pup({ args })    // pup <args> (generic command)
+// Putup commands
+f.init()           // putup configure (initializes .pup directory)
+f.build()          // putup build
+f.clean()          // putup clean
+f.parse()          // putup parse
+f.pup({ args })    // putup <args> (generic command)
 
 // Filesystem checks
 f.exists("path")
@@ -124,7 +124,7 @@ auto result = run_shell_fixture("fixture_name");  // Runs test.sh
 REQUIRE(result.success());
 ```
 
-The `test.sh` receives `$PUP` environment variable pointing to pup binary.
+The `test.sh` receives `$PUP` environment variable pointing to putup binary.
 
 ## Adding New Tests
 
@@ -171,7 +171,7 @@ SCENARIO("My feature works", "[e2e][my_feature]")
 ### 3. Run Test
 
 ```bash
-./build/test/unit/pup_test '[my_feature]' -s
+./build/test/unit/putup_test '[my_feature]' -s
 ```
 
 ## Recent Features
@@ -206,14 +206,14 @@ Related fixtures:
 ### Keep Work Directory
 
 ```bash
-KEEP_WORKDIR=1 ./build/test/unit/pup_test '[failing_test]'
+KEEP_WORKDIR=1 ./build/test/unit/putup_test '[failing_test]'
 ```
 
 Check `/tmp/claude/e2e_*` for the test directory.
 
-### Verbose Pup Output
+### Verbose Putup Output
 
-Add `-v` to pup commands in test:
+Add `-v` to putup commands in test:
 
 ```cpp
 auto result = f.build({ "-v" });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2024 pup authors
+// Copyright (c) 2024 Putup authors
 
 #include "pup/cli/options.hpp"
 #include "pup/core/platform.hpp"
@@ -98,10 +98,10 @@ auto parse_args(int argc, char** argv) -> Options
 
 auto print_usage() -> void
 {
-    printf("pup - build system using Tupfile format\n\n"
-           "Usage: pup [OPTIONS] [TARGETS]\n"
-           "       pup [OPTIONS] <command>\n\n"
-           "Running 'pup' executes the build. Use a command for other operations.\n\n"
+    printf("putup - build system using Tupfile format\n\n"
+           "Usage: putup [OPTIONS] [TARGETS]\n"
+           "       putup [OPTIONS] <command>\n\n"
+           "Running 'putup' executes the build. Use a command for other operations.\n\n"
            "Commands:\n"
            "  configure         Generate tup.config files (two-stage build)\n"
            "  clean             Remove generated files\n"
@@ -134,10 +134,10 @@ auto print_usage() -> void
            "  build/foo.o         build         foo.o       # single output rebuild\n"
            "  build-*             (glob)        (all)       # multiple variants\n"
            "\nExamples:\n"
-           "  pup                Build all variants\n"
-           "  pup build-debug    Build single variant\n"
-           "  pup build-*        Build all matching variants\n"
-           "  pup src/lib        Scoped build across all variants\n"
+           "  putup                Build all variants\n"
+           "  putup build-debug    Build single variant\n"
+           "  putup build-*        Build all matching variants\n"
+           "  putup src/lib        Scoped build across all variants\n"
            "\nEnvironment:\n"
            "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
            "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
@@ -146,7 +146,7 @@ auto print_usage() -> void
 
 auto print_version() -> void
 {
-    printf("pup %s\n", VERSION);
+    printf("putup %s\n", VERSION);
     printf("Platform: %.*s\n", static_cast<int>(pup::PLATFORM.size()), pup::PLATFORM.data());
     printf("Architecture: %.*s\n", static_cast<int>(pup::ARCH.size()), pup::ARCH.data());
 }

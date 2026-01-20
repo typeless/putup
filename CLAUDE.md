@@ -1,4 +1,4 @@
-# Pup - Developer Guide
+# Putup - Developer Guide
 
 A build system using [Tupfile](https://gittup.org/tup/) syntax.
 
@@ -17,10 +17,10 @@ A build system using [Tupfile](https://gittup.org/tup/) syntax.
 
 ## Building & Testing
 
-Pup builds itself (self-hosting). Requires `pup` in PATH.
+Putup builds itself (self-hosting). Requires `putup` in PATH.
 
 ```bash
-make              # Configure and build (runs pup configure + pup build)
+make              # Configure and build (runs putup configure + putup build)
 make V=1          # Build with verbose output
 make test         # Run unit tests + E2E tests
 make tidy         # Run clang-tidy
@@ -30,12 +30,12 @@ make clean        # Clean build artifacts
 make distclean    # Full reset: remove build/
 ```
 
-Or use pup directly:
+Or use putup directly:
 
 ```bash
-pup configure -B build   # Generate build/tup.config from configs/
-pup -B build             # Build
-./build/pup              # Run the built binary
+putup configure -B build   # Generate build/tup.config from configs/
+putup -B build             # Build
+./build/putup              # Run the built binary
 ```
 
 Build artifacts go to `build/`.
@@ -46,19 +46,19 @@ Build artifacts go to `build/`.
 
 ```bash
 make test                                 # Run all tests
-./build/test/unit/pup_test                # All tests (unit + E2E)
-./build/test/unit/pup_test -s             # Verbose output
-./build/test/unit/pup_test '[e2e]'        # E2E tests only
-./build/test/unit/pup_test '[build]'      # Build tests only
-./build/test/unit/pup_test '[groups]'     # Group semantics tests ({group}, <group>)
-./build/test/unit/pup_test '[clean]'      # Clean/distclean tests only
-./build/test/unit/pup_test '[incremental]' # Incremental rebuild tests
-./build/test/unit/pup_test '[variant]'    # Out-of-tree/variant tests
-./build/test/unit/pup_test '[multi-variant]' # Multi-variant parallel builds
-./build/test/unit/pup_test '[scope]'      # Scoped build tests
-./build/test/unit/pup_test '[target]'     # Target parsing tests
-./build/test/unit/pup_test '[shell]'      # Shell fixture tests
-./build/test/unit/pup_test '[configure]'  # Two-pass config generation tests
+./build/test/unit/putup_test                # All tests (unit + E2E)
+./build/test/unit/putup_test -s             # Verbose output
+./build/test/unit/putup_test '[e2e]'        # E2E tests only
+./build/test/unit/putup_test '[build]'      # Build tests only
+./build/test/unit/putup_test '[groups]'     # Group semantics tests ({group}, <group>)
+./build/test/unit/putup_test '[clean]'      # Clean/distclean tests only
+./build/test/unit/putup_test '[incremental]' # Incremental rebuild tests
+./build/test/unit/putup_test '[variant]'    # Out-of-tree/variant tests
+./build/test/unit/putup_test '[multi-variant]' # Multi-variant parallel builds
+./build/test/unit/putup_test '[scope]'      # Scoped build tests
+./build/test/unit/putup_test '[target]'     # Target parsing tests
+./build/test/unit/putup_test '[shell]'      # Shell fixture tests
+./build/test/unit/putup_test '[configure]'  # Two-pass config generation tests
 ```
 
 ### Writing E2E Tests
@@ -88,11 +88,11 @@ SCENARIO("Feature description", "[e2e][tag]")
 ```
 
 **E2EFixture methods:**
-- `init()`, `build()`, `clean()`, `distclean()`, `parse()`, `pup()` - Run pup commands
+- `init()`, `build()`, `clean()`, `distclean()`, `parse()`, `pup()` - Run putup commands
 - `exists()`, `is_file()`, `is_directory()`, `is_executable()` - Check paths
 - `read_file()`, `write_file()`, `append_file()`, `remove_file()` - File I/O
 - `run()` - Execute a program and capture output
-- `run_pup_in_dir()` - Run pup from a subdirectory
+- `run_pup_in_dir()` - Run putup from a subdirectory
 - `create_symlink()`, `mkdir()` - Filesystem operations
 
 **Environment variables:**
@@ -115,9 +115,9 @@ This project follows **Test-Driven Development (TDD)** with **BDD-style** tests.
 
 ```bash
 # TDD cycle
-./build/test/unit/pup_test "[new_feature]"  # Run specific test (fails)
+./build/test/unit/putup_test "[new_feature]"  # Run specific test (fails)
 # ... implement ...
-./build/test/unit/pup_test "[new_feature]"  # Run again (passes)
+./build/test/unit/putup_test "[new_feature]"  # Run again (passes)
 make test                                    # Verify no regressions
 make format                                  # Format code
 make tidy                                    # Run clang-tidy
@@ -224,41 +224,39 @@ pup/
 
 ## Reference Projects
 
-- `/home/mural/src/tup/` - Original tup source (C)
-- `/home/mural/src/castlestech.com/megahunt/PPC_Linux/spos/` - Real-world tup usage
-- `/home/mural/src/castlestech.com/megahunt/PPC_Linux/ctos/` - Multi-directory tup project (ARM cross-compile)
+For development context, the original tup source (C) can be found at https://github.com/gittup/tup
 
-## Testing with ctos (Multi-Directory Project)
+## Multi-Directory Cross-Compile Projects
 
-The ctos project is a real-world multi-directory tup project for ARM cross-compilation.
-Pup successfully builds this project (75 Tupfiles, 681 commands).
+Putup supports large multi-directory projects with cross-compilation. Key features tested with real-world projects:
 
-### Prerequisites
+- ✅ Multi-directory Tupfile scanning (75+ Tupfiles, 600+ commands)
+- ✅ Demand-driven parsing with cycle detection
+- ✅ Cross-directory order-only groups
+- ✅ Variant build path resolution
+- ✅ `import` directive (environment variables from SDK)
+- ✅ `export` directive (for subprocess calls like pkg-config)
+- ✅ Bang macros
+- ✅ Ghost nodes for cross-directory generated file dependencies
 
-```bash
-# Source the Yocto SDK environment (sets CC, CXX, CFLAGS, etc.)
-source ~/src/castlestech.com/megahunt/sdk/environment-setup-cortexa5t2hf-neon-oe-linux-gnueabi
+### Example Structure
+
 ```
-
-### Project Structure
-
-```
-ctos/
-├── Tupfile.ini          # Project root marker (empty)
-├── .tup/                # Tup database
+project/
+├── Tupfile.ini          # Project root marker
 ├── Tuprules.tup         # Shared rules with import/export
-├── build-ppc/           # Variant output directory
+├── build-variant/       # Variant output directory
 │   └── tup.config       # Variant configuration
-└── system/              # Subdirectories with Tupfiles
-    ├── powerd/Tupfile
-    ├── sensord/Tupfile
+└── subsystems/          # Subdirectories with Tupfiles
+    ├── daemon1/Tupfile
+    ├── daemon2/Tupfile
     └── ...
 ```
 
-### Key Features Used
+### Cross-Compile Tuprules Pattern
 
 ```tup
-# Tuprules.tup imports from SDK environment
+# Import from SDK environment
 import TARGET_PREFIX
 import CC
 import CXX
@@ -272,27 +270,6 @@ export PKG_CONFIG_PATH
 # Bang macros for cross-compilation
 !cc = |> ^ CC %o^ $(CC) $(CFLAGS) -c -o %o %f |>
 ```
-
-### Testing Commands
-
-```bash
-cd ~/src/castlestech.com/megahunt/PPC_Linux/ctos
-~/src/pup/build/pup
-
-# Compare with tup:
-tup
-```
-
-### Current Status
-
-- ✅ Multi-directory Tupfile scanning
-- ✅ Demand-driven parsing with cycle detection
-- ✅ Cross-directory order-only groups
-- ✅ Variant build path resolution
-- ✅ `import` directive
-- ✅ `export` directive
-- ✅ Bang macros
-- ✅ Ghost nodes for cross-directory generated file dependencies
 
 ## Implementation Phases
 
