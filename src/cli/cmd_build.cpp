@@ -948,7 +948,7 @@ auto build_single_variant(
     } else if (use_incremental && old_idx_ptr) {
         // Incremental build takes priority - config commands are inherently
         // excluded since they're not in the dependency chain of changed files
-        build_result = scheduler.build_incremental(ctx.graph(), *old_idx_ptr, changed_files);
+        build_result = scheduler.build_incremental(ctx.graph(), changed_files);
     } else if (!config_cmd_ids.empty()) {
         // Exclude config-generating commands from full build
         auto non_config_cmds = std::set<NodeId> {};

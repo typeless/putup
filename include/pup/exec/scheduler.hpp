@@ -21,9 +21,6 @@
 namespace pup::graph {
 class BuildGraph;
 }
-namespace pup::index {
-class Index;
-}
 
 namespace pup::exec {
 
@@ -101,7 +98,6 @@ public:
     [[nodiscard]]
     auto build_incremental(
         graph::BuildGraph const& graph,
-        index::Index const& old_index,
         std::vector<std::string> const& changed_files
     ) -> Result<BuildStats>;
 

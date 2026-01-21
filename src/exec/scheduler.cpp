@@ -6,7 +6,6 @@
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
-#include "pup/index/entry.hpp"
 #include "pup/parser/depfile.hpp"
 
 #include <cstdio>
@@ -42,6 +41,24 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
         }
     }
     return cache;
+}
+
+/// Resolve an output path to a filesystem path, handling variant-mapped paths.
+/// If the path is already prefixed with the variant output directory, use source_root as base.
+/// Otherwise, use output_root as base.
+auto resolve_variant_path(
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& output_root,
+    std::string_view output_root_prefix,
+    std::filesystem::path const& path
+) -> std::filesystem::path
+{
+    auto path_str = path.string();
+    if (!output_root_prefix.empty() && path_str.starts_with(output_root_prefix)
+        && (path_str.size() == output_root_prefix.size() || path_str[output_root_prefix.size()] == '/')) {
+        return source_root / path;
+    }
+    return output_root / path;
 }
 
 /// Build dependency map between jobs using the graph's edge structure.
@@ -103,7 +120,8 @@ auto build_dependency_map(
             }
         }
 
-        // Check order-only inputs - these may be files or groups
+        // Case 3: Order-only inputs (groups and files)
+        // These establish ordering without creating true data dependencies.
         for (auto oo_id : graph.get_order_only(cmd_id)) {
             auto const* oo_node = graph.get_node(oo_id);
             if (!oo_node) {
@@ -297,7 +315,6 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 
 auto Scheduler::build_incremental(
     graph::BuildGraph const& graph,
-    index::Index const& /*old_index*/,
     std::vector<std::string> const& changed_files
 ) -> Result<BuildStats>
 {
@@ -616,15 +633,7 @@ auto Scheduler::execute_job(
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
         if (!output_path.is_absolute()) {
-            // Check if path already starts with relative output_root prefix (variant-mapped)
-            auto output_str = output_path.string();
-            if (!output_root_prefix.empty() && output_str.starts_with(output_root_prefix)
-                && (output_str.size() == output_root_prefix.size() || output_str[output_root_prefix.size()] == '/')) {
-                // Already variant-mapped, use source_root as base
-                output_path = source_root / output;
-            } else {
-                output_path = impl_->options.output_root / output;
-            }
+            output_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, output);
         }
         auto parent = output_path.parent_path();
         if (!parent.empty()) {
@@ -690,15 +699,7 @@ auto Scheduler::execute_job(
             }
 
             // Compute filesystem path for the .d file
-            // Handle both source-relative and variant-mapped paths
-            auto output_str = output_path.string();
-            auto base_path = std::filesystem::path {};
-            if (!output_root_prefix.empty() && output_str.starts_with(output_root_prefix)
-                && (output_str.size() == output_root_prefix.size() || output_str[output_root_prefix.size()] == '/')) {
-                base_path = source_root / output_path.parent_path();
-            } else {
-                base_path = impl_->options.output_root / output_path.parent_path();
-            }
+            auto base_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, output_path.parent_path());
             auto depfile_path = base_path / (output_path.stem().string() + ".d");
 
             if (!std::filesystem::exists(depfile_path)) {
