@@ -2,21 +2,16 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/scheduler.hpp"
-#include "pup/core/hash.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
 
-#include <cstdio>
-
 #include <algorithm>
 #include <condition_variable>
 #include <cstdlib>
 #include <queue>
-#include <sys/stat.h>
 #include <thread>
-#include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
 

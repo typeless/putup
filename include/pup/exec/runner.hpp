@@ -88,8 +88,6 @@ private:
 
     [[nodiscard]]
     auto merge_options(RunOptions const& options) const -> RunOptions;
-    [[nodiscard]]
-    auto build_env(RunOptions const& options) const -> std::vector<std::string>;
 };
 
 /// Parse a command string into shell arguments
