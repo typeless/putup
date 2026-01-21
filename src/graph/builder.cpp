@@ -72,6 +72,35 @@ auto normalize_group_dir(
     return path.empty() ? "." : path.string();
 }
 
+/// Parsed group reference from a path like "../include/<gen-headers>"
+struct GroupReference {
+    std::string group_name;
+    std::string group_dir;
+};
+
+/// Parse a group reference from a path expression
+/// Returns nullopt if the path doesn't contain a valid <group> suffix
+auto parse_group_reference(
+    std::string const& path,
+    fs::path const& current_dir,
+    fs::path const& source_root
+) -> std::optional<GroupReference>
+{
+    auto lt_pos = path.rfind('<');
+    auto gt_pos = path.rfind('>');
+    if (lt_pos == std::string::npos || gt_pos == std::string::npos
+        || gt_pos != path.size() - 1 || gt_pos <= lt_pos) {
+        return std::nullopt;
+    }
+    auto group_name = path.substr(lt_pos + 1, gt_pos - lt_pos - 1);
+    if (group_name.empty()) {
+        return std::nullopt;
+    }
+    auto dir_part = path.substr(0, lt_pos);
+    auto group_dir = normalize_group_dir(dir_part, current_dir, source_root);
+    return GroupReference { std::move(group_name), std::move(group_dir) };
+}
+
 /// Transform a project-root-relative path to be relative to source directory
 /// Used for command expansion where commands run from Tupfile directory
 auto make_source_relative(
@@ -1155,18 +1184,9 @@ auto GraphBuilder::expand_rule(
             if (!expanded) {
                 continue;
             }
-            auto const& path = *expanded;
-            auto lt_pos = path.rfind('<');
-            auto gt_pos = path.rfind('>');
-            if (lt_pos != std::string::npos && gt_pos != std::string::npos
-                && gt_pos == path.size() - 1 && gt_pos > lt_pos) {
-                auto group_name = path.substr(lt_pos + 1, gt_pos - lt_pos - 1);
-                if (group_name.empty()) {
-                    continue;
-                }
-                auto dir_part = path.substr(0, lt_pos);
-                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.source_root);
-                auto dir_path = fs::path { group_dir };
+            auto group_ref = parse_group_reference(*expanded, ctx.current_dir, ctx.options.source_root);
+            if (group_ref) {
+                auto dir_path = fs::path { group_ref->group_dir };
 
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                 if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
@@ -1178,7 +1198,7 @@ auto GraphBuilder::expand_rule(
                 }
 
                 // Get or create the Group node (groups are first-class nodes)
-                auto group_id_result = get_or_create_group_node(ctx, group_dir, group_name);
+                auto group_id_result = get_or_create_group_node(ctx, group_ref->group_dir, group_ref->group_name);
                 if (!group_id_result) {
                     continue;
                 }
@@ -1189,7 +1209,7 @@ auto GraphBuilder::expand_rule(
                 if (!members.empty()) {
                     // Populate rule_order_only_groups for %<group> command expansion
                     // Group members are outputs, so use transform_output_path for variant mapping
-                    auto& paths = rule_order_only_groups[group_name];
+                    auto& paths = rule_order_only_groups[group_ref->group_name];
                     for (auto id : members) {
                         auto p = ctx.graph->get_full_path(id);
                         if (!p.empty()) {
@@ -1201,8 +1221,8 @@ auto GraphBuilder::expand_rule(
                     // Preserve %<group> pattern literally - will be expanded in resolve_deferred_order_only_edges()
                     // This ensures the pattern isn't lost during command expansion
                     char pattern_buf[256];
-                    snprintf(pattern_buf, sizeof(pattern_buf), "%%<%s>", group_name.c_str());
-                    rule_order_only_groups[group_name] = { std::string { pattern_buf } };
+                    snprintf(pattern_buf, sizeof(pattern_buf), "%%<%s>", group_ref->group_name.c_str());
+                    rule_order_only_groups[group_ref->group_name] = { std::string { pattern_buf } };
                 }
                 // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
                 deferred_group_ids.insert(group_id);
@@ -1329,15 +1349,10 @@ auto GraphBuilder::expand_rule(
         // Create order-only edges for generated command (e.g., gen-headers)
         // For group references, defer to resolve_deferred_order_only_edges()
         for (auto const& oi : gen_rule.order_only_inputs) {
-            // Check for path/<group> pattern
-            auto lt_pos = oi.rfind('<');
-            auto gt_pos = oi.rfind('>');
-            if (lt_pos != std::string::npos && gt_pos != std::string::npos && gt_pos == oi.size() - 1 && gt_pos > lt_pos) {
+            auto group_ref = parse_group_reference(oi, ctx.current_dir, ctx.options.source_root);
+            if (group_ref) {
                 // This is a group reference - get/create group node and defer edge
-                auto group_name = oi.substr(lt_pos + 1, gt_pos - lt_pos - 1);
-                auto dir_part = oi.substr(0, lt_pos);
-                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.source_root);
-                auto group_id_result = get_or_create_group_node(ctx, group_dir, group_name);
+                auto group_id_result = get_or_create_group_node(ctx, group_ref->group_dir, group_ref->group_name);
                 if (group_id_result) {
                     impl_->deferred_edges.insert({ *group_id_result, *gen_cmd_id });
                 }
@@ -1546,18 +1561,9 @@ auto GraphBuilder::expand_inputs(
 
         for (auto& path : *paths) {
             // Check for path/<group> pattern (order-only group reference with directory prefix)
-            // The expanded path will contain literal <groupname> suffix
-            auto lt_pos = path.rfind('<');
-            auto gt_pos = path.rfind('>');
-            if (lt_pos != std::string::npos && gt_pos != std::string::npos && gt_pos == path.size() - 1 && gt_pos > lt_pos) {
-                auto group_name = path.substr(lt_pos + 1, gt_pos - lt_pos - 1);
-                if (group_name.empty()) {
-                    continue; // Invalid empty group name
-                }
-
-                auto dir_part = path.substr(0, lt_pos);
-                auto group_dir = normalize_group_dir(dir_part, ctx.current_dir, ctx.options.source_root);
-                auto dir_path = fs::path { group_dir };
+            auto group_ref = parse_group_reference(path, ctx.current_dir, ctx.options.source_root);
+            if (group_ref) {
+                auto dir_path = fs::path { group_ref->group_dir };
 
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                 if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {

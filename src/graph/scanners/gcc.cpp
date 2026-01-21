@@ -57,9 +57,10 @@ auto shell_quote(std::string const& s) -> std::string
     return result;
 }
 
-/// Normalize a path by removing foo/../ segments.
+/// Normalize a path lexically by removing foo/../ segments.
+/// Unlike std::filesystem::lexically_normal(), works without filesystem access.
 /// Needed because DEP commands run before output directories exist.
-auto normalize_path(std::string const& path) -> std::string
+auto normalize_path_lexically(std::string const& path) -> std::string
 {
     auto parts = std::vector<std::string> {};
     auto start = std::size_t { 0 };
@@ -105,7 +106,7 @@ auto normalize_flag_path(std::string const& flag) -> std::string
         if (flag.starts_with(prefix)) {
             auto path = flag.substr(std::strlen(prefix));
             if (!path.empty()) {
-                return std::string { prefix } + normalize_path(path);
+                return std::string { prefix } + normalize_path_lexically(path);
             }
         }
     }
@@ -221,7 +222,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     auto source_files = std::vector<std::string> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
-            dep_cmd << ' ' << shell_quote(normalize_path(words[i]));
+            dep_cmd << ' ' << shell_quote(normalize_path_lexically(words[i]));
             skip_next = false;
             continue;
         }

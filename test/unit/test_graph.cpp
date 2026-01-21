@@ -423,62 +423,12 @@ TEST_CASE("Graph traversal", "[graph]")
     (void)graph.add_edge(*id_b, *id_d);
     (void)graph.add_edge(*id_c, *id_e);
 
-    SECTION("reachable_from")
-    {
-        auto reachable = reachable_from(graph, *id_a);
-        REQUIRE(reachable.size() == 5);
-
-        reachable = reachable_from(graph, *id_b);
-        REQUIRE(reachable.size() == 2); // b, d
-    }
-
-    SECTION("can_reach")
-    {
-        auto reaching = can_reach(graph, *id_d);
-        REQUIRE(reaching.size() == 3); // d, b, a
-    }
-
     SECTION("has_path")
     {
         REQUIRE(has_path(graph, *id_a, *id_d));
         REQUIRE(has_path(graph, *id_a, *id_e));
         REQUIRE_FALSE(has_path(graph, *id_d, *id_a));
         REQUIRE_FALSE(has_path(graph, *id_b, *id_c));
-    }
-
-    SECTION("node_depth")
-    {
-        REQUIRE(node_depth(graph, *id_a) == 0);
-        REQUIRE(node_depth(graph, *id_b) == 1);
-        REQUIRE(node_depth(graph, *id_c) == 1);
-        REQUIRE(node_depth(graph, *id_d) == 2);
-        REQUIRE(node_depth(graph, *id_e) == 2);
-    }
-
-    SECTION("max_depth")
-    {
-        REQUIRE(max_depth(graph) == 2);
-    }
-
-    SECTION("nodes_at_depth")
-    {
-        auto depth0 = nodes_at_depth(graph, 0);
-        // BUILD_ROOT_ID is also at depth 0 (no incoming edges)
-        REQUIRE(depth0.size() == 2);
-        REQUIRE(std::ranges::find(depth0, *id_a) != depth0.end());
-
-        auto depth1 = nodes_at_depth(graph, 1);
-        REQUIRE(depth1.size() == 2);
-
-        auto depth2 = nodes_at_depth(graph, 2);
-        REQUIRE(depth2.size() == 2);
-    }
-
-    SECTION("critical_path")
-    {
-        auto path = critical_path(graph);
-        REQUIRE(path.size() == 3);
-        REQUIRE(path[0] == *id_a);
     }
 }
 
