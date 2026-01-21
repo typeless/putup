@@ -99,12 +99,6 @@ struct Error {
 template<typename T>
 using Result = pup::expected<T, Error>;
 
-/// Unit type for Result<void> equivalent
-struct Unit { };
-
-/// Success value for Result<Unit>
-inline constexpr auto unit = Unit {};
-
 /// Helper to create an error result
 template<typename T, typename Msg>
 requires std::is_convertible_v<Msg, std::string_view>
