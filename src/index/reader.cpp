@@ -10,6 +10,34 @@
 
 namespace pup::index {
 
+namespace {
+
+template<typename T>
+auto read_raw_entries(
+    pup::platform::MappedFile const& file,
+    RawHeader const* hdr,
+    std::uint32_t count,
+    std::uint32_t offset
+) -> std::span<T const>
+{
+    if (!hdr || count == 0) {
+        return {};
+    }
+
+    auto const size = std::size_t { count } * sizeof(T);
+    if (offset > file.size() || size > file.size() - offset) {
+        return {};
+    }
+
+    auto data = std::span<std::byte const> { file.data(), file.size() };
+    auto bytes = data.subspan(offset, size);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* entries = reinterpret_cast<T const*>(bytes.data());
+    return { entries, count };
+}
+
+} // namespace
+
 auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
 {
     auto reader = IndexReader {};
@@ -109,61 +137,19 @@ auto IndexReader::header() const -> RawHeader const*
 auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
 {
     auto const* hdr = header();
-    if (!hdr || hdr->file_count == 0) {
-        return {};
-    }
-
-    // Bounds check: ensure offset and size are within file
-    auto const size = std::size_t { hdr->file_count } * sizeof(RawFileEntry);
-    if (hdr->file_offset > file_.size() || size > file_.size() - hdr->file_offset) {
-        return {};
-    }
-
-    auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto file_bytes = data.subspan(hdr->file_offset, size);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto const* files = reinterpret_cast<RawFileEntry const*>(file_bytes.data());
-    return { files, hdr->file_count };
+    return read_raw_entries<RawFileEntry>(file_, hdr, hdr ? hdr->file_count : 0, hdr ? hdr->file_offset : 0);
 }
 
 auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
 {
     auto const* hdr = header();
-    if (!hdr || hdr->command_count == 0) {
-        return {};
-    }
-
-    // Bounds check: ensure offset and size are within file
-    auto const size = std::size_t { hdr->command_count } * sizeof(RawCommandEntry);
-    if (hdr->command_offset > file_.size() || size > file_.size() - hdr->command_offset) {
-        return {};
-    }
-
-    auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto cmd_bytes = data.subspan(hdr->command_offset, size);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto const* commands = reinterpret_cast<RawCommandEntry const*>(cmd_bytes.data());
-    return { commands, hdr->command_count };
+    return read_raw_entries<RawCommandEntry>(file_, hdr, hdr ? hdr->command_count : 0, hdr ? hdr->command_offset : 0);
 }
 
 auto IndexReader::raw_edges() const -> std::span<RawEdge const>
 {
     auto const* hdr = header();
-    if (!hdr || hdr->edge_count == 0) {
-        return {};
-    }
-
-    // Bounds check: ensure offset and size are within file
-    auto const size = std::size_t { hdr->edge_count } * sizeof(RawEdge);
-    if (hdr->edge_offset > file_.size() || size > file_.size() - hdr->edge_offset) {
-        return {};
-    }
-
-    auto data = std::span<std::byte const> { file_.data(), file_.size() };
-    auto edge_bytes = data.subspan(hdr->edge_offset, size);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto const* edges = reinterpret_cast<RawEdge const*>(edge_bytes.data());
-    return { edges, hdr->edge_count };
+    return read_raw_entries<RawEdge>(file_, hdr, hdr ? hdr->edge_count : 0, hdr ? hdr->edge_offset : 0);
 }
 
 auto IndexReader::get_string(std::uint32_t offset) const -> std::string_view

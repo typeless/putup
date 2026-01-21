@@ -137,10 +137,6 @@ public:
         return edges_;
     }
 
-    /// Find file by path
-    [[nodiscard]]
-    auto find_file(std::string_view path) const -> FileEntry const*;
-
     /// Find file by ID
     [[nodiscard]]
     auto find_file_by_id(NodeId id) const -> FileEntry const*;
@@ -222,6 +218,12 @@ private:
 
     // Command index for O(1) lookup by command string (index into commands_ vector)
     std::unordered_map<std::string, std::size_t> command_index_ = {};
+
+    [[nodiscard]]
+    auto lookup_edges(
+        std::unordered_map<NodeId, std::vector<std::size_t>> const& index,
+        NodeId id
+    ) const -> std::vector<EdgeEntry const*>;
 };
 
 } // namespace pup::index

@@ -102,12 +102,6 @@ auto Index::add_edge(EdgeEntry entry) -> void
     edges_to_index_[edges_[idx].to].push_back(idx);
 }
 
-auto Index::find_file(std::string_view path) const -> FileEntry const*
-{
-    auto it = std::ranges::find(files_, path, &FileEntry::path);
-    return it != files_.end() ? &*it : nullptr;
-}
-
 auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
 {
     if (id == 0 || is_command_id(id)) {
@@ -145,11 +139,14 @@ auto Index::find_command_by_command(std::string const& cmd) const -> CommandEntr
     return nullptr;
 }
 
-auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
+auto Index::lookup_edges(
+    std::unordered_map<NodeId, std::vector<std::size_t>> const& index,
+    NodeId id
+) const -> std::vector<EdgeEntry const*>
 {
     auto result = std::vector<EdgeEntry const*> {};
-    auto it = edges_from_index_.find(id);
-    if (it != edges_from_index_.end()) {
+    auto it = index.find(id);
+    if (it != index.end()) {
         result.reserve(it->second.size());
         for (auto idx : it->second) {
             result.push_back(&edges_[idx]);
@@ -158,17 +155,14 @@ auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
     return result;
 }
 
+auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
+{
+    return lookup_edges(edges_from_index_, id);
+}
+
 auto Index::edges_to(NodeId id) const -> std::vector<EdgeEntry const*>
 {
-    auto result = std::vector<EdgeEntry const*> {};
-    auto it = edges_to_index_.find(id);
-    if (it != edges_to_index_.end()) {
-        result.reserve(it->second.size());
-        for (auto idx : it->second) {
-            result.push_back(&edges_[idx]);
-        }
-    }
-    return result;
+    return lookup_edges(edges_to_index_, id);
 }
 
 auto Index::build_edge_indices() -> void

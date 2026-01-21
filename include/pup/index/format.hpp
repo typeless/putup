@@ -89,19 +89,6 @@ struct alignas(8) RawFooter {
 
 static_assert(sizeof(RawFooter) == 32, "RawFooter must be 32 bytes");
 
-/// Helper to get file size from entry
-[[nodiscard]]
-inline auto get_file_size(RawFileEntry const& entry) -> std::uint64_t
-{
-    return entry.size;
-}
-
-/// Helper to set file size in entry
-inline auto set_file_size(RawFileEntry& entry, std::uint64_t size) -> void
-{
-    entry.size = size;
-}
-
 /// Helper to get NodeFlags from entry
 [[nodiscard]]
 inline auto get_node_flags(RawFileEntry const& entry) -> NodeFlags

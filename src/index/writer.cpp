@@ -6,9 +6,14 @@
 #include "pup/platform/file_io.hpp"
 
 #include <cstring>
+#include <limits>
 #include <span>
 
 namespace pup::index {
+
+namespace {
+constexpr auto MAX_U32 = std::numeric_limits<std::uint32_t>::max();
+} // namespace
 
 auto IndexWriter::StringTable::add(std::string_view str) -> Result<std::uint32_t>
 {
@@ -43,9 +48,8 @@ auto IndexWriter::StringTable::add(std::string_view str) -> Result<std::uint32_t
     }
 
     // Check table size limit (u32 offset max)
-    auto constexpr MAX_OFFSET = std::numeric_limits<std::uint32_t>::max();
     auto const entry_size = sizeof(std::uint16_t) + str.size();
-    if (data_.size() > MAX_OFFSET - entry_size) {
+    if (data_.size() > MAX_U32 - entry_size) {
         return make_error<std::uint32_t>(
             ErrorCode::InvalidArgument, "String table exceeds 4GB limit"
         );
@@ -123,7 +127,6 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     }
 
     // Calculate offsets (all u32, check for overflow)
-    auto constexpr MAX_U32 = std::numeric_limits<std::uint32_t>::max();
     auto const file_size_64 = file_entries.size() * sizeof(RawFileEntry);
     auto const command_size_64 = command_entries.size() * sizeof(RawCommandEntry);
     auto const edge_size_64 = edge_entries.size() * sizeof(RawEdge);

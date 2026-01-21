@@ -14,6 +14,19 @@
 using namespace pup;
 using namespace pup::index;
 
+namespace {
+
+auto find_file_by_path(Index const& index, std::string_view path) -> FileEntry const*
+{
+    for (auto const& file : index.files()) {
+        if (file.path == path)
+            return &file;
+    }
+    return nullptr;
+}
+
+} // namespace
+
 TEST_CASE("Index format struct sizes", "[index]")
 {
     SECTION("RawHeader is 40 bytes")
@@ -46,16 +59,16 @@ TEST_CASE("RawFileEntry helpers", "[index]")
 {
     auto entry = RawFileEntry {};
 
-    SECTION("file size helpers")
+    SECTION("file size field")
     {
         entry.size = 0x123456789ABCDEF0ULL;
-        REQUIRE(get_file_size(entry) == 0x123456789ABCDEF0ULL);
+        REQUIRE(entry.size == 0x123456789ABCDEF0ULL);
 
         entry.size = 0;
-        REQUIRE(get_file_size(entry) == 0);
+        REQUIRE(entry.size == 0);
 
         entry.size = 0xFFFFFFFFFFFFFFFFULL;
-        REQUIRE(get_file_size(entry) == 0xFFFFFFFFFFFFFFFFULL);
+        REQUIRE(entry.size == 0xFFFFFFFFFFFFFFFFULL);
     }
 
     SECTION("node flags helpers")
@@ -89,7 +102,7 @@ TEST_CASE("FileEntry conversion", "[index]")
 
     REQUIRE(raw.parent_id == 1);
     REQUIRE(raw.type == static_cast<std::uint8_t>(NodeType::File));
-    REQUIRE(get_file_size(raw) == 1024);
+    REQUIRE(raw.size == 1024);
     REQUIRE(raw.name_offset == 200);
     REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
     REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
@@ -201,15 +214,15 @@ TEST_CASE("Index in-memory operations", "[index]")
         REQUIRE(index.file_count() == 2);
         REQUIRE_FALSE(index.empty());
 
-        auto* found = index.find_file("foo.c");
-        REQUIRE(found != nullptr);
-        REQUIRE(found->id == 1);
+        auto* by_id_1 = index.find_file_by_id(1);
+        REQUIRE(by_id_1 != nullptr);
+        REQUIRE(by_id_1->name == "foo.c");
 
-        REQUIRE(index.find_file("nonexistent") == nullptr);
+        auto* by_id_2 = index.find_file_by_id(2);
+        REQUIRE(by_id_2 != nullptr);
+        REQUIRE(by_id_2->name == "bar.c");
 
-        auto* by_id = index.find_file_by_id(2);
-        REQUIRE(by_id != nullptr);
-        REQUIRE(by_id->name == "bar.c");
+        REQUIRE(index.find_file_by_id(999) == nullptr);
     }
 
     SECTION("add and find commands")
@@ -372,12 +385,12 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(restored.edge_count() == 3);
 
     // Verify file content (paths are computed from parent chain)
-    auto* file1 = restored.find_file("src/main.cpp");
+    auto* file1 = find_file_by_path(restored, "src/main.cpp");
     REQUIRE(file1 != nullptr);
     REQUIRE(file1->id == 3);
     REQUIRE(file1->size == 1024);
 
-    auto* file2 = restored.find_file("build/main.o");
+    auto* file2 = find_file_by_path(restored, "build/main.o");
     REQUIRE(file2 != nullptr);
     REQUIRE(file2->id == 4);
     REQUIRE(file2->type == NodeType::Generated);
@@ -389,7 +402,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(cmd->display == "CXX main.cpp");
 
     // Verify header file (implicit dependency)
-    auto* header = restored.find_file("/usr/include/stdio.h");
+    auto* header = find_file_by_path(restored, "/usr/include/stdio.h");
     REQUIRE(header != nullptr);
     REQUIRE(header->id == 5);
     REQUIRE(header->size == 8192);
@@ -478,11 +491,11 @@ TEST_CASE("Index ID contiguity requirement", "[index]")
     auto& restored = *read_result;
 
     // With consecutive IDs, path reconstruction works correctly
-    auto* foo = restored.find_file("src/lib/foo.c");
+    auto* foo = find_file_by_path(restored, "src/lib/foo.c");
     REQUIRE(foo != nullptr);
     REQUIRE(foo->size == 100);
 
-    auto* lib = restored.find_file("src/lib");
+    auto* lib = find_file_by_path(restored, "src/lib");
     REQUIRE(lib != nullptr);
     REQUIRE(lib->type == NodeType::Directory);
 
