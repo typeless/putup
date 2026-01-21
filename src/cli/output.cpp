@@ -11,52 +11,6 @@
 
 namespace pup::cli {
 
-auto remove_file(std::filesystem::path const& path, OutputMode mode) -> bool
-{
-    if (!std::filesystem::exists(path)) {
-        return false;
-    }
-
-    if (mode.dry_run) {
-        printf("Would remove: %s\n", path.string().c_str());
-        return true;
-    }
-
-    if (mode.verbose) {
-        printf("Removing: %s\n", path.string().c_str());
-    }
-
-    auto ec = std::error_code {};
-    return std::filesystem::remove(path, ec);
-}
-
-auto remove_empty_dir(
-    std::filesystem::path const& dir,
-    std::filesystem::path const& root_guard,
-    OutputMode mode
-) -> bool
-{
-    if (dir == root_guard) {
-        return false;
-    }
-
-    if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir)) {
-        return false;
-    }
-
-    if (mode.dry_run) {
-        printf("Would remove empty dir: %s\n", dir.string().c_str());
-        return true;
-    }
-
-    if (mode.verbose) {
-        printf("Removing empty dir: %s\n", dir.string().c_str());
-    }
-
-    auto ec = std::error_code {};
-    return std::filesystem::remove(dir, ec);
-}
-
 auto remove_empty_directories(
     std::set<std::filesystem::path> const& output_dirs,
     std::filesystem::path const& build_dir,

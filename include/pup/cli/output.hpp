@@ -24,21 +24,6 @@ struct RemoveResult {
     std::set<std::filesystem::path> output_dirs = {};
 };
 
-/// Remove a file with dry-run/verbose support
-/// Returns true if file was (or would be) removed
-auto remove_file(
-    std::filesystem::path const& path,
-    OutputMode mode
-) -> bool;
-
-/// Remove a directory if empty with dry-run/verbose support
-/// Returns true if directory was (or would be) removed
-auto remove_empty_dir(
-    std::filesystem::path const& dir,
-    std::filesystem::path const& root_guard,
-    OutputMode mode
-) -> bool;
-
 /// Remove empty directories from deepest to shallowest
 /// Returns count of directories removed
 auto remove_empty_directories(
