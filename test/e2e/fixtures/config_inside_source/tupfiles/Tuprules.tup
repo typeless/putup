@@ -1,0 +1,5 @@
+# TUP_SRCDIR points from config dir to source dir
+# In this case: .. (parent of tupfiles/)
+
+!cc = |> ^ CC %o^ cc -c %f -o %o |>
+!link = |> ^ LINK %o^ cc %f -o %o |>

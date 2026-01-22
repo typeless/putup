@@ -3770,3 +3770,87 @@ SCENARIO("Out-of-tree configuration with TUP_SRCDIR and TUP_OUTDIR variables", "
         }
     }
 }
+
+SCENARIO("Config tree inside source tree", "[e2e][out-of-tree-config]")
+{
+    GIVEN("a project with config directory nested inside source tree")
+    {
+        auto f = E2EFixture { "config_inside_source" };
+        auto source_dir = f.workdir();
+        auto config_dir = f.workdir() / "tupfiles";
+        auto build_dir = f.workdir() / "build";
+
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("parsing with -S pointing to parent of -C")
+        {
+            auto result = f.pup({
+                "parse",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-v"
+            });
+
+            THEN("parsing succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("globs resolve against source root, not config root")
+            {
+                // main.c is in source_dir, not source_dir/tupfiles
+                REQUIRE(result.stdout_output.find("main.c") != std::string::npos);
+            }
+        }
+
+        WHEN("building with config inside source tree")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-j1"
+            });
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("object files are created in build directory")
+            {
+                REQUIRE(f.exists("build/main.o"));
+                REQUIRE(f.exists("build/lib/add.o"));
+            }
+
+            THEN("executable is created")
+            {
+                REQUIRE(f.is_executable("build/prog"));
+            }
+
+            THEN("executable runs correctly")
+            {
+                auto run_result = f.run("build/prog");
+                REQUIRE(run_result.success());
+            }
+
+            THEN("no build artifacts in config directory")
+            {
+                REQUIRE_FALSE(f.exists("tupfiles/main.o"));
+                REQUIRE_FALSE(f.exists("tupfiles/.pup"));
+            }
+
+            THEN("no build artifacts in source root")
+            {
+                REQUIRE_FALSE(f.exists("main.o"));
+                REQUIRE_FALSE(f.exists(".pup"));
+            }
+        }
+    }
+}
