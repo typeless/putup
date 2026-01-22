@@ -24,6 +24,7 @@ struct Options {
     std::string command = {};
     std::string show_format = {};
     std::string source_dir = {};
+    std::string config_dir = {};
     std::vector<std::string> build_dirs = {};
     std::vector<std::string> targets = {};
     std::vector<std::string> output_targets = {}; // Specific output file targets

@@ -481,6 +481,12 @@ auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::
     if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
         return ctx_->tup_variant_outputdir;
     }
+    if (name == builtin_vars::TUP_SRCDIR) {
+        return ctx_->tup_srcdir;
+    }
+    if (name == builtin_vars::TUP_OUTDIR) {
+        return ctx_->tup_outdir;
+    }
 
     // TUP_PLATFORM and TUP_ARCH are handled in expand_var() with proper priority:
     // env > config > default

@@ -71,6 +71,8 @@ struct EvalContext {
     std::string tup_arch = {};              ///< Architecture (TUP_ARCH)
     std::string tup_variantdir = {};        ///< Relative path to variant output (TUP_VARIANTDIR)
     std::string tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
+    std::string tup_srcdir = {};            ///< Relative path to source dir (TUP_SRCDIR)
+    std::string tup_outdir = {};            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
     std::function<std::vector<std::string>(std::string_view)> resolve_group = {};
@@ -161,6 +163,8 @@ constexpr auto TUP_PLATFORM = "TUP_PLATFORM";
 constexpr auto TUP_ARCH = "TUP_ARCH";
 constexpr auto TUP_VARIANTDIR = "TUP_VARIANTDIR";
 constexpr auto TUP_VARIANT_OUTPUTDIR = "TUP_VARIANT_OUTPUTDIR";
+constexpr auto TUP_SRCDIR = "TUP_SRCDIR";
+constexpr auto TUP_OUTDIR = "TUP_OUTDIR";
 constexpr auto CONFIG_ = "CONFIG_"; // Prefix for @() variables
 } // namespace builtin_vars
 

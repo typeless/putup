@@ -1116,6 +1116,165 @@ Graph storage:
 
 ---
 
+## Three-Tree Architecture
+
+The three-tree architecture extends variant builds to support out-of-tree configuration files, enabling builds of third-party code without modification.
+
+### Motivation
+
+Traditional build systems require configuration files (Tupfiles, Makefiles, CMakeLists.txt) to live alongside source code. This creates friction when:
+
+- **Building third-party code**: Can't modify upstream repositories
+- **Multiple independent configs**: Want different build rules for same source
+- **Pristine source trees**: Git submodules, vendored code, read-only filesystems
+
+### The Three Trees
+
+| Tree | CLI Flag | Environment | Purpose |
+|------|----------|-------------|---------|
+| **Source root** | `-S` | `PUP_SOURCE_DIR` | Where source files live (`.c`, `.h`) |
+| **Config root** | `-C` | `PUP_CONFIG_DIR` | Where Tupfiles live |
+| **Output root** | `-B` | `PUP_BUILD_DIR` | Where outputs, `.pup/`, `tup.config` go |
+
+**Directory structure example:**
+
+```
+busybox/                 # Source tree (read-only, upstream)
+├── coreutils/
+│   └── cat.c
+└── shell/
+    └── ash.c
+
+config/                  # Config tree (Tupfiles)
+├── Tupfile.ini
+├── Tuprules.tup
+├── coreutils/
+│   └── Tupfile
+└── shell/
+    └── Tupfile
+
+build/                   # Output tree
+├── .pup/
+├── tup.config
+├── coreutils/
+│   └── cat.o
+└── shell/
+    └── ash.o
+```
+
+**Command:**
+```bash
+pup -S busybox -C config -B build
+```
+
+### Path Resolution Rules
+
+| Operation | Resolved Against |
+|-----------|-----------------|
+| Glob patterns (`*.c`) | `source_root/current_dir` |
+| Tupfile discovery | `config_root` |
+| Command execution CWD | `source_root/current_dir` |
+| Output files | `output_root/current_dir` |
+| `tup.config` | `output_root` |
+| `.pup/index` | `output_root` |
+
+### TUP_SRCDIR and TUP_OUTDIR Variables
+
+When config and source trees differ, Tupfiles need to reference source and output locations. Two built-in variables provide these paths:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `TUP_SRCDIR` | Relative path from Tupfile to source dir | Reference source files explicitly |
+| `TUP_OUTDIR` | Relative path from Tupfile to output dir | Reference output files explicitly |
+
+**Example:** For `config/coreutils/Tupfile` with source at `busybox/` and output at `build/`:
+
+```tup
+# TUP_SRCDIR = ../../busybox/coreutils
+# TUP_OUTDIR = ../../build/coreutils
+
+CFLAGS = -I$(TUP_SRCDIR)/../include
+
+# Globs automatically resolve against source_root
+: foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+```
+
+**Computation:**
+
+```cpp
+// In EvalContext setup:
+tup_srcdir = fs::relative(source_root / current_dir, config_root / current_dir);
+tup_outdir = fs::relative(output_root / current_dir, config_root / current_dir);
+```
+
+### Relationship to Graph Roots
+
+The three-tree model maps onto the existing dual-root graph architecture:
+
+- `SOURCE_ROOT_ID` (0): Parent of Source files, directories, and Commands
+- `BUILD_ROOT_ID` (1): Parent of Generated and Ghost nodes
+
+In three-tree builds:
+- **Tupfile discovery** scans `config_root`, but paths stored under SOURCE_ROOT_ID
+- **Glob expansion** reads from `source_root`, results stored under SOURCE_ROOT_ID
+- **Output expansion** creates nodes under BUILD_ROOT_ID with `output_root` prefix
+- **Command execution** runs from `source_root/current_dir`
+
+### Config Root Discovery
+
+When `-C` is not specified, `discover_layout()` determines config_root:
+
+1. **CLI argument** (`-C`): Use as config_root
+2. **Environment** (`PUP_CONFIG_DIR`): Use if set
+3. **Source has Tupfile.ini**: Traditional mode, `config_root = source_root`
+4. **Output has Tupfile.ini**: Two-tree mode, `config_root = output_root`
+5. **Fallback**: Simple projects with only `Tupfile`, `config_root = source_root`
+
+### Shared Configs with Multiple Variants
+
+The three-tree model enables a powerful pattern: shared Tupfiles with variant-specific `tup.config`:
+
+```
+source/                  # Source code
+config/                  # Shared Tupfiles
+├── Tupfile.ini
+└── Tupfile
+
+build-debug/             # Debug variant
+├── tup.config           # CONFIG_CFLAGS=-g -O0
+└── hello
+
+build-release/           # Release variant
+├── tup.config           # CONFIG_CFLAGS=-O2 -DNDEBUG
+└── hello
+```
+
+**Commands:**
+```bash
+pup -S source -C config -B build-debug
+pup -S source -C config -B build-release
+```
+
+The same Tupfiles produce different outputs based on each variant's `tup.config`.
+
+### Glob Matching in Three-Tree Builds
+
+When matching glob patterns against Generated nodes (e.g., `*.o` finding objects from earlier rules), special handling is needed because Generated nodes are stored with the build root prefix:
+
+```cpp
+// Node stored as: "../build-debug/hello.o" (under BUILD_ROOT_ID)
+// Glob pattern:   "*.o" (relative to config dir)
+
+// Solution: Strip build root prefix before matching
+auto match_path = node_path;
+if (node_path.starts_with(build_root_name + "/")) {
+    match_path = node_path.substr(build_root_name.size() + 1);
+}
+// Now match_path = "hello.o", which matches "*.o"
+```
+
+---
+
 ## Design Decisions
 
 ### Why Result<T> Instead of Exceptions?

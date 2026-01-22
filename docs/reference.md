@@ -314,6 +314,7 @@ putup show graph --all-deps | dot -Tsvg -o full-deps.svg
 | `-n` | `--dry-run` | Print commands without executing them. |
 | `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
 | `-S DIR` | | Source directory. Overrides auto-detection. |
+| `-C DIR` | `--config-dir` | Config directory (where Tupfiles live). |
 | `-B DIR` | | Build/output directory (can use multiple times). |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
@@ -342,6 +343,21 @@ Override automatic project root detection. Useful when running putup from outsid
 ```bash
 putup -S /path/to/project
 ```
+
+**`-C DIR` (Config Directory)**
+
+Specify where Tupfiles live, separate from source files. Enables building third-party code without modification (three-tree builds).
+
+```bash
+# Three-tree build: source, config, and output all separate
+putup -S busybox -C config -B build
+
+# Shared configs with multiple variants
+putup -S busybox -C config -B build-debug
+putup -S busybox -C config -B build-release
+```
+
+See Section 7.5 for details on three-tree builds.
 
 **`-B DIR` (Build Directory)**
 
@@ -390,6 +406,7 @@ putup -v -- lib     # Verbose build of 'lib' directory
 | Variable | Description |
 |----------|-------------|
 | `PUP_SOURCE_DIR` | Source directory (same as `-S`, lower priority) |
+| `PUP_CONFIG_DIR` | Config directory (same as `-C`, lower priority) |
 | `PUP_BUILD_DIR` | Build directory (same as `-B`, lower priority) |
 | `PUP_IMPLICIT_DEPS` | Set to `0` to disable auto-generated dependency rules (default: enabled) |
 
@@ -538,6 +555,8 @@ $(CC)                 # Regular variable
 | `$(TUP_PLATFORM)` | Platform: `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | Architecture: `x86_64`, `arm`, etc. |
 | `$(TUP_VARIANTDIR)` | Variant output directory (variant builds) |
+| `$(TUP_SRCDIR)` | Relative path to source directory (three-tree builds) |
+| `$(TUP_OUTDIR)` | Relative path to output directory (three-tree builds) |
 
 **Examples:**
 ```tup
@@ -1174,6 +1193,113 @@ putup build-debug/src/parser.o
 # Run the full link step separately if needed
 putup build-debug/myapp
 ```
+
+### 7.5 Three-Tree Builds (Out-of-Tree Configuration)
+
+Three-tree builds separate source files, Tupfiles, and build outputs into independent directory trees. This enables building third-party code without modification.
+
+**The Three Trees:**
+
+| Tree | Flag | Description |
+|------|------|-------------|
+| Source | `-S` | Where source files live (can be read-only) |
+| Config | `-C` | Where Tupfiles live |
+| Output | `-B` | Where outputs and `.pup/` go |
+
+**Use Cases:**
+
+1. **Building third-party code** - Build upstream code (git submodules, vendored sources) without modifying it
+2. **Shared configurations** - Same Tupfiles, different `tup.config` per variant
+3. **Hermetic builds** - Source, config, and output on different filesystems
+
+**Example: Building Busybox**
+
+```
+workspace/
+├── busybox/              # Upstream source (read-only, git submodule)
+│   ├── coreutils/
+│   │   └── cat.c
+│   └── shell/
+│       └── ash.c
+│
+├── config/               # Your Tupfiles (mirrors source structure)
+│   ├── Tupfile.ini
+│   ├── Tuprules.tup
+│   ├── coreutils/
+│   │   └── Tupfile
+│   └── shell/
+│       └── Tupfile
+│
+└── build/                # Build outputs
+    ├── tup.config
+    ├── .pup/
+    ├── coreutils/
+    │   └── cat.o
+    └── shell/
+        └── ash.o
+```
+
+**Build command:**
+```bash
+putup -S busybox -C config -B build
+```
+
+**How Paths Resolve:**
+
+| What | Resolved Against |
+|------|------------------|
+| Glob patterns (`*.c`) | `source_root/current_dir` |
+| Tupfile discovery | `config_root` |
+| Command working directory | `source_root/current_dir` |
+| Output files | `output_root/current_dir` |
+| `tup.config` | `output_root` |
+| `.pup/index` | `output_root` |
+
+**Variables for Three-Tree Builds:**
+
+Two special variables help Tupfiles reference source and output directories:
+
+| Variable | Description |
+|----------|-------------|
+| `$(TUP_SRCDIR)` | Relative path from Tupfile directory to corresponding source directory |
+| `$(TUP_OUTDIR)` | Relative path from Tupfile directory to corresponding output directory |
+
+**Example Tupfile:**
+
+```tup
+# config/coreutils/Tupfile
+include_rules
+
+# In three-tree builds:
+# - *.c globs resolve against source_root automatically
+# - Outputs go to output_root automatically
+# - TUP_SRCDIR/TUP_OUTDIR available for include paths
+
+CFLAGS = -I$(TUP_SRCDIR)/../include
+
+: foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+```
+
+**Shared Configs with Multiple Variants:**
+
+Same config directory can build multiple variants:
+
+```bash
+# Debug variant
+putup -S busybox -C config -B build-debug
+
+# Release variant (different tup.config)
+putup -S busybox -C config -B build-release
+```
+
+Each variant has its own `tup.config` in its output directory.
+
+**Fallback Behavior:**
+
+When `-C` is not specified:
+1. If source has `Tupfile.ini` → use source as config root (traditional)
+2. If output has `Tupfile.ini` → use output as config root (two-tree)
+3. Otherwise → use source as config root (simple projects)
 
 ## 8. Implicit Dependencies
 
@@ -2033,6 +2159,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PUP_SOURCE_DIR` | Source directory | Auto-detect |
+| `PUP_CONFIG_DIR` | Config directory (where Tupfiles live) | Source dir |
 | `PUP_BUILD_DIR` | Build/output directory | Source dir |
 | `PUP_IMPLICIT_DEPS` | Enable auto dep scanning | `1` (on) |
 
@@ -2045,6 +2172,8 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `$(TUP_PLATFORM)` | Platform name | `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | CPU architecture | `x86_64`, `arm`, `aarch64` |
 | `$(TUP_VARIANTDIR)` | Variant output dir | `../build-debug/src` |
+| `$(TUP_SRCDIR)` | Path to source dir (three-tree) | `../../busybox/src` |
+| `$(TUP_OUTDIR)` | Path to output dir (three-tree) | `../../build/src` |
 
 **Priority Order:**
 

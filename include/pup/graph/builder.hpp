@@ -31,7 +31,8 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    std::filesystem::path source_root;                                 ///< Source tree root (where Tupfile.ini lives)
+    std::filesystem::path source_root;                                 ///< Source tree root (where source files live)
+    std::filesystem::path config_root;                                 ///< Config tree root (where Tupfiles live)
     std::filesystem::path output_root;                                 ///< Output tree root (where outputs/.pup go)
     std::filesystem::path config_path;                                 ///< Path to tup.config (for sticky edge tracking)
     bool expand_globs = true;                                          ///< Expand glob patterns

@@ -11,6 +11,7 @@ namespace pup {
 namespace {
 
 auto const PUP_SOURCE_DIR_ENV = "PUP_SOURCE_DIR";
+auto const PUP_CONFIG_DIR_ENV = "PUP_CONFIG_DIR";
 auto const PUP_BUILD_DIR_ENV = "PUP_BUILD_DIR";
 
 auto get_env(char const* name) -> std::optional<std::filesystem::path>
@@ -128,15 +129,6 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         layout.source_root = normalize_path(*root);
     }
 
-    // Validate source_root has Tupfile.ini or Tupfile
-    if (!std::filesystem::exists(layout.source_root / "Tupfile.ini")
-        && !std::filesystem::exists(layout.source_root / "Tupfile")) {
-        return make_error<ProjectLayout>(
-            ErrorCode::NotFound,
-            "Source directory does not contain Tupfile.ini: " + layout.source_root.string()
-        );
-    }
-
     // Step 2: Determine output_root (where outputs/.pup/tup.config go)
     // Priority: CLI arg > env var > cwd if has tup.config > variant subdir > source_root
     if (opts.build_dir) {
@@ -152,6 +144,51 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
     } else {
         // In-tree build: outputs go to source_root
         layout.output_root = layout.source_root;
+    }
+
+    // Step 3: Determine config_root (where Tupfiles live)
+    // Priority: CLI arg > env var > source if has Tupfile.ini > output if has Tupfile.ini > error
+    if (opts.config_dir) {
+        if (!std::filesystem::exists(*opts.config_dir)) {
+            return make_error<ProjectLayout>(
+                ErrorCode::NotFound,
+                "Config directory not found: " + opts.config_dir->string()
+            );
+        }
+        layout.config_root = normalize_path(*opts.config_dir);
+        // Validate config_root has Tupfile.ini
+        if (!std::filesystem::exists(layout.config_root / "Tupfile.ini")) {
+            return make_error<ProjectLayout>(
+                ErrorCode::NotFound,
+                "Config directory does not contain Tupfile.ini: " + layout.config_root.string()
+            );
+        }
+    } else if (auto env_config = get_env(PUP_CONFIG_DIR_ENV)) {
+        if (!std::filesystem::exists(*env_config)) {
+            return make_error<ProjectLayout>(
+                ErrorCode::NotFound,
+                "PUP_CONFIG_DIR not found: " + env_config->string()
+            );
+        }
+        layout.config_root = normalize_path(*env_config);
+        // Validate config_root has Tupfile.ini
+        if (!std::filesystem::exists(layout.config_root / "Tupfile.ini")) {
+            return make_error<ProjectLayout>(
+                ErrorCode::NotFound,
+                "Config directory does not contain Tupfile.ini: " + layout.config_root.string()
+            );
+        }
+    } else if (std::filesystem::exists(layout.source_root / "Tupfile.ini")) {
+        // Traditional mode: Tupfiles alongside source (Tupfile.ini present)
+        layout.config_root = layout.source_root;
+    } else if (std::filesystem::exists(layout.output_root / "Tupfile.ini")) {
+        // Two-tree fallback: Tupfiles in output directory
+        layout.config_root = layout.output_root;
+    } else {
+        // Final fallback: source_root is config_root (simple projects with just Tupfile)
+        // find_project_root() accepts projects with Tupfile even without Tupfile.ini,
+        // so we honor that by using source_root as config_root.
+        layout.config_root = layout.source_root;
     }
 
     return layout;

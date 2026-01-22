@@ -3600,3 +3600,173 @@ SCENARIO("Missing include file detection", "[e2e][error]")
         }
     }
 }
+
+// =============================================================================
+// Out-of-Tree Configuration Tests (3-tree builds)
+// =============================================================================
+
+SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[e2e][out-of-tree-config]")
+{
+    GIVEN("a project with separate source, config, and build directories")
+    {
+        auto f = E2EFixture { "out_of_tree_config_3tree" };
+        auto source_dir = f.workdir() / "source";
+        auto config_dir = f.workdir() / "config";
+        auto build_dir = f.workdir() / "build";
+
+        // Create build directory with tup.config
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("parsing with -S, -C, and -B options")
+        {
+            auto result = f.pup({
+                "parse",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-v"
+            });
+
+            THEN("parsing succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("Tupfiles are discovered from config directory")
+            {
+                // Should find Tupfiles in config/, not source/
+                REQUIRE(result.stdout_output.find("config/Tupfile") != std::string::npos);
+            }
+        }
+
+        WHEN("building with -S, -C, and -B options")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-j1"
+            });
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("object files are created in build directory")
+            {
+                REQUIRE(f.exists("build/main.o"));
+                REQUIRE(f.exists("build/lib/add.o"));
+            }
+
+            THEN("executable is created in build directory")
+            {
+                REQUIRE(f.is_executable("build/prog"));
+            }
+
+            THEN("source directory remains pristine")
+            {
+                // No .pup or build artifacts in source
+                REQUIRE_FALSE(f.exists("source/.pup"));
+                REQUIRE_FALSE(f.exists("source/main.o"));
+            }
+        }
+    }
+}
+
+SCENARIO("Out-of-tree configuration with TUP_SRCDIR and TUP_OUTDIR variables", "[e2e][out-of-tree-config]")
+{
+    GIVEN("a project using TUP_SRCDIR and TUP_OUTDIR in Tupfiles")
+    {
+        auto f = E2EFixture { "out_of_tree_config_shared" };
+        auto source_dir = f.workdir() / "source";
+        auto config_dir = f.workdir() / "config";
+        auto build_debug = f.workdir() / "build-debug";
+        auto build_release = f.workdir() / "build-release";
+
+        // Create build directories
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+
+        // Create debug tup.config
+        f.write_file("build-debug/tup.config", "CONFIG_CFLAGS=-g -O0\n");
+        f.write_file("build-release/tup.config", "CONFIG_CFLAGS=-O2\n");
+
+        WHEN("building debug variant")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_debug.string(),
+                "-j1"
+            });
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("debug executable is created")
+            {
+                REQUIRE(f.is_executable("build-debug/hello"));
+            }
+        }
+
+        WHEN("building release variant with same config")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_release.string(),
+                "-j1"
+            });
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("release executable is created")
+            {
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+        }
+
+        WHEN("both variants are built with same config")
+        {
+            (void)f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_debug.string(),
+                "-j1"
+            });
+            (void)f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_release.string(),
+                "-j1"
+            });
+
+            THEN("both executables exist independently")
+            {
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+
+            THEN("config directory has no build artifacts")
+            {
+                REQUIRE_FALSE(f.exists("config/.pup"));
+                REQUIRE_FALSE(f.exists("config/hello.o"));
+            }
+        }
+    }
+}

@@ -64,11 +64,15 @@ auto parse_args(int argc, char** argv) -> Options
                 std::exit(EXIT_FAILURE);
             }
             opts.jobs = static_cast<std::size_t>(value);
-        } else if (arg == "-S") {
+        } else if (arg == "-S" || arg == "--source-dir") {
             if (i + 1 < argc) {
                 opts.source_dir = std::string { argv[++i] };
             }
-        } else if (arg == "-B") {
+        } else if (arg == "-C" || arg == "--config-dir") {
+            if (i + 1 < argc) {
+                opts.config_dir = std::string { argv[++i] };
+            }
+        } else if (arg == "-B" || arg == "--build-dir") {
             if (i + 1 < argc) {
                 opts.build_dirs.emplace_back(argv[++i]);
             }
@@ -116,7 +120,8 @@ auto print_usage() -> void
            "  -k, --keep-going   Continue after failures\n"
            "  -n, --dry-run      Print commands without executing\n"
            "  -v, --verbose      Verbose output\n"
-           "  -S DIR             Source directory (default: auto-detect)\n"
+           "  -S DIR             Source directory (where source files live)\n"
+           "  -C DIR             Config directory (where Tupfiles live)\n"
            "  -B DIR             Build/output directory (can use multiple times)\n"
            "  --summary          Human-readable output (for show graph)\n"
            "  --stat             Print build statistics\n"
@@ -140,6 +145,7 @@ auto print_usage() -> void
            "  putup src/lib        Scoped build across all variants\n"
            "\nEnvironment:\n"
            "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
+           "  PUP_CONFIG_DIR     Config directory (overridden by -C)\n"
            "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
            "  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)\n");
 }

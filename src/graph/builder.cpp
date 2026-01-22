@@ -112,7 +112,13 @@ auto make_source_relative(
     if (path.empty() || path[0] == '/') {
         return path;
     }
+    // Paths starting with .. are relative to source_root.
+    // If we're in a subdirectory (current_dir_str not empty), prepend
+    // source_to_root to adjust the path for the working directory.
     if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
+        if (!source_to_root.empty() && !current_dir_str.empty()) {
+            return std::string { source_to_root } + path;
+        }
         return path;
     }
     if (source_to_root.empty()) {
@@ -138,6 +144,25 @@ auto compute_source_to_root(fs::path const& current_dir) -> std::string
         }
     }
     return result;
+}
+
+/// Strip the build root prefix from a path if present.
+/// E.g., "build/src/main.o" → "src/main.o" when build_root_name is "build"
+auto strip_build_prefix(
+    std::string_view path,
+    std::string_view build_root_name
+) -> std::string
+{
+    if (build_root_name.empty()) {
+        return std::string { path };
+    }
+    auto prefix_len = build_root_name.size() + 1; // includes "/"
+    if (path.size() > prefix_len
+        && path.substr(0, build_root_name.size()) == build_root_name
+        && path[build_root_name.size()] == '/') {
+        return std::string { path.substr(prefix_len) };
+    }
+    return std::string { path };
 }
 
 /// Context for transforming paths to Tupfile-relative coordinates.
@@ -485,9 +510,15 @@ auto GraphBuilder::add_tupfile(
     parser::EvalContext& eval
 ) -> Result<void>
 {
-    // Compute current_dir relative to source_root
+    // Compute current_dir relative to config_root (where Tupfiles live)
+    // In 3-tree builds, config_root differs from source_root, but the directory
+    // structure mirrors the source tree, so this relative path is used for both
+    // config lookup and source file glob expansion.
+    auto const& tupfile_root = impl_->options.config_root.empty()
+        ? impl_->options.source_root
+        : impl_->options.config_root;
     auto tupfile_parent = std::filesystem::path { tupfile.filename }.parent_path();
-    auto relative_dir = std::filesystem::relative(tupfile_parent, impl_->options.source_root);
+    auto relative_dir = std::filesystem::relative(tupfile_parent, tupfile_root);
     if (relative_dir == ".") {
         relative_dir = "";
     }
@@ -502,7 +533,8 @@ auto GraphBuilder::add_tupfile(
     };
 
     // Create Tupfile node and add to sticky_sources for dependency tracking
-    auto tupfile_rel = std::filesystem::relative(tupfile.filename, impl_->options.source_root).string();
+    // For 3-tree builds, store relative to config_root (Tupfile's actual location)
+    auto tupfile_rel = std::filesystem::relative(tupfile.filename, tupfile_root).string();
     auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
     if (tupfile_node_result) {
         ctx.sticky_sources.push_back(*tupfile_node_result);
@@ -854,10 +886,14 @@ auto GraphBuilder::process_include(
     // Find the include file path
     auto include_path = std::string {};
 
+    // Include files (Tuprules.tup, etc.) live in config_root (same as Tupfiles)
+    // Use config_root if set, otherwise fall back to source_root for traditional builds
+    auto const& include_root = ctx.options.config_root.empty() ? ctx.options.source_root : ctx.options.config_root;
+
     if (inc.is_rules) {
         // include_rules: search up directory tree for Tuprules.tup
-        auto search_dir = fs::path { ctx.options.source_root / ctx.current_dir };
-        auto root = fs::path { ctx.options.source_root };
+        auto search_dir = fs::path { include_root / ctx.current_dir };
+        auto root = fs::path { include_root };
 
         while (search_dir >= root) {
             auto tuprules = fs::path { search_dir / "Tuprules.tup" };
@@ -882,7 +918,7 @@ auto GraphBuilder::process_include(
             return pup::unexpected<Error>(path_result.error());
         }
 
-        auto resolved = fs::path { ctx.options.source_root / ctx.current_dir / *path_result };
+        auto resolved = fs::path { include_root / ctx.current_dir / *path_result };
         if (!fs::exists(resolved)) {
             return make_error<void>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
         }
@@ -896,7 +932,8 @@ auto GraphBuilder::process_include(
     ctx.included_files.insert(include_path);
 
     // Add included file to sticky_sources for dependency tracking
-    auto inc_rel = fs::relative(include_path, ctx.options.source_root).string();
+    // Included files live in config_root, so use include_root for relative path
+    auto inc_rel = fs::relative(include_path, include_root).string();
     auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
     if (inc_node_result) {
         ctx.sticky_sources.push_back(*inc_node_result);
@@ -930,7 +967,7 @@ auto GraphBuilder::process_include(
         old_tup_cwd = ctx.eval->tup_cwd;
         // Compute relative path from Tupfile directory to include file's directory
         auto include_dir = fs::path { include_path }.parent_path();
-        auto rel_path = fs::relative(include_dir, ctx.options.source_root / ctx.current_dir);
+        auto rel_path = fs::relative(include_dir, include_root / ctx.current_dir);
         ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.string();
     }
 
@@ -1616,12 +1653,21 @@ auto GraphBuilder::expand_inputs(
                         }
                     }
 
-                    // Match glob pattern against Generated nodes (stored at source-root-relative paths)
+                    // Match glob pattern against Generated nodes
+                    // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
+                    // but the glob pattern is relative to current directory (e.g., *.o)
+                    // We need to strip the build root prefix and match against the relative path
                     auto pattern_path = ctx.current_dir.empty() ? path : (ctx.current_dir / path).lexically_normal().string();
                     auto glob = parser::Glob { pattern_path };
+                    auto build_root_name = ctx.graph->get_build_root_name();
                     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
                         auto node_path = ctx.graph->get_full_path(id);
-                        if (!node_path.empty() && glob.matches(node_path)) {
+                        if (node_path.empty()) {
+                            continue;
+                        }
+                        // Strip build root prefix to get source-relative path for matching
+                        auto match_path = strip_build_prefix(node_path, build_root_name);
+                        if (glob.matches(match_path)) {
                             result.push_back(std::move(node_path));
                         }
                     }
@@ -1738,7 +1784,6 @@ auto GraphBuilder::expand_outputs(
 
             // Get the full path from the node
             auto full_path = ctx.graph->get_full_path(*node_id);
-
             result.push_back(std::move(full_path));
         }
     }
@@ -1840,6 +1885,20 @@ auto GraphBuilder::get_or_create_file_node(
 {
     // Convert working-directory-relative paths to source-root-relative or absolute
     // Paths like "../../build/foo" from "src/bar" should become "build/foo"
+    // For Generated nodes, first check if path already has build root prefix.
+    // This happens when expand_outputs returns paths like "../build/lib/add.o".
+    // We must strip the prefix and look up under BUILD_ROOT_ID before any other
+    // path manipulation that could corrupt the lookup.
+    auto build_root_name = ctx.graph->get_build_root_name();
+    if (type == NodeType::Generated && !build_root_name.empty()) {
+        auto lookup_path = strip_build_prefix(path, build_root_name);
+        if (lookup_path != path) {  // Had prefix
+            if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
+                return *existing;
+            }
+        }
+    }
+
     // Paths that escape source root become absolute for correct stat() resolution
     auto resolved = std::string { path };
     if (!ctx.current_dir.empty() && path.starts_with("..")) {
@@ -1857,20 +1916,19 @@ auto GraphBuilder::get_or_create_file_node(
     // Normalize path for consistent lookup (handles //, ., ..)
     auto normalized = normalize_path(resolved);
 
-    // For Generated nodes, first check if node was already created under BUILD_ROOT_ID
-    // by expand_outputs. This ensures we find the correct node rather than creating
-    // a duplicate under SOURCE_ROOT_ID.
-    if (type == NodeType::Generated) {
-        // The path may include the build root name (e.g., "build/src/main.o").
-        // Strip it to get the source-relative path for lookup under BUILD_ROOT_ID.
-        auto lookup_path = normalized;
-        auto build_root_name = std::string { ctx.graph->get_build_root_name() };
-        if (!build_root_name.empty() && normalized.starts_with(build_root_name + "/")) {
-            lookup_path = normalized.substr(build_root_name.size() + 1);
-        }
+    // For Generated nodes, check if node was already created under BUILD_ROOT_ID
+    // by expand_outputs. This handles paths without the build prefix.
+    if (type == NodeType::Generated && !build_root_name.empty()) {
+        auto lookup_path = strip_build_prefix(normalized, build_root_name);
         if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
             return *existing;
         }
+    }
+
+    // For Generated nodes, use walk_to_file_node to ensure they're created under BUILD_ROOT_ID.
+    // This maintains consistency with expand_outputs() which also uses BUILD_ROOT_ID.
+    if (type == NodeType::Generated) {
+        return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
     }
 
     auto fs_path = fs::path { normalized };
@@ -1886,15 +1944,6 @@ auto GraphBuilder::get_or_create_file_node(
 
     // Check if node already exists
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename)) {
-        if (type == NodeType::Generated) {
-            auto* node = ctx.graph->get_node(*existing);
-            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                // Ghost/File→Generated: upgrade type, preserve edges
-                // Unlike Tup (which re-parses after upgrade), pup parses once
-                // so existing edges from commands to this node are valid
-                node->type = NodeType::Generated;
-            }
-        }
         return *existing;
     }
 
@@ -1918,12 +1967,8 @@ auto GraphBuilder::resolve_input_node(
 
     // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
     // already have the build root prefix. Strip it to get source-relative paths.
-    auto normalized_path = std::string { path };
-    auto build_root_name = std::string { ctx.graph->get_build_root_name() };
-    auto build_prefix = build_root_name + "/";
-    if (!build_root_name.empty() && normalized_path.starts_with(build_prefix)) {
-        normalized_path = normalized_path.substr(build_prefix.size());
-    }
+    auto build_root_name = ctx.graph->get_build_root_name();
+    auto normalized_path = strip_build_prefix(path, build_root_name);
 
     // With BUILD_ROOT_ID model:
     // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths

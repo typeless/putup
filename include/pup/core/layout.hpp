@@ -11,10 +11,19 @@
 
 namespace pup {
 
-/// Encapsulates source/output directory layout for a build.
-/// Enables read-only source directories by separating source and output trees.
+/// Encapsulates source/config/output directory layout for a build.
+/// Enables read-only source directories by separating source, config, and output trees.
+///
+/// Three-tree model:
+///   source_root - Where source files live (may be read-only, upstream code)
+///   config_root - Where Tupfiles live (may mirror source structure)
+///   output_root - Where outputs/.pup/tup.config go (writable)
+///
+/// Traditional builds: config_root == source_root (Tupfiles alongside sources)
+/// Out-of-tree config: config_root != source_root (separate config tree)
 struct ProjectLayout {
-    std::filesystem::path source_root; ///< Where Tupfile.ini lives (may be read-only)
+    std::filesystem::path source_root; ///< Where source files live (may be read-only)
+    std::filesystem::path config_root; ///< Where Tupfiles live (may be separate from source)
     std::filesystem::path output_root; ///< Where outputs/.pup/tup.config go (writable)
 
     /// True if source and output are the same (in-tree build)
@@ -22,6 +31,13 @@ struct ProjectLayout {
     auto is_in_tree() const -> bool
     {
         return source_root == output_root;
+    }
+
+    /// True if config tree is separate from source tree
+    [[nodiscard]]
+    auto has_separate_config() const -> bool
+    {
+        return config_root != source_root;
     }
 
     /// Get path to .pup directory
@@ -46,6 +62,14 @@ struct ProjectLayout {
         return source_root / rel;
     }
 
+    /// Resolve a config-relative path to absolute
+    [[nodiscard]]
+    auto resolve_config(std::filesystem::path const& rel) const
+        -> std::filesystem::path
+    {
+        return config_root / rel;
+    }
+
     /// Resolve an output-relative path to absolute
     [[nodiscard]]
     auto resolve_output(std::filesystem::path const& rel) const
@@ -58,6 +82,7 @@ struct ProjectLayout {
 /// Options for layout discovery
 struct LayoutOptions {
     std::optional<std::filesystem::path> source_dir; ///< -S argument
+    std::optional<std::filesystem::path> config_dir; ///< -C argument
     std::optional<std::filesystem::path> build_dir;  ///< -B argument
 };
 

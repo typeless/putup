@@ -255,7 +255,8 @@ auto parse_directory(
     TupfileParseState& state,
     pup::graph::GraphBuilder& builder,
     pup::graph::BuildGraph& graph,
-    std::filesystem::path const& root,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& config_root,
     std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
     bool verbose,
@@ -277,8 +278,9 @@ auto parse_directory(
 
     state.parsing.insert(normalized_dir);
 
+    // Tupfiles are found in config_root (may differ from source_root in 3-tree builds)
     auto tupfile_path = std::filesystem::path {
-        normalized_dir == "." ? root / "Tupfile" : root / rel_dir / "Tupfile"
+        normalized_dir == "." ? config_root / "Tupfile" : config_root / rel_dir / "Tupfile"
     };
 
     if (verbose) {
@@ -306,9 +308,29 @@ auto parse_directory(
     auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
     auto tup_variantdir = compute_tup_variantdir(
         normalized_dir == "." ? std::filesystem::path {} : rel_dir,
-        root,
+        config_root,
         output_root
     );
+
+    // Compute TUP_SRCDIR: relative path from config dir to source dir
+    // For traditional builds (config == source): "."
+    // For 3-tree builds: e.g., "../../busybox/coreutils" from config/coreutils/
+    auto tup_srcdir = std::string { "." };
+    if (config_root != source_root) {
+        auto config_dir = config_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
+        auto source_dir = source_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
+        tup_srcdir = std::filesystem::relative(source_dir, config_dir).string();
+    }
+
+    // Compute TUP_OUTDIR: relative path from config dir to output dir
+    // For in-tree builds (config == output): "."
+    // For variant builds: e.g., "../../build/coreutils" from config/coreutils/
+    auto tup_outdir = std::string { "." };
+    if (config_root != output_root) {
+        auto config_dir = config_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
+        auto output_dir = output_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
+        tup_outdir = std::filesystem::relative(output_dir, config_dir).string();
+    }
 
     // Get the scoped config for this directory (walks up tree to find nearest tup.config)
     // When root_config_only is set (for configure pass), always use root config
@@ -319,7 +341,7 @@ auto parse_directory(
     );
 
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, root, output_root, base_vars, verbose, root_config_only);
+        return parse_directory(dir, state, builder, graph, source_root, config_root, output_root, base_vars, verbose, root_config_only);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
@@ -330,6 +352,8 @@ auto parse_directory(
         .tup_arch = std::string { pup::ARCH },
         .tup_variantdir = tup_variantdir,
         .tup_variant_outputdir = tup_variantdir,
+        .tup_srcdir = tup_srcdir,
+        .tup_outdir = tup_outdir,
         .request_directory = request_directory,
         .available_tupfile_dirs = &state.available,
     };
@@ -412,6 +436,9 @@ auto build_context(
     if (!opts.source_dir.empty()) {
         layout_opts.source_dir = std::filesystem::path { opts.source_dir };
     }
+    if (!opts.config_dir.empty()) {
+        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
+    }
     if (!opts.build_dirs.empty()) {
         layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
     }
@@ -447,19 +474,24 @@ auto build_context(
     }
 
     auto ignore = parser::IgnoreList::with_defaults();
-    auto ignore_path = ctx.impl_->layout.source_root / ".pupignore";
-    if (std::filesystem::exists(ignore_path)) {
-        auto ignore_result = parser::IgnoreList::load(ignore_path);
-        if (ignore_result) {
-            ignore = std::move(*ignore_result);
-            if (ctx_opts.verbose) {
-                printf("Loaded %zu ignore patterns from %s\n",
-                    ignore.size(), ignore_path.string().c_str());
+    // Check for .pupignore in both config_root and source_root
+    for (auto const& root : { ctx.impl_->layout.config_root, ctx.impl_->layout.source_root }) {
+        auto ignore_path = root / ".pupignore";
+        if (std::filesystem::exists(ignore_path)) {
+            auto ignore_result = parser::IgnoreList::load(ignore_path);
+            if (ignore_result) {
+                ignore = std::move(*ignore_result);
+                if (ctx_opts.verbose) {
+                    printf("Loaded %zu ignore patterns from %s\n",
+                        ignore.size(), ignore_path.string().c_str());
+                }
+                break; // Use first found
             }
         }
     }
 
-    ctx.impl_->state.available = discover_tupfile_dirs(ctx.impl_->layout.source_root, ignore);
+    // Discover Tupfiles from config_root (where Tupfiles live)
+    ctx.impl_->state.available = discover_tupfile_dirs(ctx.impl_->layout.config_root, ignore);
 
     if (ctx.impl_->state.available.empty()) {
         return make_error<BuildContext>(
@@ -526,6 +558,7 @@ auto build_context(
 
     auto builder_opts = graph::BuilderOptions {
         .source_root = ctx.impl_->layout.source_root,
+        .config_root = ctx.impl_->layout.config_root,
         .output_root = ctx.impl_->layout.output_root,
         .config_path = config_path,
         .expand_globs = true,
@@ -562,7 +595,7 @@ auto build_context(
             continue;
         }
         auto result = Result<void> {
-            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx_opts.verbose, ctx_opts.root_config_only)
+            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.config_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx_opts.verbose, ctx_opts.root_config_only)
         };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());

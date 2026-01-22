@@ -1,0 +1,8 @@
+# Shared config for multiple variants
+# CFLAGS can be overridden per variant via tup.config
+CFLAGS = @(CFLAGS)
+
+# Globs automatically resolve against source_root
+# Outputs automatically go to output_root
+: foreach *.c |> ^ CC %o^ cc $(CFLAGS) -c %f -o %o |> %B.o
+: *.o |> ^ LINK %o^ cc %f -o %o |> hello

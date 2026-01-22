@@ -77,12 +77,14 @@ auto for_each_variant(
     std::string_view command_name
 ) -> int
 {
-    // Discover source root
+    // Discover project layout
     auto layout_opts = LayoutOptions {};
     if (!opts.source_dir.empty()) {
         layout_opts.source_dir = std::filesystem::path { opts.source_dir };
     }
-
+    if (!opts.config_dir.empty()) {
+        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
+    }
     if (!opts.build_dirs.empty()) {
         layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
     }

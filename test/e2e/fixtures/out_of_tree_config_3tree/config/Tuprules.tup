@@ -1,0 +1,7 @@
+# In 3-tree builds:
+# - *.c globs are resolved against source_root automatically
+# - Outputs go to output_root automatically
+# - TUP_SRCDIR provides relative path to source dir if needed for -I flags
+
+!cc = |> ^ CC %o^ cc -c %f -o %o |>
+!link = |> ^ LINK %o^ cc %f -o %o |>
