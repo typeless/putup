@@ -27,7 +27,12 @@ struct DfsState {
 // Forward declaration for mutual recursion
 auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void;
 
-auto visit_neighbors(BuildGraph const& graph, NodeId u, auto const& neighbors, DfsState& state) -> void
+auto visit_neighbors(
+    BuildGraph const& graph,
+    NodeId u,
+    auto const& neighbors,
+    DfsState& state
+) -> void
 {
     for (auto v : neighbors) {
         if (state.has_cycle) {

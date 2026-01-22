@@ -386,7 +386,10 @@ auto Scheduler::build_incremental(
     return impl_->stats;
 }
 
-auto Scheduler::execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>
+auto Scheduler::execute_parallel(
+    std::vector<BuildJob> const& jobs,
+    graph::BuildGraph const& graph
+) -> Result<void>
 {
     // Build immutable env cache before spawning workers (getenv is not thread-safe)
     auto const env_cache = build_env_cache(jobs);

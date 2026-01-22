@@ -9,8 +9,9 @@ struct YCombinator {
     F f;
 
     template<typename... Args>
-    constexpr auto operator()(Args&&... args) const
-        -> decltype(f(*this, std::forward<Args>(args)...))
+    constexpr auto operator()(
+        Args&&... args
+    ) const -> decltype(f(*this, std::forward<Args>(args)...))
     {
         return f(*this, std::forward<Args>(args)...);
     }

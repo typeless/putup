@@ -142,10 +142,17 @@ private:
     std::unique_ptr<Impl> impl_;
 
     /// Execute jobs in parallel
-    auto execute_parallel(std::vector<BuildJob> const& jobs, graph::BuildGraph const& graph) -> Result<void>;
+    auto execute_parallel(
+        std::vector<BuildJob> const& jobs,
+        graph::BuildGraph const& graph
+    ) -> Result<void>;
 
     /// Execute a single job
-    auto execute_job(BuildJob const& job, CommandRunner& runner, std::unordered_map<std::string, std::string> const& env_cache) -> JobResult;
+    auto execute_job(
+        BuildJob const& job,
+        CommandRunner& runner,
+        std::unordered_map<std::string, std::string> const& env_cache
+    ) -> JobResult;
 
     /// Build job list from graph in topological order
     [[nodiscard]]

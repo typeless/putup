@@ -47,8 +47,9 @@ public:
     /// Build a command to extract dependencies from the given command.
     /// Returns nullopt if deps shouldn't be extracted (e.g., already has flags).
     [[nodiscard]]
-    virtual auto build_dep_command(CommandInfo const& cmd) const
-        -> std::optional<std::string> = 0;
+    virtual auto build_dep_command(
+        CommandInfo const& cmd
+    ) const -> std::optional<std::string> = 0;
 
     /// Get the dependency extraction specification
     [[nodiscard]]

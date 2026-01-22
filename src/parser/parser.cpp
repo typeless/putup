@@ -732,7 +732,10 @@ auto Parser::parse_expression() -> Result<Expression>
     });
 }
 
-auto Parser::parse_expression_until(std::function<bool(Token const&)> const& stop, bool stop_at_gap) -> Result<Expression>
+auto Parser::parse_expression_until(
+    std::function<bool(Token const&)> const& stop,
+    bool stop_at_gap
+) -> Result<Expression>
 {
     auto expr = Expression {};
     auto current_text = std::string {};

@@ -56,24 +56,27 @@ struct ProjectLayout {
 
     /// Resolve a source-relative path to absolute
     [[nodiscard]]
-    auto resolve_source(std::filesystem::path const& rel) const
-        -> std::filesystem::path
+    auto resolve_source(
+        std::filesystem::path const& rel
+    ) const -> std::filesystem::path
     {
         return source_root / rel;
     }
 
     /// Resolve a config-relative path to absolute
     [[nodiscard]]
-    auto resolve_config(std::filesystem::path const& rel) const
-        -> std::filesystem::path
+    auto resolve_config(
+        std::filesystem::path const& rel
+    ) const -> std::filesystem::path
     {
         return config_root / rel;
     }
 
     /// Resolve an output-relative path to absolute
     [[nodiscard]]
-    auto resolve_output(std::filesystem::path const& rel) const
-        -> std::filesystem::path
+    auto resolve_output(
+        std::filesystem::path const& rel
+    ) const -> std::filesystem::path
     {
         return output_root / rel;
     }

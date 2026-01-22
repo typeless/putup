@@ -32,7 +32,7 @@ struct CallbackAdapter {
     OutputCallback const* callback;
 };
 
-void platform_callback(std::string_view data, bool is_stderr, void* user_data)
+auto platform_callback(std::string_view data, bool is_stderr, void* user_data) -> void
 {
     auto* adapter = static_cast<CallbackAdapter*>(user_data);
     if (adapter->callback && *adapter->callback) {

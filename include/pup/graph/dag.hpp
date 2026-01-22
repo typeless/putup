@@ -83,8 +83,10 @@ public:
 
     /// Find a node by parent directory and basename (tup-style lookup)
     [[nodiscard]]
-    auto find_by_dir_name(NodeId parent_dir, std::string_view name) const
-        -> std::optional<NodeId>;
+    auto find_by_dir_name(
+        NodeId parent_dir,
+        std::string_view name
+    ) const -> std::optional<NodeId>;
 
     /// Find a node by command string
     [[nodiscard]]

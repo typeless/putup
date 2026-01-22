@@ -16,15 +16,15 @@ auto build_env_strings(
 
     if (inherit_env) {
         // Get current environment block
-        LPWCH env_block = GetEnvironmentStringsW();
+        auto env_block = GetEnvironmentStringsW();
         if (env_block) {
             // Walk through the environment block
-            LPWCH current = env_block;
+            auto current = env_block;
             while (*current) {
                 // Convert from wide to UTF-8
-                int len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
+                auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                 if (len > 0) {
-                    std::string var(len - 1, '\0');
+                    auto var = std::string(len - 1, '\0');
                     WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
                     result.push_back(std::move(var));
                 }
@@ -45,11 +45,11 @@ namespace {
 
 auto create_env_block(std::vector<std::string> const& env) -> std::wstring
 {
-    std::wstring block;
+    auto block = std::wstring {};
     for (auto const& var : env) {
-        int len = MultiByteToWideChar(CP_UTF8, 0, var.c_str(), -1, nullptr, 0);
+        auto len = MultiByteToWideChar(CP_UTF8, 0, var.c_str(), -1, nullptr, 0);
         if (len > 0) {
-            std::wstring wvar(len - 1, L'\0');
+            auto wvar = std::wstring(len - 1, L'\0');
             MultiByteToWideChar(CP_UTF8, 0, var.c_str(), -1, wvar.data(), len);
             block += wvar;
             block += L'\0';
@@ -75,11 +75,14 @@ auto run_process_with_callback(
     auto start_time = std::chrono::steady_clock::now();
 
     // Create pipes for stdout/stderr
-    SECURITY_ATTRIBUTES sa = { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+    auto sa = SECURITY_ATTRIBUTES { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
 
-    HANDLE stdout_read = nullptr, stdout_write = nullptr;
-    HANDLE stderr_read = nullptr, stderr_write = nullptr;
-    HANDLE stdin_read = nullptr, stdin_write = nullptr;
+    auto* stdout_read = static_cast<HANDLE>(nullptr);
+    auto* stdout_write = static_cast<HANDLE>(nullptr);
+    auto* stderr_read = static_cast<HANDLE>(nullptr);
+    auto* stderr_write = static_cast<HANDLE>(nullptr);
+    auto* stdin_read = static_cast<HANDLE>(nullptr);
+    auto* stdin_write = static_cast<HANDLE>(nullptr);
 
     if (opts.capture_stdout) {
         if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
@@ -121,37 +124,37 @@ auto run_process_with_callback(
     }
 
     // Build command line: cmd.exe /c "command"
-    std::wstring cmdline = L"cmd.exe /c \"";
-    int cmd_len = MultiByteToWideChar(CP_UTF8, 0, opts.command.c_str(), -1, nullptr, 0);
+    auto cmdline = std::wstring { L"cmd.exe /c \"" };
+    auto cmd_len = MultiByteToWideChar(CP_UTF8, 0, opts.command.c_str(), -1, nullptr, 0);
     if (cmd_len > 0) {
-        std::wstring wcmd(cmd_len - 1, L'\0');
+        auto wcmd = std::wstring(cmd_len - 1, L'\0');
         MultiByteToWideChar(CP_UTF8, 0, opts.command.c_str(), -1, wcmd.data(), cmd_len);
         cmdline += wcmd;
     }
     cmdline += L'"';
 
     // Setup process startup info
-    STARTUPINFOW si = {};
+    auto si = STARTUPINFOW {};
     si.cb = sizeof(STARTUPINFOW);
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = stdin_read ? stdin_read : GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = stdout_write ? stdout_write : GetStdHandle(STD_OUTPUT_HANDLE);
     si.hStdError = stderr_write ? stderr_write : GetStdHandle(STD_ERROR_HANDLE);
 
-    PROCESS_INFORMATION pi = {};
+    auto pi = PROCESS_INFORMATION {};
 
     // Build environment block
     auto env_strings = build_env_strings(opts.env, opts.inherit_env);
     auto env_block = create_env_block(env_strings);
 
     // Convert working directory
-    std::wstring working_dir;
+    auto working_dir = std::wstring {};
     if (!opts.working_dir.empty()) {
         working_dir = opts.working_dir.wstring();
     }
 
     // Create process
-    BOOL created = CreateProcessW(
+    auto created = CreateProcessW(
         nullptr,
         cmdline.data(),
         nullptr,
@@ -190,7 +193,7 @@ auto run_process_with_callback(
 
     // Write stdin data
     if (opts.stdin_data && stdin_write) {
-        DWORD written;
+        auto written = DWORD {};
         WriteFile(stdin_write, opts.stdin_data->data(), static_cast<DWORD>(opts.stdin_data->size()), &written, nullptr);
         CloseHandle(stdin_write);
         stdin_write = nullptr;
@@ -205,9 +208,9 @@ auto run_process_with_callback(
         : std::nullopt;
 
     char buffer[4096];
-    DWORD bytes_read;
-    bool stdout_open = stdout_read != nullptr;
-    bool stderr_open = stderr_read != nullptr;
+    auto bytes_read = DWORD {};
+    auto stdout_open = stdout_read != nullptr;
+    auto stderr_open = stderr_read != nullptr;
 
     while (stdout_open || stderr_open) {
         if (deadline) {
@@ -219,7 +222,7 @@ auto run_process_with_callback(
         }
 
         if (stdout_open) {
-            DWORD available = 0;
+            auto available = DWORD { 0 };
             if (PeekNamedPipe(stdout_read, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
                 if (ReadFile(stdout_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
                     auto data = std::string_view { buffer, bytes_read };
@@ -230,7 +233,7 @@ auto run_process_with_callback(
                 }
             } else {
                 // Check if process has exited
-                DWORD exit_code;
+                auto exit_code = DWORD {};
                 if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != STILL_ACTIVE) {
                     // Read any remaining data
                     while (ReadFile(stdout_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
@@ -246,7 +249,7 @@ auto run_process_with_callback(
         }
 
         if (stderr_open) {
-            DWORD available = 0;
+            auto available = DWORD { 0 };
             if (PeekNamedPipe(stderr_read, nullptr, 0, nullptr, &available, nullptr) && available > 0) {
                 if (ReadFile(stderr_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
                     auto data = std::string_view { buffer, bytes_read };
@@ -256,7 +259,7 @@ auto run_process_with_callback(
                     result.stderr_output.append(data);
                 }
             } else {
-                DWORD exit_code;
+                auto exit_code = DWORD {};
                 if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != STILL_ACTIVE) {
                     while (ReadFile(stderr_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
                         auto data = std::string_view { buffer, bytes_read };
@@ -289,7 +292,7 @@ auto run_process_with_callback(
     // Wait for process to finish
     WaitForSingleObject(pi.hProcess, INFINITE);
 
-    DWORD exit_code;
+    auto exit_code = DWORD {};
     if (GetExitCodeProcess(pi.hProcess, &exit_code)) {
         result.exit_code = static_cast<int>(exit_code);
     }

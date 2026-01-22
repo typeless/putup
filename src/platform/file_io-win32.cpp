@@ -67,7 +67,7 @@ auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
     }
 
-    LARGE_INTEGER file_size;
+    auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(file.impl_->file_handle, &file_size)) {
         CloseHandle(file.impl_->file_handle);
         file.impl_.reset();
@@ -127,12 +127,12 @@ auto MappedFile::close() -> void
 
 auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
 {
-    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    auto attrs = WIN32_FILE_ATTRIBUTE_DATA {};
     if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
         return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
     }
 
-    ULARGE_INTEGER file_size;
+    auto file_size = ULARGE_INTEGER {};
     file_size.LowPart = attrs.nFileSizeLow;
     file_size.HighPart = attrs.nFileSizeHigh;
 
@@ -165,7 +165,7 @@ auto atomic_write(
     temp_suffix[8] = L'\0';
     temp_path += temp_suffix;
 
-    HANDLE file = CreateFileW(
+    auto file = CreateFileW(
         temp_path.c_str(),
         GENERIC_WRITE,
         0,
@@ -179,9 +179,9 @@ auto atomic_write(
         return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
     }
 
-    DWORD bytes_written;
-    BOOL write_ok = WriteFile(file, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
-    BOOL flush_ok = FlushFileBuffers(file);
+    auto bytes_written = DWORD {};
+    auto write_ok = WriteFile(file, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
+    auto flush_ok = FlushFileBuffers(file);
     CloseHandle(file);
 
     if (!write_ok || bytes_written != data.size() || !flush_ok) {
