@@ -216,8 +216,7 @@ auto find_config_for_dir(
                 return &it->second;
             }
             // Parse failed - warn user and return empty config (blocks inheritance)
-            fprintf(stderr, "Warning: Failed to parse %s: %s\n",
-                config_path.string().c_str(), config_result.error().message.c_str());
+            fprintf(stderr, "Warning: Failed to parse %s: %s\n", config_path.string().c_str(), config_result.error().message.c_str());
             auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
             return &it->second;
         }
@@ -298,9 +297,7 @@ auto parse_directory(
     if (!parse_result) {
         state.parsing.erase(normalized_dir);
         for (auto const& err : parser.errors()) {
-            fprintf(stderr, "%s:%u:%u: error: %s\n",
-                tupfile_path.string().c_str(), err.location.line, err.location.column,
-                err.message.c_str());
+            fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.string().c_str(), err.location.line, err.location.column, err.message.c_str());
         }
         return pup::unexpected<pup::Error>(parse_result.error());
     }
@@ -482,8 +479,7 @@ auto build_context(
             if (ignore_result) {
                 ignore = std::move(*ignore_result);
                 if (ctx_opts.verbose) {
-                    printf("Loaded %zu ignore patterns from %s\n",
-                        ignore.size(), ignore_path.string().c_str());
+                    printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ignore_path.string().c_str());
                 }
                 break; // Use first found
             }
@@ -510,8 +506,7 @@ auto build_context(
         if (config_result) {
             ctx.impl_->config_vars = std::move(*config_result);
             if (ctx_opts.verbose) {
-                printf("Loaded %zu config variables from %s\n",
-                    ctx.impl_->config_vars.names().size(), config_path.string().c_str());
+                printf("Loaded %zu config variables from %s\n", ctx.impl_->config_vars.names().size(), config_path.string().c_str());
             }
         }
     }

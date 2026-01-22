@@ -65,9 +65,7 @@ auto print_stats(
     printf("  Hash computations:  %6zu\n", metrics.hash_computations);
     printf("  Stat calls:         %6zu\n", metrics.stat_calls);
     if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
-        printf("  Index I/O:          %6ldms load, %ldms save\n",
-            static_cast<long>(metrics.index_load_time.count()),
-            static_cast<long>(metrics.index_save_time.count()));
+        printf("  Index I/O:          %6ldms load, %ldms save\n", static_cast<long>(metrics.index_load_time.count()), static_cast<long>(metrics.index_save_time.count()));
     }
 }
 
@@ -652,8 +650,7 @@ auto build_single_variant(
     auto scanner_registry = make_scanner_registry();
     auto* const scanner_ptr = scanner_registry ? &*scanner_registry : nullptr;
     if (scanner_ptr && opts.verbose) {
-        printf("[%.*s] Implicit dependency tracking enabled\n",
-            static_cast<int>(variant_name.size()), variant_name.data());
+        printf("[%.*s] Implicit dependency tracking enabled\n", static_cast<int>(variant_name.size()), variant_name.data());
     }
 
     auto ctx_opts = BuildContextOptions {
@@ -666,9 +663,7 @@ auto build_single_variant(
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -677,16 +672,14 @@ auto build_single_variant(
     // Build requires tup.config (configure creates it)
     auto config_path = ctx.layout().output_root / "tup.config";
     if (!std::filesystem::exists(config_path)) {
-        fprintf(stderr, "[%.*s] Error: No tup.config found. Run 'pup configure' first.\n",
-            static_cast<int>(variant_name.size()), variant_name.data());
+        fprintf(stderr, "[%.*s] Error: No tup.config found. Run 'pup configure' first.\n", static_cast<int>(variant_name.size()), variant_name.data());
         return EXIT_FAILURE;
     }
 
     auto num_commands = std::size_t { ctx.graph().nodes_of_type(pup::NodeType::Command).size() };
 
     if (num_commands == 0) {
-        printf("[%.*s] Nothing to do.\n",
-            static_cast<int>(variant_name.size()), variant_name.data());
+        printf("[%.*s] Nothing to do.\n", static_cast<int>(variant_name.size()), variant_name.data());
         return EXIT_SUCCESS;
     }
 
@@ -696,23 +689,17 @@ auto build_single_variant(
     for (auto const& target : opts.output_targets) {
         auto node_id = ctx.graph().find_by_path(target, pup::BUILD_ROOT_ID);
         if (!node_id) {
-            fprintf(stderr, "[%.*s] Error: %s is not in build graph\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                target.c_str());
+            fprintf(stderr, "[%.*s] Error: %s is not in build graph\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
             return EXIT_FAILURE;
         }
         auto const* node = ctx.graph().get_node(*node_id);
         if (!node || node->type != pup::NodeType::Generated) {
-            fprintf(stderr, "[%.*s] Error: %s is not a build output\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                target.c_str());
+            fprintf(stderr, "[%.*s] Error: %s is not a build output\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
             return EXIT_FAILURE;
         }
         target_node_ids.push_back(*node_id);
         if (opts.verbose) {
-            printf("[%.*s] Output target: %s\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                target.c_str());
+            printf("[%.*s] Output target: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
         }
     }
 
@@ -725,8 +712,7 @@ auto build_single_variant(
         auto const& idx = *old_idx_ptr;
 
         if (opts.verbose && idx.has_merkle_hashes()) {
-            printf("[%.*s] Index has Merkle hashes (v4 format)\n",
-                static_cast<int>(variant_name.size()), variant_name.data());
+            printf("[%.*s] Index has Merkle hashes (v4 format)\n", static_cast<int>(variant_name.size()), variant_name.data());
         }
 
         auto scopes = compute_build_scopes(opts, ctx.layout());
@@ -736,11 +722,9 @@ auto build_single_variant(
         }
         if (opts.verbose) {
             if (scopes.empty()) {
-                printf("[%.*s] Full project build\n",
-                    static_cast<int>(variant_name.size()), variant_name.data());
+                printf("[%.*s] Full project build\n", static_cast<int>(variant_name.size()), variant_name.data());
             } else {
-                printf("[%.*s] Scoped build:",
-                    static_cast<int>(variant_name.size()), variant_name.data());
+                printf("[%.*s] Scoped build:", static_cast<int>(variant_name.size()), variant_name.data());
                 for (auto const& s : scopes) {
                     printf(" %s", s.c_str());
                 }
@@ -786,9 +770,7 @@ auto build_single_variant(
                     }
                 }
                 if (opts.verbose) {
-                    printf("[%.*s]   New command: %s\n",
-                        static_cast<int>(variant_name.size()), variant_name.data(),
-                        node->display.c_str());
+                    printf("[%.*s]   New command: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), node->display.c_str());
                 }
             }
         }
@@ -810,16 +792,12 @@ auto build_single_variant(
                 auto abs_path = ctx.layout().output_root / file->path;
                 if (std::filesystem::exists(abs_path)) {
                     if (opts.dry_run) {
-                        printf("[%.*s] Would remove stale: %s\n",
-                            static_cast<int>(variant_name.size()), variant_name.data(),
-                            file->path.c_str());
+                        printf("[%.*s] Would remove stale: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file->path.c_str());
                     } else {
                         auto ec = std::error_code {};
                         if (std::filesystem::remove(abs_path, ec)) {
                             if (opts.verbose) {
-                                printf("[%.*s]   Removed stale: %s\n",
-                                    static_cast<int>(variant_name.size()), variant_name.data(),
-                                    file->path.c_str());
+                                printf("[%.*s]   Removed stale: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file->path.c_str());
                             }
                         }
                     }
@@ -827,15 +805,12 @@ auto build_single_variant(
             }
 
             if (opts.verbose) {
-                printf("[%.*s]   Removed command: %s\n",
-                    static_cast<int>(variant_name.size()), variant_name.data(),
-                    cmd.display.c_str());
+                printf("[%.*s]   Removed command: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cmd.display.c_str());
             }
         }
 
         if (changed_files.empty()) {
-            printf("[%.*s] Nothing to do (up to date).\n",
-                static_cast<int>(variant_name.size()), variant_name.data());
+            printf("[%.*s] Nothing to do (up to date).\n", static_cast<int>(variant_name.size()), variant_name.data());
             if (opts.stat) {
                 print_stats(idx, num_commands, 0);
             }
@@ -844,9 +819,7 @@ auto build_single_variant(
 
         use_incremental = true;
         if (opts.verbose) {
-            printf("[%.*s] Incremental build: %zu changed files\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                changed_files.size());
+            printf("[%.*s] Incremental build: %zu changed files\n", static_cast<int>(variant_name.size()), variant_name.data(), changed_files.size());
         }
     }
 
@@ -865,21 +838,15 @@ auto build_single_variant(
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
-            printf("[%.*s] %s\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                job.display.c_str());
+            printf("[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
-            fprintf(stderr, "[%.*s] FAILED: %s\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                job.display.c_str());
+            fprintf(stderr, "[%.*s] FAILED: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
             if (!job_result.output.empty()) {
-                fprintf(stderr, "[%.*s] %s\n",
-                    static_cast<int>(variant_name.size()), variant_name.data(),
-                    job_result.output.c_str());
+                fprintf(stderr, "[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job_result.output.c_str());
             }
         } else if (!job_result.discovered_deps.empty()) {
             auto lock = std::lock_guard { deps_mutex };
@@ -898,8 +865,7 @@ auto build_single_variant(
                 }
                 if (ec) {
                     if (opts.verbose) {
-                        fprintf(stderr, "Warning: Skipping dependency '%s': %s\n",
-                            dep_path.c_str(), ec.message().c_str());
+                        fprintf(stderr, "Warning: Skipping dependency '%s': %s\n", dep_path.c_str(), ec.message().c_str());
                     }
                     continue;
                 }
@@ -908,8 +874,7 @@ auto build_single_variant(
                     auto rel = std::filesystem::relative(resolved, ctx.layout().source_root, ec);
                     if (ec) {
                         if (opts.verbose) {
-                            fprintf(stderr, "Warning: Cannot relativize '%s': %s\n",
-                                resolved.string().c_str(), ec.message().c_str());
+                            fprintf(stderr, "Warning: Cannot relativize '%s': %s\n", resolved.string().c_str(), ec.message().c_str());
                         }
                         continue;
                     }
@@ -925,9 +890,7 @@ auto build_single_variant(
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         completed = done;
         if (!opts.verbose) {
-            printf("\r[%.*s] [%zu/%zu] ",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                done, total);
+            printf("\r[%.*s] [%zu/%zu] ", static_cast<int>(variant_name.size()), variant_name.data(), done, total);
             std::fflush(stdout);
         }
     });
@@ -970,21 +933,15 @@ auto build_single_variant(
     }
 
     if (!build_result) {
-        fprintf(stderr, "[%.*s] Build failed: %s\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            build_result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Build failed: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), build_result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
     auto const& stats = *build_result;
     if (stats.failed_jobs > 0) {
-        printf("[%.*s] Build completed: %zu commands (%zu failed) in %ldms\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            stats.completed_jobs, stats.failed_jobs, static_cast<long>(duration.count()));
+        printf("[%.*s] Build completed: %zu commands (%zu failed) in %ldms\n", static_cast<int>(variant_name.size()), variant_name.data(), stats.completed_jobs, stats.failed_jobs, static_cast<long>(duration.count()));
     } else {
-        printf("[%.*s] Build completed: %zu commands in %ldms\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            stats.completed_jobs, static_cast<long>(duration.count()));
+        printf("[%.*s] Build completed: %zu commands in %ldms\n", static_cast<int>(variant_name.size()), variant_name.data(), stats.completed_jobs, static_cast<long>(duration.count()));
     }
 
     auto final_index = std::optional<pup::index::Index> {};
@@ -1001,13 +958,9 @@ auto build_single_variant(
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
-            fprintf(stderr, "[%.*s] Warning: Failed to save index: %s\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                write_result.error().message.c_str());
+            fprintf(stderr, "[%.*s] Warning: Failed to save index: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), write_result.error().message.c_str());
         } else if (opts.verbose) {
-            printf("[%.*s] Saved index: %zu files, %zu commands, %zu edges\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                index.file_count(), index.command_count(), index.edge_count());
+            printf("[%.*s] Saved index: %zu files, %zu commands, %zu edges\n", static_cast<int>(variant_name.size()), variant_name.data(), index.file_count(), index.command_count(), index.edge_count());
         }
         final_index = std::move(index);
     }

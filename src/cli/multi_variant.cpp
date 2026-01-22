@@ -166,9 +166,7 @@ auto for_each_variant(
 
     // Multiple variants - parallel execution
     if (opts.verbose) {
-        printf("%.*s %zu variants in parallel:\n",
-            static_cast<int>(command_name.size()), command_name.data(),
-            variants.size());
+        printf("%.*s %zu variants in parallel:\n", static_cast<int>(command_name.size()), command_name.data(), variants.size());
         for (auto const& v : variants) {
             printf("  %s\n", v.string().c_str());
         }

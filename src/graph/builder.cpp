@@ -1892,7 +1892,7 @@ auto GraphBuilder::get_or_create_file_node(
     auto build_root_name = ctx.graph->get_build_root_name();
     if (type == NodeType::Generated && !build_root_name.empty()) {
         auto lookup_path = strip_build_prefix(path, build_root_name);
-        if (lookup_path != path) {  // Had prefix
+        if (lookup_path != path) { // Had prefix
             if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
                 return *existing;
             }

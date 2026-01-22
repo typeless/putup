@@ -59,8 +59,7 @@ auto parse_args(int argc, char** argv) -> Options
             auto value = int {};
             auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
             if (ec != std::errc {} || ptr != str.data() + str.size() || value <= 0) {
-                fprintf(stderr, "Error: Invalid job count '%.*s'\n",
-                    static_cast<int>(str.size()), str.data());
+                fprintf(stderr, "Error: Invalid job count '%.*s'\n", static_cast<int>(str.size()), str.data());
                 std::exit(EXIT_FAILURE);
             }
             opts.jobs = static_cast<std::size_t>(value);

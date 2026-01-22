@@ -74,9 +74,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -150,9 +148,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -161,18 +157,10 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     if (opts.summary) {
         auto commands = ctx.graph().nodes_of_type(pup::NodeType::Command);
-        printf("[%.*s] Tupfiles: %zu\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            ctx.parsed_dirs().size());
-        printf("[%.*s] Nodes: %zu\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            ctx.graph().node_count());
-        printf("[%.*s] Edges: %zu\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            ctx.graph().edge_count());
-        printf("[%.*s] Commands: %zu\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            commands.size());
+        printf("[%.*s] Tupfiles: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.parsed_dirs().size());
+        printf("[%.*s] Nodes: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.graph().node_count());
+        printf("[%.*s] Edges: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.graph().edge_count());
+        printf("[%.*s] Commands: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), commands.size());
 
         if (index) {
             auto implicit_count = std::size_t { 0 };
@@ -181,20 +169,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                     ++implicit_count;
                 }
             }
-            printf("[%.*s] Implicit edges: %zu\n",
-                static_cast<int>(variant_name.size()), variant_name.data(),
-                implicit_count);
+            printf("[%.*s] Implicit edges: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), implicit_count);
         }
 
         if (opts.verbose) {
-            printf("[%.*s] Commands:\n",
-                static_cast<int>(variant_name.size()), variant_name.data());
+            printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
             for (auto id : commands) {
                 if (auto const* node = ctx.graph().get_node(id)) {
                     auto display = node->display.empty() ? node->command : node->display;
-                    printf("[%.*s]   %s\n",
-                        static_cast<int>(variant_name.size()), variant_name.data(),
-                        display.c_str());
+                    printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
                 }
             }
         }
@@ -229,8 +212,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
         // Output order-only edges (dotted)
         for (auto oo_id : ctx.graph().get_order_only(id)) {
-            printf("  %s -> %s [style=dotted color=\"#0088ff\"];\n",
-                format_node_id(oo_id).c_str(), format_node_id(id).c_str());
+            printf("  %s -> %s [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id).c_str(), format_node_id(id).c_str());
         }
     }
 
@@ -254,13 +236,11 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                     implicit_nodes.insert(from_id);
                     auto const* file = index->find_file_by_id(from_id);
                     auto label = file ? escape_dot_label(file->path) : format_node_id(from_id);
-                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n",
-                        format_node_id(from_id).c_str(), label.c_str());
+                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).c_str(), label.c_str());
                 }
             }
 
-            printf("  %s -> %s [style=dashed color=\"#888888\"];\n",
-                format_node_id(from_id).c_str(), format_node_id(to_id).c_str());
+            printf("  %s -> %s [style=dashed color=\"#888888\"];\n", format_node_id(from_id).c_str(), format_node_id(to_id).c_str());
         }
     }
 
@@ -278,9 +258,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n",
-            static_cast<int>(variant_name.size()), variant_name.data(),
-            result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -385,8 +363,7 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
         return cmd_export_graph(opts, variant_name);
     }
 
-    fprintf(stderr, "Unknown show format: %.*s\n",
-        static_cast<int>(opts.show_format.size()), opts.show_format.data());
+    fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(opts.show_format.size()), opts.show_format.data());
     fprintf(stderr, "Formats: script, compdb, graph\n");
     return EXIT_FAILURE;
 }
