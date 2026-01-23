@@ -9,8 +9,10 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/terminal.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/y_combinator.hpp"
+#include "pup/exec/progress_display.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
@@ -858,20 +860,37 @@ auto build_single_variant(
     auto scheduler = pup::exec::Scheduler { sched_opts };
     auto discovered_deps = std::unordered_map<pup::NodeId, std::vector<std::string>> {};
     auto deps_mutex = std::mutex {};
+    auto progress_mutex = std::mutex {};
+
+    auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose && !opts.dry_run;
+    auto progress = pup::exec::ProgressState { .total = num_commands };
+    auto prev_lines = std::size_t { 0 };
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
             printf("[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
+        } else if (use_tty_progress) {
+            auto lock = std::lock_guard { progress_mutex };
+            auto target = job.outputs.empty() ? job.display : job.outputs.front();
+            progress = pup::exec::job_started(std::move(progress), job.id, target);
+            auto output = pup::exec::render_tty(progress, variant_name);
+            pup::exec::display_progress(output, prev_lines);
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
+            if (use_tty_progress) {
+                auto lock = std::lock_guard { progress_mutex };
+                pup::exec::finalize_progress(prev_lines);
+            }
             fprintf(stderr, "[%.*s] FAILED: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
             if (!job_result.output.empty()) {
-                fprintf(stderr, "[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job_result.output.c_str());
+                fprintf(stderr, "%s\n", job_result.output.c_str());
             }
-        } else if (!job_result.discovered_deps.empty()) {
+        }
+
+        if (!job_result.discovered_deps.empty()) {
             auto lock = std::lock_guard { deps_mutex };
             auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
                 ? job_result.deps_for_command
@@ -907,15 +926,23 @@ auto build_single_variant(
                 }
             }
         }
-    });
 
-    auto completed = std::size_t { 0 };
-    scheduler.on_progress([&](std::size_t done, std::size_t total) {
-        completed = done;
-        if (!opts.verbose) {
-            printf("\r[%.*s] [%zu/%zu] ", static_cast<int>(variant_name.size()), variant_name.data(), done, total);
+        if (use_tty_progress) {
+            auto lock = std::lock_guard { progress_mutex };
+            progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
+            auto output = pup::exec::render_tty(progress, variant_name);
+            pup::exec::display_progress(output, prev_lines);
+        } else if (!opts.verbose && !opts.dry_run) {
+            auto lock = std::lock_guard { progress_mutex };
+            progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
+            printf("\r%s ", pup::exec::render_simple(progress, variant_name).c_str());
             std::fflush(stdout);
         }
+    });
+
+    scheduler.on_progress([&](std::size_t /* done */, std::size_t total) {
+        auto lock = std::lock_guard { progress_mutex };
+        progress.total = total;
     });
 
     // Identify config-generating commands to exclude from regular build
@@ -950,7 +977,9 @@ auto build_single_variant(
     auto end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
 
-    if (!opts.verbose) {
+    if (use_tty_progress) {
+        pup::exec::finalize_progress(prev_lines);
+    } else if (!opts.verbose && !opts.dry_run) {
         printf("\n");
     }
 

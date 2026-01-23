@@ -10,6 +10,7 @@ srcs-y += src/core/metrics.cpp
 srcs-y += src/core/path_utils.cpp
 srcs-y += src/core/string_pool.cpp
 srcs-y += src/core/string_utils.cpp
+srcs-y += src/core/terminal.cpp
 
 # Parser
 srcs-y += src/parser/ast.cpp
@@ -36,6 +37,7 @@ srcs-y += src/index/reader.cpp
 srcs-y += src/index/writer.cpp
 
 # Exec
+srcs-y += src/exec/progress_display.cpp
 srcs-y += src/exec/runner.cpp
 srcs-y += src/exec/scheduler.cpp
 
