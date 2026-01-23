@@ -45,6 +45,24 @@ The default command. Executes the build by parsing Tupfiles, computing the depen
 - `-A` - Build all files (ignore cwd scoping)
 - `--stat` - Print build statistics after completion
 
+**Progress Display:**
+
+During builds, putup shows ninja-style progress output on TTY terminals:
+
+```
+[ 75% 45/60] src/parser.o
+    1:23 src/graph/builder.o
+    0:45 src/exec/runner.o
+    0:12 src/cli/cmd_build.o
+```
+
+- Progress line shows percentage, completed/total, and current target
+- Running jobs listed below, sorted by elapsed time (longest first)
+- Time format: `M:SS` (minutes:seconds)
+- Display updates in-place using terminal control sequences
+
+For non-TTY output (pipes, files), a simpler `[done/total]` format is used.
+
 **Examples:**
 ```bash
 putup                    # Build from current directory (auto-detects variants)
@@ -1705,7 +1723,9 @@ Output includes:
 - Each Tupfile as it's parsed
 - Variables being set
 - Change detection decisions
-- Commands being executed
+- Full commands as they execute (one per line)
+
+Note: Verbose mode disables the ninja-style progress display, showing each command on its own line instead of updating in-place.
 
 **Dry-run (`-n`)**
 
