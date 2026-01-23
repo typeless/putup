@@ -35,7 +35,7 @@ auto generate_linear_graph(std::size_t n) -> BuildGraph
     for (auto i = std::size_t { 0 }; i < n; ++i) {
         char buf[64];
         snprintf(buf, sizeof(buf), "file_%zu.c", i);
-        (void)graph.add_node(Node { .type = NodeType::File,
+        (void)graph.add_file_node(FileNode { .type = NodeType::File,
             .name = std::string { buf } });
     }
     return graph;
@@ -46,12 +46,12 @@ auto generate_order_only_graph(
 ) -> std::pair<BuildGraph, pup::NodeId>
 {
     auto graph = BuildGraph {};
-    auto header = graph.add_node(Node { .type = NodeType::File, .name = "common.h" });
+    auto header = graph.add_file_node(FileNode { .type = NodeType::File, .name = "common.h" });
 
     for (auto i = std::size_t { 0 }; i < n_commands; ++i) {
         char buf[64];
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
-        auto cmd = graph.add_node(Node { .type = NodeType::Command,
+        auto cmd = graph.add_command_node(CommandNode {
             .command = std::string { buf } });
         (void)graph.add_order_only_edge(*header, *cmd);
     }
@@ -63,7 +63,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
     auto graph = BuildGraph {};
 
     // Create a shared order-only dependency
-    auto shared_result = graph.add_node(Node { .type = NodeType::File, .name = "shared.h" });
+    auto shared_result = graph.add_file_node(FileNode { .name = "shared.h" });
     auto shared = *shared_result;
 
     // Create 'width' independent chains of 'depth' nodes
@@ -72,7 +72,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
         for (auto d = std::size_t { 0 }; d < depth; ++d) {
             char buf[64];
             snprintf(buf, sizeof(buf), "cmd_%zu_%zu", w, d);
-            auto node_result = graph.add_node(Node { .type = NodeType::Command,
+            auto node_result = graph.add_command_node(CommandNode {
                 .command = std::string { buf } });
             auto node = *node_result;
 
@@ -105,7 +105,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = graph.get_node(id);
+                auto const* node = graph.get_file_node(id);
                 if (node)
                     sum += graph.get_full_path(node->id).size();
             }
@@ -120,7 +120,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = graph.get_node(id);
+                auto const* node = graph.get_file_node(id);
                 if (node)
                     sum += graph.get_full_path(node->id).size();
             }
@@ -135,7 +135,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = graph.get_node(id);
+                auto const* node = graph.get_file_node(id);
                 if (node)
                     sum += graph.get_full_path(node->id).size();
             }

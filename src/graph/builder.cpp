@@ -285,7 +285,7 @@ auto walk_path_to_directory(
             // Walk to parent - node's parent_dir points to parent (0 = root)
             // Only go up if we're not already at root
             if (current_id != NodeId { 0 }) {
-                auto* node = graph.get_node(current_id);
+                auto* node = graph.get_file_node(current_id);
                 if (node) {
                     current_id = node->parent_dir;
                 }
@@ -297,12 +297,12 @@ auto walk_path_to_directory(
                 current_id = *child;
             } else {
                 // Create new directory node
-                auto node = Node {
+                auto node = FileNode {
                     .type = NodeType::Directory,
                     .name = comp_str,
                     .parent_dir = current_id,
                 };
-                auto result = graph.add_node(std::move(node));
+                auto result = graph.add_file_node(std::move(node));
                 if (result) {
                     current_id = *result;
                 }
@@ -345,7 +345,7 @@ auto walk_to_file_node(
     if (auto existing = graph.find_by_dir_name(target_dir_id, basename)) {
         // Handle type upgrade (Ghost → Generated, File → Generated)
         if (type == NodeType::Generated) {
-            auto* node = graph.get_node(*existing);
+            auto* node = graph.get_file_node(*existing);
             if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
                 node->type = NodeType::Generated;
             }
@@ -354,12 +354,12 @@ auto walk_to_file_node(
     }
 
     // Create new node
-    auto node = Node {
+    auto node = FileNode {
         .type = type,
         .name = basename,
         .parent_dir = target_dir_id,
     };
-    return graph.add_node(std::move(node));
+    return graph.add_file_node(std::move(node));
 }
 
 /// RAII scope guard for cleanup on scope exit
@@ -831,20 +831,20 @@ auto process_import(
         auto it = state.imported_env_var_nodes.find(imp.var_name);
         if (it != state.imported_env_var_nodes.end()) {
             // Update existing node in-place if value changed
-            auto* existing = ctx.graph->get_node(it->second);
+            auto* existing = ctx.graph->get_file_node(it->second);
             if (existing && existing->name != node_name) {
                 existing->name = node_name;
                 existing->content_hash = content_hash;
             }
         } else {
             // Create new Variable node
-            auto node = Node {
+            auto node = FileNode {
                 .type = NodeType::Variable,
                 .name = node_name,
                 .parent_dir = state.env_var_dir_id,
                 .content_hash = content_hash,
             };
-            auto result = ctx.graph->add_node(std::move(node));
+            auto result = ctx.graph->add_file_node(std::move(node));
             if (result) {
                 state.imported_env_var_nodes[imp.var_name] = *result;
             }
@@ -1209,7 +1209,7 @@ auto expand_rule(
         (void)ctx.graph->add_edge(*gen_cmd_id, *cmd_id);
 
         // Store generated rule info on the node for scheduler to handle
-        if (auto* node = ctx.graph->get_node(*gen_cmd_id)) {
+        if (auto* node = ctx.graph->get_command_node(*gen_cmd_id)) {
             node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
             node->output_action = gen_rule.action;
             node->parent_command = gen_rule.parent_command;
@@ -1241,11 +1241,11 @@ auto expand_rule(
         }
 
         // Check for duplicate output - another command already produces this file
-        auto* output_node = ctx.graph->get_node(*output_id);
-        if (output_node && !output_node->inputs.empty()) {
-            for (auto input_id : output_node->inputs) {
+        auto output_inputs = ctx.graph->get_inputs(*output_id);
+        if (!output_inputs.empty()) {
+            for (auto input_id : output_inputs) {
                 if (is_command_id(input_id)) {
-                    auto* existing_cmd = ctx.graph->get_node(input_id);
+                    auto* existing_cmd = ctx.graph->get_command_node(input_id);
                     auto existing_cmd_str = existing_cmd ? existing_cmd->command : "<unknown>";
                     auto output_path = ctx.graph->get_full_path(*output_id);
                     char err_buf[1024];
@@ -1662,13 +1662,13 @@ auto get_or_create_directory_node(
     }
 
     // Create new directory node
-    auto node = Node {
+    auto node = FileNode {
         .type = NodeType::Directory,
         .name = basename,
         .parent_dir = parent_id,
     };
 
-    return ctx.graph->add_node(std::move(node));
+    return ctx.graph->add_file_node(std::move(node));
 }
 
 auto get_or_create_file_node(
@@ -1742,13 +1742,13 @@ auto get_or_create_file_node(
     }
 
     // Create new node
-    auto node = Node {
+    auto node = FileNode {
         .type = type,
         .name = basename,
         .parent_dir = parent_id,
     };
 
-    return ctx.graph->add_node(std::move(node));
+    return ctx.graph->add_file_node(std::move(node));
 }
 
 auto resolve_input_node(
@@ -1829,13 +1829,13 @@ auto get_or_create_group_node(
     }
 
     // Create new group node
-    auto node = Node {
+    auto node = FileNode {
         .type = NodeType::Group,
         .name = group_basename,
         .parent_dir = parent_id,
     };
 
-    auto result = ctx.graph->add_node(std::move(node));
+    auto result = ctx.graph->add_file_node(std::move(node));
     if (result) {
         state.group_nodes[key] = *result;
     }
@@ -1849,15 +1849,14 @@ auto create_command_node(
     std::string const& display
 ) -> Result<NodeId>
 {
-    auto node = Node {
-        .type = NodeType::Command,
+    auto node = CommandNode {
         .command = command,
         .display = display,
         .source_dir = ctx.current_dir.string(),
         .exported_vars = ctx.exported_vars,
     };
 
-    auto cmd_id_result = ctx.graph->add_node(std::move(node));
+    auto cmd_id_result = ctx.graph->add_command_node(std::move(node));
     if (!cmd_id_result) {
         return cmd_id_result;
     }
@@ -2000,14 +1999,14 @@ auto add_tupfile(
             }
 
             auto value = eval.config_vars->get(var_name);
-            auto node = Node {
+            auto node = FileNode {
                 .type = NodeType::Variable,
                 .name = std::string { var_name },
                 .parent_dir = config_dir_id,
                 .content_hash = sha256(value),
             };
 
-            auto var_id_result = graph.add_node(std::move(node));
+            auto var_id_result = graph.add_file_node(std::move(node));
             if (var_id_result) {
                 state.config_var_nodes[std::string { var_name }] = *var_id_result;
             }
@@ -2022,12 +2021,12 @@ auto add_tupfile(
             state.env_var_dir_id = *existing;
         } else {
             // Create new $ directory under root
-            auto env_dir_node = Node {
+            auto env_dir_node = FileNode {
                 .type = NodeType::Directory,
                 .name = "$",
                 .parent_dir = NodeId { 0 },
             };
-            auto result = graph.add_node(std::move(env_dir_node));
+            auto result = graph.add_file_node(std::move(env_dir_node));
             if (result) {
                 state.env_var_dir_id = *result;
             }
@@ -2126,7 +2125,7 @@ auto resolve_deferred_order_only_edges(
     // With groups as first-class nodes, we create a single edge: group → command
     for (auto const& edge : state.deferred_edges) {
         // Verify group node exists and has members
-        auto const* group_node = graph.get_node(edge.group_id);
+        auto const* group_node = graph.get_file_node(edge.group_id);
         if (!group_node || group_node->type != NodeType::Group) {
             continue;
         }
@@ -2146,7 +2145,7 @@ auto resolve_deferred_order_only_edges(
                 auto pattern = std::string { pattern_buf };
 
                 // Get command node and check if pattern exists
-                auto* cmd_node = graph.get_node(edge.command_id);
+                auto* cmd_node = graph.get_command_node(edge.command_id);
                 if (cmd_node && cmd_node->command.find(pattern) != std::string::npos) {
                     // Construct path transform context from command's source_dir
                     auto current_dir = fs::path { cmd_node->source_dir };

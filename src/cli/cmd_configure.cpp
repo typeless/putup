@@ -62,7 +62,7 @@ auto configure_single_variant(
     auto scopes = compute_build_scopes(opts, ctx.layout());
     auto config_commands = std::set<pup::NodeId> {};
     for (auto const& cfg : configs) {
-        auto const* node = ctx.graph().get_node(cfg.cmd_id);
+        auto const* node = ctx.graph().get_command_node(cfg.cmd_id);
         if (!scopes.empty() && node && !pup::is_path_in_any_scope(node->source_dir, scopes)) {
             continue;
         }

@@ -17,7 +17,7 @@ auto make_graph() -> Graph
     // The build root's filesystem location is determined at build time
     // (source_root for in-tree, output_root for variant builds).
     graph.files.resize(2); // Index 0 unused, index 1 = build root
-    graph.files[1] = Node {
+    graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = {}, // Name set by set_build_root_name()
@@ -47,25 +47,8 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
     return graph.files[idx].id == id;
 }
 
-auto add_node(Graph& graph, Node node) -> Result<NodeId>
+auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 {
-    if (node.type == NodeType::Command) {
-        auto const id = graph.next_command_id++;
-        node.id = id;
-
-        if (!node.command.empty()) {
-            graph.command_str_index[node.command] = id;
-        }
-
-        auto const idx = command_index(id);
-        if (idx >= graph.commands.size()) {
-            graph.commands.resize(idx + 1);
-        }
-        graph.commands[idx] = std::move(node);
-
-        return id;
-    }
-
     auto const id = graph.next_file_id++;
     node.id = id;
 
@@ -82,6 +65,24 @@ auto add_node(Graph& graph, Node node) -> Result<NodeId>
     return id;
 }
 
+auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
+{
+    auto const id = graph.next_command_id++;
+    node.id = id;
+
+    if (!node.command.empty()) {
+        graph.command_str_index[node.command] = id;
+    }
+
+    auto const idx = command_index(id);
+    if (idx >= graph.commands.size()) {
+        graph.commands.resize(idx + 1);
+    }
+    graph.commands[idx] = std::move(node);
+
+    return id;
+}
+
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<void>
 {
     if (!validate_node_id(graph, from)) {
@@ -91,27 +92,16 @@ auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<voi
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
+    auto const edge_idx = graph.edges.size();
     graph.edges.push_back(Edge {
         .from = from,
         .to = to,
         .type = type,
     });
 
-    // Route to appropriate output vector based on edge type
-    // Sticky edges go to sticky_outputs, all others to outputs
-    auto& target_vector = (type == LinkType::Sticky)
-        ? (is_command_id(from) ? graph.commands[command_index(from)].sticky_outputs
-                               : graph.files[file_index(from)].sticky_outputs)
-        : (is_command_id(from) ? graph.commands[command_index(from)].outputs
-                               : graph.files[file_index(from)].outputs);
-    target_vector.push_back(to);
-
-    // Inputs receive all edge types
-    if (is_command_id(to)) {
-        graph.commands[command_index(to)].inputs.push_back(from);
-    } else {
-        graph.files[file_index(to)].inputs.push_back(from);
-    }
+    // Update edge indices
+    graph.edges_from_index[from].push_back(edge_idx);
+    graph.edges_to_index[to].push_back(edge_idx);
 
     return {};
 }
@@ -125,42 +115,48 @@ auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
-    // Direct storage access (ID validated above)
-    if (is_command_id(to)) {
-        graph.commands[command_index(to)].order_only.push_back(from);
-    } else {
-        graph.files[file_index(to)].order_only.push_back(from);
-    }
-
+    // Order-only edges: 'to' depends on 'from' for ordering (not content)
+    graph.order_only_to_index[to].push_back(from);
     graph.order_only_dependents[from].push_back(to);
 
     return {};
 }
 
-auto get_node(Graph& graph, NodeId id) -> Node*
+auto get_file_node(Graph& graph, NodeId id) -> FileNode*
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
-    return const_cast<Node*>(get_node(std::as_const(graph), id));
+    return const_cast<FileNode*>(get_file_node(std::as_const(graph), id));
 }
 
-auto get_node(Graph const& graph, NodeId id) -> Node const*
+auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*
 {
-    if (id == 0) {
+    if (id == 0 || is_command_id(id)) {
         return nullptr;
-    }
-    if (is_command_id(id)) {
-        auto const idx = command_index(id);
-        if (idx == 0 || idx >= graph.commands.size()) {
-            return nullptr;
-        }
-        auto const& node = graph.commands[idx];
-        return node.id == id ? &node : nullptr;
     }
     auto const idx = file_index(id);
     if (idx >= graph.files.size()) {
         return nullptr;
     }
     auto const& node = graph.files[idx];
+    return node.id == id ? &node : nullptr;
+}
+
+auto get_command_node(Graph& graph, NodeId id) -> CommandNode*
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
+    return const_cast<CommandNode*>(get_command_node(std::as_const(graph), id));
+}
+
+auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
+{
+    if (!is_command_id(id)) {
+        return nullptr;
+    }
+    auto const idx = command_index(id);
+    if (idx == 0 || idx >= graph.commands.size()) {
+        return nullptr;
+    }
+    auto const& node = graph.commands[idx];
     return node.id == id ? &node : nullptr;
 }
 
@@ -243,38 +239,60 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
 
 auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(graph, id);
-    if (!node) {
+    auto it = graph.edges_to_index.find(id);
+    if (it == graph.edges_to_index.end()) {
         return {};
     }
-    return node->inputs;
+
+    auto result = std::vector<NodeId> {};
+    result.reserve(it->second.size());
+    for (auto idx : it->second) {
+        result.push_back(graph.edges[idx].from);
+    }
+    return result;
 }
 
 auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(graph, id);
-    if (!node) {
+    auto it = graph.edges_from_index.find(id);
+    if (it == graph.edges_from_index.end()) {
         return {};
     }
-    return node->outputs;
+
+    auto result = std::vector<NodeId> {};
+    for (auto idx : it->second) {
+        auto const& edge = graph.edges[idx];
+        if (edge.type != LinkType::Sticky) {
+            result.push_back(edge.to);
+        }
+    }
+    return result;
 }
 
 auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(graph, id);
-    if (!node) {
+    auto it = graph.edges_from_index.find(id);
+    if (it == graph.edges_from_index.end()) {
         return {};
     }
-    return node->sticky_outputs;
+
+    auto result = std::vector<NodeId> {};
+    for (auto idx : it->second) {
+        auto const& edge = graph.edges[idx];
+        if (edge.type == LinkType::Sticky) {
+            result.push_back(edge.to);
+        }
+    }
+    return result;
 }
 
 auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(graph, id);
-    if (!node) {
-        return {};
+    auto it = graph.order_only_to_index.find(id);
+    if (it != graph.order_only_to_index.end()) {
+        return it->second;
     }
-    return node->order_only;
+    return {};
 }
 
 auto get_order_only_dependents(Graph const& graph, NodeId id) -> std::vector<NodeId>
@@ -311,14 +329,17 @@ auto clear(Graph& graph) -> void
     graph.files.clear();
     graph.commands.clear();
     graph.edges.clear();
+    graph.edges_to_index.clear();
+    graph.edges_from_index.clear();
+    graph.order_only_to_index.clear();
+    graph.order_only_dependents.clear();
     graph.dir_name_index.clear();
     graph.command_str_index.clear();
-    graph.order_only_dependents.clear();
     graph.path_cache.clear();
 
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
-    graph.files[1] = Node {
+    graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = std::move(build_root_name),
@@ -351,17 +372,21 @@ auto all_nodes(Graph const& graph) -> std::vector<NodeId>
 
 auto root_nodes(Graph const& graph) -> std::vector<NodeId>
 {
+    auto has_inputs = [&](NodeId id) {
+        return graph.edges_to_index.contains(id) || graph.order_only_to_index.contains(id);
+    };
+
     auto result = std::vector<NodeId> {};
     for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
         auto const& node = graph.files[i];
-        if (node.id == i && node.inputs.empty() && node.order_only.empty()) {
+        if (node.id == i && !has_inputs(i)) {
             result.push_back(i);
         }
     }
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const id = make_command_id(i);
         auto const& node = graph.commands[i];
-        if (node.id == id && node.inputs.empty() && node.order_only.empty()) {
+        if (node.id == id && !has_inputs(id)) {
             result.push_back(id);
         }
     }
@@ -370,17 +395,31 @@ auto root_nodes(Graph const& graph) -> std::vector<NodeId>
 
 auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
 {
+    auto has_outputs = [&](NodeId id) {
+        auto it = graph.edges_from_index.find(id);
+        if (it == graph.edges_from_index.end()) {
+            return false;
+        }
+        // Check for non-sticky outputs
+        for (auto idx : it->second) {
+            if (graph.edges[idx].type != LinkType::Sticky) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     auto result = std::vector<NodeId> {};
     for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
         auto const& node = graph.files[i];
-        if (node.id == i && node.outputs.empty()) {
+        if (node.id == i && !has_outputs(i)) {
             result.push_back(i);
         }
     }
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const id = make_command_id(i);
         auto const& node = graph.commands[i];
-        if (node.id == id && node.outputs.empty()) {
+        if (node.id == id && !has_outputs(id)) {
             result.push_back(id);
         }
     }
@@ -389,11 +428,11 @@ auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
 
 auto get_full_path(Graph const& graph, NodeId id) -> std::string
 {
-    if (id == 0) {
+    if (id == 0 || is_command_id(id)) {
         return "";
     }
 
-    auto const* node = get_node(graph, id);
+    auto const* node = get_file_node(graph, id);
     if (!node) {
         return "";
     }
@@ -454,16 +493,16 @@ auto get_build_root_name(Graph const& graph) -> std::string_view
 
 auto is_under_build_root(Graph const& graph, NodeId id) -> bool
 {
-    if (id == 0 || id == BUILD_ROOT_ID) {
+    if (id == 0 || id == BUILD_ROOT_ID || is_command_id(id)) {
         return id == BUILD_ROOT_ID;
     }
 
-    auto const* node = get_node(graph, id);
+    auto const* node = get_file_node(graph, id);
     while (node && node->parent_dir != SOURCE_ROOT_ID) {
         if (node->parent_dir == BUILD_ROOT_ID) {
             return true;
         }
-        node = get_node(graph, node->parent_dir);
+        node = get_file_node(graph, node->parent_dir);
     }
     return false;
 }

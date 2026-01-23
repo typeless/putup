@@ -96,15 +96,13 @@ auto collect_upstream_files(
             return;
         }
 
-        auto const* node = graph.get_node(id);
-        if (!node) {
-            return;
-        }
-
-        if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
-            auto path = graph.get_full_path(id);
-            if (!path.empty()) {
-                upstream.insert(path);
+        if (!pup::is_command_id(id)) {
+            auto const* node = graph.get_file_node(id);
+            if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
+                auto path = graph.get_full_path(id);
+                if (!path.empty()) {
+                    upstream.insert(path);
+                }
             }
         }
 
@@ -121,8 +119,11 @@ auto collect_upstream_files(
 
     // Find commands in scope and collect their upstream deps
     for (auto id : graph.all_nodes()) {
-        auto const* node = graph.get_node(id);
-        if (!node || node->type != pup::NodeType::Command) {
+        if (!pup::is_command_id(id)) {
+            continue;
+        }
+        auto const* node = graph.get_command_node(id);
+        if (!node) {
             continue;
         }
 
@@ -309,12 +310,16 @@ auto build_index(
 
     auto max_file_id = pup::NodeId { 0 };
     for (auto id : graph.all_nodes()) {
-        auto const* node = graph.get_node(id);
-        if (!node) {
-            continue;
-        }
         if (!pup::is_command_id(id) && id > max_file_id) {
             max_file_id = id;
+        }
+
+        if (pup::is_command_id(id)) {
+            continue;
+        }
+        auto const* node = graph.get_file_node(id);
+        if (!node) {
+            continue;
         }
 
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
@@ -433,16 +438,27 @@ auto build_index(
                 .content_hash = {},
             };
             index.add_file(std::move(entry));
-        } else if (node->type == pup::NodeType::Command) {
-            auto entry = pup::index::CommandEntry {
-                .id = id,
-                .dir_id = node->parent_dir,
-                .command = node->command,
-                .display = node->display,
-                .env = {},
-            };
-            index.add_command(std::move(entry));
         }
+    }
+
+    // Add command nodes in a separate pass
+    for (auto id : graph.all_nodes()) {
+        if (!pup::is_command_id(id)) {
+            continue;
+        }
+        auto const* cmd = graph.get_command_node(id);
+        if (!cmd) {
+            continue;
+        }
+
+        auto entry = pup::index::CommandEntry {
+            .id = id,
+            .dir_id = 0, // Commands don't have a parent_dir in the FileNode sense
+            .command = cmd->command,
+            .display = cmd->display,
+            .env = {},
+        };
+        index.add_command(std::move(entry));
     }
 
     for (auto const& edge : graph.edges()) {
@@ -692,7 +708,7 @@ auto build_single_variant(
             fprintf(stderr, "[%.*s] Error: %s is not in build graph\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
             return EXIT_FAILURE;
         }
-        auto const* node = ctx.graph().get_node(*node_id);
+        auto const* node = ctx.graph().get_file_node(*node_id);
         if (!node || node->type != pup::NodeType::Generated) {
             fprintf(stderr, "[%.*s] Error: %s is not a build output\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
             return EXIT_FAILURE;
@@ -757,8 +773,11 @@ auto build_single_variant(
 
         // Detect new commands (in fresh graph but not in old index)
         for (auto id : ctx.graph().all_nodes()) {
-            auto const* node = ctx.graph().get_node(id);
-            if (!node || node->type != pup::NodeType::Command) {
+            if (!pup::is_command_id(id)) {
+                continue;
+            }
+            auto const* node = ctx.graph().get_command_node(id);
+            if (!node) {
                 continue;
             }
 
@@ -916,8 +935,7 @@ auto build_single_variant(
         // Exclude config-generating commands from full build
         auto non_config_cmds = std::set<NodeId> {};
         for (auto id : ctx.graph().all_nodes()) {
-            auto const* node = ctx.graph().get_node(id);
-            if (node && node->type == NodeType::Command && !config_cmd_ids.contains(id)) {
+            if (is_command_id(id) && !config_cmd_ids.contains(id)) {
                 non_config_cmds.insert(id);
             }
         }

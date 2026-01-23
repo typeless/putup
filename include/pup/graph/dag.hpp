@@ -27,24 +27,26 @@ struct Edge {
     NodeId group_cmd_id = 0; ///< For group edges, the command that produced the group
 };
 
-/// Node in the build graph
-struct Node {
+/// File node - represents files, directories, groups, variables, ghosts
+struct FileNode {
     NodeId id = 0;
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string name = {};       ///< Basename only (tup-style identification)
-    std::string command = {};    ///< For commands: the command string
-    std::string display = {};    ///< For commands: display text (from ^ ^ markers)
-    std::string source_dir = {}; ///< For commands: Tupfile directory (relative to root)
-
+    std::string name = {};         ///< Basename only (tup-style identification)
     NodeId parent_dir = 0;         ///< Parent directory node (used with name for lookup)
-    Hash256 content_hash = { {} }; ///< Content hash for files (double braces force zero-init)
+    Hash256 content_hash = { {} }; ///< Content hash (double braces force zero-init)
+};
 
-    std::vector<NodeId> inputs = {};          ///< Input edges (all types)
-    std::vector<NodeId> outputs = {};         ///< Output edges (non-sticky only)
-    std::vector<NodeId> sticky_outputs = {};  ///< Sticky edges (Tupfile/config deps)
-    std::vector<NodeId> order_only = {};      ///< Order-only dependencies
+/// Command node - represents build commands
+/// Note: Type is determined by is_command_id(), not a stored field.
+struct CommandNode {
+    NodeId id = 0;
+
+    std::string command = {};    ///< The command string
+    std::string display = {};    ///< Display text (from ^ ^ markers)
+    std::string source_dir = {}; ///< Tupfile directory (relative to root)
+
     std::set<std::string> exported_vars = {}; ///< Env vars to export to command
 
     // For generated rules (auto-generated from pattern matching)
@@ -88,13 +90,21 @@ struct StringHash {
 
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
-    std::deque<Node> files;    ///< Files, directories, groups (non-command nodes)
-    std::deque<Node> commands; ///< Command nodes only
-    std::vector<Edge> edges;
+    std::deque<FileNode> files;       ///< Files, directories, groups (non-command nodes)
+    std::deque<CommandNode> commands; ///< Command nodes only
+    std::vector<Edge> edges;          ///< Central edge storage (single source of truth)
 
+    // Edge indices: map NodeId -> indices into edges vector
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index;   ///< Edges pointing TO this node
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index; ///< Edges pointing FROM this node
+
+    // Order-only edges stored separately (not in edges vector)
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_to_index;   ///< Order-only deps OF this node
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents; ///< Nodes depending on this
+
+    // Node lookup indices
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
-    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
     mutable std::unordered_map<NodeId, std::string> path_cache;
 
     NodeId next_file_id = 2;                     ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
@@ -109,9 +119,13 @@ auto make_graph() -> Graph;
 [[nodiscard]]
 auto validate_node_id(Graph const& graph, NodeId id) -> bool;
 
-/// Add a node to the graph
+/// Add a file node to the graph
 [[nodiscard]]
-auto add_node(Graph& graph, Node node) -> Result<NodeId>;
+auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>;
+
+/// Add a command node to the graph
+[[nodiscard]]
+auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 
 /// Add an edge between nodes
 [[nodiscard]]
@@ -121,13 +135,21 @@ auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::No
 [[nodiscard]]
 auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>;
 
-/// Get a node by ID (mutable)
+/// Get a file node by ID (mutable) - returns nullptr for command IDs
 [[nodiscard]]
-auto get_node(Graph& graph, NodeId id) -> Node*;
+auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
 
-/// Get a node by ID (const)
+/// Get a file node by ID (const) - returns nullptr for command IDs
 [[nodiscard]]
-auto get_node(Graph const& graph, NodeId id) -> Node const*;
+auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
+
+/// Get a command node by ID (mutable) - returns nullptr for file IDs
+[[nodiscard]]
+auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
+
+/// Get a command node by ID (const) - returns nullptr for file IDs
+[[nodiscard]]
+auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
 
 /// Find a node by parent directory and basename (tup-style lookup)
 [[nodiscard]]
@@ -244,9 +266,15 @@ public:
     auto operator=(BuildGraph&&) noexcept -> BuildGraph&;
 
     [[nodiscard]]
-    auto add_node(Node node) -> Result<NodeId>
+    auto add_file_node(FileNode node) -> Result<NodeId>
     {
-        return graph::add_node(graph_, std::move(node));
+        return graph::add_file_node(graph_, std::move(node));
+    }
+
+    [[nodiscard]]
+    auto add_command_node(CommandNode node) -> Result<NodeId>
+    {
+        return graph::add_command_node(graph_, std::move(node));
     }
 
     [[nodiscard]]
@@ -262,15 +290,27 @@ public:
     }
 
     [[nodiscard]]
-    auto get_node(NodeId id) -> Node*
+    auto get_file_node(NodeId id) -> FileNode*
     {
-        return graph::get_node(graph_, id);
+        return graph::get_file_node(graph_, id);
     }
 
     [[nodiscard]]
-    auto get_node(NodeId id) const -> Node const*
+    auto get_file_node(NodeId id) const -> FileNode const*
     {
-        return graph::get_node(graph_, id);
+        return graph::get_file_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto get_command_node(NodeId id) -> CommandNode*
+    {
+        return graph::get_command_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto get_command_node(NodeId id) const -> CommandNode const*
+    {
+        return graph::get_command_node(graph_, id);
     }
 
     [[nodiscard]]

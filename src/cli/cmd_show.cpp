@@ -83,7 +83,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto output_dirs = std::set<std::string> {};
     for (auto id : ctx.graph().all_nodes()) {
-        auto const* node = ctx.graph().get_node(id);
+        auto const* node = ctx.graph().get_file_node(id);
         if (!node) {
             continue;
         }
@@ -98,8 +98,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
         auto inputs = ctx.graph().get_inputs(id);
         for (auto input_id : inputs) {
-            auto const* input = ctx.graph().get_node(input_id);
-            if (input && input->type == pup::NodeType::Command) {
+            if (is_command_id(input_id)) {
                 auto path = std::filesystem::path { node_path };
                 if (path.has_parent_path()) {
                     auto parent = path.parent_path().string();
@@ -121,8 +120,11 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     }
 
     for (auto id : topo.order) {
-        auto const* node = ctx.graph().get_node(id);
-        if (!node || node->type != pup::NodeType::Command) {
+        if (!is_command_id(id)) {
+            continue;
+        }
+        auto const* node = ctx.graph().get_command_node(id);
+        if (!node) {
             continue;
         }
 
@@ -170,7 +172,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         if (opts.verbose) {
             printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
             for (auto id : commands) {
-                if (auto const* node = ctx.graph().get_node(id)) {
+                if (auto const* node = ctx.graph().get_command_node(id)) {
                     auto display = node->display.empty() ? node->command : node->display;
                     printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
                 }
@@ -184,16 +186,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     auto declared_nodes = std::unordered_set<pup::NodeId> {};
     for (auto id : ctx.graph().all_nodes()) {
-        auto const* node = ctx.graph().get_node(id);
-        if (!node) {
-            continue;
-        }
-
         declared_nodes.insert(id);
 
         auto get_label = [&]() -> std::string {
-            if (node->type == pup::NodeType::Command) {
-                return node->display.empty() ? node->command : node->display;
+            if (is_command_id(id)) {
+                auto const* cmd = ctx.graph().get_command_node(id);
+                if (!cmd) {
+                    return "";
+                }
+                return cmd->display.empty() ? cmd->command : cmd->display;
             }
             return ctx.graph().get_full_path(id);
         };
@@ -264,7 +265,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto first = true;
 
     for (auto id : commands) {
-        auto const* node = ctx.graph().get_node(id);
+        auto const* node = ctx.graph().get_command_node(id);
         if (!node) {
             continue;
         }

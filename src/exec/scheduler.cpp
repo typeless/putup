@@ -91,13 +91,8 @@ auto build_dependency_map(
 
         // Check regular inputs - traverse graph edges
         for (auto input_id : graph.get_inputs(cmd_id)) {
-            auto const* input_node = graph.get_node(input_id);
-            if (!input_node) {
-                continue;
-            }
-
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
-            if (input_node->type == NodeType::Command) {
+            if (is_command_id(input_id)) {
                 if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j) {
                     dependencies.insert(it->second);
                 }
@@ -106,8 +101,7 @@ auto build_dependency_map(
 
             // Case 2: Input is a file produced by another command
             for (auto producer_id : graph.get_inputs(input_id)) {
-                auto const* producer = graph.get_node(producer_id);
-                if (producer && producer->type == NodeType::Command) {
+                if (is_command_id(producer_id)) {
                     if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != j) {
                         dependencies.insert(it->second);
                     }
@@ -118,7 +112,7 @@ auto build_dependency_map(
         // Case 3: Order-only inputs (groups and files)
         // These establish ordering without creating true data dependencies.
         for (auto oo_id : graph.get_order_only(cmd_id)) {
-            auto const* oo_node = graph.get_node(oo_id);
+            auto const* oo_node = graph.get_file_node(oo_id);
             if (!oo_node) {
                 continue;
             }
@@ -134,8 +128,7 @@ auto build_dependency_map(
 
                     // Also check for commands that produce this member file
                     for (auto producer_id : graph.get_inputs(member_id)) {
-                        auto const* producer = graph.get_node(producer_id);
-                        if (producer && producer->type == NodeType::Command) {
+                        if (is_command_id(producer_id)) {
                             if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
                                 dependencies.insert(it2->second);
                             }
@@ -150,8 +143,7 @@ auto build_dependency_map(
 
                 // Check for commands that produce this file
                 for (auto producer_id : graph.get_inputs(oo_id)) {
-                    auto const* producer = graph.get_node(producer_id);
-                    if (producer && producer->type == NodeType::Command) {
+                    if (is_command_id(producer_id)) {
                         if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
                             dependencies.insert(it2->second);
                         }
@@ -186,13 +178,10 @@ auto collect_required_commands(
         }
         visited.insert(id);
 
-        auto const* node = graph.get_node(id);
-        if (!node) {
-            return;
-        }
-
-        if (node->type == NodeType::Command) {
-            commands.insert(id);
+        if (is_command_id(id)) {
+            if (graph.get_command_node(id)) {
+                commands.insert(id);
+            }
         }
 
         // Walk to inputs (upstream dependencies)
@@ -333,7 +322,7 @@ auto Scheduler::build_incremental(
             affected.insert(id);
 
             // For generated files that are missing/changed, also mark the producing command
-            auto const* node = graph.get_node(id);
+            auto const* node = graph.get_file_node(id);
             if (node && node->type == NodeType::Generated) {
                 for (auto input_id : graph.get_inputs(id)) {
                     affected.insert(input_id);
@@ -732,8 +721,8 @@ auto Scheduler::build_job_list(
     // Exception: Ghost nodes whose files actually exist on disk are valid
     // non-generated input files (e.g., tup.config, manually-created config files)
     for (auto id : topo_result.order) {
-        auto const* node = graph.get_node(id);
-        if (node && node->type == NodeType::Ghost && !node->outputs.empty()) {
+        auto const* node = graph.get_file_node(id);
+        if (node && node->type == NodeType::Ghost && !graph.get_outputs(id).empty()) {
             auto path = graph.get_full_path(id);
             // Check if file exists - if so, it's a valid input (not missing)
             auto build_root_name = std::string { graph.get_build_root_name() };
@@ -758,8 +747,11 @@ auto Scheduler::build_job_list(
     auto jobs = std::vector<BuildJob> {};
 
     for (auto id : topo_result.order) {
-        auto const* node = graph.get_node(id);
-        if (!node || node->type != NodeType::Command) {
+        if (!is_command_id(id)) {
+            continue;
+        }
+        auto const* node = graph.get_command_node(id);
+        if (!node) {
             continue;
         }
 
@@ -817,7 +809,7 @@ auto Scheduler::build_job_list(
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
         for (auto oi_id : graph.get_order_only(id)) {
-            auto const* oi_node = graph.get_node(oi_id);
+            auto const* oi_node = graph.get_file_node(oi_id);
             if (!oi_node) {
                 continue;
             }

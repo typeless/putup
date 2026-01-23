@@ -45,7 +45,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
     if (opts.verbose && !commands.empty()) {
         printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
         for (auto id : commands) {
-            if (auto const* node = ctx.graph().get_node(id)) {
+            if (auto const* node = ctx.graph().get_command_node(id)) {
                 printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), (node->display.empty() ? node->command : node->display).c_str());
             }
         }
