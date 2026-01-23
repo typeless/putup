@@ -140,8 +140,8 @@ auto pi = 3.14;
 auto name = "hello";
 
 // Function calls - wrap return value in explicit type
-auto result = Result{compute()};     // Not: auto result = compute();
-auto node = Node{get_node()};        // Not: auto node = get_node();
+auto result = Result{compute()};         // Not: auto result = compute();
+auto node = FileNode{get_file_node()};   // Not: auto node = get_file_node();
 auto count = std::size_t{vec.size()};
 
 // Factory functions that return the type are OK as-is

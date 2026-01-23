@@ -365,22 +365,28 @@ Supported patterns: `*`, `?`, `[abc]`, `**`, `!pattern` (exclusion)
 
 ### BuildGraph
 
-Unified representation where all entities are nodes:
+The graph uses separate structs for file and command nodes, with centralized edge storage.
+
+**Node types:**
 
 ```cpp
-struct Node {
+/// File node - files, directories, groups, variables, ghosts
+struct FileNode {
     NodeId id;
-    NodeType type;
-    NodeFlags flags;
+    NodeType type;          // File, Directory, Generated, Ghost, Group, Variable, etc.
+    NodeFlags flags;        // Modified, Created, Deleted, etc.
     std::string name;       // Basename only (tup-style identification)
-    std::string command;    // For commands
-    std::string display;    // Display text
-    std::string source_dir; // For commands: Tupfile directory (relative to root)
     NodeId parent_dir;      // Parent directory node (used with name for lookup)
-    Hash256 content_hash;
-    std::vector<NodeId> inputs;
-    std::vector<NodeId> outputs;
-    std::vector<NodeId> order_only;
+    Hash256 content_hash;   // Content hash for files, Merkle hash for directories
+};
+
+/// Command node - build commands
+/// Type is determined by is_command_id(), not a stored field.
+struct CommandNode {
+    NodeId id;
+    std::string command;    // The command string
+    std::string display;    // Display text (from ^ ^ markers)
+    std::string source_dir; // Tupfile directory (relative to root)
     std::set<std::string> exported_vars;  // Env vars to export to command
     std::optional<GeneratedOutput> generated_output;  // Output specification
     OutputAction output_action;           // What to do with output
@@ -394,21 +400,48 @@ struct Edge {
 };
 ```
 
-**Path storage model**: Nodes store only their basename in `name`. Full paths are reconstructed by walking the `parent_dir` chain via `get_full_path()`, which caches results for efficiency.
+**ID spaces:** Files and commands occupy separate ID spaces for O(1) type detection:
+- File IDs: 1, 2, 3, ... (low range)
+- Command IDs: 0x80000001, 0x80000002, ... (high bit set)
+- `is_command_id(id)` checks the high bit
 
-Graph operations:
+**Edge storage:** Edges are stored centrally with indices for O(1) lookup:
 
 ```cpp
-class BuildGraph {
-    auto add_node(Node) -> NodeId;
-    auto add_edge(from, to, type) -> void;
-    auto get_full_path(id) -> std::string;                    // Reconstruct from parent chain
-    auto find_by_dir_name(parent_id, name) -> std::optional<NodeId>;  // O(1) lookup
-    auto find_by_path(path) -> std::optional<NodeId>;         // Derived from get_full_path
-    auto get_inputs(id) -> std::span<NodeId const>;
-    auto get_outputs(id) -> std::span<NodeId const>;
-    auto nodes_of_type(type) -> std::vector<NodeId>;
+struct Graph {
+    std::deque<FileNode> files;       // Files, directories, groups
+    std::deque<CommandNode> commands; // Command nodes only
+    std::vector<Edge> edges;          // Central edge storage
+
+    // Edge indices: NodeId -> indices into edges vector
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index;   // Edges TO node
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index; // Edges FROM node
+
+    // Order-only edges (separate from edges vector)
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_to_index;
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
 };
+```
+
+**Path storage model**: Nodes store only their basename in `name`. Full paths are reconstructed by walking the `parent_dir` chain via `get_full_path()`, which caches results for efficiency.
+
+**Graph operations:**
+
+```cpp
+// Free functions (functional style)
+auto add_file_node(Graph&, FileNode) -> Result<NodeId>;
+auto add_command_node(Graph&, CommandNode) -> Result<NodeId>;
+auto add_edge(Graph&, from, to, type) -> Result<void>;
+auto get_full_path(Graph const&, id) -> std::string;
+auto find_by_dir_name(Graph const&, parent_id, name) -> std::optional<NodeId>;
+auto find_by_path(Graph const&, path) -> std::optional<NodeId>;
+auto get_inputs(Graph const&, id) -> std::vector<NodeId>;
+auto get_outputs(Graph const&, id) -> std::vector<NodeId>;
+auto nodes_of_type(Graph const&, type) -> std::vector<NodeId>;
+
+// Type-specific accessors
+auto get_file_node(Graph&, id) -> FileNode*;      // nullptr for command IDs
+auto get_command_node(Graph&, id) -> CommandNode*; // nullptr for file IDs
 ```
 
 ### Topological Sort
@@ -454,7 +487,7 @@ Ghost nodes are placeholder nodes for files that don't exist yet during parsing.
 
 ```cpp
 // scheduler.cpp
-if (node->type == NodeType::Ghost && !node->outputs.empty())
+if (node->type == NodeType::Ghost && !graph.get_outputs(id).empty())
     return error("Missing input file (unresolved ghost): " + path);
 ```
 
@@ -1296,14 +1329,15 @@ Tupfile syntax is inherently context-sensitive:
 
 The same characters mean different things in different positions. Context-aware lexing simplifies the grammar significantly.
 
-### Why Unified Node Representation?
+### Why Split FileNode and CommandNode?
 
-All entities (files, commands, directories, groups) as nodes:
+Files and commands have different fields and lifecycles. Splitting them:
 
-- Single traversal algorithm for all
-- Uniform edge representation
-- Simplified topological sort
-- Easier incremental reasoning
+- **Memory efficiency** - No wasted fields (commands don't need content_hash, files don't need exported_vars)
+- **Type safety** - `get_file_node()` vs `get_command_node()` prevents type confusion
+- **O(1) type detection** - High bit in ID determines type without field access
+- **Uniform edges** - Both types participate in the same edge graph
+- **Single traversal** - Topological sort works identically for both
 
 ### Why Binary Index Instead of SQLite?
 
