@@ -15,71 +15,71 @@ extern "C" {
 
 namespace pup {
 
-struct Sha256::Impl {
-    sha256_ctx ctx;
-};
+namespace {
 
-Sha256::Sha256()
-    : impl_(new Impl)
+auto to_ctx(Sha256State const& state) -> sha256_ctx
 {
-    sha256_init(&impl_->ctx);
+    auto ctx = sha256_ctx {};
+    std::memcpy(ctx.state, state.state.data(), sizeof(ctx.state));
+    ctx.size = state.size;
+    ctx.offset = state.offset;
+    std::memcpy(ctx.buf, state.buffer.data(), sizeof(ctx.buf));
+    return ctx;
 }
 
-Sha256::~Sha256()
+auto from_ctx(sha256_ctx const& ctx) -> Sha256State
 {
-    delete impl_;
+    auto state = Sha256State {};
+    std::memcpy(state.state.data(), ctx.state, sizeof(ctx.state));
+    state.size = ctx.size;
+    state.offset = ctx.offset;
+    std::memcpy(state.buffer.data(), ctx.buf, sizeof(ctx.buf));
+    return state;
 }
 
-Sha256::Sha256(Sha256&& other) noexcept
-    : impl_(other.impl_)
+} // namespace
+
+auto sha256_init() -> Sha256State
 {
-    other.impl_ = nullptr;
+    auto ctx = sha256_ctx {};
+    ::sha256_init(&ctx);
+    return from_ctx(ctx);
 }
 
-auto Sha256::operator=(Sha256&& other) noexcept -> Sha256&
+auto sha256_update(Sha256State state, std::span<std::byte const> data) -> Sha256State
 {
-    if (this != &other) {
-        delete impl_;
-        impl_ = other.impl_;
-        other.impl_ = nullptr;
-    }
-    return *this;
+    auto ctx = to_ctx(state);
+    ::sha256_update(&ctx, data.data(), data.size());
+    return from_ctx(ctx);
 }
 
-auto Sha256::update(std::span<std::byte const> data) -> void
+auto sha256_update(Sha256State state, std::string_view data) -> Sha256State
 {
-    sha256_update(&impl_->ctx, data.data(), data.size());
+    auto ctx = to_ctx(state);
+    ::sha256_update(&ctx, data.data(), data.size());
+    return from_ctx(ctx);
 }
 
-auto Sha256::update(std::string_view data) -> void
+auto sha256_finalize(Sha256State state) -> Hash256
 {
-    sha256_update(&impl_->ctx, data.data(), data.size());
-}
-
-auto Sha256::finalize() -> Hash256
-{
+    auto ctx = to_ctx(state);
     auto result = Hash256 {};
-    sha256_final(&impl_->ctx, reinterpret_cast<uint8_t*>(result.data()));
+    ::sha256_final(&ctx, reinterpret_cast<uint8_t*>(result.data()));
     return result;
-}
-
-auto Sha256::reset() -> void
-{
-    sha256_init(&impl_->ctx);
 }
 
 auto sha256(std::span<std::byte const> data) -> Hash256
 {
-    auto hasher = Sha256 {};
-    hasher.update(data);
-    return hasher.finalize();
+    auto state = sha256_init();
+    state = sha256_update(state, data);
+    return sha256_finalize(state);
 }
 
 auto sha256(std::string_view data) -> Hash256
 {
-    auto hasher = Sha256 {};
-    hasher.update(data);
-    return hasher.finalize();
+    auto state = sha256_init();
+    state = sha256_update(state, data);
+    return sha256_finalize(state);
 }
 
 auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
@@ -91,19 +91,19 @@ auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
         return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path.string());
     }
 
-    auto hasher = Sha256 {};
+    auto state = sha256_init();
     auto buffer = std::array<char, 8192> {};
 
     while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
         auto const bytes_read = static_cast<std::size_t>(file.gcount());
-        hasher.update(std::string_view { buffer.data(), bytes_read });
+        state = sha256_update(state, std::string_view { buffer.data(), bytes_read });
     }
 
     if (file.bad()) {
         return make_error<Hash256>(ErrorCode::IoError, "Error reading file: " + path.string());
     }
 
-    return hasher.finalize();
+    return sha256_finalize(state);
 }
 
 auto hash_to_hex(Hash256 const& hash) -> std::string
@@ -174,7 +174,7 @@ auto compute_merkle_hash(
 
     // Compute hash from serialized children entries
     // Format: [name_length: 4 bytes BE][name: UTF-8][type: 1 byte][hash: 32 bytes]
-    auto hasher = Sha256 {};
+    auto state = sha256_init();
 
     for (auto const& [name, type, hash_ptr] : sorted) {
         // Name length (4 bytes, big-endian)
@@ -185,24 +185,24 @@ auto compute_merkle_hash(
             static_cast<std::byte>((name_len >> 8) & 0xFF),
             static_cast<std::byte>(name_len & 0xFF),
         };
-        hasher.update(std::span { len_bytes });
+        state = sha256_update(state, std::span { len_bytes });
 
         // Name (UTF-8)
-        hasher.update(name);
+        state = sha256_update(state, name);
 
         // Type (1 byte)
         auto type_byte = std::array<std::byte, 1> { static_cast<std::byte>(type) };
-        hasher.update(std::span { type_byte });
+        state = sha256_update(state, std::span { type_byte });
 
         // Hash (32 bytes) - use zero hash if null
         if (hash_ptr) {
-            hasher.update(std::span { hash_ptr->data(), hash_ptr->size() });
+            state = sha256_update(state, std::span { hash_ptr->data(), hash_ptr->size() });
         } else {
-            hasher.update(std::span { ZERO_HASH.data(), ZERO_HASH.size() });
+            state = sha256_update(state, std::span { ZERO_HASH.data(), ZERO_HASH.size() });
         }
     }
 
-    return hasher.finalize();
+    return sha256_finalize(state);
 }
 
 } // namespace pup

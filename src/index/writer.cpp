@@ -8,14 +8,32 @@
 #include <cstring>
 #include <limits>
 #include <span>
+#include <unordered_map>
 
 namespace pup::index {
 
 namespace {
-constexpr auto MAX_U32 = std::numeric_limits<std::uint32_t>::max();
-} // namespace
 
-auto IndexWriter::StringTable::add(std::string_view str) -> Result<std::uint32_t>
+constexpr auto MAX_U32 = std::numeric_limits<std::uint32_t>::max();
+
+/// String table builder (internal helper)
+class StringTable {
+public:
+    [[nodiscard]]
+    auto add(std::string_view str) -> Result<std::uint32_t>;
+
+    [[nodiscard]]
+    auto data() const -> std::vector<char> const& { return data_; }
+
+    [[nodiscard]]
+    auto size() const -> std::uint32_t { return static_cast<std::uint32_t>(data_.size()); }
+
+private:
+    std::vector<char> data_ = {};
+    std::unordered_map<std::string, std::uint32_t> offsets_ = {};
+};
+
+auto StringTable::add(std::string_view str) -> Result<std::uint32_t>
 {
     // Empty strings get offset 0, which has a zero-length entry
     if (str.empty()) {
@@ -69,12 +87,37 @@ auto IndexWriter::StringTable::add(std::string_view str) -> Result<std::uint32_t
     return offset;
 }
 
-auto IndexWriter::write(
+auto build_header(
+    Index const& index,
+    StringTable const& strings,
+    std::uint32_t file_offset,
+    std::uint32_t command_offset,
+    std::uint32_t edge_offset,
+    std::uint32_t string_offset
+) -> RawHeader
+{
+    return RawHeader {
+        .magic = INDEX_MAGIC,
+        .version = INDEX_VERSION,
+        .file_count = static_cast<std::uint32_t>(index.files().size()),
+        .command_count = static_cast<std::uint32_t>(index.commands().size()),
+        .edge_count = static_cast<std::uint32_t>(index.edges().size()),
+        .string_table_size = strings.size(),
+        .file_offset = file_offset,
+        .command_offset = command_offset,
+        .edge_offset = edge_offset,
+        .string_offset = string_offset,
+    };
+}
+
+} // namespace
+
+auto write_index(
     std::filesystem::path const& path,
     Index const& index
 ) -> Result<void>
 {
-    auto data = Result<std::vector<std::byte>> { serialize(index) };
+    auto data = Result<std::vector<std::byte>> { serialize_index(index) };
     if (!data) {
         return pup::unexpected<Error>(data.error());
     }
@@ -82,7 +125,7 @@ auto IndexWriter::write(
     return pup::platform::atomic_write(path, *data);
 }
 
-auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>>
+auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
 {
     auto strings = StringTable {};
 
@@ -189,29 +232,6 @@ auto IndexWriter::serialize(Index const& index) -> Result<std::vector<std::byte>
     std::memcpy(output.subspan(footer_offset, sizeof(footer)).data(), &footer, sizeof(footer));
 
     return result;
-}
-
-auto IndexWriter::build_header(
-    Index const& index,
-    StringTable const& strings,
-    std::uint32_t file_offset,
-    std::uint32_t command_offset,
-    std::uint32_t edge_offset,
-    std::uint32_t string_offset
-) -> RawHeader
-{
-    return RawHeader {
-        .magic = INDEX_MAGIC,
-        .version = INDEX_VERSION,
-        .file_count = static_cast<std::uint32_t>(index.files().size()),
-        .command_count = static_cast<std::uint32_t>(index.commands().size()),
-        .edge_count = static_cast<std::uint32_t>(index.edges().size()),
-        .string_table_size = strings.size(),
-        .file_offset = file_offset,
-        .command_offset = command_offset,
-        .edge_offset = edge_offset,
-        .string_offset = string_offset,
-    };
 }
 
 } // namespace pup::index

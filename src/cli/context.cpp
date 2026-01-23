@@ -292,14 +292,13 @@ auto parse_directory(
         return pup::unexpected<pup::Error>(make_read_error(tupfile_path));
     }
 
-    auto parser = pup::parser::Parser { *source, tupfile_path.string() };
-    auto parse_result = pup::Result<pup::parser::Tupfile> { parser.parse() };
-    if (!parse_result) {
+    auto parse_result = pup::parser::parse_tupfile(*source, tupfile_path.string());
+    if (!parse_result.success()) {
         state.parsing.erase(normalized_dir);
-        for (auto const& err : parser.errors()) {
+        for (auto const& err : parse_result.errors) {
             fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.string().c_str(), err.location.line, err.location.column, err.message.c_str());
         }
-        return pup::unexpected<pup::Error>(parse_result.error());
+        return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
 
     auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
@@ -355,7 +354,7 @@ auto parse_directory(
         .available_tupfile_dirs = &state.available,
     };
 
-    auto result = pup::Result<void> { builder.add_tupfile(graph, *parse_result, eval_ctx) };
+    auto result = pup::Result<void> { builder.add_tupfile(graph, parse_result.tupfile, eval_ctx) };
 
     state.parsing.erase(normalized_dir);
     state.parsed.insert(normalized_dir);
@@ -517,36 +516,33 @@ auto build_context(
     constexpr auto ENV_VAR_DIR_PREFIX = std::string_view { "$/" };
     if (std::filesystem::exists(index_path)) {
         auto index_load_start = std::chrono::steady_clock::now();
-        auto reader_result = index::IndexReader::open(index_path);
-        if (reader_result) {
-            auto index_result = reader_result->read();
-            if (index_result) {
-                ctx.impl_->old_index = std::move(*index_result);
-                ctx.impl_->old_index->build_children_index();
-                auto index_load_end = std::chrono::steady_clock::now();
-                thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    index_load_end - index_load_start
-                );
+        auto index_result = index::read_index(index_path);
+        if (index_result) {
+            ctx.impl_->old_index = std::move(*index_result);
+            ctx.impl_->old_index->build_children_index();
+            auto index_load_end = std::chrono::steady_clock::now();
+            thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                index_load_end - index_load_start
+            );
 
-                // Extract cached env vars from index
-                for (auto const& file : ctx.impl_->old_index->files()) {
-                    if (file.type != NodeType::Variable) {
-                        continue;
-                    }
-                    if (!file.path.starts_with(ENV_VAR_DIR_PREFIX)) {
-                        continue;
-                    }
+            // Extract cached env vars from index
+            for (auto const& file : ctx.impl_->old_index->files()) {
+                if (file.type != NodeType::Variable) {
+                    continue;
+                }
+                if (!file.path.starts_with(ENV_VAR_DIR_PREFIX)) {
+                    continue;
+                }
 
-                    // Extract "KEY=value" from "$/KEY=value"
-                    auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
-                    auto eq_pos = key_value.find('=');
-                    if (eq_pos != std::string::npos) {
-                        cached_env_vars[std::string { key_value.substr(0, eq_pos) }] = std::string { key_value.substr(eq_pos + 1) };
-                    }
+                // Extract "KEY=value" from "$/KEY=value"
+                auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
+                auto eq_pos = key_value.find('=');
+                if (eq_pos != std::string::npos) {
+                    cached_env_vars[std::string { key_value.substr(0, eq_pos) }] = std::string { key_value.substr(eq_pos + 1) };
                 }
-                if (ctx_opts.verbose && !cached_env_vars.empty()) {
-                    printf("Loaded %zu cached env vars from index\n", cached_env_vars.size());
-                }
+            }
+            if (ctx_opts.verbose && !cached_env_vars.empty()) {
+                printf("Loaded %zu cached env vars from index\n", cached_env_vars.size());
             }
         }
     }

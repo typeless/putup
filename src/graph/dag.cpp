@@ -4,147 +4,94 @@
 #include "pup/graph/dag.hpp"
 
 #include <algorithm>
-#include <deque>
 #include <filesystem>
-#include <functional>
-#include <unordered_map>
 
 namespace pup::graph {
 
-namespace {
-
-struct DirNameKey {
-    NodeId parent_dir = 0;
-    std::string name = {};
-
-    auto operator==(DirNameKey const& other) const -> bool = default;
-};
-
-struct DirNameKeyHash {
-    auto operator()(DirNameKey const& key) const noexcept -> std::size_t
-    {
-        auto h1 = std::hash<NodeId> {}(key.parent_dir);
-        auto h2 = std::hash<std::string> {}(key.name);
-        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-};
-
-struct StringHash {
-    using is_transparent = void;
-
-    auto operator()(std::string_view sv) const noexcept -> std::size_t
-    {
-        return std::hash<std::string_view> {}(sv);
-    }
-
-    auto operator()(std::string const& s) const noexcept -> std::size_t
-    {
-        return std::hash<std::string_view> {}(s);
-    }
-};
-
-} // namespace
-
-struct BuildGraph::Impl {
-    std::deque<Node> files;    // Files, directories, groups (non-command nodes)
-    std::deque<Node> commands; // Command nodes only
-    std::vector<Edge> edges;
-    std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
-    std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
-    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
-    mutable std::unordered_map<NodeId, std::string> path_cache;
-    NodeId next_file_id = 1;
-    NodeId next_command_id = make_command_id(1);
-
-    [[nodiscard]]
-    auto validate_node_id(NodeId id) const -> bool
-    {
-        if (id == 0) {
-            return false;
-        }
-        if (is_command_id(id)) {
-            auto idx = command_index(id);
-            if (idx == 0 || idx >= commands.size()) {
-                return false;
-            }
-            return commands[idx].id == id;
-        }
-        auto idx = file_index(id);
-        if (idx >= files.size()) {
-            return false;
-        }
-        return files[idx].id == id;
-    }
-};
-
-BuildGraph::BuildGraph()
-    : impl_(std::make_unique<Impl>())
+auto make_graph() -> Graph
 {
+    auto graph = Graph {};
+
     // Reserve BUILD_ROOT_ID (1) for the build root node.
     // All Generated/Ghost nodes will be parented under this node.
     // The build root's filesystem location is determined at build time
     // (source_root for in-tree, output_root for variant builds).
-    impl_->files.resize(2); // Index 0 unused, index 1 = build root
-    impl_->files[1] = Node {
+    graph.files.resize(2); // Index 0 unused, index 1 = build root
+    graph.files[1] = Node {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = {}, // Name set by set_build_root_name()
         .parent_dir = SOURCE_ROOT_ID,
     };
-    impl_->next_file_id = 2; // Start regular nodes at ID 2
+    graph.next_file_id = 2; // Start regular nodes at ID 2
+
+    return graph;
 }
 
-BuildGraph::~BuildGraph() = default;
+auto validate_node_id(Graph const& graph, NodeId id) -> bool
+{
+    if (id == 0) {
+        return false;
+    }
+    if (is_command_id(id)) {
+        auto idx = command_index(id);
+        if (idx == 0 || idx >= graph.commands.size()) {
+            return false;
+        }
+        return graph.commands[idx].id == id;
+    }
+    auto idx = file_index(id);
+    if (idx >= graph.files.size()) {
+        return false;
+    }
+    return graph.files[idx].id == id;
+}
 
-BuildGraph::BuildGraph(BuildGraph&&) noexcept = default;
-
-auto BuildGraph::operator=(BuildGraph&&) noexcept -> BuildGraph& = default;
-
-auto BuildGraph::add_node(Node node) -> Result<NodeId>
+auto add_node(Graph& graph, Node node) -> Result<NodeId>
 {
     if (node.type == NodeType::Command) {
-        auto const id = impl_->next_command_id++;
+        auto const id = graph.next_command_id++;
         node.id = id;
 
         if (!node.command.empty()) {
-            impl_->command_str_index[node.command] = id;
+            graph.command_str_index[node.command] = id;
         }
 
         auto const idx = command_index(id);
-        if (idx >= impl_->commands.size()) {
-            impl_->commands.resize(idx + 1);
+        if (idx >= graph.commands.size()) {
+            graph.commands.resize(idx + 1);
         }
-        impl_->commands[idx] = std::move(node);
+        graph.commands[idx] = std::move(node);
 
         return id;
     }
 
-    auto const id = impl_->next_file_id++;
+    auto const id = graph.next_file_id++;
     node.id = id;
 
     if (!node.name.empty()) {
-        impl_->dir_name_index[DirNameKey { node.parent_dir, node.name }] = id;
+        graph.dir_name_index[DirNameKey { node.parent_dir, node.name }] = id;
     }
 
     auto const idx = file_index(id);
-    if (idx >= impl_->files.size()) {
-        impl_->files.resize(idx + 1);
+    if (idx >= graph.files.size()) {
+        graph.files.resize(idx + 1);
     }
-    impl_->files[idx] = std::move(node);
+    graph.files[idx] = std::move(node);
 
     return id;
 }
 
-auto BuildGraph::add_edge(NodeId from, NodeId to, LinkType type) -> Result<void>
+auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<void>
 {
-    if (!impl_->validate_node_id(from)) {
+    if (!validate_node_id(graph, from)) {
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid source node ID");
     }
-    if (!impl_->validate_node_id(to)) {
+    if (!validate_node_id(graph, to)) {
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
-    impl_->edges.push_back(Edge {
+    graph.edges.push_back(Edge {
         .from = from,
         .to = to,
         .type = type,
@@ -153,96 +100,96 @@ auto BuildGraph::add_edge(NodeId from, NodeId to, LinkType type) -> Result<void>
     // Route to appropriate output vector based on edge type
     // Sticky edges go to sticky_outputs, all others to outputs
     auto& target_vector = (type == LinkType::Sticky)
-        ? (is_command_id(from) ? impl_->commands[command_index(from)].sticky_outputs
-                               : impl_->files[file_index(from)].sticky_outputs)
-        : (is_command_id(from) ? impl_->commands[command_index(from)].outputs
-                               : impl_->files[file_index(from)].outputs);
+        ? (is_command_id(from) ? graph.commands[command_index(from)].sticky_outputs
+                               : graph.files[file_index(from)].sticky_outputs)
+        : (is_command_id(from) ? graph.commands[command_index(from)].outputs
+                               : graph.files[file_index(from)].outputs);
     target_vector.push_back(to);
 
     // Inputs receive all edge types
     if (is_command_id(to)) {
-        impl_->commands[command_index(to)].inputs.push_back(from);
+        graph.commands[command_index(to)].inputs.push_back(from);
     } else {
-        impl_->files[file_index(to)].inputs.push_back(from);
+        graph.files[file_index(to)].inputs.push_back(from);
     }
 
     return {};
 }
 
-auto BuildGraph::add_order_only_edge(NodeId from, NodeId to) -> Result<void>
+auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>
 {
-    if (!impl_->validate_node_id(from)) {
+    if (!validate_node_id(graph, from)) {
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid source node ID");
     }
-    if (!impl_->validate_node_id(to)) {
+    if (!validate_node_id(graph, to)) {
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
     // Direct storage access (ID validated above)
     if (is_command_id(to)) {
-        impl_->commands[command_index(to)].order_only.push_back(from);
+        graph.commands[command_index(to)].order_only.push_back(from);
     } else {
-        impl_->files[file_index(to)].order_only.push_back(from);
+        graph.files[file_index(to)].order_only.push_back(from);
     }
 
-    impl_->order_only_dependents[from].push_back(to);
+    graph.order_only_dependents[from].push_back(to);
 
     return {};
 }
 
-auto BuildGraph::get_node(NodeId id) -> Node*
+auto get_node(Graph& graph, NodeId id) -> Node*
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
-    return const_cast<Node*>(std::as_const(*this).get_node(id));
+    return const_cast<Node*>(get_node(std::as_const(graph), id));
 }
 
-auto BuildGraph::get_node(NodeId id) const -> Node const*
+auto get_node(Graph const& graph, NodeId id) -> Node const*
 {
     if (id == 0) {
         return nullptr;
     }
     if (is_command_id(id)) {
         auto const idx = command_index(id);
-        if (idx == 0 || idx >= impl_->commands.size()) {
+        if (idx == 0 || idx >= graph.commands.size()) {
             return nullptr;
         }
-        auto const& node = impl_->commands[idx];
+        auto const& node = graph.commands[idx];
         return node.id == id ? &node : nullptr;
     }
     auto const idx = file_index(id);
-    if (idx >= impl_->files.size()) {
+    if (idx >= graph.files.size()) {
         return nullptr;
     }
-    auto const& node = impl_->files[idx];
+    auto const& node = graph.files[idx];
     return node.id == id ? &node : nullptr;
 }
 
-auto BuildGraph::find_by_dir_name(NodeId parent_dir, std::string_view name) const
+auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
     -> std::optional<NodeId>
 {
     auto key = DirNameKey { parent_dir, std::string { name } };
-    auto it = impl_->dir_name_index.find(key);
-    if (it != impl_->dir_name_index.end()) {
+    auto it = graph.dir_name_index.find(key);
+    if (it != graph.dir_name_index.end()) {
         return it->second;
     }
     return std::nullopt;
 }
 
-auto BuildGraph::find_by_command(std::string_view cmd) const -> std::optional<NodeId>
+auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>
 {
-    auto it = impl_->command_str_index.find(cmd);
-    if (it != impl_->command_str_index.end()) {
+    auto it = graph.command_str_index.find(cmd);
+    if (it != graph.command_str_index.end()) {
         return it->second;
     }
     return std::nullopt;
 }
 
-auto BuildGraph::find_by_path(std::string_view path) const -> std::optional<NodeId>
+auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>
 {
-    return find_by_path(path, SOURCE_ROOT_ID);
+    return find_by_path(graph, path, SOURCE_ROOT_ID);
 }
 
-auto BuildGraph::find_by_path(std::string_view path, NodeId root) const -> std::optional<NodeId>
+auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std::optional<NodeId>
 {
     if (path.empty()) {
         return std::nullopt;
@@ -257,7 +204,7 @@ auto BuildGraph::find_by_path(std::string_view path, NodeId root) const -> std::
             continue;
         }
 
-        auto found = find_by_dir_name(parent_id, name);
+        auto found = find_by_dir_name(graph, parent_id, name);
         if (!found) {
             return std::nullopt;
         }
@@ -273,19 +220,19 @@ auto BuildGraph::find_by_path(std::string_view path, NodeId root) const -> std::
     return parent_id != root ? std::optional { parent_id } : std::nullopt;
 }
 
-auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>
+auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
     if (type == NodeType::Command) {
-        for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
-            auto const& node = impl_->commands[i];
+        for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
+            auto const& node = graph.commands[i];
             if (node.id == make_command_id(i)) {
                 result.push_back(node.id);
             }
         }
     } else {
-        for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
-            auto const& node = impl_->files[i];
+        for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
+            auto const& node = graph.files[i];
             if (node.id == i && node.type == type) {
                 result.push_back(i);
             }
@@ -294,131 +241,126 @@ auto BuildGraph::nodes_of_type(NodeType type) const -> std::vector<NodeId>
     return result;
 }
 
-auto BuildGraph::get_inputs(NodeId id) const -> std::vector<NodeId>
+auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(id);
+    auto const* node = get_node(graph, id);
     if (!node) {
         return {};
     }
     return node->inputs;
 }
 
-auto BuildGraph::get_outputs(NodeId id) const -> std::vector<NodeId>
+auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(id);
+    auto const* node = get_node(graph, id);
     if (!node) {
         return {};
     }
     return node->outputs;
 }
 
-auto BuildGraph::get_sticky_outputs(NodeId id) const -> std::vector<NodeId>
+auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(id);
+    auto const* node = get_node(graph, id);
     if (!node) {
         return {};
     }
     return node->sticky_outputs;
 }
 
-auto BuildGraph::get_order_only(NodeId id) const -> std::vector<NodeId>
+auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto const* node = get_node(id);
+    auto const* node = get_node(graph, id);
     if (!node) {
         return {};
     }
     return node->order_only;
 }
 
-auto BuildGraph::get_order_only_dependents(NodeId id) const -> std::vector<NodeId>
+auto get_order_only_dependents(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto it = impl_->order_only_dependents.find(id);
-    if (it != impl_->order_only_dependents.end()) {
+    auto it = graph.order_only_dependents.find(id);
+    if (it != graph.order_only_dependents.end()) {
         return it->second;
     }
     return {};
 }
 
-auto BuildGraph::edges() const -> std::vector<Edge> const&
+auto node_count(Graph const& graph) -> std::size_t
 {
-    return impl_->edges;
-}
-
-auto BuildGraph::node_count() const -> std::size_t
-{
-    auto file_count = impl_->files.empty() ? std::size_t { 0 } : impl_->files.size() - 1;
-    auto cmd_count = impl_->commands.empty() ? std::size_t { 0 } : impl_->commands.size() - 1;
+    auto file_count = graph.files.empty() ? std::size_t { 0 } : graph.files.size() - 1;
+    auto cmd_count = graph.commands.empty() ? std::size_t { 0 } : graph.commands.size() - 1;
     return file_count + cmd_count;
 }
 
-auto BuildGraph::edge_count() const -> std::size_t
+auto edge_count(Graph const& graph) -> std::size_t
 {
-    return impl_->edges.size();
+    return graph.edges.size();
 }
 
-auto BuildGraph::empty() const -> bool
+auto empty(Graph const& graph) -> bool
 {
-    return impl_->files.size() <= 1 && impl_->commands.size() <= 1;
+    return graph.files.size() <= 1 && graph.commands.size() <= 1;
 }
 
-auto BuildGraph::clear() -> void
+auto clear(Graph& graph) -> void
 {
     // Preserve build root name before clearing
-    auto build_root_name = std::move(impl_->files[BUILD_ROOT_ID].name);
+    auto build_root_name = std::move(graph.files[BUILD_ROOT_ID].name);
 
-    impl_->files.clear();
-    impl_->commands.clear();
-    impl_->edges.clear();
-    impl_->dir_name_index.clear();
-    impl_->command_str_index.clear();
-    impl_->order_only_dependents.clear();
-    impl_->path_cache.clear();
+    graph.files.clear();
+    graph.commands.clear();
+    graph.edges.clear();
+    graph.dir_name_index.clear();
+    graph.command_str_index.clear();
+    graph.order_only_dependents.clear();
+    graph.path_cache.clear();
 
-    // Reinitialize build root node (same as constructor)
-    impl_->files.resize(2);
-    impl_->files[1] = Node {
+    // Reinitialize build root node (same as make_graph)
+    graph.files.resize(2);
+    graph.files[1] = Node {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = std::move(build_root_name),
         .parent_dir = SOURCE_ROOT_ID,
     };
-    impl_->next_file_id = 2;
-    impl_->next_command_id = make_command_id(1);
+    graph.next_file_id = 2;
+    graph.next_command_id = make_command_id(1);
 }
 
-auto BuildGraph::all_nodes() const -> std::vector<NodeId>
+auto all_nodes(Graph const& graph) -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    auto file_count = impl_->files.empty() ? std::size_t { 0 } : impl_->files.size() - 1;
-    auto cmd_count = impl_->commands.empty() ? std::size_t { 0 } : impl_->commands.size() - 1;
+    auto file_count = graph.files.empty() ? std::size_t { 0 } : graph.files.size() - 1;
+    auto cmd_count = graph.commands.empty() ? std::size_t { 0 } : graph.commands.size() - 1;
     result.reserve(file_count + cmd_count);
 
-    for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
-        if (impl_->files[i].id == i) {
+    for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
+        if (graph.files[i].id == i) {
             result.push_back(i);
         }
     }
-    for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const id = make_command_id(i);
-        if (impl_->commands[i].id == id) {
+        if (graph.commands[i].id == id) {
             result.push_back(id);
         }
     }
     return result;
 }
 
-auto BuildGraph::root_nodes() const -> std::vector<NodeId>
+auto root_nodes(Graph const& graph) -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
-        auto const& node = impl_->files[i];
+    for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
+        auto const& node = graph.files[i];
         if (node.id == i && node.inputs.empty() && node.order_only.empty()) {
             result.push_back(i);
         }
     }
-    for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const id = make_command_id(i);
-        auto const& node = impl_->commands[i];
+        auto const& node = graph.commands[i];
         if (node.id == id && node.inputs.empty() && node.order_only.empty()) {
             result.push_back(id);
         }
@@ -426,18 +368,18 @@ auto BuildGraph::root_nodes() const -> std::vector<NodeId>
     return result;
 }
 
-auto BuildGraph::leaf_nodes() const -> std::vector<NodeId>
+auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
 {
     auto result = std::vector<NodeId> {};
-    for (auto i = NodeId { 1 }; i < impl_->files.size(); ++i) {
-        auto const& node = impl_->files[i];
+    for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
+        auto const& node = graph.files[i];
         if (node.id == i && node.outputs.empty()) {
             result.push_back(i);
         }
     }
-    for (auto i = std::size_t { 1 }; i < impl_->commands.size(); ++i) {
+    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const id = make_command_id(i);
-        auto const& node = impl_->commands[i];
+        auto const& node = graph.commands[i];
         if (node.id == id && node.outputs.empty()) {
             result.push_back(id);
         }
@@ -445,13 +387,13 @@ auto BuildGraph::leaf_nodes() const -> std::vector<NodeId>
     return result;
 }
 
-auto BuildGraph::get_full_path(NodeId id) const -> std::string
+auto get_full_path(Graph const& graph, NodeId id) -> std::string
 {
     if (id == 0) {
         return "";
     }
 
-    auto const* node = get_node(id);
+    auto const* node = get_node(graph, id);
     if (!node) {
         return "";
     }
@@ -460,18 +402,18 @@ auto BuildGraph::get_full_path(NodeId id) const -> std::string
         return "";
     }
 
-    if (auto it = impl_->path_cache.find(id); it != impl_->path_cache.end()) {
+    if (auto it = graph.path_cache.find(id); it != graph.path_cache.end()) {
         if (it->second.empty()) {
             return node->name;
         }
         return it->second;
     }
 
-    impl_->path_cache[id] = "";
+    graph.path_cache[id] = "";
 
     auto path = std::string {};
     if (node->parent_dir != 0) {
-        auto parent_path = get_full_path(node->parent_dir);
+        auto parent_path = get_full_path(graph, node->parent_dir);
         if (!parent_path.empty()) {
             if (parent_path.back() == '/') {
                 path = parent_path + node->name;
@@ -485,45 +427,60 @@ auto BuildGraph::get_full_path(NodeId id) const -> std::string
         path = node->name;
     }
 
-    impl_->path_cache[id] = path;
+    graph.path_cache[id] = path;
     return path;
 }
 
-auto BuildGraph::invalidate_path_cache(NodeId id) -> void
+auto invalidate_path_cache(Graph& graph, NodeId id) -> void
 {
-    impl_->path_cache.erase(id);
+    graph.path_cache.erase(id);
 }
 
-auto BuildGraph::clear_path_cache() -> void
+auto clear_path_cache(Graph& graph) -> void
 {
-    impl_->path_cache.clear();
+    graph.path_cache.clear();
 }
 
-auto BuildGraph::set_build_root_name(std::string name) -> void
+auto set_build_root_name(Graph& graph, std::string name) -> void
 {
-    impl_->files[BUILD_ROOT_ID].name = std::move(name);
-    impl_->path_cache.clear(); // Invalidate all cached paths
+    graph.files[BUILD_ROOT_ID].name = std::move(name);
+    graph.path_cache.clear(); // Invalidate all cached paths
 }
 
-auto BuildGraph::get_build_root_name() const -> std::string_view
+auto get_build_root_name(Graph const& graph) -> std::string_view
 {
-    return impl_->files[BUILD_ROOT_ID].name;
+    return graph.files[BUILD_ROOT_ID].name;
 }
 
-auto BuildGraph::is_under_build_root(NodeId id) const -> bool
+auto is_under_build_root(Graph const& graph, NodeId id) -> bool
 {
     if (id == 0 || id == BUILD_ROOT_ID) {
         return id == BUILD_ROOT_ID;
     }
 
-    auto const* node = get_node(id);
+    auto const* node = get_node(graph, id);
     while (node && node->parent_dir != SOURCE_ROOT_ID) {
         if (node->parent_dir == BUILD_ROOT_ID) {
             return true;
         }
-        node = get_node(node->parent_dir);
+        node = get_node(graph, node->parent_dir);
     }
     return false;
 }
+
+// =============================================================================
+// BuildGraph wrapper class implementation
+// =============================================================================
+
+BuildGraph::BuildGraph()
+    : graph_(make_graph())
+{
+}
+
+BuildGraph::~BuildGraph() = default;
+
+BuildGraph::BuildGraph(BuildGraph&&) noexcept = default;
+
+auto BuildGraph::operator=(BuildGraph&&) noexcept -> BuildGraph& = default;
 
 } // namespace pup::graph

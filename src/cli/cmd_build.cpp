@@ -950,10 +950,9 @@ auto build_single_variant(
         // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
         // and they'll be detected as changed on next build.
         auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, ctx.layout().output_root, old_idx_ptr) };
-        auto writer = pup::index::IndexWriter {};
 
         auto index_save_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-        auto write_result = pup::Result<void> { writer.write(index_path, index) };
+        auto write_result = pup::Result<void> { pup::index::write_index(index_path, index) };
         auto index_save_end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 

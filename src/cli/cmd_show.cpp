@@ -39,12 +39,7 @@ auto load_index_for_all_deps(
         return std::nullopt;
     }
 
-    auto reader = pup::index::IndexReader::open(index_path);
-    if (!reader) {
-        return std::nullopt;
-    }
-
-    auto index_result = reader->read();
+    auto index_result = pup::index::read_index(index_path);
     if (!index_result) {
         return std::nullopt;
     }

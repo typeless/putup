@@ -56,29 +56,29 @@ TEST_CASE("Hash to hex conversion", "[hash]")
     }
 }
 
-TEST_CASE("Incremental hashing", "[hash]")
+TEST_CASE("Streaming hash API", "[hash]")
 {
     SECTION("update in chunks matches single call")
     {
-        auto hasher = pup::Sha256{};
-        hasher.update("hello ");
-        hasher.update("world");
-        auto const incremental = hasher.finalize();
+        auto state = pup::sha256_init();
+        state = pup::sha256_update(state, "hello ");
+        state = pup::sha256_update(state, "world");
+        auto const incremental = pup::sha256_finalize(state);
 
         auto const single = pup::sha256("hello world");
 
         REQUIRE(pup::hash_equal(incremental, single));
     }
 
-    SECTION("reset allows reuse")
+    SECTION("fresh state for new hash")
     {
-        auto hasher = pup::Sha256{};
-        hasher.update("first");
-        (void)hasher.finalize();
+        auto state1 = pup::sha256_init();
+        state1 = pup::sha256_update(state1, "first");
+        (void)pup::sha256_finalize(state1);
 
-        hasher.reset();
-        hasher.update("second");
-        auto const result = hasher.finalize();
+        auto state2 = pup::sha256_init();
+        state2 = pup::sha256_update(state2, "second");
+        auto const result = pup::sha256_finalize(state2);
 
         auto const expected = pup::sha256("second");
         REQUIRE(pup::hash_equal(result, expected));

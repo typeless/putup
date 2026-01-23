@@ -2,10 +2,17 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/parser.hpp"
+#include "pup/parser/lexer.hpp"
+#include "pup/core/result.hpp"
+
+#include <functional>
+#include <unordered_set>
 
 namespace pup::parser {
 
-struct Parser::RuleBody {
+namespace {
+
+struct RuleBody {
     Expression command;
     std::optional<Expression> display;
     std::vector<PathPattern> outputs;
@@ -15,9 +22,9 @@ struct Parser::RuleBody {
     std::optional<Expression> output_order_only_group_dir;
 };
 
-struct Parser::Impl {
+struct ParserState {
     Lexer lexer;
-    Options options;
+    ParserOptions options;
     std::vector<ParseError> errors;
     std::unordered_set<std::string> included_files;
     int include_depth = 0;
@@ -25,114 +32,89 @@ struct Parser::Impl {
     Token current;
     Token previous;
 
-    Impl(std::string_view source, std::string_view filename)
+    ParserState(std::string_view source, std::string_view filename)
         : lexer(source, filename)
     {
     }
 };
 
-Parser::Parser(std::string_view source, std::string_view filename, Options options)
-    : impl_(std::make_unique<Impl>(source, filename))
+// Forward declarations
+auto advance(ParserState& s) -> Token;
+auto check(ParserState const& s, TokenType type) -> bool;
+auto match(ParserState& s, TokenType type) -> bool;
+auto expect(ParserState& s, TokenType type, std::string_view message) -> Result<Token>;
+auto skip_to_next_statement(ParserState& s) -> void;
+auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>;
+auto parse_rule(ParserState& s) -> Result<Rule>;
+auto parse_bang_macro(ParserState& s) -> Result<BangMacro>;
+auto parse_rule_body(ParserState& s) -> Result<RuleBody>;
+auto parse_assignment(ParserState& s, Expression name_expr) -> Result<Assignment>;
+auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditional>;
+auto parse_include(ParserState& s, bool is_rules) -> Result<Include>;
+auto parse_export(ParserState& s) -> Result<Export>;
+auto parse_import(ParserState& s) -> Result<Import>;
+auto parse_expression(ParserState& s) -> Result<Expression>;
+auto parse_expression_until(ParserState& s, std::function<bool(Token const&)> const& stop, bool stop_at_gap = false) -> Result<Expression>;
+auto parse_path_pattern(ParserState& s, bool stop_at_angle = false) -> Result<PathPattern>;
+auto parse_command(ParserState& s) -> Result<Expression>;
+auto report_error(ParserState& s, std::string const& message) -> void;
+
+auto advance(ParserState& s) -> Token
 {
-    impl_->options = options;
-    advance(); // Prime the parser with first token
+    s.previous = s.current;
+    s.current = s.lexer.next();
+    return s.previous;
 }
 
-Parser::~Parser() = default;
-
-Parser::Parser(Parser&&) noexcept = default;
-
-auto Parser::operator=(Parser&&) noexcept -> Parser& = default;
-
-auto Parser::errors() const -> std::vector<ParseError> const&
+auto check(ParserState const& s, TokenType type) -> bool
 {
-    return impl_->errors;
+    return s.current.type == type;
 }
 
-auto Parser::parse() -> Result<Tupfile>
+auto match(ParserState& s, TokenType type) -> bool
 {
-    auto tupfile = Tupfile {};
-    tupfile.filename = std::string { impl_->lexer.filename() };
-
-    while (!check(TokenType::Eof)) {
-        // Skip empty lines and comments
-        if (match(TokenType::Newline)) {
-            continue;
-        }
-        if (match(TokenType::Hash)) {
-            if (!check(TokenType::Newline) && !check(TokenType::Eof)) {
-                advance(); // Skip to next line
-            }
-            continue;
-        }
-
-        auto stmt = parse_line();
-        if (!stmt) {
-            report_error(stmt.error().message);
-            skip_to_next_statement();
-            continue;
-        }
-
-        if (*stmt) {
-            tupfile.statements.push_back(std::move(*stmt));
-        }
-    }
-
-    if (!impl_->errors.empty()) {
-        return pup::make_error<Tupfile>(ErrorCode::ParseError, "Parse failed with " + std::to_string(impl_->errors.size()) + " error(s)");
-    }
-
-    return tupfile;
-}
-
-auto Parser::advance() -> Token
-{
-    impl_->previous = impl_->current;
-    impl_->current = impl_->lexer.next();
-    return impl_->previous;
-}
-
-auto Parser::check(TokenType type) const -> bool
-{
-    return impl_->current.type == type;
-}
-
-auto Parser::match(TokenType type) -> bool
-{
-    if (check(type)) {
-        advance();
+    if (check(s, type)) {
+        advance(s);
         return true;
     }
     return false;
 }
 
-auto Parser::expect(TokenType type, std::string_view message) -> Result<Token>
+auto expect(ParserState& s, TokenType type, std::string_view message) -> Result<Token>
 {
-    if (check(type)) {
-        return advance();
+    if (check(s, type)) {
+        return advance(s);
     }
-    return pup::make_error<Token>(ErrorCode::UnexpectedToken, std::string { message } + ", got " + std::string { token_type_name(impl_->current.type) });
+    return pup::make_error<Token>(ErrorCode::UnexpectedToken, std::string { message } + ", got " + std::string { token_type_name(s.current.type) });
 }
 
-auto Parser::skip_to_next_statement() -> void
+auto skip_to_next_statement(ParserState& s) -> void
 {
-    while (!check(TokenType::Eof) && !check(TokenType::Newline)) {
-        advance();
+    while (!check(s, TokenType::Eof) && !check(s, TokenType::Newline)) {
+        advance(s);
     }
-    if (check(TokenType::Newline)) {
-        advance();
+    if (check(s, TokenType::Newline)) {
+        advance(s);
     }
 }
 
-auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
+auto report_error(ParserState& s, std::string const& message) -> void
 {
-    auto const& tok = impl_->current;
+    s.errors.push_back(ParseError {
+        .location = s.current.location,
+        .message = message,
+    });
+}
+
+auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
+{
+    auto const& tok = s.current;
     auto const start_loc = tok.location;
 
     // Rule: starts with ':'
-    if (check(TokenType::Colon)) {
-        advance();
-        auto rule = parse_rule();
+    if (check(s, TokenType::Colon)) {
+        advance(s);
+        auto rule = parse_rule(s);
         if (!rule) {
             return pup::unexpected<Error>(rule.error());
         }
@@ -144,9 +126,9 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
     }
 
     // Bang-macro: starts with '!'
-    if (check(TokenType::Bang)) {
-        advance();
-        auto macro = parse_bang_macro();
+    if (check(s, TokenType::Bang)) {
+        advance(s);
+        auto macro = parse_bang_macro(s);
         if (!macro) {
             return pup::unexpected<Error>(macro.error());
         }
@@ -165,8 +147,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "'foreach' must appear after ':' in a rule");
 
         case TokenType::KwIncludeRules: {
-            advance();
-            auto inc = parse_include(true);
+            advance(s);
+            auto inc = parse_include(s, true);
             if (!inc) {
                 return pup::unexpected<Error>(inc.error());
             }
@@ -177,8 +159,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         case TokenType::KwInclude: {
-            advance();
-            auto inc = parse_include(false);
+            advance(s);
+            auto inc = parse_include(s, false);
             if (!inc) {
                 return pup::unexpected<Error>(inc.error());
             }
@@ -189,8 +171,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         case TokenType::KwIfdef: {
-            advance();
-            auto cond = parse_conditional(Conditional::Kind::Ifdef);
+            advance(s);
+            auto cond = parse_conditional(s, Conditional::Kind::Ifdef);
             if (!cond) {
                 return pup::unexpected<Error>(cond.error());
             }
@@ -201,8 +183,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         case TokenType::KwIfndef: {
-            advance();
-            auto cond = parse_conditional(Conditional::Kind::Ifndef);
+            advance(s);
+            auto cond = parse_conditional(s, Conditional::Kind::Ifndef);
             if (!cond) {
                 return pup::unexpected<Error>(cond.error());
             }
@@ -213,8 +195,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         case TokenType::KwIfeq: {
-            advance();
-            auto cond = parse_conditional(Conditional::Kind::Ifeq);
+            advance(s);
+            auto cond = parse_conditional(s, Conditional::Kind::Ifeq);
             if (!cond) {
                 return pup::unexpected<Error>(cond.error());
             }
@@ -225,8 +207,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         case TokenType::KwIfneq: {
-            advance();
-            auto cond = parse_conditional(Conditional::Kind::Ifneq);
+            advance(s);
+            auto cond = parse_conditional(s, Conditional::Kind::Ifneq);
             if (!cond) {
                 return pup::unexpected<Error>(cond.error());
             }
@@ -242,8 +224,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
             return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "Unexpected '" + std::string { tok.text } + "' without matching if");
 
         case TokenType::KwExport: {
-            advance();
-            auto exp = parse_export();
+            advance(s);
+            auto exp = parse_export(s);
             if (!exp) {
                 return pup::unexpected<Error>(exp.error());
             }
@@ -254,8 +236,8 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         case TokenType::KwImport: {
-            advance();
-            auto imp = parse_import();
+            advance(s);
+            auto imp = parse_import(s);
             if (!imp) {
                 return pup::unexpected<Error>(imp.error());
             }
@@ -272,17 +254,17 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
 
     // Assignment: name (= | += | :=) value
     // name can be a complex expression like foo-$(BAR) or simple identifier
-    if (check(TokenType::Identifier) || check(TokenType::Text) || check(TokenType::Dollar)) {
+    if (check(s, TokenType::Identifier) || check(s, TokenType::Text) || check(s, TokenType::Dollar)) {
         // Parse the LHS as an expression, stopping at assignment operators
-        auto name_expr = parse_expression_until([](Token const& t) {
+        auto name_expr = parse_expression_until(s, [](Token const& t) {
             return t.is_assignment_op() || t.is_end_of_statement();
         });
         if (!name_expr) {
             return pup::unexpected<Error>(name_expr.error());
         }
 
-        if (impl_->current.is_assignment_op()) {
-            auto assign = parse_assignment(std::move(*name_expr));
+        if (s.current.is_assignment_op()) {
+            auto assign = parse_assignment(s, std::move(*name_expr));
             if (!assign) {
                 return pup::unexpected<Error>(assign.error());
             }
@@ -293,16 +275,16 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         }
 
         // Not an assignment - skip rest of line (tup-like permissive behavior)
-        while (!check(TokenType::Newline) && !check(TokenType::Eof)) {
-            advance();
+        while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            advance(s);
         }
         return nullptr;
     }
 
     // Node variable assignment: &name = value
-    if (check(TokenType::Ampersand)) {
-        advance();
-        auto name_tok = expect(TokenType::Identifier, "Expected identifier after '&'");
+    if (check(s, TokenType::Ampersand)) {
+        advance(s);
+        auto name_tok = expect(s, TokenType::Identifier, "Expected identifier after '&'");
         if (!name_tok) {
             return pup::unexpected<Error>(name_tok.error());
         }
@@ -311,7 +293,7 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
         auto name_expr = Expression {};
         name_expr.parts.emplace_back(Expression::Literal { std::string { name_tok->text } });
 
-        auto assign = parse_assignment(std::move(name_expr));
+        auto assign = parse_assignment(s, std::move(name_expr));
         if (!assign) {
             return pup::unexpected<Error>(assign.error());
         }
@@ -326,29 +308,29 @@ auto Parser::parse_line() -> Result<std::unique_ptr<Statement>>
     // Skip unrecognized lines (matching tup's permissive behavior)
     // This handles edge cases like 'echo "Root = " $(ROOT)' which tup treats
     // as a weird variable assignment. Rather than error, we skip to EOL.
-    while (!check(TokenType::Newline) && !check(TokenType::Eof)) {
-        advance();
+    while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+        advance(s);
     }
 
     return nullptr; // Return null to indicate skipped line
 }
 
-auto Parser::parse_rule() -> Result<Rule>
+auto parse_rule(ParserState& s) -> Result<Rule>
 {
     auto rule = Rule {};
-    rule.location = impl_->previous.location;
+    rule.location = s.previous.location;
 
     // Check for foreach
-    if (match(TokenType::KwForeach)) {
+    if (match(s, TokenType::KwForeach)) {
         rule.foreach_ = true;
     }
 
     // Set context for input parsing
-    impl_->lexer.set_context(Lexer::Context::Inputs);
+    s.lexer.set_context(Lexer::Context::Inputs);
 
     // Parse inputs until | or |>
-    while (!check(TokenType::Pipe) && !check(TokenType::PipeArrow) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-        auto pattern = parse_path_pattern();
+    while (!check(s, TokenType::Pipe) && !check(s, TokenType::PipeArrow) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+        auto pattern = parse_path_pattern(s);
         if (!pattern) {
             return pup::unexpected<Error>(pattern.error());
         }
@@ -356,9 +338,9 @@ auto Parser::parse_rule() -> Result<Rule>
     }
 
     // Parse order-only inputs if present
-    if (match(TokenType::Pipe)) {
-        while (!check(TokenType::PipeArrow) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-            auto pattern = parse_path_pattern();
+    if (match(s, TokenType::Pipe)) {
+        while (!check(s, TokenType::PipeArrow) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            auto pattern = parse_path_pattern(s);
             if (!pattern) {
                 return pup::unexpected<Error>(pattern.error());
             }
@@ -367,7 +349,7 @@ auto Parser::parse_rule() -> Result<Rule>
     }
 
     // Parse rule body (command + outputs + groups)
-    auto body = parse_rule_body();
+    auto body = parse_rule_body(s);
     if (!body) {
         return pup::unexpected<Error>(body.error());
     }
@@ -380,37 +362,37 @@ auto Parser::parse_rule() -> Result<Rule>
     rule.output_order_only_group = std::move(body->output_order_only_group);
     rule.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
 
-    impl_->lexer.set_context(Lexer::Context::LineStart);
+    s.lexer.set_context(Lexer::Context::LineStart);
     return rule;
 }
 
-auto Parser::parse_bang_macro() -> Result<BangMacro>
+auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
 {
     auto macro = BangMacro {};
-    macro.location = impl_->previous.location;
+    macro.location = s.previous.location;
 
     // Expect macro name
-    if (!check(TokenType::Identifier) && !check(TokenType::Text)) {
+    if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
         return pup::make_error<BangMacro>(ErrorCode::ParseError, "Expected macro name after '!'");
     }
 
-    macro.name = std::string { impl_->current.text };
-    advance();
+    macro.name = std::string { s.current.text };
+    advance(s);
 
     // Expect =
-    auto eq = expect(TokenType::Equals, "Expected '=' after macro name");
+    auto eq = expect(s, TokenType::Equals, "Expected '=' after macro name");
     if (!eq) {
         return pup::unexpected<Error>(eq.error());
     }
 
     // Optional order-only inputs before |>
-    if (match(TokenType::Pipe)) {
-        while (!check(TokenType::PipeArrow) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-            if (match(TokenType::KwForeach)) {
+    if (match(s, TokenType::Pipe)) {
+        while (!check(s, TokenType::PipeArrow) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            if (match(s, TokenType::KwForeach)) {
                 macro.foreach_ = true;
                 continue;
             }
-            auto pattern = parse_path_pattern();
+            auto pattern = parse_path_pattern(s);
             if (!pattern) {
                 return pup::unexpected<Error>(pattern.error());
             }
@@ -419,7 +401,7 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     }
 
     // Parse rule body (command + outputs + groups)
-    auto body = parse_rule_body();
+    auto body = parse_rule_body(s);
     if (!body) {
         return pup::unexpected<Error>(body.error());
     }
@@ -432,42 +414,42 @@ auto Parser::parse_bang_macro() -> Result<BangMacro>
     macro.output_order_only_group = std::move(body->output_order_only_group);
     macro.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
 
-    impl_->lexer.set_context(Lexer::Context::LineStart);
+    s.lexer.set_context(Lexer::Context::LineStart);
     return macro;
 }
 
-auto Parser::parse_rule_body() -> Result<RuleBody>
+auto parse_rule_body(ParserState& s) -> Result<RuleBody>
 {
     auto body = RuleBody {};
 
     // Expect |> before command
-    if (!check(TokenType::PipeArrow)) {
+    if (!check(s, TokenType::PipeArrow)) {
         return pup::make_error<RuleBody>(ErrorCode::ParseError, "Expected '|>' before command");
     }
 
     // Set context BEFORE advancing so next token is read in Command context
-    impl_->lexer.set_context(Lexer::Context::Command);
-    advance(); // Consume |> and read command token in Command context
+    s.lexer.set_context(Lexer::Context::Command);
+    advance(s); // Consume |> and read command token in Command context
 
     // Parse command
-    auto cmd = parse_command();
+    auto cmd = parse_command(s);
     if (!cmd) {
         return pup::unexpected<Error>(cmd.error());
     }
     body.command = std::move(*cmd);
 
     // Switch context before advancing so advance() reads Outputs context token
-    impl_->lexer.set_context(Lexer::Context::Outputs);
+    s.lexer.set_context(Lexer::Context::Outputs);
 
     // Expect |> before outputs
-    auto arrow2 = expect(TokenType::PipeArrow, "Expected '|>' after command");
+    auto arrow2 = expect(s, TokenType::PipeArrow, "Expected '|>' after command");
     if (!arrow2) {
         return pup::unexpected<Error>(arrow2.error());
     }
 
     // Parse outputs (stop_at_angle=true so path/<group> splits the path from the group)
-    while (!check(TokenType::Pipe) && !check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-        auto pattern = parse_path_pattern(true);
+    while (!check(s, TokenType::Pipe) && !check(s, TokenType::OpenBrace) && !check(s, TokenType::OpenAngle) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+        auto pattern = parse_path_pattern(s, true);
         if (!pattern) {
             return pup::unexpected<Error>(pattern.error());
         }
@@ -475,9 +457,9 @@ auto Parser::parse_rule_body() -> Result<RuleBody>
     }
 
     // Parse extra outputs if present
-    if (match(TokenType::Pipe)) {
-        while (!check(TokenType::OpenBrace) && !check(TokenType::OpenAngle) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-            auto pattern = parse_path_pattern(true);
+    if (match(s, TokenType::Pipe)) {
+        while (!check(s, TokenType::OpenBrace) && !check(s, TokenType::OpenAngle) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            auto pattern = parse_path_pattern(s, true);
             if (!pattern) {
                 return pup::unexpected<Error>(pattern.error());
             }
@@ -486,12 +468,12 @@ auto Parser::parse_rule_body() -> Result<RuleBody>
     }
 
     // Parse output group {name} if present
-    if (match(TokenType::OpenBrace)) {
-        if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            body.output_group = std::string { impl_->current.text };
-            advance();
+    if (match(s, TokenType::OpenBrace)) {
+        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
+            body.output_group = std::string { s.current.text };
+            advance(s);
         }
-        auto close = expect(TokenType::CloseBrace, "Expected '}' after group name");
+        auto close = expect(s, TokenType::CloseBrace, "Expected '}' after group name");
         if (!close) {
             return pup::unexpected<Error>(close.error());
         }
@@ -499,7 +481,7 @@ auto Parser::parse_rule_body() -> Result<RuleBody>
 
     // Parse order-only output group <name> if present
     // Supports path/<group> syntax where path specifies the group's directory
-    if (match(TokenType::OpenAngle)) {
+    if (match(s, TokenType::OpenAngle)) {
         // Check if last output is a directory prefix (ends with /)
         if (!body.outputs.empty()) {
             auto& last = body.outputs.back();
@@ -513,11 +495,11 @@ auto Parser::parse_rule_body() -> Result<RuleBody>
             }
         }
 
-        if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            body.output_order_only_group = std::string { impl_->current.text };
-            advance();
+        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
+            body.output_order_only_group = std::string { s.current.text };
+            advance(s);
         }
-        auto close = expect(TokenType::CloseAngle, "Expected '>' after group name");
+        auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
         if (!close) {
             return pup::unexpected<Error>(close.error());
         }
@@ -526,29 +508,29 @@ auto Parser::parse_rule_body() -> Result<RuleBody>
     return body;
 }
 
-auto Parser::parse_assignment(Expression name_expr) -> Result<Assignment>
+auto parse_assignment(ParserState& s, Expression name_expr) -> Result<Assignment>
 {
     auto assign = Assignment {};
-    assign.location = impl_->previous.location;
+    assign.location = s.previous.location;
     assign.name = std::move(name_expr);
 
     // Determine operation type
-    if (match(TokenType::Equals)) {
+    if (match(s, TokenType::Equals)) {
         assign.op = Assignment::Op::Set;
-    } else if (match(TokenType::PlusEquals)) {
+    } else if (match(s, TokenType::PlusEquals)) {
         assign.op = Assignment::Op::Append;
-    } else if (match(TokenType::ColonEquals)) {
+    } else if (match(s, TokenType::ColonEquals)) {
         assign.op = Assignment::Op::Define;
-    } else if (match(TokenType::QuestionEquals)) {
+    } else if (match(s, TokenType::QuestionEquals)) {
         assign.op = Assignment::Op::SoftSet;
-    } else if (match(TokenType::DoubleQuestionEquals)) {
+    } else if (match(s, TokenType::DoubleQuestionEquals)) {
         assign.op = Assignment::Op::WeakSet;
     } else {
         return pup::make_error<Assignment>(ErrorCode::ParseError, "Expected assignment operator");
     }
 
     // Parse value (rest of line)
-    auto value = parse_expression();
+    auto value = parse_expression(s);
     if (!value) {
         return pup::unexpected<Error>(value.error());
     }
@@ -557,30 +539,30 @@ auto Parser::parse_assignment(Expression name_expr) -> Result<Assignment>
     return assign;
 }
 
-auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
+auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditional>
 {
     auto cond = Conditional {};
-    cond.location = impl_->previous.location;
+    cond.location = s.previous.location;
     cond.kind = kind;
 
     if (kind == Conditional::Kind::Ifdef || kind == Conditional::Kind::Ifndef) {
         // ifdef/ifndef VAR
-        if (!check(TokenType::Identifier) && !check(TokenType::Text)) {
+        if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
             return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected variable name after ifdef/ifndef");
         }
-        cond.var_name = std::string { impl_->current.text };
-        advance();
+        cond.var_name = std::string { s.current.text };
+        advance(s);
     } else {
         // ifeq/ifneq (lhs, rhs)
-        auto open = expect(TokenType::OpenParen, "Expected '(' after ifeq/ifneq");
+        auto open = expect(s, TokenType::OpenParen, "Expected '(' after ifeq/ifneq");
         if (!open) {
             return pup::unexpected<Error>(open.error());
         }
 
-        impl_->lexer.set_context(Lexer::Context::Conditional);
+        s.lexer.set_context(Lexer::Context::Conditional);
 
         // Parse LHS until comma
-        auto lhs = parse_expression_until([](Token const& t) {
+        auto lhs = parse_expression_until(s, [](Token const& t) {
             return t.is(TokenType::Comma);
         });
         if (!lhs) {
@@ -588,13 +570,13 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
         }
         cond.lhs = std::move(*lhs);
 
-        auto comma = expect(TokenType::Comma, "Expected ',' in ifeq/ifneq");
+        auto comma = expect(s, TokenType::Comma, "Expected ',' in ifeq/ifneq");
         if (!comma) {
             return pup::unexpected<Error>(comma.error());
         }
 
         // Parse RHS until close paren
-        auto rhs = parse_expression_until([](Token const& t) {
+        auto rhs = parse_expression_until(s, [](Token const& t) {
             return t.is(TokenType::CloseParen);
         });
         if (!rhs) {
@@ -602,32 +584,32 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
         }
         cond.rhs = std::move(*rhs);
 
-        auto close = expect(TokenType::CloseParen, "Expected ')' in ifeq/ifneq");
+        auto close = expect(s, TokenType::CloseParen, "Expected ')' in ifeq/ifneq");
         if (!close) {
             return pup::unexpected<Error>(close.error());
         }
 
-        impl_->lexer.set_context(Lexer::Context::LineStart);
+        s.lexer.set_context(Lexer::Context::LineStart);
     }
 
     // Skip to end of line
-    while (!check(TokenType::Newline) && !check(TokenType::Eof)) {
-        advance();
+    while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+        advance(s);
     }
-    if (check(TokenType::Newline)) {
-        advance();
+    if (check(s, TokenType::Newline)) {
+        advance(s);
     }
 
     // Parse then body until else or endif
-    while (!check(TokenType::KwElse) && !check(TokenType::KwEndif) && !check(TokenType::Eof)) {
-        if (match(TokenType::Newline) || match(TokenType::Hash)) {
+    while (!check(s, TokenType::KwElse) && !check(s, TokenType::KwEndif) && !check(s, TokenType::Eof)) {
+        if (match(s, TokenType::Newline) || match(s, TokenType::Hash)) {
             continue;
         }
 
-        auto stmt = parse_line();
+        auto stmt = parse_line(s);
         if (!stmt) {
-            report_error(stmt.error().message);
-            skip_to_next_statement();
+            report_error(s, stmt.error().message);
+            skip_to_next_statement(s);
             continue;
         }
         if (*stmt) {
@@ -636,23 +618,23 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
     }
 
     // Parse else body if present
-    if (match(TokenType::KwElse)) {
-        while (!check(TokenType::Newline) && !check(TokenType::Eof)) {
-            advance();
+    if (match(s, TokenType::KwElse)) {
+        while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            advance(s);
         }
-        if (check(TokenType::Newline)) {
-            advance();
+        if (check(s, TokenType::Newline)) {
+            advance(s);
         }
 
-        while (!check(TokenType::KwEndif) && !check(TokenType::Eof)) {
-            if (match(TokenType::Newline) || match(TokenType::Hash)) {
+        while (!check(s, TokenType::KwEndif) && !check(s, TokenType::Eof)) {
+            if (match(s, TokenType::Newline) || match(s, TokenType::Hash)) {
                 continue;
             }
 
-            auto stmt = parse_line();
+            auto stmt = parse_line(s);
             if (!stmt) {
-                report_error(stmt.error().message);
-                skip_to_next_statement();
+                report_error(s, stmt.error().message);
+                skip_to_next_statement(s);
                 continue;
             }
             if (*stmt) {
@@ -662,21 +644,21 @@ auto Parser::parse_conditional(Conditional::Kind kind) -> Result<Conditional>
     }
 
     // Expect endif
-    if (!match(TokenType::KwEndif)) {
+    if (!match(s, TokenType::KwEndif)) {
         return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected 'endif'");
     }
 
     return cond;
 }
 
-auto Parser::parse_include(bool is_rules) -> Result<Include>
+auto parse_include(ParserState& s, bool is_rules) -> Result<Include>
 {
     auto inc = Include {};
-    inc.location = impl_->previous.location;
+    inc.location = s.previous.location;
     inc.is_rules = is_rules;
 
     if (!is_rules) {
-        auto path = parse_expression();
+        auto path = parse_expression(s);
         if (!path) {
             return pup::unexpected<Error>(path.error());
         }
@@ -686,36 +668,36 @@ auto Parser::parse_include(bool is_rules) -> Result<Include>
     return inc;
 }
 
-auto Parser::parse_export() -> Result<Export>
+auto parse_export(ParserState& s) -> Result<Export>
 {
     auto exp = Export {};
-    exp.location = impl_->previous.location;
+    exp.location = s.previous.location;
 
-    if (!check(TokenType::Identifier) && !check(TokenType::Text)) {
+    if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
         return pup::make_error<Export>(ErrorCode::ParseError, "Expected variable name after 'export'");
     }
 
-    exp.var_name = std::string { impl_->current.text };
-    advance();
+    exp.var_name = std::string { s.current.text };
+    advance(s);
 
     return exp;
 }
 
-auto Parser::parse_import() -> Result<Import>
+auto parse_import(ParserState& s) -> Result<Import>
 {
     auto imp = Import {};
-    imp.location = impl_->previous.location;
+    imp.location = s.previous.location;
 
-    if (!check(TokenType::Identifier) && !check(TokenType::Text)) {
+    if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
         return pup::make_error<Import>(ErrorCode::ParseError, "Expected variable name after 'import'");
     }
 
-    imp.var_name = std::string { impl_->current.text };
-    advance();
+    imp.var_name = std::string { s.current.text };
+    advance(s);
 
     // Optional default value (=, ?=, and ??= are all equivalent for import)
-    if (match(TokenType::Equals) || match(TokenType::QuestionEquals) || match(TokenType::DoubleQuestionEquals)) {
-        auto value = parse_expression();
+    if (match(s, TokenType::Equals) || match(s, TokenType::QuestionEquals) || match(s, TokenType::DoubleQuestionEquals)) {
+        auto value = parse_expression(s);
         if (!value) {
             return pup::unexpected<Error>(value.error());
         }
@@ -725,21 +707,22 @@ auto Parser::parse_import() -> Result<Import>
     return imp;
 }
 
-auto Parser::parse_expression() -> Result<Expression>
+auto parse_expression(ParserState& s) -> Result<Expression>
 {
-    return parse_expression_until([](Token const& t) {
+    return parse_expression_until(s, [](Token const& t) {
         return t.is_end_of_statement();
     });
 }
 
-auto Parser::parse_expression_until(
+auto parse_expression_until(
+    ParserState& s,
     std::function<bool(Token const&)> const& stop,
     bool stop_at_gap
 ) -> Result<Expression>
 {
     auto expr = Expression {};
     auto current_text = std::string {};
-    auto last_end_offset = impl_->current.location.offset; // Track where last token ended
+    auto last_end_offset = s.current.location.offset; // Track where last token ended
 
     auto flush_text = [&] {
         if (!current_text.empty()) {
@@ -748,9 +731,9 @@ auto Parser::parse_expression_until(
         }
     };
 
-    while (!check(TokenType::Eof) && !stop(impl_->current)) {
+    while (!check(s, TokenType::Eof) && !stop(s.current)) {
         // Check if there was whitespace between tokens (gap in offsets)
-        auto has_gap = impl_->current.location.offset > last_end_offset;
+        auto has_gap = s.current.location.offset > last_end_offset;
         if (has_gap) {
             if (stop_at_gap) {
                 flush_text();
@@ -762,119 +745,119 @@ auto Parser::parse_expression_until(
         }
 
         // Variable reference: $(VAR)
-        if (check(TokenType::Dollar)) {
+        if (check(s, TokenType::Dollar)) {
             flush_text();
-            advance();
-            if (!match(TokenType::OpenParen)) {
+            advance(s);
+            if (!match(s, TokenType::OpenParen)) {
                 return pup::make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '$'");
             }
 
             auto name = std::string {};
-            while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-                name += impl_->current.text;
-                advance();
+            while (!check(s, TokenType::CloseParen) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+                name += s.current.text;
+                advance(s);
             }
 
-            if (!match(TokenType::CloseParen)) {
+            if (!match(s, TokenType::CloseParen)) {
                 return pup::make_error<Expression>(ErrorCode::ParseError, "Unterminated variable reference");
             }
 
-            auto var = VarRef { VarRef::Kind::Regular, std::move(name), impl_->previous.location };
+            auto var = VarRef { VarRef::Kind::Regular, std::move(name), s.previous.location };
             expr.parts.emplace_back(Expression::Variable { std::move(var) });
-            last_end_offset = impl_->previous.location.offset + static_cast<std::uint32_t>(impl_->previous.text.size());
+            last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
             continue;
         }
 
         // Config variable: @(VAR)
-        if (check(TokenType::At)) {
+        if (check(s, TokenType::At)) {
             flush_text();
-            advance();
-            if (!match(TokenType::OpenParen)) {
+            advance(s);
+            if (!match(s, TokenType::OpenParen)) {
                 return pup::make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '@'");
             }
 
             auto name = std::string {};
-            while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-                name += impl_->current.text;
-                advance();
+            while (!check(s, TokenType::CloseParen) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+                name += s.current.text;
+                advance(s);
             }
 
-            if (!match(TokenType::CloseParen)) {
+            if (!match(s, TokenType::CloseParen)) {
                 return pup::make_error<Expression>(ErrorCode::ParseError, "Unterminated config variable reference");
             }
 
-            auto var = VarRef { VarRef::Kind::Config, std::move(name), impl_->previous.location };
+            auto var = VarRef { VarRef::Kind::Config, std::move(name), s.previous.location };
             expr.parts.emplace_back(Expression::Variable { std::move(var) });
-            last_end_offset = impl_->previous.location.offset + static_cast<std::uint32_t>(impl_->previous.text.size());
+            last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
             continue;
         }
 
         // Node variable: &(VAR)
-        if (check(TokenType::Ampersand)) {
+        if (check(s, TokenType::Ampersand)) {
             flush_text();
-            advance();
-            if (!match(TokenType::OpenParen)) {
+            advance(s);
+            if (!match(s, TokenType::OpenParen)) {
                 return pup::make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '&'");
             }
 
             auto name = std::string {};
-            while (!check(TokenType::CloseParen) && !check(TokenType::Newline) && !check(TokenType::Eof)) {
-                name += impl_->current.text;
-                advance();
+            while (!check(s, TokenType::CloseParen) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+                name += s.current.text;
+                advance(s);
             }
 
-            if (!match(TokenType::CloseParen)) {
+            if (!match(s, TokenType::CloseParen)) {
                 return pup::make_error<Expression>(ErrorCode::ParseError, "Unterminated node variable reference");
             }
 
-            auto var = VarRef { VarRef::Kind::Node, std::move(name), impl_->previous.location };
+            auto var = VarRef { VarRef::Kind::Node, std::move(name), s.previous.location };
             expr.parts.emplace_back(Expression::Variable { std::move(var) });
-            last_end_offset = impl_->previous.location.offset + static_cast<std::uint32_t>(impl_->previous.text.size());
+            last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
             continue;
         }
 
         // Any other token becomes text
-        current_text += impl_->current.text;
-        last_end_offset = impl_->current.location.offset + static_cast<std::uint32_t>(impl_->current.text.size());
-        advance();
+        current_text += s.current.text;
+        last_end_offset = s.current.location.offset + static_cast<std::uint32_t>(s.current.text.size());
+        advance(s);
     }
 
     flush_text();
     return expr;
 }
 
-auto Parser::parse_path_pattern(bool stop_at_angle) -> Result<PathPattern>
+auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPattern>
 {
     auto pattern = PathPattern {};
-    pattern.location = impl_->current.location;
+    pattern.location = s.current.location;
 
     // Check for exclusion prefix (! for inputs, ^ for outputs)
-    if (match(TokenType::Bang)) {
+    if (match(s, TokenType::Bang)) {
         pattern.is_exclusion = true;
-    } else if (match(TokenType::Caret)) {
+    } else if (match(s, TokenType::Caret)) {
         pattern.is_output_exclusion = true;
     }
 
     // Check for group reference: {name} or <name>
-    if (match(TokenType::OpenBrace)) {
+    if (match(s, TokenType::OpenBrace)) {
         pattern.is_group = true;
-        if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            pattern.group_name = std::string { impl_->current.text };
-            advance();
+        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
+            pattern.group_name = std::string { s.current.text };
+            advance(s);
         }
-        if (!match(TokenType::CloseBrace)) {
+        if (!match(s, TokenType::CloseBrace)) {
             return pup::make_error<PathPattern>(ErrorCode::ParseError, "Expected '}' after group name");
         }
         return pattern;
     }
 
-    if (match(TokenType::OpenAngle)) {
+    if (match(s, TokenType::OpenAngle)) {
         pattern.is_order_only_group = true;
-        if (check(TokenType::Identifier) || check(TokenType::Text)) {
-            pattern.group_name = std::string { impl_->current.text };
-            advance();
+        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
+            pattern.group_name = std::string { s.current.text };
+            advance(s);
         }
-        if (!match(TokenType::CloseAngle)) {
+        if (!match(s, TokenType::CloseAngle)) {
             return pup::make_error<PathPattern>(ErrorCode::ParseError, "Expected '>' after group name");
         }
         return pattern;
@@ -883,7 +866,7 @@ auto Parser::parse_path_pattern(bool stop_at_angle) -> Result<PathPattern>
     // Parse path expression (until whitespace or delimiter)
     // stop_at_gap=true ensures we stop at whitespace boundaries between paths
     // For outputs (stop_at_angle=true), also stop at < for path/<group> syntax
-    auto path = parse_expression_until([stop_at_angle](Token const& t) {
+    auto path = parse_expression_until(s, [stop_at_angle](Token const& t) {
         if (stop_at_angle && t.is(TokenType::OpenAngle)) {
             return true;
         }
@@ -896,21 +879,21 @@ auto Parser::parse_path_pattern(bool stop_at_angle) -> Result<PathPattern>
     pattern.path = std::move(*path);
 
     // Skip whitespace
-    impl_->lexer.skip_whitespace();
+    s.lexer.skip_whitespace();
 
     return pattern;
 }
 
-auto Parser::parse_command() -> Result<Expression>
+auto parse_command(ParserState& s) -> Result<Expression>
 {
     auto expr = Expression {};
-    auto tok = Token { impl_->current }; // Start with current token (already advanced past |>)
+    auto tok = Token { s.current }; // Start with current token (already advanced past |>)
 
     // Collect command text until |>
     auto cmd_text = std::string {};
     while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
         cmd_text += tok.text;
-        tok = Token { impl_->lexer.next() };
+        tok = Token { s.lexer.next() };
     }
 
     // Trim leading whitespace (O(n) using find_first_not_of + substr)
@@ -946,22 +929,54 @@ auto Parser::parse_command() -> Result<Expression>
     }
 
     // Put back the |> token
-    impl_->current = tok;
+    s.current = tok;
 
     return expr;
 }
 
-auto Parser::make_error(std::string const& message) -> Error
-{
-    return Error::make(ErrorCode::ParseError, std::string { impl_->lexer.filename() } + ":" + std::to_string(impl_->current.location.line) + ":" + std::to_string(impl_->current.location.column) + ": " + message);
-}
+} // namespace
 
-auto Parser::report_error(std::string const& message) -> void
+auto parse_tupfile(
+    std::string_view source,
+    std::string_view filename,
+    ParserOptions opts
+) -> ParseResult
 {
-    impl_->errors.push_back(ParseError {
-        .location = impl_->current.location,
-        .message = message,
-    });
+    auto s = ParserState { source, filename };
+    s.options = opts;
+    advance(s); // Prime the parser with first token
+
+    auto tupfile = Tupfile {};
+    tupfile.filename = std::string { s.lexer.filename() };
+
+    while (!check(s, TokenType::Eof)) {
+        // Skip empty lines and comments
+        if (match(s, TokenType::Newline)) {
+            continue;
+        }
+        if (match(s, TokenType::Hash)) {
+            if (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+                advance(s); // Skip to next line
+            }
+            continue;
+        }
+
+        auto stmt = parse_line(s);
+        if (!stmt) {
+            report_error(s, stmt.error().message);
+            skip_to_next_statement(s);
+            continue;
+        }
+
+        if (*stmt) {
+            tupfile.statements.push_back(std::move(*stmt));
+        }
+    }
+
+    return ParseResult {
+        .tupfile = std::move(tupfile),
+        .errors = std::move(s.errors),
+    };
 }
 
 } // namespace pup::parser

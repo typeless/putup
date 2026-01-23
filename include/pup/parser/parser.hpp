@@ -4,13 +4,9 @@
 #pragma once
 
 #include "ast.hpp"
-#include "lexer.hpp"
-#include "pup/core/result.hpp"
 
-#include <functional>
-#include <memory>
 #include <string>
-#include <unordered_set>
+#include <string_view>
 #include <vector>
 
 namespace pup::parser {
@@ -27,86 +23,21 @@ struct ParserOptions {
     int max_include_depth = 100;
 };
 
-/// Parser for Tupfile syntax (PIMPL for compile-time isolation)
-class Parser {
-public:
-    using Options = ParserOptions;
+/// Result of parsing a Tupfile
+struct ParseResult {
+    Tupfile tupfile;
+    std::vector<ParseError> errors;
 
-    Parser(std::string_view source, std::string_view filename, Options options = Options {});
-    ~Parser();
-
-    Parser(Parser const&) = delete;
-    auto operator=(Parser const&) -> Parser& = delete;
-
-    Parser(Parser&&) noexcept;
-    auto operator=(Parser&&) noexcept -> Parser&;
-
-    /// Parse complete Tupfile
     [[nodiscard]]
-    auto parse() -> Result<Tupfile>;
-
-    /// Get all parse errors
-    [[nodiscard]]
-    auto errors() const -> std::vector<ParseError> const&;
-
-    struct Impl;
-
-private:
-    std::unique_ptr<Impl> impl_;
-
-    // Token management
-    auto advance() -> Token;
-    [[nodiscard]]
-    auto check(TokenType type) const -> bool;
-    [[nodiscard]]
-    auto match(TokenType type) -> bool;
-    auto expect(TokenType type, std::string_view message) -> Result<Token>;
-    auto skip_to_next_statement() -> void;
-
-    // Statement parsing
-    [[nodiscard]]
-    auto parse_line() -> Result<std::unique_ptr<Statement>>;
-    [[nodiscard]]
-    auto parse_rule() -> Result<Rule>;
-    [[nodiscard]]
-    auto parse_bang_macro() -> Result<BangMacro>;
-    struct RuleBody;
-    [[nodiscard]]
-    auto parse_rule_body() -> Result<RuleBody>;
-    [[nodiscard]]
-    auto parse_assignment(Expression name_expr) -> Result<Assignment>;
-    [[nodiscard]]
-    auto parse_conditional(Conditional::Kind kind) -> Result<Conditional>;
-    [[nodiscard]]
-    auto parse_include(bool is_rules) -> Result<Include>;
-    [[nodiscard]]
-    auto parse_export() -> Result<Export>;
-    [[nodiscard]]
-    auto parse_import() -> Result<Import>;
-
-    // Expression parsing
-    [[nodiscard]]
-    auto parse_expression() -> Result<Expression>;
-    [[nodiscard]]
-    auto parse_expression_until(
-        std::function<bool(Token const&)> const& stop,
-        bool stop_at_gap = false
-    ) -> Result<Expression>;
-    [[nodiscard]]
-    auto parse_path_pattern(bool stop_at_angle = false) -> Result<PathPattern>;
-    [[nodiscard]]
-    auto parse_path_list() -> Result<std::vector<PathPattern>>;
-    [[nodiscard]]
-    auto parse_path_list_until(TokenType stop) -> Result<std::vector<PathPattern>>;
-
-    // Command parsing (between |> markers)
-    [[nodiscard]]
-    auto parse_command() -> Result<Expression>;
-
-    // Helper to create error
-    [[nodiscard]]
-    auto make_error(std::string const& message) -> Error;
-    auto report_error(std::string const& message) -> void;
+    auto success() const -> bool { return errors.empty(); }
 };
+
+/// Parse a Tupfile from source text
+[[nodiscard]]
+auto parse_tupfile(
+    std::string_view source,
+    std::string_view filename,
+    ParserOptions opts = {}
+) -> ParseResult;
 
 } // namespace pup::parser

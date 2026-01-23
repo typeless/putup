@@ -25,12 +25,7 @@ auto remove_indexed_outputs(
 {
     auto result = RemoveResult {};
 
-    auto reader_result = pup::index::IndexReader::open(index_path);
-    if (!reader_result) {
-        return result;
-    }
-
-    auto index_result = reader_result->read();
+    auto index_result = pup::index::read_index(index_path);
     if (!index_result) {
         return result;
     }

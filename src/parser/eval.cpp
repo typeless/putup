@@ -64,15 +64,117 @@ auto VarDb::clear() -> void
 }
 
 // =============================================================================
-// Evaluator
+// Internal helper functions
 // =============================================================================
 
-Evaluator::Evaluator(EvalContext* ctx)
-    : ctx_(ctx)
+namespace {
+
+auto expand_special_var(EvalContext& ctx, std::string_view name) -> std::optional<std::string>
 {
+    // Context-computed special variables - NOT overridable via config
+    if (name == builtin_vars::TUP_CWD) {
+        return ctx.tup_cwd;
+    }
+    if (name == builtin_vars::TUP_VARIANTDIR) {
+        return ctx.tup_variantdir;
+    }
+    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
+        return ctx.tup_variant_outputdir;
+    }
+    if (name == builtin_vars::TUP_SRCDIR) {
+        return ctx.tup_srcdir;
+    }
+    if (name == builtin_vars::TUP_OUTDIR) {
+        return ctx.tup_outdir;
+    }
+
+    // TUP_PLATFORM and TUP_ARCH are handled in expand_var() with proper priority:
+    // env > config > default
+
+    return std::nullopt;
 }
 
-auto Evaluator::expand(Expression const& expr) -> Result<std::string>
+auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
+{
+    // TUP_PLATFORM and TUP_ARCH have special priority: env > config > default
+    // Check env var first (highest priority)
+    if (ref.name == builtin_vars::TUP_PLATFORM) {
+        if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+            return std::string { env };
+        }
+    }
+    if (ref.name == builtin_vars::TUP_ARCH) {
+        if (auto const* env = std::getenv("TUP_ARCH"); env && *env) {
+            return std::string { env };
+        }
+    }
+
+    // Check for context-computed special variables (TUP_CWD, TUP_VARIANTDIR, etc.)
+    // These are NOT overridable via config
+    if (auto special = expand_special_var(ctx, ref.name)) {
+        return *special;
+    }
+
+    VarDb const* db = nullptr;
+    switch (ref.kind) {
+    case VarRef::Kind::Regular:
+        db = ctx.vars;
+        break;
+    case VarRef::Kind::Config:
+        db = ctx.config_vars;
+        break;
+    case VarRef::Kind::Node:
+        db = ctx.node_vars;
+        break;
+    }
+
+    if (db && db->contains(ref.name)) {
+        // Track config variable usage for fine-grained dependency tracking
+        // Track even for empty values - if value changes, command should rebuild
+        if (ref.kind == VarRef::Kind::Config && ctx.on_config_var_used) {
+            ctx.on_config_var_used(ref.name);
+        }
+        // Track imported env variable usage for fine-grained dependency tracking
+        if (ref.kind == VarRef::Kind::Regular && ctx.imported_vars
+            && ctx.imported_vars->contains(ref.name) && ctx.on_env_var_used) {
+            ctx.on_env_var_used(ref.name);
+        }
+        return std::string { db->get(ref.name) };
+    }
+
+    // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
+    if (ref.kind == VarRef::Kind::Regular && ctx.config_vars && ctx.config_vars->contains(ref.name)) {
+        // Track config variable usage - strip CONFIG_ prefix if present
+        // Track even for empty values - if value changes, command should rebuild
+        if (ctx.on_config_var_used) {
+            auto name = ref.name;
+            if (name.starts_with(builtin_vars::CONFIG_)) {
+                name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
+            }
+            ctx.on_config_var_used(name);
+        }
+        return std::string { ctx.config_vars->get(ref.name) };
+    }
+
+    // Fall back to compile-time default for TUP_PLATFORM/TUP_ARCH
+    if (ref.name == builtin_vars::TUP_PLATFORM) {
+        return std::string { pup::PLATFORM };
+    }
+    if (ref.name == builtin_vars::TUP_ARCH) {
+        return std::string { pup::ARCH };
+    }
+
+    // Variable not found - return empty string (tup behavior)
+    return std::string {};
+}
+
+} // namespace
+
+// =============================================================================
+// Free functions
+// =============================================================================
+
+auto expand(EvalContext& ctx, Expression const& expr) -> Result<std::string>
 {
     auto result = std::string {};
 
@@ -81,7 +183,7 @@ auto Evaluator::expand(Expression const& expr) -> Result<std::string>
             result += std::get<Expression::Literal>(part).value;
         } else if (std::holds_alternative<Expression::Variable>(part)) {
             auto const& var = std::get<Expression::Variable>(part);
-            auto expanded = expand_var(var.ref);
+            auto expanded = expand_var(ctx, var.ref);
             if (!expanded) {
                 return pup::unexpected<Error>(expanded.error());
             }
@@ -91,10 +193,10 @@ auto Evaluator::expand(Expression const& expr) -> Result<std::string>
 
     // Recursively expand any variable references that were embedded in literals
     // (e.g., from escaped quotes like \"$(VAR)\")
-    return expand(std::string_view { result });
+    return expand(ctx, std::string_view { result });
 }
 
-auto Evaluator::expand(std::string_view text) -> Result<std::string>
+auto expand(EvalContext& ctx, std::string_view text) -> Result<std::string>
 {
     auto result = std::string {};
     auto pos = std::size_t { 0 };
@@ -131,7 +233,7 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
                 }
 
                 auto ref = VarRef { kind, std::string { name }, {} };
-                auto expanded = expand_var(ref);
+                auto expanded = expand_var(ctx, ref);
                 if (!expanded) {
                     return pup::unexpected<Error>(expanded.error());
                 }
@@ -149,7 +251,8 @@ auto Evaluator::expand(std::string_view text) -> Result<std::string>
     return result;
 }
 
-auto Evaluator::expand_pattern(
+auto expand_pattern(
+    EvalContext& ctx,
     std::string_view text,
     PatternFlags const& flags
 ) -> Result<std::string>
@@ -230,8 +333,8 @@ auto Evaluator::expand_pattern(
             pos = end + 1;
 
             // Resolve order-only group to paths via callback
-            if (ctx_->resolve_order_only_group) {
-                auto paths = ctx_->resolve_order_only_group(group_name);
+            if (ctx.resolve_order_only_group) {
+                auto paths = ctx.resolve_order_only_group(group_name);
                 for (std::size_t i = 0; i < paths.size(); ++i) {
                     if (i > 0) {
                         result += ' ';
@@ -294,7 +397,8 @@ auto Evaluator::expand_pattern(
     return result;
 }
 
-auto Evaluator::expand_path(
+auto expand_path(
+    EvalContext& ctx,
     PathPattern const& pattern
 ) -> Result<std::vector<std::string>>
 {
@@ -302,8 +406,8 @@ auto Evaluator::expand_path(
 
     if (pattern.is_order_only_group) {
         // Order-only group reference <groupname> - use callback to resolve
-        if (ctx_->resolve_order_only_group) {
-            auto paths = ctx_->resolve_order_only_group(pattern.group_name);
+        if (ctx.resolve_order_only_group) {
+            auto paths = ctx.resolve_order_only_group(pattern.group_name);
             result.insert(result.end(), paths.begin(), paths.end());
         }
         return result;
@@ -311,15 +415,15 @@ auto Evaluator::expand_path(
 
     if (pattern.is_group) {
         // Group reference {groupname} - use callback to resolve
-        if (ctx_->resolve_group) {
-            auto paths = ctx_->resolve_group(pattern.group_name);
+        if (ctx.resolve_group) {
+            auto paths = ctx.resolve_group(pattern.group_name);
             result.insert(result.end(), paths.begin(), paths.end());
         }
         return result;
     }
 
     // Expand the path expression
-    auto path_result = expand(pattern.path);
+    auto path_result = expand(ctx, pattern.path);
     if (!path_result) {
         return pup::unexpected<Error>(path_result.error());
     }
@@ -352,30 +456,30 @@ auto Evaluator::expand_path(
     return result;
 }
 
-auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
+auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
 {
     switch (cond.kind) {
     case Conditional::Kind::Ifdef:
-        if (ctx_->vars && ctx_->vars->contains(cond.var_name)) {
+        if (ctx.vars && ctx.vars->contains(cond.var_name)) {
             return true;
         }
-        if (ctx_->config_vars && ctx_->config_vars->contains(cond.var_name)) {
+        if (ctx.config_vars && ctx.config_vars->contains(cond.var_name)) {
             return true;
         }
         return false;
 
     case Conditional::Kind::Ifndef:
-        if (ctx_->vars && ctx_->vars->contains(cond.var_name)) {
+        if (ctx.vars && ctx.vars->contains(cond.var_name)) {
             return false;
         }
-        if (ctx_->config_vars && ctx_->config_vars->contains(cond.var_name)) {
+        if (ctx.config_vars && ctx.config_vars->contains(cond.var_name)) {
             return false;
         }
         return true;
 
     case Conditional::Kind::Ifeq: {
-        auto lhs = expand(cond.lhs);
-        auto rhs = expand(cond.rhs);
+        auto lhs = expand(ctx, cond.lhs);
+        auto rhs = expand(ctx, cond.rhs);
         if (!lhs || !rhs) {
             return false;
         }
@@ -383,8 +487,8 @@ auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
     }
 
     case Conditional::Kind::Ifneq: {
-        auto lhs = expand(cond.lhs);
-        auto rhs = expand(cond.rhs);
+        auto lhs = expand(ctx, cond.lhs);
+        auto rhs = expand(ctx, cond.rhs);
         if (!lhs || !rhs) {
             return false;
         }
@@ -393,105 +497,6 @@ auto Evaluator::evaluate_condition(Conditional const& cond) -> bool
     }
 
     return false;
-}
-
-auto Evaluator::expand_var(VarRef const& ref) -> Result<std::string>
-{
-    // TUP_PLATFORM and TUP_ARCH have special priority: env > config > default
-    // Check env var first (highest priority)
-    if (ref.name == builtin_vars::TUP_PLATFORM) {
-        if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
-            return std::string { env };
-        }
-    }
-    if (ref.name == builtin_vars::TUP_ARCH) {
-        if (auto const* env = std::getenv("TUP_ARCH"); env && *env) {
-            return std::string { env };
-        }
-    }
-
-    // Check for context-computed special variables (TUP_CWD, TUP_VARIANTDIR, etc.)
-    // These are NOT overridable via config
-    if (auto special = expand_special_var(ref.name)) {
-        return *special;
-    }
-
-    VarDb const* db = nullptr;
-    switch (ref.kind) {
-    case VarRef::Kind::Regular:
-        db = ctx_->vars;
-        break;
-    case VarRef::Kind::Config:
-        db = ctx_->config_vars;
-        break;
-    case VarRef::Kind::Node:
-        db = ctx_->node_vars;
-        break;
-    }
-
-    if (db && db->contains(ref.name)) {
-        // Track config variable usage for fine-grained dependency tracking
-        // Track even for empty values - if value changes, command should rebuild
-        if (ref.kind == VarRef::Kind::Config && ctx_->on_config_var_used) {
-            ctx_->on_config_var_used(ref.name);
-        }
-        // Track imported env variable usage for fine-grained dependency tracking
-        if (ref.kind == VarRef::Kind::Regular && ctx_->imported_vars
-            && ctx_->imported_vars->contains(ref.name) && ctx_->on_env_var_used) {
-            ctx_->on_env_var_used(ref.name);
-        }
-        return std::string { db->get(ref.name) };
-    }
-
-    // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
-    if (ref.kind == VarRef::Kind::Regular && ctx_->config_vars && ctx_->config_vars->contains(ref.name)) {
-        // Track config variable usage - strip CONFIG_ prefix if present
-        // Track even for empty values - if value changes, command should rebuild
-        if (ctx_->on_config_var_used) {
-            auto name = ref.name;
-            if (name.starts_with(builtin_vars::CONFIG_)) {
-                name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
-            }
-            ctx_->on_config_var_used(name);
-        }
-        return std::string { ctx_->config_vars->get(ref.name) };
-    }
-
-    // Fall back to compile-time default for TUP_PLATFORM/TUP_ARCH
-    if (ref.name == builtin_vars::TUP_PLATFORM) {
-        return std::string { pup::PLATFORM };
-    }
-    if (ref.name == builtin_vars::TUP_ARCH) {
-        return std::string { pup::ARCH };
-    }
-
-    // Variable not found - return empty string (tup behavior)
-    return std::string {};
-}
-
-auto Evaluator::expand_special_var(std::string_view name) -> std::optional<std::string>
-{
-    // Context-computed special variables - NOT overridable via config
-    if (name == builtin_vars::TUP_CWD) {
-        return ctx_->tup_cwd;
-    }
-    if (name == builtin_vars::TUP_VARIANTDIR) {
-        return ctx_->tup_variantdir;
-    }
-    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
-        return ctx_->tup_variant_outputdir;
-    }
-    if (name == builtin_vars::TUP_SRCDIR) {
-        return ctx_->tup_srcdir;
-    }
-    if (name == builtin_vars::TUP_OUTDIR) {
-        return ctx_->tup_outdir;
-    }
-
-    // TUP_PLATFORM and TUP_ARCH are handled in expand_var() with proper priority:
-    // env > config > default
-
-    return std::nullopt;
 }
 
 } // namespace pup::parser

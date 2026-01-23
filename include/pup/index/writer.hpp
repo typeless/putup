@@ -8,63 +8,20 @@
 #include "pup/core/result.hpp"
 
 #include <filesystem>
-#include <unordered_map>
 #include <vector>
 
 namespace pup::index {
 
-/// Index file writer with atomic write support
-class IndexWriter {
-public:
-    IndexWriter() = default;
+/// Write an index to a file atomically
+/// Uses a temporary file and rename for atomic operation
+[[nodiscard]]
+auto write_index(
+    std::filesystem::path const& path,
+    Index const& index
+) -> Result<void>;
 
-    /// Write an index to a file atomically
-    /// Uses a temporary file and rename for atomic operation
-    [[nodiscard]]
-    auto write(
-        std::filesystem::path const& path,
-        Index const& index
-    ) -> Result<void>;
-
-    /// Serialize an index to a byte vector
-    [[nodiscard]]
-    auto serialize(Index const& index) -> Result<std::vector<std::byte>>;
-
-private:
-    /// String table builder
-    class StringTable {
-    public:
-        /// Add a string and return its offset
-        [[nodiscard]]
-        auto add(std::string_view str) -> Result<std::uint32_t>;
-
-        /// Get the table data
-        [[nodiscard]]
-        auto data() const -> std::vector<char> const&
-        {
-            return data_;
-        }
-
-        /// Get the current size
-        [[nodiscard]]
-        auto size() const -> std::uint32_t
-        {
-            return static_cast<std::uint32_t>(data_.size());
-        }
-
-    private:
-        std::vector<char> data_ = {};
-        std::unordered_map<std::string, std::uint32_t> offsets_ = {};
-    };
-
-    auto build_header(
-        Index const& index,
-        StringTable const& strings,
-        std::uint32_t file_offset,
-        std::uint32_t command_offset,
-        std::uint32_t edge_offset,
-        std::uint32_t string_offset
-    ) -> RawHeader;
-};
+/// Serialize an index to a byte vector
+[[nodiscard]]
+auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>;
 
 } // namespace pup::index

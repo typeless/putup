@@ -342,29 +342,28 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     index.add_edge(EdgeEntry { .from = 5, .to = cmd_id, .type = LinkType::Implicit });
 
     // Serialize
-    auto writer = IndexWriter {};
-    auto data = writer.serialize(index);
+        auto data = serialize_index(index);
     REQUIRE(data.has_value());
     REQUIRE(data->size() > sizeof(RawHeader) + sizeof(RawFooter));
 
     // Write to temp file and read back
     auto temp_path = std::filesystem::temp_directory_path() / "pup_test_index";
 
-    auto write_result = writer.write(temp_path, index);
+    auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
     // Verify file exists
     REQUIRE(std::filesystem::exists(temp_path));
 
     // Read back
-    auto reader_result = IndexReader::open(temp_path);
+    auto reader_result = open_index(temp_path);
     REQUIRE(reader_result.has_value());
 
-    auto& reader = *reader_result;
-    REQUIRE(reader.is_open());
+    auto& idx_file = *reader_result;
+    REQUIRE(index_is_open(idx_file));
 
     // Check header
-    auto const* hdr = reader.header();
+    auto const* hdr = index_header(idx_file);
     REQUIRE(hdr != nullptr);
     REQUIRE(std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) == 0);
     REQUIRE(hdr->version == INDEX_VERSION);
@@ -373,10 +372,10 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(hdr->edge_count == 3);
 
     // Verify checksum
-    REQUIRE(reader.verify_checksum());
+    REQUIRE(index_verify_checksum(idx_file));
 
     // Read full index
-    auto read_result = reader.read();
+    auto read_result = read_index(idx_file);
     REQUIRE(read_result.has_value());
 
     auto& restored = *read_result;
@@ -478,14 +477,13 @@ TEST_CASE("Index ID contiguity requirement", "[index]")
 
     // Serialize and read back
     auto temp_path = std::filesystem::temp_directory_path() / "pup_test_contiguous";
-    auto writer = IndexWriter {};
-    auto write_result = writer.write(temp_path, index);
+        auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
-    auto reader_result = IndexReader::open(temp_path);
+    auto reader_result = open_index(temp_path);
     REQUIRE(reader_result.has_value());
 
-    auto read_result = reader_result->read();
+    auto read_result = read_index(*reader_result);
     REQUIRE(read_result.has_value());
 
     auto& restored = *read_result;
@@ -506,23 +504,22 @@ TEST_CASE("Index reader validation", "[index]")
 {
     SECTION("non-existent file")
     {
-        auto result = IndexReader::open("/nonexistent/path/to/index");
+        auto result = open_index("/nonexistent/path/to/index");
         REQUIRE_FALSE(result.has_value());
     }
 
     SECTION("is_valid_index")
     {
-        REQUIRE_FALSE(IndexReader::is_valid_index("/nonexistent"));
+        REQUIRE_FALSE(is_valid_index("/nonexistent"));
 
         // Create a valid index
         auto index = Index {};
         index.add_file(FileEntry { .id = 1, .name = "test.c" });
 
         auto temp_path = std::filesystem::temp_directory_path() / "pup_valid_test";
-        auto writer = IndexWriter {};
-        (void)writer.write(temp_path, index);
+                (void)write_index(temp_path, index);
 
-        REQUIRE(IndexReader::is_valid_index(temp_path));
+        REQUIRE(is_valid_index(temp_path));
 
         std::filesystem::remove(temp_path);
     }
@@ -537,8 +534,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     index.add_command(CommandEntry { .id = cmd_id, .command = "gcc test.c" });
     index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
-    auto writer = IndexWriter {};
-    auto data = writer.serialize(index);
+        auto data = serialize_index(index);
     REQUIRE(data.has_value());
 
     auto temp_path = std::filesystem::temp_directory_path() / "pup_malicious_test";
@@ -553,10 +549,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto files = reader_result->raw_files();
+        auto files = index_raw_files(*reader_result);
         REQUIRE(files.empty());
 
         std::filesystem::remove(temp_path);
@@ -572,10 +568,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto files = reader_result->raw_files();
+        auto files = index_raw_files(*reader_result);
         REQUIRE(files.empty());
 
         std::filesystem::remove(temp_path);
@@ -591,10 +587,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto commands = reader_result->raw_commands();
+        auto commands = index_raw_commands(*reader_result);
         REQUIRE(commands.empty());
 
         std::filesystem::remove(temp_path);
@@ -610,10 +606,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto commands = reader_result->raw_commands();
+        auto commands = index_raw_commands(*reader_result);
         REQUIRE(commands.empty());
 
         std::filesystem::remove(temp_path);
@@ -629,10 +625,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto edges = reader_result->raw_edges();
+        auto edges = index_raw_edges(*reader_result);
         REQUIRE(edges.empty());
 
         std::filesystem::remove(temp_path);
@@ -648,10 +644,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto edges = reader_result->raw_edges();
+        auto edges = index_raw_edges(*reader_result);
         REQUIRE(edges.empty());
 
         std::filesystem::remove(temp_path);
@@ -669,10 +665,10 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
-        auto files = reader_result->raw_files();
+        auto files = index_raw_files(*reader_result);
         REQUIRE(files.empty());
 
         std::filesystem::remove(temp_path);
@@ -688,11 +684,11 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
         out.close();
 
-        auto reader_result = IndexReader::open(temp_path);
+        auto reader_result = open_index(temp_path);
         REQUIRE(reader_result.has_value());
 
         // get_string should return empty for out-of-bounds
-        auto str = reader_result->get_string(0);
+        auto str = index_get_string(*reader_result, 0);
         REQUIRE(str.empty());
 
         std::filesystem::remove(temp_path);
@@ -710,8 +706,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
 
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = huge_name });
 
-        auto writer = IndexWriter {};
-        auto result = writer.serialize(index);
+                auto result = serialize_index(index);
 
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error().message.find("64KB") != std::string::npos);
@@ -726,8 +721,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
 
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = max_name });
 
-        auto writer = IndexWriter {};
-        auto result = writer.serialize(index);
+                auto result = serialize_index(index);
 
         REQUIRE(result.has_value());
     }
@@ -743,8 +737,7 @@ TEST_CASE("StringTable deduplication", "[index]")
         index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = "main.cpp" });
         index.add_file(FileEntry { .id = 3, .parent_id = 0, .name = "main.cpp" });
 
-        auto writer = IndexWriter {};
-        auto data = writer.serialize(index);
+                auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
         // v6 length-prefixed: 2 (empty) + 2 (length) + 8 (main.cpp) = 12
@@ -759,8 +752,7 @@ TEST_CASE("StringTable deduplication", "[index]")
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = "/usr/include/stdio.h" });
         index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = "/usr/include/stdio.h" });
 
-        auto writer = IndexWriter {};
-        auto data = writer.serialize(index);
+                auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
         // v6 length-prefixed: 2 (empty) + 2 (length) + 20 (path) = 24
@@ -775,8 +767,7 @@ TEST_CASE("StringTable deduplication", "[index]")
         index.add_command(CommandEntry { .id = make_command_id(1), .command = "gcc", .display = "", .env = "" });
         index.add_command(CommandEntry { .id = make_command_id(2), .command = "gcc", .display = "", .env = "" });
 
-        auto writer = IndexWriter {};
-        auto data = writer.serialize(index);
+                auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
         // v6 length-prefixed: 2 (empty) + 2 (length) + 3 (gcc) = 7

@@ -1,1 +1,1 @@
-ROOT = $(TUP_CWD)
+# No variables needed - paths are source-root-relative

@@ -6,7 +6,9 @@
 #include "result.hpp"
 #include "types.hpp"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string_view>
@@ -15,34 +17,30 @@
 
 namespace pup {
 
-/// SHA-256 hasher (Git's block implementation)
-class Sha256 {
-public:
-    Sha256();
-    ~Sha256();
-
-    Sha256(Sha256 const&) = delete;
-    auto operator=(Sha256 const&) -> Sha256& = delete;
-    Sha256(Sha256&&) noexcept;
-    auto operator=(Sha256&&) noexcept -> Sha256&;
-
-    /// Add data to the hash
-    auto update(std::span<std::byte const> data) -> void;
-
-    /// Add string data to the hash
-    auto update(std::string_view data) -> void;
-
-    /// Finalize and return the hash
-    [[nodiscard]]
-    auto finalize() -> Hash256;
-
-    /// Reset to initial state for reuse
-    auto reset() -> void;
-
-private:
-    struct Impl;
-    Impl* impl_ = nullptr;
+/// SHA-256 state for streaming hashes
+/// Transparent struct - no PIMPL, suitable for stack allocation
+struct Sha256State {
+    std::array<std::uint32_t, 8> state;
+    std::uint64_t size;
+    std::uint32_t offset;
+    std::array<std::uint8_t, 64> buffer;
 };
+
+/// Initialize SHA-256 state
+[[nodiscard]]
+auto sha256_init() -> Sha256State;
+
+/// Update SHA-256 state with data (functional style - returns new state)
+[[nodiscard]]
+auto sha256_update(Sha256State state, std::span<std::byte const> data) -> Sha256State;
+
+/// Update SHA-256 state with string data
+[[nodiscard]]
+auto sha256_update(Sha256State state, std::string_view data) -> Sha256State;
+
+/// Finalize SHA-256 and return the hash
+[[nodiscard]]
+auto sha256_finalize(Sha256State state) -> Hash256;
 
 /// Compute SHA-256 hash of a byte span
 [[nodiscard]]

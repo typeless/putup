@@ -53,14 +53,14 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("literal expression")
     {
         auto expr = Expression {};
         expr.parts.push_back(Expression::Literal { "hello world" });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "hello world");
     }
@@ -73,7 +73,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
         expr.parts.push_back(Expression::Literal { "hello " });
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "NAME", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "hello pup");
     }
@@ -88,7 +88,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
         expr.parts.push_back(Expression::Literal { " " });
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CFLAGS", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "gcc -Wall -O2");
     }
@@ -98,7 +98,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "UNDEFINED", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(result->empty());
     }
@@ -108,11 +108,11 @@ TEST_CASE("Evaluator string expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("no variables")
     {
-        auto result = eval.expand("hello world");
+        auto result = expand(ctx,"hello world");
         REQUIRE(result.has_value());
         REQUIRE(*result == "hello world");
     }
@@ -120,7 +120,7 @@ TEST_CASE("Evaluator string expansion", "[eval]")
     SECTION("single variable")
     {
         vars.set("NAME", "pup");
-        auto result = eval.expand("hello $(NAME)");
+        auto result = expand(ctx,"hello $(NAME)");
         REQUIRE(result.has_value());
         REQUIRE(*result == "hello pup");
     }
@@ -129,14 +129,14 @@ TEST_CASE("Evaluator string expansion", "[eval]")
     {
         vars.set("CC", "gcc");
         vars.set("FLAGS", "-O2");
-        auto result = eval.expand("$(CC) $(FLAGS)");
+        auto result = expand(ctx,"$(CC) $(FLAGS)");
         REQUIRE(result.has_value());
         REQUIRE(*result == "gcc -O2");
     }
 
     SECTION("dollar without paren is literal")
     {
-        auto result = eval.expand("price is $5");
+        auto result = expand(ctx,"price is $5");
         REQUIRE(result.has_value());
         REQUIRE(*result == "price is $5");
     }
@@ -147,7 +147,7 @@ TEST_CASE("Evaluator config variables", "[eval]")
     auto vars = VarDb {};
     auto config_vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("config variable expansion")
     {
@@ -156,7 +156,7 @@ TEST_CASE("Evaluator config variables", "[eval]")
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "DEBUG", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "y");
     }
@@ -171,14 +171,14 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
         .tup_platform = "linux",
         .tup_arch = "x86_64",
     };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("TUP_CWD")
     {
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "TUP_CWD", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "/home/user/project/src");
     }
@@ -188,7 +188,7 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "TUP_PLATFORM", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "linux");
     }
@@ -226,14 +226,14 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
         .config_vars = &config_vars,
         .tup_platform = std::string { pup::PLATFORM }, // compile-time default
     };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("returns compile-time default when config not set")
     {
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == pup::PLATFORM);
     }
@@ -245,7 +245,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "win32");
     }
@@ -258,7 +258,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "env-platform");
     }
@@ -273,14 +273,14 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
         .config_vars = &config_vars,
         .tup_arch = std::string { pup::ARCH }, // compile-time default
     };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("returns compile-time default when config not set")
     {
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == pup::ARCH);
     }
@@ -292,7 +292,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "arm64");
     }
@@ -305,7 +305,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
         auto expr = Expression {};
         expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
 
-        auto result = eval.expand(expr);
+        auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
         REQUIRE(*result == "env-arch");
     }
@@ -315,7 +315,7 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     // For foreach rules, all_inputs has just one element (the current input)
     auto flags = PatternFlags {
@@ -331,28 +331,28 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
 
     SECTION("%f - input filename")
     {
-        auto result = eval.expand_pattern("gcc -c %f -o %o", flags);
+        auto result = expand_pattern(ctx,"gcc -c %f -o %o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "gcc -c src/foo.c -o build/foo.o");
     }
 
     SECTION("%B - basename without extension")
     {
-        auto result = eval.expand_pattern("%B.o", flags);
+        auto result = expand_pattern(ctx,"%B.o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "foo.o");
     }
 
     SECTION("%% escape")
     {
-        auto result = eval.expand_pattern("100%%", flags);
+        auto result = expand_pattern(ctx,"100%%", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "100%");
     }
 
     SECTION("%Nf - N-th input (single)")
     {
-        auto result = eval.expand_pattern("%1f", flags);
+        auto result = expand_pattern(ctx,"%1f", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "src/foo.c");
     }
@@ -364,7 +364,7 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     // For non-foreach rules, all_inputs has all input files
     auto flags = PatternFlags {
@@ -380,14 +380,14 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 
     SECTION("%f - all inputs")
     {
-        auto result = eval.expand_pattern("gcc -c %f -o %o", flags);
+        auto result = expand_pattern(ctx,"gcc -c %f -o %o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "gcc -c a.c b.c c.c -o out.o");
     }
 
     SECTION("%Nf - N-th input")
     {
-        auto result = eval.expand_pattern("%1f %2f %3f", flags);
+        auto result = expand_pattern(ctx,"%1f %2f %3f", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "a.c b.c c.c");
     }
@@ -399,7 +399,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("%No - N-th output (multiple)")
     {
@@ -409,7 +409,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
             .all_outputs = { "a.o", "b.o", "c.o" },
         };
 
-        auto result = eval.expand_pattern("%1o %2o %3o", flags);
+        auto result = expand_pattern(ctx,"%1o %2o %3o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "a.o b.o c.o");
     }
@@ -422,7 +422,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
             .all_outputs = { "out.o" },
         };
 
-        auto result = eval.expand_pattern("%1o", flags);
+        auto result = expand_pattern(ctx,"%1o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "out.o");
     }
@@ -433,7 +433,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
             .all_outputs = { "only.o" },
         };
 
-        auto result = eval.expand_pattern("%2o", flags);
+        auto result = expand_pattern(ctx,"%2o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "");
     }
@@ -447,7 +447,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
             .all_outputs = { "a.o", "b.o" },
         };
 
-        auto result = eval.expand_pattern("gen %f -o %1o %2o", flags);
+        auto result = expand_pattern(ctx,"gen %f -o %1o %2o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "gen src.c -o a.o b.o");
     }
@@ -457,7 +457,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("%g - simple glob match")
     {
@@ -465,7 +465,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
             .input = "hello.c",
             .glob_match = "hello",
         };
-        auto result = eval.expand_pattern("%g", flags);
+        auto result = expand_pattern(ctx,"%g", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "hello");
     }
@@ -477,7 +477,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
             .input = "foo_test.c",
             .glob_match = "foo",
         };
-        auto result = eval.expand_pattern("%g.o", flags);
+        auto result = expand_pattern(ctx,"%g.o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "foo.o");
     }
@@ -487,7 +487,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         auto flags = PatternFlags {
             .input = "file.c",
         };
-        auto result = eval.expand_pattern("%g", flags);
+        auto result = expand_pattern(ctx,"%g", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "");
     }
@@ -502,7 +502,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
             .glob_match = "foo",
             .all_inputs = { "foo_test.c" },
         };
-        auto result = eval.expand_pattern("compile %f -DNAME=%g -o %o", flags);
+        auto result = expand_pattern(ctx,"compile %f -DNAME=%g -o %o", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "compile foo_test.c -DNAME=foo -o foo.o");
     }
@@ -513,7 +513,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
     auto vars = VarDb {};
     auto config_vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("ifdef - true when defined")
     {
@@ -523,7 +523,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         cond.kind = Conditional::Kind::Ifdef;
         cond.var_name = "DEBUG";
 
-        REQUIRE(eval.evaluate_condition(cond));
+        REQUIRE(evaluate_condition(ctx,cond));
     }
 
     SECTION("ifdef - false when undefined")
@@ -532,7 +532,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         cond.kind = Conditional::Kind::Ifdef;
         cond.var_name = "UNDEFINED";
 
-        REQUIRE_FALSE(eval.evaluate_condition(cond));
+        REQUIRE_FALSE(evaluate_condition(ctx,cond));
     }
 
     SECTION("ifndef - true when undefined")
@@ -541,7 +541,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         cond.kind = Conditional::Kind::Ifndef;
         cond.var_name = "UNDEFINED";
 
-        REQUIRE(eval.evaluate_condition(cond));
+        REQUIRE(evaluate_condition(ctx,cond));
     }
 
     SECTION("ifeq - true when equal")
@@ -553,7 +553,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
         cond.rhs.parts.push_back(Expression::Literal { "gcc" });
 
-        REQUIRE(eval.evaluate_condition(cond));
+        REQUIRE(evaluate_condition(ctx,cond));
     }
 
     SECTION("ifeq - false when not equal")
@@ -565,7 +565,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
         cond.rhs.parts.push_back(Expression::Literal { "gcc" });
 
-        REQUIRE_FALSE(eval.evaluate_condition(cond));
+        REQUIRE_FALSE(evaluate_condition(ctx,cond));
     }
 
     SECTION("ifneq - true when not equal")
@@ -577,7 +577,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
         cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
         cond.rhs.parts.push_back(Expression::Literal { "gcc" });
 
-        REQUIRE(eval.evaluate_condition(cond));
+        REQUIRE(evaluate_condition(ctx,cond));
     }
 }
 
@@ -585,7 +585,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("resolve_group callback for {name}")
     {
@@ -599,7 +599,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         pattern.is_group = true;
         pattern.group_name = "objs";
 
-        auto result = eval.expand_path(pattern);
+        auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
         REQUIRE(result->size() == 3);
         REQUIRE((*result)[0] == "a.o");
@@ -619,7 +619,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         pattern.is_order_only_group = true;
         pattern.group_name = "gen-headers";
 
-        auto result = eval.expand_path(pattern);
+        auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
         REQUIRE(result->size() == 2);
         REQUIRE((*result)[0] == "generated/config.h");
@@ -632,7 +632,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         pattern.is_order_only_group = true;
         pattern.group_name = "nonexistent";
 
-        auto result = eval.expand_path(pattern);
+        auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
         REQUIRE(result->empty());
     }
@@ -642,7 +642,7 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     ctx.resolve_order_only_group = [](std::string_view name) -> std::vector<std::string> {
         if (name == "headers")
@@ -658,14 +658,14 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
 
     SECTION("%<group> expands to group paths")
     {
-        auto result = eval.expand_pattern("echo %<headers>", flags);
+        auto result = expand_pattern(ctx,"echo %<headers>", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "echo inc/a.h inc/b.h");
     }
 
     SECTION("%<nonexistent> expands to empty")
     {
-        auto result = eval.expand_pattern("echo %<nonexistent>", flags);
+        auto result = expand_pattern(ctx,"echo %<nonexistent>", flags);
         REQUIRE(result.has_value());
         REQUIRE(*result == "echo ");
     }
@@ -685,9 +685,9 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = ".";
 
-    auto eval = Evaluator { &ctx };
 
-    auto result = eval.expand("$(TUP_VARIANT_OUTPUTDIR)");
+
+    auto result = expand(ctx,"$(TUP_VARIANT_OUTPUTDIR)");
     REQUIRE(result.has_value());
     CHECK(*result == ".");
 }
@@ -702,9 +702,9 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]"
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
-    auto eval = Evaluator { &ctx };
 
-    auto result = eval.expand("$(TUP_VARIANT_OUTPUTDIR)");
+
+    auto result = expand(ctx,"$(TUP_VARIANT_OUTPUTDIR)");
     REQUIRE(result.has_value());
     CHECK(*result == "../../build/sub/dir");
 }
@@ -718,9 +718,9 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
-    auto eval = Evaluator { &ctx };
 
-    auto result = eval.expand("echo -o $(TUP_VARIANT_OUTPUTDIR)/out.txt");
+
+    auto result = expand(ctx,"echo -o $(TUP_VARIANT_OUTPUTDIR)/out.txt");
     REQUIRE(result.has_value());
     CHECK(*result == "echo -o ../../build/sub/dir/out.txt");
 }
@@ -741,32 +741,32 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
     ctx.tup_variantdir = "../../build/rules";
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("TUP_CWD expands to included file's relative path")
     {
-        auto result = eval.expand("$(TUP_CWD)");
+        auto result = expand(ctx,"$(TUP_CWD)");
         REQUIRE(result.has_value());
         CHECK(*result == "../../rules");
     }
 
     SECTION("TUP_VARIANTDIR expands to variant's included file directory")
     {
-        auto result = eval.expand("$(TUP_VARIANTDIR)");
+        auto result = expand(ctx,"$(TUP_VARIANTDIR)");
         REQUIRE(result.has_value());
         CHECK(*result == "../../build/rules");
     }
 
     SECTION("TUP_VARIANT_OUTPUTDIR expands to variant's current directory")
     {
-        auto result = eval.expand("$(TUP_VARIANT_OUTPUTDIR)");
+        auto result = expand(ctx,"$(TUP_VARIANT_OUTPUTDIR)");
         REQUIRE(result.has_value());
         CHECK(*result == "../../build/sub/dir");
     }
 
     SECTION("All three in same command")
     {
-        auto result = eval.expand("CWD=$(TUP_CWD) VARIANTDIR=$(TUP_VARIANTDIR) OUTPUTDIR=$(TUP_VARIANT_OUTPUTDIR)");
+        auto result = expand(ctx,"CWD=$(TUP_CWD) VARIANTDIR=$(TUP_VARIANTDIR) OUTPUTDIR=$(TUP_VARIANT_OUTPUTDIR)");
         REQUIRE(result.has_value());
         CHECK(*result == "CWD=../../rules VARIANTDIR=../../build/rules OUTPUTDIR=../../build/sub/dir");
     }
@@ -776,18 +776,18 @@ TEST_CASE("Evaluator undefined variable handling", "[eval][error]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto eval = Evaluator { &ctx };
+
 
     SECTION("undefined variable expands to empty string")
     {
-        auto result = eval.expand("prefix_$(UNDEFINED)_suffix");
+        auto result = expand(ctx,"prefix_$(UNDEFINED)_suffix");
         REQUIRE(result.has_value());
         CHECK(*result == "prefix__suffix");
     }
 
     SECTION("multiple undefined variables")
     {
-        auto result = eval.expand("$(A)$(B)$(C)");
+        auto result = expand(ctx,"$(A)$(B)$(C)");
         REQUIRE(result.has_value());
         CHECK(*result == "");
     }
@@ -795,7 +795,7 @@ TEST_CASE("Evaluator undefined variable handling", "[eval][error]")
     SECTION("mixed defined and undefined")
     {
         vars.set("DEFINED", "value");
-        auto result = eval.expand("$(DEFINED)-$(UNDEFINED)");
+        auto result = expand(ctx,"$(DEFINED)-$(UNDEFINED)");
         REQUIRE(result.has_value());
         CHECK(*result == "value-");
     }

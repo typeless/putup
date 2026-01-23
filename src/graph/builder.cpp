@@ -808,16 +808,14 @@ auto GraphBuilder::process_assignment(
     parser::Assignment const& assign
 ) -> Result<void>
 {
-    auto evaluator = parser::Evaluator { ctx.eval };
-
     // Evaluate the variable name (may contain variable refs like foo-$(BAR))
-    auto name = Result<std::string> { evaluator.expand(assign.name) };
+    auto name = parser::expand(*ctx.eval, assign.name);
     if (!name) {
         return pup::unexpected<Error>(name.error());
     }
 
     // Evaluate the value
-    auto value = Result<std::string> { evaluator.expand(assign.value) };
+    auto value = parser::expand(*ctx.eval, assign.value);
     if (!value) {
         return pup::unexpected<Error>(value.error());
     }
@@ -863,8 +861,7 @@ auto GraphBuilder::process_conditional(
     parser::Conditional const& cond
 ) -> Result<void>
 {
-    auto evaluator = parser::Evaluator { ctx.eval };
-    auto condition_true = evaluator.evaluate_condition(cond);
+    auto condition_true = parser::evaluate_condition(*ctx.eval, cond);
 
     auto const& body = condition_true ? cond.then_body : cond.else_body;
 
@@ -912,8 +909,7 @@ auto GraphBuilder::process_include(
         }
     } else {
         // include path: expand and resolve the path
-        auto evaluator = parser::Evaluator { ctx.eval };
-        auto path_result = Result<std::string> { evaluator.expand(inc.path) };
+        auto path_result = parser::expand(*ctx.eval, inc.path);
         if (!path_result) {
             return pup::unexpected<Error>(path_result.error());
         }
@@ -950,13 +946,12 @@ auto GraphBuilder::process_include(
     auto source = std::string { ss.str() };
 
     // Parse the include file
-    auto parser = parser::Parser { source, include_path };
-    auto parse_result = Result<parser::Tupfile> { parser.parse() };
-    if (!parse_result) {
-        for (auto const& err : parser.errors()) {
+    auto parse_result = parser::parse_tupfile(source, include_path);
+    if (!parse_result.success()) {
+        for (auto const& err : parse_result.errors) {
             fprintf(stderr, "%s:%d:%d: error: %s\n", include_path.c_str(), err.location.line, err.location.column, err.message.c_str());
         }
-        return pup::unexpected<Error>(parse_result.error());
+        return make_error<void>(ErrorCode::ParseError, "Parse error in include file: " + include_path);
     }
 
     // For include_rules, temporarily set TUP_CWD to the relative path from
@@ -972,7 +967,7 @@ auto GraphBuilder::process_include(
     }
 
     // Process statements from the included file
-    for (auto const& stmt : parse_result->statements) {
+    for (auto const& stmt : parse_result.tupfile.statements) {
         auto result = Result<void> { process_statement(ctx, *stmt) };
         if (!result) {
             if (inc.is_rules && ctx.eval) {
@@ -1010,8 +1005,7 @@ auto GraphBuilder::process_import(
     }
     // 3. Fall back to default value
     else if (imp.default_value) {
-        auto evaluator = parser::Evaluator { ctx.eval };
-        auto expanded = Result<std::string> { evaluator.expand(*imp.default_value) };
+        auto expanded = parser::expand(*ctx.eval, *imp.default_value);
         if (!expanded) {
             return pup::unexpected<Error>(expanded.error());
         }
@@ -1155,7 +1149,6 @@ auto GraphBuilder::expand_rule(
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     auto rule_order_only_groups = std::unordered_map<std::string, std::vector<std::string>> {};
-    auto evaluator = parser::Evaluator { ctx.eval };
 
     // Track group NodeIds for deferred edge creation
     // Groups are first-class nodes; edges created after all Tupfiles are parsed
@@ -1176,7 +1169,7 @@ auto GraphBuilder::expand_rule(
             // Direct group reference: <group> or dir/<group> (is_order_only_group=true)
             auto group_dir = std::string {};
             if (!pattern.path.empty()) {
-                auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
+                auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
                     group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
                 }
@@ -1217,7 +1210,7 @@ auto GraphBuilder::expand_rule(
             deferred_group_ids.insert(group_id);
         } else if (!pattern.path.empty()) {
             // Path expression that may contain <group> suffix: ../include/<gen-headers>
-            auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
+            auto expanded = parser::expand(*ctx.eval, pattern.path);
             if (!expanded) {
                 continue;
             }
@@ -1484,8 +1477,7 @@ auto GraphBuilder::expand_rule(
             }
 
             if (group_dir_expr) {
-                auto evaluator = parser::Evaluator { ctx.eval };
-                auto expanded = evaluator.expand(*group_dir_expr);
+                auto expanded = parser::expand(*ctx.eval, *group_dir_expr);
                 if (expanded) {
                     // Use normalize_group_dir for consistent handling with input groups
                     // This strips variant prefix and resolves relative paths
@@ -1536,7 +1528,6 @@ auto GraphBuilder::expand_inputs(
 ) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
-    auto evaluator = parser::Evaluator { ctx.eval };
 
     for (auto const& pattern : patterns) {
         if (pattern.is_exclusion || pattern.is_output_exclusion) {
@@ -1564,7 +1555,7 @@ auto GraphBuilder::expand_inputs(
             auto dir_path = fs::path {};
 
             if (!pattern.path.empty()) {
-                auto expanded = Result<std::string> { evaluator.expand(pattern.path) };
+                auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
                     group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
                     dir_path = fs::path { group_dir };
@@ -1591,7 +1582,7 @@ auto GraphBuilder::expand_inputs(
         }
 
         // Expand path expression
-        auto paths = Result<std::vector<std::string>> { evaluator.expand_path(pattern) };
+        auto paths = parser::expand_path(*ctx.eval, pattern);
         if (!paths) {
             return pup::unexpected<Error>(paths.error());
         }
@@ -1696,7 +1687,7 @@ auto GraphBuilder::expand_inputs(
             continue;
         }
 
-        auto paths = Result<std::vector<std::string>> { evaluator.expand_path(pattern) };
+        auto paths = parser::expand_path(*ctx.eval, pattern);
         if (!paths) {
             continue;
         }
@@ -1706,7 +1697,7 @@ auto GraphBuilder::expand_inputs(
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
                 auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.source_root
                                                                             : ctx.options.source_root / ctx.current_dir };
-                auto expanded = Result<std::vector<std::string>> { parser::glob_expand(excl, base) };
+                auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
                     for (auto const& p : *expanded) {
                         // Normalize the same way as included paths
@@ -1744,7 +1735,6 @@ auto GraphBuilder::expand_outputs(
 ) -> Result<std::vector<std::string>>
 {
     auto result = std::vector<std::string> {};
-    auto evaluator = parser::Evaluator { ctx.eval };
 
     for (auto const& pattern : patterns) {
         if (pattern.is_group) {
@@ -1754,14 +1744,14 @@ auto GraphBuilder::expand_outputs(
             continue; // Exclusion patterns are markers, not actual outputs
         }
 
-        auto paths = Result<std::vector<std::string>> { evaluator.expand_path(pattern) };
+        auto paths = parser::expand_path(*ctx.eval, pattern);
         if (!paths) {
             return pup::unexpected<Error>(paths.error());
         }
 
         for (auto& path : *paths) {
             // Expand pattern flags (%B, %f, etc.)
-            auto expanded = Result<std::string> { evaluator.expand_pattern(path, flags) };
+            auto expanded = parser::expand_pattern(*ctx.eval, path, flags);
             auto output_path = expanded ? *expanded : std::move(path);
 
             // Combine with current directory and normalize
@@ -1798,15 +1788,13 @@ auto GraphBuilder::expand_command(
     std::vector<std::string> const& outputs
 ) -> Result<std::string>
 {
-    auto evaluator = parser::Evaluator { ctx.eval };
-
     // Expand the command expression (variable expansion)
-    auto literal = Result<std::string> { evaluator.expand(cmd) };
+    auto literal = parser::expand(*ctx.eval, cmd);
     if (!literal) {
         return pup::unexpected<Error>(literal.error());
     }
 
-    auto expanded = Result<std::string> { evaluator.expand(std::string_view { *literal }) };
+    auto expanded = parser::expand(*ctx.eval, std::string_view { *literal });
     if (!expanded) {
         return pup::unexpected<Error>(expanded.error());
     }
@@ -1826,7 +1814,7 @@ auto GraphBuilder::expand_command(
     flags.all_outputs = cmd_outputs;
 
     // Expand pattern flags and return
-    return evaluator.expand_pattern(*expanded, flags);
+    return parser::expand_pattern(*ctx.eval, *expanded, flags);
 }
 
 namespace {

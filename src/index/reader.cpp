@@ -38,35 +38,35 @@ auto read_raw_entries(
 
 } // namespace
 
-auto IndexReader::open(std::filesystem::path const& path) -> Result<IndexReader>
+auto open_index(std::filesystem::path const& path) -> Result<IndexFile>
 {
-    auto reader = IndexReader {};
+    auto result = IndexFile {};
 
     auto file_result = pup::platform::MappedFile::open(path);
     if (!file_result) {
-        return make_error<IndexReader>(ErrorCode::IoError, "Failed to open index file");
+        return make_error<IndexFile>(ErrorCode::IoError, "Failed to open index file");
     }
 
-    reader.file_ = std::move(*file_result);
+    result.file = std::move(*file_result);
 
-    if (reader.file_.size() < sizeof(RawHeader) + sizeof(RawFooter)) {
-        return make_error<IndexReader>(ErrorCode::InvalidFormat, "Index file too small");
+    if (result.file.size() < sizeof(RawHeader) + sizeof(RawFooter)) {
+        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Index file too small");
     }
 
     // Validate header
-    auto const* hdr = reader.header();
+    auto const* hdr = index_header(result);
     if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
-        return make_error<IndexReader>(ErrorCode::InvalidFormat, "Invalid index file magic");
+        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Invalid index file magic");
     }
     // v6 format only (clean break from v5)
     if (hdr->version != INDEX_VERSION) {
-        return make_error<IndexReader>(ErrorCode::InvalidFormat, "Unsupported index version");
+        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Unsupported index version");
     }
 
-    return reader;
+    return result;
 }
 
-auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
+auto is_valid_index(std::filesystem::path const& path) -> bool
 {
     auto file = std::ifstream { path, std::ios::binary };
     if (!file) {
@@ -85,19 +85,19 @@ auto IndexReader::is_valid_index(std::filesystem::path const& path) -> bool
         && header.version == INDEX_VERSION;
 }
 
-auto IndexReader::read() const -> Result<Index>
+auto read_index(IndexFile const& f) -> Result<Index>
 {
-    if (!is_open()) {
-        return make_error<Index>(ErrorCode::InvalidState, "Reader not open");
+    if (!index_is_open(f)) {
+        return make_error<Index>(ErrorCode::InvalidState, "Index file not open");
     }
 
     auto index = Index {};
 
     // Read file entries
-    auto files = raw_files();
+    auto files = index_raw_files(f);
     for (auto i = std::size_t { 0 }; i < files.size(); ++i) {
         auto const& raw = files[i];
-        auto name = get_string(raw.name_offset);
+        auto name = index_get_string(f, raw.name_offset);
         index.add_file(FileEntry::from_raw(raw, name, i));
     }
 
@@ -105,17 +105,17 @@ auto IndexReader::read() const -> Result<Index>
     index.compute_paths();
 
     // Read command entries
-    auto commands = raw_commands();
+    auto commands = index_raw_commands(f);
     for (auto i = std::size_t { 0 }; i < commands.size(); ++i) {
         auto const& raw = commands[i];
-        auto cmd = get_string(raw.cmd_offset);
-        auto display = get_string(raw.display_offset);
-        auto env = get_string(raw.env_offset);
+        auto cmd = index_get_string(f, raw.cmd_offset);
+        auto display = index_get_string(f, raw.display_offset);
+        auto env = index_get_string(f, raw.env_offset);
         index.add_command(CommandEntry::from_raw(raw, cmd, display, env, i));
     }
 
     // Read edges
-    auto edges = raw_edges();
+    auto edges = index_raw_edges(f);
     for (auto const& raw : edges) {
         index.add_edge(EdgeEntry::from_raw(raw));
     }
@@ -126,35 +126,44 @@ auto IndexReader::read() const -> Result<Index>
     return index;
 }
 
-auto IndexReader::header() const -> RawHeader const*
+auto read_index(std::filesystem::path const& path) -> Result<Index>
 {
-    if (!is_open() || file_.size() < sizeof(RawHeader)) {
+    auto file_result = open_index(path);
+    if (!file_result) {
+        return pup::unexpected<Error>(file_result.error());
+    }
+    return read_index(*file_result);
+}
+
+auto index_header(IndexFile const& f) -> RawHeader const*
+{
+    if (!index_is_open(f) || f.file.size() < sizeof(RawHeader)) {
         return nullptr;
     }
-    return reinterpret_cast<RawHeader const*>(file_.data());
+    return reinterpret_cast<RawHeader const*>(f.file.data());
 }
 
-auto IndexReader::raw_files() const -> std::span<RawFileEntry const>
+auto index_raw_files(IndexFile const& f) -> std::span<RawFileEntry const>
 {
-    auto const* hdr = header();
-    return read_raw_entries<RawFileEntry>(file_, hdr, hdr ? hdr->file_count : 0, hdr ? hdr->file_offset : 0);
+    auto const* hdr = index_header(f);
+    return read_raw_entries<RawFileEntry>(f.file, hdr, hdr ? hdr->file_count : 0, hdr ? hdr->file_offset : 0);
 }
 
-auto IndexReader::raw_commands() const -> std::span<RawCommandEntry const>
+auto index_raw_commands(IndexFile const& f) -> std::span<RawCommandEntry const>
 {
-    auto const* hdr = header();
-    return read_raw_entries<RawCommandEntry>(file_, hdr, hdr ? hdr->command_count : 0, hdr ? hdr->command_offset : 0);
+    auto const* hdr = index_header(f);
+    return read_raw_entries<RawCommandEntry>(f.file, hdr, hdr ? hdr->command_count : 0, hdr ? hdr->command_offset : 0);
 }
 
-auto IndexReader::raw_edges() const -> std::span<RawEdge const>
+auto index_raw_edges(IndexFile const& f) -> std::span<RawEdge const>
 {
-    auto const* hdr = header();
-    return read_raw_entries<RawEdge>(file_, hdr, hdr ? hdr->edge_count : 0, hdr ? hdr->edge_offset : 0);
+    auto const* hdr = index_header(f);
+    return read_raw_entries<RawEdge>(f.file, hdr, hdr ? hdr->edge_count : 0, hdr ? hdr->edge_offset : 0);
 }
 
-auto IndexReader::get_string(std::uint32_t offset) const -> std::string_view
+auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view
 {
-    auto const* hdr = header();
+    auto const* hdr = index_header(f);
     if (!hdr) {
         return {};
     }
@@ -163,11 +172,11 @@ auto IndexReader::get_string(std::uint32_t offset) const -> std::string_view
     auto const string_start = hdr->string_offset + offset;
 
     // Need at least 2 bytes for length prefix
-    if (string_start + sizeof(std::uint16_t) > file_.size()) {
+    if (string_start + sizeof(std::uint16_t) > f.file.size()) {
         return {};
     }
 
-    auto data = std::span<std::byte const> { file_.data(), file_.size() };
+    auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
 
     // Read u16 length (little-endian)
     auto const* len_bytes = data.subspan(string_start, sizeof(std::uint16_t)).data();
@@ -181,7 +190,7 @@ auto IndexReader::get_string(std::uint32_t offset) const -> std::string_view
 
     // Bounds check string data
     auto const data_start = string_start + sizeof(std::uint16_t);
-    if (data_start + length > file_.size()) {
+    if (data_start + length > f.file.size()) {
         return {};
     }
 
@@ -190,14 +199,14 @@ auto IndexReader::get_string(std::uint32_t offset) const -> std::string_view
     return { reinterpret_cast<char const*>(str_bytes.data()), length };
 }
 
-auto IndexReader::verify_checksum() const -> bool
+auto index_verify_checksum(IndexFile const& f) -> bool
 {
-    if (!is_open() || file_.size() < sizeof(RawFooter)) {
+    if (!index_is_open(f) || f.file.size() < sizeof(RawFooter)) {
         return false;
     }
 
-    auto const content_size = file_.size() - sizeof(RawFooter);
-    auto data = std::span<std::byte const> { file_.data(), file_.size() };
+    auto const content_size = f.file.size() - sizeof(RawFooter);
+    auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
 
     auto computed = sha256(data.first(content_size));
 
