@@ -4,6 +4,8 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
@@ -33,9 +35,9 @@ struct FileNode {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string name = {};         ///< Basename only (tup-style identification)
-    NodeId parent_dir = 0;         ///< Parent directory node (used with name for lookup)
-    Hash256 content_hash = { {} }; ///< Content hash (double braces force zero-init)
+    StringId name = StringId::Empty; ///< Basename only (interned, tup-style identification)
+    NodeId parent_dir = 0;           ///< Parent directory node (used with name for lookup)
+    Hash256 content_hash = { {} };   ///< Content hash (double braces force zero-init)
 };
 
 /// Command node - represents build commands
@@ -43,11 +45,11 @@ struct FileNode {
 struct CommandNode {
     NodeId id = 0;
 
-    std::string command = {};    ///< The command string
-    std::string display = {};    ///< Display text (from ^ ^ markers)
-    std::string source_dir = {}; ///< Tupfile directory (relative to root)
+    StringId command = StringId::Empty;    ///< The command string (interned)
+    StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
+    StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
 
-    std::set<std::string> exported_vars = {}; ///< Env vars to export to command
+    std::set<StringId> exported_vars = {}; ///< Env vars to export to command (interned)
 
     // For generated rules (auto-generated from pattern matching)
     std::optional<GeneratedOutput> generated_output = {}; ///< Output specification
@@ -55,21 +57,68 @@ struct CommandNode {
     NodeId parent_command = INVALID_NODE_ID;              ///< Parent command for InjectImplicitDeps
 };
 
-/// Key for directory + name lookup
+/// Key for directory + name lookup (interned)
 struct DirNameKey {
     NodeId parent_dir = 0;
-    std::string name = {};
+    StringId name = StringId::Empty;
 
     auto operator==(DirNameKey const& other) const -> bool = default;
 };
 
-/// Hash function for DirNameKey
+/// View for zero-allocation DirNameKey lookup
+struct DirNameKeyView {
+    NodeId parent_dir = 0;
+    std::string_view name = {};
+};
+
+/// Hash function for DirNameKey with transparent lookup support
 struct DirNameKeyHash {
+    using is_transparent = void;
+
+    StringPool const* pool = nullptr;
+
     auto operator()(DirNameKey const& key) const noexcept -> std::size_t
     {
         auto h1 = std::hash<NodeId> {}(key.parent_dir);
-        auto h2 = std::hash<std::string> {}(key.name);
+        // Hash the actual string content to match DirNameKeyView hashing
+        auto name_sv = pool ? pool->get(key.name) : std::string_view {};
+        auto h2 = std::hash<std::string_view> {}(name_sv);
         return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+
+    auto operator()(DirNameKeyView const& view) const noexcept -> std::size_t
+    {
+        auto h1 = std::hash<NodeId> {}(view.parent_dir);
+        auto h2 = std::hash<std::string_view> {}(view.name);
+        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+};
+
+/// Equality for DirNameKey with transparent lookup support
+struct DirNameKeyEqual {
+    using is_transparent = void;
+
+    StringPool const* pool = nullptr;
+
+    auto operator()(DirNameKey const& a, DirNameKey const& b) const -> bool
+    {
+        return a == b;
+    }
+
+    auto operator()(DirNameKey const& a, DirNameKeyView const& b) const -> bool
+    {
+        if (a.parent_dir != b.parent_dir) {
+            return false;
+        }
+        if (!pool) {
+            return false;
+        }
+        return pool->get(a.name) == b.name;
+    }
+
+    auto operator()(DirNameKeyView const& a, DirNameKey const& b) const -> bool
+    {
+        return (*this)(b, a);
     }
 };
 
@@ -90,6 +139,8 @@ struct StringHash {
 
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
+    StringPool strings; ///< Interned string storage
+
     std::deque<FileNode> files;       ///< Files, directories, groups (non-command nodes)
     std::deque<CommandNode> commands; ///< Command nodes only
     std::vector<Edge> edges;          ///< Central edge storage (single source of truth)
@@ -102,8 +153,8 @@ struct Graph {
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_to_index;   ///< Order-only deps OF this node
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents; ///< Nodes depending on this
 
-    // Node lookup indices
-    std::unordered_map<DirNameKey, NodeId, DirNameKeyHash> dir_name_index;
+    // Node lookup indices (with transparent lookup support)
+    std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual> dir_name_index;
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
     mutable std::unordered_map<NodeId, std::string> path_cache;
 
@@ -235,6 +286,30 @@ auto invalidate_path_cache(Graph& graph, NodeId id) -> void;
 
 /// Clear the entire path cache
 auto clear_path_cache(Graph& graph) -> void;
+
+/// Intern a string in the graph's string pool
+[[nodiscard]]
+auto intern_string(Graph& graph, std::string_view str) -> StringId;
+
+/// Get string from the graph's string pool
+[[nodiscard]]
+auto get_string(Graph const& graph, StringId id) -> std::string_view;
+
+/// Get file node name as string_view
+[[nodiscard]]
+auto get_name(Graph const& graph, NodeId id) -> std::string_view;
+
+/// Get command node command string as string_view
+[[nodiscard]]
+auto get_command_str(Graph const& graph, NodeId id) -> std::string_view;
+
+/// Get command node display string as string_view
+[[nodiscard]]
+auto get_display_str(Graph const& graph, NodeId id) -> std::string_view;
+
+/// Get command node source directory as string_view
+[[nodiscard]]
+auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".
@@ -455,6 +530,20 @@ public:
     auto graph() const -> Graph const&
     {
         return graph_;
+    }
+
+    /// Intern a string in the graph's string pool
+    [[nodiscard]]
+    auto intern(std::string_view str) -> StringId
+    {
+        return graph_.strings.intern(str);
+    }
+
+    /// Get string from the graph's string pool
+    [[nodiscard]]
+    auto str(StringId id) const -> std::string_view
+    {
+        return graph_.strings.get(id);
     }
 
 private:

@@ -128,8 +128,10 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto dir = node->source_dir.empty() ? std::string { "." } : node->source_dir;
-        printf("(cd \"%s\" && %s)\n", dir.c_str(), node->command.c_str());
+        auto source_dir = graph::get_source_dir(ctx.graph().graph(), id);
+        auto dir = source_dir.empty() ? std::string { "." } : std::string { source_dir };
+        auto cmd = std::string { graph::get_command_str(ctx.graph().graph(), id) };
+        printf("(cd \"%s\" && %s)\n", dir.c_str(), cmd.c_str());
     }
 
     return EXIT_SUCCESS;
@@ -172,8 +174,10 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         if (opts.verbose) {
             printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
             for (auto id : commands) {
-                if (auto const* node = ctx.graph().get_command_node(id)) {
-                    auto display = node->display.empty() ? node->command : node->display;
+                if (ctx.graph().get_command_node(id)) {
+                    auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
+                    auto cmd_sv = graph::get_command_str(ctx.graph().graph(), id);
+                    auto display = std::string { display_sv.empty() ? cmd_sv : display_sv };
                     printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
                 }
             }
@@ -194,7 +198,9 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                 if (!cmd) {
                     return "";
                 }
-                return cmd->display.empty() ? cmd->command : cmd->display;
+                auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
+                auto cmd_sv = graph::get_command_str(ctx.graph().graph(), id);
+                return std::string { display_sv.empty() ? cmd_sv : display_sv };
             }
             return ctx.graph().get_full_path(id);
         };
@@ -298,9 +304,10 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
+        auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
         auto working_dir = ctx.layout().source_root;
-        if (!node->source_dir.empty()) {
-            working_dir /= node->source_dir;
+        if (!source_dir_sv.empty()) {
+            working_dir /= source_dir_sv;
         }
 
         // Convert project-root-relative paths to working-dir-relative
@@ -314,7 +321,8 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             output_rel = std::filesystem::relative(output_abs, working_dir).string();
         }
 
-        auto args = pup::core::tokenize_shell_command(node->command);
+        auto cmd_sv = graph::get_command_str(ctx.graph().graph(), id);
+        auto args = pup::core::tokenize_shell_command(cmd_sv);
         if (args.empty()) {
             continue;
         }

@@ -128,7 +128,8 @@ auto collect_upstream_files(
         }
 
         // Check if command's source_dir is in any scope
-        if (!pup::is_path_in_any_scope(node->source_dir, scopes)) {
+        auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
+        if (!pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
             continue;
         }
 
@@ -361,7 +362,7 @@ auto build_index(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = node->name,
+                .name = std::string { pup::graph::get_name(graph.graph(), id) },
                 .path = node_path,
                 .size = file_size,
                 .content_hash = content_hash,
@@ -379,7 +380,8 @@ auto build_index(
             // For BUILD_ROOT_ID itself, store empty name so it doesn't contribute
             // to path reconstruction during index loading. This is essential for
             // variant builds where Generated files should have source-relative paths.
-            auto entry_name = (id == pup::BUILD_ROOT_ID) ? std::string {} : node->name;
+            auto node_name_sv = pup::graph::get_name(graph.graph(), id);
+            auto entry_name = (id == pup::BUILD_ROOT_ID) ? std::string {} : std::string { node_name_sv };
 
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -404,7 +406,7 @@ auto build_index(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = node->name,
+                .name = std::string { pup::graph::get_name(graph.graph(), id) },
                 .path = {},
                 .size = 0,
                 .content_hash = node->content_hash,
@@ -418,7 +420,7 @@ auto build_index(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = node->name,
+                .name = std::string { pup::graph::get_name(graph.graph(), id) },
                 .path = {},
                 .size = 0,
                 .content_hash = {},
@@ -432,7 +434,7 @@ auto build_index(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = node->name,
+                .name = std::string { pup::graph::get_name(graph.graph(), id) },
                 .path = {},
                 .size = 0,
                 .content_hash = {},
@@ -454,8 +456,8 @@ auto build_index(
         auto entry = pup::index::CommandEntry {
             .id = id,
             .dir_id = 0, // Commands don't have a parent_dir in the FileNode sense
-            .command = cmd->command,
-            .display = cmd->display,
+            .command = std::string { pup::graph::get_command_str(graph.graph(), id) },
+            .display = std::string { pup::graph::get_display_str(graph.graph(), id) },
             .env = {},
         };
         index.add_command(std::move(entry));
@@ -781,7 +783,8 @@ auto build_single_variant(
                 continue;
             }
 
-            if (!idx.find_command_by_command(node->command)) {
+            auto cmd_sv = pup::graph::get_command_str(ctx.graph().graph(), id);
+            if (!idx.find_command_by_command(std::string { cmd_sv })) {
                 for (auto output_id : ctx.graph().get_outputs(id)) {
                     auto output_path = ctx.graph().get_full_path(output_id);
                     if (!output_path.empty()) {
@@ -789,7 +792,8 @@ auto build_single_variant(
                     }
                 }
                 if (opts.verbose) {
-                    printf("[%.*s]   New command: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), node->display.c_str());
+                    auto display_sv = pup::graph::get_display_str(ctx.graph().graph(), id);
+                    printf("[%.*s]   New command: %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data());
                 }
             }
         }

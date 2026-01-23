@@ -16,8 +16,8 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("add nodes")
     {
-        auto node1 = FileNode { .name = "foo.c" };
-        auto node2 = FileNode { .name = "bar.c" };
+        auto node1 = FileNode { .name = graph.intern("foo.c") };
+        auto node2 = FileNode { .name = graph.intern("bar.c") };
 
         auto id1 = graph.add_file_node(node1);
         auto id2 = graph.add_file_node(node2);
@@ -33,13 +33,13 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("find by dir and name")
     {
         // Create directory node first
-        auto dir_node = FileNode { .type = NodeType::Directory, .name = "src" };
+        auto dir_node = FileNode { .type = NodeType::Directory, .name = graph.intern("src") };
         auto dir_id = graph.add_file_node(dir_node);
         REQUIRE(dir_id.has_value());
 
         // Create file node with parent_dir and name
         auto file_node = FileNode {
-            .name = "foo.c",
+            .name = graph.intern("foo.c"),
             .parent_dir = *dir_id,
         };
         auto file_id = graph.add_file_node(file_node);
@@ -58,18 +58,18 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("find by dir and name - multiple directories")
     {
         // src/ and lib/ directories
-        auto src_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "src" });
-        auto lib_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "lib" });
+        auto src_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("src") });
+        auto lib_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("lib") });
         REQUIRE(src_dir.has_value());
         REQUIRE(lib_dir.has_value());
 
         // Same basename in different directories
         auto src_file = graph.add_file_node(FileNode {
-            .name = "util.c",
+            .name = graph.intern("util.c"),
             .parent_dir = *src_dir,
         });
         auto lib_file = graph.add_file_node(FileNode {
-            .name = "util.c",
+            .name = graph.intern("util.c"),
             .parent_dir = *lib_dir,
         });
         REQUIRE(src_file.has_value());
@@ -88,9 +88,9 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("get_full_path - simple hierarchy")
     {
         // Build: src/foo.c
-        auto src_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "src" });
+        auto src_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("src") });
         auto foo_file = graph.add_file_node(FileNode {
-            .name = "foo.c",
+            .name = graph.intern("foo.c"),
             .parent_dir = *src_dir,
         });
         REQUIRE(src_dir.has_value());
@@ -103,11 +103,11 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("get_full_path - deep hierarchy")
     {
         // Build: a/b/c/d/file.txt
-        auto a_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "a" });
-        auto b_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "b", .parent_dir = *a_dir });
-        auto c_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "c", .parent_dir = *b_dir });
-        auto d_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "d", .parent_dir = *c_dir });
-        auto file = graph.add_file_node(FileNode { .name = "file.txt", .parent_dir = *d_dir });
+        auto a_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("a") });
+        auto b_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("b"), .parent_dir = *a_dir });
+        auto c_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("c"), .parent_dir = *b_dir });
+        auto d_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("d"), .parent_dir = *c_dir });
+        auto file = graph.add_file_node(FileNode { .name = graph.intern("file.txt"), .parent_dir = *d_dir });
 
         REQUIRE(graph.get_full_path(*a_dir) == "a");
         REQUIRE(graph.get_full_path(*b_dir) == "a/b");
@@ -118,13 +118,13 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("get_full_path - name with path separator (no parent_dir)")
     {
-        auto node = graph.add_file_node(FileNode { .name = "legacy/path.c" });
+        auto node = graph.add_file_node(FileNode { .name = graph.intern("legacy/path.c") });
         REQUIRE(graph.get_full_path(*node) == "legacy/path.c");
     }
 
     SECTION("get_full_path - root level file")
     {
-        auto file = graph.add_file_node(FileNode { .name = "Makefile" });
+        auto file = graph.add_file_node(FileNode { .name = graph.intern("Makefile") });
         REQUIRE(graph.get_full_path(*file) == "Makefile");
     }
 
@@ -136,8 +136,8 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("get_full_path - caching works")
     {
-        auto dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "cached" });
-        auto file = graph.add_file_node(FileNode { .name = "test.c", .parent_dir = *dir });
+        auto dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("cached") });
+        auto file = graph.add_file_node(FileNode { .name = graph.intern("test.c"), .parent_dir = *dir });
 
         // First call computes and caches
         auto path1 = graph.get_full_path(*file);
@@ -150,8 +150,8 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("invalidate_path_cache and clear_path_cache")
     {
-        auto dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "dir" });
-        auto file = graph.add_file_node(FileNode { .name = "file.c", .parent_dir = *dir });
+        auto dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("dir") });
+        auto file = graph.add_file_node(FileNode { .name = graph.intern("file.c"), .parent_dir = *dir });
 
         // Populate cache
         (void)graph.get_full_path(*file);
@@ -171,9 +171,9 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("add edges")
     {
-        auto id1 = graph.add_file_node(FileNode { .name = "foo.c" });
-        auto id2 = graph.add_command_node(CommandNode { .command = "gcc foo.c" });
-        auto id3 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "foo.o" });
+        auto id1 = graph.add_file_node(FileNode { .name = graph.intern("foo.c") });
+        auto id2 = graph.add_command_node(CommandNode { .command = graph.intern("gcc foo.c") });
+        auto id3 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("foo.o") });
 
         REQUIRE(id1.has_value());
         REQUIRE(id2.has_value());
@@ -198,10 +198,10 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("nodes of type")
     {
-        (void)graph.add_file_node(FileNode { .name = "a.c" });
-        (void)graph.add_file_node(FileNode { .name = "b.c" });
-        (void)graph.add_command_node(CommandNode { .command = "gcc" });
-        (void)graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "out.o" });
+        (void)graph.add_file_node(FileNode { .name = graph.intern("a.c") });
+        (void)graph.add_file_node(FileNode { .name = graph.intern("b.c") });
+        (void)graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        (void)graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("out.o") });
 
         auto files = graph.nodes_of_type(NodeType::File);
         REQUIRE(files.size() == 2);
@@ -215,9 +215,9 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
     SECTION("root and leaf nodes")
     {
-        auto id1 = graph.add_file_node(FileNode { .name = "a.c" });
-        auto id2 = graph.add_command_node(CommandNode {});
-        auto id3 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "a.o" });
+        auto id1 = graph.add_file_node(FileNode { .name = graph.intern("a.c") });
+        auto id2 = graph.add_command_node(CommandNode { .command = graph.intern("") });
+        auto id3 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
 
         (void)graph.add_edge(*id1, *id2);
         (void)graph.add_edge(*id2, *id3);
@@ -241,9 +241,9 @@ TEST_CASE("Topological sort", "[graph]")
 
     SECTION("simple linear graph")
     {
-        auto id1 = graph.add_file_node(FileNode { .name = "a" });
-        auto id2 = graph.add_file_node(FileNode { .name = "b" });
-        auto id3 = graph.add_file_node(FileNode { .name = "c" });
+        auto id1 = graph.add_file_node(FileNode { .name = graph.intern("a") });
+        auto id2 = graph.add_file_node(FileNode { .name = graph.intern("b") });
+        auto id3 = graph.add_file_node(FileNode { .name = graph.intern("c") });
 
         (void)graph.add_edge(*id1, *id2);
         (void)graph.add_edge(*id2, *id3);
@@ -269,10 +269,10 @@ TEST_CASE("Topological sort", "[graph]")
         //   b   c
         //    | /
         //     d
-        auto id_a = graph.add_file_node(FileNode { .name = "a" });
-        auto id_b = graph.add_file_node(FileNode { .name = "b" });
-        auto id_c = graph.add_file_node(FileNode { .name = "c" });
-        auto id_d = graph.add_file_node(FileNode { .name = "d" });
+        auto id_a = graph.add_file_node(FileNode { .name = graph.intern("a") });
+        auto id_b = graph.add_file_node(FileNode { .name = graph.intern("b") });
+        auto id_c = graph.add_file_node(FileNode { .name = graph.intern("c") });
+        auto id_d = graph.add_file_node(FileNode { .name = graph.intern("d") });
 
         (void)graph.add_edge(*id_a, *id_b);
         (void)graph.add_edge(*id_a, *id_c);
@@ -292,9 +292,9 @@ TEST_CASE("Topological sort", "[graph]")
 
     SECTION("cycle detection")
     {
-        auto id1 = graph.add_file_node(FileNode { .name = "a" });
-        auto id2 = graph.add_file_node(FileNode { .name = "b" });
-        auto id3 = graph.add_file_node(FileNode { .name = "c" });
+        auto id1 = graph.add_file_node(FileNode { .name = graph.intern("a") });
+        auto id2 = graph.add_file_node(FileNode { .name = graph.intern("b") });
+        auto id3 = graph.add_file_node(FileNode { .name = graph.intern("c") });
 
         (void)graph.add_edge(*id1, *id2);
         (void)graph.add_edge(*id2, *id3);
@@ -307,8 +307,8 @@ TEST_CASE("Topological sort", "[graph]")
 
     SECTION("is_dag")
     {
-        auto id1 = graph.add_file_node(FileNode { .name = "a" });
-        auto id2 = graph.add_file_node(FileNode { .name = "b" });
+        auto id1 = graph.add_file_node(FileNode { .name = graph.intern("a") });
+        auto id2 = graph.add_file_node(FileNode { .name = graph.intern("b") });
 
         (void)graph.add_edge(*id1, *id2);
 
@@ -325,7 +325,7 @@ TEST_CASE("BuildGraph node types", "[graph]")
 
     SECTION("Group node type")
     {
-        auto node = FileNode { .type = NodeType::Group, .name = "{objs}" };
+        auto node = FileNode { .type = NodeType::Group, .name = graph.intern("{objs}") };
         auto id = graph.add_file_node(node);
 
         REQUIRE(id.has_value());
@@ -336,13 +336,13 @@ TEST_CASE("BuildGraph node types", "[graph]")
 
     SECTION("all node types")
     {
-        auto file_id = graph.add_file_node(FileNode { .name = "a.c" });
-        auto cmd_id = graph.add_command_node(CommandNode { .command = "gcc" });
-        auto gen_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "a.o" });
-        auto dir_id = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = "src" });
-        auto var_id = graph.add_file_node(FileNode { .type = NodeType::Variable, .name = "CC" });
-        auto group_id = graph.add_file_node(FileNode { .type = NodeType::Group, .name = "{objs}" });
-        auto gen_dir_id = graph.add_file_node(FileNode { .type = NodeType::GeneratedDir, .name = "build" });
+        auto file_id = graph.add_file_node(FileNode { .name = graph.intern("a.c") });
+        auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        auto gen_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
+        auto dir_id = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("src") });
+        auto var_id = graph.add_file_node(FileNode { .type = NodeType::Variable, .name = graph.intern("CC") });
+        auto group_id = graph.add_file_node(FileNode { .type = NodeType::Group, .name = graph.intern("{objs}") });
+        auto gen_dir_id = graph.add_file_node(FileNode { .type = NodeType::GeneratedDir, .name = graph.intern("build") });
 
         REQUIRE(file_id.has_value());
         REQUIRE(cmd_id.has_value());
@@ -367,8 +367,8 @@ TEST_CASE("BuildGraph edge types", "[graph]")
 
     SECTION("order-only edges")
     {
-        auto id1 = graph.add_file_node(FileNode { .name = "header.h" });
-        auto id2 = graph.add_command_node(CommandNode { .command = "gcc" });
+        auto id1 = graph.add_file_node(FileNode { .name = graph.intern("header.h") });
+        auto id2 = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
 
         REQUIRE(id1.has_value());
         REQUIRE(id2.has_value());
@@ -384,9 +384,9 @@ TEST_CASE("BuildGraph edge types", "[graph]")
     SECTION("group edges")
     {
         // Group edge: command -> group (command produces outputs in group)
-        auto cmd_id = graph.add_command_node(CommandNode { .command = "gcc" });
-        auto out_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "a.o" });
-        auto group_id = graph.add_file_node(FileNode { .type = NodeType::Group, .name = "{objs}" });
+        auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        auto out_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
+        auto group_id = graph.add_file_node(FileNode { .type = NodeType::Group, .name = graph.intern("{objs}") });
 
         REQUIRE(cmd_id.has_value());
         REQUIRE(out_id.has_value());
@@ -408,11 +408,11 @@ TEST_CASE("Graph traversal", "[graph]")
     //   b   c
     //   |   |
     //   d   e
-    auto id_a = graph.add_file_node(FileNode { .name = "a" });
-    auto id_b = graph.add_file_node(FileNode { .name = "b" });
-    auto id_c = graph.add_file_node(FileNode { .name = "c" });
-    auto id_d = graph.add_file_node(FileNode { .name = "d" });
-    auto id_e = graph.add_file_node(FileNode { .name = "e" });
+    auto id_a = graph.add_file_node(FileNode { .name = graph.intern("a") });
+    auto id_b = graph.add_file_node(FileNode { .name = graph.intern("b") });
+    auto id_c = graph.add_file_node(FileNode { .name = graph.intern("c") });
+    auto id_d = graph.add_file_node(FileNode { .name = graph.intern("d") });
+    auto id_e = graph.add_file_node(FileNode { .name = graph.intern("e") });
 
     (void)graph.add_edge(*id_a, *id_b);
     (void)graph.add_edge(*id_a, *id_c);
@@ -441,10 +441,10 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
     //                               ^
     // input.c ----------------------+
 
-    auto header_id = graph.add_file_node(FileNode { .name = "header.h" });
-    auto input_id = graph.add_file_node(FileNode { .name = "input.c" });
-    auto cmd_id = graph.add_command_node(CommandNode { .command = "gcc" });
-    auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "output.o" });
+    auto header_id = graph.add_file_node(FileNode { .name = graph.intern("header.h") });
+    auto input_id = graph.add_file_node(FileNode { .name = graph.intern("input.c") });
+    auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+    auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("output.o") });
 
     REQUIRE(header_id.has_value());
     REQUIRE(input_id.has_value());
@@ -530,10 +530,10 @@ TEST_CASE("get_outputs excludes sticky edges", "[graph][regression]")
     //                          ^
     // source.c ---(normal)-----+
 
-    auto tupfile_id = graph.add_file_node(FileNode { .name = "Tupfile" });
-    auto source_id = graph.add_file_node(FileNode { .name = "source.c" });
-    auto cmd_id = graph.add_command_node(CommandNode { .command = "gcc source.c" });
-    auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "output.o" });
+    auto tupfile_id = graph.add_file_node(FileNode { .name = graph.intern("Tupfile") });
+    auto source_id = graph.add_file_node(FileNode { .name = graph.intern("source.c") });
+    auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc source.c") });
+    auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("output.o") });
 
     (void)graph.add_edge(*source_id, *cmd_id, LinkType::Normal);
     (void)graph.add_edge(*cmd_id, *output_id, LinkType::Normal);
@@ -560,10 +560,10 @@ TEST_CASE("Sticky edge API", "[graph]")
     using pup::LinkType;
     auto graph = BuildGraph {};
 
-    auto tupfile_id = graph.add_file_node(FileNode { .name = "Tupfile" });
-    auto source_id = graph.add_file_node(FileNode { .name = "source.c" });
-    auto cmd_id = graph.add_command_node(CommandNode { .command = "gcc source.c" });
-    auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = "output.o" });
+    auto tupfile_id = graph.add_file_node(FileNode { .name = graph.intern("Tupfile") });
+    auto source_id = graph.add_file_node(FileNode { .name = graph.intern("source.c") });
+    auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc source.c") });
+    auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("output.o") });
 
     (void)graph.add_edge(*source_id, *cmd_id, LinkType::Normal);
     (void)graph.add_edge(*cmd_id, *output_id, LinkType::Normal);
@@ -602,7 +602,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     SECTION("multiple sticky edges from same node")
     {
-        auto cmd2_id = graph.add_command_node(CommandNode { .command = "gcc other.c" });
+        auto cmd2_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc other.c") });
         (void)graph.add_edge(*tupfile_id, *cmd2_id, LinkType::Sticky);
 
         REQUIRE(graph.get_sticky_outputs(*tupfile_id).size() == 2);
@@ -611,7 +611,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     SECTION("mixed edge types from same node")
     {
-        auto cmd2_id = graph.add_command_node(CommandNode { .command = "lint source.c" });
+        auto cmd2_id = graph.add_command_node(CommandNode { .command = graph.intern("lint source.c") });
         (void)graph.add_edge(*source_id, *cmd2_id, LinkType::Sticky);
 
         auto source_outputs = graph.get_outputs(*source_id);

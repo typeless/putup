@@ -221,17 +221,17 @@ TEST_CASE("Scheduler basic operation", "[exec]")
         auto graph = graph::BuildGraph {};
 
         auto input_id = graph.add_file_node(graph::FileNode {
-            .name = "input.txt",
+            .name = graph.intern("input.txt"),
         });
 
         auto cmd_id = graph.add_command_node(graph::CommandNode {
-            .command = "cat input.txt > output.txt",
-            .display = "CAT input.txt",
+            .command = graph.intern("cat input.txt > output.txt"),
+            .display = graph.intern("CAT input.txt"),
         });
 
         auto output_id = graph.add_file_node(graph::FileNode {
             .type = NodeType::Generated,
-            .name = "output.txt",
+            .name = graph.intern("output.txt"),
         });
 
         (void)graph.add_edge(*input_id, *cmd_id);
@@ -260,18 +260,18 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //   b.c -> cmd2 -> b.o
         auto graph = graph::BuildGraph {};
 
-        auto a_c = graph.add_file_node(graph::FileNode { .name = "a.c" });
-        auto b_c = graph.add_file_node(graph::FileNode { .name = "b.c" });
+        auto a_c = graph.add_file_node(graph::FileNode { .name = graph.intern("a.c") });
+        auto b_c = graph.add_file_node(graph::FileNode { .name = graph.intern("b.c") });
 
         auto cmd1 = graph.add_command_node(graph::CommandNode {
-            .command = "gcc -c a.c -o a.o",
+            .command = graph.intern("gcc -c a.c -o a.o"),
         });
         auto cmd2 = graph.add_command_node(graph::CommandNode {
-            .command = "gcc -c b.c -o b.o",
+            .command = graph.intern("gcc -c b.c -o b.o"),
         });
 
-        auto a_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "a.o" });
-        auto b_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "b.o" });
+        auto a_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
+        auto b_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("b.o") });
 
         (void)graph.add_edge(*a_c, *cmd1);
         (void)graph.add_edge(*cmd1, *a_o);
@@ -292,15 +292,15 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         // a.c -> compile -> a.o -> link -> a.out
         auto graph = graph::BuildGraph {};
 
-        auto a_c = graph.add_file_node(graph::FileNode { .name = "a.c" });
+        auto a_c = graph.add_file_node(graph::FileNode { .name = graph.intern("a.c") });
         auto compile_cmd = graph.add_command_node(graph::CommandNode {
-            .command = "gcc -c a.c -o a.o",
+            .command = graph.intern("gcc -c a.c -o a.o"),
         });
-        auto a_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "a.o" });
+        auto a_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
         auto link_cmd = graph.add_command_node(graph::CommandNode {
-            .command = "gcc a.o -o a.out",
+            .command = graph.intern("gcc a.o -o a.out"),
         });
-        auto a_out = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "a.out" });
+        auto a_out = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("a.out") });
 
         (void)graph.add_edge(*a_c, *compile_cmd);
         (void)graph.add_edge(*compile_cmd, *a_o);
@@ -326,19 +326,19 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //       link     (waits for both)
         auto graph = graph::BuildGraph {};
 
-        auto a_c = graph.add_file_node(graph::FileNode { .name = "main.c" });
+        auto a_c = graph.add_file_node(graph::FileNode { .name = graph.intern("main.c") });
         auto cmd1 = graph.add_command_node(graph::CommandNode {
-            .command = "gcc -c main.c -o main.o",
+            .command = graph.intern("gcc -c main.c -o main.o"),
         });
         auto cmd2 = graph.add_command_node(graph::CommandNode {
-            .command = "gcc -c main.c -o main_opt.o",
+            .command = graph.intern("gcc -c main.c -o main_opt.o"),
         });
-        auto main_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "main.o" });
-        auto main_opt_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "main_opt.o" });
+        auto main_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("main.o") });
+        auto main_opt_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("main_opt.o") });
         auto link_cmd = graph.add_command_node(graph::CommandNode {
-            .command = "gcc main.o main_opt.o -o app",
+            .command = graph.intern("gcc main.o main_opt.o -o app"),
         });
-        auto app = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "app" });
+        auto app = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("app") });
 
         (void)graph.add_edge(*a_c, *cmd1);
         (void)graph.add_edge(*a_c, *cmd2);
@@ -365,13 +365,13 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //      c1 c2 c3  (all can run in parallel)
         auto graph = graph::BuildGraph {};
 
-        auto src = graph.add_file_node(graph::FileNode { .name = "lib.c" });
-        auto cmd1 = graph.add_command_node(graph::CommandNode { .command = "gcc -c -O0 lib.c -o lib_debug.o" });
-        auto cmd2 = graph.add_command_node(graph::CommandNode { .command = "gcc -c -O2 lib.c -o lib_opt.o" });
-        auto cmd3 = graph.add_command_node(graph::CommandNode { .command = "gcc -c -Os lib.c -o lib_size.o" });
-        auto out1 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "lib_debug.o" });
-        auto out2 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "lib_opt.o" });
-        auto out3 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "lib_size.o" });
+        auto src = graph.add_file_node(graph::FileNode { .name = graph.intern("lib.c") });
+        auto cmd1 = graph.add_command_node(graph::CommandNode { .command = graph.intern("gcc -c -O0 lib.c -o lib_debug.o") });
+        auto cmd2 = graph.add_command_node(graph::CommandNode { .command = graph.intern("gcc -c -O2 lib.c -o lib_opt.o") });
+        auto cmd3 = graph.add_command_node(graph::CommandNode { .command = graph.intern("gcc -c -Os lib.c -o lib_size.o") });
+        auto out1 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("lib_debug.o") });
+        auto out2 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("lib_opt.o") });
+        auto out3 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("lib_size.o") });
 
         (void)graph.add_edge(*src, *cmd1);
         (void)graph.add_edge(*src, *cmd2);
@@ -397,13 +397,13 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //       link    (must wait for all)
         auto graph = graph::BuildGraph {};
 
-        auto a_o = graph.add_file_node(graph::FileNode { .name = "a.o" });
-        auto b_o = graph.add_file_node(graph::FileNode { .name = "b.o" });
-        auto c_o = graph.add_file_node(graph::FileNode { .name = "c.o" });
+        auto a_o = graph.add_file_node(graph::FileNode { .name = graph.intern("a.o") });
+        auto b_o = graph.add_file_node(graph::FileNode { .name = graph.intern("b.o") });
+        auto c_o = graph.add_file_node(graph::FileNode { .name = graph.intern("c.o") });
         auto link_cmd = graph.add_command_node(graph::CommandNode {
-            .command = "gcc a.o b.o c.o -o program",
+            .command = graph.intern("gcc a.o b.o c.o -o program"),
         });
-        auto program = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = "program" });
+        auto program = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("program") });
 
         (void)graph.add_edge(*a_o, *link_cmd);
         (void)graph.add_edge(*b_o, *link_cmd);
@@ -430,19 +430,19 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         auto graph = graph::BuildGraph {};
 
         auto input_id = graph.add_file_node(graph::FileNode {
-            .name = "/dev/null",
+            .name = graph.intern("/dev/null"),
         });
 
         // Command that echoes the exported var
         auto cmd_node = graph::CommandNode {
-            .command = "echo $PUP_TEST_EXPORT_VAR",
+            .command = graph.intern("echo $PUP_TEST_EXPORT_VAR"),
         };
-        cmd_node.exported_vars.insert("PUP_TEST_EXPORT_VAR");
+        cmd_node.exported_vars.insert(graph.intern("PUP_TEST_EXPORT_VAR"));
         auto cmd_id = graph.add_command_node(cmd_node);
 
         auto output_id = graph.add_file_node(graph::FileNode {
             .type = NodeType::Generated,
-            .name = "/tmp/test_output.txt",
+            .name = graph.intern("/tmp/test_output.txt"),
         });
 
         (void)graph.add_edge(*input_id, *cmd_id);
@@ -472,19 +472,19 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         auto graph = graph::BuildGraph {};
 
         auto input_id = graph.add_file_node(graph::FileNode {
-            .name = "/dev/null",
+            .name = graph.intern("/dev/null"),
         });
 
         // Command without exported_vars - var should NOT be in env
         auto cmd_node = graph::CommandNode {
-            .command = "echo ${PUP_TEST_HIDDEN_VAR:-default}",
+            .command = graph.intern("echo ${PUP_TEST_HIDDEN_VAR:-default}"),
         };
         // Note: exported_vars is empty
         auto cmd_id = graph.add_command_node(cmd_node);
 
         auto output_id = graph.add_file_node(graph::FileNode {
             .type = NodeType::Generated,
-            .name = "/tmp/test_output2.txt",
+            .name = graph.intern("/tmp/test_output2.txt"),
         });
 
         (void)graph.add_edge(*input_id, *cmd_id);

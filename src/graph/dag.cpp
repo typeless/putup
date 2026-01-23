@@ -12,6 +12,11 @@ auto make_graph() -> Graph
 {
     auto graph = Graph {};
 
+    // Initialize dir_name_index with pool pointer for transparent lookup
+    graph.dir_name_index = std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual>(
+        0, DirNameKeyHash { &graph.strings }, DirNameKeyEqual { &graph.strings }
+    );
+
     // Reserve BUILD_ROOT_ID (1) for the build root node.
     // All Generated/Ghost nodes will be parented under this node.
     // The build root's filesystem location is determined at build time
@@ -20,7 +25,7 @@ auto make_graph() -> Graph
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
-        .name = {}, // Name set by set_build_root_name()
+        .name = StringId::Empty, // Name set by set_build_root_name()
         .parent_dir = SOURCE_ROOT_ID,
     };
     graph.next_file_id = 2; // Start regular nodes at ID 2
@@ -52,7 +57,7 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     auto const id = graph.next_file_id++;
     node.id = id;
 
-    if (!node.name.empty()) {
+    if (!is_empty(node.name)) {
         graph.dir_name_index[DirNameKey { node.parent_dir, node.name }] = id;
     }
 
@@ -70,8 +75,9 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
     auto const id = graph.next_command_id++;
     node.id = id;
 
-    if (!node.command.empty()) {
-        graph.command_str_index[node.command] = id;
+    if (!is_empty(node.command)) {
+        auto cmd_str = std::string { graph.strings.get(node.command) };
+        graph.command_str_index[std::move(cmd_str)] = id;
     }
 
     auto const idx = command_index(id);
@@ -163,8 +169,9 @@ auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
 auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
     -> std::optional<NodeId>
 {
-    auto key = DirNameKey { parent_dir, std::string { name } };
-    auto it = graph.dir_name_index.find(key);
+    // Zero-allocation lookup using transparent hash/equal
+    auto view = DirNameKeyView { parent_dir, name };
+    auto it = graph.dir_name_index.find(view);
     if (it != graph.dir_name_index.end()) {
         return it->second;
     }
@@ -323,8 +330,8 @@ auto empty(Graph const& graph) -> bool
 
 auto clear(Graph& graph) -> void
 {
-    // Preserve build root name before clearing
-    auto build_root_name = std::move(graph.files[BUILD_ROOT_ID].name);
+    // Preserve build root name string before clearing
+    auto build_root_name_str = std::string { graph.strings.get(graph.files[BUILD_ROOT_ID].name) };
 
     graph.files.clear();
     graph.commands.clear();
@@ -336,13 +343,22 @@ auto clear(Graph& graph) -> void
     graph.dir_name_index.clear();
     graph.command_str_index.clear();
     graph.path_cache.clear();
+    graph.strings.clear();
+
+    // Re-initialize dir_name_index with pool pointer
+    graph.dir_name_index = std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual>(
+        0, DirNameKeyHash { &graph.strings }, DirNameKeyEqual { &graph.strings }
+    );
+
+    // Re-intern build root name
+    auto build_root_name = graph.strings.intern(build_root_name_str);
 
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
-        .name = std::move(build_root_name),
+        .name = build_root_name,
         .parent_dir = SOURCE_ROOT_ID,
     };
     graph.next_file_id = 2;
@@ -437,13 +453,14 @@ auto get_full_path(Graph const& graph, NodeId id) -> std::string
         return "";
     }
 
-    if (node->name.empty()) {
+    auto const name = graph.strings.get(node->name);
+    if (name.empty()) {
         return "";
     }
 
     if (auto it = graph.path_cache.find(id); it != graph.path_cache.end()) {
         if (it->second.empty()) {
-            return node->name;
+            return std::string { name };
         }
         return it->second;
     }
@@ -455,15 +472,15 @@ auto get_full_path(Graph const& graph, NodeId id) -> std::string
         auto parent_path = get_full_path(graph, node->parent_dir);
         if (!parent_path.empty()) {
             if (parent_path.back() == '/') {
-                path = parent_path + node->name;
+                path = std::string { parent_path } + std::string { name };
             } else {
-                path = parent_path + "/" + node->name;
+                path = std::string { parent_path } + "/" + std::string { name };
             }
         } else {
-            path = node->name;
+            path = std::string { name };
         }
     } else {
-        path = node->name;
+        path = std::string { name };
     }
 
     graph.path_cache[id] = path;
@@ -482,13 +499,13 @@ auto clear_path_cache(Graph& graph) -> void
 
 auto set_build_root_name(Graph& graph, std::string name) -> void
 {
-    graph.files[BUILD_ROOT_ID].name = std::move(name);
+    graph.files[BUILD_ROOT_ID].name = graph.strings.intern(name);
     graph.path_cache.clear(); // Invalidate all cached paths
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
 {
-    return graph.files[BUILD_ROOT_ID].name;
+    return graph.strings.get(graph.files[BUILD_ROOT_ID].name);
 }
 
 auto is_under_build_root(Graph const& graph, NodeId id) -> bool
@@ -505,6 +522,52 @@ auto is_under_build_root(Graph const& graph, NodeId id) -> bool
         node = get_file_node(graph, node->parent_dir);
     }
     return false;
+}
+
+auto intern_string(Graph& graph, std::string_view str) -> StringId
+{
+    return graph.strings.intern(str);
+}
+
+auto get_string(Graph const& graph, StringId id) -> std::string_view
+{
+    return graph.strings.get(id);
+}
+
+auto get_name(Graph const& graph, NodeId id) -> std::string_view
+{
+    auto const* node = get_file_node(graph, id);
+    if (!node) {
+        return {};
+    }
+    return graph.strings.get(node->name);
+}
+
+auto get_command_str(Graph const& graph, NodeId id) -> std::string_view
+{
+    auto const* node = get_command_node(graph, id);
+    if (!node) {
+        return {};
+    }
+    return graph.strings.get(node->command);
+}
+
+auto get_display_str(Graph const& graph, NodeId id) -> std::string_view
+{
+    auto const* node = get_command_node(graph, id);
+    if (!node) {
+        return {};
+    }
+    return graph.strings.get(node->display);
+}
+
+auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view
+{
+    auto const* node = get_command_node(graph, id);
+    if (!node) {
+        return {};
+    }
+    return graph.strings.get(node->source_dir);
 }
 
 // =============================================================================

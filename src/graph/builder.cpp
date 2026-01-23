@@ -299,7 +299,7 @@ auto walk_path_to_directory(
                 // Create new directory node
                 auto node = FileNode {
                     .type = NodeType::Directory,
-                    .name = comp_str,
+                    .name = graph.intern(comp_str),
                     .parent_dir = current_id,
                 };
                 auto result = graph.add_file_node(std::move(node));
@@ -356,7 +356,7 @@ auto walk_to_file_node(
     // Create new node
     auto node = FileNode {
         .type = type,
-        .name = basename,
+        .name = graph.intern(basename),
         .parent_dir = target_dir_id,
     };
     return graph.add_file_node(std::move(node));
@@ -829,18 +829,19 @@ auto process_import(
 
         // Check if we already have a node for this variable (from same build session)
         auto it = state.imported_env_var_nodes.find(imp.var_name);
+        auto const name_id = ctx.graph->intern(node_name);
         if (it != state.imported_env_var_nodes.end()) {
             // Update existing node in-place if value changed
             auto* existing = ctx.graph->get_file_node(it->second);
-            if (existing && existing->name != node_name) {
-                existing->name = node_name;
+            if (existing && existing->name != name_id) {
+                existing->name = name_id;
                 existing->content_hash = content_hash;
             }
         } else {
             // Create new Variable node
             auto node = FileNode {
                 .type = NodeType::Variable,
-                .name = node_name,
+                .name = name_id,
                 .parent_dir = state.env_var_dir_id,
                 .content_hash = content_hash,
             };
@@ -1245,8 +1246,8 @@ auto expand_rule(
         if (!output_inputs.empty()) {
             for (auto input_id : output_inputs) {
                 if (is_command_id(input_id)) {
-                    auto* existing_cmd = ctx.graph->get_command_node(input_id);
-                    auto existing_cmd_str = existing_cmd ? existing_cmd->command : "<unknown>";
+                    auto existing_cmd_str_sv = get_command_str(ctx.graph->graph(), input_id);
+                    auto existing_cmd_str = std::string { existing_cmd_str_sv.empty() ? "<unknown>" : existing_cmd_str_sv };
                     auto output_path = ctx.graph->get_full_path(*output_id);
                     char err_buf[1024];
                     snprintf(err_buf, sizeof(err_buf), "Unable to create output '%s' because it is already owned by command:\n  %s", output_path.c_str(), existing_cmd_str.c_str());
@@ -1664,7 +1665,7 @@ auto get_or_create_directory_node(
     // Create new directory node
     auto node = FileNode {
         .type = NodeType::Directory,
-        .name = basename,
+        .name = ctx.graph->intern(basename),
         .parent_dir = parent_id,
     };
 
@@ -1744,7 +1745,7 @@ auto get_or_create_file_node(
     // Create new node
     auto node = FileNode {
         .type = type,
-        .name = basename,
+        .name = ctx.graph->intern(basename),
         .parent_dir = parent_id,
     };
 
@@ -1831,7 +1832,7 @@ auto get_or_create_group_node(
     // Create new group node
     auto node = FileNode {
         .type = NodeType::Group,
-        .name = group_basename,
+        .name = ctx.graph->intern(group_basename),
         .parent_dir = parent_id,
     };
 
@@ -1849,11 +1850,17 @@ auto create_command_node(
     std::string const& display
 ) -> Result<NodeId>
 {
+    // Intern exported_vars
+    auto exported_var_ids = std::set<StringId> {};
+    for (auto const& var : ctx.exported_vars) {
+        exported_var_ids.insert(ctx.graph->intern(var));
+    }
+
     auto node = CommandNode {
-        .command = command,
-        .display = display,
-        .source_dir = ctx.current_dir.string(),
-        .exported_vars = ctx.exported_vars,
+        .command = ctx.graph->intern(command),
+        .display = ctx.graph->intern(display),
+        .source_dir = ctx.graph->intern(ctx.current_dir.string()),
+        .exported_vars = std::move(exported_var_ids),
     };
 
     auto cmd_id_result = ctx.graph->add_command_node(std::move(node));
@@ -2001,7 +2008,7 @@ auto add_tupfile(
             auto value = eval.config_vars->get(var_name);
             auto node = FileNode {
                 .type = NodeType::Variable,
-                .name = std::string { var_name },
+                .name = graph.intern(var_name),
                 .parent_dir = config_dir_id,
                 .content_hash = sha256(value),
             };
@@ -2023,7 +2030,7 @@ auto add_tupfile(
             // Create new $ directory under root
             auto env_dir_node = FileNode {
                 .type = NodeType::Directory,
-                .name = "$",
+                .name = graph.intern("$"),
                 .parent_dir = NodeId { 0 },
             };
             auto result = graph.add_file_node(std::move(env_dir_node));
@@ -2137,7 +2144,7 @@ auto resolve_deferred_order_only_edges(
 
             // Expand %<group> pattern in command string (was preserved during parsing)
             // Extract group name from node's basename (e.g., "<archives>" -> "archives")
-            auto const& group_basename = group_node->name;
+            auto group_basename = std::string { graph.str(group_node->name) };
             if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
                 auto group_name = group_basename.substr(1, group_basename.size() - 2);
                 char pattern_buf[256];
@@ -2146,12 +2153,14 @@ auto resolve_deferred_order_only_edges(
 
                 // Get command node and check if pattern exists
                 auto* cmd_node = graph.get_command_node(edge.command_id);
-                if (cmd_node && cmd_node->command.find(pattern) != std::string::npos) {
+                auto cmd_str = std::string { graph.str(cmd_node->command) };
+                if (cmd_node && cmd_str.find(pattern) != std::string::npos) {
                     // Construct path transform context from command's source_dir
-                    auto current_dir = fs::path { cmd_node->source_dir };
+                    auto source_dir_str = std::string { graph.str(cmd_node->source_dir) };
+                    auto current_dir = fs::path { source_dir_str };
                     auto tc = PathTransformContext {
                         .source_to_root = compute_source_to_root(current_dir),
-                        .current_dir_str = cmd_node->source_dir,
+                        .current_dir_str = source_dir_str,
                         .source_root = state.options.source_root,
                         .output_root = state.options.output_root,
                     };
@@ -2169,19 +2178,22 @@ auto resolve_deferred_order_only_edges(
                     }
 
                     // Replace pattern in command
-                    auto pos = cmd_node->command.find(pattern);
+                    auto pos = cmd_str.find(pattern);
                     while (pos != std::string::npos) {
-                        cmd_node->command.replace(pos, pattern.size(), replacement);
-                        pos = cmd_node->command.find(pattern, pos + replacement.size());
+                        cmd_str.replace(pos, pattern.size(), replacement);
+                        pos = cmd_str.find(pattern, pos + replacement.size());
                     }
+                    cmd_node->command = graph.intern(cmd_str);
 
                     // Also update display if it contains the pattern
-                    if (cmd_node->display.find(pattern) != std::string::npos) {
-                        pos = cmd_node->display.find(pattern);
+                    auto display_str = std::string { graph.str(cmd_node->display) };
+                    if (display_str.find(pattern) != std::string::npos) {
+                        pos = display_str.find(pattern);
                         while (pos != std::string::npos) {
-                            cmd_node->display.replace(pos, pattern.size(), replacement);
-                            pos = cmd_node->display.find(pattern, pos + replacement.size());
+                            display_str.replace(pos, pattern.size(), replacement);
+                            pos = display_str.find(pattern, pos + replacement.size());
                         }
+                        cmd_node->display = graph.intern(display_str);
                     }
                 }
             }

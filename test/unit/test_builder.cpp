@@ -363,7 +363,8 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
     auto link_cmd_count = 0;
     for (auto id : commands) {
         auto const* node = graph.get_command_node(id);
-        if (node && node->command.find("-o app") != std::string::npos) {
+        auto cmd_str = get_command_str(graph.graph(), id);
+        if (node && cmd_str.find("-o app") != std::string_view::npos) {
             auto inputs = graph.get_inputs(id);
             // Should have at least 2 .o inputs (may also have Tupfile as sticky)
             auto o_count = 0;
@@ -783,7 +784,8 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     auto found = false;
     for (auto id : graph.nodes_of_type(NodeType::Command)) {
         auto const* node = graph.get_command_node(id);
-        if (node && node->command.find("compile kernel.c") != std::string::npos) {
+        auto cmd_str = get_command_str(graph.graph(), id);
+        if (node && cmd_str.find("compile kernel.c") != std::string_view::npos) {
             auto order_only = graph.get_order_only(id);
             // Should have config.h as order-only
             found = !order_only.empty();
@@ -871,7 +873,8 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
     auto found_order_only = false;
     for (auto id : graph.nodes_of_type(NodeType::Command)) {
         auto const* node = graph.get_command_node(id);
-        if (node && node->command.find("compile") != std::string::npos) {
+        auto cmd_str = get_command_str(graph.graph(), id);
+        if (node && cmd_str.find("compile") != std::string_view::npos) {
             auto order_only = graph.get_order_only(id);
             if (!order_only.empty()) {
                 found_order_only = true;
@@ -1035,14 +1038,14 @@ TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
     REQUIRE(helpers_node != nullptr);
 
     // Verify the node has name and parent_dir set
-    CHECK(helpers_node->name == "helpers.c");
+    CHECK(get_name(graph.graph(), helpers_node->id) == "helpers.c");
     CHECK(helpers_node->parent_dir != 0); // Not root
 
     // Verify the parent directory node exists
     auto const* parent_dir = graph.get_file_node(helpers_node->parent_dir);
     REQUIRE(parent_dir != nullptr);
     CHECK(parent_dir->type == NodeType::Directory);
-    CHECK(parent_dir->name == "util");
+    CHECK(get_name(graph.graph(), parent_dir->id) == "util");
 
     // Verify we can find the file via (parent_dir, name)
     auto found = graph.find_by_dir_name(helpers_node->parent_dir, "helpers.c");
@@ -1102,7 +1105,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[builder
     FileNode const* output_node = nullptr;
     for (auto id : generated) {
         auto const* node = graph.get_file_node(id);
-        if (node && node->name == "main.o") {
+        if (node && get_name(graph.graph(), id) == "main.o") {
             output_node = node;
             break;
         }
@@ -1168,7 +1171,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     FileNode const* boot_hex_node = nullptr;
     for (auto id : generated) {
         auto const* node = graph.get_file_node(id);
-        if (node && node->name == "boot.hex") {
+        if (node && get_name(graph.graph(), id) == "boot.hex") {
             boot_hex_node = node;
             break;
         }
@@ -1201,7 +1204,8 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     CommandNode const* srec_cmd = nullptr;
     for (auto id : commands) {
         auto const* node = graph.get_command_node(id);
-        if (node && node->command.find("srec_cat") != std::string::npos) {
+        auto cmd_str = get_command_str(graph.graph(), id);
+        if (node && cmd_str.find("srec_cat") != std::string_view::npos) {
             srec_cmd = node;
             break;
         }
@@ -1274,7 +1278,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
     FileNode const* output_node = nullptr;
     for (auto id : generated) {
         auto const* node = graph.get_file_node(id);
-        if (node && node->name == "out.txt") {
+        if (node && get_name(graph.graph(), id) == "out.txt") {
             output_node = node;
             break;
         }
@@ -1334,9 +1338,10 @@ TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
     REQUIRE(cmd_node != nullptr);
 
     // At root, paths should be direct (no ../ prefixes)
-    CHECK(cmd_node->command.find("../") == std::string::npos);
-    CHECK(cmd_node->command.find("-c main.c") != std::string::npos);
-    CHECK(cmd_node->command.find("-o main.o") != std::string::npos);
+    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    CHECK(cmd_str.find("../") == std::string_view::npos);
+    CHECK(cmd_str.find("-c main.c") != std::string_view::npos);
+    CHECK(cmd_str.find("-o main.o") != std::string_view::npos);
 }
 
 TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder][paths]")
@@ -1385,9 +1390,10 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder
     REQUIRE(cmd_node != nullptr);
 
     // Command should use "add.c" not "../../src/lib/add.c"
-    CHECK(cmd_node->command.find("../../src/lib/add.c") == std::string::npos);
-    CHECK(cmd_node->command.find("-c add.c") != std::string::npos);
-    CHECK(cmd_node->command.find("-o add.o") != std::string::npos);
+    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    CHECK(cmd_str.find("../../src/lib/add.c") == std::string_view::npos);
+    CHECK(cmd_str.find("-c add.c") != std::string_view::npos);
+    CHECK(cmd_str.find("-o add.o") != std::string_view::npos);
 }
 
 TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[builder][paths]")
@@ -1440,10 +1446,11 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[buil
     REQUIRE(cmd_node != nullptr);
 
     // Local file should be simplified, cross-directory uses root-relative path
-    INFO("Command: " << cmd_node->command);
-    CHECK(cmd_node->command.find("main.c") != std::string::npos);
+    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    INFO("Command: " << std::string { cmd_str });
+    CHECK(cmd_str.find("main.c") != std::string_view::npos);
     // Cross-directory reference becomes root-relative: ../../src/util/helper.c
-    CHECK(cmd_node->command.find("src/util/helper.c") != std::string::npos);
+    CHECK(cmd_str.find("src/util/helper.c") != std::string_view::npos);
 }
 
 TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths][variant]")
@@ -1498,13 +1505,14 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
     auto const* cmd_node = graph.get_command_node(commands[0]);
     REQUIRE(cmd_node != nullptr);
 
-    INFO("Command: " << cmd_node->command);
+    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    INFO("Command: " << std::string { cmd_str });
 
     // Input should be simplified (just "add.c", not round-trip path)
-    CHECK(cmd_node->command.find("-c add.c") != std::string::npos);
+    CHECK(cmd_str.find("-c add.c") != std::string_view::npos);
 
     // Output should go to variant directory
-    CHECK(cmd_node->command.find("build/src/lib/add.o") != std::string::npos);
+    CHECK(cmd_str.find("build/src/lib/add.o") != std::string_view::npos);
 }
 
 // =============================================================================
@@ -1559,7 +1567,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     FileNode const* output_node = nullptr;
     for (auto id : generated) {
         auto const* node = graph.get_file_node(id);
-        if (node && node->name == "..hidden") {
+        if (node && get_name(graph.graph(), id) == "..hidden") {
             output_node = node;
             break;
         }

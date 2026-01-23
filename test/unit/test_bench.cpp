@@ -36,7 +36,7 @@ auto generate_linear_graph(std::size_t n) -> BuildGraph
         char buf[64];
         snprintf(buf, sizeof(buf), "file_%zu.c", i);
         (void)graph.add_file_node(FileNode { .type = NodeType::File,
-            .name = std::string { buf } });
+            .name = graph.intern(buf) });
     }
     return graph;
 }
@@ -46,13 +46,13 @@ auto generate_order_only_graph(
 ) -> std::pair<BuildGraph, pup::NodeId>
 {
     auto graph = BuildGraph {};
-    auto header = graph.add_file_node(FileNode { .type = NodeType::File, .name = "common.h" });
+    auto header = graph.add_file_node(FileNode { .type = NodeType::File, .name = graph.intern("common.h") });
 
     for (auto i = std::size_t { 0 }; i < n_commands; ++i) {
         char buf[64];
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
         auto cmd = graph.add_command_node(CommandNode {
-            .command = std::string { buf } });
+            .command = graph.intern(buf) });
         (void)graph.add_order_only_edge(*header, *cmd);
     }
     return { std::move(graph), *header };
@@ -63,7 +63,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
     auto graph = BuildGraph {};
 
     // Create a shared order-only dependency
-    auto shared_result = graph.add_file_node(FileNode { .name = "shared.h" });
+    auto shared_result = graph.add_file_node(FileNode { .name = graph.intern("shared.h") });
     auto shared = *shared_result;
 
     // Create 'width' independent chains of 'depth' nodes
@@ -73,7 +73,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
             char buf[64];
             snprintf(buf, sizeof(buf), "cmd_%zu_%zu", w, d);
             auto node_result = graph.add_command_node(CommandNode {
-                .command = std::string { buf } });
+                .command = graph.intern(buf) });
             auto node = *node_result;
 
             // Connect to previous in chain

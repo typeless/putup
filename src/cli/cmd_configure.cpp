@@ -63,12 +63,14 @@ auto configure_single_variant(
     auto config_commands = std::set<pup::NodeId> {};
     for (auto const& cfg : configs) {
         auto const* node = ctx.graph().get_command_node(cfg.cmd_id);
-        if (!scopes.empty() && node && !pup::is_path_in_any_scope(node->source_dir, scopes)) {
+        auto source_dir_sv = node ? pup::graph::get_source_dir(ctx.graph().graph(), cfg.cmd_id) : std::string_view {};
+        if (!scopes.empty() && node && !pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
             continue;
         }
         config_commands.insert(cfg.cmd_id);
         if (opts.verbose) {
-            printf("[%.*s] Config rule: %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), node ? node->display.c_str() : "<unknown>", cfg.output_path.c_str());
+            auto display_sv = node ? pup::graph::get_display_str(ctx.graph().graph(), cfg.cmd_id) : std::string_view { "<unknown>" };
+            printf("[%.*s] Config rule: %.*s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data(), cfg.output_path.c_str());
         }
     }
 

@@ -759,9 +759,10 @@ auto Scheduler::build_job_list(
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
+        auto source_dir = get_source_dir(graph.graph(), id);
         auto working_dir = std::filesystem::path { impl_->options.source_root };
-        if (!node->source_dir.empty()) {
-            working_dir /= node->source_dir;
+        if (!source_dir.empty()) {
+            working_dir /= source_dir;
         }
 
         // Check if this is a generated rule that captures stdout
@@ -776,15 +777,25 @@ auto Scheduler::build_job_list(
             }
         }
 
+        // Convert StringIds to strings
+        auto cmd_str = std::string { get_command_str(graph.graph(), id) };
+        auto display_str = std::string { get_display_str(graph.graph(), id) };
+
+        // Convert exported_vars from StringIds to strings
+        auto exported_str = std::set<std::string> {};
+        for (auto var_id : node->exported_vars) {
+            exported_str.insert(std::string { graph.graph().strings.get(var_id) });
+        }
+
         auto job = BuildJob {
             .id = id,
-            .command = node->command,
-            .display = node->display.empty() ? node->command : node->display,
+            .command = cmd_str,
+            .display = display_str.empty() ? cmd_str : display_str,
             .working_dir = working_dir,
             .inputs = {},
             .outputs = {},
             .order_only_inputs = {},
-            .exported_vars = node->exported_vars,
+            .exported_vars = std::move(exported_str),
             .capture_stdout = capture_stdout,
             .inject_implicit_deps = inject_implicit,
             .parent_command = parent_cmd,
