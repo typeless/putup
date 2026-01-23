@@ -100,6 +100,20 @@ struct EvalContext {
     /// Callback for tracking imported env variable usage (for fine-grained dependency tracking)
     /// Called with the variable name when an imported env var is accessed via $(VAR).
     std::function<void(std::string_view name)> on_env_var_used = {};
+
+    /// Callback for tracking variable assignments (for show var command)
+    /// Called when a variable is assigned with the variable name, operator, before/after values,
+    /// filename, line/column, and whether the assignment was effective.
+    std::function<void(
+        std::string_view name,
+        Assignment::Op op,
+        std::string_view value_before,
+        std::string_view value_after,
+        std::string_view filename,
+        std::uint32_t line,
+        std::uint32_t column,
+        bool is_effective
+    )> on_var_assigned = {};
 };
 
 /// Pattern flags for command/output expansion

@@ -1,0 +1,16 @@
+include_rules
+
+# Override CC
+CC = clang
+
+# Append to CFLAGS
+CFLAGS += -DDEBUG
+
+# SoftSet that won't apply (CC already set)
+CC ?= default-cc
+
+# New variable
+LDFLAGS = -lm
+
+# Dummy rule to make valid Tupfile
+: |> echo "test" > %o |> output.txt

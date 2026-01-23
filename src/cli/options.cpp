@@ -85,11 +85,15 @@ auto parse_args(int argc, char** argv) -> Options
             for (++i; i < argc; ++i) {
                 opts.targets.emplace_back(argv[i]);
             }
+        } else if (arg == "--json") {
+            opts.show_json = true;
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty() && is_command(arg)) {
                 opts.command = std::string { arg };
             } else if (opts.command == "show" && opts.show_format.empty()) {
                 opts.show_format = std::string { arg };
+            } else if (opts.command == "show" && opts.show_format == "var" && opts.show_var_filter.empty()) {
+                opts.show_var_filter = std::string { arg };
             } else {
                 opts.targets.emplace_back(arg);
             }
@@ -114,6 +118,7 @@ auto print_usage() -> void
            "                      script  - Shell script\n"
            "                      compdb  - compile_commands.json\n"
            "                      graph   - DOT format (--summary for text)\n"
+           "                      var [NAME] [--json] - Variable tracking\n"
            "\nOptions:\n"
            "  -j, --jobs N       Run N jobs in parallel\n"
            "  -k, --keep-going   Continue after failures\n"

@@ -13,6 +13,7 @@
 #include "pup/graph/topo.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"
+#include "pup/parser/var_tracking.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -355,6 +356,132 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     return EXIT_SUCCESS;
 }
 
+auto output_var_text(
+    std::map<std::string, parser::VarHistory, std::less<>> const& histories,
+    std::string_view variant_name
+) -> int
+{
+    for (auto const& [name, history] : histories) {
+        printf("%s = %s\n", name.c_str(), history.final_value.c_str());
+        printf("  History:\n");
+        for (auto const* assign : history.assignments) {
+            auto const* prefix = assign->is_effective ? "  " : "# ";
+            auto op_str = parser::op_to_string(assign->op);
+            printf("  %s%s:%u\t%s %.*s %s",
+                   prefix,
+                   assign->filename.c_str(),
+                   assign->line,
+                   assign->name.c_str(),
+                   static_cast<int>(op_str.size()),
+                   op_str.data(),
+                   assign->value_after.c_str());
+            if (!assign->is_effective) {
+                printf("   (ineffective)");
+            }
+            printf("\n");
+        }
+        printf("\n");
+    }
+    (void)variant_name;
+    return EXIT_SUCCESS;
+}
+
+auto output_var_json(
+    std::map<std::string, parser::VarHistory, std::less<>> const& histories,
+    std::string_view variant_name
+) -> int
+{
+    printf("{\n");
+    printf("  \"variant\": \"%.*s\",\n", static_cast<int>(variant_name.size()), variant_name.data());
+    printf("  \"variables\": {\n");
+
+    auto first_var = true;
+    for (auto const& [name, history] : histories) {
+        if (!first_var) {
+            printf(",\n");
+        }
+        first_var = false;
+
+        printf("    \"%s\": {\n", escape_json(name).c_str());
+        printf("      \"value\": \"%s\",\n", escape_json(history.final_value).c_str());
+        printf("      \"history\": [\n");
+
+        auto first_assign = true;
+        for (auto const* assign : history.assignments) {
+            if (!first_assign) {
+                printf(",\n");
+            }
+            first_assign = false;
+
+            auto op_str = parser::op_to_string(assign->op);
+            printf("        {\n");
+            printf("          \"file\": \"%s\",\n", escape_json(assign->filename).c_str());
+            printf("          \"line\": %u,\n", assign->line);
+            printf("          \"op\": \"%.*s\",\n", static_cast<int>(op_str.size()), op_str.data());
+            printf("          \"value\": \"%s\",\n", escape_json(assign->value_after).c_str());
+            printf("          \"effective\": %s\n", assign->is_effective ? "true" : "false");
+            printf("        }");
+        }
+
+        printf("\n      ]\n");
+        printf("    }");
+    }
+
+    printf("\n  }\n");
+    printf("}\n");
+    return EXIT_SUCCESS;
+}
+
+auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
+{
+    auto log = parser::AssignmentLog {};
+
+    auto on_var_assigned = [&log](
+        std::string_view name,
+        parser::Assignment::Op op,
+        std::string_view value_before,
+        std::string_view value_after,
+        std::string_view filename,
+        std::uint32_t line,
+        std::uint32_t column,
+        bool is_effective
+    ) {
+        log.push_back(parser::VarAssignment {
+            .name = std::string { name },
+            .filename = std::string { filename },
+            .line = line,
+            .column = column,
+            .op = op,
+            .value_before = std::string { value_before },
+            .value_after = std::string { value_after },
+            .is_effective = is_effective,
+        });
+    };
+
+    auto scanner_registry = make_scanner_registry();
+    auto ctx_opts = BuildContextOptions {
+        .verbose = opts.verbose,
+        .scanner_registry = scanner_registry ? &*scanner_registry : nullptr,
+        .on_var_assigned = on_var_assigned,
+    };
+
+    auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
+    if (!result) {
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        return EXIT_FAILURE;
+    }
+
+    auto filtered = opts.show_var_filter.empty()
+        ? log
+        : parser::filter_by_name(log, opts.show_var_filter);
+
+    auto histories = parser::group_by_name(filtered);
+
+    return opts.show_json
+        ? output_var_json(histories, variant_name)
+        : output_var_text(histories, variant_name);
+}
+
 auto show_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
     if (opts.show_format == "script") {
@@ -366,9 +493,12 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
     if (opts.show_format == "graph") {
         return cmd_export_graph(opts, variant_name);
     }
+    if (opts.show_format == "var") {
+        return cmd_export_var(opts, variant_name);
+    }
 
     fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(opts.show_format.size()), opts.show_format.data());
-    fprintf(stderr, "Formats: script, compdb, graph\n");
+    fprintf(stderr, "Formats: script, compdb, graph, var\n");
     return EXIT_FAILURE;
 }
 
@@ -378,7 +508,7 @@ auto cmd_show(Options const& opts) -> int
 {
     if (opts.show_format.empty()) {
         fprintf(stderr, "Usage: putup show <format>\n");
-        fprintf(stderr, "Formats: script, compdb, graph\n");
+        fprintf(stderr, "Formats: script, compdb, graph, var\n");
         return EXIT_FAILURE;
     }
 

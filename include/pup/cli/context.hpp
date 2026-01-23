@@ -5,8 +5,11 @@
 
 #include "options.hpp"
 #include "pup/core/result.hpp"
+#include "pup/parser/ast.hpp"
 
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
@@ -30,14 +33,27 @@ class Index;
 
 namespace pup::cli {
 
+/// Callback type for tracking variable assignments
+using VarAssignedCallback = std::function<void(
+    std::string_view name,
+    parser::Assignment::Op op,
+    std::string_view value_before,
+    std::string_view value_after,
+    std::string_view filename,
+    std::uint32_t line,
+    std::uint32_t column,
+    bool is_effective
+)>;
+
 /// Options for building the dependency graph
 struct BuildContextOptions {
     bool verbose = false;
     bool keep_going = false;
     bool auto_init = false;
-    bool root_config_only = false; // For configure: use only root tup.config
+    bool root_config_only = false;
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
+    VarAssignedCallback on_var_assigned = {};
 };
 
 /// Create scanner registry for implicit dependency tracking

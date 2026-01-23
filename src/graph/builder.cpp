@@ -636,6 +636,9 @@ auto process_assignment(
         return {};
     }
 
+    auto value_before = std::string { db->get(*name) };
+    auto is_effective = true;
+
     switch (assign.op) {
     case parser::Assignment::Op::Set:
         db->set(*name, *value);
@@ -651,12 +654,28 @@ auto process_assignment(
         // ?= - set only if variable is not already defined (first wins)
         if (!db->contains(*name)) {
             db->set(*name, *value);
+        } else {
+            is_effective = false;
         }
         break;
     case parser::Assignment::Op::WeakSet:
         // ??= - deferred assignment, applied at end of Tupfile (last wins)
         ctx.pending_weak_assignments.emplace_back(*name, *value);
         break;
+    }
+
+    if (ctx.eval->on_var_assigned) {
+        auto value_after = std::string { db->get(*name) };
+        ctx.eval->on_var_assigned(
+            *name,
+            assign.op,
+            value_before,
+            value_after,
+            ctx.current_file.string(),
+            assign.location.line,
+            assign.location.column,
+            is_effective
+        );
     }
 
     return {};
@@ -774,10 +793,15 @@ auto process_include(
         ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.string();
     }
 
+    // Save and update current_file for variable tracking callback
+    auto old_current_file = ctx.current_file;
+    ctx.current_file = include_path;
+
     // Process statements from the included file
     for (auto const& stmt : parse_result.tupfile.statements) {
         auto result = Result<void> { process_statement(ctx, state, *stmt) };
         if (!result) {
+            ctx.current_file = old_current_file;
             if (inc.is_rules && ctx.eval) {
                 ctx.eval->tup_cwd = old_tup_cwd;
             }
@@ -785,7 +809,8 @@ auto process_include(
         }
     }
 
-    // Restore original TUP_CWD
+    // Restore original current_file and TUP_CWD
+    ctx.current_file = old_current_file;
     if (inc.is_rules && ctx.eval) {
         ctx.eval->tup_cwd = old_tup_cwd;
     }

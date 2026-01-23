@@ -23,11 +23,13 @@ struct Options {
     bool include_all_deps = false;
     std::string command = {};
     std::string show_format = {};
+    std::string show_var_filter = {};
     std::string source_dir = {};
     std::string config_dir = {};
     std::vector<std::string> build_dirs = {};
     std::vector<std::string> targets = {};
-    std::vector<std::string> output_targets = {}; // Specific output file targets
+    std::vector<std::string> output_targets = {};
+    bool show_json = false;
 };
 
 /// Parse command-line arguments

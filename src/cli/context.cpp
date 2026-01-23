@@ -259,7 +259,8 @@ auto parse_directory(
     std::filesystem::path const& output_root,
     pup::parser::VarDb const& base_vars,
     bool verbose,
-    bool root_config_only = false
+    bool root_config_only = false,
+    VarAssignedCallback const& on_var_assigned = {}
 ) -> pup::Result<void>
 {
     auto vars = pup::parser::VarDb { base_vars };
@@ -337,7 +338,7 @@ auto parse_directory(
     );
 
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, source_root, config_root, output_root, base_vars, verbose, root_config_only);
+        return parse_directory(dir, state, builder, graph, source_root, config_root, output_root, base_vars, verbose, root_config_only, on_var_assigned);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
@@ -352,6 +353,7 @@ auto parse_directory(
         .tup_outdir = tup_outdir,
         .request_directory = request_directory,
         .available_tupfile_dirs = &state.available,
+        .on_var_assigned = on_var_assigned,
     };
 
     auto result = pup::Result<void> { builder.add_tupfile(graph, parse_result.tupfile, eval_ctx) };
@@ -586,7 +588,7 @@ auto build_context(
             continue;
         }
         auto result = Result<void> {
-            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.config_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx_opts.verbose, ctx_opts.root_config_only)
+            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.config_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx_opts.verbose, ctx_opts.root_config_only, ctx_opts.on_var_assigned)
         };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());

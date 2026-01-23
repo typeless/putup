@@ -3854,3 +3854,77 @@ SCENARIO("Config tree inside source tree", "[e2e][out-of-tree-config]")
         }
     }
 }
+
+// =============================================================================
+// Show Var Command Tests
+// =============================================================================
+
+SCENARIO("show var displays variable assignments", "[e2e][show][var]")
+{
+    GIVEN("a project with variable assignments")
+    {
+        auto f = E2EFixture { "show_var" };
+        REQUIRE(f.init().success());
+
+        WHEN("show var is run")
+        {
+            auto result = f.pup({ "show", "var" });
+
+            THEN("command succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output includes CC variable")
+            {
+                REQUIRE(result.stdout_output.find("CC") != std::string::npos);
+            }
+
+            THEN("output includes CFLAGS variable")
+            {
+                REQUIRE(result.stdout_output.find("CFLAGS") != std::string::npos);
+            }
+
+            THEN("output includes History section")
+            {
+                REQUIRE(result.stdout_output.find("History:") != std::string::npos);
+            }
+        }
+
+        WHEN("show var CC is run")
+        {
+            auto result = f.pup({ "show", "var", "CC" });
+
+            THEN("command succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output includes CC variable")
+            {
+                REQUIRE(result.stdout_output.find("CC") != std::string::npos);
+            }
+
+            THEN("output does NOT include CFLAGS variable")
+            {
+                REQUIRE(result.stdout_output.find("CFLAGS") == std::string::npos);
+            }
+        }
+
+        WHEN("show var --json is run")
+        {
+            auto result = f.pup({ "show", "var", "--json" });
+
+            THEN("command succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output is JSON format")
+            {
+                REQUIRE(result.stdout_output.find("{") != std::string::npos);
+                REQUIRE(result.stdout_output.find("\"variables\":") != std::string::npos);
+            }
+        }
+    }
+}

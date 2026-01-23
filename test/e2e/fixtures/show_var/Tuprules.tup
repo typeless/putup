@@ -1,0 +1,4 @@
+# Base compiler settings
+CC = gcc
+CFLAGS = -Wall
+CFLAGS += -O2
