@@ -245,6 +245,7 @@ Show build information in various formats. Supports path-based variant and scope
 - `script` - Shell script
 - `compdb` - compile_commands.json
 - `graph` - DOT format dependency graph
+- `var` - Variable assignment history
 
 **Examples with targets:**
 ```bash
@@ -302,6 +303,57 @@ putup show graph --summary
 # Include header dependencies
 putup show graph --all-deps | dot -Tsvg -o full-deps.svg
 ```
+
+#### 3.7.4 show var
+
+```
+putup show var [NAME] [--json]
+```
+
+Show variable assignments and their history. Displays where variables are defined and modified across Tuprules.tup and Tupfile files.
+
+**Arguments:**
+- `NAME` - Optional variable name to filter (shows only that variable)
+
+**Options:**
+- `--json` - Output in JSON format
+
+**Output format (text):**
+```
+CC = clang
+  History:
+    Tuprules.tup:2      CC = gcc
+    src/Tupfile:4       CC = clang
+  # src/Tupfile:10      CC ?= default   (ineffective)
+
+CFLAGS = -Wall -O2
+  History:
+    Tuprules.tup:3      CFLAGS = -Wall
+    Tuprules.tup:4      CFLAGS += -Wall -O2
+```
+
+Lines prefixed with `#` indicate ineffective assignments (e.g., `?=` when the variable was already set).
+
+**Examples:**
+```bash
+# Show all variables with history
+putup show var
+
+# Show specific variable
+putup show var CC
+
+# JSON output for tooling
+putup show var --json
+
+# Filter specific variable in JSON
+putup show var CFLAGS --json
+```
+
+**Use cases:**
+- Debug why a variable has an unexpected value
+- Understand variable inheritance from Tuprules.tup
+- Track down where a flag was added or overridden
+- Generate variable documentation
 
 ## 4. Command-Line Options
 
@@ -2100,6 +2152,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Multi-variant parallel | ❌ | ✅ | Auto-detect and build variants |
 | show script | ❌ | ✅ | Generate build.sh |
 | show compdb | ❌ | ✅ | compile_commands.json |
+| show var | ❌ | ✅ | Variable assignment history |
 | Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
 
 **Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name
