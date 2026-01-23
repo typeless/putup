@@ -381,320 +381,125 @@ struct ScopeGuard {
     auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
 };
 
-} // namespace
+constexpr auto MAX_DIRECTORY_DEPTH = 128;
 
-struct GraphBuilder::Impl {
-    struct GroupKey {
-        std::string directory;
-        std::string name;
+// ============================================================================
+// Forward declarations for internal free functions
+// ============================================================================
 
-        auto operator==(GroupKey const& other) const -> bool = default;
-        auto operator<(GroupKey const& other) const -> bool
-        {
-            return std::tie(directory, name) < std::tie(other.directory, other.name);
-        }
-    };
-
-    struct GroupKeyHash {
-        auto operator()(GroupKey const& k) const -> std::size_t
-        {
-            auto h1 = std::hash<std::string> {}(k.directory);
-            auto h2 = std::hash<std::string> {}(k.name);
-            return h1 ^ (h2 << 1);
-        }
-    };
-
-    /// Deferred order-only edge reference for circular parsing situations
-    /// Stores group NodeId (not GroupKey) for direct edge creation
-    struct DeferredOrderOnlyEdge {
-        NodeId group_id;
-        NodeId command_id;
-
-        auto operator<(DeferredOrderOnlyEdge const& other) const -> bool
-        {
-            return std::tie(group_id, command_id) < std::tie(other.group_id, other.command_id);
-        }
-    };
-
-    /// Deferred file-based order-only edge for variant builds
-    /// Stores source-relative path for resolution after all Tupfiles are parsed
-    struct DeferredFileOrderOnlyEdge {
-        std::string path;       ///< Source-relative path (e.g., "include/header.h")
-        std::string source_dir; ///< Tupfile directory for context
-        NodeId command_id;
-
-        auto operator<(DeferredFileOrderOnlyEdge const& other) const -> bool
-        {
-            return std::tie(path, command_id) < std::tie(other.path, other.command_id);
-        }
-    };
-
-    BuilderOptions options;
-    std::vector<std::string> errors;
-    std::vector<std::string> warnings;
-
-    /// Group node lookup: (directory, name) → NodeId
-    /// Used for quick lookup when groups are referenced before creation
-    std::unordered_map<GroupKey, NodeId, GroupKeyHash> group_nodes;
-
-    /// Deferred edges to resolve after all Tupfiles are parsed
-    /// Using set to avoid duplicate edges when same group referenced multiple times
-    std::set<DeferredOrderOnlyEdge> deferred_edges;
-
-    /// Deferred file-based order-only edges for variant builds
-    /// Resolved after all Tupfiles parsed so Generated nodes exist
-    std::set<DeferredFileOrderOnlyEdge> deferred_file_edges;
-
-    /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
-    /// Persists across add_tupfile calls to avoid duplicate nodes
-    std::unordered_map<std::string, NodeId> config_var_nodes;
-
-    /// Virtual $ directory for imported environment variables (like tup's env_dt)
-    NodeId env_var_dir_id = INVALID_NODE_ID;
-
-    /// Imported environment variable nodes (var_name -> NodeId)
-    /// Node name encodes "key=value" for persistence
-    std::unordered_map<std::string, NodeId> imported_env_var_nodes;
-
-    /// Set of imported variable names (for tracking which vars are imported)
-    std::unordered_set<std::string> imported_var_names;
-};
-
-GraphBuilder::GraphBuilder(BuilderOptions options)
-    : impl_(std::make_unique<Impl>())
-{
-    impl_->options = std::move(options);
-}
-
-GraphBuilder::~GraphBuilder() = default;
-
-GraphBuilder::GraphBuilder(GraphBuilder&&) noexcept = default;
-
-auto GraphBuilder::operator=(GraphBuilder&&) noexcept -> GraphBuilder& = default;
-
-auto GraphBuilder::errors() const -> std::vector<std::string> const&
-{
-    return impl_->errors;
-}
-
-auto GraphBuilder::warnings() const -> std::vector<std::string> const&
-{
-    return impl_->warnings;
-}
-
-auto GraphBuilder::build(
-    parser::Tupfile const& tupfile,
-    parser::EvalContext& eval
-) -> Result<BuildGraph>
-{
-    auto graph = BuildGraph {};
-
-    // Set build root name: relative path from source to output root.
-    // For in-tree builds (source == output), this is empty.
-    // For variant builds (-B build), this is "build".
-    if (impl_->options.source_root != impl_->options.output_root) {
-        auto build_root_name = fs::relative(impl_->options.output_root, impl_->options.source_root).string();
-        graph.set_build_root_name(std::move(build_root_name));
-    }
-
-    auto result = Result<void> { add_tupfile(graph, tupfile, eval) };
-    if (!result) {
-        return pup::unexpected<Error>(result.error());
-    }
-    return graph;
-}
-
-auto GraphBuilder::add_tupfile(
-    BuildGraph& graph,
-    parser::Tupfile const& tupfile,
-    parser::EvalContext& eval
-) -> Result<void>
-{
-    // Compute current_dir relative to config_root (where Tupfiles live)
-    // In 3-tree builds, config_root differs from source_root, but the directory
-    // structure mirrors the source tree, so this relative path is used for both
-    // config lookup and source file glob expansion.
-    auto const& tupfile_root = impl_->options.config_root.empty()
-        ? impl_->options.source_root
-        : impl_->options.config_root;
-    auto tupfile_parent = std::filesystem::path { tupfile.filename }.parent_path();
-    auto relative_dir = std::filesystem::relative(tupfile_parent, tupfile_root);
-    if (relative_dir == ".") {
-        relative_dir = "";
-    }
-
-    auto ctx = BuilderContext {
-        .graph = &graph,
-        .eval = &eval,
-        .vars = eval.vars,
-        .options = impl_->options,
-        .current_dir = relative_dir,
-        .current_file = tupfile.filename,
-    };
-
-    // Create Tupfile node and add to sticky_sources for dependency tracking
-    // For 3-tree builds, store relative to config_root (Tupfile's actual location)
-    auto tupfile_rel = std::filesystem::relative(tupfile.filename, tupfile_root).string();
-    auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
-    if (tupfile_node_result) {
-        ctx.sticky_sources.push_back(*tupfile_node_result);
-    }
-
-    // Create Variable nodes for fine-grained config dependency tracking
-    // Each config variable becomes a node so commands only depend on variables they use
-    // Only create nodes once (first Tupfile); subsequent Tupfiles reuse existing nodes
-    if (eval.config_vars && impl_->config_var_nodes.empty()) {
-        // Get config directory for Variable node parent (typically the -B directory)
-        auto config_dir_id = NodeId { 0 };
-        if (!impl_->options.config_path.empty()) {
-            auto config_parent = std::filesystem::path { impl_->options.config_path }.parent_path();
-            auto config_dir_rel = std::filesystem::relative(config_parent, impl_->options.source_root).string();
-            if (config_dir_rel.empty() || config_dir_rel == ".") {
-                config_dir_rel = "";
-            }
-            auto dir_result = get_or_create_directory_node(ctx, config_dir_rel);
-            if (dir_result) {
-                config_dir_id = *dir_result;
-            }
-        }
-
-        for (auto const& var_name : eval.config_vars->names()) {
-            // Skip CONFIG_ prefixed names (we store the stripped version)
-            if (var_name.starts_with(parser::builtin_vars::CONFIG_)) {
-                continue;
-            }
-
-            // Check if node already exists (shouldn't happen with empty check above, but defensive)
-            if (auto existing = graph.find_by_dir_name(config_dir_id, var_name)) {
-                impl_->config_var_nodes[std::string { var_name }] = *existing;
-                continue;
-            }
-
-            auto value = eval.config_vars->get(var_name);
-            auto node = Node {
-                .type = NodeType::Variable,
-                .name = std::string { var_name },
-                .parent_dir = config_dir_id,
-                .content_hash = sha256(value),
-            };
-
-            auto var_id_result = graph.add_node(std::move(node));
-            if (var_id_result) {
-                impl_->config_var_nodes[std::string { var_name }] = *var_id_result;
-            }
-        }
-    }
-
-    // Create/find virtual $ directory for imported env vars (like tup's env_dt)
-    // Only initialize once; subsequent Tupfiles reuse existing nodes
-    if (impl_->env_var_dir_id == INVALID_NODE_ID) {
-        // Check if $ directory already exists in graph (from same build session)
-        if (auto existing = graph.find_by_dir_name(NodeId { 0 }, "$")) {
-            impl_->env_var_dir_id = *existing;
-        } else {
-            // Create new $ directory under root
-            auto env_dir_node = Node {
-                .type = NodeType::Directory,
-                .name = "$",
-                .parent_dir = NodeId { 0 },
-            };
-            auto result = graph.add_node(std::move(env_dir_node));
-            if (result) {
-                impl_->env_var_dir_id = *result;
-            }
-        }
-    }
-
-    // Set up callback to track which config variables are used during expansion
-    eval.on_config_var_used = [&ctx](std::string_view name) {
-        ctx.used_config_vars.insert(std::string { name });
-    };
-
-    // Set up callback to track which imported env variables are used during expansion
-    eval.imported_vars = &impl_->imported_var_names;
-    eval.on_env_var_used = [&ctx](std::string_view name) {
-        ctx.used_env_vars.insert(std::string { name });
-    };
-
-    // Set up resolve_group callback for {group} pattern expansion
-    eval.resolve_group = [&ctx](std::string_view name
-                         ) -> std::vector<std::string> {
-        auto it = ctx.groups.find(std::string { name });
-        if (it == ctx.groups.end()) {
-            return {};
-        }
-        auto paths = std::vector<std::string> {};
-        for (auto id : it->second) {
-            auto path = ctx.graph->get_full_path(id);
-            if (!path.empty()) {
-                paths.push_back(std::move(path));
-            }
-        }
-        return paths;
-    };
-
-    // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
-    // This is for local group references (no directory prefix) - uses current directory
-    // Groups are first-class nodes; lookup via graph edges (file → group)
-    eval.resolve_order_only_group = [this, &ctx](std::string_view name
-                                    ) -> std::vector<std::string> {
-        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
-        auto key = Impl::GroupKey { dir, std::string { name } };
-        auto it = impl_->group_nodes.find(key);
-        if (it == impl_->group_nodes.end()) {
-            return {};
-        }
-        auto paths = std::vector<std::string> {};
-        auto members = get_group_members(*ctx.graph, it->second);
-        for (auto id : members) {
-            auto path = ctx.graph->get_full_path(id);
-            if (!path.empty()) {
-                paths.push_back(std::move(path));
-            }
-        }
-        return paths;
-    };
-
-    for (auto const& stmt : tupfile.statements) {
-        auto result = Result<void> { process_statement(ctx, *stmt) };
-        if (!result) {
-            impl_->errors.push_back(result.error().message);
-            if (!impl_->options.verbose) {
-                return pup::unexpected<Error>(result.error());
-            }
-        }
-    }
-
-    // Apply pending weak assignments (??=) - last wins
-    // Process in reverse order so earlier assignments are checked against later ones
-    if (ctx.vars && !ctx.pending_weak_assignments.empty()) {
-        for (auto it = ctx.pending_weak_assignments.rbegin();
-             it != ctx.pending_weak_assignments.rend();
-             ++it) {
-            if (!ctx.vars->contains(it->first)) {
-                ctx.vars->set(it->first, it->second);
-            }
-        }
-    }
-
-    // Copy errors and warnings
-    for (auto& err : ctx.errors) {
-        impl_->errors.push_back(std::move(err));
-    }
-    for (auto& warn : ctx.warnings) {
-        impl_->warnings.push_back(std::move(warn));
-    }
-
-    return {};
-}
-
-auto GraphBuilder::process_statement(
+auto process_statement(
     BuilderContext& ctx,
+    BuilderState& state,
+    parser::Statement const& stmt
+) -> Result<void>;
+
+auto process_rule(
+    BuilderContext& ctx,
+    BuilderState& state,
+    parser::Rule const& rule
+) -> Result<void>;
+
+auto process_bang_macro(
+    BuilderContext& ctx,
+    parser::BangMacro const& macro
+) -> Result<void>;
+
+auto process_assignment(
+    BuilderContext& ctx,
+    parser::Assignment const& assign
+) -> Result<void>;
+
+auto process_conditional(
+    BuilderContext& ctx,
+    BuilderState& state,
+    parser::Conditional const& cond
+) -> Result<void>;
+
+auto process_include(
+    BuilderContext& ctx,
+    BuilderState& state,
+    parser::Include const& inc
+) -> Result<void>;
+
+auto process_import(
+    BuilderContext& ctx,
+    BuilderState& state,
+    parser::Import const& imp
+) -> Result<void>;
+
+auto process_export(
+    BuilderContext& ctx,
+    parser::Export const& exp
+) -> Result<void>;
+
+auto expand_rule(
+    BuilderContext& ctx,
+    BuilderState& state,
+    parser::Rule const& rule,
+    std::vector<std::string> const& inputs
+) -> Result<void>;
+
+auto expand_inputs(
+    BuilderContext& ctx,
+    std::vector<parser::PathPattern> const& patterns
+) -> Result<std::vector<std::string>>;
+
+auto expand_outputs(
+    BuilderContext& ctx,
+    std::vector<parser::PathPattern> const& patterns,
+    parser::PatternFlags const& flags
+) -> Result<std::vector<std::string>>;
+
+auto expand_command(
+    BuilderContext& ctx,
+    parser::Expression const& cmd,
+    parser::PatternFlags flags,
+    std::vector<std::string> const& outputs
+) -> Result<std::string>;
+
+auto get_or_create_directory_node(
+    BuilderContext& ctx,
+    std::filesystem::path const& dir_path,
+    int depth = 0
+) -> Result<NodeId>;
+
+auto get_or_create_file_node(
+    BuilderContext& ctx,
+    std::string const& path,
+    NodeType type = NodeType::File
+) -> Result<NodeId>;
+
+auto resolve_input_node(
+    BuilderContext& ctx,
+    std::string const& path
+) -> Result<NodeId>;
+
+auto get_or_create_group_node(
+    BuilderContext& ctx,
+    BuilderState& state,
+    std::string const& directory,
+    std::string const& name
+) -> Result<NodeId>;
+
+auto create_command_node(
+    BuilderContext& ctx,
+    BuilderState& state,
+    std::string const& command,
+    std::string const& display
+) -> Result<NodeId>;
+
+// ============================================================================
+// Internal free function implementations
+// ============================================================================
+
+auto process_statement(
+    BuilderContext& ctx,
+    BuilderState& state,
     parser::Statement const& stmt
 ) -> Result<void>
 {
     if (auto const* rule = stmt.as<parser::Rule>()) {
-        return process_rule(ctx, *rule);
+        return process_rule(ctx, state, *rule);
     }
 
     if (auto const* macro = stmt.as<parser::BangMacro>()) {
@@ -706,15 +511,15 @@ auto GraphBuilder::process_statement(
     }
 
     if (auto const* cond = stmt.as<parser::Conditional>()) {
-        return process_conditional(ctx, *cond);
+        return process_conditional(ctx, state, *cond);
     }
 
     if (auto const* inc = stmt.as<parser::Include>()) {
-        return process_include(ctx, *inc);
+        return process_include(ctx, state, *inc);
     }
 
     if (auto const* imp = stmt.as<parser::Import>()) {
-        return process_import(ctx, *imp);
+        return process_import(ctx, state, *imp);
     }
 
     if (auto const* exp = stmt.as<parser::Export>()) {
@@ -724,8 +529,9 @@ auto GraphBuilder::process_statement(
     return {};
 }
 
-auto GraphBuilder::process_rule(
+auto process_rule(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Rule const& rule
 ) -> Result<void>
 {
@@ -765,14 +571,14 @@ auto GraphBuilder::process_rule(
         for (auto const& file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
-            auto result = Result<void> { expand_rule(ctx, rule, iter_inputs) };
+            auto result = Result<void> { expand_rule(ctx, state, rule, iter_inputs) };
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
         }
     } else {
         // Normal rule: single command for all inputs
-        auto result = Result<void> { expand_rule(ctx, rule, *inputs) };
+        auto result = Result<void> { expand_rule(ctx, state, rule, *inputs) };
         if (!result) {
             return pup::unexpected<Error>(result.error());
         }
@@ -781,7 +587,7 @@ auto GraphBuilder::process_rule(
     return {};
 }
 
-auto GraphBuilder::process_bang_macro(
+auto process_bang_macro(
     BuilderContext& ctx,
     parser::BangMacro const& macro
 ) -> Result<void>
@@ -803,7 +609,7 @@ auto GraphBuilder::process_bang_macro(
     return {};
 }
 
-auto GraphBuilder::process_assignment(
+auto process_assignment(
     BuilderContext& ctx,
     parser::Assignment const& assign
 ) -> Result<void>
@@ -856,8 +662,9 @@ auto GraphBuilder::process_assignment(
     return {};
 }
 
-auto GraphBuilder::process_conditional(
+auto process_conditional(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Conditional const& cond
 ) -> Result<void>
 {
@@ -866,7 +673,7 @@ auto GraphBuilder::process_conditional(
     auto const& body = condition_true ? cond.then_body : cond.else_body;
 
     for (auto const& stmt : body) {
-        auto result = Result<void> { process_statement(ctx, *stmt) };
+        auto result = Result<void> { process_statement(ctx, state, *stmt) };
         if (!result) {
             return pup::unexpected<Error>(result.error());
         }
@@ -875,8 +682,9 @@ auto GraphBuilder::process_conditional(
     return {};
 }
 
-auto GraphBuilder::process_include(
+auto process_include(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Include const& inc
 ) -> Result<void>
 {
@@ -968,7 +776,7 @@ auto GraphBuilder::process_include(
 
     // Process statements from the included file
     for (auto const& stmt : parse_result.tupfile.statements) {
-        auto result = Result<void> { process_statement(ctx, *stmt) };
+        auto result = Result<void> { process_statement(ctx, state, *stmt) };
         if (!result) {
             if (inc.is_rules && ctx.eval) {
                 ctx.eval->tup_cwd = old_tup_cwd;
@@ -985,8 +793,9 @@ auto GraphBuilder::process_include(
     return {};
 }
 
-auto GraphBuilder::process_import(
+auto process_import(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Import const& imp
 ) -> Result<void>
 {
@@ -999,8 +808,8 @@ auto GraphBuilder::process_import(
         value = env_val;
     }
     // 2. Fall back to cached value from previous build (passed via options)
-    else if (auto it = impl_->options.cached_env_vars.find(imp.var_name);
-             it != impl_->options.cached_env_vars.end()) {
+    else if (auto it = state.options.cached_env_vars.find(imp.var_name);
+             it != state.options.cached_env_vars.end()) {
         value = it->second;
     }
     // 3. Fall back to default value
@@ -1014,13 +823,13 @@ auto GraphBuilder::process_import(
     // If no env, no cache, and no default, variable remains empty (tup behavior)
 
     // Create/update Variable node under $ directory for persistence
-    if (impl_->env_var_dir_id != INVALID_NODE_ID) {
+    if (state.env_var_dir_id != INVALID_NODE_ID) {
         auto node_name = imp.var_name + "=" + value;
         auto content_hash = sha256(value);
 
         // Check if we already have a node for this variable (from same build session)
-        auto it = impl_->imported_env_var_nodes.find(imp.var_name);
-        if (it != impl_->imported_env_var_nodes.end()) {
+        auto it = state.imported_env_var_nodes.find(imp.var_name);
+        if (it != state.imported_env_var_nodes.end()) {
             // Update existing node in-place if value changed
             auto* existing = ctx.graph->get_node(it->second);
             if (existing && existing->name != node_name) {
@@ -1032,12 +841,12 @@ auto GraphBuilder::process_import(
             auto node = Node {
                 .type = NodeType::Variable,
                 .name = node_name,
-                .parent_dir = impl_->env_var_dir_id,
+                .parent_dir = state.env_var_dir_id,
                 .content_hash = content_hash,
             };
             auto result = ctx.graph->add_node(std::move(node));
             if (result) {
-                impl_->imported_env_var_nodes[imp.var_name] = *result;
+                state.imported_env_var_nodes[imp.var_name] = *result;
             }
         }
     }
@@ -1047,12 +856,12 @@ auto GraphBuilder::process_import(
     }
 
     // Track this as an imported variable for fine-grained dependency tracking
-    impl_->imported_var_names.insert(imp.var_name);
+    state.imported_var_names.insert(imp.var_name);
 
     return {};
 }
 
-auto GraphBuilder::process_export(
+auto process_export(
     BuilderContext& ctx,
     parser::Export const& exp
 ) -> Result<void>
@@ -1063,8 +872,9 @@ auto GraphBuilder::process_export(
     return {};
 }
 
-auto GraphBuilder::expand_rule(
+auto expand_rule(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Rule const& rule,
     std::vector<std::string> const& inputs
 ) -> Result<void>
@@ -1186,7 +996,7 @@ auto GraphBuilder::expand_rule(
             }
 
             // Get or create the Group node (groups are first-class nodes)
-            auto group_id_result = get_or_create_group_node(ctx, group_dir, pattern.group_name);
+            auto group_id_result = get_or_create_group_node(ctx, state, group_dir, pattern.group_name);
             if (!group_id_result) {
                 continue;
             }
@@ -1228,7 +1038,7 @@ auto GraphBuilder::expand_rule(
                 }
 
                 // Get or create the Group node (groups are first-class nodes)
-                auto group_id_result = get_or_create_group_node(ctx, group_ref->group_dir, group_ref->group_name);
+                auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
                 if (!group_id_result) {
                     continue;
                 }
@@ -1337,7 +1147,7 @@ auto GraphBuilder::expand_rule(
     }
 
     // Create command node
-    auto cmd_id = Result<NodeId> { create_command_node(ctx, cmd_text, display) };
+    auto cmd_id = Result<NodeId> { create_command_node(ctx, state, cmd_text, display) };
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
@@ -1363,7 +1173,7 @@ auto GraphBuilder::expand_rule(
     }
 
     for (auto const& gen_rule : generated_rules) {
-        auto gen_cmd_id = Result<NodeId> { create_command_node(ctx, gen_rule.command, gen_rule.display) };
+        auto gen_cmd_id = Result<NodeId> { create_command_node(ctx, state, gen_rule.command, gen_rule.display) };
         if (!gen_cmd_id) {
             continue;
         }
@@ -1382,9 +1192,9 @@ auto GraphBuilder::expand_rule(
             auto group_ref = parse_group_reference(oi, ctx.current_dir, ctx.options.source_root);
             if (group_ref) {
                 // This is a group reference - get/create group node and defer edge
-                auto group_id_result = get_or_create_group_node(ctx, group_ref->group_dir, group_ref->group_name);
+                auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
                 if (group_id_result) {
-                    impl_->deferred_edges.insert({ *group_id_result, *gen_cmd_id });
+                    state.deferred_edges.insert({ *group_id_result, *gen_cmd_id });
                 }
             } else if (!parser::has_glob_chars(oi)) {
                 // Regular file path - create edge directly (skip glob patterns)
@@ -1490,7 +1300,7 @@ auto GraphBuilder::expand_rule(
             }
 
             // Create or get the Group node
-            auto group_id_result = get_or_create_group_node(ctx, dir, *output_oo_group);
+            auto group_id_result = get_or_create_group_node(ctx, state, dir, *output_oo_group);
             if (group_id_result) {
                 // Add edge: file → group (file is member of group)
                 (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
@@ -1516,13 +1326,13 @@ auto GraphBuilder::expand_rule(
     // Store deferred edges for groups
     // These will be resolved after all Tupfiles are parsed (group might grow)
     for (auto group_id : deferred_group_ids) {
-        impl_->deferred_edges.insert({ group_id, *cmd_id });
+        state.deferred_edges.insert({ group_id, *cmd_id });
     }
 
     return {};
 }
 
-auto GraphBuilder::expand_inputs(
+auto expand_inputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns
 ) -> Result<std::vector<std::string>>
@@ -1728,7 +1538,7 @@ auto GraphBuilder::expand_inputs(
     return result;
 }
 
-auto GraphBuilder::expand_outputs(
+auto expand_outputs(
     BuilderContext& ctx,
     std::vector<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags
@@ -1781,7 +1591,7 @@ auto GraphBuilder::expand_outputs(
     return result;
 }
 
-auto GraphBuilder::expand_command(
+auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
@@ -1817,11 +1627,7 @@ auto GraphBuilder::expand_command(
     return parser::expand_pattern(*ctx.eval, *expanded, flags);
 }
 
-namespace {
-constexpr auto MAX_DIRECTORY_DEPTH = 128;
-}
-
-auto GraphBuilder::get_or_create_directory_node(
+auto get_or_create_directory_node(
     BuilderContext& ctx,
     std::filesystem::path const& dir_path,
     int depth
@@ -1865,7 +1671,7 @@ auto GraphBuilder::get_or_create_directory_node(
     return ctx.graph->add_node(std::move(node));
 }
 
-auto GraphBuilder::get_or_create_file_node(
+auto get_or_create_file_node(
     BuilderContext& ctx,
     std::string const& path,
     NodeType type
@@ -1945,7 +1751,7 @@ auto GraphBuilder::get_or_create_file_node(
     return ctx.graph->add_node(std::move(node));
 }
 
-auto GraphBuilder::resolve_input_node(
+auto resolve_input_node(
     BuilderContext& ctx,
     std::string const& path
 ) -> Result<NodeId>
@@ -1993,16 +1799,17 @@ auto GraphBuilder::resolve_input_node(
     return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
 }
 
-auto GraphBuilder::get_or_create_group_node(
+auto get_or_create_group_node(
     BuilderContext& ctx,
+    BuilderState& state,
     std::string const& directory,
     std::string const& name
 ) -> Result<NodeId>
 {
     // Check cache first (fast path)
-    auto key = Impl::GroupKey { directory, name };
-    auto it = impl_->group_nodes.find(key);
-    if (it != impl_->group_nodes.end()) {
+    auto key = GroupKey { directory, name };
+    auto it = state.group_nodes.find(key);
+    if (it != state.group_nodes.end()) {
         return it->second;
     }
 
@@ -2017,7 +1824,7 @@ auto GraphBuilder::get_or_create_group_node(
     // Group nodes are stored with angle-bracket name like "<gen-headers>"
     auto group_basename = "<" + name + ">";
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, group_basename)) {
-        impl_->group_nodes[key] = *existing;
+        state.group_nodes[key] = *existing;
         return *existing;
     }
 
@@ -2030,13 +1837,14 @@ auto GraphBuilder::get_or_create_group_node(
 
     auto result = ctx.graph->add_node(std::move(node));
     if (result) {
-        impl_->group_nodes[key] = *result;
+        state.group_nodes[key] = *result;
     }
     return result;
 }
 
-auto GraphBuilder::create_command_node(
+auto create_command_node(
     BuilderContext& ctx,
+    BuilderState& state,
     std::string const& command,
     std::string const& display
 ) -> Result<NodeId>
@@ -2063,16 +1871,16 @@ auto GraphBuilder::create_command_node(
 
     // Add sticky edges from used config variables (fine-grained dependency tracking)
     for (auto const& var_name : ctx.used_config_vars) {
-        auto it = impl_->config_var_nodes.find(var_name);
-        if (it != impl_->config_var_nodes.end()) {
+        auto it = state.config_var_nodes.find(var_name);
+        if (it != state.config_var_nodes.end()) {
             (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
         }
     }
 
     // Add sticky edges from used imported env variables (fine-grained dependency tracking)
     for (auto const& var_name : ctx.used_env_vars) {
-        auto it = impl_->imported_env_var_nodes.find(var_name);
-        if (it != impl_->imported_env_var_nodes.end()) {
+        auto it = state.imported_env_var_nodes.find(var_name);
+        if (it != state.imported_env_var_nodes.end()) {
             (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
         }
     }
@@ -2080,11 +1888,243 @@ auto GraphBuilder::create_command_node(
     return cmd_id;
 }
 
-auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>
+} // anonymous namespace
+
+// ============================================================================
+// Public free function API
+// ============================================================================
+
+auto make_builder_state(BuilderOptions opts) -> BuilderState
+{
+    return BuilderState {
+        .options = std::move(opts),
+        .errors = {},
+        .warnings = {},
+        .group_nodes = {},
+        .deferred_edges = {},
+        .config_var_nodes = {},
+        .env_var_dir_id = INVALID_NODE_ID,
+        .imported_env_var_nodes = {},
+        .imported_var_names = {},
+    };
+}
+
+auto build_graph(
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval,
+    BuilderState& state
+) -> Result<BuildGraph>
+{
+    auto graph = BuildGraph {};
+
+    // Set build root name: relative path from source to output root.
+    // For in-tree builds (source == output), this is empty.
+    // For variant builds (-B build), this is "build".
+    if (state.options.source_root != state.options.output_root) {
+        auto build_root_name = fs::relative(state.options.output_root, state.options.source_root).string();
+        graph.set_build_root_name(std::move(build_root_name));
+    }
+
+    auto result = Result<void> { add_tupfile(graph, tupfile, eval, state) };
+    if (!result) {
+        return pup::unexpected<Error>(result.error());
+    }
+    return graph;
+}
+
+auto add_tupfile(
+    BuildGraph& graph,
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval,
+    BuilderState& state
+) -> Result<void>
+{
+    // Compute current_dir relative to config_root (where Tupfiles live)
+    // In 3-tree builds, config_root differs from source_root, but the directory
+    // structure mirrors the source tree, so this relative path is used for both
+    // config lookup and source file glob expansion.
+    auto const& tupfile_root = state.options.config_root.empty()
+        ? state.options.source_root
+        : state.options.config_root;
+    auto tupfile_parent = std::filesystem::path { tupfile.filename }.parent_path();
+    auto relative_dir = std::filesystem::relative(tupfile_parent, tupfile_root);
+    if (relative_dir == ".") {
+        relative_dir = "";
+    }
+
+    auto ctx = BuilderContext {
+        .graph = &graph,
+        .eval = &eval,
+        .vars = eval.vars,
+        .options = state.options,
+        .current_dir = relative_dir,
+        .current_file = tupfile.filename,
+    };
+
+    // Create Tupfile node and add to sticky_sources for dependency tracking
+    // For 3-tree builds, store relative to config_root (Tupfile's actual location)
+    auto tupfile_rel = std::filesystem::relative(tupfile.filename, tupfile_root).string();
+    auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
+    if (tupfile_node_result) {
+        ctx.sticky_sources.push_back(*tupfile_node_result);
+    }
+
+    // Create Variable nodes for fine-grained config dependency tracking
+    // Each config variable becomes a node so commands only depend on variables they use
+    // Only create nodes once (first Tupfile); subsequent Tupfiles reuse existing nodes
+    if (eval.config_vars && state.config_var_nodes.empty()) {
+        // Get config directory for Variable node parent (typically the -B directory)
+        auto config_dir_id = NodeId { 0 };
+        if (!state.options.config_path.empty()) {
+            auto config_parent = std::filesystem::path { state.options.config_path }.parent_path();
+            auto config_dir_rel = std::filesystem::relative(config_parent, state.options.source_root).string();
+            if (config_dir_rel.empty() || config_dir_rel == ".") {
+                config_dir_rel = "";
+            }
+            auto dir_result = get_or_create_directory_node(ctx, config_dir_rel);
+            if (dir_result) {
+                config_dir_id = *dir_result;
+            }
+        }
+
+        for (auto const& var_name : eval.config_vars->names()) {
+            // Skip CONFIG_ prefixed names (we store the stripped version)
+            if (var_name.starts_with(parser::builtin_vars::CONFIG_)) {
+                continue;
+            }
+
+            // Check if node already exists (shouldn't happen with empty check above, but defensive)
+            if (auto existing = graph.find_by_dir_name(config_dir_id, var_name)) {
+                state.config_var_nodes[std::string { var_name }] = *existing;
+                continue;
+            }
+
+            auto value = eval.config_vars->get(var_name);
+            auto node = Node {
+                .type = NodeType::Variable,
+                .name = std::string { var_name },
+                .parent_dir = config_dir_id,
+                .content_hash = sha256(value),
+            };
+
+            auto var_id_result = graph.add_node(std::move(node));
+            if (var_id_result) {
+                state.config_var_nodes[std::string { var_name }] = *var_id_result;
+            }
+        }
+    }
+
+    // Create/find virtual $ directory for imported env vars (like tup's env_dt)
+    // Only initialize once; subsequent Tupfiles reuse existing nodes
+    if (state.env_var_dir_id == INVALID_NODE_ID) {
+        // Check if $ directory already exists in graph (from same build session)
+        if (auto existing = graph.find_by_dir_name(NodeId { 0 }, "$")) {
+            state.env_var_dir_id = *existing;
+        } else {
+            // Create new $ directory under root
+            auto env_dir_node = Node {
+                .type = NodeType::Directory,
+                .name = "$",
+                .parent_dir = NodeId { 0 },
+            };
+            auto result = graph.add_node(std::move(env_dir_node));
+            if (result) {
+                state.env_var_dir_id = *result;
+            }
+        }
+    }
+
+    // Set up callback to track which config variables are used during expansion
+    eval.on_config_var_used = [&ctx](std::string_view name) {
+        ctx.used_config_vars.insert(std::string { name });
+    };
+
+    // Set up callback to track which imported env variables are used during expansion
+    eval.imported_vars = &state.imported_var_names;
+    eval.on_env_var_used = [&ctx](std::string_view name) {
+        ctx.used_env_vars.insert(std::string { name });
+    };
+
+    // Set up resolve_group callback for {group} pattern expansion
+    eval.resolve_group = [&ctx](std::string_view name
+                         ) -> std::vector<std::string> {
+        auto it = ctx.groups.find(std::string { name });
+        if (it == ctx.groups.end()) {
+            return {};
+        }
+        auto paths = std::vector<std::string> {};
+        for (auto id : it->second) {
+            auto path = ctx.graph->get_full_path(id);
+            if (!path.empty()) {
+                paths.push_back(std::move(path));
+            }
+        }
+        return paths;
+    };
+
+    // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
+    // This is for local group references (no directory prefix) - uses current directory
+    // Groups are first-class nodes; lookup via graph edges (file → group)
+    eval.resolve_order_only_group = [&ctx, &state](std::string_view name
+                                    ) -> std::vector<std::string> {
+        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+        auto key = GroupKey { dir, std::string { name } };
+        auto it = state.group_nodes.find(key);
+        if (it == state.group_nodes.end()) {
+            return {};
+        }
+        auto paths = std::vector<std::string> {};
+        auto members = get_group_members(*ctx.graph, it->second);
+        for (auto id : members) {
+            auto path = ctx.graph->get_full_path(id);
+            if (!path.empty()) {
+                paths.push_back(std::move(path));
+            }
+        }
+        return paths;
+    };
+
+    for (auto const& stmt : tupfile.statements) {
+        auto result = Result<void> { process_statement(ctx, state, *stmt) };
+        if (!result) {
+            state.errors.push_back(result.error().message);
+            if (!state.options.verbose) {
+                return pup::unexpected<Error>(result.error());
+            }
+        }
+    }
+
+    // Apply pending weak assignments (??=) - last wins
+    // Process in reverse order so earlier assignments are checked against later ones
+    if (ctx.vars && !ctx.pending_weak_assignments.empty()) {
+        for (auto it = ctx.pending_weak_assignments.rbegin();
+             it != ctx.pending_weak_assignments.rend();
+             ++it) {
+            if (!ctx.vars->contains(it->first)) {
+                ctx.vars->set(it->first, it->second);
+            }
+        }
+    }
+
+    // Copy errors and warnings
+    for (auto& err : ctx.errors) {
+        state.errors.push_back(std::move(err));
+    }
+    for (auto& warn : ctx.warnings) {
+        state.warnings.push_back(std::move(warn));
+    }
+
+    return {};
+}
+
+auto resolve_deferred_order_only_edges(
+    BuildGraph& graph,
+    BuilderState& state
+) -> Result<void>
 {
     // Resolve deferred order-only edges
     // With groups as first-class nodes, we create a single edge: group → command
-    for (auto const& edge : impl_->deferred_edges) {
+    for (auto const& edge : state.deferred_edges) {
         // Verify group node exists and has members
         auto const* group_node = graph.get_node(edge.group_id);
         if (!group_node || group_node->type != NodeType::Group) {
@@ -2113,8 +2153,8 @@ auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Resul
                     auto tc = PathTransformContext {
                         .source_to_root = compute_source_to_root(current_dir),
                         .current_dir_str = cmd_node->source_dir,
-                        .source_root = impl_->options.source_root,
-                        .output_root = impl_->options.output_root,
+                        .source_root = state.options.source_root,
+                        .output_root = state.options.output_root,
                     };
 
                     // Transform member paths and build replacement string
@@ -2151,14 +2191,65 @@ auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Resul
             auto group_path = graph.get_full_path(edge.group_id);
             char warn_buf[512];
             snprintf(warn_buf, sizeof(warn_buf), "order-only group %s has no members", group_path.c_str());
-            impl_->warnings.push_back(std::string { warn_buf });
+            state.warnings.push_back(std::string { warn_buf });
         }
     }
 
     // Clear deferred edges after resolution
-    impl_->deferred_edges.clear();
+    state.deferred_edges.clear();
 
     return {};
+}
+
+// ============================================================================
+// GraphBuilder wrapper implementation
+// ============================================================================
+
+GraphBuilder::GraphBuilder(BuilderOptions options)
+    : state_ { make_builder_state(std::move(options)) }
+{
+}
+
+auto GraphBuilder::errors() const -> std::vector<std::string> const&
+{
+    return state_.errors;
+}
+
+auto GraphBuilder::warnings() const -> std::vector<std::string> const&
+{
+    return state_.warnings;
+}
+
+auto GraphBuilder::build(
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval
+) -> Result<BuildGraph>
+{
+    return build_graph(tupfile, eval, state_);
+}
+
+auto GraphBuilder::add_tupfile(
+    BuildGraph& graph,
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval
+) -> Result<void>
+{
+    return pup::graph::add_tupfile(graph, tupfile, eval, state_);
+}
+
+auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>
+{
+    return pup::graph::resolve_deferred_order_only_edges(graph, state_);
+}
+
+auto GraphBuilder::state() -> BuilderState&
+{
+    return state_;
+}
+
+auto GraphBuilder::state() const -> BuilderState const&
+{
+    return state_;
 }
 
 } // namespace pup::graph

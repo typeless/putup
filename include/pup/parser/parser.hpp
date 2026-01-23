@@ -29,7 +29,10 @@ struct ParseResult {
     std::vector<ParseError> errors;
 
     [[nodiscard]]
-    auto success() const -> bool { return errors.empty(); }
+    auto success() const -> bool
+    {
+        return errors.empty();
+    }
 };
 
 /// Parse a Tupfile from source text

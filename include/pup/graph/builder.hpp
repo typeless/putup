@@ -57,7 +57,7 @@ struct BangMacroDef {
     std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
-/// Context for building the graph
+/// Context for building the graph (per-Tupfile state)
 struct BuilderContext {
     BuildGraph* graph = nullptr;
     parser::EvalContext* eval = nullptr;
@@ -86,17 +86,115 @@ struct BuilderContext {
     std::vector<std::pair<std::string, std::string>> pending_weak_assignments = {};
 };
 
-/// Build graph from a parsed Tupfile (PIMPL for compile-time isolation)
+// ============================================================================
+// BuilderState - Persistent state across multiple Tupfiles
+// ============================================================================
+
+/// Key for cross-directory group lookup
+struct GroupKey {
+    std::string directory;
+    std::string name;
+
+    auto operator==(GroupKey const& other) const -> bool = default;
+    auto operator<(GroupKey const& other) const -> bool
+    {
+        return std::tie(directory, name) < std::tie(other.directory, other.name);
+    }
+};
+
+/// Hash function for GroupKey
+struct GroupKeyHash {
+    auto operator()(GroupKey const& k) const -> std::size_t
+    {
+        auto h1 = std::hash<std::string> {}(k.directory);
+        auto h2 = std::hash<std::string> {}(k.name);
+        return h1 ^ (h2 << 1);
+    }
+};
+
+/// Deferred order-only edge reference for circular parsing situations
+struct DeferredOrderOnlyEdge {
+    NodeId group_id;
+    NodeId command_id;
+
+    auto operator<(DeferredOrderOnlyEdge const& other) const -> bool
+    {
+        return std::tie(group_id, command_id) < std::tie(other.group_id, other.command_id);
+    }
+};
+
+/// Per-session state that persists across multiple Tupfiles
+struct BuilderState {
+    BuilderOptions options;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+
+    /// Group node lookup: (directory, name) → NodeId
+    std::unordered_map<GroupKey, NodeId, GroupKeyHash> group_nodes;
+
+    /// Deferred edges to resolve after all Tupfiles are parsed
+    std::set<DeferredOrderOnlyEdge> deferred_edges;
+
+    /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
+    std::unordered_map<std::string, NodeId> config_var_nodes;
+
+    /// Virtual $ directory for imported environment variables (like tup's env_dt)
+    NodeId env_var_dir_id = INVALID_NODE_ID;
+
+    /// Imported environment variable nodes (var_name -> NodeId)
+    std::unordered_map<std::string, NodeId> imported_env_var_nodes;
+
+    /// Set of imported variable names (for tracking which vars are imported)
+    std::unordered_set<std::string> imported_var_names;
+};
+
+// ============================================================================
+// Free function API
+// ============================================================================
+
+/// Create a new builder state with the given options
+[[nodiscard]]
+auto make_builder_state(BuilderOptions opts) -> BuilderState;
+
+/// Build graph from a single Tupfile AST
+[[nodiscard]]
+auto build_graph(
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval,
+    BuilderState& state
+) -> Result<BuildGraph>;
+
+/// Add a Tupfile to an existing graph
+[[nodiscard]]
+auto add_tupfile(
+    BuildGraph& graph,
+    parser::Tupfile const& tupfile,
+    parser::EvalContext& eval,
+    BuilderState& state
+) -> Result<void>;
+
+/// Resolve deferred order-only edges after all Tupfiles are parsed
+[[nodiscard]]
+auto resolve_deferred_order_only_edges(
+    BuildGraph& graph,
+    BuilderState& state
+) -> Result<void>;
+
+// ============================================================================
+// GraphBuilder - Thin wrapper for backward compatibility
+// ============================================================================
+
+/// Build graph from a parsed Tupfile (thin wrapper around free functions)
 class GraphBuilder {
 public:
     explicit GraphBuilder(BuilderOptions options = {});
-    ~GraphBuilder();
+    ~GraphBuilder() = default;
 
     GraphBuilder(GraphBuilder const&) = delete;
     auto operator=(GraphBuilder const&) -> GraphBuilder& = delete;
 
-    GraphBuilder(GraphBuilder&&) noexcept;
-    auto operator=(GraphBuilder&&) noexcept -> GraphBuilder&;
+    GraphBuilder(GraphBuilder&&) noexcept = default;
+    auto operator=(GraphBuilder&&) noexcept -> GraphBuilder& = default;
 
     /// Build graph from a single Tupfile AST
     [[nodiscard]]
@@ -122,113 +220,17 @@ public:
     auto warnings() const -> std::vector<std::string> const&;
 
     /// Resolve deferred order-only edges after all Tupfiles are parsed
-    /// This handles circular parsing situations where groups weren't registered
-    /// at the time they were referenced.
     [[nodiscard]]
     auto resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>;
 
-    struct Impl;
+    /// Access underlying state for direct manipulation
+    [[nodiscard]]
+    auto state() -> BuilderState&;
+    [[nodiscard]]
+    auto state() const -> BuilderState const&;
 
 private:
-    std::unique_ptr<Impl> impl_;
-
-    auto process_statement(
-        BuilderContext& ctx,
-        parser::Statement const& stmt
-    ) -> Result<void>;
-
-    auto process_rule(
-        BuilderContext& ctx,
-        parser::Rule const& rule
-    ) -> Result<void>;
-
-    auto process_bang_macro(
-        BuilderContext& ctx,
-        parser::BangMacro const& macro
-    ) -> Result<void>;
-
-    auto process_assignment(
-        BuilderContext& ctx,
-        parser::Assignment const& assign
-    ) -> Result<void>;
-
-    auto process_conditional(
-        BuilderContext& ctx,
-        parser::Conditional const& cond
-    ) -> Result<void>;
-
-    auto process_include(
-        BuilderContext& ctx,
-        parser::Include const& inc
-    ) -> Result<void>;
-
-    auto process_import(
-        BuilderContext& ctx,
-        parser::Import const& imp
-    ) -> Result<void>;
-
-    auto process_export(
-        BuilderContext& ctx,
-        parser::Export const& exp
-    ) -> Result<void>;
-
-    auto expand_rule(
-        BuilderContext& ctx,
-        parser::Rule const& rule,
-        std::vector<std::string> const& inputs
-    ) -> Result<void>;
-
-    auto expand_inputs(
-        BuilderContext& ctx,
-        std::vector<parser::PathPattern> const& patterns
-    ) -> Result<std::vector<std::string>>;
-
-    auto expand_outputs(
-        BuilderContext& ctx,
-        std::vector<parser::PathPattern> const& patterns,
-        parser::PatternFlags const& flags
-    ) -> Result<std::vector<std::string>>;
-
-    auto expand_command(
-        BuilderContext& ctx,
-        parser::Expression const& cmd,
-        parser::PatternFlags flags,
-        std::vector<std::string> const& outputs
-    ) -> Result<std::string>;
-
-    auto get_or_create_directory_node(
-        BuilderContext& ctx,
-        std::filesystem::path const& dir_path,
-        int depth = 0
-    ) -> Result<NodeId>;
-
-    auto get_or_create_file_node(
-        BuilderContext& ctx,
-        std::string const& path,
-        NodeType type = NodeType::File
-    ) -> Result<NodeId>;
-
-    /// Resolve input path to node, checking variant-mapped path first
-    /// In variant builds, if a Generated node exists at the mapped output path,
-    /// use that instead of creating a new File node at the source path.
-    /// This prevents duplicate nodes when order-only deps reference source paths
-    /// that have corresponding outputs in the variant directory.
-    auto resolve_input_node(
-        BuilderContext& ctx,
-        std::string const& path
-    ) -> Result<NodeId>;
-
-    auto get_or_create_group_node(
-        BuilderContext& ctx,
-        std::string const& directory,
-        std::string const& name
-    ) -> Result<NodeId>;
-
-    auto create_command_node(
-        BuilderContext& ctx,
-        std::string const& command,
-        std::string const& display
-    ) -> Result<NodeId>;
+    BuilderState state_;
 };
 
 } // namespace pup::graph

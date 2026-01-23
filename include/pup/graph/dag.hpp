@@ -97,7 +97,7 @@ struct Graph {
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
     mutable std::unordered_map<NodeId, std::string> path_cache;
 
-    NodeId next_file_id = 2;                      ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
+    NodeId next_file_id = 2;                     ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
     NodeId next_command_id = make_command_id(1); ///< Next command node ID
 };
 
@@ -244,7 +244,10 @@ public:
     auto operator=(BuildGraph&&) noexcept -> BuildGraph&;
 
     [[nodiscard]]
-    auto add_node(Node node) -> Result<NodeId> { return graph::add_node(graph_, std::move(node)); }
+    auto add_node(Node node) -> Result<NodeId>
+    {
+        return graph::add_node(graph_, std::move(node));
+    }
 
     [[nodiscard]]
     auto add_edge(NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>
@@ -259,10 +262,16 @@ public:
     }
 
     [[nodiscard]]
-    auto get_node(NodeId id) -> Node* { return graph::get_node(graph_, id); }
+    auto get_node(NodeId id) -> Node*
+    {
+        return graph::get_node(graph_, id);
+    }
 
     [[nodiscard]]
-    auto get_node(NodeId id) const -> Node const* { return graph::get_node(graph_, id); }
+    auto get_node(NodeId id) const -> Node const*
+    {
+        return graph::get_node(graph_, id);
+    }
 
     [[nodiscard]]
     auto find_by_dir_name(NodeId parent_dir, std::string_view name) const -> std::optional<NodeId>
@@ -295,10 +304,16 @@ public:
     }
 
     [[nodiscard]]
-    auto get_inputs(NodeId id) const -> std::vector<NodeId> { return graph::get_inputs(graph_, id); }
+    auto get_inputs(NodeId id) const -> std::vector<NodeId>
+    {
+        return graph::get_inputs(graph_, id);
+    }
 
     [[nodiscard]]
-    auto get_outputs(NodeId id) const -> std::vector<NodeId> { return graph::get_outputs(graph_, id); }
+    auto get_outputs(NodeId id) const -> std::vector<NodeId>
+    {
+        return graph::get_outputs(graph_, id);
+    }
 
     [[nodiscard]]
     auto get_sticky_outputs(NodeId id) const -> std::vector<NodeId>
@@ -319,30 +334,54 @@ public:
     }
 
     [[nodiscard]]
-    auto edges() const -> std::vector<Edge> const& { return graph_.edges; }
+    auto edges() const -> std::vector<Edge> const&
+    {
+        return graph_.edges;
+    }
 
     [[nodiscard]]
-    auto node_count() const -> std::size_t { return graph::node_count(graph_); }
+    auto node_count() const -> std::size_t
+    {
+        return graph::node_count(graph_);
+    }
 
     [[nodiscard]]
-    auto edge_count() const -> std::size_t { return graph::edge_count(graph_); }
+    auto edge_count() const -> std::size_t
+    {
+        return graph::edge_count(graph_);
+    }
 
     [[nodiscard]]
-    auto empty() const -> bool { return graph::empty(graph_); }
+    auto empty() const -> bool
+    {
+        return graph::empty(graph_);
+    }
 
     auto clear() -> void { graph::clear(graph_); }
 
     [[nodiscard]]
-    auto all_nodes() const -> std::vector<NodeId> { return graph::all_nodes(graph_); }
+    auto all_nodes() const -> std::vector<NodeId>
+    {
+        return graph::all_nodes(graph_);
+    }
 
     [[nodiscard]]
-    auto root_nodes() const -> std::vector<NodeId> { return graph::root_nodes(graph_); }
+    auto root_nodes() const -> std::vector<NodeId>
+    {
+        return graph::root_nodes(graph_);
+    }
 
     [[nodiscard]]
-    auto leaf_nodes() const -> std::vector<NodeId> { return graph::leaf_nodes(graph_); }
+    auto leaf_nodes() const -> std::vector<NodeId>
+    {
+        return graph::leaf_nodes(graph_);
+    }
 
     [[nodiscard]]
-    auto get_full_path(NodeId id) const -> std::string { return graph::get_full_path(graph_, id); }
+    auto get_full_path(NodeId id) const -> std::string
+    {
+        return graph::get_full_path(graph_, id);
+    }
 
     auto invalidate_path_cache(NodeId id) -> void { graph::invalidate_path_cache(graph_, id); }
 
@@ -354,17 +393,29 @@ public:
     }
 
     [[nodiscard]]
-    auto get_build_root_name() const -> std::string_view { return graph::get_build_root_name(graph_); }
+    auto get_build_root_name() const -> std::string_view
+    {
+        return graph::get_build_root_name(graph_);
+    }
 
     [[nodiscard]]
-    auto is_under_build_root(NodeId id) const -> bool { return graph::is_under_build_root(graph_, id); }
+    auto is_under_build_root(NodeId id) const -> bool
+    {
+        return graph::is_under_build_root(graph_, id);
+    }
 
     /// Access underlying graph for direct manipulation
     [[nodiscard]]
-    auto graph() -> Graph& { return graph_; }
+    auto graph() -> Graph&
+    {
+        return graph_;
+    }
 
     [[nodiscard]]
-    auto graph() const -> Graph const& { return graph_; }
+    auto graph() const -> Graph const&
+    {
+        return graph_;
+    }
 
 private:
     Graph graph_;

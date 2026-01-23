@@ -2,8 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/parser.hpp"
-#include "pup/parser/lexer.hpp"
 #include "pup/core/result.hpp"
+#include "pup/parser/lexer.hpp"
 
 #include <functional>
 #include <unordered_set>
@@ -870,9 +870,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
         if (stop_at_angle && t.is(TokenType::OpenAngle)) {
             return true;
         }
-        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::OpenBrace, TokenType::Newline, TokenType::Eof);
-    },
-                                       true);
+        return t.is_one_of(TokenType::Whitespace, TokenType::Pipe, TokenType::PipeArrow, TokenType::OpenBrace, TokenType::Newline, TokenType::Eof); }, true);
     if (!path) {
         return pup::unexpected<Error>(path.error());
     }

@@ -23,10 +23,16 @@ public:
     auto add(std::string_view str) -> Result<std::uint32_t>;
 
     [[nodiscard]]
-    auto data() const -> std::vector<char> const& { return data_; }
+    auto data() const -> std::vector<char> const&
+    {
+        return data_;
+    }
 
     [[nodiscard]]
-    auto size() const -> std::uint32_t { return static_cast<std::uint32_t>(data_.size()); }
+    auto size() const -> std::uint32_t
+    {
+        return static_cast<std::uint32_t>(data_.size());
+    }
 
 private:
     std::vector<char> data_ = {};
