@@ -10,6 +10,7 @@
 #include "pup/parser/parser.hpp"
 
 #include <cstdio>
+#include <format>
 
 #include <algorithm>
 #include <atomic>
@@ -77,6 +78,28 @@ struct GroupReference {
     std::string group_name;
     std::string group_dir;
 };
+
+/// Check if a path is an order-only group reference (ends with <name>)
+/// Examples: "<group>", "path/<group>", "../include/<gen-headers>"
+auto is_order_only_group_reference(std::string_view path) -> bool
+{
+    auto lt_pos = path.rfind('<');
+    return lt_pos != std::string_view::npos && !path.empty() && path.back() == '>';
+}
+
+/// Trigger demand-driven parsing for a directory if it contains a Tupfile.
+/// This is used when referencing cross-directory groups or generated files.
+auto request_demand_driven_parse(
+    parser::EvalContext const& eval,
+    fs::path const& dir_path
+) -> void
+{
+    if (eval.request_directory && eval.available_tupfile_dirs) {
+        if (eval.available_tupfile_dirs->contains(dir_path)) {
+            (void)eval.request_directory(dir_path);
+        }
+    }
+}
 
 /// Parse a group reference from a path expression
 /// Returns nullopt if the path doesn't contain a valid <group> suffix
@@ -362,24 +385,23 @@ auto walk_to_file_node(
     return graph.add_file_node(std::move(node));
 }
 
-/// RAII scope guard for cleanup on scope exit
+/// RAII scope guard for cleanup on scope exit (zero-overhead via template)
+template<typename F>
 struct ScopeGuard {
-    std::function<void()> cleanup;
-    explicit ScopeGuard(std::function<void()> fn)
+    F cleanup;
+    explicit ScopeGuard(F fn)
         : cleanup { std::move(fn) }
     {
     }
-    ~ScopeGuard()
-    {
-        if (cleanup) {
-            cleanup();
-        }
-    }
+    ~ScopeGuard() { cleanup(); }
     ScopeGuard(ScopeGuard const&) = delete;
     auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
     ScopeGuard(ScopeGuard&&) = delete;
     auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
 };
+
+template<typename F>
+ScopeGuard(F) -> ScopeGuard<F>;
 
 constexpr auto MAX_DIRECTORY_DEPTH = 128;
 
@@ -487,6 +509,232 @@ auto create_command_node(
     std::string const& command,
     std::string const& display
 ) -> Result<NodeId>;
+
+/// Search up the directory tree for Tuprules.tup
+/// Returns empty path if not found
+auto find_tuprules_file(
+    fs::path const& start_dir,
+    fs::path const& root
+) -> fs::path
+{
+    auto search_dir = start_dir;
+
+    while (search_dir >= root) {
+        auto tuprules = fs::path { search_dir / "Tuprules.tup" };
+        if (fs::exists(tuprules)) {
+            return tuprules;
+        }
+        if (search_dir == root) {
+            break;
+        }
+        search_dir = search_dir.parent_path();
+    }
+
+    return {};
+}
+
+/// Resolve an explicit include path (not include_rules)
+/// Returns the resolved path or an error
+auto resolve_include_path(
+    BuilderContext& ctx,
+    fs::path const& include_root,
+    parser::Expression const& path_expr
+) -> Result<fs::path>
+{
+    auto path_result = parser::expand(*ctx.eval, path_expr);
+    if (!path_result) {
+        return pup::unexpected<Error>(path_result.error());
+    }
+
+    auto resolved = fs::path { include_root / ctx.current_dir / *path_result };
+    if (!fs::exists(resolved)) {
+        return make_error<fs::path>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
+    }
+    return resolved;
+}
+
+/// Expand a glob pattern against filesystem and graph nodes.
+/// Adds matched paths to result vector.
+auto expand_glob_pattern(
+    BuilderContext& ctx,
+    std::string const& path,
+    std::vector<std::string>& result
+) -> void
+{
+    auto base = fs::path { ctx.current_dir.empty() ? ctx.options.source_root
+                                                   : ctx.options.source_root / ctx.current_dir };
+
+    // First try expanding against filesystem
+    auto expanded = parser::glob_expand(path, base);
+    if (expanded && !expanded->empty()) {
+        for (auto& p : *expanded) {
+            // Prefix with current_dir to make path relative to project root
+            if (!ctx.current_dir.empty()) {
+                result.push_back((ctx.current_dir / p).string());
+            } else {
+                result.push_back(std::move(p));
+            }
+        }
+        return;
+    }
+
+    // No files on disk - look for matching Generated nodes in graph
+    // First, try demand-driven parsing of the directory containing the glob pattern
+    auto pattern_dir = fs::path { path }.parent_path();
+    auto abs_pattern_dir = (ctx.current_dir / pattern_dir).lexically_normal();
+    request_demand_driven_parse(*ctx.eval, abs_pattern_dir);
+
+    // Match glob pattern against Generated nodes
+    // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
+    // but the glob pattern is relative to current directory (e.g., *.o)
+    // We need to strip the build root prefix and match against the relative path
+    auto pattern_path = ctx.current_dir.empty() ? path : (ctx.current_dir / path).lexically_normal().string();
+    auto glob = parser::Glob { pattern_path };
+    auto build_root_name = ctx.graph->get_build_root_name();
+    for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
+        auto node_path = ctx.graph->get_full_path(id);
+        if (node_path.empty()) {
+            continue;
+        }
+        // Strip build root prefix to get source-relative path for matching
+        auto match_path = strip_build_prefix(node_path, build_root_name);
+        if (glob.matches(match_path)) {
+            result.push_back(std::move(node_path));
+        }
+    }
+}
+
+/// Apply exclusion patterns to filter out paths from the result.
+/// Handles both glob and non-glob exclusions.
+auto apply_exclusions(
+    BuilderContext& ctx,
+    std::vector<parser::PathPattern> const& patterns,
+    std::vector<std::string>& result
+) -> void
+{
+    for (auto const& pattern : patterns) {
+        if (!pattern.is_exclusion && !pattern.is_output_exclusion) {
+            continue;
+        }
+
+        auto paths = parser::expand_path(*ctx.eval, pattern);
+        if (!paths) {
+            continue;
+        }
+
+        for (auto const& excl : *paths) {
+            if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
+                auto base = fs::path { ctx.current_dir.empty() ? ctx.options.source_root
+                                                               : ctx.options.source_root / ctx.current_dir };
+                auto expanded = parser::glob_expand(excl, base);
+                if (expanded && !expanded->empty()) {
+                    for (auto const& p : *expanded) {
+                        auto normalized = ctx.current_dir.empty()
+                            ? fs::path { p }.lexically_normal().string()
+                            : (ctx.current_dir / p).lexically_normal().string();
+                        std::erase(result, normalized);
+                    }
+                }
+            } else {
+                auto normalized_excl = ctx.current_dir.empty()
+                    ? fs::path { excl }.lexically_normal().string()
+                    : (ctx.current_dir / excl).lexically_normal().string();
+                std::erase(result, normalized_excl);
+            }
+        }
+    }
+}
+
+/// Process generated rules (e.g., DEP commands for dependency scanning).
+/// Creates command nodes and edges for each generated rule.
+auto process_generated_rules(
+    BuilderContext& ctx,
+    BuilderState& state,
+    std::vector<GeneratedRule> const& generated_rules,
+    NodeId parent_cmd_id
+) -> void
+{
+    for (auto const& gen_rule : generated_rules) {
+        auto gen_cmd_id = create_command_node(ctx, state, gen_rule.command, gen_rule.display);
+        if (!gen_cmd_id) {
+            continue;
+        }
+
+        // Create edges from inputs to generated command
+        for (auto const& input : gen_rule.inputs) {
+            auto input_id = resolve_input_node(ctx, input);
+            if (input_id) {
+                (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
+            }
+        }
+
+        // Create order-only edges for generated command (e.g., gen-headers)
+        // For group references, defer to resolve_deferred_order_only_edges()
+        for (auto const& oi : gen_rule.order_only_inputs) {
+            auto group_ref = parse_group_reference(oi, ctx.current_dir, ctx.options.source_root);
+            if (group_ref) {
+                // This is a group reference - get/create group node and defer edge
+                auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
+                if (group_id_result) {
+                    state.deferred_edges.insert({ *group_id_result, *gen_cmd_id });
+                }
+            } else if (!parser::has_glob_chars(oi)) {
+                // Regular file path - create edge directly (skip glob patterns)
+                auto oi_id = resolve_input_node(ctx, oi);
+                if (oi_id) {
+                    (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
+                }
+            }
+        }
+
+        // Add edge from generated command to parent command (dep-scan runs before compile)
+        (void)ctx.graph->add_edge(*gen_cmd_id, parent_cmd_id);
+
+        // Store generated rule info on the node for scheduler to handle
+        if (auto* node = ctx.graph->get_command_node(*gen_cmd_id)) {
+            node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
+            node->output_action = gen_rule.action;
+            node->parent_command = gen_rule.parent_command;
+        }
+    }
+}
+
+/// Lookup a bang macro from the expanded command text.
+/// Returns pointer to the macro definition, or nullptr if command doesn't reference a macro.
+auto lookup_bang_macro(
+    BuilderContext& ctx,
+    parser::Expression const& command,
+    parser::PatternFlags const& flags
+) -> Result<BangMacroDef const*>
+{
+    auto expanded_cmd = expand_command(ctx, command, flags, {});
+    if (!expanded_cmd) {
+        return pup::unexpected<Error>(expanded_cmd.error());
+    }
+
+    auto cmd_str = std::string { *expanded_cmd };
+    // Trim leading whitespace
+    while (!cmd_str.empty() && (cmd_str.front() == ' ' || cmd_str.front() == '\t')) {
+        cmd_str.erase(0, 1);
+    }
+
+    if (cmd_str.empty() || cmd_str[0] != '!') {
+        return nullptr;
+    }
+
+    // Bang macro reference - extract just the macro name (first word after !)
+    auto name_end = cmd_str.find_first_of(" \t", 1);
+    auto macro_name = (name_end == std::string::npos)
+        ? cmd_str.substr(1)
+        : cmd_str.substr(1, name_end - 1);
+
+    auto it = ctx.macros.find(macro_name);
+    if (it == ctx.macros.end()) {
+        return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, "Unknown bang macro: !" + macro_name);
+    }
+
+    return &it->second;
+}
 
 // ============================================================================
 // Internal free function implementations
@@ -707,45 +955,24 @@ auto process_include(
     parser::Include const& inc
 ) -> Result<void>
 {
-    // Find the include file path
-    auto include_path = std::string {};
-
     // Include files (Tuprules.tup, etc.) live in config_root (same as Tupfiles)
     // Use config_root if set, otherwise fall back to source_root for traditional builds
     auto const& include_root = ctx.options.config_root.empty() ? ctx.options.source_root : ctx.options.config_root;
 
+    // Find the include file path
+    auto include_path = std::string {};
     if (inc.is_rules) {
-        // include_rules: search up directory tree for Tuprules.tup
-        auto search_dir = fs::path { include_root / ctx.current_dir };
-        auto root = fs::path { include_root };
-
-        while (search_dir >= root) {
-            auto tuprules = fs::path { search_dir / "Tuprules.tup" };
-            if (fs::exists(tuprules)) {
-                include_path = tuprules.string();
-                break;
-            }
-            if (search_dir == root) {
-                break;
-            }
-            search_dir = search_dir.parent_path();
-        }
-
-        if (include_path.empty()) {
+        auto tuprules = find_tuprules_file(include_root / ctx.current_dir, include_root);
+        if (tuprules.empty()) {
             return {}; // No Tuprules.tup found, silently continue
         }
+        include_path = tuprules.string();
     } else {
-        // include path: expand and resolve the path
-        auto path_result = parser::expand(*ctx.eval, inc.path);
-        if (!path_result) {
-            return pup::unexpected<Error>(path_result.error());
+        auto resolved = resolve_include_path(ctx, include_root, inc.path);
+        if (!resolved) {
+            return pup::unexpected<Error>(resolved.error());
         }
-
-        auto resolved = fs::path { include_root / ctx.current_dir / *path_result };
-        if (!fs::exists(resolved)) {
-            return make_error<void>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
-        }
-        include_path = resolved.string();
+        include_path = resolved->string();
     }
 
     // Prevent infinite recursion
@@ -948,39 +1175,11 @@ auto expand_rule(
     };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
-    auto macro_name = std::string {};
-    BangMacroDef const* macro_ptr = nullptr;
-
-    {
-        // Expand the command to detect if it's a macro reference
-        auto expanded_cmd = Result<std::string> { expand_command(ctx, rule.command, flags, {}) };
-        if (!expanded_cmd) {
-            return pup::unexpected<Error>(expanded_cmd.error());
-        }
-
-        auto cmd_str = std::string { *expanded_cmd };
-        // Trim whitespace
-        while (!cmd_str.empty() && (cmd_str.front() == ' ' || cmd_str.front() == '\t')) {
-            cmd_str.erase(0, 1);
-        }
-
-        if (!cmd_str.empty() && cmd_str[0] == '!') {
-            // Bang macro reference - extract just the macro name (first word after !)
-            auto name_end = cmd_str.find_first_of(" \t", 1);
-            if (name_end == std::string::npos) {
-                macro_name = cmd_str.substr(1);
-            } else {
-                macro_name = cmd_str.substr(1, name_end - 1);
-            }
-
-            auto it = decltype(ctx.macros)::iterator { ctx.macros.find(macro_name) };
-            if (it == ctx.macros.end()) {
-                return make_error<void>(ErrorCode::UnknownMacro, "Unknown bang macro: !" + macro_name);
-            }
-
-            macro_ptr = &it->second;
-        }
+    auto macro_result = lookup_bang_macro(ctx, rule.command, flags);
+    if (!macro_result) {
+        return pup::unexpected<Error>(macro_result.error());
     }
+    auto macro_ptr = *macro_result;
 
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
@@ -1014,12 +1213,7 @@ auto expand_rule(
             }
 
             // Demand-driven parsing: request the directory's Tupfile if not yet parsed
-            auto dir_path = fs::path { group_dir };
-            if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
-                    (void)ctx.eval->request_directory(dir_path);
-                }
-            }
+            request_demand_driven_parse(*ctx.eval, fs::path { group_dir });
 
             // Get or create the Group node (groups are first-class nodes)
             auto group_id_result = get_or_create_group_node(ctx, state, group_dir, pattern.group_name);
@@ -1052,16 +1246,8 @@ auto expand_rule(
             }
             auto group_ref = parse_group_reference(*expanded, ctx.current_dir, ctx.options.source_root);
             if (group_ref) {
-                auto dir_path = fs::path { group_ref->group_dir };
-
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
-                if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                    if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
-                        // Note: Circular dependency errors are NOT fatal - the group may be
-                        // registered after the current parsing context completes.
-                        (void)ctx.eval->request_directory(dir_path);
-                    }
-                }
+                request_demand_driven_parse(*ctx.eval, fs::path { group_ref->group_dir });
 
                 // Get or create the Group node (groups are first-class nodes)
                 auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
@@ -1086,9 +1272,8 @@ auto expand_rule(
                 } else {
                     // Preserve %<group> pattern literally - will be expanded in resolve_deferred_order_only_edges()
                     // This ensures the pattern isn't lost during command expansion
-                    char pattern_buf[256];
-                    snprintf(pattern_buf, sizeof(pattern_buf), "%%<%s>", group_ref->group_name.c_str());
-                    rule_order_only_groups[group_ref->group_name] = { std::string { pattern_buf } };
+                    auto pattern = std::format("%<{}>", group_ref->group_name);
+                    rule_order_only_groups[group_ref->group_name] = { std::move(pattern) };
                 }
                 // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
                 deferred_group_ids.insert(group_id);
@@ -1198,55 +1383,13 @@ auto expand_rule(
         generated_rules = ctx.options.pattern_registry->match_and_generate(cmd_info);
     }
 
-    for (auto const& gen_rule : generated_rules) {
-        auto gen_cmd_id = Result<NodeId> { create_command_node(ctx, state, gen_rule.command, gen_rule.display) };
-        if (!gen_cmd_id) {
-            continue;
-        }
-
-        // Create edges from inputs to generated command
-        for (auto const& input : gen_rule.inputs) {
-            auto input_id = Result<NodeId> { resolve_input_node(ctx, input) };
-            if (input_id) {
-                (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
-            }
-        }
-
-        // Create order-only edges for generated command (e.g., gen-headers)
-        // For group references, defer to resolve_deferred_order_only_edges()
-        for (auto const& oi : gen_rule.order_only_inputs) {
-            auto group_ref = parse_group_reference(oi, ctx.current_dir, ctx.options.source_root);
-            if (group_ref) {
-                // This is a group reference - get/create group node and defer edge
-                auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
-                if (group_id_result) {
-                    state.deferred_edges.insert({ *group_id_result, *gen_cmd_id });
-                }
-            } else if (!parser::has_glob_chars(oi)) {
-                // Regular file path - create edge directly (skip glob patterns)
-                auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
-                if (oi_id) {
-                    (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
-                }
-            }
-        }
-
-        // Add edge from generated command to parent command (dep-scan runs before compile)
-        (void)ctx.graph->add_edge(*gen_cmd_id, *cmd_id);
-
-        // Store generated rule info on the node for scheduler to handle
-        if (auto* node = ctx.graph->get_command_node(*gen_cmd_id)) {
-            node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
-            node->output_action = gen_rule.action;
-            node->parent_command = gen_rule.parent_command;
-        }
-    }
+    process_generated_rules(ctx, state, generated_rules, *cmd_id);
 
     // Create edges from inputs to command
     // Use file_inputs (excludes glob patterns which aren't valid paths)
     // Skip group references - they are handled by deferred edge resolution (order-only)
     for (auto const& input : file_inputs) {
-        if (input.find('<') != std::string::npos && input.back() == '>') {
+        if (is_order_only_group_reference(input)) {
             continue;
         }
         auto input_id = Result<NodeId> { resolve_input_node(ctx, input) };
@@ -1272,11 +1415,14 @@ auto expand_rule(
             for (auto input_id : output_inputs) {
                 if (is_command_id(input_id)) {
                     auto existing_cmd_str_sv = get_command_str(ctx.graph->graph(), input_id);
-                    auto existing_cmd_str = std::string { existing_cmd_str_sv.empty() ? "<unknown>" : existing_cmd_str_sv };
+                    auto existing_cmd_str = existing_cmd_str_sv.empty() ? "<unknown>" : std::string { existing_cmd_str_sv };
                     auto output_path = ctx.graph->get_full_path(*output_id);
-                    char err_buf[1024];
-                    snprintf(err_buf, sizeof(err_buf), "Unable to create output '%s' because it is already owned by command:\n  %s", output_path.c_str(), existing_cmd_str.c_str());
-                    return make_error<void>(ErrorCode::DuplicateNode, std::string { err_buf });
+                    auto err_msg = std::format(
+                        "Unable to create output '{}' because it is already owned by command:\n  {}",
+                        output_path,
+                        existing_cmd_str
+                    );
+                    return make_error<void>(ErrorCode::DuplicateNode, std::move(err_msg));
                 }
             }
         }
@@ -1337,10 +1483,7 @@ auto expand_rule(
     // Create order-only edges from the pre-expanded paths
     // Skip group references (deferred edge creation) and glob patterns (not valid paths)
     for (auto const& oi : order_only_paths) {
-        if (oi.find('<') != std::string::npos && oi.back() == '>') {
-            continue;
-        }
-        if (parser::has_glob_chars(oi)) {
+        if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
             continue;
         }
         auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
@@ -1388,22 +1531,12 @@ auto expand_inputs(
             // Order-only group reference <name> - cross-directory
             // The pattern.path contains the directory prefix (e.g., $(ROOT)/include/generated/)
             auto group_dir = std::string {};
-            auto dir_path = fs::path {};
 
             if (!pattern.path.empty()) {
                 auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
                     group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
-                    dir_path = fs::path { group_dir };
-
-                    // Demand-driven parsing: request the directory's Tupfile if not yet parsed
-                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                        if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
-                            // Note: Circular dependency errors are NOT fatal - the group may be
-                            // registered after the current parsing context completes.
-                            (void)ctx.eval->request_directory(dir_path);
-                        }
-                    }
+                    request_demand_driven_parse(*ctx.eval, fs::path { group_dir });
                 }
             } else {
                 group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
@@ -1427,17 +1560,7 @@ auto expand_inputs(
             // Check for path/<group> pattern (order-only group reference with directory prefix)
             auto group_ref = parse_group_reference(path, ctx.current_dir, ctx.options.source_root);
             if (group_ref) {
-                auto dir_path = fs::path { group_ref->group_dir };
-
-                // Demand-driven parsing: request the directory's Tupfile if not yet parsed
-                if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                    if (ctx.eval->available_tupfile_dirs->contains(dir_path)) {
-                        // Note: Circular dependency errors are NOT fatal - the group may be
-                        // registered after the current parsing context completes.
-                        (void)ctx.eval->request_directory(dir_path);
-                    }
-                }
-
+                request_demand_driven_parse(*ctx.eval, fs::path { group_ref->group_dir });
                 // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
                 // Edges are created by resolve_deferred_order_only_edges() after all Tupfiles are parsed.
                 result.push_back(path);
@@ -1453,113 +1576,22 @@ auto expand_inputs(
 
             // Expand globs if enabled - add matched files after the pattern
             if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
-                auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.source_root
-                                                                            : ctx.options.source_root / ctx.current_dir };
-
-                // First try expanding against filesystem
-                auto expanded = Result<std::vector<std::string>> { parser::glob_expand(path, base) };
-                if (expanded && !expanded->empty()) {
-                    for (auto& p : *expanded) {
-                        // Prefix with current_dir to make path relative to project root
-                        if (!ctx.current_dir.empty()) {
-                            result.push_back((ctx.current_dir / p).string());
-                        } else {
-                            result.push_back(std::move(p));
-                        }
-                    }
-                } else {
-                    // No files on disk - look for matching Generated nodes in graph
-                    // First, try demand-driven parsing of the directory containing the glob pattern
-                    auto pattern_dir = fs::path { path }.parent_path();
-                    auto abs_pattern_dir = fs::path { (ctx.current_dir / pattern_dir).lexically_normal() };
-                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                        if (ctx.eval->available_tupfile_dirs->contains(abs_pattern_dir)) {
-                            // Note: Circular dependency errors are NOT fatal - the generated files
-                            // may be registered after the current parsing context completes.
-                            (void)ctx.eval->request_directory(abs_pattern_dir);
-                        }
-                    }
-
-                    // Match glob pattern against Generated nodes
-                    // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
-                    // but the glob pattern is relative to current directory (e.g., *.o)
-                    // We need to strip the build root prefix and match against the relative path
-                    auto pattern_path = ctx.current_dir.empty() ? path : (ctx.current_dir / path).lexically_normal().string();
-                    auto glob = parser::Glob { pattern_path };
-                    auto build_root_name = ctx.graph->get_build_root_name();
-                    for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
-                        auto node_path = ctx.graph->get_full_path(id);
-                        if (node_path.empty()) {
-                            continue;
-                        }
-                        // Strip build root prefix to get source-relative path for matching
-                        auto match_path = strip_build_prefix(node_path, build_root_name);
-                        if (glob.matches(match_path)) {
-                            result.push_back(std::move(node_path));
-                        }
-                    }
-                }
+                expand_glob_pattern(ctx, path, result);
             } else if (!parser::has_glob_chars(path)) {
                 // Non-glob path: trigger demand-driven parsing if file doesn't exist
                 // (path already added above, but we may need to request cross-directory Tupfile)
-                auto full_path = std::filesystem::path { ctx.options.source_root / ctx.current_dir / path };
+                auto full_path = ctx.options.source_root / ctx.current_dir / path;
                 if (!std::filesystem::exists(full_path)) {
                     auto file_dir = fs::path { path }.parent_path();
-                    auto abs_file_dir = fs::path { (ctx.current_dir / file_dir).lexically_normal() };
-
-                    if (ctx.eval && ctx.eval->request_directory && ctx.eval->available_tupfile_dirs) {
-                        if (ctx.eval->available_tupfile_dirs->contains(abs_file_dir)) {
-                            (void)ctx.eval->request_directory(abs_file_dir);
-                        }
-                    }
+                    auto abs_file_dir = (ctx.current_dir / file_dir).lexically_normal();
+                    request_demand_driven_parse(*ctx.eval, abs_file_dir);
                 }
             }
         }
     }
 
     // Handle exclusions (! for regular inputs, ^ for foreach exclusions)
-    for (auto const& pattern : patterns) {
-        if (!pattern.is_exclusion && !pattern.is_output_exclusion) {
-            continue;
-        }
-
-        auto paths = parser::expand_path(*ctx.eval, pattern);
-        if (!paths) {
-            continue;
-        }
-
-        for (auto const& excl : *paths) {
-            // Expand globs in exclusion pattern if needed
-            if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
-                auto base = std::filesystem::path { ctx.current_dir.empty() ? ctx.options.source_root
-                                                                            : ctx.options.source_root / ctx.current_dir };
-                auto expanded = parser::glob_expand(excl, base);
-                if (expanded && !expanded->empty()) {
-                    for (auto const& p : *expanded) {
-                        // Normalize the same way as included paths
-                        auto normalized = std::string {};
-                        if (!ctx.current_dir.empty()) {
-                            normalized = (ctx.current_dir / p).lexically_normal().string();
-                        } else {
-                            normalized = fs::path { p }.lexically_normal().string();
-                        }
-
-                        std::erase(result, normalized);
-                    }
-                }
-            } else {
-                // Non-glob exclusion: normalize path the same way as included paths
-                auto normalized_excl = std::string {};
-                if (!ctx.current_dir.empty()) {
-                    normalized_excl = (ctx.current_dir / excl).lexically_normal().string();
-                } else {
-                    normalized_excl = fs::path { excl }.lexically_normal().string();
-                }
-
-                std::erase(result, normalized_excl);
-            }
-        }
-    }
+    apply_exclusions(ctx, patterns, result);
 
     return result;
 }
@@ -2172,9 +2204,7 @@ auto resolve_deferred_order_only_edges(
             auto group_basename = std::string { graph.str(group_node->name) };
             if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
                 auto group_name = group_basename.substr(1, group_basename.size() - 2);
-                char pattern_buf[256];
-                snprintf(pattern_buf, sizeof(pattern_buf), "%%<%s>", group_name.c_str());
-                auto pattern = std::string { pattern_buf };
+                auto pattern = std::format("%<{}>", group_name);
 
                 // Get command node and check if pattern exists
                 auto* cmd_node = graph.get_command_node(edge.command_id);
@@ -2225,9 +2255,7 @@ auto resolve_deferred_order_only_edges(
         } else {
             // Group exists but has no members - warn about potential typo
             auto group_path = graph.get_full_path(edge.group_id);
-            char warn_buf[512];
-            snprintf(warn_buf, sizeof(warn_buf), "order-only group %s has no members", group_path.c_str());
-            state.warnings.push_back(std::string { warn_buf });
+            state.warnings.push_back(std::format("order-only group {} has no members", group_path));
         }
     }
 
