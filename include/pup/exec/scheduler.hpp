@@ -141,10 +141,17 @@ public:
 private:
     std::unique_ptr<Impl> impl_;
 
-    /// Execute jobs in parallel
+    /// Execute jobs in parallel (or dispatch to sequential for jobs == 1)
     auto execute_parallel(
         std::vector<BuildJob> const& jobs,
         graph::BuildGraph const& graph
+    ) -> Result<void>;
+
+    /// Execute jobs sequentially with dependency ordering
+    auto execute_sequential(
+        std::vector<BuildJob> const& jobs,
+        graph::BuildGraph const& graph,
+        std::unordered_map<std::string, std::string> const& env_cache
     ) -> Result<void>;
 
     /// Execute a single job

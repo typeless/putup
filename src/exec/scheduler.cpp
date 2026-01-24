@@ -56,6 +56,24 @@ auto resolve_variant_path(
     return output_root / path;
 }
 
+/// Add job dependencies for any command that produces the given node.
+auto add_producer_dependencies(
+    graph::BuildGraph const& graph,
+    std::unordered_map<NodeId, std::size_t> const& cmd_to_job,
+    NodeId node_id,
+    std::size_t current_job,
+    std::unordered_set<std::size_t>& dependencies
+) -> void
+{
+    for (auto producer_id : graph.get_inputs(node_id)) {
+        if (is_command_id(producer_id)) {
+            if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != current_job) {
+                dependencies.insert(it->second);
+            }
+        }
+    }
+}
+
 /// Build dependency map between jobs using the graph's edge structure.
 /// Returns: in_degree[j] = number of jobs that j depends on
 ///          dependents[i] = list of jobs that depend on job i
@@ -100,13 +118,7 @@ auto build_dependency_map(
             }
 
             // Case 2: Input is a file produced by another command
-            for (auto producer_id : graph.get_inputs(input_id)) {
-                if (is_command_id(producer_id)) {
-                    if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != j) {
-                        dependencies.insert(it->second);
-                    }
-                }
-            }
+            add_producer_dependencies(graph, cmd_to_job, input_id, j, dependencies);
         }
 
         // Case 3: Order-only inputs (groups and files)
@@ -127,13 +139,7 @@ auto build_dependency_map(
                     }
 
                     // Also check for commands that produce this member file
-                    for (auto producer_id : graph.get_inputs(member_id)) {
-                        if (is_command_id(producer_id)) {
-                            if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
-                                dependencies.insert(it2->second);
-                            }
-                        }
-                    }
+                    add_producer_dependencies(graph, cmd_to_job, member_id, j, dependencies);
                 }
             } else {
                 // Regular file - check if it's a direct output of another job
@@ -142,13 +148,7 @@ auto build_dependency_map(
                 }
 
                 // Check for commands that produce this file
-                for (auto producer_id : graph.get_inputs(oo_id)) {
-                    if (is_command_id(producer_id)) {
-                        if (auto it2 = cmd_to_job.find(producer_id); it2 != cmd_to_job.end() && it2->second != j) {
-                            dependencies.insert(it2->second);
-                        }
-                    }
-                }
+                add_producer_dependencies(graph, cmd_to_job, oo_id, j, dependencies);
             }
         }
 
@@ -170,33 +170,28 @@ auto collect_required_commands(
 {
     auto visited = std::set<NodeId> {};
     auto commands = std::set<NodeId> {};
+    auto stack = std::vector<NodeId>(target_ids.begin(), target_ids.end());
 
-    auto walk_backward = std::function<void(NodeId)> {};
-    walk_backward = [&](NodeId id) {
+    while (!stack.empty()) {
+        auto id = stack.back();
+        stack.pop_back();
+
         if (visited.contains(id)) {
-            return;
+            continue;
         }
         visited.insert(id);
 
-        if (is_command_id(id)) {
-            if (graph.get_command_node(id)) {
-                commands.insert(id);
-            }
+        if (is_command_id(id) && graph.get_command_node(id)) {
+            commands.insert(id);
         }
 
-        // Walk to inputs (upstream dependencies)
         for (auto input_id : graph.get_inputs(id)) {
-            walk_backward(input_id);
+            stack.push_back(input_id);
         }
 
-        // Include order-only dependencies
         for (auto dep_id : graph.get_order_only(id)) {
-            walk_backward(dep_id);
+            stack.push_back(dep_id);
         }
-    };
-
-    for (auto target_id : target_ids) {
-        walk_backward(target_id);
     }
 
     return commands;
@@ -375,78 +370,81 @@ auto Scheduler::build_incremental(
     return impl_->stats;
 }
 
+auto Scheduler::execute_sequential(
+    std::vector<BuildJob> const& jobs,
+    graph::BuildGraph const& graph,
+    std::unordered_map<std::string, std::string> const& env_cache
+) -> Result<void>
+{
+    auto runner = CommandRunner {};
+    if (!impl_->options.source_root.empty()) {
+        runner.set_working_dir(impl_->options.source_root);
+    }
+    if (impl_->options.timeout) {
+        runner.set_timeout(*impl_->options.timeout); // NOLINT(bugprone-unchecked-optional-access)
+    }
+
+    auto [in_degree, dependents] = build_dependency_map(jobs, graph);
+
+    auto ready_queue = std::queue<std::size_t> {};
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
+        if (in_degree[i] == 0) {
+            ready_queue.push(i);
+        }
+    }
+
+    while (!ready_queue.empty()) {
+        if (impl_->cancelled.load()) {
+            break;
+        }
+
+        auto const job_idx = ready_queue.front();
+        ready_queue.pop();
+        auto const& job = jobs[job_idx];
+
+        if (impl_->on_start) {
+            impl_->on_start(job);
+        }
+
+        auto result = JobResult { execute_job(job, runner, env_cache) };
+
+        if (impl_->on_complete) {
+            impl_->on_complete(job, result);
+        }
+
+        impl_->stats.build_time += result.duration;
+
+        if (result.success) {
+            ++impl_->stats.completed_jobs;
+            for (auto dep_idx : dependents[job_idx]) {
+                if (--in_degree[dep_idx] == 0) {
+                    ready_queue.push(dep_idx);
+                }
+            }
+        } else {
+            ++impl_->stats.failed_jobs;
+            if (!impl_->options.keep_going) {
+                return make_error<void>(ErrorCode::CommandFailed, "Command failed");
+            }
+        }
+
+        if (impl_->on_progress) {
+            impl_->on_progress(impl_->stats.completed_jobs + impl_->stats.failed_jobs, impl_->stats.total_jobs);
+        }
+    }
+
+    return {};
+}
+
 auto Scheduler::execute_parallel(
     std::vector<BuildJob> const& jobs,
     graph::BuildGraph const& graph
 ) -> Result<void>
 {
-    // Build immutable env cache before spawning workers (getenv is not thread-safe)
     auto const env_cache = build_env_cache(jobs);
 
     if (impl_->options.jobs == 1 || jobs.size() == 1) {
-        // Sequential execution with dependency ordering
-        auto runner = CommandRunner {};
-        if (!impl_->options.source_root.empty()) {
-            runner.set_working_dir(impl_->options.source_root);
-        }
-        if (impl_->options.timeout) {
-            // FIXME: False positive - optional is checked on previous line
-            runner.set_timeout(*impl_->options.timeout); // NOLINT(bugprone-unchecked-optional-access)
-        }
-
-        // Build dependency map - same as parallel path
-        auto [in_degree, dependents] = build_dependency_map(jobs, graph);
-
-        // Process jobs in dependency order using a ready queue
-        auto ready_queue = std::queue<std::size_t> {};
-        for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-            if (in_degree[i] == 0) {
-                ready_queue.push(i);
-            }
-        }
-
-        while (!ready_queue.empty()) {
-            if (impl_->cancelled.load()) {
-                break;
-            }
-
-            auto const job_idx = ready_queue.front();
-            ready_queue.pop();
-            auto const& job = jobs[job_idx];
-
-            if (impl_->on_start) {
-                impl_->on_start(job);
-            }
-
-            auto result = JobResult { execute_job(job, runner, env_cache) };
-
-            if (impl_->on_complete) {
-                impl_->on_complete(job, result);
-            }
-
-            impl_->stats.build_time += result.duration;
-
-            if (result.success) {
-                ++impl_->stats.completed_jobs;
-                // Unblock dependent jobs
-                for (auto dep_idx : dependents[job_idx]) {
-                    if (--in_degree[dep_idx] == 0) {
-                        ready_queue.push(dep_idx);
-                    }
-                }
-            } else {
-                ++impl_->stats.failed_jobs;
-                if (!impl_->options.keep_going) {
-                    return make_error<void>(ErrorCode::CommandFailed, "Command failed");
-                }
-            }
-
-            if (impl_->on_progress) {
-                impl_->on_progress(impl_->stats.completed_jobs + impl_->stats.failed_jobs, impl_->stats.total_jobs);
-            }
-        }
-
-        return {};
+        return execute_sequential(jobs, graph, env_cache);
     }
 
     // Parallel execution with dependency-aware ready queue
