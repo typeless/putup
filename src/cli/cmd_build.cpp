@@ -25,7 +25,6 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <mutex>
 #include <set>
 #include <unordered_map>
@@ -93,7 +92,7 @@ auto collect_upstream_files(
     auto visited = std::set<pup::NodeId> {};
 
     // Recursive helper to collect inputs
-    std::function<void(pup::NodeId)> collect = [&](pup::NodeId id) {
+    auto collect = pup::YCombinator { [&](auto const& self, pup::NodeId id) -> void {
         if (!visited.insert(id).second) {
             return;
         }
@@ -110,14 +109,14 @@ auto collect_upstream_files(
 
         // Walk to inputs (upstream)
         for (auto input_id : graph.get_inputs(id)) {
-            collect(input_id);
+            self(input_id);
         }
 
         // Also follow order-only deps
         for (auto dep_id : graph.get_order_only(id)) {
-            collect(dep_id);
+            self(dep_id);
         }
-    };
+    } };
 
     // Find commands in scope and collect their upstream deps
     for (auto id : graph.all_nodes()) {
@@ -224,99 +223,129 @@ auto find_changed_files_with_implicit(
     return changed;
 }
 
-auto expand_implicit_deps(
-    std::vector<std::string> const& changed,
-    pup::index::Index const& index,
-    pup::graph::BuildGraph const& graph
-) -> std::vector<std::string>
+/// Context for building implicit dependency entries in the index.
+/// Holds mutable state shared between get_or_create_dir and create_implicit_file.
+struct ImplicitDepContext {
+    pup::index::Index& index;
+    std::unordered_map<std::string, pup::NodeId>& path_to_id;
+    pup::NodeId& next_id;
+    std::set<std::pair<pup::NodeId, pup::NodeId>>& added_edges;
+    std::filesystem::path const& source_root;
+};
+
+/// Recursively get or create directory entries in the index.
+/// Returns the NodeId for the directory at dir_path.
+auto get_or_create_dir(
+    ImplicitDepContext& ctx,
+    std::filesystem::path const& dir_path
+) -> pup::NodeId
 {
-    auto result = std::vector<std::string> { changed };
-    auto added = std::set<std::string> { changed.begin(), changed.end() };
+    auto normalized = dir_path.lexically_normal();
+    auto path_str = normalized.string();
 
-    auto path_to_file = std::unordered_map<std::string, pup::index::FileEntry const*> {};
-    for (auto const& file : index.files()) {
-        path_to_file[file.path] = &file;
+    if (path_str.empty() || path_str == ".") {
+        return pup::NodeId { 0 };
     }
 
-    for (auto const& path : changed) {
-        auto it = path_to_file.find(path);
-        if (it == path_to_file.end()) {
-            continue;
-        }
-
-        auto file_id = pup::NodeId { it->second->id };
-
-        for (auto const& edge : index.edges()) {
-            if (edge.from != file_id) {
-                continue;
-            }
-
-            if (edge.type == pup::LinkType::Implicit) {
-                auto cmd_id = pup::NodeId { edge.to };
-                auto const* cmd = index.find_command_by_id(cmd_id);
-                if (!cmd) {
-                    continue;
-                }
-
-                auto cmd_node_id = graph.find_by_command(cmd->command);
-                if (!cmd_node_id) {
-                    continue;
-                }
-
-                for (auto output_id : graph.get_outputs(*cmd_node_id)) {
-                    auto output_path = graph.get_full_path(output_id);
-                    if (!output_path.empty()) {
-                        if (added.insert(output_path).second) {
-                            result.push_back(output_path);
-                        }
-                    }
-                }
-            }
-
-            if (edge.type == pup::LinkType::Sticky) {
-                auto cmd_id = pup::NodeId { edge.to };
-                auto const* cmd = index.find_command_by_id(cmd_id);
-                if (!cmd) {
-                    continue;
-                }
-
-                auto cmd_node_id = graph.find_by_command(cmd->command);
-                if (!cmd_node_id) {
-                    continue;
-                }
-
-                for (auto output_id : graph.get_outputs(*cmd_node_id)) {
-                    auto output_path = graph.get_full_path(output_id);
-                    if (!output_path.empty()) {
-                        if (added.insert(output_path).second) {
-                            result.push_back(output_path);
-                        }
-                    }
-                }
-            }
-        }
+    if (auto it = ctx.path_to_id.find(path_str); it != ctx.path_to_id.end()) {
+        return it->second;
     }
 
-    return result;
+    if (path_str == "/") {
+        auto dir_id = ctx.next_id++;
+        auto entry = pup::index::FileEntry {
+            .id = dir_id,
+            .parent_id = pup::NodeId { 0 },
+            .src_id = 0,
+            .type = pup::NodeType::Directory,
+            .flags = pup::NodeFlags::None,
+            .name = "/",
+            .path = "/",
+            .size = 0,
+            .content_hash = {},
+        };
+        ctx.index.add_file(std::move(entry));
+        ctx.path_to_id["/"] = dir_id;
+        return dir_id;
+    }
+
+    auto parent_path = normalized.parent_path();
+    auto parent_id = get_or_create_dir(ctx, parent_path);
+    auto basename = normalized.filename().string();
+
+    auto dir_id = ctx.next_id++;
+    auto entry = pup::index::FileEntry {
+        .id = dir_id,
+        .parent_id = parent_id,
+        .src_id = 0,
+        .type = pup::NodeType::Directory,
+        .flags = pup::NodeFlags::None,
+        .name = basename,
+        .path = path_str,
+        .size = 0,
+        .content_hash = {},
+    };
+    ctx.index.add_file(std::move(entry));
+    ctx.path_to_id[path_str] = dir_id;
+    return dir_id;
 }
 
-auto build_index(
+/// Create a file entry for an implicit dependency (header file discovered by compiler).
+/// Creates parent directories as needed and returns the file's NodeId.
+auto create_implicit_file(
+    ImplicitDepContext& ctx,
+    std::filesystem::path const& abs_path,
+    std::string const& rel_path
+) -> pup::NodeId
+{
+    auto content_hash = pup::Hash256 {};
+    auto file_size = std::uint64_t { 0 };
+    if (std::filesystem::exists(abs_path)) {
+        auto hash_result = pup::sha256_file(abs_path);
+        if (hash_result) {
+            content_hash = *hash_result;
+        } else {
+            fprintf(stderr, "Warning: Failed to hash file: %s\n", abs_path.c_str());
+        }
+
+        auto ec = std::error_code {};
+        file_size = std::filesystem::file_size(abs_path, ec);
+    }
+
+    auto fs_path = std::filesystem::path { rel_path };
+    auto parent_id = get_or_create_dir(ctx, fs_path.parent_path());
+    auto basename = fs_path.filename().string();
+
+    auto file_id = ctx.next_id++;
+
+    auto entry = pup::index::FileEntry {
+        .id = file_id,
+        .parent_id = parent_id,
+        .src_id = 0,
+        .type = pup::NodeType::File,
+        .flags = pup::NodeFlags::None,
+        .name = basename,
+        .path = rel_path,
+        .size = file_size,
+        .content_hash = content_hash,
+    };
+    ctx.index.add_file(std::move(entry));
+    ctx.path_to_id[rel_path] = file_id;
+    return file_id;
+}
+
+/// Serialize file and directory nodes from the build graph to the index.
+/// Returns the populated index and a path-to-id mapping for later use.
+auto serialize_graph_nodes(
     pup::graph::BuildGraph const& graph,
-    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
     std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root,
-    pup::index::Index const* old_index = nullptr
-) -> pup::index::Index
+    std::filesystem::path const& output_root
+) -> std::pair<pup::index::Index, std::unordered_map<std::string, pup::NodeId>>
 {
     auto index = pup::index::Index {};
     auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
 
-    auto max_file_id = pup::NodeId { 0 };
     for (auto id : graph.all_nodes()) {
-        if (!pup::is_command_id(id) && id > max_file_id) {
-            max_file_id = id;
-        }
-
         if (pup::is_command_id(id)) {
             continue;
         }
@@ -331,16 +360,11 @@ auto build_index(
                 continue;
             }
 
-            // For Generated nodes under BUILD_ROOT_ID, get_full_path returns
-            // the path WITH the build root name (e.g., "build/src/main.o").
-            // Strip it to get the source-relative path (e.g., "src/main.o").
             auto build_root_name = std::string { graph.get_build_root_name() };
             if (node->type == pup::NodeType::Generated && !build_root_name.empty() && node_path.starts_with(build_root_name + "/")) {
                 node_path = node_path.substr(build_root_name.size() + 1);
             }
 
-            // Paths are source-relative. Generated files exist at output_root,
-            // source files exist at source_root.
             auto file_path = (node->type == pup::NodeType::Generated)
                 ? output_root / node_path
                 : source_root / node_path;
@@ -352,6 +376,8 @@ auto build_index(
                 auto hash_result = pup::sha256_file(file_path);
                 if (hash_result) {
                     content_hash = *hash_result;
+                } else {
+                    fprintf(stderr, "Warning: Failed to hash file: %s\n", file_path.c_str());
                 }
 
                 auto ec = std::error_code {};
@@ -373,15 +399,11 @@ auto build_index(
             path_to_id[node_path] = id;
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = graph.get_full_path(id);
-            // For GeneratedDir nodes under BUILD_ROOT_ID, strip the build root name
             auto build_root_name = std::string { graph.get_build_root_name() };
             if (node->type == pup::NodeType::GeneratedDir && !build_root_name.empty() && node_path.starts_with(build_root_name + "/")) {
                 node_path = node_path.substr(build_root_name.size() + 1);
             }
 
-            // For BUILD_ROOT_ID itself, store empty name so it doesn't contribute
-            // to path reconstruction during index loading. This is essential for
-            // variant builds where Generated files should have source-relative paths.
             auto node_name_sv = pup::graph::get_name(graph.graph(), id);
             auto entry_name = (id == pup::BUILD_ROOT_ID) ? std::string {} : std::string { node_name_sv };
 
@@ -400,8 +422,10 @@ auto build_index(
             if (!node_path.empty()) {
                 path_to_id[node_path] = id;
             }
-        } else if (node->type == pup::NodeType::Variable) {
-            // Variable nodes must be in index to maintain consecutive ID sequence
+        } else if (node->type == pup::NodeType::Variable
+            || node->type == pup::NodeType::Group
+            || node->type == pup::NodeType::Ghost) {
+            // These node types must be in index to maintain consecutive ID sequence
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = node->parent_dir,
@@ -411,41 +435,21 @@ auto build_index(
                 .name = std::string { pup::graph::get_name(graph.graph(), id) },
                 .path = {},
                 .size = 0,
-                .content_hash = node->content_hash,
-            };
-            index.add_file(std::move(entry));
-        } else if (node->type == pup::NodeType::Group) {
-            // Group nodes must be in index to maintain consecutive ID sequence
-            auto entry = pup::index::FileEntry {
-                .id = id,
-                .parent_id = node->parent_dir,
-                .src_id = 0,
-                .type = node->type,
-                .flags = node->flags,
-                .name = std::string { pup::graph::get_name(graph.graph(), id) },
-                .path = {},
-                .size = 0,
-                .content_hash = {},
-            };
-            index.add_file(std::move(entry));
-        } else if (node->type == pup::NodeType::Ghost) {
-            // Ghost nodes must be in index to maintain consecutive ID sequence
-            auto entry = pup::index::FileEntry {
-                .id = id,
-                .parent_id = node->parent_dir,
-                .src_id = 0,
-                .type = node->type,
-                .flags = node->flags,
-                .name = std::string { pup::graph::get_name(graph.graph(), id) },
-                .path = {},
-                .size = 0,
-                .content_hash = {},
+                .content_hash = (node->type == pup::NodeType::Variable) ? node->content_hash : pup::Hash256 {},
             };
             index.add_file(std::move(entry));
         }
     }
 
-    // Add command nodes in a separate pass
+    return { std::move(index), std::move(path_to_id) };
+}
+
+/// Serialize command nodes from the build graph to the index.
+auto serialize_command_nodes(
+    pup::graph::BuildGraph const& graph,
+    pup::index::Index& index
+) -> void
+{
     for (auto id : graph.all_nodes()) {
         if (!pup::is_command_id(id)) {
             continue;
@@ -457,14 +461,21 @@ auto build_index(
 
         auto entry = pup::index::CommandEntry {
             .id = id,
-            .dir_id = 0, // Commands don't have a parent_dir in the FileNode sense
+            .dir_id = 0,
             .command = std::string { pup::graph::get_command_str(graph.graph(), id) },
             .display = std::string { pup::graph::get_display_str(graph.graph(), id) },
             .env = {},
         };
         index.add_command(std::move(entry));
     }
+}
 
+/// Serialize edges from the build graph to the index.
+auto serialize_edges(
+    pup::graph::BuildGraph const& graph,
+    pup::index::Index& index
+) -> void
+{
     for (auto const& edge : graph.edges()) {
         index.add_edge(pup::index::EdgeEntry {
             .from = edge.from,
@@ -473,131 +484,53 @@ auto build_index(
             .group_cmd_id = edge.group_cmd_id,
         });
     }
+}
 
-    auto next_id = pup::NodeId { max_file_id + 1 };
-    auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
-
-    auto get_or_create_dir = pup::YCombinator { [&](
-                                                    auto const& self,
-                                                    std::filesystem::path const& dir_path
-                                                ) -> pup::NodeId {
-        auto normalized = dir_path.lexically_normal();
-        auto path_str = normalized.string();
-
-        if (path_str.empty() || path_str == ".") {
-            return pup::NodeId { 0 };
+/// Compute the next available NodeId after all existing nodes.
+auto compute_next_id(pup::graph::BuildGraph const& graph) -> pup::NodeId
+{
+    auto max_file_id = pup::NodeId { 0 };
+    for (auto id : graph.all_nodes()) {
+        if (!pup::is_command_id(id) && id > max_file_id) {
+            max_file_id = id;
         }
+    }
+    return pup::NodeId { max_file_id + 1 };
+}
 
-        if (auto it = path_to_id.find(path_str); it != path_to_id.end()) {
-            return it->second;
-        }
-
-        if (path_str == "/") {
-            auto dir_id = next_id++;
-            auto entry = pup::index::FileEntry {
-                .id = dir_id,
-                .parent_id = pup::NodeId { 0 },
-                .src_id = 0,
-                .type = pup::NodeType::Directory,
-                .flags = pup::NodeFlags::None,
-                .name = "/",
-                .path = "/",
-                .size = 0,
-                .content_hash = {},
-            };
-            index.add_file(std::move(entry));
-            path_to_id["/"] = dir_id;
-            return dir_id;
-        }
-
-        auto parent_path = normalized.parent_path();
-        auto parent_id = self(parent_path);
-        auto basename = normalized.filename().string();
-
-        auto dir_id = next_id++;
-        auto entry = pup::index::FileEntry {
-            .id = dir_id,
-            .parent_id = parent_id,
-            .src_id = 0,
-            .type = pup::NodeType::Directory,
-            .flags = pup::NodeFlags::None,
-            .name = basename,
-            .path = path_str,
-            .size = 0,
-            .content_hash = {},
-        };
-        index.add_file(std::move(entry));
-        path_to_id[path_str] = dir_id;
-        return dir_id;
-    } };
-
-    auto create_implicit_file = [&](
-                                    std::filesystem::path const& abs_path,
-                                    std::string const& rel_path
-                                ) -> pup::NodeId {
-        auto content_hash = pup::Hash256 {};
-        auto file_size = std::uint64_t { 0 };
-        if (std::filesystem::exists(abs_path)) {
-            auto hash_result = pup::sha256_file(abs_path);
-            if (hash_result) {
-                content_hash = *hash_result;
-            }
-
-            auto ec = std::error_code {};
-            file_size = std::filesystem::file_size(abs_path, ec);
-        }
-
-        // Create parent directories first - they get assigned IDs before the file
-        auto fs_path = std::filesystem::path { rel_path };
-        auto parent_id = get_or_create_dir(fs_path.parent_path());
-        auto basename = fs_path.filename().string();
-
-        // Now assign file ID (after directory IDs to maintain consecutive ordering)
-        auto file_id = next_id++;
-
-        auto entry = pup::index::FileEntry {
-            .id = file_id,
-            .parent_id = parent_id,
-            .src_id = 0,
-            .type = pup::NodeType::File,
-            .flags = pup::NodeFlags::None,
-            .name = basename,
-            .path = rel_path,
-            .size = file_size,
-            .content_hash = content_hash,
-        };
-        index.add_file(std::move(entry));
-        path_to_id[rel_path] = file_id;
-        return file_id;
-    };
-
+/// Process discovered implicit dependencies from compiler output.
+/// Adds new file entries and implicit edges to the index.
+auto process_implicit_deps(
+    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
+    pup::graph::BuildGraph const& graph,
+    ImplicitDepContext& ctx
+) -> void
+{
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
-            // Implicit deps (from -MD) are source headers
-            auto abs_path = resolve_path(dep_path, source_root);
+            auto abs_path = resolve_path(dep_path, ctx.source_root);
 
             auto rel_path = std::string {};
-            if (pup::is_path_under(abs_path, source_root)) {
-                rel_path = std::filesystem::relative(abs_path, source_root).string();
+            if (pup::is_path_under(abs_path, ctx.source_root)) {
+                rel_path = std::filesystem::relative(abs_path, ctx.source_root).string();
             } else {
                 rel_path = abs_path.string();
             }
 
-            // For variant builds, implicit deps from the build directory (e.g., "build/include/header.h")
-            // need to be normalized to source-relative paths (e.g., "include/header.h") to match
-            // how Generated nodes are stored in the index.
             auto build_root_name = graph.get_build_root_name();
             auto build_prefix = std::string { build_root_name } + "/";
             if (!build_root_name.empty() && rel_path.starts_with(build_prefix)) {
                 rel_path = rel_path.substr(build_prefix.size());
             }
 
-            auto it = path_to_id.find(rel_path);
-            auto dep_id = it != path_to_id.end() ? it->second : create_implicit_file(abs_path, rel_path);
+            auto it = ctx.path_to_id.find(rel_path);
+            auto dep_id = it != ctx.path_to_id.end()
+                ? it->second
+                : create_implicit_file(ctx, abs_path, rel_path);
 
             auto edge_key = std::pair { dep_id, cmd_id };
-            if (added_edges.insert(edge_key).second) {
-                index.add_edge(pup::index::EdgeEntry {
+            if (ctx.added_edges.insert(edge_key).second) {
+                ctx.index.add_edge(pup::index::EdgeEntry {
                     .from = dep_id,
                     .to = cmd_id,
                     .type = pup::LinkType::Implicit,
@@ -606,58 +539,185 @@ auto build_index(
             }
         }
     }
+}
 
+/// Preserve implicit edges from the old index for commands that weren't rebuilt.
+auto preserve_old_implicit_edges(
+    pup::index::Index const& old_index,
+    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
+    ImplicitDepContext& ctx
+) -> void
+{
+    auto commands_with_new_deps = std::set<pup::NodeId> {};
+    for (auto const& [cmd_id, _] : discovered_deps) {
+        commands_with_new_deps.insert(cmd_id);
+    }
+
+    for (auto const& edge : old_index.edges()) {
+        if (edge.type != pup::LinkType::Implicit) {
+            continue;
+        }
+
+        if (commands_with_new_deps.contains(edge.to)) {
+            continue;
+        }
+
+        auto const* old_file = old_index.find_file_by_id(edge.from);
+        if (!old_file) {
+            continue;
+        }
+
+        auto new_file_it = ctx.path_to_id.find(old_file->path);
+        auto abs_path = resolve_path(old_file->path, ctx.source_root);
+        auto new_from_id = new_file_it != ctx.path_to_id.end()
+            ? new_file_it->second
+            : create_implicit_file(ctx, abs_path, old_file->path);
+
+        auto edge_key = std::pair { new_from_id, edge.to };
+        if (ctx.added_edges.insert(edge_key).second) {
+            ctx.index.add_edge(pup::index::EdgeEntry {
+                .from = new_from_id,
+                .to = edge.to,
+                .type = pup::LinkType::Implicit,
+                .group_cmd_id = 0,
+            });
+        }
+    }
+}
+
+auto expand_implicit_deps(
+    std::vector<std::string> const& changed,
+    pup::index::Index const& index,
+    pup::graph::BuildGraph const& graph
+) -> std::vector<std::string>
+{
+    auto result = std::vector<std::string> { changed };
+    auto added = std::set<std::string> { changed.begin(), changed.end() };
+
+    auto path_to_file = std::unordered_map<std::string, pup::index::FileEntry const*> {};
+    for (auto const& file : index.files()) {
+        path_to_file[file.path] = &file;
+    }
+
+    // Build edge index: from_id -> vector of edges (O(edges) once)
+    auto edges_by_from = std::unordered_map<pup::NodeId, std::vector<pup::index::EdgeEntry const*>> {};
+    for (auto const& edge : index.edges()) {
+        if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::Sticky) {
+            edges_by_from[edge.from].push_back(&edge);
+        }
+    }
+
+    // O(1) lookup per changed file
+    for (auto const& path : changed) {
+        auto it = path_to_file.find(path);
+        if (it == path_to_file.end()) {
+            continue;
+        }
+
+        auto file_id = pup::NodeId { it->second->id };
+        auto edge_it = edges_by_from.find(file_id);
+        if (edge_it == edges_by_from.end()) {
+            continue;
+        }
+
+        for (auto const* edge : edge_it->second) {
+            auto cmd_id = pup::NodeId { edge->to };
+            auto const* cmd = index.find_command_by_id(cmd_id);
+            if (!cmd) {
+                continue;
+            }
+
+            auto cmd_node_id = graph.find_by_command(cmd->command);
+            if (!cmd_node_id) {
+                continue;
+            }
+
+            for (auto output_id : graph.get_outputs(*cmd_node_id)) {
+                auto output_path = graph.get_full_path(output_id);
+                if (!output_path.empty()) {
+                    if (added.insert(output_path).second) {
+                        result.push_back(output_path);
+                    }
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+/// Build a complete index from the build graph and discovered dependencies.
+/// Orchestrates the serialization of nodes, commands, edges, and implicit deps.
+auto build_index(
+    pup::graph::BuildGraph const& graph,
+    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& output_root,
+    pup::index::Index const* old_index = nullptr
+) -> pup::index::Index
+{
+    // Serialize file/directory nodes from the build graph
+    auto [index, path_to_id] = serialize_graph_nodes(graph, source_root, output_root);
+
+    // Serialize command nodes
+    serialize_command_nodes(graph, index);
+
+    // Serialize edges from the build graph
+    serialize_edges(graph, index);
+
+    // Setup context for implicit dependency processing
+    auto next_id = compute_next_id(graph);
+    auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
+    auto ctx = ImplicitDepContext {
+        .index = index,
+        .path_to_id = path_to_id,
+        .next_id = next_id,
+        .added_edges = added_edges,
+        .source_root = source_root,
+    };
+
+    // Process discovered implicit dependencies from compiler output
+    process_implicit_deps(discovered_deps, graph, ctx);
+
+    // Preserve implicit edges from the old index for commands that weren't rebuilt
     if (old_index) {
-        auto commands_with_new_deps = std::set<pup::NodeId> {};
-        for (auto const& [cmd_id, _] : discovered_deps) {
-            commands_with_new_deps.insert(cmd_id);
-        }
-
-        auto old_path_to_new_id = std::unordered_map<std::string, pup::NodeId> {};
-        for (auto const& file : old_index->files()) {
-            auto it = path_to_id.find(file.path);
-            if (it != path_to_id.end()) {
-                old_path_to_new_id[file.path] = it->second;
-            }
-        }
-
-        for (auto const& edge : old_index->edges()) {
-            if (edge.type != pup::LinkType::Implicit) {
-                continue;
-            }
-
-            if (commands_with_new_deps.contains(edge.to)) {
-                continue;
-            }
-
-            auto const* old_file = old_index->find_file_by_id(edge.from);
-            if (!old_file) {
-                continue;
-            }
-
-            auto new_file_it = path_to_id.find(old_file->path);
-            // Old implicit deps are source headers
-            auto abs_path = resolve_path(old_file->path, source_root);
-            auto new_from_id = new_file_it != path_to_id.end()
-                ? new_file_it->second
-                : create_implicit_file(abs_path, old_file->path);
-
-            auto edge_key = std::pair { new_from_id, edge.to };
-            if (added_edges.insert(edge_key).second) {
-                index.add_edge(pup::index::EdgeEntry {
-                    .from = new_from_id,
-                    .to = edge.to,
-                    .type = pup::LinkType::Implicit,
-                    .group_cmd_id = 0,
-                });
-            }
-        }
+        preserve_old_implicit_edges(*old_index, discovered_deps, ctx);
     }
 
     // Compute Merkle hashes for directories (enables O(log n) change detection)
     index.compute_merkle_hashes();
 
     return index;
+}
+
+/// Build mode precedence (highest to lowest):
+/// 1. Incremental - if old index exists and files changed
+/// 2. Targets - if specific output targets requested (and not incremental)
+/// 3. Subset - exclude config commands from full build
+/// 4. Full - build everything
+enum class BuildMode {
+    Incremental,
+    Targets,
+    Subset,
+    Full,
+};
+
+auto determine_build_mode(
+    bool has_targets,
+    bool use_incremental,
+    bool has_config_cmds
+) -> BuildMode
+{
+    if (use_incremental) {
+        return BuildMode::Incremental;
+    }
+    if (has_targets) {
+        return BuildMode::Targets;
+    }
+    if (has_config_cmds) {
+        return BuildMode::Subset;
+    }
+    return BuildMode::Full;
 }
 
 /// Build a single variant with the given options.
@@ -955,15 +1015,20 @@ auto build_single_variant(
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
 
-    if (!target_node_ids.empty() && !use_incremental) {
-        // Target-based build: use reverse traversal to find required commands
-        build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
-    } else if (use_incremental && old_idx_ptr) {
-        // Incremental build takes priority - config commands are inherently
-        // excluded since they're not in the dependency chain of changed files
+    auto mode = determine_build_mode(
+        !target_node_ids.empty(),
+        use_incremental,
+        !config_cmd_ids.empty()
+    );
+
+    switch (mode) {
+    case BuildMode::Incremental:
         build_result = scheduler.build_incremental(ctx.graph(), changed_files);
-    } else if (!config_cmd_ids.empty()) {
-        // Exclude config-generating commands from full build
+        break;
+    case BuildMode::Targets:
+        build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
+        break;
+    case BuildMode::Subset: {
         auto non_config_cmds = std::set<NodeId> {};
         for (auto id : ctx.graph().all_nodes()) {
             if (is_command_id(id) && !config_cmd_ids.contains(id)) {
@@ -971,8 +1036,11 @@ auto build_single_variant(
             }
         }
         build_result = scheduler.build_subset(ctx.graph(), non_config_cmds);
-    } else {
+        break;
+    }
+    case BuildMode::Full:
         build_result = scheduler.build(ctx.graph());
+        break;
     }
     auto end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
