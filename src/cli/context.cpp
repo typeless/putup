@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -78,6 +79,25 @@ auto compute_build_scopes(
 }
 
 namespace {
+
+// Returns empty path for root-equivalent paths ("" or "."), otherwise unchanged
+auto normalize_to_empty(std::filesystem::path const& p) -> std::filesystem::path
+{
+    return (p.empty() || p == ".") ? std::filesystem::path {} : p;
+}
+
+// Returns "." for root-equivalent paths ("" or "."), otherwise unchanged
+auto normalize_to_dot(std::filesystem::path const& p) -> std::filesystem::path
+{
+    return (p.empty() || p == ".") ? std::filesystem::path { "." } : p;
+}
+
+// Joins base/rel, but if rel is root-equivalent returns just base
+auto join_path(std::filesystem::path const& base, std::filesystem::path const& rel)
+    -> std::filesystem::path
+{
+    return (rel.empty() || rel == ".") ? base : base / rel;
+}
 
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
@@ -181,7 +201,7 @@ auto discover_tupfile_dirs(
         }
 
         auto dir_rel = std::filesystem::relative(dir, root);
-        dirs.insert(dir_rel.empty() || dir_rel == "." ? std::filesystem::path { "." } : dir_rel);
+        dirs.insert(normalize_to_dot(dir_rel));
     }
 
     return dirs;
@@ -195,9 +215,7 @@ auto find_config_for_dir(
     TupfileParseState& state
 ) -> parser::VarDb const*
 {
-    auto normalized = std::filesystem::path {
-        rel_dir.empty() || rel_dir == "." ? std::filesystem::path {} : rel_dir
-    };
+    auto normalized = normalize_to_empty(rel_dir);
 
     // Check cache first
     if (auto it = state.scoped_configs.find(normalized); it != state.scoped_configs.end()) {
@@ -237,85 +255,81 @@ auto find_config_for_dir(
 
 auto make_circular_dep_error(std::filesystem::path const& dir) -> pup::Error
 {
-    char buf[512];
-    snprintf(buf, sizeof(buf), "Circular Tupfile dependency: %s", dir.string().c_str());
-    return pup::Error { pup::ErrorCode::CyclicDependency, std::string { buf } };
+    return pup::Error {
+        pup::ErrorCode::CyclicDependency,
+        std::format("Circular Tupfile dependency: {}", dir.string())
+    };
 }
 
 auto make_read_error(std::filesystem::path const& path) -> pup::Error
 {
-    char buf[512];
-    snprintf(buf, sizeof(buf), "Failed to read %s", path.string().c_str());
-    return pup::Error { pup::ErrorCode::IoError, std::string { buf } };
+    return pup::Error {
+        pup::ErrorCode::IoError,
+        std::format("Failed to read {}", path.string())
+    };
 }
 
-auto parse_directory(
-    std::filesystem::path const& rel_dir,
-    TupfileParseState& state,
-    pup::graph::GraphBuilder& builder,
-    pup::graph::BuildGraph& graph,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& config_root,
-    std::filesystem::path const& output_root,
-    pup::parser::VarDb const& base_vars,
-    bool verbose,
-    bool root_config_only = false,
-    VarAssignedCallback const& on_var_assigned = {}
-) -> pup::Result<void>
-{
-    auto vars = pup::parser::VarDb { base_vars };
-    auto normalized_dir = std::filesystem::path {
-        rel_dir.empty() || rel_dir == "." ? std::filesystem::path { "." } : rel_dir
-    };
+struct ParseContext {
+    TupfileParseState& state;
+    pup::graph::GraphBuilder& builder;
+    pup::graph::BuildGraph& graph;
+    std::filesystem::path const& source_root;
+    std::filesystem::path const& config_root;
+    std::filesystem::path const& output_root;
+    pup::parser::VarDb const& base_vars;
+    bool verbose;
+    bool root_config_only;
+    VarAssignedCallback on_var_assigned;
+};
 
-    if (state.parsed.contains(normalized_dir)) {
+auto parse_directory(std::filesystem::path const& rel_dir, ParseContext& ctx) -> pup::Result<void>
+{
+    auto vars = pup::parser::VarDb { ctx.base_vars };
+    auto normalized_dir = normalize_to_dot(rel_dir);
+
+    if (ctx.state.parsed.contains(normalized_dir)) {
         return {};
     }
 
-    if (state.parsing.contains(normalized_dir)) {
+    if (ctx.state.parsing.contains(normalized_dir)) {
         return pup::unexpected<pup::Error>(make_circular_dep_error(normalized_dir));
     }
 
-    state.parsing.insert(normalized_dir);
+    ctx.state.parsing.insert(normalized_dir);
 
     // Tupfiles are found in config_root (may differ from source_root in 3-tree builds)
-    auto tupfile_path = std::filesystem::path {
-        normalized_dir == "." ? config_root / "Tupfile" : config_root / rel_dir / "Tupfile"
-    };
+    auto tupfile_path = join_path(ctx.config_root, normalize_to_empty(rel_dir)) / "Tupfile";
 
-    if (verbose) {
+    if (ctx.verbose) {
         printf("Parsing: %s\n", tupfile_path.string().c_str());
     }
 
     auto source = read_file(tupfile_path);
     if (!source) {
-        state.parsing.erase(normalized_dir);
+        ctx.state.parsing.erase(normalized_dir);
         return pup::unexpected<pup::Error>(make_read_error(tupfile_path));
     }
 
     auto parse_result = pup::parser::parse_tupfile(*source, tupfile_path.string());
     if (!parse_result.success()) {
-        state.parsing.erase(normalized_dir);
+        ctx.state.parsing.erase(normalized_dir);
         for (auto const& err : parse_result.errors) {
             fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.string().c_str(), err.location.line, err.location.column, err.message.c_str());
         }
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
 
-    auto tup_cwd = std::string { normalized_dir == "." ? "." : rel_dir.string() };
-    auto tup_variantdir = compute_tup_variantdir(
-        normalized_dir == "." ? std::filesystem::path {} : rel_dir,
-        config_root,
-        output_root
-    );
+    auto tup_cwd = normalized_dir.string();
+    auto tup_variantdir = compute_tup_variantdir(normalize_to_empty(rel_dir), ctx.config_root, ctx.output_root);
 
     // Compute TUP_SRCDIR: relative path from config dir to source dir
     // For traditional builds (config == source): "."
     // For 3-tree builds: e.g., "../../busybox/coreutils" from config/coreutils/
+    auto rel_dir_normalized = normalize_to_empty(rel_dir);
     auto tup_srcdir = std::string { "." };
-    if (config_root != source_root) {
-        auto config_dir = config_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
-        auto source_dir = source_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
+    if (ctx.config_root != ctx.source_root) {
+        auto config_dir = join_path(ctx.config_root, rel_dir_normalized);
+        auto source_dir = join_path(ctx.source_root, rel_dir_normalized);
         tup_srcdir = std::filesystem::relative(source_dir, config_dir).string();
     }
 
@@ -323,22 +337,22 @@ auto parse_directory(
     // For in-tree builds (config == output): "."
     // For variant builds: e.g., "../../build/coreutils" from config/coreutils/
     auto tup_outdir = std::string { "." };
-    if (config_root != output_root) {
-        auto config_dir = config_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
-        auto output_dir = output_root / (normalized_dir == "." ? std::filesystem::path {} : rel_dir);
+    if (ctx.config_root != ctx.output_root) {
+        auto config_dir = join_path(ctx.config_root, rel_dir_normalized);
+        auto output_dir = join_path(ctx.output_root, rel_dir_normalized);
         tup_outdir = std::filesystem::relative(output_dir, config_dir).string();
     }
 
     // Get the scoped config for this directory (walks up tree to find nearest tup.config)
     // When root_config_only is set (for configure pass), always use root config
     auto const* scoped_config = find_config_for_dir(
-        root_config_only ? std::filesystem::path {} : rel_dir,
-        output_root,
-        state
+        ctx.root_config_only ? std::filesystem::path {} : rel_dir,
+        ctx.output_root,
+        ctx.state
     );
 
     auto request_directory = [&](std::filesystem::path const& dir) -> pup::Result<void> {
-        return parse_directory(dir, state, builder, graph, source_root, config_root, output_root, base_vars, verbose, root_config_only, on_var_assigned);
+        return parse_directory(dir, ctx);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
@@ -352,20 +366,139 @@ auto parse_directory(
         .tup_srcdir = tup_srcdir,
         .tup_outdir = tup_outdir,
         .request_directory = request_directory,
-        .available_tupfile_dirs = &state.available,
-        .on_var_assigned = on_var_assigned,
+        .available_tupfile_dirs = &ctx.state.available,
+        .on_var_assigned = ctx.on_var_assigned,
     };
 
-    auto result = pup::Result<void> { builder.add_tupfile(graph, parse_result.tupfile, eval_ctx) };
+    auto result = pup::Result<void> { ctx.builder.add_tupfile(ctx.graph, parse_result.tupfile, eval_ctx) };
 
-    state.parsing.erase(normalized_dir);
-    state.parsed.insert(normalized_dir);
+    ctx.state.parsing.erase(normalized_dir);
+    ctx.state.parsed.insert(normalized_dir);
 
     if (result) {
         ++pup::thread_metrics().tupfiles_parsed;
     }
 
     return result;
+}
+
+auto make_layout_options(Options const& opts) -> LayoutOptions
+{
+    auto layout_opts = LayoutOptions {};
+    if (!opts.source_dir.empty()) {
+        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
+    }
+    if (!opts.config_dir.empty()) {
+        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
+    }
+    if (!opts.build_dirs.empty()) {
+        layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
+    }
+    return layout_opts;
+}
+
+auto try_auto_init(ProjectLayout const& layout) -> void
+{
+    auto pup_dir = layout.pup_dir();
+    if (std::filesystem::exists(pup_dir)) {
+        return;
+    }
+    if (!std::filesystem::exists(layout.source_root / "Tupfile.ini")) {
+        return;
+    }
+    std::filesystem::create_directories(pup_dir);
+    printf("Initialized pup in \"%s\"\n", pup_dir.string().c_str());
+}
+
+auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
+{
+    auto ignore = pup::parser::IgnoreList::with_defaults();
+    for (auto const& root : { layout.config_root, layout.source_root }) {
+        auto ignore_path = root / ".pupignore";
+        if (!std::filesystem::exists(ignore_path)) {
+            continue;
+        }
+        auto ignore_result = pup::parser::IgnoreList::load(ignore_path);
+        if (!ignore_result) {
+            continue;
+        }
+        ignore = std::move(*ignore_result);
+        if (verbose) {
+            printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ignore_path.string().c_str());
+        }
+        break;
+    }
+    return ignore;
+}
+
+struct IndexLoadResult {
+    std::optional<pup::index::Index> index;
+    std::unordered_map<std::string, std::string> cached_env_vars;
+};
+
+auto load_old_index(std::filesystem::path const& output_root, bool verbose) -> IndexLoadResult
+{
+    auto result = IndexLoadResult {};
+    auto index_path = output_root / ".pup" / "index";
+
+    if (!std::filesystem::exists(index_path)) {
+        return result;
+    }
+
+    auto index_load_start = std::chrono::steady_clock::now();
+    auto index_result = pup::index::read_index(index_path);
+    if (!index_result) {
+        return result;
+    }
+
+    result.index = std::move(*index_result);
+    result.index->build_children_index();
+
+    auto index_load_end = std::chrono::steady_clock::now();
+    pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        index_load_end - index_load_start
+    );
+
+    constexpr auto ENV_VAR_DIR_PREFIX = std::string_view { "$/" };
+    for (auto const& file : result.index->files()) {
+        if (file.type != pup::NodeType::Variable) {
+            continue;
+        }
+        if (!file.path.starts_with(ENV_VAR_DIR_PREFIX)) {
+            continue;
+        }
+        auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
+        auto eq_pos = key_value.find('=');
+        if (eq_pos != std::string::npos) {
+            result.cached_env_vars[std::string { key_value.substr(0, eq_pos) }] = std::string { key_value.substr(eq_pos + 1) };
+        }
+    }
+
+    if (verbose && !result.cached_env_vars.empty()) {
+        printf("Loaded %zu cached env vars from index\n", result.cached_env_vars.size());
+    }
+
+    return result;
+}
+
+auto sort_dirs_by_depth(std::set<std::filesystem::path> const& available) -> std::vector<std::filesystem::path>
+{
+    auto root_rel = std::filesystem::path { "." };
+    auto dirs = std::vector<std::filesystem::path> { available.begin(), available.end() };
+    std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
+        auto is_root_a = (a == root_rel);
+        auto is_root_b = (b == root_rel);
+        if (is_root_a != is_root_b) {
+            return is_root_b;
+        }
+        auto depth_a = std::distance(a.begin(), a.end());
+        auto depth_b = std::distance(b.begin(), b.end());
+        if (depth_a != depth_b) {
+            return depth_a > depth_b;
+        }
+        return a < b;
+    });
+    return dirs;
 }
 
 } // namespace
@@ -430,18 +563,8 @@ auto build_context(
     BuildContextOptions const& ctx_opts
 ) -> Result<BuildContext>
 {
-    auto layout_opts = LayoutOptions {};
-    if (!opts.source_dir.empty()) {
-        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
-    }
-    if (!opts.config_dir.empty()) {
-        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
-    }
-    if (!opts.build_dirs.empty()) {
-        layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
-    }
-
-    auto layout_result = Result<ProjectLayout> { discover_layout(layout_opts) };
+    // 1. Discover layout
+    auto layout_result = Result<ProjectLayout> { discover_layout(make_layout_options(opts)) };
     if (!layout_result) {
         return unexpected<Error>(layout_result.error());
     }
@@ -449,9 +572,7 @@ auto build_context(
     auto ctx = BuildContext {};
     ctx.impl_->layout = std::move(*layout_result);
 
-    // Set build root name for variant builds.
-    // This must be done before any Tupfiles are parsed so that Generated nodes
-    // created under BUILD_ROOT_ID get correct full paths including the build prefix.
+    // Set build root name for variant builds (before parsing)
     if (ctx.impl_->layout.source_root != ctx.impl_->layout.output_root) {
         auto build_root_name = std::filesystem::relative(
                                    ctx.impl_->layout.output_root,
@@ -461,46 +582,24 @@ auto build_context(
         ctx.impl_->graph.set_build_root_name(std::move(build_root_name));
     }
 
+    // 2. Auto-init if needed
     if (ctx_opts.auto_init) {
-        auto pup_dir = ctx.impl_->layout.pup_dir();
-        if (!std::filesystem::exists(pup_dir)) {
-            if (std::filesystem::exists(ctx.impl_->layout.source_root / "Tupfile.ini")) {
-                std::filesystem::create_directories(pup_dir);
-                printf("Initialized pup in \"%s\"\n", pup_dir.string().c_str());
-            }
-        }
+        try_auto_init(ctx.impl_->layout);
     }
 
-    auto ignore = parser::IgnoreList::with_defaults();
-    // Check for .pupignore in both config_root and source_root
-    for (auto const& root : { ctx.impl_->layout.config_root, ctx.impl_->layout.source_root }) {
-        auto ignore_path = root / ".pupignore";
-        if (std::filesystem::exists(ignore_path)) {
-            auto ignore_result = parser::IgnoreList::load(ignore_path);
-            if (ignore_result) {
-                ignore = std::move(*ignore_result);
-                if (ctx_opts.verbose) {
-                    printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ignore_path.string().c_str());
-                }
-                break; // Use first found
-            }
-        }
-    }
-
-    // Discover Tupfiles from config_root (where Tupfiles live)
+    // 3. Discover Tupfiles
+    auto ignore = load_ignore_list(ctx.impl_->layout, ctx_opts.verbose);
     ctx.impl_->state.available = discover_tupfile_dirs(ctx.impl_->layout.config_root, ignore);
 
     if (ctx.impl_->state.available.empty()) {
-        return make_error<BuildContext>(
-            ErrorCode::IoError, "No Tupfiles found in project"
-        );
+        return make_error<BuildContext>(ErrorCode::IoError, "No Tupfiles found in project");
     }
 
     if (ctx_opts.verbose) {
         printf("Found %zu directories with Tupfiles\n", ctx.impl_->state.available.size());
     }
 
-    // tup.config lives in output_root (variant or -B directory)
+    // 4. Load config
     auto config_path = ctx.impl_->layout.output_root / "tup.config";
     if (std::filesystem::exists(config_path)) {
         auto config_result = Result<parser::VarDb> { parser::parse_config(config_path) };
@@ -512,43 +611,11 @@ auto build_context(
         }
     }
 
-    // Load old index for incremental builds and cached env vars
-    auto cached_env_vars = std::unordered_map<std::string, std::string> {};
-    auto index_path = ctx.impl_->layout.output_root / ".pup" / "index";
-    constexpr auto ENV_VAR_DIR_PREFIX = std::string_view { "$/" };
-    if (std::filesystem::exists(index_path)) {
-        auto index_load_start = std::chrono::steady_clock::now();
-        auto index_result = index::read_index(index_path);
-        if (index_result) {
-            ctx.impl_->old_index = std::move(*index_result);
-            ctx.impl_->old_index->build_children_index();
-            auto index_load_end = std::chrono::steady_clock::now();
-            thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                index_load_end - index_load_start
-            );
+    // 5. Load index
+    auto [old_index, cached_env_vars] = load_old_index(ctx.impl_->layout.output_root, ctx_opts.verbose);
+    ctx.impl_->old_index = std::move(old_index);
 
-            // Extract cached env vars from index
-            for (auto const& file : ctx.impl_->old_index->files()) {
-                if (file.type != NodeType::Variable) {
-                    continue;
-                }
-                if (!file.path.starts_with(ENV_VAR_DIR_PREFIX)) {
-                    continue;
-                }
-
-                // Extract "KEY=value" from "$/KEY=value"
-                auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
-                auto eq_pos = key_value.find('=');
-                if (eq_pos != std::string::npos) {
-                    cached_env_vars[std::string { key_value.substr(0, eq_pos) }] = std::string { key_value.substr(eq_pos + 1) };
-                }
-            }
-            if (ctx_opts.verbose && !cached_env_vars.empty()) {
-                printf("Loaded %zu cached env vars from index\n", cached_env_vars.size());
-            }
-        }
-    }
-
+    // 6. Parse Tupfiles
     auto builder_opts = graph::BuilderOptions {
         .source_root = ctx.impl_->layout.source_root,
         .config_root = ctx.impl_->layout.config_root,
@@ -559,48 +626,34 @@ auto build_context(
         .pattern_registry = ctx_opts.pattern_registry,
         .cached_env_vars = std::move(cached_env_vars),
     };
-
     auto builder = graph::GraphBuilder { builder_opts };
 
-    // Post-order traversal: parse children before parents so groups are populated
-    // before parent directories reference them. Sort by path depth (deeper first).
-    // Root directory "." is always parsed last.
-    auto root_rel = std::filesystem::path { "." };
-    auto dirs = std::vector<std::filesystem::path> {
-        ctx.impl_->state.available.begin(), ctx.impl_->state.available.end()
+    auto parse_ctx = ParseContext {
+        .state = ctx.impl_->state,
+        .builder = builder,
+        .graph = ctx.impl_->graph,
+        .source_root = ctx.impl_->layout.source_root,
+        .config_root = ctx.impl_->layout.config_root,
+        .output_root = ctx.impl_->layout.output_root,
+        .base_vars = ctx.impl_->vars,
+        .verbose = ctx_opts.verbose,
+        .root_config_only = ctx_opts.root_config_only,
+        .on_var_assigned = ctx_opts.on_var_assigned,
     };
-    std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
-        auto is_root_a = (a == root_rel);
-        auto is_root_b = (b == root_rel);
-        if (is_root_a != is_root_b) {
-            return is_root_b;
-        }
-        auto depth_a = std::distance(a.begin(), a.end());
-        auto depth_b = std::distance(b.begin(), b.end());
-        if (depth_a != depth_b) {
-            return depth_a > depth_b;
-        }
-        return a < b;
-    });
 
-    for (auto const& dir : dirs) {
+    for (auto const& dir : sort_dirs_by_depth(ctx.impl_->state.available)) {
         if (ctx.impl_->state.parsed.contains(dir)) {
             continue;
         }
-        auto result = Result<void> {
-            parse_directory(dir, ctx.impl_->state, builder, ctx.impl_->graph, ctx.impl_->layout.source_root, ctx.impl_->layout.config_root, ctx.impl_->layout.output_root, ctx.impl_->vars, ctx_opts.verbose, ctx_opts.root_config_only, ctx_opts.on_var_assigned)
-        };
+        auto result = Result<void> { parse_directory(dir, parse_ctx) };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
         }
     }
 
-    // Resolve order-only edges that couldn't be created during parsing due to
-    // circular Tupfile dependencies (e.g., A references B's group, B's parsing
-    // triggers A's parsing before B's group is registered)
+    // Resolve deferred order-only edges
     (void)builder.resolve_deferred_order_only_edges(ctx.impl_->graph);
 
-    // Surface any warnings from graph building (e.g., undefined order-only groups)
     for (auto const& warning : builder.warnings()) {
         fprintf(stderr, "warning: %s\n", warning.c_str());
     }
