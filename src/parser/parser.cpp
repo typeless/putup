@@ -5,7 +5,10 @@
 #include "pup/core/result.hpp"
 #include "pup/parser/lexer.hpp"
 
+#include <array>
+#include <format>
 #include <functional>
+#include <optional>
 #include <unordered_set>
 
 namespace pup::parser {
@@ -106,6 +109,100 @@ auto report_error(ParserState& s, std::string const& message) -> void
     });
 }
 
+template<typename T>
+auto make_statement(SourceLocation loc, Result<T> result) -> Result<std::unique_ptr<Statement>>
+{
+    if (!result) {
+        return pup::unexpected<Error>(result.error());
+    }
+
+    auto stmt = std::make_unique<Statement>();
+    stmt->location = loc;
+    stmt->content = std::move(*result);
+    return stmt;
+}
+
+auto skip_to_eol(ParserState& s) -> void
+{
+    while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+        advance(s);
+    }
+    if (check(s, TokenType::Newline)) {
+        advance(s);
+    }
+}
+
+template<typename Predicate>
+auto parse_statement_body(ParserState& s, Predicate is_terminator)
+    -> std::vector<std::unique_ptr<Statement>>
+{
+    auto body = std::vector<std::unique_ptr<Statement>> {};
+
+    while (!check(s, TokenType::Eof) && !is_terminator(s.current.type)) {
+        if (match(s, TokenType::Newline) || match(s, TokenType::Hash)) {
+            continue;
+        }
+
+        auto stmt = parse_line(s);
+        if (!stmt) {
+            report_error(s, stmt.error().message);
+            skip_to_next_statement(s);
+            continue;
+        }
+        if (*stmt) {
+            body.push_back(std::move(*stmt));
+        }
+    }
+
+    return body;
+}
+
+struct VarRefSpec {
+    TokenType prefix_token;
+    VarRef::Kind kind;
+    char prefix_char;
+    std::string_view unterminated_msg;
+};
+
+constexpr auto kVarRefSpecs = std::array {
+    VarRefSpec { TokenType::Dollar, VarRef::Kind::Regular, '$', "Unterminated variable reference" },
+    VarRefSpec { TokenType::At, VarRef::Kind::Config, '@', "Unterminated config variable reference" },
+    VarRefSpec { TokenType::Ampersand, VarRef::Kind::Node, '&', "Unterminated node variable reference" },
+};
+
+auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
+    -> std::optional<Result<VarRef>>
+{
+    if (!check(s, spec.prefix_token)) {
+        return std::nullopt;
+    }
+
+    advance(s);
+    if (!match(s, TokenType::OpenParen)) {
+        return pup::make_error<VarRef>(
+            ErrorCode::ParseError,
+            std::format("Expected '(' after '{}'", spec.prefix_char)
+        );
+    }
+
+    auto name = std::string {};
+    while (!check(s, TokenType::CloseParen)
+           && !check(s, TokenType::Newline)
+           && !check(s, TokenType::Eof)) {
+        name += s.current.text;
+        advance(s);
+    }
+
+    if (!match(s, TokenType::CloseParen)) {
+        return pup::make_error<VarRef>(
+            ErrorCode::ParseError,
+            std::string { spec.unterminated_msg }
+        );
+    }
+
+    return VarRef { spec.kind, std::move(name), s.previous.location };
+}
+
 auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
 {
     auto const& tok = s.current;
@@ -146,106 +243,42 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
             // foreach is only valid inside a rule
             return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "'foreach' must appear after ':' in a rule");
 
-        case TokenType::KwIncludeRules: {
+        case TokenType::KwIncludeRules:
             advance(s);
-            auto inc = parse_include(s, true);
-            if (!inc) {
-                return pup::unexpected<Error>(inc.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*inc);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_include(s, true));
 
-        case TokenType::KwInclude: {
+        case TokenType::KwInclude:
             advance(s);
-            auto inc = parse_include(s, false);
-            if (!inc) {
-                return pup::unexpected<Error>(inc.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*inc);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_include(s, false));
 
-        case TokenType::KwIfdef: {
+        case TokenType::KwIfdef:
             advance(s);
-            auto cond = parse_conditional(s, Conditional::Kind::Ifdef);
-            if (!cond) {
-                return pup::unexpected<Error>(cond.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*cond);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_conditional(s, Conditional::Kind::Ifdef));
 
-        case TokenType::KwIfndef: {
+        case TokenType::KwIfndef:
             advance(s);
-            auto cond = parse_conditional(s, Conditional::Kind::Ifndef);
-            if (!cond) {
-                return pup::unexpected<Error>(cond.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*cond);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_conditional(s, Conditional::Kind::Ifndef));
 
-        case TokenType::KwIfeq: {
+        case TokenType::KwIfeq:
             advance(s);
-            auto cond = parse_conditional(s, Conditional::Kind::Ifeq);
-            if (!cond) {
-                return pup::unexpected<Error>(cond.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*cond);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_conditional(s, Conditional::Kind::Ifeq));
 
-        case TokenType::KwIfneq: {
+        case TokenType::KwIfneq:
             advance(s);
-            auto cond = parse_conditional(s, Conditional::Kind::Ifneq);
-            if (!cond) {
-                return pup::unexpected<Error>(cond.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*cond);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_conditional(s, Conditional::Kind::Ifneq));
 
         case TokenType::KwElse:
         case TokenType::KwEndif:
             // These should be handled by parse_conditional
             return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "Unexpected '" + std::string { tok.text } + "' without matching if");
 
-        case TokenType::KwExport: {
+        case TokenType::KwExport:
             advance(s);
-            auto exp = parse_export(s);
-            if (!exp) {
-                return pup::unexpected<Error>(exp.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*exp);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_export(s));
 
-        case TokenType::KwImport: {
+        case TokenType::KwImport:
             advance(s);
-            auto imp = parse_import(s);
-            if (!imp) {
-                return pup::unexpected<Error>(imp.error());
-            }
-            auto stmt = std::make_unique<Statement>();
-            stmt->location = start_loc;
-            stmt->content = std::move(*imp);
-            return stmt;
-        }
+            return make_statement(start_loc, parse_import(s));
 
         default:
             break;
@@ -592,55 +625,17 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
         s.lexer.set_context(Lexer::Context::LineStart);
     }
 
-    // Skip to end of line
-    while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-        advance(s);
-    }
-    if (check(s, TokenType::Newline)) {
-        advance(s);
-    }
+    skip_to_eol(s);
 
-    // Parse then body until else or endif
-    while (!check(s, TokenType::KwElse) && !check(s, TokenType::KwEndif) && !check(s, TokenType::Eof)) {
-        if (match(s, TokenType::Newline) || match(s, TokenType::Hash)) {
-            continue;
-        }
+    cond.then_body = parse_statement_body(s, [](TokenType t) {
+        return t == TokenType::KwElse || t == TokenType::KwEndif;
+    });
 
-        auto stmt = parse_line(s);
-        if (!stmt) {
-            report_error(s, stmt.error().message);
-            skip_to_next_statement(s);
-            continue;
-        }
-        if (*stmt) {
-            cond.then_body.push_back(std::move(*stmt));
-        }
-    }
-
-    // Parse else body if present
     if (match(s, TokenType::KwElse)) {
-        while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-            advance(s);
-        }
-        if (check(s, TokenType::Newline)) {
-            advance(s);
-        }
-
-        while (!check(s, TokenType::KwEndif) && !check(s, TokenType::Eof)) {
-            if (match(s, TokenType::Newline) || match(s, TokenType::Hash)) {
-                continue;
-            }
-
-            auto stmt = parse_line(s);
-            if (!stmt) {
-                report_error(s, stmt.error().message);
-                skip_to_next_statement(s);
-                continue;
-            }
-            if (*stmt) {
-                cond.else_body.push_back(std::move(*stmt));
-            }
-        }
+        skip_to_eol(s);
+        cond.else_body = parse_statement_body(s, [](TokenType t) {
+            return t == TokenType::KwEndif;
+        });
     }
 
     // Expect endif
@@ -744,74 +739,25 @@ auto parse_expression_until(
             current_text += ' ';
         }
 
-        // Variable reference: $(VAR)
-        if (check(s, TokenType::Dollar)) {
-            flush_text();
-            advance(s);
-            if (!match(s, TokenType::OpenParen)) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '$'");
+        // Variable references: $(VAR), @(VAR), &(VAR)
+        auto const* matched_spec = static_cast<VarRefSpec const*>(nullptr);
+        for (auto const& spec : kVarRefSpecs) {
+            if (check(s, spec.prefix_token)) {
+                matched_spec = &spec;
+                break;
             }
-
-            auto name = std::string {};
-            while (!check(s, TokenType::CloseParen) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-                name += s.current.text;
-                advance(s);
-            }
-
-            if (!match(s, TokenType::CloseParen)) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Unterminated variable reference");
-            }
-
-            auto var = VarRef { VarRef::Kind::Regular, std::move(name), s.previous.location };
-            expr.parts.emplace_back(Expression::Variable { std::move(var) });
-            last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
-            continue;
         }
-
-        // Config variable: @(VAR)
-        if (check(s, TokenType::At)) {
+        if (matched_spec) {
             flush_text();
-            advance(s);
-            if (!match(s, TokenType::OpenParen)) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '@'");
+            auto result = try_parse_variable_ref(s, *matched_spec);
+            if (!result) {
+                return pup::make_error<Expression>(ErrorCode::ParseError, "Internal parser error");
+            }
+            if (!*result) {
+                return pup::unexpected<Error>(result->error());
             }
 
-            auto name = std::string {};
-            while (!check(s, TokenType::CloseParen) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-                name += s.current.text;
-                advance(s);
-            }
-
-            if (!match(s, TokenType::CloseParen)) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Unterminated config variable reference");
-            }
-
-            auto var = VarRef { VarRef::Kind::Config, std::move(name), s.previous.location };
-            expr.parts.emplace_back(Expression::Variable { std::move(var) });
-            last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
-            continue;
-        }
-
-        // Node variable: &(VAR)
-        if (check(s, TokenType::Ampersand)) {
-            flush_text();
-            advance(s);
-            if (!match(s, TokenType::OpenParen)) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Expected '(' after '&'");
-            }
-
-            auto name = std::string {};
-            while (!check(s, TokenType::CloseParen) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-                name += s.current.text;
-                advance(s);
-            }
-
-            if (!match(s, TokenType::CloseParen)) {
-                return pup::make_error<Expression>(ErrorCode::ParseError, "Unterminated node variable reference");
-            }
-
-            auto var = VarRef { VarRef::Kind::Node, std::move(name), s.previous.location };
-            expr.parts.emplace_back(Expression::Variable { std::move(var) });
+            expr.parts.emplace_back(Expression::Variable { std::move(**result) });
             last_end_offset = s.previous.location.offset + static_cast<std::uint32_t>(s.previous.text.size());
             continue;
         }
