@@ -1,3 +1,4 @@
+ifeq (@(TESTS),y)
 include_rules
 
 # Catch2 amalgamated
@@ -40,3 +41,4 @@ test-srcs-y += test_var_tracking.cpp
 
 # Link test runner
 : {test_objs} {test_support} $(ROOT)/libputup.a |> !link |> putup_test
+endif
