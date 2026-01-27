@@ -621,7 +621,6 @@ $(CC)                 # Regular variable
 | Variable | Description |
 |----------|-------------|
 | `$(TUP_CWD)` | Current Tupfile directory (relative to root) |
-| `$(TUP_ROOT)` | Path to project root from current directory |
 | `$(TUP_PLATFORM)` | Platform: `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | Architecture: `x86_64`, `arm`, etc. |
 | `$(TUP_VARIANTDIR)` | Variant output directory (variant builds) |
@@ -631,7 +630,7 @@ $(CC)                 # Regular variable
 **Examples:**
 ```tup
 CC = gcc
-CFLAGS = -Wall -I$(TUP_ROOT)/include
+CFLAGS = -Wall -I$(TUP_CWD)/../include
 
 # Use config variable with default
 OPTIMIZE = @(OPTIMIZE:-O2)
@@ -845,8 +844,9 @@ Groups can be referenced across directories:
 
 ```tup
 # Tuprules.tup
+ROOT = $(TUP_CWD)
 CC = gcc
-CFLAGS = -Wall -I$(TUP_ROOT)/include
+CFLAGS = -Wall -I$(ROOT)/include
 !cc = |> ^ CC %o^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 
 # lib/Tupfile
@@ -1064,7 +1064,7 @@ CONFIG_CFLAGS=-g -O0 -DDEBUG
 
 2. Create the variant:
 ```bash
-putup configure -B build-debug configs
+putup configure -B build-debug
 # Creates build-debug/ directory and build-debug/tup.config
 ```
 
@@ -2241,7 +2241,6 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `$(TUP_CWD)` | Current Tupfile dir (relative) | `src/lib` |
-| `$(TUP_ROOT)` | Path to root from current dir | `../..` |
 | `$(TUP_PLATFORM)` | Platform name | `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | CPU architecture | `x86_64`, `arm`, `aarch64` |
 | `$(TUP_VARIANTDIR)` | Variant output dir | `../build-debug/src` |

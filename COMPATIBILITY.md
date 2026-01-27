@@ -23,95 +23,28 @@ Putup uses Tup's Tupfile syntax. This document covers supported features and dif
 | `tup options` | - | ❌ Not implemented |
 | `tup dbconfig` | - | ❌ Not implemented |
 
-## Tupfile Syntax
+## Tupfile Syntax Support
 
-### Rules
+See [docs/reference.md](docs/reference.md#5-tupfile-syntax) for complete syntax documentation.
 
-```tup
-: [foreach] inputs [| order-only] |> command |> outputs [{group}]
-```
+### Implementation Status
 
-✅ **Fully supported** including:
-- `foreach` for per-input rule expansion
-- Multiple inputs and outputs
-- Order-only dependencies with `|`
-- Output groups with `{groupname}`
-- Display text with `^ text ^`
-
-### Variables
-
-| Syntax | Description | Status |
-|--------|-------------|--------|
-| `VAR = value` | Assignment | ✅ |
-| `VAR += value` | Append | ✅ |
-| `VAR := value` | Immediate (no expansion) | ✅ |
-| `VAR ?= value` | Soft set (if undefined, first wins) | ✅ (pup extension) |
-| `VAR ??= value` | Weak set (deferred default, last wins) | ✅ (pup extension) |
-| `$(VAR)` | Variable reference | ✅ |
-| `@(VAR)` | Config variable from tup.config | ✅ |
-| `&(VAR)` | Node variable | ✅ |
-
-### Special Variables
-
-| Variable | Description | Status |
-|----------|-------------|--------|
-| `$(TUP_CWD)` | Current Tupfile directory | ✅ |
-| `$(TUP_PLATFORM)` | Operating system | ✅ |
-| `$(TUP_ARCH)` | CPU architecture | ✅ |
-| `$(TUP_VARIANTDIR)` | Relative path to variant | ✅ |
-| `$(TUP_VARIANT_OUTPUTDIR)` | Absolute variant path | ✅ |
-
-### Pattern Flags
-
-| Flag | Description | Status |
-|------|-------------|--------|
-| `%f` | All inputs | ✅ |
-| `%o` | All outputs | ✅ |
-| `%b` | Basename with extension | ✅ |
-| `%B` | Basename without extension | ✅ |
-| `%e` | Extension (foreach only) | ✅ |
-| `%d` | Directory name | ✅ |
-| `%g` | Glob match portion | ✅ |
-| `%O` | Output directory | ✅ |
-| `%1f`, `%2f` | Nth input | ✅ |
-| `%1o`, `%2o` | Nth output | ✅ |
-| `%%` | Literal % | ✅ |
-
-### Bang Macros
-
-```tup
-!cc = |> ^ CC %o^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
-: foreach *.c |> !cc |> {objs}
-```
-
-✅ **Fully supported** including:
-- Macro definition with command and outputs
-- Display text in macros
-- Macro invocation in rules
-
-### Conditionals
-
-| Syntax | Status |
-|--------|--------|
-| `ifdef VAR` | ✅ |
-| `ifndef VAR` | ✅ |
-| `ifeq ($(VAR),value)` | ✅ |
-| `ifneq ($(VAR),value)` | ✅ |
-| `else` | ✅ |
-| `endif` | ✅ |
-
-### Directives
-
-| Directive | Description | Status |
-|-----------|-------------|--------|
-| `include path` | Include file | ✅ |
-| `include_rules` | Include Tuprules.tup chain | ✅ |
-| `.gitignore` | Generate .gitignore for outputs | ✅ |
-| `export VAR` | Export to command environment | ✅ |
-| `import VAR[=default]` | Import from environment | ✅ |
-| `run ./script` | Execute script for rules | ❌ Not implemented |
-| `preload dir` | Allow wildcards in subdir | ❌ Not implemented |
-| `error message` | Halt with error | ❌ Not implemented |
+| Feature | Status |
+|---------|--------|
+| Rules (`: inputs \|> command \|> outputs`) | ✅ Implemented |
+| foreach rules | ✅ Implemented |
+| Variables (`=`, `+=`, `:=`) | ✅ Implemented |
+| Soft/weak set (`?=`, `??=`) | ✅ Implemented (extension) |
+| Config variables (`@(VAR)`) | ✅ Implemented |
+| Node variables (`&(VAR)`) | ✅ Implemented |
+| Pattern flags (`%f`, `%o`, `%B`, etc.) | ✅ Implemented |
+| Bang macros (`!name`) | ✅ Implemented |
+| Conditionals (`ifdef`, `ifeq`, etc.) | ✅ Implemented |
+| Groups and bins (`{group}`, `<group>`) | ✅ Implemented |
+| Directives (`include`, `export`, `import`) | ✅ Implemented |
+| `run` directive | ❌ Not implemented |
+| `preload` directive | ⚠️ Parsed, not enforced |
+| `error` directive | ❌ Not implemented |
 
 ### Groups and Bins
 
