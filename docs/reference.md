@@ -383,6 +383,7 @@ putup show var CFLAGS --json
 | `-k` | `--keep-going` | Continue building after a command fails. |
 | `-n` | `--dry-run` | Print commands without executing them. |
 | `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
+| `-D VAR=val` | `--define` | Override CONFIG_ variable from CLI. |
 | `-S DIR` | | Source directory. Overrides auto-detection. |
 | `-C DIR` | `--config-dir` | Config directory (where Tupfiles live). |
 | `-B DIR` | | Build/output directory (can use multiple times). |
@@ -404,6 +405,31 @@ Controls parallel execution. Putup runs independent commands concurrently up to 
 putup -j1      # Sequential build
 putup -j8      # 8 parallel jobs
 putup -j$(nproc)  # Use all cores (default behavior)
+```
+
+**`-D, --define VAR=value` (Config Override)**
+
+Override CONFIG_ variables from the command line without modifying tup.config files. Follows GCC/CMake conventions.
+
+```bash
+putup -D CC=clang              # Override CONFIG_CC
+putup -D DEBUG                 # Shorthand for -D DEBUG=y
+putup -DDEBUG -DCC=clang       # GCC-style (no space)
+putup -D CFLAGS="-O0 -g"       # Values with spaces (quoted)
+```
+
+The CONFIG_ prefix is optional and stripped automatically:
+
+```bash
+putup -D CC=clang              # Sets CONFIG_CC
+putup -D CONFIG_CC=clang       # Same effect
+```
+
+CLI overrides have highest precedence, overriding values from tup.config:
+
+```bash
+# tup.config has CONFIG_TESTS=y
+putup -D TESTS=n show script   # Generate script without tests
 ```
 
 **`-S DIR` (Source Directory)**
@@ -884,6 +910,18 @@ CONFIG_VERSION="1.0.0"
 - Variable names must start with `CONFIG_`
 - Values can be quoted (quotes are stripped)
 - Empty lines and comments (`#`) are ignored
+
+**CLI Overrides:**
+
+Config variables can be overridden from the command line using `-D`:
+
+```bash
+putup -D CC=clang           # Override CONFIG_CC
+putup -D DEBUG=n            # Disable CONFIG_DEBUG
+putup -DDEBUG -DCC=clang    # Multiple overrides
+```
+
+CLI overrides have highest precedence and apply to all scoped configs.
 
 **Usage in Tupfiles:**
 
