@@ -499,7 +499,13 @@ auto clear_path_cache(Graph& graph) -> void
 
 auto set_build_root_name(Graph& graph, std::string name) -> void
 {
-    graph.files[BUILD_ROOT_ID].name = graph.strings.intern(name);
+    auto name_id = graph.strings.intern(name);
+    graph.files[BUILD_ROOT_ID].name = name_id;
+
+    // Register in dir_name_index so lookups for "build" find BUILD_ROOT_ID
+    // (BUILD_ROOT_ID was created with empty name, so wasn't indexed initially)
+    graph.dir_name_index[DirNameKey { SOURCE_ROOT_ID, name_id }] = BUILD_ROOT_ID;
+
     graph.path_cache.clear(); // Invalidate all cached paths
 }
 
