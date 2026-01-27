@@ -1,0 +1,6 @@
+# Test WeakSet (??=) with config var - last wins, deferred until rule
+# First ??= uses @(OPT1), second ??= uses @(OPT2) - second should win
+MYFLAGS ??= -DLEVEL=@(OPT1)
+MYFLAGS ??= -DLEVEL=@(OPT2)
+
+: main.c |> gcc $(MYFLAGS) -o %o %f |> program

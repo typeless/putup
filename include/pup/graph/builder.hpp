@@ -57,6 +57,14 @@ struct BangMacroDef {
     std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
+/// Pending weak assignment with captured dependencies
+struct PendingWeakAssignment {
+    std::string name;
+    std::string value;
+    std::set<std::string> config_deps; ///< Config vars used in RHS
+    std::set<std::string> env_deps;    ///< Env vars used in RHS
+};
+
 /// Context for building the graph (per-Tupfile state)
 struct BuilderContext {
     BuildGraph* graph = nullptr;
@@ -82,8 +90,8 @@ struct BuilderContext {
     std::vector<std::string> errors = {};
     std::vector<std::string> warnings = {};
 
-    /// Pending weak (??=) assignments - applied at end of Tupfile, last wins
-    std::vector<std::pair<std::string, std::string>> pending_weak_assignments = {};
+    /// Pending weak (??=) assignments - applied before rules, last wins
+    std::vector<PendingWeakAssignment> pending_weak_assignments = {};
 };
 
 // ============================================================================
@@ -146,6 +154,15 @@ struct BuilderState {
 
     /// Set of imported variable names (for tracking which vars are imported)
     std::unordered_set<std::string> imported_var_names;
+
+    /// Track which regular variables depend on config vars (for transitive tracking)
+    /// When CXXFLAGS = @(RELEASE_CXXFLAGS), record: var_config_deps["CXXFLAGS"] = {"RELEASE_CXXFLAGS"}
+    std::unordered_map<std::string, std::set<std::string>, parser::StringHash, std::equal_to<>>
+        var_config_deps;
+
+    /// Track which regular variables depend on imported env vars (for transitive tracking)
+    std::unordered_map<std::string, std::set<std::string>, parser::StringHash, std::equal_to<>>
+        var_env_deps;
 };
 
 // ============================================================================

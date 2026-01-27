@@ -101,6 +101,18 @@ struct EvalContext {
     /// Called with the variable name when an imported env var is accessed via $(VAR).
     std::function<void(std::string_view name)> on_env_var_used = {};
 
+    /// Map of regular variable names to their transitive config var dependencies.
+    /// When a variable is assigned a value containing @(CONFIG_VAR), record the dependency.
+    /// When that variable is later expanded, propagate the dependency via on_config_var_used.
+    std::unordered_map<std::string, std::set<std::string>, StringHash, std::equal_to<>> const*
+        var_config_deps
+        = nullptr;
+
+    /// Map of regular variable names to their transitive env var dependencies.
+    std::unordered_map<std::string, std::set<std::string>, StringHash, std::equal_to<>> const*
+        var_env_deps
+        = nullptr;
+
     /// Callback for tracking variable assignments (for show var command)
     /// Called when a variable is assigned with the variable name, operator, before/after values,
     /// filename, line/column, and whether the assignment was effective.

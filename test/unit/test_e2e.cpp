@@ -707,6 +707,147 @@ SCENARIO("Fine-grained config variable tracking with $(CONFIG_VAR) syntax", "[e2
     }
 }
 
+SCENARIO("Fine-grained config variable tracking with indirect usage", "[e2e][incremental][config]")
+{
+    GIVEN("a project with config var used through a regular variable")
+    {
+        auto f = E2EFixture { "config_var_indirect" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=x\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+            WHEN("an unused config variable changes")
+            {
+                f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=y\n");
+                auto result = f.build({ "-B", "build" });
+
+                THEN("no rebuild occurs")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE(result.is_noop());
+                }
+            }
+
+            WHEN("the indirectly-used config variable changes")
+            {
+                f.write_file("build/tup.config", "CONFIG_OPT=2\nCONFIG_UNUSED=x\n");
+                auto result = f.build({ "-B", "build" });
+
+                THEN("rebuild occurs even though command uses $(MYFLAGS) not @(OPT)")
+                {
+                    // THIS IS THE KEY ASSERTION - currently fails
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                }
+
+                THEN("output reflects the new config")
+                {
+                    REQUIRE(f.run("build/program").stdout_output == "Optimization: 2\n");
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("SoftSet with config var only records deps when effective", "[e2e][incremental][config]")
+{
+    GIVEN("a project using ?= with config var")
+    {
+        auto f = E2EFixture { "config_var_softset" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_OTHER=x\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.run("build/program").stdout_output == "Level: 1\n");
+        REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+        WHEN("used config var changes and ?= was effective")
+        {
+            f.write_file("build/tup.config", "CONFIG_OPT=2\nCONFIG_OTHER=x\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("rebuild occurs because MYFLAGS depends on OPT")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.run("build/program").stdout_output == "Level: 2\n");
+            }
+        }
+    }
+
+    GIVEN("a project where MYFLAGS is already set before ?=")
+    {
+        auto f = E2EFixture { "config_var_softset" };
+        f.mkdir("build");
+        // Pre-set MYFLAGS so ?= is ineffective
+        f.write_file("Tuprules.tup", "MYFLAGS = -DLEVEL=99\n");
+        f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_OTHER=x\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.run("build/program").stdout_output == "Level: 99\n");
+        REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+        WHEN("the config var that ?= would have used changes")
+        {
+            f.write_file("build/tup.config", "CONFIG_OPT=2\nCONFIG_OTHER=x\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("no rebuild because ?= was ineffective - MYFLAGS doesn't depend on OPT")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("WeakSet with config var records deps only for winning assignment", "[e2e][incremental][config]")
+{
+    GIVEN("a project with multiple weak assignments using different config vars")
+    {
+        auto f = E2EFixture { "config_var_weakset" };
+        f.mkdir("build");
+        // OPT2=5 wins (last ??= assignment), OPT1=1 is ignored
+        f.write_file("build/tup.config", "CONFIG_OPT1=1\nCONFIG_OPT2=5\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        // Should use OPT2 (last wins)
+        REQUIRE(f.run("build/program").stdout_output == "Level: 5\n");
+        REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+        WHEN("the losing config var (OPT1) changes")
+        {
+            f.write_file("build/tup.config", "CONFIG_OPT1=99\nCONFIG_OPT2=5\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("no rebuild because MYFLAGS only depends on OPT2 (the winner)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+
+        WHEN("the winning config var (OPT2) changes")
+        {
+            f.write_file("build/tup.config", "CONFIG_OPT1=1\nCONFIG_OPT2=7\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("rebuild occurs because MYFLAGS depends on OPT2")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.run("build/program").stdout_output == "Level: 7\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Touch does not trigger unnecessary rebuild", "[e2e][incremental]")
 {
     GIVEN("a built project with source files")

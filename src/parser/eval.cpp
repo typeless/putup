@@ -134,10 +134,30 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
         if (ref.kind == VarRef::Kind::Config && ctx.on_config_var_used) {
             ctx.on_config_var_used(ref.name);
         }
+        // Propagate transitive config var dependencies for regular variables
+        // If CXXFLAGS was assigned from @(RELEASE_CXXFLAGS), using $(CXXFLAGS)
+        // should trigger the RELEASE_CXXFLAGS dependency
+        if (ref.kind == VarRef::Kind::Regular && ctx.var_config_deps && ctx.on_config_var_used) {
+            auto it = ctx.var_config_deps->find(ref.name); // heterogeneous lookup
+            if (it != ctx.var_config_deps->end()) {
+                for (auto const& dep : it->second) {
+                    ctx.on_config_var_used(dep);
+                }
+            }
+        }
         // Track imported env variable usage for fine-grained dependency tracking
         if (ref.kind == VarRef::Kind::Regular && ctx.imported_vars
             && ctx.imported_vars->contains(ref.name) && ctx.on_env_var_used) {
             ctx.on_env_var_used(ref.name);
+        }
+        // Propagate transitive env var dependencies for regular variables
+        if (ref.kind == VarRef::Kind::Regular && ctx.var_env_deps && ctx.on_env_var_used) {
+            auto it = ctx.var_env_deps->find(ref.name); // heterogeneous lookup
+            if (it != ctx.var_env_deps->end()) {
+                for (auto const& dep : it->second) {
+                    ctx.on_env_var_used(dep);
+                }
+            }
         }
         return std::string { db->get(ref.name) };
     }

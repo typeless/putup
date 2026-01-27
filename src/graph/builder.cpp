@@ -428,6 +428,7 @@ auto process_bang_macro(
 
 auto process_assignment(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Assignment const& assign
 ) -> Result<void>;
 
@@ -755,7 +756,7 @@ auto process_statement(
     }
 
     if (auto const* assign = stmt.as<parser::Assignment>()) {
-        return process_assignment(ctx, *assign);
+        return process_assignment(ctx, state, *assign);
     }
 
     if (auto const* cond = stmt.as<parser::Conditional>()) {
@@ -777,6 +778,30 @@ auto process_statement(
     return {};
 }
 
+/// Apply pending weak assignments (??=) - last wins for each variable name
+/// Iterates in reverse order so later assignments take precedence
+auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) -> void
+{
+    if (!ctx.vars || ctx.pending_weak_assignments.empty()) {
+        return;
+    }
+    for (auto it = ctx.pending_weak_assignments.rbegin();
+         it != ctx.pending_weak_assignments.rend();
+         ++it) {
+        if (!ctx.vars->contains(it->name)) {
+            ctx.vars->set(it->name, it->value);
+            // Record transitive dependencies for this effective assignment
+            if (!it->config_deps.empty()) {
+                state.var_config_deps[it->name] = std::move(it->config_deps);
+            }
+            if (!it->env_deps.empty()) {
+                state.var_env_deps[it->name] = std::move(it->env_deps);
+            }
+        }
+    }
+    ctx.pending_weak_assignments.clear();
+}
+
 auto process_rule(
     BuilderContext& ctx,
     BuilderState& state,
@@ -785,16 +810,7 @@ auto process_rule(
 {
     // Apply any pending weak assignments (??=) before expanding commands
     // This ensures ??= assignments that precede rules take effect
-    if (ctx.vars && !ctx.pending_weak_assignments.empty()) {
-        for (auto it = ctx.pending_weak_assignments.rbegin();
-             it != ctx.pending_weak_assignments.rend();
-             ++it) {
-            if (!ctx.vars->contains(it->first)) {
-                ctx.vars->set(it->first, it->second);
-            }
-        }
-        ctx.pending_weak_assignments.clear();
-    }
+    apply_pending_weak_assignments(ctx, state);
 
     // Expand input patterns
     auto inputs = Result<std::vector<std::string>> { expand_inputs(ctx, rule.inputs) };
@@ -859,6 +875,7 @@ auto process_bang_macro(
 
 auto process_assignment(
     BuilderContext& ctx,
+    BuilderState& state,
     parser::Assignment const& assign
 ) -> Result<void>
 {
@@ -868,11 +885,28 @@ auto process_assignment(
         return pup::unexpected<Error>(name.error());
     }
 
-    // Evaluate the value
+    // Save current tracking state and clear for value expansion
+    // This lets us capture which config/env vars are used in the RHS
+    auto saved_config_vars = std::move(ctx.used_config_vars);
+    auto saved_env_vars = std::move(ctx.used_env_vars);
+    ctx.used_config_vars.clear();
+    ctx.used_env_vars.clear();
+
+    // Evaluate the value - callbacks will populate used_*_vars
     auto value = parser::expand(*ctx.eval, assign.value);
     if (!value) {
+        ctx.used_config_vars = std::move(saved_config_vars);
+        ctx.used_env_vars = std::move(saved_env_vars);
         return pup::unexpected<Error>(value.error());
     }
+
+    // Capture the dependencies from RHS expansion
+    auto captured_config_deps = std::move(ctx.used_config_vars);
+    auto captured_env_deps = std::move(ctx.used_env_vars);
+
+    // Restore tracking state
+    ctx.used_config_vars = std::move(saved_config_vars);
+    ctx.used_env_vars = std::move(saved_env_vars);
 
     // Config variables are read-only (loaded from tup.config), so only Regular and Node are writable
     auto* db = ctx.eval->vars;
@@ -887,28 +921,62 @@ auto process_assignment(
     auto value_before = std::string { db->get(*name) };
     auto is_effective = true;
 
+    // Helper to record transitive dependencies for this variable
+    auto record_deps = [&]() {
+        if (!captured_config_deps.empty()) {
+            auto& deps = state.var_config_deps[*name];
+            if (assign.op == parser::Assignment::Op::Set
+                || assign.op == parser::Assignment::Op::Define
+                || assign.op == parser::Assignment::Op::SoftSet) {
+                deps = std::move(captured_config_deps);
+            } else if (assign.op == parser::Assignment::Op::Append) {
+                deps.merge(captured_config_deps);
+            }
+        }
+        if (!captured_env_deps.empty()) {
+            auto& deps = state.var_env_deps[*name];
+            if (assign.op == parser::Assignment::Op::Set
+                || assign.op == parser::Assignment::Op::Define
+                || assign.op == parser::Assignment::Op::SoftSet) {
+                deps = std::move(captured_env_deps);
+            } else if (assign.op == parser::Assignment::Op::Append) {
+                deps.merge(captured_env_deps);
+            }
+        }
+    };
+
     switch (assign.op) {
     case parser::Assignment::Op::Set:
         db->set(*name, *value);
+        record_deps();
         break;
     case parser::Assignment::Op::Append:
         db->append(*name, *value);
+        record_deps();
         break;
     case parser::Assignment::Op::Define:
-        // := means no further expansion
         db->set(*name, *value);
+        record_deps();
         break;
     case parser::Assignment::Op::SoftSet:
         // ?= - set only if variable is not already defined (first wins)
+        // Only record deps if assignment is effective
         if (!db->contains(*name)) {
             db->set(*name, *value);
+            record_deps();
         } else {
             is_effective = false;
         }
         break;
     case parser::Assignment::Op::WeakSet:
-        // ??= - deferred assignment, applied at end of Tupfile (last wins)
-        ctx.pending_weak_assignments.emplace_back(*name, *value);
+        // ??= - deferred assignment, applied before rules (last wins)
+        // Store deps with the pending assignment; they'll be recorded when applied
+        ctx.pending_weak_assignments.push_back(PendingWeakAssignment {
+            .name = *name,
+            .value = *value,
+            .config_deps = std::move(captured_config_deps),
+            .env_deps = std::move(captured_env_deps),
+        });
         break;
     }
 
@@ -1969,6 +2037,8 @@ auto make_builder_state(BuilderOptions opts) -> BuilderState
         .env_var_dir_id = INVALID_NODE_ID,
         .imported_env_var_nodes = {},
         .imported_var_names = {},
+        .var_config_deps = {},
+        .var_env_deps = {},
     };
 }
 
@@ -2108,6 +2178,12 @@ auto add_tupfile(
         ctx.used_env_vars.insert(std::string { name });
     };
 
+    // Wire up transitive dependency maps for variable tracking
+    // When $(CXXFLAGS) is expanded and CXXFLAGS depends on @(RELEASE_CXXFLAGS),
+    // the propagation in eval.cpp will call on_config_var_used("RELEASE_CXXFLAGS")
+    eval.var_config_deps = &state.var_config_deps;
+    eval.var_env_deps = &state.var_env_deps;
+
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
                          ) -> std::vector<std::string> {
@@ -2158,16 +2234,7 @@ auto add_tupfile(
     }
 
     // Apply pending weak assignments (??=) - last wins
-    // Process in reverse order so earlier assignments are checked against later ones
-    if (ctx.vars && !ctx.pending_weak_assignments.empty()) {
-        for (auto it = ctx.pending_weak_assignments.rbegin();
-             it != ctx.pending_weak_assignments.rend();
-             ++it) {
-            if (!ctx.vars->contains(it->first)) {
-                ctx.vars->set(it->first, it->second);
-            }
-        }
-    }
+    apply_pending_weak_assignments(ctx, state);
 
     // Copy errors and warnings
     for (auto& err : ctx.errors) {

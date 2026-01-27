@@ -1,0 +1,5 @@
+# Config var used INDIRECTLY through regular variable
+# This is the key difference from config_var_tracking fixture
+MYFLAGS = -DOPT_LEVEL=@(OPT)
+
+: main.c |> gcc $(MYFLAGS) -o %o %f |> program

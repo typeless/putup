@@ -1,0 +1,6 @@
+# Test SoftSet (?=) with config var - only effective if not already set
+include_rules
+
+MYFLAGS ?= -DLEVEL=@(OPT)
+
+: main.c |> gcc $(MYFLAGS) -o %o %f |> program
