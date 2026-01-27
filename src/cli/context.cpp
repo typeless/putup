@@ -104,7 +104,8 @@ struct TupfileParseState {
     std::set<std::filesystem::path> available;
     std::set<std::filesystem::path> parsed;
     std::set<std::filesystem::path> parsing;
-    std::map<std::filesystem::path, parser::VarDb> scoped_configs; // Cache of per-dir configs
+    std::map<std::filesystem::path, parser::VarDb> scoped_configs;                    // Cache of per-dir configs
+    std::vector<std::pair<std::string, std::string>> const* config_defines = nullptr; // CLI overrides
 };
 
 auto compute_tup_variantdir(
@@ -207,6 +208,21 @@ auto discover_tupfile_dirs(
     return dirs;
 }
 
+/// Apply CLI config overrides to a VarDb
+auto apply_config_overrides(
+    parser::VarDb& config,
+    std::vector<std::pair<std::string, std::string>> const* defines
+) -> void
+{
+    if (!defines) {
+        return;
+    }
+    for (auto const& [name, value] : *defines) {
+        config.set(name, value);
+        config.set("CONFIG_" + name, value);
+    }
+}
+
 /// Find the tup.config for a directory by walking up the tree
 /// Returns pointer to the cached VarDb for that directory
 auto find_config_for_dir(
@@ -230,6 +246,7 @@ auto find_config_for_dir(
             // Found a config - load and cache it
             auto config_result = parser::parse_config(config_path);
             if (config_result) {
+                apply_config_overrides(*config_result, state.config_defines);
                 auto [it, _] = state.scoped_configs.emplace(normalized, std::move(*config_result));
                 return &it->second;
             }
@@ -609,6 +626,20 @@ auto build_context(
                 printf("Loaded %zu config variables from %s\n", ctx.impl_->config_vars.names().size(), config_path.string().c_str());
             }
         }
+    }
+
+    // Apply -D config overrides (highest precedence)
+    for (auto const& [name, value] : opts.config_defines) {
+        ctx.impl_->config_vars.set(name, value);
+        ctx.impl_->config_vars.set("CONFIG_" + name, value);
+        if (ctx_opts.verbose) {
+            printf("-D %s=%s\n", name.c_str(), value.c_str());
+        }
+    }
+
+    // Store config_defines for scoped configs to use
+    if (!opts.config_defines.empty()) {
+        ctx.impl_->state.config_defines = &opts.config_defines;
     }
 
     // 5. Load index

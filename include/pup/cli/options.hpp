@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pup::cli {
@@ -12,6 +13,9 @@ namespace pup::cli {
 /// Command-line options
 struct Options {
     std::size_t jobs = 0;
+    /// Config variable overrides from -D flags
+    /// Key is stripped name (e.g., "CC" not "CONFIG_CC")
+    std::vector<std::pair<std::string, std::string>> config_defines = {};
     bool keep_going = false;
     bool verbose = false;
     bool dry_run = false;

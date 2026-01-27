@@ -22,6 +22,27 @@ auto is_command(std::string_view arg) -> bool
         || arg == "configure";
 }
 
+auto strip_config_prefix(std::string_view name) -> std::string_view
+{
+    constexpr auto CONFIG_PREFIX = std::string_view { "CONFIG_" };
+    if (name.starts_with(CONFIG_PREFIX)) {
+        return name.substr(CONFIG_PREFIX.size());
+    }
+    return name;
+}
+
+auto parse_define(std::string_view arg) -> std::pair<std::string, std::string>
+{
+    auto eq = arg.find('=');
+    if (eq == std::string_view::npos) {
+        auto name = strip_config_prefix(arg);
+        return { std::string { name }, "y" };
+    }
+    auto name = strip_config_prefix(arg.substr(0, eq));
+    auto value = std::string { arg.substr(eq + 1) };
+    return { std::string { name }, value };
+}
+
 } // namespace
 
 auto parse_args(int argc, char** argv) -> Options
@@ -81,6 +102,12 @@ auto parse_args(int argc, char** argv) -> Options
             opts.include_all_deps = true;
         } else if (arg == "-A" || arg == "--all") {
             opts.all = true;
+        } else if (arg == "-D" || arg == "--define") {
+            if (i + 1 < argc) {
+                opts.config_defines.push_back(parse_define(argv[++i]));
+            }
+        } else if (arg.starts_with("-D")) {
+            opts.config_defines.push_back(parse_define(arg.substr(2)));
         } else if (arg == "--") {
             for (++i; i < argc; ++i) {
                 opts.targets.emplace_back(argv[i]);
@@ -124,6 +151,8 @@ auto print_usage() -> void
            "  -k, --keep-going   Continue after failures\n"
            "  -n, --dry-run      Print commands without executing\n"
            "  -v, --verbose      Verbose output\n"
+           "  -D, --define VAR=value\n"
+           "                     Override config variable (-D VAR is shorthand for -D VAR=y)\n"
            "  -S DIR             Source directory (where source files live)\n"
            "  -C DIR             Config directory (where Tupfiles live)\n"
            "  -B DIR             Build/output directory (can use multiple times)\n"
