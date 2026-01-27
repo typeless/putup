@@ -11,7 +11,6 @@
 #include "pup/core/path_utils.hpp"
 #include "pup/core/terminal.hpp"
 #include "pup/core/types.hpp"
-#include "pup/core/y_combinator.hpp"
 #include "pup/exec/progress_display.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
@@ -32,14 +31,6 @@
 namespace pup::cli {
 
 namespace {
-
-auto resolve_path(
-    std::filesystem::path const& path,
-    std::filesystem::path const& root
-) -> std::filesystem::path
-{
-    return path.is_absolute() ? path : root / path;
-}
 
 auto print_stats(
     pup::index::Index const& index,
@@ -70,6 +61,38 @@ auto print_stats(
     }
 }
 
+auto strip_build_root_prefix(std::string& path, std::string_view build_root_name) -> void
+{
+    if (!build_root_name.empty()) {
+        auto prefix_len = build_root_name.size() + 1;
+        if (path.size() > build_root_name.size() && path.starts_with(build_root_name) && path[build_root_name.size()] == '/') {
+            path = path.substr(prefix_len);
+        }
+    }
+}
+
+template<typename... Args>
+auto vprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
+{
+    printf("[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
+    if constexpr (sizeof...(args) == 0) {
+        printf("%s", fmt);
+    } else {
+        printf(fmt, std::forward<Args>(args)...);
+    }
+}
+
+template<typename... Args>
+auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
+{
+    fprintf(stderr, "[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
+    if constexpr (sizeof...(args) == 0) {
+        fprintf(stderr, "%s", fmt);
+    } else {
+        fprintf(stderr, fmt, std::forward<Args>(args)...);
+    }
+}
+
 auto is_tupfile(std::string_view path) -> bool
 {
     return path.ends_with("/Tupfile") || path.ends_with("/Tuprules.tup")
@@ -90,11 +113,38 @@ auto collect_upstream_files(
 
     auto upstream = std::set<std::string> {};
     auto visited = std::set<pup::NodeId> {};
+    auto stack = std::vector<pup::NodeId> {};
 
-    // Recursive helper to collect inputs
-    auto collect = pup::YCombinator { [&](auto const& self, pup::NodeId id) -> void {
+    // Find commands in scope and seed the stack with their inputs
+    for (auto id : graph.all_nodes()) {
+        if (!pup::is_command_id(id)) {
+            continue;
+        }
+        auto const* node = graph.get_command_node(id);
+        if (!node) {
+            continue;
+        }
+
+        auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
+        if (!pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
+            continue;
+        }
+
+        for (auto input_id : graph.get_inputs(id)) {
+            stack.push_back(input_id);
+        }
+        for (auto dep_id : graph.get_order_only(id)) {
+            stack.push_back(dep_id);
+        }
+    }
+
+    // Walk upstream iteratively
+    while (!stack.empty()) {
+        auto id = stack.back();
+        stack.pop_back();
+
         if (!visited.insert(id).second) {
-            return;
+            continue;
         }
 
         if (!pup::is_command_id(id)) {
@@ -107,39 +157,11 @@ auto collect_upstream_files(
             }
         }
 
-        // Walk to inputs (upstream)
         for (auto input_id : graph.get_inputs(id)) {
-            self(input_id);
-        }
-
-        // Also follow order-only deps
-        for (auto dep_id : graph.get_order_only(id)) {
-            self(dep_id);
-        }
-    } };
-
-    // Find commands in scope and collect their upstream deps
-    for (auto id : graph.all_nodes()) {
-        if (!pup::is_command_id(id)) {
-            continue;
-        }
-        auto const* node = graph.get_command_node(id);
-        if (!node) {
-            continue;
-        }
-
-        // Check if command's source_dir is in any scope
-        auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
-        if (!pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
-            continue;
-        }
-
-        // Collect all inputs for this command
-        for (auto input_id : graph.get_inputs(id)) {
-            collect(input_id);
+            stack.push_back(input_id);
         }
         for (auto dep_id : graph.get_order_only(id)) {
-            collect(dep_id);
+            stack.push_back(dep_id);
         }
     }
 
@@ -176,7 +198,8 @@ auto find_changed_files_with_implicit(
         // Paths are source-relative. Generated files exist at output_root,
         // source files exist at source_root.
         auto const& root = (file.type == pup::NodeType::Generated) ? output_root : source_root;
-        auto path = resolve_path(file.path, root);
+        auto file_path = std::filesystem::path { file.path };
+        auto path = file_path.is_absolute() ? file_path : root / file_path;
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
@@ -360,9 +383,8 @@ auto serialize_graph_nodes(
                 continue;
             }
 
-            auto build_root_name = std::string { graph.get_build_root_name() };
-            if (node->type == pup::NodeType::Generated && !build_root_name.empty() && node_path.starts_with(build_root_name + "/")) {
-                node_path = node_path.substr(build_root_name.size() + 1);
+            if (node->type == pup::NodeType::Generated) {
+                strip_build_root_prefix(node_path, graph.get_build_root_name());
             }
 
             auto file_path = (node->type == pup::NodeType::Generated)
@@ -399,9 +421,8 @@ auto serialize_graph_nodes(
             path_to_id[node_path] = id;
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = graph.get_full_path(id);
-            auto build_root_name = std::string { graph.get_build_root_name() };
-            if (node->type == pup::NodeType::GeneratedDir && !build_root_name.empty() && node_path.starts_with(build_root_name + "/")) {
-                node_path = node_path.substr(build_root_name.size() + 1);
+            if (node->type == pup::NodeType::GeneratedDir) {
+                strip_build_root_prefix(node_path, graph.get_build_root_name());
             }
 
             auto node_name_sv = pup::graph::get_name(graph.graph(), id);
@@ -423,8 +444,8 @@ auto serialize_graph_nodes(
                 path_to_id[node_path] = id;
             }
         } else if (node->type == pup::NodeType::Variable
-            || node->type == pup::NodeType::Group
-            || node->type == pup::NodeType::Ghost) {
+                   || node->type == pup::NodeType::Group
+                   || node->type == pup::NodeType::Ghost) {
             // These node types must be in index to maintain consecutive ID sequence
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -508,7 +529,8 @@ auto process_implicit_deps(
 {
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
-            auto abs_path = resolve_path(dep_path, ctx.source_root);
+            auto dep_fs_path = std::filesystem::path { dep_path };
+            auto abs_path = dep_fs_path.is_absolute() ? dep_fs_path : ctx.source_root / dep_fs_path;
 
             auto rel_path = std::string {};
             if (pup::is_path_under(abs_path, ctx.source_root)) {
@@ -517,11 +539,7 @@ auto process_implicit_deps(
                 rel_path = abs_path.string();
             }
 
-            auto build_root_name = graph.get_build_root_name();
-            auto build_prefix = std::string { build_root_name } + "/";
-            if (!build_root_name.empty() && rel_path.starts_with(build_prefix)) {
-                rel_path = rel_path.substr(build_prefix.size());
-            }
+            strip_build_root_prefix(rel_path, graph.get_build_root_name());
 
             auto it = ctx.path_to_id.find(rel_path);
             auto dep_id = it != ctx.path_to_id.end()
@@ -568,7 +586,8 @@ auto preserve_old_implicit_edges(
         }
 
         auto new_file_it = ctx.path_to_id.find(old_file->path);
-        auto abs_path = resolve_path(old_file->path, ctx.source_root);
+        auto old_path = std::filesystem::path { old_file->path };
+        auto abs_path = old_path.is_absolute() ? old_path : ctx.source_root / old_path;
         auto new_from_id = new_file_it != ctx.path_to_id.end()
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file->path);
@@ -690,6 +709,112 @@ auto build_index(
     return index;
 }
 
+/// Validate output targets exist in the build graph.
+/// Returns node IDs on success, or empty optional with error printed on failure.
+auto validate_output_targets(
+    std::vector<std::string> const& targets,
+    pup::graph::BuildGraph const& graph,
+    std::string_view variant_name,
+    bool verbose
+) -> std::optional<std::vector<pup::NodeId>>
+{
+    auto node_ids = std::vector<pup::NodeId> {};
+    for (auto const& target : targets) {
+        auto node_id = graph.find_by_path(target, pup::BUILD_ROOT_ID);
+        if (!node_id) {
+            veprint(variant_name, "Error: %s is not in build graph\n", target.c_str());
+            return std::nullopt;
+        }
+        auto const* node = graph.get_file_node(*node_id);
+        if (!node || node->type != pup::NodeType::Generated) {
+            veprint(variant_name, "Error: %s is not a build output\n", target.c_str());
+            return std::nullopt;
+        }
+        node_ids.push_back(*node_id);
+        if (verbose) {
+            vprint(variant_name, "Output target: %s\n", target.c_str());
+        }
+    }
+    return node_ids;
+}
+
+/// Detect new commands (in graph but not index) and add their outputs to changed files.
+auto detect_new_commands(
+    pup::graph::BuildGraph const& graph,
+    pup::index::Index const& idx,
+    std::string_view variant_name,
+    bool verbose
+) -> std::vector<std::string>
+{
+    auto changed = std::vector<std::string> {};
+    for (auto id : graph.all_nodes()) {
+        if (!pup::is_command_id(id)) {
+            continue;
+        }
+        auto const* node = graph.get_command_node(id);
+        if (!node) {
+            continue;
+        }
+
+        auto cmd_sv = pup::graph::get_command_str(graph.graph(), id);
+        if (!idx.find_command_by_command(std::string { cmd_sv })) {
+            for (auto output_id : graph.get_outputs(id)) {
+                auto output_path = graph.get_full_path(output_id);
+                if (!output_path.empty()) {
+                    changed.push_back(output_path);
+                }
+            }
+            if (verbose) {
+                auto display_sv = pup::graph::get_display_str(graph.graph(), id);
+                vprint(variant_name, "  New command: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
+            }
+        }
+    }
+    return changed;
+}
+
+/// Remove stale outputs from removed commands and report them.
+auto remove_stale_outputs(
+    pup::graph::BuildGraph const& graph,
+    pup::index::Index const& idx,
+    std::filesystem::path const& output_root,
+    std::string_view variant_name,
+    bool dry_run,
+    bool verbose
+) -> void
+{
+    for (auto const& cmd : idx.commands()) {
+        if (graph.find_by_command(cmd.command)) {
+            continue;
+        }
+
+        for (auto const* edge : idx.edges_from(cmd.id)) {
+            auto const* file = idx.find_file_by_id(edge->to);
+            if (!file || file->type != pup::NodeType::Generated) {
+                continue;
+            }
+
+            auto abs_path = output_root / file->path;
+            if (std::filesystem::exists(abs_path)) {
+                if (dry_run) {
+                    vprint(variant_name, "Would remove stale: %s\n", file->path.c_str());
+                } else {
+                    auto ec = std::error_code {};
+                    if (std::filesystem::remove(abs_path, ec)) {
+                        if (verbose) {
+                            vprint(variant_name, "  Removed stale: %s\n", file->path.c_str());
+                        }
+                    }
+                }
+            }
+        }
+
+        if (verbose) {
+            vprint(variant_name, "  Removed command: %s\n", cmd.display.c_str());
+        }
+    }
+}
+
 /// Build mode precedence (highest to lowest):
 /// 1. Incremental - if old index exists and files changed
 /// 2. Targets - if specific output targets requested (and not incremental)
@@ -730,7 +855,7 @@ auto build_single_variant(
     auto scanner_registry = make_scanner_registry();
     auto* const scanner_ptr = scanner_registry ? &*scanner_registry : nullptr;
     if (scanner_ptr && opts.verbose) {
-        printf("[%.*s] Implicit dependency tracking enabled\n", static_cast<int>(variant_name.size()), variant_name.data());
+        vprint(variant_name, "Implicit dependency tracking enabled\n");
     }
 
     auto ctx_opts = BuildContextOptions {
@@ -743,7 +868,7 @@ auto build_single_variant(
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        veprint(variant_name, "Error: %s\n", result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
@@ -752,36 +877,27 @@ auto build_single_variant(
     // Build requires tup.config (configure creates it)
     auto config_path = ctx.layout().output_root / "tup.config";
     if (!std::filesystem::exists(config_path)) {
-        fprintf(stderr, "[%.*s] Error: No tup.config found. Run 'pup configure' first.\n", static_cast<int>(variant_name.size()), variant_name.data());
+        veprint(variant_name, "Error: No tup.config found. Run 'pup configure' first.\n");
         return EXIT_FAILURE;
     }
 
     auto num_commands = std::size_t { ctx.graph().nodes_of_type(pup::NodeType::Command).size() };
 
     if (num_commands == 0) {
-        printf("[%.*s] Nothing to do.\n", static_cast<int>(variant_name.size()), variant_name.data());
+        vprint(variant_name, "Nothing to do.\n");
         return EXIT_SUCCESS;
     }
 
-    // Validate output targets exist in graph and collect their NodeIds
-    // Generated outputs are stored under BUILD_ROOT_ID, not SOURCE_ROOT_ID
-    auto target_node_ids = std::vector<pup::NodeId> {};
-    for (auto const& target : opts.output_targets) {
-        auto node_id = ctx.graph().find_by_path(target, pup::BUILD_ROOT_ID);
-        if (!node_id) {
-            fprintf(stderr, "[%.*s] Error: %s is not in build graph\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
-            return EXIT_FAILURE;
-        }
-        auto const* node = ctx.graph().get_file_node(*node_id);
-        if (!node || node->type != pup::NodeType::Generated) {
-            fprintf(stderr, "[%.*s] Error: %s is not a build output\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
-            return EXIT_FAILURE;
-        }
-        target_node_ids.push_back(*node_id);
-        if (opts.verbose) {
-            printf("[%.*s] Output target: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), target.c_str());
-        }
+    auto target_ids_result = validate_output_targets(
+        opts.output_targets,
+        ctx.graph(),
+        variant_name,
+        opts.verbose
+    );
+    if (!target_ids_result) {
+        return EXIT_FAILURE;
     }
+    auto target_node_ids = std::move(*target_ids_result);
 
     auto index_path = ctx.layout().index_path();
     auto const* old_idx_ptr = ctx.old_index();
@@ -792,7 +908,7 @@ auto build_single_variant(
         auto const& idx = *old_idx_ptr;
 
         if (opts.verbose && idx.has_merkle_hashes()) {
-            printf("[%.*s] Index has Merkle hashes (v4 format)\n", static_cast<int>(variant_name.size()), variant_name.data());
+            vprint(variant_name, "Index has Merkle hashes (v4 format)\n");
         }
 
         auto scopes = compute_build_scopes(opts, ctx.layout());
@@ -802,9 +918,9 @@ auto build_single_variant(
         }
         if (opts.verbose) {
             if (scopes.empty()) {
-                printf("[%.*s] Full project build\n", static_cast<int>(variant_name.size()), variant_name.data());
+                vprint(variant_name, "Full project build\n");
             } else {
-                printf("[%.*s] Scoped build:", static_cast<int>(variant_name.size()), variant_name.data());
+                vprint(variant_name, "Scoped build:");
                 for (auto const& s : scopes) {
                     printf(" %s", s.c_str());
                 }
@@ -815,7 +931,14 @@ auto build_single_variant(
             }
         }
 
-        changed_files = find_changed_files_with_implicit(ctx.layout().source_root, ctx.layout().output_root, idx, scopes, upstream_files, opts.verbose);
+        changed_files = find_changed_files_with_implicit(
+            ctx.layout().source_root,
+            ctx.layout().output_root,
+            idx,
+            scopes,
+            upstream_files,
+            opts.verbose
+        );
         changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
 
         // Add output targets to force their rebuild
@@ -835,67 +958,20 @@ auto build_single_variant(
             }
         }
 
-        // Detect new commands (in fresh graph but not in old index)
-        for (auto id : ctx.graph().all_nodes()) {
-            if (!pup::is_command_id(id)) {
-                continue;
-            }
-            auto const* node = ctx.graph().get_command_node(id);
-            if (!node) {
-                continue;
-            }
+        auto new_cmd_outputs = detect_new_commands(ctx.graph(), idx, variant_name, opts.verbose);
+        changed_files.insert(changed_files.end(), new_cmd_outputs.begin(), new_cmd_outputs.end());
 
-            auto cmd_sv = pup::graph::get_command_str(ctx.graph().graph(), id);
-            if (!idx.find_command_by_command(std::string { cmd_sv })) {
-                for (auto output_id : ctx.graph().get_outputs(id)) {
-                    auto output_path = ctx.graph().get_full_path(output_id);
-                    if (!output_path.empty()) {
-                        changed_files.push_back(output_path);
-                    }
-                }
-                if (opts.verbose) {
-                    auto display_sv = pup::graph::get_display_str(ctx.graph().graph(), id);
-                    printf("[%.*s]   New command: %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data());
-                }
-            }
-        }
-
-        // Detect removed commands (in old index but not in fresh graph)
-        // and delete their stale outputs
-        for (auto const& cmd : idx.commands()) {
-            if (ctx.graph().find_by_command(cmd.command)) {
-                continue;
-            }
-
-            for (auto const* edge : idx.edges_from(cmd.id)) {
-                auto const* file = idx.find_file_by_id(edge->to);
-                if (!file || file->type != pup::NodeType::Generated) {
-                    continue;
-                }
-
-                // Paths are source-relative. Generated files exist at output_root.
-                auto abs_path = ctx.layout().output_root / file->path;
-                if (std::filesystem::exists(abs_path)) {
-                    if (opts.dry_run) {
-                        printf("[%.*s] Would remove stale: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file->path.c_str());
-                    } else {
-                        auto ec = std::error_code {};
-                        if (std::filesystem::remove(abs_path, ec)) {
-                            if (opts.verbose) {
-                                printf("[%.*s]   Removed stale: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file->path.c_str());
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (opts.verbose) {
-                printf("[%.*s]   Removed command: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cmd.display.c_str());
-            }
-        }
+        remove_stale_outputs(
+            ctx.graph(),
+            idx,
+            ctx.layout().output_root,
+            variant_name,
+            opts.dry_run,
+            opts.verbose
+        );
 
         if (changed_files.empty()) {
-            printf("[%.*s] Nothing to do (up to date).\n", static_cast<int>(variant_name.size()), variant_name.data());
+            vprint(variant_name, "Nothing to do (up to date).\n");
             if (opts.stat) {
                 print_stats(idx, num_commands, 0);
             }
@@ -904,7 +980,7 @@ auto build_single_variant(
 
         use_incremental = true;
         if (opts.verbose) {
-            printf("[%.*s] Incremental build: %zu changed files\n", static_cast<int>(variant_name.size()), variant_name.data(), changed_files.size());
+            vprint(variant_name, "Incremental build: %zu changed files\n", changed_files.size());
         }
     }
 
@@ -928,7 +1004,7 @@ auto build_single_variant(
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
-            printf("[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
+            vprint(variant_name, "%s\n", job.display.c_str());
         } else if (use_tty_progress) {
             auto lock = std::lock_guard { progress_mutex };
             auto target = job.outputs.empty() ? job.display : job.outputs.front();
@@ -944,7 +1020,7 @@ auto build_single_variant(
                 auto lock = std::lock_guard { progress_mutex };
                 pup::exec::finalize_progress(prev_lines);
             }
-            fprintf(stderr, "[%.*s] FAILED: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
+            veprint(variant_name, "FAILED: %s\n", job.display.c_str());
             if (!job_result.output.empty()) {
                 fprintf(stderr, "%s\n", job_result.output.c_str());
             }
@@ -1052,15 +1128,15 @@ auto build_single_variant(
     }
 
     if (!build_result) {
-        fprintf(stderr, "[%.*s] Build failed: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), build_result.error().message.c_str());
+        veprint(variant_name, "Build failed: %s\n", build_result.error().message.c_str());
         return EXIT_FAILURE;
     }
 
     auto const& stats = *build_result;
     if (stats.failed_jobs > 0) {
-        printf("[%.*s] Build completed: %zu commands (%zu failed) in %ldms\n", static_cast<int>(variant_name.size()), variant_name.data(), stats.completed_jobs, stats.failed_jobs, static_cast<long>(duration.count()));
+        vprint(variant_name, "Build completed: %zu commands (%zu failed) in %ldms\n", stats.completed_jobs, stats.failed_jobs, static_cast<long>(duration.count()));
     } else {
-        printf("[%.*s] Build completed: %zu commands in %ldms\n", static_cast<int>(variant_name.size()), variant_name.data(), stats.completed_jobs, static_cast<long>(duration.count()));
+        vprint(variant_name, "Build completed: %zu commands in %ldms\n", stats.completed_jobs, static_cast<long>(duration.count()));
     }
 
     auto final_index = std::optional<pup::index::Index> {};
@@ -1068,7 +1144,13 @@ auto build_single_variant(
         // Save index even after partial failures - successful outputs are recorded
         // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
         // and they'll be detected as changed on next build.
-        auto index = pup::index::Index { build_index(ctx.graph(), discovered_deps, ctx.layout().source_root, ctx.layout().output_root, old_idx_ptr) };
+        auto index = pup::index::Index { build_index(
+            ctx.graph(),
+            discovered_deps,
+            ctx.layout().source_root,
+            ctx.layout().output_root,
+            old_idx_ptr
+        ) };
 
         auto index_save_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
         auto write_result = pup::Result<void> { pup::index::write_index(index_path, index) };
@@ -1076,9 +1158,9 @@ auto build_single_variant(
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
-            fprintf(stderr, "[%.*s] Warning: Failed to save index: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), write_result.error().message.c_str());
+            veprint(variant_name, "Warning: Failed to save index: %s\n", write_result.error().message.c_str());
         } else if (opts.verbose) {
-            printf("[%.*s] Saved index: %zu files, %zu commands, %zu edges\n", static_cast<int>(variant_name.size()), variant_name.data(), index.file_count(), index.command_count(), index.edge_count());
+            vprint(variant_name, "Saved index: %zu files, %zu commands, %zu edges\n", index.file_count(), index.command_count(), index.edge_count());
         }
         final_index = std::move(index);
     }

@@ -16,6 +16,28 @@ namespace pup::cli {
 
 namespace {
 
+template<typename... Args>
+auto vprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
+{
+    printf("[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
+    if constexpr (sizeof...(args) == 0) {
+        printf("%s", fmt);
+    } else {
+        printf(fmt, std::forward<Args>(args)...);
+    }
+}
+
+template<typename... Args>
+auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
+{
+    fprintf(stderr, "[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
+    if constexpr (sizeof...(args) == 0) {
+        fprintf(stderr, "%s", fmt);
+    } else {
+        fprintf(stderr, fmt, std::forward<Args>(args)...);
+    }
+}
+
 auto remove_indexed_outputs(
     std::filesystem::path const& index_path,
     std::filesystem::path const& root,
@@ -27,6 +49,7 @@ auto remove_indexed_outputs(
 
     auto index_result = pup::index::read_index(index_path);
     if (!index_result) {
+        fprintf(stderr, "Warning: Could not load index: %s\n", index_result.error().message.c_str());
         return result;
     }
 
@@ -50,7 +73,7 @@ auto remove_indexed_outputs(
         }
 
         if (mode.dry_run) {
-            printf("[%.*s] Would remove: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file.path.c_str());
+            vprint(variant_name, "Would remove: %s\n", file.path.c_str());
             ++result.removed_count;
             continue;
         }
@@ -59,10 +82,10 @@ auto remove_indexed_outputs(
         if (std::filesystem::remove(abs_path, ec)) {
             ++result.removed_count;
             if (mode.verbose) {
-                printf("[%.*s] Removed: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file.path.c_str());
+                vprint(variant_name, "Removed: %s\n", file.path.c_str());
             }
         } else if (ec) {
-            fprintf(stderr, "[%.*s] Error removing %s: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), file.path.c_str(), ec.message().c_str());
+            veprint(variant_name, "Error removing %s: %s\n", file.path.c_str(), ec.message().c_str());
             ++result.error_count;
         }
     }
@@ -74,13 +97,13 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
 {
     auto ctx = resolve_clean_context(opts);
     if (!ctx) {
-        fprintf(stderr, "[%.*s] Error: No build directory found (use -B to specify)\n", static_cast<int>(variant_name.size()), variant_name.data());
+        veprint(variant_name, "Error: No build directory found (use -B to specify)\n");
         return EXIT_FAILURE;
     }
 
     auto index_path = ctx->build_dir / ".pup" / "index";
     if (!std::filesystem::exists(index_path)) {
-        printf("[%.*s] Nothing to clean (no index found)\n", static_cast<int>(variant_name.size()), variant_name.data());
+        vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
     }
 
@@ -94,9 +117,9 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     );
 
     if (opts.dry_run) {
-        printf("[%.*s] Would remove %zu files, %zu directories\n", static_cast<int>(variant_name.size()), variant_name.data(), result.removed_count, dirs_removed);
+        vprint(variant_name, "Would remove %zu files, %zu directories\n", result.removed_count, dirs_removed);
     } else {
-        printf("[%.*s] Removed %zu files, %zu directories\n", static_cast<int>(variant_name.size()), variant_name.data(), result.removed_count, dirs_removed);
+        vprint(variant_name, "Removed %zu files, %zu directories\n", result.removed_count, dirs_removed);
     }
 
     return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
@@ -106,7 +129,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
 {
     auto ctx = resolve_clean_context(opts);
     if (!ctx) {
-        fprintf(stderr, "[%.*s] Error: No build directory found (use -B to specify)\n", static_cast<int>(variant_name.size()), variant_name.data());
+        veprint(variant_name, "Error: No build directory found (use -B to specify)\n");
         return EXIT_FAILURE;
     }
 
@@ -126,10 +149,10 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto pup_dir = ctx->build_dir / ".pup";
     if (std::filesystem::exists(pup_dir)) {
         if (opts.dry_run) {
-            printf("[%.*s] Would remove: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), pup_dir.string().c_str());
+            vprint(variant_name, "Would remove: %s\n", pup_dir.string().c_str());
         } else {
             if (opts.verbose) {
-                printf("[%.*s] Removing: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), pup_dir.string().c_str());
+                vprint(variant_name, "Removing: %s\n", pup_dir.string().c_str());
             }
             std::filesystem::remove_all(pup_dir);
         }
@@ -138,10 +161,10 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto config_path = ctx->build_dir / "tup.config";
     if (std::filesystem::exists(config_path)) {
         if (opts.dry_run) {
-            printf("[%.*s] Would remove: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str());
+            vprint(variant_name, "Would remove: %s\n", config_path.string().c_str());
         } else {
             if (opts.verbose) {
-                printf("[%.*s] Removing: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str());
+                vprint(variant_name, "Removing: %s\n", config_path.string().c_str());
             }
             std::filesystem::remove(config_path);
         }
@@ -151,7 +174,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     remove_empty_directories(output_dirs, ctx->build_dir, ctx->root, mode);
 
     if (!opts.dry_run) {
-        printf("[%.*s] Project reset complete\n", static_cast<int>(variant_name.size()), variant_name.data());
+        vprint(variant_name, "Project reset complete\n");
     }
 
     return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;

@@ -357,8 +357,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 }
 
 auto output_var_text(
-    std::map<std::string, parser::VarHistory, std::less<>> const& histories,
-    std::string_view variant_name
+    std::map<std::string, parser::VarHistory, std::less<>> const& histories
 ) -> int
 {
     for (auto const& [name, history] : histories) {
@@ -367,14 +366,7 @@ auto output_var_text(
         for (auto const* assign : history.assignments) {
             auto const* prefix = assign->is_effective ? "  " : "# ";
             auto op_str = parser::op_to_string(assign->op);
-            printf("  %s%s:%u\t%s %.*s %s",
-                   prefix,
-                   assign->filename.c_str(),
-                   assign->line,
-                   assign->name.c_str(),
-                   static_cast<int>(op_str.size()),
-                   op_str.data(),
-                   assign->value_after.c_str());
+            printf("  %s%s:%u\t%s %.*s %s", prefix, assign->filename.c_str(), assign->line, assign->name.c_str(), static_cast<int>(op_str.size()), op_str.data(), assign->value_after.c_str());
             if (!assign->is_effective) {
                 printf("   (ineffective)");
             }
@@ -382,7 +374,6 @@ auto output_var_text(
         }
         printf("\n");
     }
-    (void)variant_name;
     return EXIT_SUCCESS;
 }
 
@@ -437,15 +428,15 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
     auto log = parser::AssignmentLog {};
 
     auto on_var_assigned = [&log](
-        std::string_view name,
-        parser::Assignment::Op op,
-        std::string_view value_before,
-        std::string_view value_after,
-        std::string_view filename,
-        std::uint32_t line,
-        std::uint32_t column,
-        bool is_effective
-    ) {
+                               std::string_view name,
+                               parser::Assignment::Op op,
+                               std::string_view value_before,
+                               std::string_view value_after,
+                               std::string_view filename,
+                               std::uint32_t line,
+                               std::uint32_t column,
+                               bool is_effective
+                           ) {
         log.push_back(parser::VarAssignment {
             .name = std::string { name },
             .filename = std::string { filename },
@@ -479,7 +470,7 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
 
     return opts.show_json
         ? output_var_json(histories, variant_name)
-        : output_var_text(histories, variant_name);
+        : output_var_text(histories);
 }
 
 auto show_single_variant(Options const& opts, std::string_view variant_name) -> int

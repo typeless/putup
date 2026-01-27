@@ -113,7 +113,8 @@ struct EvalContext {
         std::uint32_t line,
         std::uint32_t column,
         bool is_effective
-    )> on_var_assigned = {};
+    )>
+        on_var_assigned = {};
 };
 
 /// Pattern flags for command/output expansion

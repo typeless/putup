@@ -651,7 +651,7 @@ auto build_context(
         }
     }
 
-    // Resolve deferred order-only edges
+    // Resolve deferred order-only edges (side effect: modifies graph; return value is count, unused)
     (void)builder.resolve_deferred_order_only_edges(ctx.impl_->graph);
 
     for (auto const& warning : builder.warnings()) {

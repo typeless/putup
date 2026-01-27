@@ -11,6 +11,10 @@
 
 namespace pup::cli {
 
+namespace {
+constexpr auto ASCII_CONTROL_CHAR_MAX = static_cast<unsigned char>(0x1F);
+}
+
 auto remove_empty_directories(
     std::set<std::filesystem::path> const& output_dirs,
     std::filesystem::path const& build_dir,
@@ -93,7 +97,7 @@ auto escape_json(std::string_view s) -> std::string
             result += "\\t";
             break;
         default:
-            if (static_cast<unsigned char>(c) < 0x20) {
+            if (static_cast<unsigned char>(c) <= ASCII_CONTROL_CHAR_MAX) {
                 continue;
             }
             result += c;
