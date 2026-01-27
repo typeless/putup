@@ -10,6 +10,7 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
+#include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"
@@ -126,6 +127,11 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         }
         auto const* node = ctx.graph().get_command_node(id);
         if (!node) {
+            continue;
+        }
+
+        // Skip auto-generated dependency scanning commands (they're for incremental builds only)
+        if (node->output_action == graph::OutputAction::InjectImplicitDeps) {
             continue;
         }
 
