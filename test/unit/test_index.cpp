@@ -29,9 +29,9 @@ auto find_file_by_path(Index const& index, std::string_view path) -> FileEntry c
 
 TEST_CASE("Index format struct sizes", "[index]")
 {
-    SECTION("RawHeader is 40 bytes")
+    SECTION("RawHeader is 48 bytes (v8)")
     {
-        REQUIRE(sizeof(RawHeader) == 40);
+        REQUIRE(sizeof(RawHeader) == 48);
     }
 
     SECTION("RawFileEntry is 56 bytes")
@@ -124,9 +124,11 @@ TEST_CASE("CommandEntry conversion", "[index]")
     auto cmd = CommandEntry {
         .id = node_id::make_command(5),
         .dir_id = 5,
-        .command = "gcc -c main.c -o main.o",
+        .template_str = "gcc -c %f -o %o",
         .display = "CC main.c",
         .env = "CC=gcc",
+        .inputs = { 10 },
+        .outputs = { 20 },
     };
 
     auto raw = cmd.to_raw(0, 50, 100);
@@ -137,13 +139,18 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.env_offset == 100);
 
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
-    auto restored = CommandEntry::from_raw(raw, cmd.command, cmd.display, cmd.env, 4);
+    auto restored = CommandEntry::from_raw(
+        raw, cmd.template_str, cmd.display, cmd.env,
+        std::vector<NodeId> { 10 }, std::vector<NodeId> { 20 }, 4
+    );
 
     REQUIRE(restored.id == node_id::make_command(5));
     REQUIRE(restored.dir_id == cmd.dir_id);
-    REQUIRE(restored.command == cmd.command);
+    REQUIRE(restored.template_str == cmd.template_str);
     REQUIRE(restored.display == cmd.display);
     REQUIRE(restored.env == cmd.env);
+    REQUIRE(restored.inputs == cmd.inputs);
+    REQUIRE(restored.outputs == cmd.outputs);
 }
 
 TEST_CASE("EdgeEntry conversion", "[index]")
@@ -227,14 +234,14 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .command = "gcc foo.c" });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .command = "gcc bar.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .template_str = "gcc foo.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .template_str = "gcc bar.c" });
 
         REQUIRE(index.command_count() == 2);
 
         auto* found = index.find_command_by_id(node_id::make_command(1));
         REQUIRE(found != nullptr);
-        REQUIRE(found->command == "gcc foo.c");
+        REQUIRE(found->template_str == "gcc foo.c");
 
         REQUIRE(index.find_command_by_id(node_id::make_command(999)) == nullptr);
     }
@@ -328,12 +335,15 @@ TEST_CASE("Index serialization roundtrip", "[index]")
         .size = 8192,
     });
 
-    // Command 1
+    // Command 1 (v8: template + operands)
     index.add_command(CommandEntry {
         .id = cmd_id,
         .dir_id = 0,
-        .command = "g++ -c src/main.cpp -o build/main.o",
+        .template_str = "g++ -c %f -o %o",
         .display = "CXX main.cpp",
+        .env = {},
+        .inputs = { 3 },   // main.cpp
+        .outputs = { 4 },  // main.o
     });
 
     // Add edges (file 3 -> cmd, cmd -> file 4, file 5 -> cmd implicit)
@@ -397,8 +407,14 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     // Verify command (ID computed from position: node_id::make_command(0 + 1))
     auto* cmd = restored.find_command_by_id(cmd_id);
     REQUIRE(cmd != nullptr);
-    REQUIRE(cmd->command == "g++ -c src/main.cpp -o build/main.o");
+    REQUIRE(cmd->template_str == "g++ -c %f -o %o");
     REQUIRE(cmd->display == "CXX main.cpp");
+    REQUIRE(cmd->inputs == std::vector<NodeId> { 3 });
+    REQUIRE(cmd->outputs == std::vector<NodeId> { 4 });
+
+    // v8: Verify command reconstruction from template + operands
+    auto reconstructed = get_command_string(restored, *cmd);
+    REQUIRE(reconstructed == "g++ -c src/main.cpp -o build/main.o");
 
     // Verify header file (implicit dependency)
     auto* header = find_file_by_path(restored, "/usr/include/stdio.h");
@@ -531,7 +547,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .name = "test.c" });
-    index.add_command(CommandEntry { .id = cmd_id, .command = "gcc test.c" });
+    index.add_command(CommandEntry { .id = cmd_id, .template_str = "gcc test.c", .inputs = { 1 } });
     index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
         auto data = serialize_index(index);
@@ -764,14 +780,365 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .command = "gcc", .display = "", .env = "" });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .command = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .template_str = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .template_str = "gcc", .display = "", .env = "" });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        // v6 length-prefixed: 2 (empty) + 2 (length) + 3 (gcc) = 7
+        // v8 length-prefixed: 2 (empty) + 2 (length) + 3 (gcc) = 7
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
         REQUIRE(hdr->string_table_size == 7);
     }
+}
+
+TEST_CASE("v8 template reconstruction", "[index][v8]")
+{
+    auto index = Index {};
+
+    // Create directory structure for path reconstruction
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = "src" });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = "build" });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = "main.cpp" });
+    index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = "main.o" });
+
+    // Compute paths from parent chain
+    index.compute_paths();
+
+    SECTION("get_command_string with %f and %o")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "g++ -c %f -o %o",
+            .inputs = { 3 },   // main.cpp
+            .outputs = { 4 },  // main.o
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "g++ -c src/main.cpp -o build/main.o");
+    }
+
+    SECTION("get_command_string with %b (basename)")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "echo %b",
+            .inputs = { 3 },
+            .outputs = {},
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "echo main.cpp");
+    }
+
+    SECTION("get_command_string with %B (basename without extension)")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "echo %B",
+            .inputs = { 3 },
+            .outputs = {},
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "echo main");
+    }
+
+    SECTION("get_command_string with %e (extension)")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "echo %e",
+            .inputs = { 3 },
+            .outputs = {},
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "echo cpp");
+    }
+
+    SECTION("get_command_string with multiple inputs")
+    {
+        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = "util.cpp" });
+        index.compute_paths();
+
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "g++ -c %f -o %o",
+            .inputs = { 3, 5 },
+            .outputs = { 4 },
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "g++ -c src/main.cpp src/util.cpp -o build/main.o");
+    }
+
+    SECTION("get_command_string with %Nf (N-th input)")
+    {
+        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = "util.cpp" });
+        index.compute_paths();
+
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "echo %1f %2f",
+            .inputs = { 3, 5 },
+            .outputs = {},
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "echo src/main.cpp src/util.cpp");
+    }
+
+    SECTION("get_command_string with %% escape")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "echo 100%%",
+            .inputs = {},
+            .outputs = {},
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result == "echo 100%");
+    }
+
+    SECTION("get_command_string with empty template")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .template_str = "",
+            .inputs = {},
+            .outputs = {},
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(result.empty());
+    }
+}
+
+TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
+{
+    auto index = Index {};
+
+    // Create directory structure:
+    //   lib/foo.c, lib/foo.o
+    //   app/main.c, app/app
+    // Command runs from "app" directory, referencing "../lib/foo.o"
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = "lib", .path = "lib" });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = "app", .path = "app" });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = "foo.c", .path = "lib/foo.c" });
+    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::Generated, .name = "foo.o", .path = "lib/foo.o" });
+    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::File, .name = "main.c", .path = "app/main.c" });
+    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = "app", .path = "app/app" });
+
+    SECTION("command in subdirectory referencing sibling directory")
+    {
+        // Command runs from "app" directory, links with ../lib/foo.o
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .dir_id = 2,  // app directory
+            .template_str = "gcc %f -o %o",
+            .inputs = { 5, 4 },   // main.c, foo.o (from lib)
+            .outputs = { 6 },      // app
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        // Paths should be relative to "app" directory
+        REQUIRE(result == "gcc main.c ../lib/foo.o -o app");
+    }
+
+    SECTION("command in root referencing subdirectory files")
+    {
+        // Command runs from root, uses full paths
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .dir_id = 0,  // root directory (no relativization)
+            .template_str = "gcc %f -o %o",
+            .inputs = { 5, 4 },
+            .outputs = { 6 },
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        // Paths should be full since dir_id is 0
+        REQUIRE(result == "gcc app/main.c lib/foo.o -o app/app");
+    }
+
+    SECTION("command in subdirectory with same-directory files")
+    {
+        // Command runs from "lib" directory, all files are local
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .dir_id = 1,  // lib directory
+            .template_str = "gcc -c %f -o %o",
+            .inputs = { 3 },   // foo.c
+            .outputs = { 4 },  // foo.o
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        // Paths should be relative to "lib" directory
+        REQUIRE(result == "gcc -c foo.c -o foo.o");
+    }
+}
+
+TEST_CASE("v8 build_command_lookup", "[index][v8]")
+{
+    auto index = Index {};
+
+    // Create file entries
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = "foo.c" });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = "foo.o" });
+    index.add_file(FileEntry { .id = 3, .parent_id = 0, .type = NodeType::File, .name = "bar.c" });
+    index.add_file(FileEntry { .id = 4, .parent_id = 0, .type = NodeType::Generated, .name = "bar.o" });
+    index.compute_paths();
+
+    // Add commands with template + operands
+    index.add_command(CommandEntry {
+        .id = node_id::make_command(1),
+        .template_str = "gcc -c %f -o %o",
+        .inputs = { 1 },
+        .outputs = { 2 },
+    });
+    index.add_command(CommandEntry {
+        .id = node_id::make_command(2),
+        .template_str = "gcc -c %f -o %o",
+        .inputs = { 3 },
+        .outputs = { 4 },
+    });
+
+    SECTION("lookup by reconstructed command string")
+    {
+        auto lookup = build_command_lookup(index);
+
+        REQUIRE(lookup.size() == 2);
+        REQUIRE(lookup.contains("gcc -c foo.c -o foo.o"));
+        REQUIRE(lookup.contains("gcc -c bar.c -o bar.o"));
+
+        auto const* cmd1 = lookup.at("gcc -c foo.c -o foo.o");
+        REQUIRE(cmd1 != nullptr);
+        REQUIRE(cmd1->id == node_id::make_command(1));
+
+        auto const* cmd2 = lookup.at("gcc -c bar.c -o bar.o");
+        REQUIRE(cmd2 != nullptr);
+        REQUIRE(cmd2->id == node_id::make_command(2));
+    }
+
+    SECTION("same template, different operands")
+    {
+        auto lookup = build_command_lookup(index);
+
+        // Both commands have same template but different operands
+        // So they should be distinct in the lookup
+        REQUIRE(lookup.size() == 2);
+
+        auto const* cmd1 = lookup.at("gcc -c foo.c -o foo.o");
+        auto const* cmd2 = lookup.at("gcc -c bar.c -o bar.o");
+
+        REQUIRE(cmd1->template_str == cmd2->template_str);
+        REQUIRE(cmd1->inputs != cmd2->inputs);
+    }
+}
+
+TEST_CASE("v8 roundtrip with operand sections", "[index][v8]")
+{
+    auto index = Index {};
+
+    // Create file structure
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = "src" });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = "build" });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = "main.cpp" });
+    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = "util.cpp" });
+    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = "main.o" });
+    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = "util.o" });
+    index.add_file(FileEntry { .id = 7, .parent_id = 2, .type = NodeType::Generated, .name = "program" });
+
+    auto cmd1_id = node_id::make_command(1);
+    auto cmd2_id = node_id::make_command(2);
+    auto cmd3_id = node_id::make_command(3);
+
+    // Commands with templates + operands
+    index.add_command(CommandEntry {
+        .id = cmd1_id,
+        .template_str = "g++ -c %f -o %o",
+        .display = "CXX main.cpp",
+        .inputs = { 3 },
+        .outputs = { 5 },
+    });
+    index.add_command(CommandEntry {
+        .id = cmd2_id,
+        .template_str = "g++ -c %f -o %o",
+        .display = "CXX util.cpp",
+        .inputs = { 4 },
+        .outputs = { 6 },
+    });
+    index.add_command(CommandEntry {
+        .id = cmd3_id,
+        .template_str = "g++ %f -o %o",
+        .display = "LD program",
+        .inputs = { 5, 6 },
+        .outputs = { 7 },
+    });
+
+    // Serialize
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    // Write and read back
+    auto temp_path = std::filesystem::temp_directory_path() / "pup_v8_roundtrip_test";
+    auto write_result = write_index(temp_path, index);
+    REQUIRE(write_result.has_value());
+
+    auto reader_result = open_index(temp_path);
+    REQUIRE(reader_result.has_value());
+
+    auto read_result = read_index(*reader_result);
+    REQUIRE(read_result.has_value());
+
+    auto& restored = *read_result;
+
+    // Verify structure
+    REQUIRE(restored.file_count() == 7);
+    REQUIRE(restored.command_count() == 3);
+
+    // Verify commands retain template + operands
+    auto* cmd1 = restored.find_command_by_id(cmd1_id);
+    REQUIRE(cmd1 != nullptr);
+    REQUIRE(cmd1->template_str == "g++ -c %f -o %o");
+    REQUIRE(cmd1->inputs == std::vector<NodeId> { 3 });
+    REQUIRE(cmd1->outputs == std::vector<NodeId> { 5 });
+
+    auto* cmd2 = restored.find_command_by_id(cmd2_id);
+    REQUIRE(cmd2 != nullptr);
+    REQUIRE(cmd2->template_str == "g++ -c %f -o %o");
+    REQUIRE(cmd2->inputs == std::vector<NodeId> { 4 });
+    REQUIRE(cmd2->outputs == std::vector<NodeId> { 6 });
+
+    auto* cmd3 = restored.find_command_by_id(cmd3_id);
+    REQUIRE(cmd3 != nullptr);
+    REQUIRE(cmd3->template_str == "g++ %f -o %o");
+    REQUIRE(cmd3->inputs == std::vector<NodeId> { 5, 6 });
+    REQUIRE(cmd3->outputs == std::vector<NodeId> { 7 });
+
+    // Verify command reconstruction
+    auto cmd1_str = get_command_string(restored, *cmd1);
+    REQUIRE(cmd1_str == "g++ -c src/main.cpp -o build/main.o");
+
+    auto cmd2_str = get_command_string(restored, *cmd2);
+    REQUIRE(cmd2_str == "g++ -c src/util.cpp -o build/util.o");
+
+    auto cmd3_str = get_command_string(restored, *cmd3);
+    REQUIRE(cmd3_str == "g++ build/main.o build/util.o -o build/program");
+
+    // Cleanup
+    std::filesystem::remove(temp_path);
 }

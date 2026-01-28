@@ -22,23 +22,26 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   5 - Removed mtime fields, change detection uses size + content hash only
 ///   6 - Compact format: 32-bit IDs/offsets, length-prefixed strings
 ///   7 - Separate ID spaces: files 1..N, commands 0x80000001...; ID field removed
-inline constexpr auto INDEX_VERSION = std::uint32_t { 7 };
+///   8 - Template deduplication: commands store template + operands, reconstruct lazily
+inline constexpr auto INDEX_VERSION = std::uint32_t { 8 };
 
-/// Index file header (40 bytes)
+/// Index file header (48 bytes) - v8
 struct alignas(8) RawHeader {
-    std::array<char, 4> magic = INDEX_MAGIC; ///< "PUPI"
-    std::uint32_t version = INDEX_VERSION;   ///< Format version
-    std::uint32_t file_count = 0;            ///< Number of file entries
-    std::uint32_t command_count = 0;         ///< Number of command entries
-    std::uint32_t edge_count = 0;            ///< Number of edge entries
-    std::uint32_t string_table_size = 0;     ///< Size of string table in bytes
-    std::uint32_t file_offset = 0;           ///< Offset to file entries
-    std::uint32_t command_offset = 0;        ///< Offset to command entries
-    std::uint32_t edge_offset = 0;           ///< Offset to edge entries
-    std::uint32_t string_offset = 0;         ///< Offset to string table
+    std::array<char, 4> magic = INDEX_MAGIC;  ///< "PUPI"
+    std::uint32_t version = INDEX_VERSION;    ///< Format version
+    std::uint32_t file_count = 0;             ///< Number of file entries
+    std::uint32_t command_count = 0;          ///< Number of command entries
+    std::uint32_t edge_count = 0;             ///< Number of edge entries
+    std::uint32_t string_table_size = 0;      ///< Size of string table in bytes
+    std::uint32_t file_offset = 0;            ///< Offset to file entries
+    std::uint32_t command_offset = 0;         ///< Offset to command entries
+    std::uint32_t edge_offset = 0;            ///< Offset to edge entries
+    std::uint32_t operand_table_offset = 0;   ///< Offset to operand offset table (v8)
+    std::uint32_t operand_data_offset = 0;    ///< Offset to operand data (v8)
+    std::uint32_t string_offset = 0;          ///< Offset to string table
 };
 
-static_assert(sizeof(RawHeader) == 40, "RawHeader must be 40 bytes");
+static_assert(sizeof(RawHeader) == 48, "RawHeader must be 48 bytes");
 
 /// Raw file entry (56 bytes)
 /// Represents source files, generated files, directories, groups, etc.
@@ -57,12 +60,13 @@ struct alignas(8) RawFileEntry {
 
 static_assert(sizeof(RawFileEntry) == 56, "RawFileEntry must be 56 bytes");
 
-/// Raw command entry (16 bytes)
-/// Represents build commands
+/// Raw command entry (16 bytes) - v8
+/// Represents build commands. In v8, cmd_offset points to template string (with %f/%o patterns)
+/// rather than fully-expanded command. Operands stored in separate operand section.
 /// Node ID is computed from array position: id = array_index | COMMAND_ID_FLAG
 struct alignas(8) RawCommandEntry {
     std::uint32_t dir_id = 0;         ///< Directory where command runs
-    std::uint32_t cmd_offset = 0;     ///< Offset into string table (length-prefixed)
+    std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
     std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
 };

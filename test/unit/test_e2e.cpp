@@ -1069,6 +1069,8 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
         {
             auto noop = f.build({ "-B", "build" });
             REQUIRE(noop.success());
+            INFO("stdout: " << noop.stdout_output);
+            INFO("stderr: " << noop.stderr_output);
             REQUIRE(noop.is_noop());
 
             WHEN("source file content is modified without size change")
@@ -1112,6 +1114,8 @@ SCENARIO("Scoped build skips changes outside scope", "[e2e][incremental][scope]"
             THEN("the build is a no-op (out-of-scope change ignored)")
             {
                 REQUIRE(result.success());
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.is_noop());
             }
         }

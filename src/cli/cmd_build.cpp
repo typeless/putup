@@ -463,9 +463,11 @@ auto serialize_graph_nodes(
 }
 
 /// Serialize command nodes from the build graph to the index.
+/// v8: Store template + operands instead of fully-expanded command.
 auto serialize_command_nodes(
     pup::graph::BuildGraph const& graph,
-    pup::index::Index& index
+    pup::index::Index& index,
+    std::unordered_map<std::string, pup::NodeId> const& path_to_id
 ) -> void
 {
     for (auto id : graph.all_nodes()) {
@@ -477,12 +479,56 @@ auto serialize_command_nodes(
             continue;
         }
 
+        // v8: Get template string (pre-pattern-expansion)
+        // If no template, or if template contains group patterns (%< or %{),
+        // fall back to full command - group patterns require complex expansion
+        auto template_sv = pup::graph::get_template_str(graph.graph(), id);
+        auto has_group_pattern = template_sv.find("%<") != std::string_view::npos
+            || template_sv.find("%{") != std::string_view::npos;
+        auto template_str = template_sv.empty() || has_group_pattern
+            ? std::string { pup::graph::get_command_str(graph.graph(), id) }
+            : std::string { template_sv };
+
+        // v8: Collect input and output operands from graph edges
+        // Only include Normal edges - exclude Sticky (Tupfile deps), Group, Implicit
+        auto inputs = std::vector<pup::NodeId> {};
+        auto outputs = std::vector<pup::NodeId> {};
+
+        auto const& g = graph.graph();
+        auto edges_it = g.edges_to_index.find(id);
+        if (edges_it != g.edges_to_index.end()) {
+            for (auto idx : edges_it->second) {
+                auto const& edge = g.edges[idx];
+                if (edge.type == pup::LinkType::Normal && !pup::node_id::is_command(edge.from)) {
+                    inputs.push_back(edge.from);
+                }
+            }
+        }
+
+        for (auto output_id : graph.get_outputs(id)) {
+            if (!pup::node_id::is_command(output_id)) {
+                outputs.push_back(output_id);
+            }
+        }
+
+        // Look up source_dir in path_to_id to get the directory NodeId
+        auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
+        auto dir_id = pup::NodeId { 0 };
+        if (!source_dir_sv.empty()) {
+            auto it = path_to_id.find(std::string { source_dir_sv });
+            if (it != path_to_id.end()) {
+                dir_id = it->second;
+            }
+        }
+
         auto entry = pup::index::CommandEntry {
             .id = id,
-            .dir_id = 0,
-            .command = std::string { pup::graph::get_command_str(graph.graph(), id) },
+            .dir_id = dir_id,
+            .template_str = std::move(template_str),
             .display = std::string { pup::graph::get_display_str(graph.graph(), id) },
             .env = {},
+            .inputs = std::move(inputs),
+            .outputs = std::move(outputs),
         };
         index.add_command(std::move(entry));
     }
@@ -640,7 +686,9 @@ auto expand_implicit_deps(
                 continue;
             }
 
-            auto cmd_node_id = graph.find_by_command(cmd->command);
+            // v8: Reconstruct command string from template + operands
+            auto cmd_str = pup::index::get_command_string(index, *cmd);
+            auto cmd_node_id = graph.find_by_command(cmd_str);
             if (!cmd_node_id) {
                 continue;
             }
@@ -673,7 +721,7 @@ auto build_index(
     auto [index, path_to_id] = serialize_graph_nodes(graph, source_root, output_root);
 
     // Serialize command nodes
-    serialize_command_nodes(graph, index);
+    serialize_command_nodes(graph, index, path_to_id);
 
     // Serialize edges from the build graph
     serialize_edges(graph, index);
@@ -751,7 +799,9 @@ auto detect_new_commands(
         }
 
         auto cmd_sv = pup::graph::get_command_str(graph.graph(), id);
-        if (!idx.find_command_by_command(std::string { cmd_sv })) {
+        auto cmd_str = std::string { cmd_sv };
+        auto found = idx.find_command_by_command(cmd_str);
+        if (!found) {
             for (auto output_id : graph.get_outputs(id)) {
                 auto output_path = graph.get_full_path(output_id);
                 if (!output_path.empty()) {
@@ -778,7 +828,9 @@ auto remove_stale_outputs(
 ) -> void
 {
     for (auto const& cmd : idx.commands()) {
-        if (graph.find_by_command(cmd.command)) {
+        // v8: Reconstruct command string from template + operands
+        auto cmd_str = pup::index::get_command_string(idx, cmd);
+        if (graph.find_by_command(cmd_str)) {
             continue;
         }
 

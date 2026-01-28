@@ -5,6 +5,8 @@
 #include "pup/core/hash.hpp"
 
 #include <algorithm>
+#include <charconv>
+#include <filesystem>
 #include <functional>
 #include <unordered_set>
 
@@ -43,14 +45,14 @@ auto FileEntry::from_raw(
 }
 
 auto CommandEntry::to_raw(
-    std::uint32_t cmd_offset,
+    std::uint32_t template_offset,
     std::uint32_t display_offset,
     std::uint32_t env_offset
 ) const -> RawCommandEntry
 {
     auto raw = RawCommandEntry {};
     raw.dir_id = dir_id;
-    raw.cmd_offset = cmd_offset;
+    raw.cmd_offset = template_offset;
     raw.display_offset = display_offset;
     raw.env_offset = env_offset;
     return raw;
@@ -58,18 +60,22 @@ auto CommandEntry::to_raw(
 
 auto CommandEntry::from_raw(
     RawCommandEntry const& raw,
-    std::string_view cmd_str,
+    std::string_view template_str,
     std::string_view display_str,
     std::string_view env_str,
+    std::vector<NodeId> inputs,
+    std::vector<NodeId> outputs,
     std::size_t array_index
 ) -> CommandEntry
 {
     return CommandEntry {
         .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,
-        .command = std::string { cmd_str },
+        .template_str = std::string { template_str },
         .display = std::string { display_str },
         .env = std::string { env_str },
+        .inputs = std::move(inputs),
+        .outputs = std::move(outputs),
     };
 }
 
@@ -169,15 +175,25 @@ auto Index::build_edge_indices() -> void
 {
     edges_from_index_.clear();
     edges_to_index_.clear();
-    command_index_.clear();
 
     for (auto i = std::size_t { 0 }; i < edges_.size(); ++i) {
         edges_from_index_[edges_[i].from].push_back(i);
         edges_to_index_[edges_[i].to].push_back(i);
     }
 
+    // Rebuild command index using reconstructed command strings
+    rebuild_command_index();
+}
+
+auto Index::rebuild_command_index() -> void
+{
+    command_index_.clear();
+
     for (auto i = std::size_t { 0 }; i < commands_.size(); ++i) {
-        command_index_[commands_[i].command] = i;
+        auto cmd_str = get_command_string(*this, commands_[i]);
+        if (!cmd_str.empty()) {
+            command_index_[std::move(cmd_str)] = i;
+        }
     }
 }
 
@@ -342,6 +358,233 @@ auto Index::has_merkle_hashes() const -> bool
         return (file.type == NodeType::Directory || file.type == NodeType::GeneratedDir)
             && file.content_hash != Hash256 {};
     });
+}
+
+namespace {
+
+auto get_basename(std::string_view path) -> std::string_view
+{
+    auto pos = path.rfind('/');
+    return pos == std::string_view::npos ? path : path.substr(pos + 1);
+}
+
+auto get_stem(std::string_view name) -> std::string_view
+{
+    auto pos = name.rfind('.');
+    return pos == std::string_view::npos ? name : name.substr(0, pos);
+}
+
+auto get_extension(std::string_view name) -> std::string_view
+{
+    auto pos = name.rfind('.');
+    return pos == std::string_view::npos ? std::string_view {} : name.substr(pos + 1);
+}
+
+auto get_parent_path(std::string_view path) -> std::string_view
+{
+    auto pos = path.rfind('/');
+    if (pos == std::string_view::npos) {
+        return {};
+    }
+    return path.substr(0, pos);
+}
+
+} // namespace
+
+auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string
+{
+    if (cmd.template_str.empty()) {
+        return {};
+    }
+
+    // Get directory path for relativization (if command has a source dir)
+    // Pre-create filesystem::path once to avoid repeated construction in the lambda
+    auto dir_fs_path = std::filesystem::path {};
+    if (cmd.dir_id != 0) {
+        auto const* dir = index.find_file_by_id(cmd.dir_id);
+        if (dir && !dir->path.empty()) {
+            dir_fs_path = dir->path;
+        }
+    }
+
+    // Helper to get path relative to source directory
+    // Uses std::filesystem::relative for proper cross-directory handling (e.g., ../sibling/file)
+    auto get_relative_path = [&dir_fs_path](std::string_view path) -> std::string {
+        if (dir_fs_path.empty()) {
+            return std::string { path };
+        }
+        auto ec = std::error_code {};
+        auto rel = std::filesystem::relative(
+            std::filesystem::path { path },
+            dir_fs_path,
+            ec
+        );
+        if (ec || rel.empty()) {
+            return std::string { path };  // Fall back to full path on error
+        }
+        return rel.string();
+    };
+
+    auto result = std::string {};
+    auto const& tmpl = cmd.template_str;
+    auto pos = std::size_t { 0 };
+
+    while (pos < tmpl.size()) {
+        auto percent = tmpl.find('%', pos);
+
+        if (percent == std::string::npos) {
+            result += tmpl.substr(pos);
+            break;
+        }
+
+        result += tmpl.substr(pos, percent - pos);
+
+        if (percent + 1 >= tmpl.size()) {
+            result += '%';
+            pos = percent + 1;
+            continue;
+        }
+
+        auto flag = tmpl[percent + 1];
+        pos = percent + 2;
+
+        if (flag == '%') {
+            result += '%';
+            continue;
+        }
+
+        // Check for %Nf or %No patterns (N-th input/output)
+        if (flag >= '0' && flag <= '9') {
+            auto end = pos;
+            while (end < tmpl.size() && tmpl[end] >= '0' && tmpl[end] <= '9') {
+                ++end;
+            }
+
+            auto num = 0;
+            auto const* start_ptr = tmpl.data() + percent + 1;
+            auto const* end_ptr = tmpl.data() + end;
+            std::from_chars(start_ptr, end_ptr, num);
+
+            if (end < tmpl.size() && tmpl[end] == 'f') {
+                if (num > 0 && static_cast<std::size_t>(num) <= cmd.inputs.size()) {
+                    auto const* file = index.find_file_by_id(cmd.inputs[static_cast<std::size_t>(num - 1)]);
+                    if (file) {
+                        result += get_relative_path(file->path);
+                    }
+                }
+                pos = end + 1;
+                continue;
+            }
+
+            if (end < tmpl.size() && tmpl[end] == 'o') {
+                if (num > 0 && static_cast<std::size_t>(num) <= cmd.outputs.size()) {
+                    auto const* file = index.find_file_by_id(cmd.outputs[static_cast<std::size_t>(num - 1)]);
+                    if (file) {
+                        result += get_relative_path(file->path);
+                    }
+                }
+                pos = end + 1;
+                continue;
+            }
+
+            result += '%';
+            pos = percent + 1;
+            continue;
+        }
+
+        // Standard pattern flags
+        switch (flag) {
+        case 'f':
+        case 'i': {
+            for (std::size_t i = 0; i < cmd.inputs.size(); ++i) {
+                if (i > 0) {
+                    result += ' ';
+                }
+                auto const* file = index.find_file_by_id(cmd.inputs[i]);
+                if (file) {
+                    result += get_relative_path(file->path);
+                }
+            }
+            break;
+        }
+        case 'b': {
+            if (!cmd.inputs.empty()) {
+                auto const* file = index.find_file_by_id(cmd.inputs[0]);
+                if (file) {
+                    result += get_basename(file->path);
+                }
+            }
+            break;
+        }
+        case 'B': {
+            if (!cmd.inputs.empty()) {
+                auto const* file = index.find_file_by_id(cmd.inputs[0]);
+                if (file) {
+                    result += get_stem(file->name);
+                }
+            }
+            break;
+        }
+        case 'e': {
+            if (!cmd.inputs.empty()) {
+                auto const* file = index.find_file_by_id(cmd.inputs[0]);
+                if (file) {
+                    result += get_extension(file->name);
+                }
+            }
+            break;
+        }
+        case 'o': {
+            if (!cmd.outputs.empty()) {
+                auto const* file = index.find_file_by_id(cmd.outputs[0]);
+                if (file) {
+                    result += get_relative_path(file->path);
+                }
+            }
+            break;
+        }
+        case 'O': {
+            if (!cmd.outputs.empty()) {
+                auto const* file = index.find_file_by_id(cmd.outputs[0]);
+                if (file) {
+                    result += get_basename(file->path);
+                }
+            }
+            break;
+        }
+        case 'd': {
+            if (!cmd.inputs.empty()) {
+                auto const* file = index.find_file_by_id(cmd.inputs[0]);
+                if (file) {
+                    result += get_parent_path(get_relative_path(file->path));
+                }
+            }
+            break;
+        }
+        default:
+            result += '%';
+            result += flag;
+            break;
+        }
+    }
+
+    return result;
+}
+
+auto build_command_lookup(Index const& index)
+    -> std::unordered_map<std::string, CommandEntry const*>
+{
+    auto lookup = std::unordered_map<std::string, CommandEntry const*> {};
+    lookup.reserve(index.commands().size());
+
+    for (auto const& cmd : index.commands()) {
+        auto full_cmd = get_command_string(index, cmd);
+        if (!full_cmd.empty()) {
+            lookup.emplace(std::move(full_cmd), &cmd);
+        }
+    }
+
+    return lookup;
 }
 
 } // namespace pup::index

@@ -99,6 +99,8 @@ auto build_header(
     std::uint32_t file_offset,
     std::uint32_t command_offset,
     std::uint32_t edge_offset,
+    std::uint32_t operand_table_offset,
+    std::uint32_t operand_data_offset,
     std::uint32_t string_offset
 ) -> RawHeader
 {
@@ -112,6 +114,8 @@ auto build_header(
         .file_offset = file_offset,
         .command_offset = command_offset,
         .edge_offset = edge_offset,
+        .operand_table_offset = operand_table_offset,
+        .operand_data_offset = operand_data_offset,
         .string_offset = string_offset,
     };
 }
@@ -148,13 +152,14 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     }
 
     // Build command entries and collect strings
+    // v8: Use template_str instead of fully-expanded command
     auto command_entries = std::vector<RawCommandEntry> {};
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
-        auto cmd_offset = strings.add(cmd.command);
-        if (!cmd_offset) {
-            return pup::unexpected<Error>(cmd_offset.error());
+        auto template_offset = strings.add(cmd.template_str);
+        if (!template_offset) {
+            return pup::unexpected<Error>(template_offset.error());
         }
         auto display_offset = strings.add(cmd.display);
         if (!display_offset) {
@@ -164,7 +169,42 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
         if (!env_offset) {
             return pup::unexpected<Error>(env_offset.error());
         }
-        command_entries.push_back(cmd.to_raw(*cmd_offset, *display_offset, *env_offset));
+        command_entries.push_back(cmd.to_raw(*template_offset, *display_offset, *env_offset));
+    }
+
+    // v8: Build operand offset table and operand data
+    auto operand_table = std::vector<std::uint32_t> {};
+    auto operand_data = std::vector<std::byte> {};
+    operand_table.reserve(index.commands().size());
+
+    for (auto const& cmd : index.commands()) {
+        operand_table.push_back(static_cast<std::uint32_t>(operand_data.size()));
+
+        // Write input count (1 byte, max 255 inputs)
+        auto input_count = std::min(cmd.inputs.size(), std::size_t { 255 });
+        operand_data.push_back(static_cast<std::byte>(input_count));
+
+        // Write output count (1 byte, max 255 outputs)
+        auto output_count = std::min(cmd.outputs.size(), std::size_t { 255 });
+        operand_data.push_back(static_cast<std::byte>(output_count));
+
+        // Write input NodeIds (4 bytes each)
+        for (std::size_t i = 0; i < input_count; ++i) {
+            auto id = cmd.inputs[i];
+            operand_data.push_back(static_cast<std::byte>(id & 0xFF));
+            operand_data.push_back(static_cast<std::byte>((id >> 8) & 0xFF));
+            operand_data.push_back(static_cast<std::byte>((id >> 16) & 0xFF));
+            operand_data.push_back(static_cast<std::byte>((id >> 24) & 0xFF));
+        }
+
+        // Write output NodeIds (4 bytes each)
+        for (std::size_t i = 0; i < output_count; ++i) {
+            auto id = cmd.outputs[i];
+            operand_data.push_back(static_cast<std::byte>(id & 0xFF));
+            operand_data.push_back(static_cast<std::byte>((id >> 8) & 0xFF));
+            operand_data.push_back(static_cast<std::byte>((id >> 16) & 0xFF));
+            operand_data.push_back(static_cast<std::byte>((id >> 24) & 0xFF));
+        }
     }
 
     // Build edge entries
@@ -179,8 +219,11 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     auto const file_size_64 = file_entries.size() * sizeof(RawFileEntry);
     auto const command_size_64 = command_entries.size() * sizeof(RawCommandEntry);
     auto const edge_size_64 = edge_entries.size() * sizeof(RawEdge);
+    auto const operand_table_size_64 = operand_table.size() * sizeof(std::uint32_t);
+    auto const operand_data_size_64 = operand_data.size();
     auto const total_size_64 = sizeof(RawHeader) + file_size_64 + command_size_64
-        + edge_size_64 + strings.size() + sizeof(RawFooter);
+        + edge_size_64 + operand_table_size_64 + operand_data_size_64
+        + strings.size() + sizeof(RawFooter);
 
     if (total_size_64 > MAX_U32) {
         return make_error<std::vector<std::byte>>(
@@ -195,14 +238,19 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     auto const command_size = static_cast<std::uint32_t>(command_size_64);
     auto const edge_offset = command_offset + command_size;
     auto const edge_size = static_cast<std::uint32_t>(edge_size_64);
-    auto const string_offset = edge_offset + edge_size;
+    auto const operand_table_offset = edge_offset + edge_size;
+    auto const operand_table_size = static_cast<std::uint32_t>(operand_table_size_64);
+    auto const operand_data_offset = operand_table_offset + operand_table_size;
+    auto const operand_data_size = static_cast<std::uint32_t>(operand_data_size_64);
+    auto const string_offset = operand_data_offset + operand_data_size;
     auto const string_size = strings.size();
     auto const footer_offset = string_offset + string_size;
     auto const total_size = static_cast<std::uint32_t>(total_size_64);
 
     // Build header
     auto header = build_header(
-        index, strings, file_offset, command_offset, edge_offset, string_offset
+        index, strings, file_offset, command_offset, edge_offset,
+        operand_table_offset, operand_data_offset, string_offset
     );
 
     // Allocate result buffer
@@ -225,6 +273,24 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     // Write edge entries
     if (!edge_entries.empty()) {
         std::memcpy(output.subspan(edge_offset, edge_size).data(), edge_entries.data(), edge_size);
+    }
+
+    // Write operand offset table (v8)
+    if (!operand_table.empty()) {
+        std::memcpy(
+            output.subspan(operand_table_offset, operand_table_size).data(),
+            operand_table.data(),
+            operand_table_size
+        );
+    }
+
+    // Write operand data (v8)
+    if (!operand_data.empty()) {
+        std::memcpy(
+            output.subspan(operand_data_offset, operand_data_size).data(),
+            operand_data.data(),
+            operand_data_size
+        );
     }
 
     // Write string table

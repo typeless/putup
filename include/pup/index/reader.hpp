@@ -57,6 +57,12 @@ auto index_raw_edges(IndexFile const& f) -> std::span<RawEdge const>;
 [[nodiscard]]
 auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view;
 
+/// Get operands for a command (v8)
+/// Returns pair of {input NodeIds, output NodeIds}
+[[nodiscard]]
+auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
+    -> std::pair<std::vector<NodeId>, std::vector<NodeId>>;
+
 /// Verify the checksum
 [[nodiscard]]
 auto index_verify_checksum(IndexFile const& f) -> bool;

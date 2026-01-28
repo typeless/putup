@@ -104,14 +104,17 @@ auto read_index(IndexFile const& f) -> Result<Index>
     // Compute paths from parent chain (after all files loaded)
     index.compute_paths();
 
-    // Read command entries
+    // Read command entries (v8: template + operands)
     auto commands = index_raw_commands(f);
     for (auto i = std::size_t { 0 }; i < commands.size(); ++i) {
         auto const& raw = commands[i];
-        auto cmd = index_get_string(f, raw.cmd_offset);
+        auto template_str = index_get_string(f, raw.cmd_offset);
         auto display = index_get_string(f, raw.display_offset);
         auto env = index_get_string(f, raw.env_offset);
-        index.add_command(CommandEntry::from_raw(raw, cmd, display, env, i));
+        auto [inputs, outputs] = index_get_operands(f, i);
+        index.add_command(CommandEntry::from_raw(
+            raw, template_str, display, env, std::move(inputs), std::move(outputs), i
+        ));
     }
 
     // Read edges
@@ -197,6 +200,77 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
     auto str_bytes = data.subspan(data_start, length);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return { reinterpret_cast<char const*>(str_bytes.data()), length };
+}
+
+auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
+    -> std::pair<std::vector<NodeId>, std::vector<NodeId>>
+{
+    auto const* hdr = index_header(f);
+    if (!hdr || cmd_index >= hdr->command_count) {
+        return { {}, {} };
+    }
+
+    auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
+
+    // Read offset from operand table
+    auto table_pos = hdr->operand_table_offset + cmd_index * sizeof(std::uint32_t);
+    if (table_pos + sizeof(std::uint32_t) > f.file.size()) {
+        return { {}, {} };
+    }
+
+    auto const* offset_bytes = data.subspan(table_pos, sizeof(std::uint32_t)).data();
+    auto offset = static_cast<std::uint32_t>(
+        static_cast<std::uint8_t>(offset_bytes[0])
+        | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(offset_bytes[1])) << 8)
+        | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(offset_bytes[2])) << 16)
+        | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(offset_bytes[3])) << 24)
+    );
+
+    // Read operand record
+    auto record_pos = hdr->operand_data_offset + offset;
+    if (record_pos + 2 > f.file.size()) {
+        return { {}, {} };
+    }
+
+    auto in_count = static_cast<std::uint8_t>(data[record_pos]);
+    auto out_count = static_cast<std::uint8_t>(data[record_pos + 1]);
+
+    auto expected_size = static_cast<std::size_t>(2) + (in_count + out_count) * sizeof(NodeId);
+    if (record_pos + expected_size > f.file.size()) {
+        return { {}, {} };
+    }
+
+    auto inputs = std::vector<NodeId> {};
+    auto outputs = std::vector<NodeId> {};
+    inputs.reserve(in_count);
+    outputs.reserve(out_count);
+
+    auto pos = record_pos + 2;
+    for (std::uint8_t i = 0; i < in_count; ++i) {
+        auto const* id_bytes = data.subspan(pos, sizeof(NodeId)).data();
+        auto id = static_cast<NodeId>(
+            static_cast<std::uint8_t>(id_bytes[0])
+            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[1])) << 8)
+            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[2])) << 16)
+            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[3])) << 24)
+        );
+        inputs.push_back(id);
+        pos += sizeof(NodeId);
+    }
+
+    for (std::uint8_t i = 0; i < out_count; ++i) {
+        auto const* id_bytes = data.subspan(pos, sizeof(NodeId)).data();
+        auto id = static_cast<NodeId>(
+            static_cast<std::uint8_t>(id_bytes[0])
+            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[1])) << 8)
+            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[2])) << 16)
+            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[3])) << 24)
+        );
+        outputs.push_back(id);
+        pos += sizeof(NodeId);
+    }
+
+    return { std::move(inputs), std::move(outputs) };
 }
 
 auto index_verify_checksum(IndexFile const& f) -> bool

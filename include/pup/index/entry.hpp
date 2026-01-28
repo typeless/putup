@@ -42,19 +42,24 @@ struct FileEntry {
     ) -> FileEntry;
 };
 
-/// In-memory command entry
+/// In-memory command entry (v8)
+/// Stores template pattern with %f/%o markers plus operand NodeIds.
+/// Full command string is reconstructed on demand via get_command_string().
 struct CommandEntry {
     NodeId id = 0;
     NodeId dir_id = 0; ///< Directory where command runs
 
-    std::string command = {}; ///< Full command string
-    std::string display = {}; ///< Display text (from ^ ^ markers)
-    std::string env = {};     ///< Environment variables
+    std::string template_str = {}; ///< Template pattern with %f/%o markers
+    std::string display = {};      ///< Display text (from ^ ^ markers)
+    std::string env = {};          ///< Environment variables
+
+    std::vector<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
+    std::vector<NodeId> outputs = {}; ///< Output file operands (for %o expansion)
 
     /// Convert to raw format for serialization
     [[nodiscard]]
     auto to_raw(
-        std::uint32_t cmd_offset,
+        std::uint32_t template_offset,
         std::uint32_t display_offset,
         std::uint32_t env_offset
     ) const -> RawCommandEntry;
@@ -64,9 +69,11 @@ struct CommandEntry {
     [[nodiscard]]
     static auto from_raw(
         RawCommandEntry const& raw,
-        std::string_view cmd_str,
+        std::string_view template_str,
         std::string_view display_str,
         std::string_view env_str,
+        std::vector<NodeId> inputs,
+        std::vector<NodeId> outputs,
         std::size_t array_index
     ) -> CommandEntry;
 };
@@ -145,9 +152,13 @@ public:
     [[nodiscard]]
     auto find_command_by_id(NodeId id) const -> CommandEntry const*;
 
-    /// Find command by command string
+    /// Find command by command string (requires prior build_command_lookup() call)
+    /// @deprecated Use build_command_lookup() for explicit lookup map management
     [[nodiscard]]
     auto find_command_by_command(std::string const& cmd) const -> CommandEntry const*;
+
+    /// Rebuild internal command lookup index (call after modifying commands or after load)
+    auto rebuild_command_index() -> void;
 
     /// Get edges from a node (O(1) after build_edge_indices)
     [[nodiscard]]
@@ -225,5 +236,21 @@ private:
         NodeId id
     ) const -> std::vector<EdgeEntry const*>;
 };
+
+/// Reconstruct full command string from template + operands.
+/// Uses pattern expansion to replace %f, %o, %b, %B, etc. with actual paths.
+/// @param index The index containing file entries for path lookup
+/// @param cmd The command entry with template and operands
+/// @return The fully expanded command string
+[[nodiscard]]
+auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string;
+
+/// Build a lookup map from command strings to command entries.
+/// This is O(N) reconstruction - call once when needed for change detection.
+/// @param index The index to build lookup from
+/// @return Map of command string -> command entry pointer
+[[nodiscard]]
+auto build_command_lookup(Index const& index)
+    -> std::unordered_map<std::string, CommandEntry const*>;
 
 } // namespace pup::index
