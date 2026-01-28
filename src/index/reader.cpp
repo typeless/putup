@@ -58,7 +58,7 @@ auto open_index(std::filesystem::path const& path) -> Result<IndexFile>
     if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Invalid index file magic");
     }
-    // v6 format only (clean break from v5)
+    // v8 format only (clean break from v5)
     if (hdr->version != INDEX_VERSION) {
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Unsupported index version");
     }
@@ -80,7 +80,7 @@ auto is_valid_index(std::filesystem::path const& path) -> bool
         return false;
     }
 
-    // v6 format only
+    // v8 format only
     return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0
         && header.version == INDEX_VERSION;
 }

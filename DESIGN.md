@@ -684,13 +684,15 @@ struct BuilderContext {
 
 ## Index Module
 
-### Binary Format (v7)
+### Binary Format (v8)
+
+v8 introduces **template-based command storage** for significant space savings. Instead of storing fully-expanded command strings, commands store a template pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds. Full commands are reconstructed lazily when needed.
 
 ```
 ┌─────────────────────────────────────┐
-│ Header (40 bytes)                   │
+│ Header (48 bytes)                   │
 │   magic: "PUPI" (4 bytes)           │
-│   version: u32 (7)                  │
+│   version: u32 (8)                  │
 │   file_count: u32                   │
 │   command_count: u32                │
 │   edge_count: u32                   │
@@ -698,6 +700,8 @@ struct BuilderContext {
 │   file_offset: u32                  │
 │   command_offset: u32               │
 │   edge_offset: u32                  │
+│   operand_table_offset: u32         │  ← NEW
+│   operand_data_offset: u32          │  ← NEW
 │   string_offset: u32                │
 ├─────────────────────────────────────┤
 │ FileEntry[] (56 bytes each)         │
@@ -712,7 +716,7 @@ struct BuilderContext {
 ├─────────────────────────────────────┤
 │ CommandEntry[] (16 bytes each)      │
 │   dir_id: u32                       │
-│   cmd_offset: u32                   │
+│   template_offset: u32              │  ← Was cmd_offset
 │   display_offset: u32               │
 │   env_offset: u32                   │
 │   (id = index | 0x80000000)         │
@@ -723,15 +727,29 @@ struct BuilderContext {
 │   type: u8, reserved: 3 bytes       │
 │   group_cmd_id: u32                 │
 ├─────────────────────────────────────┤
+│ Operand Offset Table (4 bytes × N)  │  ← NEW
+│   offset[i] = position in data      │
+├─────────────────────────────────────┤
+│ Operand Data (variable length)      │  ← NEW
+│   Per command: u8 in_count,         │
+│                u8 out_count,        │
+│                NodeId inputs[],     │
+│                NodeId outputs[]     │
+├─────────────────────────────────────┤
 │ String Table (length-prefixed)      │
 │   [0]: u16(0) - empty string entry  │
 │   [...]: u16(len) + data bytes      │
 │   Deduplicated via offset reuse     │
+│   Templates stored here (auto-dedup)│
 ├─────────────────────────────────────┤
 │ Footer (32 bytes)                   │
 │   checksum: [u8; 32] (SHA-256)      │
 └─────────────────────────────────────┘
 ```
+
+**Template deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same template for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, v8 stores 1 template + 1000 operand records.
+
+**Lazy reconstruction**: Full command strings are computed on demand via `get_command_string()`, which substitutes operand paths into the template. This keeps index loading fast.
 
 Version history:
 - v1: Initial format with full path strings
@@ -741,6 +759,7 @@ Version history:
 - v5: Removed mtime, change detection uses size + content hash
 - v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
 - v7: Tagged ID spaces (files vs commands), ID computed from array index
+- v8: Template-based command storage with operand sections
 
 Design principles:
 - Fixed-size entries for O(1) random access
