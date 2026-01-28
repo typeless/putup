@@ -264,7 +264,7 @@ Show build information in various formats. Supports path-based variant and scope
 - `compdb` - compile_commands.json
 - `graph` - DOT format dependency graph
 - `var` - Variable assignment history
-- `templates` - Command template deduplication analysis
+- `instructions` - Command instruction deduplication analysis
 
 **Examples with targets:**
 ```bash
@@ -374,28 +374,28 @@ putup show var CFLAGS --json
 - Track down where a flag was added or overridden
 - Generate variable documentation
 
-#### 3.7.5 show templates
+#### 3.7.5 show instructions
 
 ```
-putup show templates
+putup show instructions
 ```
 
-Analyze command template deduplication. Shows how many unique templates exist versus total commands, helping understand index storage efficiency.
+Analyze command instruction deduplication. Shows how many unique instructions exist versus total commands, helping understand index storage efficiency.
 
 **Output:**
 ```
-Template Analysis:
+Instruction Analysis:
   Commands: 147
-  Unique templates: 7
+  Unique instructions: 7
   Deduplication ratio: 21.0x
 
-Top templates:
+Top instructions:
   #1 (89 uses): "g++ -std=c++20 -Wall -O2 -c -o %o %f"
   #2 (45 uses): "g++ -std=c++20 -Wall -O2 %f -o %o"
   #3 (8 uses): "ar rcs %o %f"
   ...
 
-Estimated savings: 92% (template + operands vs full strings)
+Estimated savings: 92% (instruction + operands vs full strings)
 ```
 
 **Use cases:**
@@ -1596,14 +1596,14 @@ Binary file at `.pup/index` storing the complete build state (v8 format).
 |---------|-------------|
 | Header (48 bytes) | Magic number, version, counts, offsets |
 | File entries (56 bytes each) | Parent, name offset, type, size, SHA-256 hash |
-| Command entries (16 bytes each) | Dir ID, template/display/env offsets |
+| Command entries (16 bytes each) | Dir ID, instruction/display/env offsets |
 | Edges (16 bytes each) | From, to, link type, group cmd ID |
 | Operand table | Per-command offset into operand data |
 | Operand data | Packed input/output NodeIds per command |
-| String table | Length-prefixed packed strings (including templates) |
+| String table | Length-prefixed packed strings (including instructions) |
 | Footer (32 bytes) | SHA-256 checksum |
 
-**Template-based storage (v8):** Commands store a template pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds instead of fully-expanded command strings. This provides ~90% space savings for projects with many similar commands (e.g., compiling C files with bang macros). Full commands are reconstructed lazily when needed for change detection.
+**Instruction-based storage (v8):** Commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds instead of fully-expanded command strings. This provides ~90% space savings for projects with many similar commands (e.g., compiling C files with bang macros). Full commands are reconstructed lazily when needed for change detection.
 
 **Link types:**
 
@@ -2245,9 +2245,9 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | show script | ❌ | ✅ | Generate build.sh |
 | show compdb | ❌ | ✅ | compile_commands.json |
 | show var | ❌ | ✅ | Variable assignment history |
-| show templates | ❌ | ✅ | Template deduplication analysis |
+| show instructions | ❌ | ✅ | Instruction deduplication analysis |
 | Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
-| Template-based index | ❌ | ✅ | v8 format with ~90% storage savings |
+| Instruction-based index | ❌ | ✅ | v8 format with ~90% storage savings |
 
 **Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name
 

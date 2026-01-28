@@ -124,7 +124,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     auto cmd = CommandEntry {
         .id = node_id::make_command(5),
         .dir_id = 5,
-        .template_str = "gcc -c %f -o %o",
+        .instruction_pattern = "gcc -c %f -o %o",
         .display = "CC main.c",
         .env = "CC=gcc",
         .inputs = { 10 },
@@ -140,13 +140,13 @@ TEST_CASE("CommandEntry conversion", "[index]")
 
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto restored = CommandEntry::from_raw(
-        raw, cmd.template_str, cmd.display, cmd.env,
+        raw, cmd.instruction_pattern, cmd.display, cmd.env,
         std::vector<NodeId> { 10 }, std::vector<NodeId> { 20 }, 4
     );
 
     REQUIRE(restored.id == node_id::make_command(5));
     REQUIRE(restored.dir_id == cmd.dir_id);
-    REQUIRE(restored.template_str == cmd.template_str);
+    REQUIRE(restored.instruction_pattern == cmd.instruction_pattern);
     REQUIRE(restored.display == cmd.display);
     REQUIRE(restored.env == cmd.env);
     REQUIRE(restored.inputs == cmd.inputs);
@@ -234,14 +234,14 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .template_str = "gcc foo.c" });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .template_str = "gcc bar.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = "gcc foo.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = "gcc bar.c" });
 
         REQUIRE(index.command_count() == 2);
 
         auto* found = index.find_command_by_id(node_id::make_command(1));
         REQUIRE(found != nullptr);
-        REQUIRE(found->template_str == "gcc foo.c");
+        REQUIRE(found->instruction_pattern == "gcc foo.c");
 
         REQUIRE(index.find_command_by_id(node_id::make_command(999)) == nullptr);
     }
@@ -339,7 +339,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     index.add_command(CommandEntry {
         .id = cmd_id,
         .dir_id = 0,
-        .template_str = "g++ -c %f -o %o",
+        .instruction_pattern = "g++ -c %f -o %o",
         .display = "CXX main.cpp",
         .env = {},
         .inputs = { 3 },   // main.cpp
@@ -407,7 +407,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     // Verify command (ID computed from position: node_id::make_command(0 + 1))
     auto* cmd = restored.find_command_by_id(cmd_id);
     REQUIRE(cmd != nullptr);
-    REQUIRE(cmd->template_str == "g++ -c %f -o %o");
+    REQUIRE(cmd->instruction_pattern == "g++ -c %f -o %o");
     REQUIRE(cmd->display == "CXX main.cpp");
     REQUIRE(cmd->inputs == std::vector<NodeId> { 3 });
     REQUIRE(cmd->outputs == std::vector<NodeId> { 4 });
@@ -547,7 +547,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .name = "test.c" });
-    index.add_command(CommandEntry { .id = cmd_id, .template_str = "gcc test.c", .inputs = { 1 } });
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = "gcc test.c", .inputs = { 1 } });
     index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
         auto data = serialize_index(index);
@@ -780,8 +780,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .template_str = "gcc", .display = "", .env = "" });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .template_str = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = "gcc", .display = "", .env = "" });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -809,7 +809,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "g++ -c %f -o %o",
+            .instruction_pattern = "g++ -c %f -o %o",
             .inputs = { 3 },   // main.cpp
             .outputs = { 4 },  // main.o
         };
@@ -823,7 +823,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "echo %b",
+            .instruction_pattern = "echo %b",
             .inputs = { 3 },
             .outputs = {},
         };
@@ -837,7 +837,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "echo %B",
+            .instruction_pattern = "echo %B",
             .inputs = { 3 },
             .outputs = {},
         };
@@ -851,7 +851,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "echo %e",
+            .instruction_pattern = "echo %e",
             .inputs = { 3 },
             .outputs = {},
         };
@@ -868,7 +868,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "g++ -c %f -o %o",
+            .instruction_pattern = "g++ -c %f -o %o",
             .inputs = { 3, 5 },
             .outputs = { 4 },
         };
@@ -885,7 +885,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "echo %1f %2f",
+            .instruction_pattern = "echo %1f %2f",
             .inputs = { 3, 5 },
             .outputs = {},
         };
@@ -899,7 +899,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "echo 100%%",
+            .instruction_pattern = "echo 100%%",
             .inputs = {},
             .outputs = {},
         };
@@ -913,7 +913,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .template_str = "",
+            .instruction_pattern = "",
             .inputs = {},
             .outputs = {},
         };
@@ -945,7 +945,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .dir_id = 2,  // app directory
-            .template_str = "gcc %f -o %o",
+            .instruction_pattern = "gcc %f -o %o",
             .inputs = { 5, 4 },   // main.c, foo.o (from lib)
             .outputs = { 6 },      // app
         };
@@ -962,7 +962,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .dir_id = 0,  // root directory (no relativization)
-            .template_str = "gcc %f -o %o",
+            .instruction_pattern = "gcc %f -o %o",
             .inputs = { 5, 4 },
             .outputs = { 6 },
         };
@@ -979,7 +979,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .dir_id = 1,  // lib directory
-            .template_str = "gcc -c %f -o %o",
+            .instruction_pattern = "gcc -c %f -o %o",
             .inputs = { 3 },   // foo.c
             .outputs = { 4 },  // foo.o
         };
@@ -1005,13 +1005,13 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
     // Add commands with template + operands
     index.add_command(CommandEntry {
         .id = node_id::make_command(1),
-        .template_str = "gcc -c %f -o %o",
+        .instruction_pattern = "gcc -c %f -o %o",
         .inputs = { 1 },
         .outputs = { 2 },
     });
     index.add_command(CommandEntry {
         .id = node_id::make_command(2),
-        .template_str = "gcc -c %f -o %o",
+        .instruction_pattern = "gcc -c %f -o %o",
         .inputs = { 3 },
         .outputs = { 4 },
     });
@@ -1044,7 +1044,7 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
         auto const* cmd1 = lookup.at("gcc -c foo.c -o foo.o");
         auto const* cmd2 = lookup.at("gcc -c bar.c -o bar.o");
 
-        REQUIRE(cmd1->template_str == cmd2->template_str);
+        REQUIRE(cmd1->instruction_pattern == cmd2->instruction_pattern);
         REQUIRE(cmd1->inputs != cmd2->inputs);
     }
 }
@@ -1069,21 +1069,21 @@ TEST_CASE("v8 roundtrip with operand sections", "[index][v8]")
     // Commands with templates + operands
     index.add_command(CommandEntry {
         .id = cmd1_id,
-        .template_str = "g++ -c %f -o %o",
+        .instruction_pattern = "g++ -c %f -o %o",
         .display = "CXX main.cpp",
         .inputs = { 3 },
         .outputs = { 5 },
     });
     index.add_command(CommandEntry {
         .id = cmd2_id,
-        .template_str = "g++ -c %f -o %o",
+        .instruction_pattern = "g++ -c %f -o %o",
         .display = "CXX util.cpp",
         .inputs = { 4 },
         .outputs = { 6 },
     });
     index.add_command(CommandEntry {
         .id = cmd3_id,
-        .template_str = "g++ %f -o %o",
+        .instruction_pattern = "g++ %f -o %o",
         .display = "LD program",
         .inputs = { 5, 6 },
         .outputs = { 7 },
@@ -1113,19 +1113,19 @@ TEST_CASE("v8 roundtrip with operand sections", "[index][v8]")
     // Verify commands retain template + operands
     auto* cmd1 = restored.find_command_by_id(cmd1_id);
     REQUIRE(cmd1 != nullptr);
-    REQUIRE(cmd1->template_str == "g++ -c %f -o %o");
+    REQUIRE(cmd1->instruction_pattern == "g++ -c %f -o %o");
     REQUIRE(cmd1->inputs == std::vector<NodeId> { 3 });
     REQUIRE(cmd1->outputs == std::vector<NodeId> { 5 });
 
     auto* cmd2 = restored.find_command_by_id(cmd2_id);
     REQUIRE(cmd2 != nullptr);
-    REQUIRE(cmd2->template_str == "g++ -c %f -o %o");
+    REQUIRE(cmd2->instruction_pattern == "g++ -c %f -o %o");
     REQUIRE(cmd2->inputs == std::vector<NodeId> { 4 });
     REQUIRE(cmd2->outputs == std::vector<NodeId> { 6 });
 
     auto* cmd3 = restored.find_command_by_id(cmd3_id);
     REQUIRE(cmd3 != nullptr);
-    REQUIRE(cmd3->template_str == "g++ %f -o %o");
+    REQUIRE(cmd3->instruction_pattern == "g++ %f -o %o");
     REQUIRE(cmd3->inputs == std::vector<NodeId> { 5, 6 });
     REQUIRE(cmd3->outputs == std::vector<NodeId> { 7 });
 

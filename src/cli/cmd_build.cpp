@@ -479,15 +479,15 @@ auto serialize_command_nodes(
             continue;
         }
 
-        // v8: Get template string (pre-pattern-expansion)
-        // If no template, or if template contains group patterns (%< or %{),
+        // v8: Get instruction pattern (pre-operand-substitution)
+        // If no instruction, or if instruction contains group patterns (%< or %{),
         // fall back to full command - group patterns require complex expansion
-        auto template_sv = pup::graph::get_template_str(graph.graph(), id);
-        auto has_group_pattern = template_sv.find("%<") != std::string_view::npos
-            || template_sv.find("%{") != std::string_view::npos;
-        auto template_str = template_sv.empty() || has_group_pattern
+        auto instruction_sv = pup::graph::get_instruction_pattern(graph.graph(), id);
+        auto has_group_pattern = instruction_sv.find("%<") != std::string_view::npos
+            || instruction_sv.find("%{") != std::string_view::npos;
+        auto instruction_pattern = instruction_sv.empty() || has_group_pattern
             ? std::string { pup::graph::get_command_str(graph.graph(), id) }
-            : std::string { template_sv };
+            : std::string { instruction_sv };
 
         // v8: Collect input and output operands from graph edges
         // Only include Normal edges - exclude Sticky (Tupfile deps), Group, Implicit
@@ -524,7 +524,7 @@ auto serialize_command_nodes(
         auto entry = pup::index::CommandEntry {
             .id = id,
             .dir_id = dir_id,
-            .template_str = std::move(template_str),
+            .instruction_pattern = std::move(instruction_pattern),
             .display = std::string { pup::graph::get_display_str(graph.graph(), id) },
             .env = {},
             .inputs = std::move(inputs),

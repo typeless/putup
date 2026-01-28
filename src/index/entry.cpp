@@ -45,14 +45,14 @@ auto FileEntry::from_raw(
 }
 
 auto CommandEntry::to_raw(
-    std::uint32_t template_offset,
+    std::uint32_t instruction_offset,
     std::uint32_t display_offset,
     std::uint32_t env_offset
 ) const -> RawCommandEntry
 {
     auto raw = RawCommandEntry {};
     raw.dir_id = dir_id;
-    raw.cmd_offset = template_offset;
+    raw.cmd_offset = instruction_offset;
     raw.display_offset = display_offset;
     raw.env_offset = env_offset;
     return raw;
@@ -60,7 +60,7 @@ auto CommandEntry::to_raw(
 
 auto CommandEntry::from_raw(
     RawCommandEntry const& raw,
-    std::string_view template_str,
+    std::string_view instruction_pattern,
     std::string_view display_str,
     std::string_view env_str,
     std::vector<NodeId> inputs,
@@ -71,7 +71,7 @@ auto CommandEntry::from_raw(
     return CommandEntry {
         .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,
-        .template_str = std::string { template_str },
+        .instruction_pattern = std::string { instruction_pattern },
         .display = std::string { display_str },
         .env = std::string { env_str },
         .inputs = std::move(inputs),
@@ -393,7 +393,7 @@ auto get_parent_path(std::string_view path) -> std::string_view
 
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string
 {
-    if (cmd.template_str.empty()) {
+    if (cmd.instruction_pattern.empty()) {
         return {};
     }
 
@@ -426,7 +426,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::str
     };
 
     auto result = std::string {};
-    auto const& tmpl = cmd.template_str;
+    auto const& tmpl = cmd.instruction_pattern;
     auto pos = std::size_t { 0 };
 
     while (pos < tmpl.size()) {

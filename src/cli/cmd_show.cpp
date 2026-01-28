@@ -481,7 +481,7 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
         : output_var_text(histories);
 }
 
-auto cmd_export_templates(Options const& opts, std::string_view variant_name) -> int
+auto cmd_export_instructions(Options const& opts, std::string_view variant_name) -> int
 {
     auto scanner_registry = make_scanner_registry();
     auto ctx_opts = BuildContextOptions {
@@ -498,49 +498,49 @@ auto cmd_export_templates(Options const& opts, std::string_view variant_name) ->
     auto& ctx = *result;
     auto const& graph = ctx.graph().graph();
 
-    // Build template usage map: template_id -> list of command IDs using it
-    auto template_usage = std::unordered_map<StringId, std::vector<NodeId>> {};
+    // Build instruction usage map: instruction_id -> list of command IDs using it
+    auto instruction_usage = std::unordered_map<StringId, std::vector<NodeId>> {};
     auto total_cmd_bytes = std::size_t { 0 };
 
     for (auto const& cmd : graph.commands) {
         auto cmd_str = graph.strings.get(cmd.command);
         total_cmd_bytes += cmd_str.size();
 
-        if (!is_empty(cmd.template_id)) {
-            template_usage[cmd.template_id].push_back(cmd.id);
+        if (!is_empty(cmd.instruction_id)) {
+            instruction_usage[cmd.instruction_id].push_back(cmd.id);
         }
     }
 
     auto total_commands = graph.commands.size();
-    auto unique_templates = template_usage.size();
+    auto unique_instructions = instruction_usage.size();
 
-    printf("Template Analysis:\n");
+    printf("Instruction Analysis:\n");
     printf("  Commands: %zu\n", total_commands);
-    printf("  Unique templates: %zu\n", unique_templates);
-    if (unique_templates > 0) {
-        printf("  Deduplication ratio: %.1fx\n", double(total_commands) / double(unique_templates));
+    printf("  Unique instructions: %zu\n", unique_instructions);
+    if (unique_instructions > 0) {
+        printf("  Deduplication ratio: %.1fx\n", double(total_commands) / double(unique_instructions));
     }
 
-    // Sort templates by usage count (descending)
-    auto sorted_templates = std::vector<std::pair<StringId, std::size_t>> {};
-    sorted_templates.reserve(template_usage.size());
-    for (auto const& [tid, cmds] : template_usage) {
-        sorted_templates.emplace_back(tid, cmds.size());
+    // Sort instructions by usage count (descending)
+    auto sorted_instructions = std::vector<std::pair<StringId, std::size_t>> {};
+    sorted_instructions.reserve(instruction_usage.size());
+    for (auto const& [iid, cmds] : instruction_usage) {
+        sorted_instructions.emplace_back(iid, cmds.size());
     }
-    std::sort(sorted_templates.begin(), sorted_templates.end(), [](auto const& a, auto const& b) {
+    std::sort(sorted_instructions.begin(), sorted_instructions.end(), [](auto const& a, auto const& b) {
         return a.second > b.second;
     });
 
-    // Show top 10 templates
-    printf("\nTop templates:\n");
+    // Show top 10 instructions
+    printf("\nTop instructions:\n");
     auto shown = std::size_t { 0 };
-    for (auto const& [tid, count] : sorted_templates) {
+    for (auto const& [iid, count] : sorted_instructions) {
         if (shown >= 10) {
             break;
         }
-        auto template_str = graph.strings.get(tid);
-        // Truncate long templates for display
-        auto display_str = std::string { template_str };
+        auto instruction_str = graph.strings.get(iid);
+        // Truncate long instructions for display
+        auto display_str = std::string { instruction_str };
         if (display_str.size() > 60) {
             display_str = display_str.substr(0, 57) + "...";
         }
@@ -550,19 +550,19 @@ auto cmd_export_templates(Options const& opts, std::string_view variant_name) ->
 
     // Calculate estimated storage savings
     // Current: each command stores full string
-    // Template-based: store unique templates + small operand refs per command
-    auto unique_template_bytes = std::size_t { 0 };
-    for (auto const& [tid, _] : template_usage) {
-        unique_template_bytes += graph.strings.get(tid).size();
+    // Instruction-based: store unique instructions + small operand refs per command
+    auto unique_instruction_bytes = std::size_t { 0 };
+    for (auto const& [iid, _] : instruction_usage) {
+        unique_instruction_bytes += graph.strings.get(iid).size();
     }
 
-    // Estimate: template table + 8 bytes per command (template_id + operand offset)
-    auto estimated_new_bytes = unique_template_bytes + (total_commands * 8);
+    // Estimate: instruction table + 8 bytes per command (instruction_id + operand offset)
+    auto estimated_new_bytes = unique_instruction_bytes + (total_commands * 8);
 
     printf("\nStorage estimate:\n");
     printf("  Current command strings: %zu bytes\n", total_cmd_bytes);
-    printf("  Unique template strings: %zu bytes\n", unique_template_bytes);
-    printf("  Estimated with templates: %zu bytes\n", estimated_new_bytes);
+    printf("  Unique instruction strings: %zu bytes\n", unique_instruction_bytes);
+    printf("  Estimated with instructions: %zu bytes\n", estimated_new_bytes);
     if (total_cmd_bytes > 0 && estimated_new_bytes < total_cmd_bytes) {
         auto savings = 100.0 * (1.0 - double(estimated_new_bytes) / double(total_cmd_bytes));
         printf("  Potential savings: %.0f%%\n", savings);
@@ -585,12 +585,12 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
     if (opts.show_format == "var") {
         return cmd_export_var(opts, variant_name);
     }
-    if (opts.show_format == "templates") {
-        return cmd_export_templates(opts, variant_name);
+    if (opts.show_format == "instructions" || opts.show_format == "templates") {
+        return cmd_export_instructions(opts, variant_name);
     }
 
     fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(opts.show_format.size()), opts.show_format.data());
-    fprintf(stderr, "Formats: script, compdb, graph, var, templates\n");
+    fprintf(stderr, "Formats: script, compdb, graph, var, instructions\n");
     return EXIT_FAILURE;
 }
 
@@ -600,7 +600,7 @@ auto cmd_show(Options const& opts) -> int
 {
     if (opts.show_format.empty()) {
         fprintf(stderr, "Usage: putup show <format>\n");
-        fprintf(stderr, "Formats: script, compdb, graph, var, templates\n");
+        fprintf(stderr, "Formats: script, compdb, graph, var, instructions\n");
         return EXIT_FAILURE;
     }
 

@@ -152,14 +152,14 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     }
 
     // Build command entries and collect strings
-    // v8: Use template_str instead of fully-expanded command
+    // v8: Use instruction_pattern instead of fully-expanded command
     auto command_entries = std::vector<RawCommandEntry> {};
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
-        auto template_offset = strings.add(cmd.template_str);
-        if (!template_offset) {
-            return pup::unexpected<Error>(template_offset.error());
+        auto instruction_offset = strings.add(cmd.instruction_pattern);
+        if (!instruction_offset) {
+            return pup::unexpected<Error>(instruction_offset.error());
         }
         auto display_offset = strings.add(cmd.display);
         if (!display_offset) {
@@ -169,7 +169,7 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
         if (!env_offset) {
             return pup::unexpected<Error>(env_offset.error());
         }
-        command_entries.push_back(cmd.to_raw(*template_offset, *display_offset, *env_offset));
+        command_entries.push_back(cmd.to_raw(*instruction_offset, *display_offset, *env_offset));
     }
 
     // v8: Build operand offset table and operand data

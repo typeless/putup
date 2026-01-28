@@ -686,7 +686,7 @@ struct BuilderContext {
 
 ### Binary Format (v8)
 
-v8 introduces **template-based command storage** for significant space savings. Instead of storing fully-expanded command strings, commands store a template pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds. Full commands are reconstructed lazily when needed.
+v8 introduces **instruction-based command storage** for significant space savings. Instead of storing fully-expanded command strings, commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds. Full commands are reconstructed lazily when needed.
 
 ```
 ┌─────────────────────────────────────┐
@@ -716,7 +716,7 @@ v8 introduces **template-based command storage** for significant space savings. 
 ├─────────────────────────────────────┤
 │ CommandEntry[] (16 bytes each)      │
 │   dir_id: u32                       │
-│   template_offset: u32              │  ← Was cmd_offset
+│   instruction_offset: u32           │  ← Was cmd_offset
 │   display_offset: u32               │
 │   env_offset: u32                   │
 │   (id = index | 0x80000000)         │
@@ -740,16 +740,16 @@ v8 introduces **template-based command storage** for significant space savings. 
 │   [0]: u16(0) - empty string entry  │
 │   [...]: u16(len) + data bytes      │
 │   Deduplicated via offset reuse     │
-│   Templates stored here (auto-dedup)│
+│   Instructions stored here (deduped)│
 ├─────────────────────────────────────┤
 │ Footer (32 bytes)                   │
 │   checksum: [u8; 32] (SHA-256)      │
 └─────────────────────────────────────┘
 ```
 
-**Template deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same template for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, v8 stores 1 template + 1000 operand records.
+**Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, v8 stores 1 instruction + 1000 operand records.
 
-**Lazy reconstruction**: Full command strings are computed on demand via `get_command_string()`, which substitutes operand paths into the template. This keeps index loading fast.
+**Lazy reconstruction**: Full command strings are computed on demand via `get_command_string()`, which substitutes operand paths into the instruction. This keeps index loading fast.
 
 Version history:
 - v1: Initial format with full path strings
@@ -759,7 +759,7 @@ Version history:
 - v5: Removed mtime, change detection uses size + content hash
 - v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
 - v7: Tagged ID spaces (files vs commands), ID computed from array index
-- v8: Template-based command storage with operand sections
+- v8: Instruction-based command storage with operand sections
 
 Design principles:
 - Fixed-size entries for O(1) random access

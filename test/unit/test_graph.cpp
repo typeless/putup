@@ -649,28 +649,28 @@ TEST_CASE("Template tracking via StringId deduplication", "[graph][template]")
     }
 }
 
-TEST_CASE("CommandNode stores template_id", "[graph][template]")
+TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
 {
     auto graph = BuildGraph {};
 
-    SECTION("command node with template_id")
+    SECTION("command node with instruction_id")
     {
-        auto template_str = graph.intern("gcc -O2 -c -o %o %f");
+        auto instruction = graph.intern("gcc -O2 -c -o %o %f");
         auto node = CommandNode {
             .command = graph.intern("gcc -O2 -c -o foo.o foo.c"),
             .display = graph.intern("CC foo.o"),
-            .template_id = template_str,
+            .instruction_id = instruction,
         };
         auto cmd_id = graph.add_command_node(std::move(node));
         REQUIRE(cmd_id.has_value());
 
         auto const* cmd = graph.get_command_node(*cmd_id);
         REQUIRE(cmd != nullptr);
-        REQUIRE(cmd->template_id == template_str);
-        REQUIRE(get_template_str(graph.graph(), *cmd_id) == "gcc -O2 -c -o %o %f");
+        REQUIRE(cmd->instruction_id == instruction);
+        REQUIRE(get_instruction_pattern(graph.graph(), *cmd_id) == "gcc -O2 -c -o %o %f");
     }
 
-    SECTION("command node without template_id")
+    SECTION("command node without instruction_id")
     {
         auto node = CommandNode {
             .command = graph.intern("cp foo bar"),
@@ -680,21 +680,21 @@ TEST_CASE("CommandNode stores template_id", "[graph][template]")
 
         auto const* cmd = graph.get_command_node(*cmd_id);
         REQUIRE(cmd != nullptr);
-        REQUIRE(cmd->template_id == pup::StringId::Empty);
-        REQUIRE(get_template_str(graph.graph(), *cmd_id).empty());
+        REQUIRE(cmd->instruction_id == pup::StringId::Empty);
+        REQUIRE(get_instruction_pattern(graph.graph(), *cmd_id).empty());
     }
 
-    SECTION("multiple commands share same template")
+    SECTION("multiple commands share same instruction")
     {
-        auto template_str = graph.intern("gcc -c -o %o %f");
+        auto instruction = graph.intern("gcc -c -o %o %f");
 
         auto node1 = CommandNode {
             .command = graph.intern("gcc -c -o foo.o foo.c"),
-            .template_id = template_str,
+            .instruction_id = instruction,
         };
         auto node2 = CommandNode {
             .command = graph.intern("gcc -c -o bar.o bar.c"),
-            .template_id = template_str,
+            .instruction_id = instruction,
         };
 
         auto cmd1_id = graph.add_command_node(std::move(node1));
@@ -706,7 +706,7 @@ TEST_CASE("CommandNode stores template_id", "[graph][template]")
         auto const* cmd1 = graph.get_command_node(*cmd1_id);
         auto const* cmd2 = graph.get_command_node(*cmd2_id);
 
-        REQUIRE(cmd1->template_id == cmd2->template_id);
-        REQUIRE(get_template_str(graph.graph(), *cmd1_id) == get_template_str(graph.graph(), *cmd2_id));
+        REQUIRE(cmd1->instruction_id == cmd2->instruction_id);
+        REQUIRE(get_instruction_pattern(graph.graph(), *cmd1_id) == get_instruction_pattern(graph.graph(), *cmd2_id));
     }
 }

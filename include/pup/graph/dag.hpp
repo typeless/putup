@@ -60,10 +60,10 @@ struct CommandNode {
     StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
 
-    /// Pre-pattern-expansion template for deduplication analytics.
-    /// Note: `command` is kept for execution; template enables measuring
-    /// potential savings. Phase 2 would store template + operands only.
-    StringId template_id = StringId::Empty;
+    /// Pre-pattern-expansion instruction for deduplication analytics.
+    /// Note: `command` is kept for execution; instruction enables measuring
+    /// potential savings. Phase 2 would store instruction + operands only.
+    StringId instruction_id = StringId::Empty;
 
     std::set<StringId> exported_vars = {}; ///< Env vars to export to command (interned)
 
@@ -392,9 +392,9 @@ auto get_display_str(Graph const& graph, NodeId id) -> std::string_view;
 [[nodiscard]]
 auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view;
 
-/// Get command node template string as string_view (pre-pattern-expansion)
+/// Get command node instruction pattern as string_view (pre-pattern-expansion)
 [[nodiscard]]
-auto get_template_str(Graph const& graph, NodeId id) -> std::string_view;
+auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".

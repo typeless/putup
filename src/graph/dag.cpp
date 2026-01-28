@@ -694,13 +694,13 @@ auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view
     return graph.strings.get(node->source_dir);
 }
 
-auto get_template_str(Graph const& graph, NodeId id) -> std::string_view
+auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view
 {
     auto const* node = get_command_node(graph, id);
     if (!node) {
         return {};
     }
-    return graph.strings.get(node->template_id);
+    return graph.strings.get(node->instruction_id);
 }
 
 // =============================================================================

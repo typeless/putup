@@ -43,13 +43,13 @@ struct FileEntry {
 };
 
 /// In-memory command entry (v8)
-/// Stores template pattern with %f/%o markers plus operand NodeIds.
+/// Stores instruction pattern with %f/%o markers plus operand NodeIds.
 /// Full command string is reconstructed on demand via get_command_string().
 struct CommandEntry {
     NodeId id = 0;
     NodeId dir_id = 0; ///< Directory where command runs
 
-    std::string template_str = {}; ///< Template pattern with %f/%o markers
+    std::string instruction_pattern = {}; ///< Instruction pattern with %f/%o markers
     std::string display = {};      ///< Display text (from ^ ^ markers)
     std::string env = {};          ///< Environment variables
 
@@ -59,7 +59,7 @@ struct CommandEntry {
     /// Convert to raw format for serialization
     [[nodiscard]]
     auto to_raw(
-        std::uint32_t template_offset,
+        std::uint32_t instruction_offset,
         std::uint32_t display_offset,
         std::uint32_t env_offset
     ) const -> RawCommandEntry;
@@ -69,7 +69,7 @@ struct CommandEntry {
     [[nodiscard]]
     static auto from_raw(
         RawCommandEntry const& raw,
-        std::string_view template_str,
+        std::string_view instruction_pattern,
         std::string_view display_str,
         std::string_view env_str,
         std::vector<NodeId> inputs,
@@ -237,10 +237,10 @@ private:
     ) const -> std::vector<EdgeEntry const*>;
 };
 
-/// Reconstruct full command string from template + operands.
+/// Reconstruct full command string from instruction + operands.
 /// Uses pattern expansion to replace %f, %o, %b, %B, etc. with actual paths.
 /// @param index The index containing file entries for path lookup
-/// @param cmd The command entry with template and operands
+/// @param cmd The command entry with instruction and operands
 /// @return The fully expanded command string
 [[nodiscard]]
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string;

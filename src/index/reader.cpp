@@ -104,16 +104,16 @@ auto read_index(IndexFile const& f) -> Result<Index>
     // Compute paths from parent chain (after all files loaded)
     index.compute_paths();
 
-    // Read command entries (v8: template + operands)
+    // Read command entries (v8: instruction + operands)
     auto commands = index_raw_commands(f);
     for (auto i = std::size_t { 0 }; i < commands.size(); ++i) {
         auto const& raw = commands[i];
-        auto template_str = index_get_string(f, raw.cmd_offset);
+        auto instruction_pattern = index_get_string(f, raw.cmd_offset);
         auto display = index_get_string(f, raw.display_offset);
         auto env = index_get_string(f, raw.env_offset);
         auto [inputs, outputs] = index_get_operands(f, i);
         index.add_command(CommandEntry::from_raw(
-            raw, template_str, display, env, std::move(inputs), std::move(outputs), i
+            raw, instruction_pattern, display, env, std::move(inputs), std::move(outputs), i
         ));
     }
 
