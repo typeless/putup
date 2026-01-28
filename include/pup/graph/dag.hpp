@@ -60,6 +60,11 @@ struct CommandNode {
     StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
 
+    /// Pre-pattern-expansion template for deduplication analytics.
+    /// Note: `command` is kept for execution; template enables measuring
+    /// potential savings. Phase 2 would store template + operands only.
+    StringId template_id = StringId::Empty;
+
     std::set<StringId> exported_vars = {}; ///< Env vars to export to command (interned)
 
     // For generated rules (auto-generated from pattern matching)
@@ -195,8 +200,8 @@ struct Graph {
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual> dir_name_index;
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
 
-    NodeId next_file_id = 2;                              ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
-    NodeId next_command_id = node_id::make_command(1);    ///< Next command node ID
+    NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
+    NodeId next_command_id = node_id::make_command(1);     ///< Next command node ID
     NodeId next_condition_id = node_id::make_condition(1); ///< Next condition node ID
     NodeId next_phi_id = node_id::make_phi(1);             ///< Next phi node ID
 };
@@ -386,6 +391,10 @@ auto get_display_str(Graph const& graph, NodeId id) -> std::string_view;
 /// Get command node source directory as string_view
 [[nodiscard]]
 auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view;
+
+/// Get command node template string as string_view (pre-pattern-expansion)
+[[nodiscard]]
+auto get_template_str(Graph const& graph, NodeId id) -> std::string_view;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".

@@ -490,7 +490,8 @@ auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    std::vector<std::string> const& outputs
+    std::vector<std::string> const& outputs,
+    std::string* out_template = nullptr
 ) -> Result<std::string>;
 
 auto get_or_create_directory_node(
@@ -521,7 +522,8 @@ auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
     std::string const& command,
-    std::string const& display
+    std::string const& display,
+    std::string const& template_str = {}
 ) -> Result<NodeId>;
 
 /// Search up the directory tree for Tuprules.tup
@@ -1473,6 +1475,7 @@ auto expand_rule(
     // Command expansion variables
     auto cmd_text = std::string {};
     auto display = std::string {};
+    auto template_str = std::string {};
     auto outputs_patterns = rule.outputs;
 
     // Use macro's outputs if rule doesn't specify any (macro_ptr set earlier)
@@ -1487,8 +1490,9 @@ auto expand_rule(
     }
 
     // Now expand command with actual outputs for %o substitution
+    // Also capture template (after variable expansion, before pattern substitution)
     if (macro_ptr) {
-        auto macro_cmd = Result<std::string> { expand_command(ctx, macro_ptr->command, flags, *outputs) };
+        auto macro_cmd = Result<std::string> { expand_command(ctx, macro_ptr->command, flags, *outputs, &template_str) };
         if (!macro_cmd) {
             return pup::unexpected<Error>(macro_cmd.error());
         }
@@ -1501,7 +1505,7 @@ auto expand_rule(
             }
         }
     } else {
-        auto full_cmd = Result<std::string> { expand_command(ctx, rule.command, flags, *outputs) };
+        auto full_cmd = Result<std::string> { expand_command(ctx, rule.command, flags, *outputs, &template_str) };
         if (!full_cmd) {
             return pup::unexpected<Error>(full_cmd.error());
         }
@@ -1528,8 +1532,8 @@ auto expand_rule(
         }
     }
 
-    // Create command node
-    auto cmd_id = Result<NodeId> { create_command_node(ctx, state, cmd_text, display) };
+    // Create command node (with template for deduplication analysis)
+    auto cmd_id = Result<NodeId> { create_command_node(ctx, state, cmd_text, display, template_str) };
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
@@ -1827,7 +1831,8 @@ auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    std::vector<std::string> const& outputs
+    std::vector<std::string> const& outputs,
+    std::string* out_template
 ) -> Result<std::string>
 {
     // Expand the command expression (variable expansion)
@@ -1839,6 +1844,11 @@ auto expand_command(
     auto expanded = parser::expand(*ctx.eval, std::string_view { *literal });
     if (!expanded) {
         return pup::unexpected<Error>(expanded.error());
+    }
+
+    // Capture template if requested (after variable expansion, before pattern substitution)
+    if (out_template) {
+        *out_template = *expanded;
     }
 
     // Transform outputs to Tupfile-relative paths and augment flags
@@ -2078,7 +2088,8 @@ auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
     std::string const& command,
-    std::string const& display
+    std::string const& display,
+    std::string const& template_str
 ) -> Result<NodeId>
 {
     // Intern exported_vars
@@ -2091,6 +2102,7 @@ auto create_command_node(
         .command = ctx.graph->intern(command),
         .display = ctx.graph->intern(display),
         .source_dir = ctx.graph->intern(ctx.current_dir.string()),
+        .template_id = ctx.graph->intern(template_str),
         .exported_vars = std::move(exported_var_ids),
         .guards = ctx.condition_stack, // Apply current guards from condition stack
     };

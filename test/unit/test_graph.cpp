@@ -623,3 +623,90 @@ TEST_CASE("Sticky edge API", "[graph]")
         REQUIRE(source_sticky[0] == *cmd2_id);
     }
 }
+
+TEST_CASE("Template tracking via StringId deduplication", "[graph][template]")
+{
+    auto graph = BuildGraph {};
+
+    SECTION("same template pattern interns to same StringId")
+    {
+        auto t1 = graph.intern("gcc -O2 -c -o %o %f");
+        auto t2 = graph.intern("gcc -O2 -c -o %o %f");
+        REQUIRE(t1 == t2);
+    }
+
+    SECTION("different patterns intern to different StringIds")
+    {
+        auto t1 = graph.intern("gcc -O2 -c -o %o %f");
+        auto t2 = graph.intern("g++ -O2 -c -o %o %f");
+        REQUIRE(t1 != t2);
+    }
+
+    SECTION("empty template is valid")
+    {
+        auto empty = graph.intern("");
+        REQUIRE(empty == pup::StringId::Empty);
+    }
+}
+
+TEST_CASE("CommandNode stores template_id", "[graph][template]")
+{
+    auto graph = BuildGraph {};
+
+    SECTION("command node with template_id")
+    {
+        auto template_str = graph.intern("gcc -O2 -c -o %o %f");
+        auto node = CommandNode {
+            .command = graph.intern("gcc -O2 -c -o foo.o foo.c"),
+            .display = graph.intern("CC foo.o"),
+            .template_id = template_str,
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto const* cmd = graph.get_command_node(*cmd_id);
+        REQUIRE(cmd != nullptr);
+        REQUIRE(cmd->template_id == template_str);
+        REQUIRE(get_template_str(graph.graph(), *cmd_id) == "gcc -O2 -c -o %o %f");
+    }
+
+    SECTION("command node without template_id")
+    {
+        auto node = CommandNode {
+            .command = graph.intern("cp foo bar"),
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto const* cmd = graph.get_command_node(*cmd_id);
+        REQUIRE(cmd != nullptr);
+        REQUIRE(cmd->template_id == pup::StringId::Empty);
+        REQUIRE(get_template_str(graph.graph(), *cmd_id).empty());
+    }
+
+    SECTION("multiple commands share same template")
+    {
+        auto template_str = graph.intern("gcc -c -o %o %f");
+
+        auto node1 = CommandNode {
+            .command = graph.intern("gcc -c -o foo.o foo.c"),
+            .template_id = template_str,
+        };
+        auto node2 = CommandNode {
+            .command = graph.intern("gcc -c -o bar.o bar.c"),
+            .template_id = template_str,
+        };
+
+        auto cmd1_id = graph.add_command_node(std::move(node1));
+        auto cmd2_id = graph.add_command_node(std::move(node2));
+
+        REQUIRE(cmd1_id.has_value());
+        REQUIRE(cmd2_id.has_value());
+
+        auto const* cmd1 = graph.get_command_node(*cmd1_id);
+        auto const* cmd2 = graph.get_command_node(*cmd2_id);
+
+        REQUIRE(cmd1->template_id == cmd2->template_id);
+        REQUIRE(get_template_str(graph.graph(), *cmd1_id) == get_template_str(graph.graph(), *cmd2_id));
+    }
+}
