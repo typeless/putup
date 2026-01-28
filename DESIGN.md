@@ -439,10 +439,11 @@ struct Guard {
 /// Type is determined by node_id::is_command(), not a stored field.
 struct CommandNode {
     NodeId id = 0;
-    StringId command = StringId::Empty;        // Fully expanded command for execution
     StringId display = StringId::Empty;        // Display text (from ^ ^ markers)
     StringId source_dir = StringId::Empty;     // Tupfile directory (relative to root)
-    StringId instruction_id = StringId::Empty; // Pre-expansion pattern for deduplication
+    StringId instruction_id = StringId::Empty; // Instruction pattern (e.g., "gcc -c %f -o %o")
+    std::vector<NodeId> inputs = {};           // Operand file NodeIds for %f expansion
+    std::vector<NodeId> outputs = {};          // Operand file NodeIds for %o expansion
     std::set<StringId> exported_vars = {};     // Env vars to export (interned)
     std::optional<GeneratedOutput> generated_output = {};  // Output specification
     OutputAction output_action = {};           // What to do with output
@@ -581,10 +582,11 @@ auto is_guard_satisfied(Graph const&, CommandNode const&) -> bool;
 
 // String access helpers (resolve StringId -> string_view)
 auto get_name(Graph const&, id) -> std::string_view;
-auto get_command_str(Graph const&, id) -> std::string_view;
 auto get_display_str(Graph const&, id) -> std::string_view;
 auto get_source_dir(Graph const&, id) -> std::string_view;
 auto get_instruction_pattern(Graph const&, id) -> std::string_view;
+auto expand_instruction(Graph const&, id, PathCache&) -> std::string;
+auto expand_instruction(Graph const&, id) -> std::string;
 ```
 
 ### Topological Sort
@@ -772,7 +774,7 @@ v8 introduces **instruction-based command storage** for significant space saving
 
 **Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, v8 stores 1 instruction + 1000 operand records.
 
-**Lazy reconstruction**: Full command strings are computed on demand via `get_command_string()`, which substitutes operand paths into the instruction. This keeps index loading fast.
+**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction_id` (the pattern) plus explicit `inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
 
 Version history:
 - v1: Initial format with full path strings

@@ -52,7 +52,7 @@ auto generate_order_only_graph(
         char buf[64];
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
         auto cmd = graph.add_command_node(CommandNode {
-            .command = graph.intern(buf) });
+            .instruction_id = graph.intern(buf) });
         (void)graph.add_order_only_edge(*header, *cmd);
     }
     return { std::move(graph), *header };
@@ -73,7 +73,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
             char buf[64];
             snprintf(buf, sizeof(buf), "cmd_%zu_%zu", w, d);
             auto node_result = graph.add_command_node(CommandNode {
-                .command = graph.intern(buf) });
+                .instruction_id = graph.intern(buf) });
             auto node = *node_result;
 
             // Connect to previous in chain

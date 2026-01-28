@@ -479,37 +479,10 @@ auto serialize_command_nodes(
             continue;
         }
 
-        // v8: Get instruction pattern (pre-operand-substitution)
-        // If no instruction, or if instruction contains group patterns (%< or %{),
-        // fall back to full command - group patterns require complex expansion
-        auto instruction_sv = pup::graph::get_instruction_pattern(graph.graph(), id);
-        auto has_group_pattern = instruction_sv.find("%<") != std::string_view::npos
-            || instruction_sv.find("%{") != std::string_view::npos;
-        auto instruction_pattern = instruction_sv.empty() || has_group_pattern
-            ? std::string { pup::graph::get_command_str(graph.graph(), id) }
-            : std::string { instruction_sv };
-
-        // v8: Collect input and output operands from graph edges
-        // Only include Normal edges - exclude Sticky (Tupfile deps), Group, Implicit
-        auto inputs = std::vector<pup::NodeId> {};
-        auto outputs = std::vector<pup::NodeId> {};
-
-        auto const& g = graph.graph();
-        auto edges_it = g.edges_to_index.find(id);
-        if (edges_it != g.edges_to_index.end()) {
-            for (auto idx : edges_it->second) {
-                auto const& edge = g.edges[idx];
-                if (edge.type == pup::LinkType::Normal && !pup::node_id::is_command(edge.from)) {
-                    inputs.push_back(edge.from);
-                }
-            }
-        }
-
-        for (auto output_id : graph.get_outputs(id)) {
-            if (!pup::node_id::is_command(output_id)) {
-                outputs.push_back(output_id);
-            }
-        }
+        // v8: instruction and operands are stored directly on CommandNode
+        auto instruction_pattern = std::string { pup::graph::get_instruction_pattern(graph.graph(), id) };
+        auto inputs = cmd->inputs;
+        auto outputs = cmd->outputs;
 
         // Look up source_dir in path_to_id to get the directory NodeId
         auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
@@ -798,8 +771,7 @@ auto detect_new_commands(
             continue;
         }
 
-        auto cmd_sv = pup::graph::get_command_str(graph.graph(), id);
-        auto cmd_str = std::string { cmd_sv };
+        auto cmd_str = graph.expand_instruction(id);
         auto found = idx.find_command_by_command(cmd_str);
         if (!found) {
             for (auto output_id : graph.get_outputs(id)) {
@@ -953,6 +925,10 @@ auto build_single_variant(
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
+
+        // Build command string index for find_by_command() lookups
+        // Must happen after parsing (operands set) but before incremental logic
+        ctx.graph().build_command_index();
 
         if (opts.verbose && idx.has_merkle_hashes()) {
             vprint(variant_name, "Index has Merkle hashes (v4 format)\n");

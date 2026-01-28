@@ -172,7 +172,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("add edges")
     {
         auto id1 = graph.add_file_node(FileNode { .name = graph.intern("foo.c") });
-        auto id2 = graph.add_command_node(CommandNode { .command = graph.intern("gcc foo.c") });
+        auto id2 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc foo.c") });
         auto id3 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("foo.o") });
 
         REQUIRE(id1.has_value());
@@ -200,7 +200,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     {
         (void)graph.add_file_node(FileNode { .name = graph.intern("a.c") });
         (void)graph.add_file_node(FileNode { .name = graph.intern("b.c") });
-        (void)graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        (void)graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc") });
         (void)graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("out.o") });
 
         auto files = graph.nodes_of_type(NodeType::File);
@@ -216,7 +216,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
     SECTION("root and leaf nodes")
     {
         auto id1 = graph.add_file_node(FileNode { .name = graph.intern("a.c") });
-        auto id2 = graph.add_command_node(CommandNode { .command = graph.intern("") });
+        auto id2 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("") });
         auto id3 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
 
         (void)graph.add_edge(*id1, *id2);
@@ -337,7 +337,7 @@ TEST_CASE("BuildGraph node types", "[graph]")
     SECTION("all node types")
     {
         auto file_id = graph.add_file_node(FileNode { .name = graph.intern("a.c") });
-        auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        auto cmd_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc") });
         auto gen_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
         auto dir_id = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("src") });
         auto var_id = graph.add_file_node(FileNode { .type = NodeType::Variable, .name = graph.intern("CC") });
@@ -368,7 +368,7 @@ TEST_CASE("BuildGraph edge types", "[graph]")
     SECTION("order-only edges")
     {
         auto id1 = graph.add_file_node(FileNode { .name = graph.intern("header.h") });
-        auto id2 = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        auto id2 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc") });
 
         REQUIRE(id1.has_value());
         REQUIRE(id2.has_value());
@@ -384,7 +384,7 @@ TEST_CASE("BuildGraph edge types", "[graph]")
     SECTION("group edges")
     {
         // Group edge: command -> group (command produces outputs in group)
-        auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+        auto cmd_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc") });
         auto out_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
         auto group_id = graph.add_file_node(FileNode { .type = NodeType::Group, .name = graph.intern("{objs}") });
 
@@ -443,7 +443,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
 
     auto header_id = graph.add_file_node(FileNode { .name = graph.intern("header.h") });
     auto input_id = graph.add_file_node(FileNode { .name = graph.intern("input.c") });
-    auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc") });
+    auto cmd_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc") });
     auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("output.o") });
 
     REQUIRE(header_id.has_value());
@@ -532,7 +532,7 @@ TEST_CASE("get_outputs excludes sticky edges", "[graph][regression]")
 
     auto tupfile_id = graph.add_file_node(FileNode { .name = graph.intern("Tupfile") });
     auto source_id = graph.add_file_node(FileNode { .name = graph.intern("source.c") });
-    auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc source.c") });
+    auto cmd_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc source.c") });
     auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("output.o") });
 
     (void)graph.add_edge(*source_id, *cmd_id, LinkType::Normal);
@@ -562,7 +562,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     auto tupfile_id = graph.add_file_node(FileNode { .name = graph.intern("Tupfile") });
     auto source_id = graph.add_file_node(FileNode { .name = graph.intern("source.c") });
-    auto cmd_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc source.c") });
+    auto cmd_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc source.c") });
     auto output_id = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("output.o") });
 
     (void)graph.add_edge(*source_id, *cmd_id, LinkType::Normal);
@@ -602,7 +602,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     SECTION("multiple sticky edges from same node")
     {
-        auto cmd2_id = graph.add_command_node(CommandNode { .command = graph.intern("gcc other.c") });
+        auto cmd2_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("gcc other.c") });
         (void)graph.add_edge(*tupfile_id, *cmd2_id, LinkType::Sticky);
 
         REQUIRE(graph.get_sticky_outputs(*tupfile_id).size() == 2);
@@ -611,7 +611,7 @@ TEST_CASE("Sticky edge API", "[graph]")
 
     SECTION("mixed edge types from same node")
     {
-        auto cmd2_id = graph.add_command_node(CommandNode { .command = graph.intern("lint source.c") });
+        auto cmd2_id = graph.add_command_node(CommandNode { .instruction_id = graph.intern("lint source.c") });
         (void)graph.add_edge(*source_id, *cmd2_id, LinkType::Sticky);
 
         auto source_outputs = graph.get_outputs(*source_id);
@@ -657,7 +657,6 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
     {
         auto instruction = graph.intern("gcc -O2 -c -o %o %f");
         auto node = CommandNode {
-            .command = graph.intern("gcc -O2 -c -o foo.o foo.c"),
             .display = graph.intern("CC foo.o"),
             .instruction_id = instruction,
         };
@@ -670,11 +669,24 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         REQUIRE(get_instruction_pattern(graph.graph(), *cmd_id) == "gcc -O2 -c -o %o %f");
     }
 
-    SECTION("command node without instruction_id")
+    SECTION("command node with literal instruction (no patterns)")
     {
         auto node = CommandNode {
-            .command = graph.intern("cp foo bar"),
+            .instruction_id = graph.intern("cp foo bar"),
         };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto const* cmd = graph.get_command_node(*cmd_id);
+        REQUIRE(cmd != nullptr);
+        REQUIRE(cmd->instruction_id != pup::StringId::Empty);
+        REQUIRE(get_instruction_pattern(graph.graph(), *cmd_id) == "cp foo bar");
+        REQUIRE(expand_instruction(graph.graph(), *cmd_id) == "cp foo bar");
+    }
+
+    SECTION("command node with empty instruction_id")
+    {
+        auto node = CommandNode {};
         auto cmd_id = graph.add_command_node(std::move(node));
         REQUIRE(cmd_id.has_value());
 
@@ -689,11 +701,9 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         auto instruction = graph.intern("gcc -c -o %o %f");
 
         auto node1 = CommandNode {
-            .command = graph.intern("gcc -c -o foo.o foo.c"),
             .instruction_id = instruction,
         };
         auto node2 = CommandNode {
-            .command = graph.intern("gcc -c -o bar.o bar.c"),
             .instruction_id = instruction,
         };
 
@@ -708,5 +718,213 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
 
         REQUIRE(cmd1->instruction_id == cmd2->instruction_id);
         REQUIRE(get_instruction_pattern(graph.graph(), *cmd1_id) == get_instruction_pattern(graph.graph(), *cmd2_id));
+    }
+}
+
+TEST_CASE("expand_instruction reconstructs command from operands", "[graph][instruction]")
+{
+    auto graph = BuildGraph {};
+
+    // Build directory hierarchy: src/foo.c, src/bar.c, src/foo.o
+    auto src_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("src") });
+    REQUIRE(src_dir.has_value());
+
+    auto foo_c = graph.add_file_node(FileNode {
+        .name = graph.intern("foo.c"),
+        .parent_dir = *src_dir,
+    });
+    auto bar_c = graph.add_file_node(FileNode {
+        .name = graph.intern("bar.c"),
+        .parent_dir = *src_dir,
+    });
+    auto foo_o = graph.add_file_node(FileNode {
+        .type = NodeType::Generated,
+        .name = graph.intern("foo.o"),
+        .parent_dir = *src_dir,
+    });
+    REQUIRE(foo_c.has_value());
+    REQUIRE(bar_c.has_value());
+    REQUIRE(foo_o.has_value());
+
+    SECTION("%f and %o with source_dir")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("gcc -c %f -o %o"),
+            .inputs = { *foo_c },
+            .outputs = { *foo_o },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "gcc -c foo.c -o foo.o");
+    }
+
+    SECTION("%f with multiple inputs")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("gcc -c %f -o %o"),
+            .inputs = { *foo_c, *bar_c },
+            .outputs = { *foo_o },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "gcc -c foo.c bar.c -o foo.o");
+    }
+
+    SECTION("%b (basename of first input)")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("echo %b"),
+            .inputs = { *foo_c },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo foo.c");
+    }
+
+    SECTION("%B (stem of first input)")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("echo %B"),
+            .inputs = { *foo_c },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo foo");
+    }
+
+    SECTION("%e (extension of first input)")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("echo %e"),
+            .inputs = { *foo_c },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo c");
+    }
+
+    SECTION("%d (parent directory of first input)")
+    {
+        // For "src/foo.c" relative to source_dir "src" → "foo.c" → parent is empty
+        // Let's use a deeper path to test %d meaningfully
+        auto sub_dir = graph.add_file_node(FileNode {
+            .type = NodeType::Directory,
+            .name = graph.intern("sub"),
+            .parent_dir = *src_dir,
+        });
+        auto deep_file = graph.add_file_node(FileNode {
+            .name = graph.intern("deep.c"),
+            .parent_dir = *sub_dir,
+        });
+        REQUIRE(deep_file.has_value());
+
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("echo %d"),
+            .inputs = { *deep_file },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo sub");
+    }
+
+    SECTION("%O (basename of first output)")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("echo %O"),
+            .outputs = { *foo_o },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo foo.o");
+    }
+
+    SECTION("%Nf (N-th input)")
+    {
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("gcc %1f %2f"),
+            .inputs = { *foo_c, *bar_c },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "gcc foo.c bar.c");
+    }
+
+    SECTION("%No (N-th output)")
+    {
+        auto bar_o = graph.add_file_node(FileNode {
+            .type = NodeType::Generated,
+            .name = graph.intern("bar.o"),
+            .parent_dir = *src_dir,
+        });
+        REQUIRE(bar_o.has_value());
+
+        auto node = CommandNode {
+            .source_dir = graph.intern("src"),
+            .instruction_id = graph.intern("echo %2o"),
+            .outputs = { *foo_o, *bar_o },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo bar.o");
+    }
+
+    SECTION("%% escapes to literal percent")
+    {
+        auto node = CommandNode {
+            .instruction_id = graph.intern("echo 100%%"),
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo 100%");
+    }
+
+    SECTION("no patterns returns verbatim")
+    {
+        auto node = CommandNode {
+            .instruction_id = graph.intern("cp /src/file /dst/file"),
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "cp /src/file /dst/file");
+    }
+
+    SECTION("empty instruction returns empty")
+    {
+        auto node = CommandNode {};
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result.empty());
     }
 }

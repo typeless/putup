@@ -124,51 +124,6 @@ auto parse_group_reference(
     return GroupReference { std::move(group_name), std::move(group_dir) };
 }
 
-/// Transform a project-root-relative path to be relative to source directory
-/// Used for command expansion where commands run from Tupfile directory
-auto make_source_relative(
-    std::string const& path,
-    std::string_view source_to_root,
-    std::string_view current_dir_str
-) -> std::string
-{
-    if (path.empty() || path[0] == '/') {
-        return path;
-    }
-    // Paths starting with .. are relative to source_root.
-    // If we're in a subdirectory (current_dir_str not empty), prepend
-    // source_to_root to adjust the path for the working directory.
-    if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
-        if (!source_to_root.empty() && !current_dir_str.empty()) {
-            return std::string { source_to_root } + path;
-        }
-        return path;
-    }
-    if (source_to_root.empty()) {
-        return path;
-    }
-    if (!current_dir_str.empty() && path.starts_with(std::string { current_dir_str } + "/")) {
-        return path.substr(current_dir_str.size() + 1);
-    }
-    if (!current_dir_str.empty() && path == current_dir_str) {
-        return ".";
-    }
-    return std::string { source_to_root } + path;
-}
-
-/// Compute the "../" prefix needed to go from current_dir to project root
-auto compute_source_to_root(fs::path const& current_dir) -> std::string
-{
-    auto result = std::string {};
-    for (auto const& comp : current_dir) {
-        auto s = comp.string();
-        if (s != "." && s != "/" && !s.empty()) {
-            result += "../";
-        }
-    }
-    return result;
-}
-
 /// Strip the build root prefix from a path if present.
 /// E.g., "build/src/main.o" → "src/main.o" when build_root_name is "build"
 auto strip_build_prefix(
@@ -205,7 +160,7 @@ struct PathTransformContext {
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
     return PathTransformContext {
-        .source_to_root = compute_source_to_root(ctx.current_dir),
+        .source_to_root = compute_source_to_root(ctx.current_dir.string()),
         .current_dir_str = ctx.current_dir.string(),
         .source_root = ctx.options.source_root,
         .output_root = ctx.options.output_root,
@@ -521,9 +476,8 @@ auto get_or_create_group_node(
 auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& command,
-    std::string const& display,
-    std::string const& instruction_pattern = {}
+    std::string const& instruction,
+    std::string const& display
 ) -> Result<NodeId>;
 
 /// Search up the directory tree for Tuprules.tup
@@ -676,11 +630,13 @@ auto process_generated_rules(
             continue;
         }
 
-        // Create edges from inputs to generated command
+        // Create edges from inputs to generated command and collect operands
+        auto gen_input_ids = std::vector<NodeId> {};
         for (auto const& input : gen_rule.inputs) {
             auto input_id = resolve_input_node(ctx, input);
             if (input_id) {
                 (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
+                gen_input_ids.push_back(*input_id);
             }
         }
 
@@ -706,11 +662,14 @@ auto process_generated_rules(
         // Add edge from generated command to parent command (dep-scan runs before compile)
         (void)ctx.graph->add_edge(*gen_cmd_id, parent_cmd_id);
 
-        // Store generated rule info on the node for scheduler to handle
+        // Store generated rule info and operands on the node.
+        // outputs intentionally left empty: generated rules are dep-scan commands
+        // whose output is captured via generated_output, not %o expansion.
         if (auto* node = ctx.graph->get_command_node(*gen_cmd_id)) {
             node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
             node->output_action = gen_rule.action;
             node->parent_command = gen_rule.parent_command;
+            node->inputs = std::move(gen_input_ids);
         }
     }
 }
@@ -1532,8 +1491,15 @@ auto expand_rule(
         }
     }
 
-    // Create command node (with instruction for deduplication analysis)
-    auto cmd_id = Result<NodeId> { create_command_node(ctx, state, cmd_text, display, instruction_pattern) };
+    // Resolve final instruction: use instruction_pattern when valid,
+    // fall back to expanded command text (which has no % patterns)
+    auto has_group_pattern = instruction_pattern.find("%<") != std::string::npos
+        || instruction_pattern.find("%{") != std::string::npos;
+    auto const& final_instruction = instruction_pattern.empty() || has_group_pattern
+        ? cmd_text
+        : instruction_pattern;
+
+    auto cmd_id = Result<NodeId> { create_command_node(ctx, state, final_instruction, display) };
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
@@ -1560,9 +1526,10 @@ auto expand_rule(
 
     process_generated_rules(ctx, state, generated_rules, *cmd_id);
 
-    // Create edges from inputs to command
+    // Create edges from inputs to command and collect operand NodeIds
     // Use file_inputs (excludes glob patterns which aren't valid paths)
     // Skip group references - they are handled by deferred edge resolution (order-only)
+    auto input_ids = std::vector<NodeId> {};
     for (auto const& input : file_inputs) {
         if (is_order_only_group_reference(input)) {
             continue;
@@ -1575,9 +1542,11 @@ auto expand_rule(
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
+        input_ids.push_back(*input_id);
     }
 
-    // Create edges from command to outputs
+    // Create edges from command to outputs and collect operand NodeIds
+    auto output_ids = std::vector<NodeId> {};
     for (auto const& output : *outputs) {
         auto output_id = Result<NodeId> { get_or_create_file_node(ctx, output, NodeType::Generated) };
         if (!output_id) {
@@ -1587,10 +1556,12 @@ auto expand_rule(
         // Check for duplicate output - another command already produces this file
         auto output_inputs = ctx.graph->get_inputs(*output_id);
         if (!output_inputs.empty()) {
-            for (auto input_id : output_inputs) {
-                if (node_id::is_command(input_id)) {
-                    auto existing_cmd_str_sv = get_command_str(ctx.graph->graph(), input_id);
-                    auto existing_cmd_str = existing_cmd_str_sv.empty() ? "<unknown>" : std::string { existing_cmd_str_sv };
+            for (auto existing_id : output_inputs) {
+                if (node_id::is_command(existing_id)) {
+                    auto existing_cmd_str = expand_instruction(ctx.graph->graph(), existing_id, ctx.graph->path_cache());
+                    if (existing_cmd_str.empty()) {
+                        existing_cmd_str = "<unknown>";
+                    }
                     auto output_path = ctx.graph->get_full_path(*output_id);
                     auto err_msg = std::format(
                         "Unable to create output '{}' because it is already owned by command:\n  {}",
@@ -1606,6 +1577,7 @@ auto expand_rule(
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
+        output_ids.push_back(*output_id);
 
         // Add to output group {name} if specified
         // Only add if the current context is active (guards satisfied)
@@ -1656,6 +1628,12 @@ auto expand_rule(
                 (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
             }
         }
+    }
+
+    // Store explicit operands on the command node for expand_instruction()
+    if (auto* cmd = ctx.graph->get_command_node(*cmd_id)) {
+        cmd->inputs = std::move(input_ids);
+        cmd->outputs = std::move(output_ids);
     }
 
     // Create order-only edges from the pre-expanded paths
@@ -2087,9 +2065,8 @@ auto get_or_create_group_node(
 auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& command,
-    std::string const& display,
-    std::string const& instruction_pattern
+    std::string const& instruction,
+    std::string const& display
 ) -> Result<NodeId>
 {
     // Intern exported_vars
@@ -2099,10 +2076,9 @@ auto create_command_node(
     }
 
     auto node = CommandNode {
-        .command = ctx.graph->intern(command),
         .display = ctx.graph->intern(display),
         .source_dir = ctx.graph->intern(ctx.current_dir.string()),
-        .instruction_id = ctx.graph->intern(instruction_pattern),
+        .instruction_id = ctx.graph->intern(instruction),
         .exported_vars = std::move(exported_var_ids),
         .guards = ctx.condition_stack, // Apply current guards from condition stack
     };
@@ -2404,13 +2380,12 @@ auto resolve_deferred_order_only_edges(
 
                 // Get command node and check if pattern exists
                 auto* cmd_node = graph.get_command_node(edge.command_id);
-                auto cmd_str = std::string { graph.str(cmd_node->command) };
+                auto cmd_str = std::string { graph.str(cmd_node->instruction_id) };
                 if (cmd_node && cmd_str.find(pattern) != std::string::npos) {
                     // Construct path transform context from command's source_dir
                     auto source_dir_str = std::string { graph.str(cmd_node->source_dir) };
-                    auto current_dir = fs::path { source_dir_str };
                     auto tc = PathTransformContext {
-                        .source_to_root = compute_source_to_root(current_dir),
+                        .source_to_root = compute_source_to_root(source_dir_str),
                         .current_dir_str = source_dir_str,
                         .source_root = state.options.source_root,
                         .output_root = state.options.output_root,
@@ -2434,7 +2409,7 @@ auto resolve_deferred_order_only_edges(
                         cmd_str.replace(pos, pattern.size(), replacement);
                         pos = cmd_str.find(pattern, pos + replacement.size());
                     }
-                    cmd_node->command = graph.intern(cmd_str);
+                    cmd_node->instruction_id = graph.intern(cmd_str);
 
                     // Also update display if it contains the pattern
                     auto display_str = std::string { graph.str(cmd_node->display) };

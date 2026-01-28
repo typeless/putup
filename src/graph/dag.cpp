@@ -4,6 +4,8 @@
 #include "pup/graph/dag.hpp"
 
 #include <algorithm>
+#include <cassert>
+#include <charconv>
 #include <filesystem>
 
 namespace pup::graph {
@@ -88,11 +90,6 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
 {
     auto const id = graph.next_command_id++;
     node.id = id;
-
-    if (!is_empty(node.command)) {
-        auto cmd_str = std::string { graph.strings.get(node.command) };
-        graph.command_str_index[std::move(cmd_str)] = id;
-    }
 
     auto const idx = node_id::index(id);
     if (idx >= graph.commands.size()) {
@@ -291,6 +288,7 @@ auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view na
 
 auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>
 {
+    assert(graph.command_index_built && "find_by_command() requires build_command_index() first");
     auto it = graph.command_str_index.find(cmd);
     if (it != graph.command_str_index.end()) {
         return it->second;
@@ -667,13 +665,245 @@ auto get_name(Graph const& graph, NodeId id) -> std::string_view
     return graph.strings.get(node->name);
 }
 
-auto get_command_str(Graph const& graph, NodeId id) -> std::string_view
+namespace {
+
+auto path_basename(std::string_view path) -> std::string_view
 {
-    auto const* node = get_command_node(graph, id);
-    if (!node) {
+    auto pos = path.rfind('/');
+    return pos == std::string_view::npos ? path : path.substr(pos + 1);
+}
+
+auto path_stem(std::string_view name) -> std::string_view
+{
+    auto pos = name.rfind('.');
+    return pos == std::string_view::npos ? name : name.substr(0, pos);
+}
+
+auto path_extension(std::string_view name) -> std::string_view
+{
+    auto pos = name.rfind('.');
+    return pos == std::string_view::npos ? std::string_view {} : name.substr(pos + 1);
+}
+
+auto path_parent(std::string_view path) -> std::string_view
+{
+    auto pos = path.rfind('/');
+    if (pos == std::string_view::npos) {
         return {};
     }
-    return graph.strings.get(node->command);
+    return path.substr(0, pos);
+}
+
+} // namespace
+
+auto compute_source_to_root(std::string_view source_dir) -> std::string
+{
+    if (source_dir.empty()) {
+        return {};
+    }
+    auto result = std::string {};
+    auto pos = std::size_t { 0 };
+    while (pos < source_dir.size()) {
+        auto slash = source_dir.find('/', pos);
+        auto segment = slash == std::string_view::npos
+            ? source_dir.substr(pos)
+            : source_dir.substr(pos, slash - pos);
+        if (!segment.empty() && segment != ".") {
+            result += "../";
+        }
+        pos = slash == std::string_view::npos ? source_dir.size() : slash + 1;
+    }
+    return result;
+}
+
+auto make_source_relative(
+    std::string_view path,
+    std::string_view source_to_root,
+    std::string_view source_dir
+) -> std::string
+{
+    if (path.empty() || path[0] == '/') {
+        return std::string { path };
+    }
+    if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
+        if (!source_to_root.empty() && !source_dir.empty()) {
+            return std::string { source_to_root } + std::string { path };
+        }
+        return std::string { path };
+    }
+    if (source_to_root.empty()) {
+        return std::string { path };
+    }
+    auto dir_prefix = std::string { source_dir } + "/";
+    if (path.starts_with(dir_prefix)) {
+        return std::string { path.substr(dir_prefix.size()) };
+    }
+    if (path == source_dir) {
+        return ".";
+    }
+    return std::string { source_to_root } + std::string { path };
+}
+
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string
+{
+    auto const* cmd = get_command_node(graph, cmd_id);
+    if (!cmd) {
+        return {};
+    }
+
+    auto pattern = graph.strings.get(cmd->instruction_id);
+    if (pattern.empty()) {
+        return {};
+    }
+
+    auto source_dir = graph.strings.get(cmd->source_dir);
+    auto source_to_root = compute_source_to_root(source_dir);
+
+    auto get_operand_path = [&](NodeId id) -> std::string {
+        auto full = get_full_path(graph, id, cache);
+        return make_source_relative(full, source_to_root, source_dir);
+    };
+
+    auto get_operand_name = [&](NodeId id) -> std::string_view {
+        return get_name(graph, id);
+    };
+
+    auto result = std::string {};
+    auto pos = std::size_t { 0 };
+
+    while (pos < pattern.size()) {
+        auto percent = pattern.find('%', pos);
+        if (percent == std::string::npos) {
+            result += pattern.substr(pos);
+            break;
+        }
+
+        result += pattern.substr(pos, percent - pos);
+
+        if (percent + 1 >= pattern.size()) {
+            result += '%';
+            pos = percent + 1;
+            continue;
+        }
+
+        auto flag = pattern[percent + 1];
+        pos = percent + 2;
+
+        if (flag == '%') {
+            result += '%';
+            continue;
+        }
+
+        if (flag >= '0' && flag <= '9') {
+            auto end = pos;
+            while (end < pattern.size() && pattern[end] >= '0' && pattern[end] <= '9') {
+                ++end;
+            }
+
+            auto num = 0;
+            auto const* start_ptr = pattern.data() + percent + 1;
+            auto const* end_ptr = pattern.data() + end;
+            std::from_chars(start_ptr, end_ptr, num);
+
+            if (end < pattern.size() && pattern[end] == 'f') {
+                if (num > 0 && static_cast<std::size_t>(num) <= cmd->inputs.size()) {
+                    result += get_operand_path(cmd->inputs[static_cast<std::size_t>(num - 1)]);
+                }
+                pos = end + 1;
+                continue;
+            }
+
+            if (end < pattern.size() && pattern[end] == 'o') {
+                if (num > 0 && static_cast<std::size_t>(num) <= cmd->outputs.size()) {
+                    result += get_operand_path(cmd->outputs[static_cast<std::size_t>(num - 1)]);
+                }
+                pos = end + 1;
+                continue;
+            }
+
+            result += '%';
+            pos = percent + 1;
+            continue;
+        }
+
+        switch (flag) {
+        case 'f':
+        case 'i': {
+            for (std::size_t i = 0; i < cmd->inputs.size(); ++i) {
+                if (i > 0) {
+                    result += ' ';
+                }
+                result += get_operand_path(cmd->inputs[i]);
+            }
+            break;
+        }
+        case 'b': {
+            if (!cmd->inputs.empty()) {
+                result += path_basename(get_full_path(graph, cmd->inputs[0], cache));
+            }
+            break;
+        }
+        case 'B': {
+            if (!cmd->inputs.empty()) {
+                result += path_stem(get_operand_name(cmd->inputs[0]));
+            }
+            break;
+        }
+        case 'e': {
+            if (!cmd->inputs.empty()) {
+                result += path_extension(get_operand_name(cmd->inputs[0]));
+            }
+            break;
+        }
+        case 'o': {
+            if (!cmd->outputs.empty()) {
+                result += get_operand_path(cmd->outputs[0]);
+            }
+            break;
+        }
+        case 'O': {
+            if (!cmd->outputs.empty()) {
+                result += path_basename(get_full_path(graph, cmd->outputs[0], cache));
+            }
+            break;
+        }
+        case 'd': {
+            if (!cmd->inputs.empty()) {
+                result += path_parent(get_operand_path(cmd->inputs[0]));
+            }
+            break;
+        }
+        default:
+            result += '%';
+            result += flag;
+            break;
+        }
+    }
+
+    return result;
+}
+
+auto expand_instruction(Graph const& graph, NodeId cmd_id) -> std::string
+{
+    auto cache = PathCache {};
+    return expand_instruction(graph, cmd_id, cache);
+}
+
+auto build_command_index(Graph& graph, PathCache& cache) -> void
+{
+    graph.command_str_index.clear();
+    graph.command_index_built = true;
+    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
+        auto const& cmd = graph.commands[i];
+        auto const id = node_id::make_command(i);
+        if (cmd.id != id) {
+            continue;
+        }
+        auto cmd_str = expand_instruction(graph, id, cache);
+        if (!cmd_str.empty()) {
+            graph.command_str_index[std::move(cmd_str)] = id;
+        }
+    }
 }
 
 auto get_display_str(Graph const& graph, NodeId id) -> std::string_view

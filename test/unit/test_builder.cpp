@@ -363,7 +363,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
     auto link_cmd_count = 0;
     for (auto id : commands) {
         auto const* node = graph.get_command_node(id);
-        auto cmd_str = get_command_str(graph.graph(), id);
+        auto cmd_str = expand_instruction(graph.graph(), id);
         if (node && cmd_str.find("-o app") != std::string_view::npos) {
             auto inputs = graph.get_inputs(id);
             // Should have at least 2 .o inputs (may also have Tupfile as sticky)
@@ -784,7 +784,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     auto found = false;
     for (auto id : graph.nodes_of_type(NodeType::Command)) {
         auto const* node = graph.get_command_node(id);
-        auto cmd_str = get_command_str(graph.graph(), id);
+        auto cmd_str = expand_instruction(graph.graph(), id);
         if (node && cmd_str.find("compile kernel.c") != std::string_view::npos) {
             auto order_only = graph.get_order_only(id);
             // Should have config.h as order-only
@@ -873,7 +873,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
     auto found_order_only = false;
     for (auto id : graph.nodes_of_type(NodeType::Command)) {
         auto const* node = graph.get_command_node(id);
-        auto cmd_str = get_command_str(graph.graph(), id);
+        auto cmd_str = expand_instruction(graph.graph(), id);
         if (node && cmd_str.find("compile") != std::string_view::npos) {
             auto order_only = graph.get_order_only(id);
             if (!order_only.empty()) {
@@ -1204,7 +1204,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     CommandNode const* srec_cmd = nullptr;
     for (auto id : commands) {
         auto const* node = graph.get_command_node(id);
-        auto cmd_str = get_command_str(graph.graph(), id);
+        auto cmd_str = expand_instruction(graph.graph(), id);
         if (node && cmd_str.find("srec_cat") != std::string_view::npos) {
             srec_cmd = node;
             break;
@@ -1338,7 +1338,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
     REQUIRE(cmd_node != nullptr);
 
     // At root, paths should be direct (no ../ prefixes)
-    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
     CHECK(cmd_str.find("../") == std::string_view::npos);
     CHECK(cmd_str.find("-c main.c") != std::string_view::npos);
     CHECK(cmd_str.find("-o main.o") != std::string_view::npos);
@@ -1390,7 +1390,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder
     REQUIRE(cmd_node != nullptr);
 
     // Command should use "add.c" not "../../src/lib/add.c"
-    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
     CHECK(cmd_str.find("../../src/lib/add.c") == std::string_view::npos);
     CHECK(cmd_str.find("-c add.c") != std::string_view::npos);
     CHECK(cmd_str.find("-o add.o") != std::string_view::npos);
@@ -1446,7 +1446,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[buil
     REQUIRE(cmd_node != nullptr);
 
     // Local file should be simplified, cross-directory uses root-relative path
-    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
     INFO("Command: " << std::string { cmd_str });
     CHECK(cmd_str.find("main.c") != std::string_view::npos);
     // Cross-directory reference becomes root-relative: ../../src/util/helper.c
@@ -1505,7 +1505,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
     auto const* cmd_node = graph.get_command_node(commands[0]);
     REQUIRE(cmd_node != nullptr);
 
-    auto cmd_str = get_command_str(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
     INFO("Command: " << std::string { cmd_str });
 
     // Input should be simplified (just "add.c", not round-trip path)

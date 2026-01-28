@@ -820,8 +820,8 @@ auto Scheduler::build_job_list(
             }
         }
 
-        // Convert StringIds to strings
-        auto cmd_str = std::string { get_command_str(graph.graph(), id) };
+        // Expand command from instruction pattern + operands
+        auto cmd_str = expand_instruction(graph.graph(), id);
         auto display_str = std::string { get_display_str(graph.graph(), id) };
 
         // Convert exported_vars from StringIds to strings

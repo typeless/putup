@@ -53,17 +53,17 @@ struct Guard {
 
 /// Command node - represents build commands
 /// Note: Type is determined by node_id::is_command(), not a stored field.
+/// Command string is reconstructed on demand via expand_instruction() from
+/// instruction_id + explicit operand NodeIds (inputs/outputs).
 struct CommandNode {
     NodeId id = 0;
 
-    StringId command = StringId::Empty;    ///< The command string (interned)
     StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
+    StringId instruction_id = StringId::Empty; ///< Instruction pattern (e.g. "gcc -c %f -o %o")
 
-    /// Pre-pattern-expansion instruction for deduplication analytics.
-    /// Note: `command` is kept for execution; instruction enables measuring
-    /// potential savings. Phase 2 would store instruction + operands only.
-    StringId instruction_id = StringId::Empty;
+    std::vector<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion
+    std::vector<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion
 
     std::set<StringId> exported_vars = {}; ///< Env vars to export to command (interned)
 
@@ -199,6 +199,7 @@ struct Graph {
     // Node lookup indices (with transparent lookup support)
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual> dir_name_index;
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
+    bool command_index_built = false;
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
     NodeId next_command_id = node_id::make_command(1);     ///< Next command node ID
@@ -380,9 +381,32 @@ auto get_string(Graph const& graph, StringId id) -> std::string_view;
 [[nodiscard]]
 auto get_name(Graph const& graph, NodeId id) -> std::string_view;
 
-/// Get command node command string as string_view
+/// Compute the "../" prefix needed to navigate from source_dir back to project root.
+/// E.g., "src/lib" → "../../"
 [[nodiscard]]
-auto get_command_str(Graph const& graph, NodeId id) -> std::string_view;
+auto compute_source_to_root(std::string_view source_dir) -> std::string;
+
+/// Transform a project-root-relative path to be relative to a Tupfile's source directory.
+/// Used for command expansion where commands run from the Tupfile directory.
+[[nodiscard]]
+auto make_source_relative(
+    std::string_view path,
+    std::string_view source_to_root,
+    std::string_view source_dir
+) -> std::string;
+
+/// Expand instruction pattern into full command string by substituting
+/// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
+[[nodiscard]]
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string;
+
+/// Expand instruction pattern (convenience overload, creates temporary cache)
+[[nodiscard]]
+auto expand_instruction(Graph const& graph, NodeId cmd_id) -> std::string;
+
+/// Build the command string index for find_by_command() lookups.
+/// Must be called after all commands have their operands set (post-parsing).
+auto build_command_index(Graph& graph, PathCache& cache) -> void;
 
 /// Get command node display string as string_view
 [[nodiscard]]
@@ -629,6 +653,17 @@ public:
     auto get_full_path(NodeId id) const -> std::string
     {
         return std::string { graph::get_full_path(graph_, id, path_cache_) };
+    }
+
+    [[nodiscard]]
+    auto expand_instruction(NodeId id) const -> std::string
+    {
+        return graph::expand_instruction(graph_, id, path_cache_);
+    }
+
+    auto build_command_index() -> void
+    {
+        graph::build_command_index(graph_, path_cache_);
     }
 
     auto invalidate_path_cache(NodeId id) -> void { graph::invalidate_path_cache(path_cache_, id); }

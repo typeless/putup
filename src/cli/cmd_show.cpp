@@ -139,7 +139,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
         auto source_dir = graph::get_source_dir(ctx.graph().graph(), id);
         auto dir = source_dir.empty() ? std::string { "." } : std::string { source_dir };
-        auto cmd = std::string { graph::get_command_str(ctx.graph().graph(), id) };
+        auto cmd = std::string { graph::expand_instruction(ctx.graph().graph(), id) };
         printf("(cd \"%s\" && %s)\n", dir.c_str(), cmd.c_str());
     }
 
@@ -185,7 +185,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
             for (auto id : commands) {
                 if (ctx.graph().get_command_node(id)) {
                     auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
-                    auto cmd_sv = graph::get_command_str(ctx.graph().graph(), id);
+                    auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
                     auto display = std::string { display_sv.empty() ? cmd_sv : display_sv };
                     printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
                 }
@@ -208,7 +208,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                     return "";
                 }
                 auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
-                auto cmd_sv = graph::get_command_str(ctx.graph().graph(), id);
+                auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
                 return std::string { display_sv.empty() ? cmd_sv : display_sv };
             }
             return ctx.graph().get_full_path(id);
@@ -330,7 +330,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             output_rel = std::filesystem::relative(output_abs, working_dir).string();
         }
 
-        auto cmd_sv = graph::get_command_str(ctx.graph().graph(), id);
+        auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
         auto args = pup::core::tokenize_shell_command(cmd_sv);
         if (args.empty()) {
             continue;
@@ -500,12 +500,8 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
 
     // Build instruction usage map: instruction_id -> list of command IDs using it
     auto instruction_usage = std::unordered_map<StringId, std::vector<NodeId>> {};
-    auto total_cmd_bytes = std::size_t { 0 };
 
     for (auto const& cmd : graph.commands) {
-        auto cmd_str = graph.strings.get(cmd.command);
-        total_cmd_bytes += cmd_str.size();
-
         if (!is_empty(cmd.instruction_id)) {
             instruction_usage[cmd.instruction_id].push_back(cmd.id);
         }
@@ -548,25 +544,16 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
         ++shown;
     }
 
-    // Calculate estimated storage savings
-    // Current: each command stores full string
-    // Instruction-based: store unique instructions + small operand refs per command
     auto unique_instruction_bytes = std::size_t { 0 };
     for (auto const& [iid, _] : instruction_usage) {
         unique_instruction_bytes += graph.strings.get(iid).size();
     }
 
-    // Estimate: instruction table + 8 bytes per command (instruction_id + operand offset)
-    auto estimated_new_bytes = unique_instruction_bytes + (total_commands * 8);
-
-    printf("\nStorage estimate:\n");
-    printf("  Current command strings: %zu bytes\n", total_cmd_bytes);
+    auto per_command_overhead = total_commands * 8; // instruction_id + operand offset
+    printf("\nStorage:\n");
     printf("  Unique instruction strings: %zu bytes\n", unique_instruction_bytes);
-    printf("  Estimated with instructions: %zu bytes\n", estimated_new_bytes);
-    if (total_cmd_bytes > 0 && estimated_new_bytes < total_cmd_bytes) {
-        auto savings = 100.0 * (1.0 - double(estimated_new_bytes) / double(total_cmd_bytes));
-        printf("  Potential savings: %.0f%%\n", savings);
-    }
+    printf("  Per-command overhead: %zu bytes (%zu commands x 8)\n", per_command_overhead, total_commands);
+    printf("  Total: %zu bytes\n", unique_instruction_bytes + per_command_overhead);
 
     return EXIT_SUCCESS;
 }
