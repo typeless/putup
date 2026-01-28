@@ -21,6 +21,9 @@
 
 namespace pup::graph {
 
+/// Path cache - maps NodeId to full path string for efficiency
+using PathCache = std::unordered_map<NodeId, std::string>;
+
 /// Edge between nodes in the build graph
 struct Edge {
     NodeId from = 0;
@@ -49,7 +52,7 @@ struct Guard {
 };
 
 /// Command node - represents build commands
-/// Note: Type is determined by is_command_id(), not a stored field.
+/// Note: Type is determined by node_id::is_command(), not a stored field.
 struct CommandNode {
     NodeId id = 0;
 
@@ -170,54 +173,6 @@ struct StringHash {
     }
 };
 
-/// Condition ID flag - distinguishes condition nodes from file/command nodes
-inline constexpr auto CONDITION_ID_FLAG = NodeId { 0x40000000 };
-
-/// Phi ID flag - distinguishes phi nodes from file/command/condition nodes
-inline constexpr auto PHI_ID_FLAG = NodeId { 0x20000000 };
-
-/// Check if ID refers to a condition node
-[[nodiscard]]
-constexpr auto is_condition_id(NodeId id) -> bool
-{
-    return (id & CONDITION_ID_FLAG) != 0 && (id & COMMAND_ID_FLAG) == 0;
-}
-
-/// Check if ID refers to a phi node
-[[nodiscard]]
-constexpr auto is_phi_id(NodeId id) -> bool
-{
-    return (id & PHI_ID_FLAG) != 0 && (id & COMMAND_ID_FLAG) == 0 && (id & CONDITION_ID_FLAG) == 0;
-}
-
-/// Get array index for condition ID
-[[nodiscard]]
-constexpr auto condition_index(NodeId id) -> std::size_t
-{
-    return static_cast<std::size_t>(id & ~CONDITION_ID_FLAG);
-}
-
-/// Get array index for phi ID
-[[nodiscard]]
-constexpr auto phi_index(NodeId id) -> std::size_t
-{
-    return static_cast<std::size_t>(id & ~PHI_ID_FLAG);
-}
-
-/// Create condition ID from array index
-[[nodiscard]]
-constexpr auto make_condition_id(std::size_t idx) -> NodeId
-{
-    return static_cast<NodeId>(idx) | CONDITION_ID_FLAG;
-}
-
-/// Create phi ID from array index
-[[nodiscard]]
-constexpr auto make_phi_id(std::size_t idx) -> NodeId
-{
-    return static_cast<NodeId>(idx) | PHI_ID_FLAG;
-}
-
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
     StringPool strings; ///< Interned string storage
@@ -239,12 +194,11 @@ struct Graph {
     // Node lookup indices (with transparent lookup support)
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual> dir_name_index;
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
-    mutable std::unordered_map<NodeId, std::string> path_cache;
 
-    NodeId next_file_id = 2;                         ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
-    NodeId next_command_id = make_command_id(1);     ///< Next command node ID
-    NodeId next_condition_id = make_condition_id(1); ///< Next condition node ID
-    NodeId next_phi_id = make_phi_id(1);             ///< Next phi node ID
+    NodeId next_file_id = 2;                              ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
+    NodeId next_command_id = node_id::make_command(1);    ///< Next command node ID
+    NodeId next_condition_id = node_id::make_condition(1); ///< Next condition node ID
+    NodeId next_phi_id = node_id::make_phi(1);             ///< Next phi node ID
 };
 
 /// Create a new empty graph with build root initialized
@@ -394,15 +348,20 @@ auto root_nodes(Graph const& graph) -> std::vector<NodeId>;
 auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>;
 
 /// Reconstruct full path from (parent_dir, name) chain
-/// Uses internal cache for efficiency.
+/// Uses provided cache for efficiency.
+[[nodiscard]]
+auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::string_view;
+
+/// Reconstruct full path without caching (convenience overload)
+/// Note: Creates temporary cache - prefer the cached version for repeated calls.
 [[nodiscard]]
 auto get_full_path(Graph const& graph, NodeId id) -> std::string;
 
-/// Invalidate path cache for a node (call when parent_dir or name changes)
-auto invalidate_path_cache(Graph& graph, NodeId id) -> void;
+/// Invalidate path cache entry for a node (call when parent_dir or name changes)
+auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
 
 /// Clear the entire path cache
-auto clear_path_cache(Graph& graph) -> void;
+auto clear_path_cache(PathCache& cache) -> void;
 
 /// Intern a string in the graph's string pool
 [[nodiscard]]
@@ -660,16 +619,30 @@ public:
     [[nodiscard]]
     auto get_full_path(NodeId id) const -> std::string
     {
-        return graph::get_full_path(graph_, id);
+        return std::string { graph::get_full_path(graph_, id, path_cache_) };
     }
 
-    auto invalidate_path_cache(NodeId id) -> void { graph::invalidate_path_cache(graph_, id); }
+    auto invalidate_path_cache(NodeId id) -> void { graph::invalidate_path_cache(path_cache_, id); }
 
-    auto clear_path_cache() -> void { graph::clear_path_cache(graph_); }
+    auto clear_path_cache() -> void { graph::clear_path_cache(path_cache_); }
+
+    /// Get direct access to the path cache (for advanced use)
+    [[nodiscard]]
+    auto path_cache() -> PathCache&
+    {
+        return path_cache_;
+    }
+
+    [[nodiscard]]
+    auto path_cache() const -> PathCache const&
+    {
+        return path_cache_;
+    }
 
     auto set_build_root_name(std::string name) -> void
     {
         graph::set_build_root_name(graph_, std::move(name));
+        path_cache_.clear();
     }
 
     [[nodiscard]]
@@ -713,6 +686,7 @@ public:
 
 private:
     Graph graph_;
+    mutable PathCache path_cache_; ///< Path cache owned by BuildGraph (not Graph)
 };
 
 } // namespace pup::graph

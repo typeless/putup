@@ -64,128 +64,163 @@ auto VarDb::clear() -> void
 }
 
 // =============================================================================
+// VarContext lookup functions
+// =============================================================================
+
+auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::Kind kind) -> VarLookupResult
+{
+    // Context-computed special variables (highest priority) - NOT overridable
+    if (name == builtin_vars::TUP_CWD && !ctx.tup_cwd.empty()) {
+        return { ctx.tup_cwd, VarBank::Builtin };
+    }
+    if (name == builtin_vars::TUP_VARIANTDIR && !ctx.tup_variantdir.empty()) {
+        return { ctx.tup_variantdir, VarBank::Builtin };
+    }
+    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR && !ctx.tup_variant_outputdir.empty()) {
+        return { ctx.tup_variant_outputdir, VarBank::Builtin };
+    }
+    if (name == builtin_vars::TUP_SRCDIR && !ctx.tup_srcdir.empty()) {
+        return { ctx.tup_srcdir, VarBank::Builtin };
+    }
+    if (name == builtin_vars::TUP_OUTDIR && !ctx.tup_outdir.empty()) {
+        return { ctx.tup_outdir, VarBank::Builtin };
+    }
+
+    // TUP_PLATFORM and TUP_ARCH: env > config > context > default
+    // For Config kind, env still takes priority, then config is checked.
+    if (name == builtin_vars::TUP_PLATFORM) {
+        if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+            return { std::string_view { env }, VarBank::Env };
+        }
+        // For Config kind or if config has the value, use config
+        if (ctx.config && ctx.config->contains(name)) {
+            return { ctx.config->get(name), VarBank::Config };
+        }
+        // Only use context value for Regular kind (not Config)
+        if (kind != VarRef::Kind::Config && !ctx.tup_platform.empty()) {
+            return { ctx.tup_platform, VarBank::Builtin };
+        }
+        return { std::string_view { pup::PLATFORM }, VarBank::Builtin };
+    }
+    if (name == builtin_vars::TUP_ARCH) {
+        if (auto const* env = std::getenv("TUP_ARCH"); env && *env) {
+            return { std::string_view { env }, VarBank::Env };
+        }
+        // For Config kind or if config has the value, use config
+        if (ctx.config && ctx.config->contains(name)) {
+            return { ctx.config->get(name), VarBank::Config };
+        }
+        // Only use context value for Regular kind (not Config)
+        if (kind != VarRef::Kind::Config && !ctx.tup_arch.empty()) {
+            return { ctx.tup_arch, VarBank::Builtin };
+        }
+        return { std::string_view { pup::ARCH }, VarBank::Builtin };
+    }
+
+    // Kind-specific lookup
+    switch (kind) {
+    case VarRef::Kind::Config:
+        if (ctx.config && ctx.config->contains(name)) {
+            return { ctx.config->get(name), VarBank::Config };
+        }
+        break;
+
+    case VarRef::Kind::Node:
+        if (ctx.node && ctx.node->contains(name)) {
+            return { ctx.node->get(name), VarBank::Node };
+        }
+        break;
+
+    case VarRef::Kind::Regular:
+        // Regular variables have priority over config
+        if (ctx.vars && ctx.vars->contains(name)) {
+            // Check if this is an imported env var
+            if (ctx.imported_vars && ctx.imported_vars->contains(std::string { name })) {
+                return { ctx.vars->get(name), VarBank::Env };
+            }
+            return { ctx.vars->get(name), VarBank::Regular };
+        }
+        // Fall back to config (tup behavior: CONFIG_* accessible via $())
+        if (ctx.config && ctx.config->contains(name)) {
+            return { ctx.config->get(name), VarBank::Config };
+        }
+        break;
+    }
+
+    return { std::nullopt, VarBank::NotFound };
+}
+
+auto lookup_var(VarContext const& ctx, std::string_view name, VarRef::Kind kind) -> std::optional<std::string_view>
+{
+    return lookup_var_with_bank(ctx, name, kind).value;
+}
+
+// =============================================================================
 // Internal helper functions
 // =============================================================================
 
 namespace {
 
-auto expand_special_var(EvalContext& ctx, std::string_view name) -> std::optional<std::string>
+/// Create VarContext from EvalContext for lookup functions
+auto make_var_context(EvalContext const& ctx) -> VarContext
 {
-    // Context-computed special variables - NOT overridable via config
-    if (name == builtin_vars::TUP_CWD) {
-        return ctx.tup_cwd;
-    }
-    if (name == builtin_vars::TUP_VARIANTDIR) {
-        return ctx.tup_variantdir;
-    }
-    if (name == builtin_vars::TUP_VARIANT_OUTPUTDIR) {
-        return ctx.tup_variant_outputdir;
-    }
-    if (name == builtin_vars::TUP_SRCDIR) {
-        return ctx.tup_srcdir;
-    }
-    if (name == builtin_vars::TUP_OUTDIR) {
-        return ctx.tup_outdir;
-    }
-
-    // TUP_PLATFORM and TUP_ARCH are handled in expand_var() with proper priority:
-    // env > config > default
-
-    return std::nullopt;
+    return VarContext {
+        .vars = ctx.vars,
+        .config = ctx.config_vars,
+        .node = ctx.node_vars,
+        .tup_cwd = ctx.tup_cwd,
+        .tup_platform = ctx.tup_platform,
+        .tup_arch = ctx.tup_arch,
+        .tup_variantdir = ctx.tup_variantdir,
+        .tup_variant_outputdir = ctx.tup_variant_outputdir,
+        .tup_srcdir = ctx.tup_srcdir,
+        .tup_outdir = ctx.tup_outdir,
+        .imported_vars = ctx.imported_vars,
+    };
 }
 
 auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
 {
-    // TUP_PLATFORM and TUP_ARCH have special priority: env > config > default
-    // Check env var first (highest priority)
-    if (ref.name == builtin_vars::TUP_PLATFORM) {
-        if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
-            return std::string { env };
+    auto var_ctx = make_var_context(ctx);
+    auto [value, bank] = lookup_var_with_bank(var_ctx, ref.name, ref.kind);
+
+    // Dependency tracking based on which bank was used
+    if (bank == VarBank::Config && ctx.on_config_var_used) {
+        auto name = ref.name;
+        if (name.starts_with(builtin_vars::CONFIG_)) {
+            name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
         }
-    }
-    if (ref.name == builtin_vars::TUP_ARCH) {
-        if (auto const* env = std::getenv("TUP_ARCH"); env && *env) {
-            return std::string { env };
-        }
+        ctx.on_config_var_used(name);
     }
 
-    // Check for context-computed special variables (TUP_CWD, TUP_VARIANTDIR, etc.)
-    // These are NOT overridable via config
-    if (auto special = expand_special_var(ctx, ref.name)) {
-        return *special;
-    }
-
-    VarDb const* db = nullptr;
-    switch (ref.kind) {
-    case VarRef::Kind::Regular:
-        db = ctx.vars;
-        break;
-    case VarRef::Kind::Config:
-        db = ctx.config_vars;
-        break;
-    case VarRef::Kind::Node:
-        db = ctx.node_vars;
-        break;
-    }
-
-    if (db && db->contains(ref.name)) {
-        // Track config variable usage for fine-grained dependency tracking
-        // Track even for empty values - if value changes, command should rebuild
-        if (ref.kind == VarRef::Kind::Config && ctx.on_config_var_used) {
-            ctx.on_config_var_used(ref.name);
-        }
-        // Propagate transitive config var dependencies for regular variables
-        // If CXXFLAGS was assigned from @(RELEASE_CXXFLAGS), using $(CXXFLAGS)
-        // should trigger the RELEASE_CXXFLAGS dependency
-        if (ref.kind == VarRef::Kind::Regular && ctx.var_config_deps && ctx.on_config_var_used) {
-            auto it = ctx.var_config_deps->find(ref.name); // heterogeneous lookup
-            if (it != ctx.var_config_deps->end()) {
-                for (auto const& dep : it->second) {
-                    ctx.on_config_var_used(dep);
-                }
+    // Propagate transitive config var dependencies for regular variables
+    if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
+        && ctx.var_config_deps && ctx.on_config_var_used) {
+        auto it = ctx.var_config_deps->find(ref.name);
+        if (it != ctx.var_config_deps->end()) {
+            for (auto const& dep : it->second) {
+                ctx.on_config_var_used(dep);
             }
         }
-        // Track imported env variable usage for fine-grained dependency tracking
-        if (ref.kind == VarRef::Kind::Regular && ctx.imported_vars
-            && ctx.imported_vars->contains(ref.name) && ctx.on_env_var_used) {
-            ctx.on_env_var_used(ref.name);
-        }
-        // Propagate transitive env var dependencies for regular variables
-        if (ref.kind == VarRef::Kind::Regular && ctx.var_env_deps && ctx.on_env_var_used) {
-            auto it = ctx.var_env_deps->find(ref.name); // heterogeneous lookup
-            if (it != ctx.var_env_deps->end()) {
-                for (auto const& dep : it->second) {
-                    ctx.on_env_var_used(dep);
-                }
+    }
+
+    // Track imported env variable usage
+    if (bank == VarBank::Env && ctx.on_env_var_used) {
+        ctx.on_env_var_used(ref.name);
+    }
+
+    // Propagate transitive env var dependencies for regular variables
+    if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
+        && ctx.var_env_deps && ctx.on_env_var_used) {
+        auto it = ctx.var_env_deps->find(ref.name);
+        if (it != ctx.var_env_deps->end()) {
+            for (auto const& dep : it->second) {
+                ctx.on_env_var_used(dep);
             }
         }
-        return std::string { db->get(ref.name) };
     }
 
-    // For regular variables, also check config_vars (tup behavior: CONFIG_* are accessible via $())
-    if (ref.kind == VarRef::Kind::Regular && ctx.config_vars && ctx.config_vars->contains(ref.name)) {
-        // Track config variable usage - strip CONFIG_ prefix if present
-        // Track even for empty values - if value changes, command should rebuild
-        if (ctx.on_config_var_used) {
-            auto name = ref.name;
-            if (name.starts_with(builtin_vars::CONFIG_)) {
-                name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
-            }
-            ctx.on_config_var_used(name);
-        }
-        return std::string { ctx.config_vars->get(ref.name) };
-    }
-
-    // Fall back to compile-time default for TUP_PLATFORM/TUP_ARCH
-    if (ref.name == builtin_vars::TUP_PLATFORM) {
-        return std::string { pup::PLATFORM };
-    }
-    if (ref.name == builtin_vars::TUP_ARCH) {
-        return std::string { pup::ARCH };
-    }
-
-    // Variable not found - return empty string (tup behavior)
-    return std::string {};
+    return value ? std::string { *value } : std::string {};
 }
 
 } // namespace

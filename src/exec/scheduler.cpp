@@ -66,7 +66,7 @@ auto add_producer_dependencies(
 ) -> void
 {
     for (auto producer_id : graph.get_inputs(node_id)) {
-        if (is_command_id(producer_id)) {
+        if (node_id::is_command(producer_id)) {
             if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != current_job) {
                 dependencies.insert(it->second);
             }
@@ -110,7 +110,7 @@ auto build_dependency_map(
         // Check regular inputs - traverse graph edges
         for (auto input_id : graph.get_inputs(cmd_id)) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
-            if (is_command_id(input_id)) {
+            if (node_id::is_command(input_id)) {
                 if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j) {
                     dependencies.insert(it->second);
                 }
@@ -207,7 +207,7 @@ auto collect_required_commands(
         }
         visited.insert(id);
 
-        if (is_command_id(id) && graph.get_command_node(id)) {
+        if (node_id::is_command(id) && graph.get_command_node(id)) {
             commands.insert(id);
         }
 
@@ -418,8 +418,7 @@ auto Scheduler::execute_sequential(
     }
 
     // Count inactive jobs upfront (they never enter the queue)
-    auto inactive_count = std::count_if(jobs.begin(), jobs.end(),
-        [](auto const& j) { return !j.guard_active; });
+    auto inactive_count = std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return !j.guard_active; });
     impl_->stats.skipped_jobs += static_cast<std::size_t>(inactive_count);
 
     // Only queue active jobs with no dependencies
@@ -501,8 +500,7 @@ auto Scheduler::execute_parallel(
     }
 
     // Count active jobs - inactive jobs never enter the queue
-    auto active_count = static_cast<std::size_t>(std::count_if(jobs.begin(), jobs.end(),
-        [](auto const& j) { return j.guard_active; }));
+    auto active_count = static_cast<std::size_t>(std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return j.guard_active; }));
     impl_->stats.skipped_jobs += jobs.size() - active_count;
 
     // Only queue active jobs with no dependencies
@@ -792,7 +790,7 @@ auto Scheduler::build_job_list(
     auto jobs = std::vector<BuildJob> {};
 
     for (auto id : topo_result.order) {
-        if (!is_command_id(id)) {
+        if (!node_id::is_command(id)) {
             continue;
         }
         auto const* node = graph.get_command_node(id);

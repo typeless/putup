@@ -19,36 +19,71 @@ inline constexpr auto SOURCE_ROOT_ID = INVALID_NODE_ID;
 /// Build root node ID (parent of Generated/Ghost nodes in variant builds)
 inline constexpr auto BUILD_ROOT_ID = NodeId { 1 };
 
-/// Command ID flag - high bit indicates command (vs file/directory/group)
-inline constexpr auto COMMAND_ID_FLAG = NodeId { 0x80000000 };
+/// NodeId encoding namespace - groups all ID type detection and manipulation functions
+namespace node_id {
 
-/// Check if ID refers to a command (vs file/directory/group)
+/// Flag bits for different node types (mutually exclusive in high nibble)
+inline constexpr auto COMMAND_FLAG = NodeId { 0x80000000 };
+inline constexpr auto CONDITION_FLAG = NodeId { 0x40000000 };
+inline constexpr auto PHI_FLAG = NodeId { 0x20000000 };
+
+/// Check if ID refers to a file node (no flags set)
 [[nodiscard]]
-constexpr auto is_command_id(NodeId id) -> bool
+constexpr auto is_file(NodeId id) -> bool
 {
-    return (id & COMMAND_ID_FLAG) != 0;
+    return id != 0 && (id & (COMMAND_FLAG | CONDITION_FLAG | PHI_FLAG)) == 0;
 }
 
-/// Get array index for file ID (file IDs start at 1, index 0 unused)
+/// Check if ID refers to a command node
 [[nodiscard]]
-constexpr auto file_index(NodeId id) -> std::size_t
+constexpr auto is_command(NodeId id) -> bool
 {
-    return static_cast<std::size_t>(id);
+    return (id & COMMAND_FLAG) != 0;
 }
 
-/// Get array index for command ID (command IDs start at 0x80000001, index 0 unused)
+/// Check if ID refers to a condition node
 [[nodiscard]]
-constexpr auto command_index(NodeId id) -> std::size_t
+constexpr auto is_condition(NodeId id) -> bool
 {
-    return static_cast<std::size_t>(id & ~COMMAND_ID_FLAG);
+    return (id & CONDITION_FLAG) != 0 && (id & COMMAND_FLAG) == 0;
+}
+
+/// Check if ID refers to a phi node
+[[nodiscard]]
+constexpr auto is_phi(NodeId id) -> bool
+{
+    return (id & PHI_FLAG) != 0 && (id & COMMAND_FLAG) == 0 && (id & CONDITION_FLAG) == 0;
+}
+
+/// Get array index from any node ID (strips flag bits)
+[[nodiscard]]
+constexpr auto index(NodeId id) -> std::size_t
+{
+    return static_cast<std::size_t>(id & ~(COMMAND_FLAG | CONDITION_FLAG | PHI_FLAG));
 }
 
 /// Create command ID from array index
 [[nodiscard]]
-constexpr auto make_command_id(std::size_t idx) -> NodeId
+constexpr auto make_command(std::size_t idx) -> NodeId
 {
-    return static_cast<NodeId>(idx) | COMMAND_ID_FLAG;
+    return static_cast<NodeId>(idx) | COMMAND_FLAG;
 }
+
+/// Create condition ID from array index
+[[nodiscard]]
+constexpr auto make_condition(std::size_t idx) -> NodeId
+{
+    return static_cast<NodeId>(idx) | CONDITION_FLAG;
+}
+
+/// Create phi ID from array index
+[[nodiscard]]
+constexpr auto make_phi(std::size_t idx) -> NodeId
+{
+    return static_cast<NodeId>(idx) | PHI_FLAG;
+}
+
+} // namespace node_id
 
 /// SHA-256 hash (32 bytes)
 using Hash256 = std::array<std::byte, 32>;

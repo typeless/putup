@@ -24,7 +24,7 @@ auto find_config_commands(
     auto result = std::vector<ConfigCommand> {};
 
     for (auto id : graph.all_nodes()) {
-        if (!is_command_id(id)) {
+        if (!node_id::is_command(id)) {
             continue;
         }
         auto const* node = graph.get_command_node(id);
@@ -61,7 +61,7 @@ auto collect_command_dependencies(
         worklist.pop_back();
 
         for (auto input_id : graph.get_inputs(cmd_id)) {
-            if (is_command_id(input_id)) {
+            if (node_id::is_command(input_id)) {
                 if (result.insert(input_id).second) {
                     worklist.push_back(input_id);
                 }
@@ -69,7 +69,7 @@ auto collect_command_dependencies(
             }
 
             for (auto producer_id : graph.get_inputs(input_id)) {
-                if (is_command_id(producer_id)) {
+                if (node_id::is_command(producer_id)) {
                     if (result.insert(producer_id).second) {
                         worklist.push_back(producer_id);
                     }
@@ -79,7 +79,7 @@ auto collect_command_dependencies(
 
         for (auto oo_id : graph.get_order_only(cmd_id)) {
             for (auto producer_id : graph.get_inputs(oo_id)) {
-                if (is_command_id(producer_id)) {
+                if (node_id::is_command(producer_id)) {
                     if (result.insert(producer_id).second) {
                         worklist.push_back(producer_id);
                     }

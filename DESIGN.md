@@ -300,8 +300,39 @@ class VarDb {
     auto append(name, value) -> void;  // Space-separated
     auto get(name) -> std::string;
 };
+```
 
+**Variable lookup abstraction** - The `VarContext` struct groups variable sources for lookup, while `VarBank` tracks which source a value came from:
+
+```cpp
+enum class VarBank {
+    Builtin,  // TUP_CWD, TUP_PLATFORM, etc.
+    Regular,  // $(VAR)
+    Config,   // @(VAR) or $(CONFIG_VAR)
+    Node,     // &(VAR)
+    Env,      // Imported environment variable
+    NotFound
+};
+
+struct VarContext {
+    VarDb* vars = nullptr;         // Regular variables
+    VarDb const* config = nullptr; // Config variables
+    VarDb* node = nullptr;         // Node variables
+    std::string_view tup_cwd, tup_platform, tup_arch;
+    std::string_view tup_variantdir, tup_variant_outputdir;
+    std::string_view tup_srcdir, tup_outdir;
+    std::unordered_set<std::string> const* imported_vars;
+};
+
+// Lookup with bank tracking (for dependency recording)
+auto lookup_var_with_bank(VarContext const&, name, kind) -> VarLookupResult;
+```
+
+**EvalContext** owns the data and provides callbacks for cross-directory resolution and dependency tracking:
+
+```cpp
 struct EvalContext {
+    // Variable storage (ownership - VarContext provides views)
     VarDb* vars;                // $(VAR)
     VarDb const* config_vars;   // @(VAR) - read-only
     VarDb* node_vars;           // &(VAR)
@@ -399,7 +430,7 @@ struct FileNode {
 };
 
 /// Command node - build commands
-/// Type is determined by is_command_id(), not a stored field.
+/// Type is determined by node_id::is_command(), not a stored field.
 struct CommandNode {
     NodeId id;
     StringId command;       // The command string (interned)
@@ -448,7 +479,27 @@ struct Edge {
 **ID spaces:** Files and commands occupy separate ID spaces for O(1) type detection:
 - File IDs: 1, 2, 3, ... (low range)
 - Command IDs: 0x80000001, 0x80000002, ... (high bit set)
-- `is_command_id(id)` checks the high bit
+- Condition IDs: 0x40000001, ... (condition flag set)
+- Phi IDs: 0x20000001, ... (phi flag set)
+
+The `node_id` namespace provides type detection and ID construction:
+
+```cpp
+namespace node_id {
+    constexpr auto COMMAND_FLAG   = NodeId { 0x80000000 };
+    constexpr auto CONDITION_FLAG = NodeId { 0x40000000 };
+    constexpr auto PHI_FLAG       = NodeId { 0x20000000 };
+
+    constexpr auto is_command(NodeId id) -> bool;    // Checks high bit
+    constexpr auto is_condition(NodeId id) -> bool;  // Checks condition flag
+    constexpr auto is_phi(NodeId id) -> bool;        // Checks phi flag
+    constexpr auto index(NodeId id) -> std::size_t;  // Strips all flags
+
+    constexpr auto make_command(std::size_t idx) -> NodeId;
+    constexpr auto make_condition(std::size_t idx) -> NodeId;
+    constexpr auto make_phi(std::size_t idx) -> NodeId;
+}
+```
 
 **Edge storage:** Edges are stored centrally with indices for O(1) lookup:
 
@@ -475,7 +526,14 @@ struct Graph {
     // Node lookup indices (with transparent lookup support)
     std::unordered_map<DirNameKey, NodeId, ...> dir_name_index;  // (parent, name) -> NodeId
     std::unordered_map<std::string, NodeId, ...> command_str_index;  // command -> NodeId
-    mutable std::unordered_map<NodeId, std::string> path_cache;
+};
+
+// Path cache is stored externally in BuildGraph for const-correctness
+using PathCache = std::unordered_map<NodeId, std::string>;
+
+class BuildGraph {
+    Graph graph_;
+    mutable PathCache path_cache_;  // Cache for get_full_path()
 };
 ```
 

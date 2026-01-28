@@ -122,7 +122,7 @@ TEST_CASE("FileEntry conversion", "[index]")
 TEST_CASE("CommandEntry conversion", "[index]")
 {
     auto cmd = CommandEntry {
-        .id = make_command_id(5),
+        .id = node_id::make_command(5),
         .dir_id = 5,
         .command = "gcc -c main.c -o main.o",
         .display = "CC main.c",
@@ -136,10 +136,10 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.display_offset == 50);
     REQUIRE(raw.env_offset == 100);
 
-    // ID is computed from array index (4 + 1 = 5, then make_command_id)
+    // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto restored = CommandEntry::from_raw(raw, cmd.command, cmd.display, cmd.env, 4);
 
-    REQUIRE(restored.id == make_command_id(5));
+    REQUIRE(restored.id == node_id::make_command(5));
     REQUIRE(restored.dir_id == cmd.dir_id);
     REQUIRE(restored.command == cmd.command);
     REQUIRE(restored.display == cmd.display);
@@ -227,22 +227,22 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = make_command_id(1), .command = "gcc foo.c" });
-        index.add_command(CommandEntry { .id = make_command_id(2), .command = "gcc bar.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .command = "gcc foo.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .command = "gcc bar.c" });
 
         REQUIRE(index.command_count() == 2);
 
-        auto* found = index.find_command_by_id(make_command_id(1));
+        auto* found = index.find_command_by_id(node_id::make_command(1));
         REQUIRE(found != nullptr);
         REQUIRE(found->command == "gcc foo.c");
 
-        REQUIRE(index.find_command_by_id(make_command_id(999)) == nullptr);
+        REQUIRE(index.find_command_by_id(node_id::make_command(999)) == nullptr);
     }
 
     SECTION("add and query edges")
     {
-        auto cmd1 = make_command_id(1);
-        auto cmd2 = make_command_id(2);
+        auto cmd1 = node_id::make_command(1);
+        auto cmd2 = node_id::make_command(2);
         index.add_edge(EdgeEntry { .from = 1, .to = cmd1 });
         index.add_edge(EdgeEntry { .from = cmd1, .to = 2 });
         index.add_edge(EdgeEntry { .from = 1, .to = cmd2 });
@@ -259,7 +259,7 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("clear")
     {
-        auto cmd1 = make_command_id(1);
+        auto cmd1 = node_id::make_command(1);
         index.add_file(FileEntry { .id = 1, .name = "test.c" });
         index.add_command(CommandEntry { .id = cmd1 });
         index.add_edge(EdgeEntry { .from = 1, .to = cmd1 });
@@ -279,8 +279,8 @@ TEST_CASE("Index serialization roundtrip", "[index]")
 {
     // IDs must be consecutive and match array position (id = array_index + 1)
     // Files: 1, 2, 3, 4, 5 in insertion order
-    // Commands: make_command_id(1)
-    auto const cmd_id = make_command_id(1);
+    // Commands: node_id::make_command(1)
+    auto const cmd_id = node_id::make_command(1);
 
     auto index = Index {};
 
@@ -394,7 +394,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(file2->id == 4);
     REQUIRE(file2->type == NodeType::Generated);
 
-    // Verify command (ID computed from position: make_command_id(0 + 1))
+    // Verify command (ID computed from position: node_id::make_command(0 + 1))
     auto* cmd = restored.find_command_by_id(cmd_id);
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->command == "g++ -c src/main.cpp -o build/main.o");
@@ -528,7 +528,7 @@ TEST_CASE("Index reader validation", "[index]")
 TEST_CASE("Index reader malicious data handling", "[index]")
 {
     // Create a minimal valid index to use as base
-    auto const cmd_id = make_command_id(1);
+    auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .name = "test.c" });
     index.add_command(CommandEntry { .id = cmd_id, .command = "gcc test.c" });
@@ -764,8 +764,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = make_command_id(1), .command = "gcc", .display = "", .env = "" });
-        index.add_command(CommandEntry { .id = make_command_id(2), .command = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .command = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .command = "gcc", .display = "", .env = "" });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());

@@ -1086,10 +1086,10 @@ auto process_conditional(
 
     // Helper to process a branch with given polarity
     auto process_branch = [&](
-        std::vector<std::unique_ptr<parser::Statement>> const& body,
-        bool polarity,
-        bool is_active
-    ) -> Result<void> {
+                              std::vector<std::unique_ptr<parser::Statement>> const& body,
+                              bool polarity,
+                              bool is_active
+                          ) -> Result<void> {
         ctx.condition_stack.push_back(Guard { .condition = cond_id, .polarity = polarity });
         auto pop_guard = ScopeGuard([&] { ctx.condition_stack.pop_back(); });
 
@@ -1584,7 +1584,7 @@ auto expand_rule(
         auto output_inputs = ctx.graph->get_inputs(*output_id);
         if (!output_inputs.empty()) {
             for (auto input_id : output_inputs) {
-                if (is_command_id(input_id)) {
+                if (node_id::is_command(input_id)) {
                     auto existing_cmd_str_sv = get_command_str(ctx.graph->graph(), input_id);
                     auto existing_cmd_str = existing_cmd_str_sv.empty() ? "<unknown>" : std::string { existing_cmd_str_sv };
                     auto output_path = ctx.graph->get_full_path(*output_id);

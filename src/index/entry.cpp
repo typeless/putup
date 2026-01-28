@@ -65,7 +65,7 @@ auto CommandEntry::from_raw(
 ) -> CommandEntry
 {
     return CommandEntry {
-        .id = make_command_id(array_index + 1),
+        .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,
         .command = std::string { cmd_str },
         .display = std::string { display_str },
@@ -104,10 +104,10 @@ auto Index::add_edge(EdgeEntry entry) -> void
 
 auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
 {
-    if (id == 0 || is_command_id(id)) {
+    if (id == 0 || node_id::is_command(id)) {
         return nullptr;
     }
-    auto const idx = file_index(id) - 1;
+    auto const idx = node_id::index(id) - 1;
     if (idx >= files_.size()) {
         return nullptr;
     }
@@ -116,10 +116,10 @@ auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
 
 auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 {
-    if (!is_command_id(id)) {
+    if (!node_id::is_command(id)) {
         return nullptr;
     }
-    auto const idx = command_index(id);
+    auto const idx = node_id::index(id);
     if (idx == 0) {
         return nullptr;
     }

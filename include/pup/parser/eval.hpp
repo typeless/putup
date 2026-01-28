@@ -60,7 +60,69 @@ private:
     std::unordered_map<std::string, std::string, StringHash, std::equal_to<>> vars_;
 };
 
-/// Context for evaluating expressions
+/// Identifies which variable bank a lookup resolved from
+enum class VarBank {
+    Builtin,  ///< Built-in variable (TUP_CWD, TUP_PLATFORM, etc.)
+    Regular,  ///< Regular variable $(VAR)
+    Config,   ///< Config variable @(VAR) or $(CONFIG_VAR)
+    Node,     ///< Node variable &(VAR)
+    Env,      ///< Environment variable
+    NotFound, ///< Variable not found
+};
+
+/// Variable context - groups variable sources for lookup
+/// This is the "register bank" abstraction for variable resolution.
+struct VarContext {
+    VarDb* vars = nullptr;         ///< Regular variables $(VAR)
+    VarDb const* config = nullptr; ///< Config variables @(VAR)
+    VarDb* node = nullptr;         ///< Node variables &(VAR)
+
+    std::string_view tup_cwd = {};               ///< TUP_CWD value
+    std::string_view tup_platform = {};          ///< TUP_PLATFORM value
+    std::string_view tup_arch = {};              ///< TUP_ARCH value
+    std::string_view tup_variantdir = {};        ///< TUP_VARIANTDIR value
+    std::string_view tup_variant_outputdir = {}; ///< TUP_VARIANT_OUTPUTDIR value
+    std::string_view tup_srcdir = {};            ///< TUP_SRCDIR value
+    std::string_view tup_outdir = {};            ///< TUP_OUTDIR value
+
+    /// Set of imported environment variable names
+    std::unordered_set<std::string> const* imported_vars = nullptr;
+};
+
+/// Result of variable lookup with bank information
+struct VarLookupResult {
+    std::optional<std::string_view> value = std::nullopt;
+    VarBank bank = VarBank::NotFound;
+};
+
+/// Lookup a variable by name with appropriate priority.
+/// Priority: builtin > env (for TUP_PLATFORM/ARCH) > regular > config (with CONFIG_ prefix)
+/// @param ctx Variable context containing all variable banks
+/// @param name Variable name to look up
+/// @param kind The kind of variable reference (affects lookup priority)
+/// @return The variable value if found, or nullopt
+[[nodiscard]]
+auto lookup_var(VarContext const& ctx, std::string_view name, VarRef::Kind kind = VarRef::Kind::Regular)
+    -> std::optional<std::string_view>;
+
+/// Lookup a variable by name and return which bank it came from.
+/// Useful for dependency tracking - knowing which bank was accessed.
+/// @param ctx Variable context containing all variable banks
+/// @param name Variable name to look up
+/// @param kind The kind of variable reference (affects lookup priority)
+/// @return Pair of optional value and the bank it came from
+[[nodiscard]]
+auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::Kind kind = VarRef::Kind::Regular)
+    -> VarLookupResult;
+
+/// Context for evaluating expressions.
+///
+/// Note: The variable-related fields (vars, config_vars, node_vars, tup_* strings)
+/// parallel VarContext but differ in ownership semantics:
+/// - EvalContext owns strings (std::string) for stable lifetime
+/// - VarContext uses views (std::string_view) for efficient lookup
+///
+/// Use make_var_context() (internal) to create a VarContext from EvalContext.
 struct EvalContext {
     VarDb* vars = nullptr;              ///< Regular variables $(VAR)
     VarDb const* config_vars = nullptr; ///< Config variables @(VAR) from tup.config (read-only)

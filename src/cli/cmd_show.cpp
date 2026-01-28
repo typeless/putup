@@ -53,10 +53,10 @@ auto load_index_for_all_deps(
 auto format_node_id(pup::NodeId id) -> std::string
 {
     char buf[32];
-    if (is_command_id(id)) {
-        snprintf(buf, sizeof(buf), "c%zu", command_index(id));
+    if (node_id::is_command(id)) {
+        snprintf(buf, sizeof(buf), "c%zu", node_id::index(id));
     } else {
-        snprintf(buf, sizeof(buf), "f%zu", file_index(id));
+        snprintf(buf, sizeof(buf), "f%zu", node_id::index(id));
     }
     return buf;
 }
@@ -100,7 +100,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
         auto inputs = ctx.graph().get_inputs(id);
         for (auto input_id : inputs) {
-            if (is_command_id(input_id)) {
+            if (node_id::is_command(input_id)) {
                 auto path = std::filesystem::path { node_path };
                 if (path.has_parent_path()) {
                     auto parent = path.parent_path().string();
@@ -122,7 +122,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     }
 
     for (auto id : topo.order) {
-        if (!is_command_id(id)) {
+        if (!node_id::is_command(id)) {
             continue;
         }
         auto const* node = ctx.graph().get_command_node(id);
@@ -200,7 +200,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         declared_nodes.insert(id);
 
         auto get_label = [&]() -> std::string {
-            if (is_command_id(id)) {
+            if (node_id::is_command(id)) {
                 auto const* cmd = ctx.graph().get_command_node(id);
                 if (!cmd) {
                     return "";

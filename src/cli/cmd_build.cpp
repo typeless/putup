@@ -117,7 +117,7 @@ auto collect_upstream_files(
 
     // Find commands in scope and seed the stack with their inputs
     for (auto id : graph.all_nodes()) {
-        if (!pup::is_command_id(id)) {
+        if (!pup::node_id::is_command(id)) {
             continue;
         }
         auto const* node = graph.get_command_node(id);
@@ -147,7 +147,7 @@ auto collect_upstream_files(
             continue;
         }
 
-        if (!pup::is_command_id(id)) {
+        if (!pup::node_id::is_command(id)) {
             auto const* node = graph.get_file_node(id);
             if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
                 auto path = graph.get_full_path(id);
@@ -366,7 +366,7 @@ auto serialize_graph_nodes(
     auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
 
     for (auto id : graph.all_nodes()) {
-        if (pup::is_command_id(id)) {
+        if (pup::node_id::is_command(id)) {
             continue;
         }
         auto const* node = graph.get_file_node(id);
@@ -469,7 +469,7 @@ auto serialize_command_nodes(
 ) -> void
 {
     for (auto id : graph.all_nodes()) {
-        if (!pup::is_command_id(id)) {
+        if (!pup::node_id::is_command(id)) {
             continue;
         }
         auto const* cmd = graph.get_command_node(id);
@@ -509,7 +509,7 @@ auto compute_next_id(pup::graph::BuildGraph const& graph) -> pup::NodeId
 {
     auto max_file_id = pup::NodeId { 0 };
     for (auto id : graph.all_nodes()) {
-        if (!pup::is_command_id(id) && id > max_file_id) {
+        if (!pup::node_id::is_command(id) && id > max_file_id) {
             max_file_id = id;
         }
     }
@@ -742,7 +742,7 @@ auto detect_new_commands(
 {
     auto changed = std::vector<std::string> {};
     for (auto id : graph.all_nodes()) {
-        if (!pup::is_command_id(id)) {
+        if (!pup::node_id::is_command(id)) {
             continue;
         }
         auto const* node = graph.get_command_node(id);
@@ -1101,7 +1101,7 @@ auto build_single_variant(
     case BuildMode::Subset: {
         auto non_config_cmds = std::set<NodeId> {};
         for (auto id : ctx.graph().all_nodes()) {
-            if (is_command_id(id) && !config_cmd_ids.contains(id)) {
+            if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
                 non_config_cmds.insert(id);
             }
         }

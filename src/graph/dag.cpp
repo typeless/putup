@@ -38,28 +38,28 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
     if (id == 0) {
         return false;
     }
-    if (is_command_id(id)) {
-        auto idx = command_index(id);
+    if (node_id::is_command(id)) {
+        auto idx = node_id::index(id);
         if (idx == 0 || idx >= graph.commands.size()) {
             return false;
         }
         return graph.commands[idx].id == id;
     }
-    if (is_condition_id(id)) {
-        auto idx = condition_index(id);
+    if (node_id::is_condition(id)) {
+        auto idx = node_id::index(id);
         if (idx == 0 || idx >= graph.conditions.size()) {
             return false;
         }
         return graph.conditions[idx].id == id;
     }
-    if (is_phi_id(id)) {
-        auto idx = phi_index(id);
+    if (node_id::is_phi(id)) {
+        auto idx = node_id::index(id);
         if (idx == 0 || idx >= graph.phi_nodes.size()) {
             return false;
         }
         return graph.phi_nodes[idx].id == id;
     }
-    auto idx = file_index(id);
+    auto idx = node_id::index(id);
     if (idx >= graph.files.size()) {
         return false;
     }
@@ -75,7 +75,7 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
         graph.dir_name_index[DirNameKey { node.parent_dir, node.name }] = id;
     }
 
-    auto const idx = file_index(id);
+    auto const idx = node_id::index(id);
     if (idx >= graph.files.size()) {
         graph.files.resize(idx + 1);
     }
@@ -94,7 +94,7 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
         graph.command_str_index[std::move(cmd_str)] = id;
     }
 
-    auto const idx = command_index(id);
+    auto const idx = node_id::index(id);
     if (idx >= graph.commands.size()) {
         graph.commands.resize(idx + 1);
     }
@@ -150,10 +150,10 @@ auto get_file_node(Graph& graph, NodeId id) -> FileNode*
 
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*
 {
-    if (id == 0 || is_command_id(id)) {
+    if (id == 0 || node_id::is_command(id)) {
         return nullptr;
     }
-    auto const idx = file_index(id);
+    auto const idx = node_id::index(id);
     if (idx >= graph.files.size()) {
         return nullptr;
     }
@@ -169,10 +169,10 @@ auto get_command_node(Graph& graph, NodeId id) -> CommandNode*
 
 auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
 {
-    if (!is_command_id(id)) {
+    if (!node_id::is_command(id)) {
         return nullptr;
     }
-    auto const idx = command_index(id);
+    auto const idx = node_id::index(id);
     if (idx == 0 || idx >= graph.commands.size()) {
         return nullptr;
     }
@@ -183,10 +183,10 @@ auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
 {
     auto const id = graph.next_condition_id;
-    graph.next_condition_id = make_condition_id(condition_index(graph.next_condition_id) + 1);
+    graph.next_condition_id = node_id::make_condition(node_id::index(graph.next_condition_id) + 1);
     node.id = id;
 
-    auto const idx = condition_index(id);
+    auto const idx = node_id::index(id);
     if (idx >= graph.conditions.size()) {
         graph.conditions.resize(idx + 1);
     }
@@ -203,10 +203,10 @@ auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
 
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*
 {
-    if (!is_condition_id(id)) {
+    if (!node_id::is_condition(id)) {
         return nullptr;
     }
-    auto const idx = condition_index(id);
+    auto const idx = node_id::index(id);
     if (idx == 0 || idx >= graph.conditions.size()) {
         return nullptr;
     }
@@ -217,10 +217,10 @@ auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*
 auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>
 {
     auto const id = graph.next_phi_id;
-    graph.next_phi_id = make_phi_id(phi_index(graph.next_phi_id) + 1);
+    graph.next_phi_id = node_id::make_phi(node_id::index(graph.next_phi_id) + 1);
     node.id = id;
 
-    auto const idx = phi_index(id);
+    auto const idx = node_id::index(id);
     if (idx >= graph.phi_nodes.size()) {
         graph.phi_nodes.resize(idx + 1);
     }
@@ -237,10 +237,10 @@ auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*
 
 auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*
 {
-    if (!is_phi_id(id)) {
+    if (!node_id::is_phi(id)) {
         return nullptr;
     }
-    auto const idx = phi_index(id);
+    auto const idx = node_id::index(id);
     if (idx == 0 || idx >= graph.phi_nodes.size()) {
         return nullptr;
     }
@@ -340,7 +340,7 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
     if (type == NodeType::Command) {
         for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
             auto const& node = graph.commands[i];
-            if (node.id == make_command_id(i)) {
+            if (node.id == node_id::make_command(i)) {
                 result.push_back(node.id);
             }
         }
@@ -455,7 +455,6 @@ auto clear(Graph& graph) -> void
     graph.order_only_dependents.clear();
     graph.dir_name_index.clear();
     graph.command_str_index.clear();
-    graph.path_cache.clear();
     graph.strings.clear();
 
     // Re-initialize dir_name_index with pool pointer
@@ -475,9 +474,9 @@ auto clear(Graph& graph) -> void
         .parent_dir = SOURCE_ROOT_ID,
     };
     graph.next_file_id = 2;
-    graph.next_command_id = make_command_id(1);
-    graph.next_condition_id = make_condition_id(1);
-    graph.next_phi_id = make_phi_id(1);
+    graph.next_command_id = node_id::make_command(1);
+    graph.next_condition_id = node_id::make_condition(1);
+    graph.next_phi_id = node_id::make_phi(1);
 }
 
 auto all_nodes(Graph const& graph) -> std::vector<NodeId>
@@ -493,7 +492,7 @@ auto all_nodes(Graph const& graph) -> std::vector<NodeId>
         }
     }
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const id = make_command_id(i);
+        auto const id = node_id::make_command(i);
         if (graph.commands[i].id == id) {
             result.push_back(id);
         }
@@ -515,7 +514,7 @@ auto root_nodes(Graph const& graph) -> std::vector<NodeId>
         }
     }
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const id = make_command_id(i);
+        auto const id = node_id::make_command(i);
         auto const& node = graph.commands[i];
         if (node.id == id && !has_inputs(id)) {
             result.push_back(id);
@@ -548,7 +547,7 @@ auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
         }
     }
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const id = make_command_id(i);
+        auto const id = node_id::make_command(i);
         auto const& node = graph.commands[i];
         if (node.id == id && !has_outputs(id)) {
             result.push_back(id);
@@ -557,9 +556,9 @@ auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
     return result;
 }
 
-auto get_full_path(Graph const& graph, NodeId id) -> std::string
+auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::string_view
 {
-    if (id == 0 || is_command_id(id)) {
+    if (id == 0 || node_id::is_command(id)) {
         return "";
     }
 
@@ -573,18 +572,18 @@ auto get_full_path(Graph const& graph, NodeId id) -> std::string
         return "";
     }
 
-    if (auto it = graph.path_cache.find(id); it != graph.path_cache.end()) {
+    if (auto it = cache.find(id); it != cache.end()) {
         if (it->second.empty()) {
-            return std::string { name };
+            return name;
         }
         return it->second;
     }
 
-    graph.path_cache[id] = "";
+    cache[id] = "";
 
     auto path = std::string {};
     if (node->parent_dir != 0) {
-        auto parent_path = get_full_path(graph, node->parent_dir);
+        auto parent_path = get_full_path(graph, node->parent_dir, cache);
         if (!parent_path.empty()) {
             if (parent_path.back() == '/') {
                 path = std::string { parent_path } + std::string { name };
@@ -598,18 +597,24 @@ auto get_full_path(Graph const& graph, NodeId id) -> std::string
         path = std::string { name };
     }
 
-    graph.path_cache[id] = path;
-    return path;
+    cache[id] = path;
+    return cache[id];
 }
 
-auto invalidate_path_cache(Graph& graph, NodeId id) -> void
+auto get_full_path(Graph const& graph, NodeId id) -> std::string
 {
-    graph.path_cache.erase(id);
+    auto cache = PathCache {};
+    return std::string { get_full_path(graph, id, cache) };
 }
 
-auto clear_path_cache(Graph& graph) -> void
+auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
 {
-    graph.path_cache.clear();
+    cache.erase(id);
+}
+
+auto clear_path_cache(PathCache& cache) -> void
+{
+    cache.clear();
 }
 
 auto set_build_root_name(Graph& graph, std::string name) -> void
@@ -620,8 +625,6 @@ auto set_build_root_name(Graph& graph, std::string name) -> void
     // Register in dir_name_index so lookups for "build" find BUILD_ROOT_ID
     // (BUILD_ROOT_ID was created with empty name, so wasn't indexed initially)
     graph.dir_name_index[DirNameKey { SOURCE_ROOT_ID, name_id }] = BUILD_ROOT_ID;
-
-    graph.path_cache.clear(); // Invalidate all cached paths
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
@@ -631,7 +634,7 @@ auto get_build_root_name(Graph const& graph) -> std::string_view
 
 auto is_under_build_root(Graph const& graph, NodeId id) -> bool
 {
-    if (id == 0 || id == BUILD_ROOT_ID || is_command_id(id)) {
+    if (id == 0 || id == BUILD_ROOT_ID || node_id::is_command(id)) {
         return id == BUILD_ROOT_ID;
     }
 

@@ -60,7 +60,7 @@ struct CommandEntry {
     ) const -> RawCommandEntry;
 
     /// Create from raw format
-    /// @param array_index 0-based position in command array (ID = make_command_id(array_index + 1))
+    /// @param array_index 0-based position in command array (ID = node_id::make_command(array_index + 1))
     [[nodiscard]]
     static auto from_raw(
         RawCommandEntry const& raw,
