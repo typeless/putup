@@ -429,44 +429,51 @@ struct FileNode {
     Hash256 content_hash;   // Content hash for files, Merkle hash for directories
 };
 
+/// Guard entry - condition + required polarity
+struct Guard {
+    NodeId condition = INVALID_NODE_ID;  // Condition node ID
+    bool polarity = true;                // True if condition must be true
+};
+
 /// Command node - build commands
 /// Type is determined by node_id::is_command(), not a stored field.
 struct CommandNode {
-    NodeId id;
-    StringId command;       // The command string (interned)
-    StringId display;       // Display text (from ^ ^ markers, interned)
-    StringId source_dir;    // Tupfile directory (relative to root, interned)
-    std::set<StringId> exported_vars;  // Env vars to export (interned)
-    std::optional<GeneratedOutput> generated_output;  // Output specification
-    OutputAction output_action;           // What to do with output
-    NodeId parent_command;                // Parent command for InjectImplicitDeps
+    NodeId id = 0;
+    StringId command = StringId::Empty;        // Fully expanded command for execution
+    StringId display = StringId::Empty;        // Display text (from ^ ^ markers)
+    StringId source_dir = StringId::Empty;     // Tupfile directory (relative to root)
+    StringId instruction_id = StringId::Empty; // Pre-expansion pattern for deduplication
+    std::set<StringId> exported_vars = {};     // Env vars to export (interned)
+    std::optional<GeneratedOutput> generated_output = {};  // Output specification
+    OutputAction output_action = {};           // What to do with output
+    NodeId parent_command = INVALID_NODE_ID;   // Parent command for InjectImplicitDeps
 
     // Guards for conditional execution (phi-node model)
-    // List of (condition_id, polarity) pairs - ALL must be satisfied
+    // ALL guards must be satisfied for command to execute
     // For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
-    //   → guards = [(condA, true), (condB, true)]
-    std::vector<std::pair<NodeId, bool>> guards = {};
+    //   → guards = [Guard{condA, true}, Guard{condB, true}]
+    std::vector<Guard> guards = {};
 };
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
+/// Type is determined by node_id::is_condition(), not a stored field.
 struct ConditionNode {
     NodeId id = 0;
-    NodeType type = NodeType::Condition;
-    StringId expression = StringId::Empty;  // String representation of condition
-    bool current_value = false;             // Evaluated at graph time
-    NodeId config_var_dep = INVALID_NODE_ID; // Config var this depends on (if any)
+    StringId expression = StringId::Empty;     // String representation of condition
+    bool current_value = false;                // Evaluated at graph time
+    NodeId config_var_dep = INVALID_NODE_ID;   // Config var this depends on (if any)
 };
 
 /// Phi node - merges outputs from conditional branches
-/// Created when same output name appears in both branches of a conditional
+/// Created when same output name appears in both branches of a conditional.
+/// Type is determined by node_id::is_phi(), not a stored field.
 struct PhiNode {
     NodeId id = 0;
-    NodeType type = NodeType::Phi;
-    StringId name = StringId::Empty;      // Canonical output name
-    NodeId parent_dir = 0;
-    NodeId condition = INVALID_NODE_ID;   // The condition
-    NodeId then_output = INVALID_NODE_ID; // Output when condition true
-    NodeId else_output = INVALID_NODE_ID; // Output when condition false
+    StringId name = StringId::Empty;       // Canonical output name
+    NodeId parent_dir = 0;                 // Parent directory
+    NodeId condition = INVALID_NODE_ID;    // The condition determining which output
+    NodeId then_output = INVALID_NODE_ID;  // Output when condition is true
+    NodeId else_output = INVALID_NODE_ID;  // Output when condition is false
 };
 
 struct Edge {
@@ -490,6 +497,7 @@ namespace node_id {
     constexpr auto CONDITION_FLAG = NodeId { 0x40000000 };
     constexpr auto PHI_FLAG       = NodeId { 0x20000000 };
 
+    constexpr auto is_file(NodeId id) -> bool;       // No flags set (regular file node)
     constexpr auto is_command(NodeId id) -> bool;    // Checks high bit
     constexpr auto is_condition(NodeId id) -> bool;  // Checks condition flag
     constexpr auto is_phi(NodeId id) -> bool;        // Checks phi flag
@@ -526,6 +534,12 @@ struct Graph {
     // Node lookup indices (with transparent lookup support)
     std::unordered_map<DirNameKey, NodeId, ...> dir_name_index;  // (parent, name) -> NodeId
     std::unordered_map<std::string, NodeId, ...> command_str_index;  // command -> NodeId
+
+    // ID generators (next available ID for each type)
+    NodeId next_file_id = 2;                               // Starts at 2 (BUILD_ROOT is 1)
+    NodeId next_command_id = node_id::make_command(1);     // First command ID
+    NodeId next_condition_id = node_id::make_condition(1); // First condition ID
+    NodeId next_phi_id = node_id::make_phi(1);             // First phi ID
 };
 
 // Path cache is stored externally in BuildGraph for const-correctness
@@ -554,14 +568,23 @@ auto get_outputs(Graph const&, id) -> std::vector<NodeId>;
 auto nodes_of_type(Graph const&, type) -> std::vector<NodeId>;
 
 // Type-specific accessors
-auto get_file_node(Graph&, id) -> FileNode*;       // nullptr for command IDs
-auto get_command_node(Graph&, id) -> CommandNode*; // nullptr for file IDs
+auto get_file_node(Graph&, id) -> FileNode*;           // nullptr for command IDs
+auto get_command_node(Graph&, id) -> CommandNode*;     // nullptr for file IDs
+auto get_condition_node(Graph&, id) -> ConditionNode*; // nullptr for non-condition IDs
+auto get_phi_node(Graph&, id) -> PhiNode*;             // nullptr for non-phi IDs
+
+// Phi-node model helpers
+auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
+auto add_phi_node(Graph&, PhiNode) -> Result<NodeId>;
+auto resolve_phi_node(Graph const&, phi_id) -> NodeId; // Returns active output
+auto is_guard_satisfied(Graph const&, CommandNode const&) -> bool;
 
 // String access helpers (resolve StringId -> string_view)
 auto get_name(Graph const&, id) -> std::string_view;
-auto get_command(Graph const&, id) -> std::string_view;
-auto get_display(Graph const&, id) -> std::string_view;
+auto get_command_str(Graph const&, id) -> std::string_view;
+auto get_display_str(Graph const&, id) -> std::string_view;
 auto get_source_dir(Graph const&, id) -> std::string_view;
+auto get_instruction_pattern(Graph const&, id) -> std::string_view;
 ```
 
 ### Topological Sort
@@ -859,9 +882,8 @@ struct BuildJob {
     bool inject_implicit_deps = false;       // Parse stdout as depfile
     NodeId parent_command = INVALID_NODE_ID; // Parent command for implicit deps
 
-    // Phi-node model: guards for conditional execution
-    std::vector<std::pair<NodeId, bool>> guards = {};  // Copied from CommandNode
-    bool guard_active = true;  // All guards satisfied? (evaluated at schedule time)
+    // Phi-node model: evaluated at schedule time from CommandNode.guards
+    bool guard_active = true;  // True if all guards satisfied, job skipped if false
 };
 
 struct JobResult {
@@ -1609,7 +1631,7 @@ foo.c ─────┬─→ [cmd1: gcc -g]  ─→ app@DEBUG=y ──┐
 **Key properties:**
 
 1. **Both branches always in graph** - Stable structure across condition toggles
-2. **Commands are guarded** - Have a `(condition_id, polarity)` dependency
+2. **Commands are guarded** - Have `Guard{condition, polarity}` entries
 3. **Phi-nodes merge outputs** - Represent the "canonical" file for downstream consumers
 4. **Execution filters by guard** - Scheduler checks `guard_active` before running
 5. **Index stays constant** - No churn when toggling configurations
@@ -1617,15 +1639,17 @@ foo.c ─────┬─→ [cmd1: gcc -g]  ─→ app@DEBUG=y ──┐
 **Guard evaluation in scheduler:**
 
 ```cpp
-// When building job list, evaluate ALL guards
-job.guard_active = true;
-for (auto const& [cond_id, polarity] : cmd->guards) {
-    auto const* cond = graph.get_condition_node(cond_id);
-    if (cond->current_value != polarity) {
-        job.guard_active = false;
-        break;
+// When building job list, evaluate guards via helper
+auto guard_active = is_guard_satisfied(graph, *cmd);
+
+// is_guard_satisfied() checks ALL guards:
+for (auto const& guard : cmd.guards) {
+    auto const* cond = get_condition_node(graph, guard.condition);
+    if (cond->current_value != guard.polarity) {
+        return false;  // Guard not satisfied
     }
 }
+return true;  // All guards satisfied
 
 // Jobs with inactive guards are skipped, not executed
 if (!job.guard_active) {
@@ -1634,14 +1658,14 @@ if (!job.guard_active) {
 }
 ```
 
-**Nested conditionals**: Guards are a list of `(condition, polarity)` pairs. For nested ifeq/ifdef blocks, ALL pairs must be satisfied:
+**Nested conditionals**: Guards are a list of `Guard{condition, polarity}` entries. For nested ifeq/ifdef blocks, ALL must be satisfied:
 
 ```tup
 ifeq (@(A),x)           # cond1
   ifeq (@(B),y)         # cond2
-    : s.c |> ... |> out # guards = [(cond1,true), (cond2,true)]
+    : s.c |> ... |> out # guards = [Guard{cond1,true}, Guard{cond2,true}]
   else
-    : s.c |> ... |> out # guards = [(cond1,true), (cond2,false)]
+    : s.c |> ... |> out # guards = [Guard{cond1,true}, Guard{cond2,false}]
   endif
 endif
 ```
