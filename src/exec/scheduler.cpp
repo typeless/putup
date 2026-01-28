@@ -161,6 +161,32 @@ auto build_dependency_map(
     return { std::move(in_degree), std::move(dependents) };
 }
 
+/// Validate that no active job depends on a skipped job's output.
+/// Returns error if an active job would fail due to missing inputs from skipped jobs.
+auto validate_guard_dependencies(
+    std::vector<BuildJob> const& jobs,
+    std::vector<std::vector<std::size_t>> const& dependents
+) -> Result<void>
+{
+    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
+        if (jobs[i].guard_active) {
+            continue;
+        }
+        // This job is skipped - check if any active job depends on it
+        for (auto dep_idx : dependents[i]) {
+            if (jobs[dep_idx].guard_active) {
+                return make_error<void>(
+                    ErrorCode::MissingInput,
+                    "Command '" + jobs[dep_idx].command
+                        + "' depends on output from '" + jobs[i].command
+                        + "' which is inactive due to conditional guard"
+                );
+            }
+        }
+    }
+    return {};
+}
+
 /// Collect all commands required to build the given target nodes.
 /// Uses reverse traversal: starts at targets, walks backward through inputs.
 auto collect_required_commands(
@@ -386,9 +412,20 @@ auto Scheduler::execute_sequential(
 
     auto [in_degree, dependents] = build_dependency_map(jobs, graph);
 
+    // Validate no active job depends on a skipped job
+    if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
+        return pup::unexpected<Error>(result.error());
+    }
+
+    // Count inactive jobs upfront (they never enter the queue)
+    auto inactive_count = std::count_if(jobs.begin(), jobs.end(),
+        [](auto const& j) { return !j.guard_active; });
+    impl_->stats.skipped_jobs += static_cast<std::size_t>(inactive_count);
+
+    // Only queue active jobs with no dependencies
     auto ready_queue = std::queue<std::size_t> {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        if (in_degree[i] == 0) {
+        if (in_degree[i] == 0 && jobs[i].guard_active) {
             ready_queue.push(i);
         }
     }
@@ -417,7 +454,7 @@ auto Scheduler::execute_sequential(
         if (result.success) {
             ++impl_->stats.completed_jobs;
             for (auto dep_idx : dependents[job_idx]) {
-                if (--in_degree[dep_idx] == 0) {
+                if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
                     ready_queue.push(dep_idx);
                 }
             }
@@ -458,9 +495,19 @@ auto Scheduler::execute_parallel(
     // Build dependency map using graph edges (no path string matching needed)
     auto [in_degree, dependents] = build_dependency_map(jobs, graph);
 
-    // Initialize ready queue with jobs that have no dependencies
+    // Validate no active job depends on a skipped job
+    if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
+        return pup::unexpected<Error>(result.error());
+    }
+
+    // Count active jobs - inactive jobs never enter the queue
+    auto active_count = static_cast<std::size_t>(std::count_if(jobs.begin(), jobs.end(),
+        [](auto const& j) { return j.guard_active; }));
+    impl_->stats.skipped_jobs += jobs.size() - active_count;
+
+    // Only queue active jobs with no dependencies
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        if (in_degree[i] == 0) {
+        if (in_degree[i] == 0 && jobs[i].guard_active) {
             ready_queue.push(i);
         }
     }
@@ -528,16 +575,16 @@ auto Scheduler::execute_parallel(
                     impl_->on_progress(completed_count, impl_->stats.total_jobs);
                 }
 
-                // Queue dependents whose dependencies are now satisfied
+                // Queue active dependents whose dependencies are now satisfied
                 for (auto dependent_idx : dependents[job_idx]) {
                     --in_degree[dependent_idx];
-                    if (in_degree[dependent_idx] == 0) {
+                    if (in_degree[dependent_idx] == 0 && jobs[dependent_idx].guard_active) {
                         ready_queue.push(dependent_idx);
                     }
                 }
 
-                // Check if all jobs are done
-                if (completed_count >= jobs.size()) {
+                // Check if all active jobs are done
+                if (completed_count >= active_count) {
                     all_done.store(true);
                 }
             }
@@ -785,6 +832,9 @@ auto Scheduler::build_job_list(
             exported_str.insert(std::string { graph.graph().strings.get(var_id) });
         }
 
+        // Evaluate guards - command only executes if ALL guards are satisfied
+        auto guard_active = graph::is_guard_satisfied(graph.graph(), *node);
+
         auto job = BuildJob {
             .id = id,
             .command = cmd_str,
@@ -797,6 +847,7 @@ auto Scheduler::build_job_list(
             .capture_stdout = capture_stdout,
             .inject_implicit_deps = inject_implicit,
             .parent_command = parent_cmd,
+            .guard_active = guard_active,
         };
 
         // Collect input paths

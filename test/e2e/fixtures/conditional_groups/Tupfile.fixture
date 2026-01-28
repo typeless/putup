@@ -1,0 +1,11 @@
+# Test: conditional branches should not both contribute to groups
+# Only the active branch's outputs should be in the group
+
+ifeq (@(USE_PLATFORM),ios)
+: ios_impl.c |> gcc -c %f -o %o |> ios_impl.o {objs}
+else
+: linux_impl.c |> gcc -c %f -o %o |> linux_impl.o {objs}
+endif
+
+# This rule consumes {objs} - should only get outputs from active branch
+: {objs} |> ar rcs %o %f |> libplatform.a

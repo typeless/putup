@@ -64,6 +64,8 @@ enum class NodeType : std::uint8_t {
     Group = 6,        ///< Named group (bin) of files
     GeneratedDir = 7, ///< Auto-created output directory
     Root = 8,         ///< Project root
+    Condition = 9,    ///< Conditional guard (ifeq/ifdef condition)
+    Phi = 10,         ///< Merges outputs from conditional branches
 };
 
 /// Dependency edge types

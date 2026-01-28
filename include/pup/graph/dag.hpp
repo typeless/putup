@@ -40,6 +40,14 @@ struct FileNode {
     Hash256 content_hash = { {} };   ///< Content hash (double braces force zero-init)
 };
 
+/// Guard entry - a condition and the polarity (true/false) required for this guard
+struct Guard {
+    NodeId condition = INVALID_NODE_ID; ///< Condition node ID
+    bool polarity = true;               ///< True if condition must be true, false if must be false
+
+    auto operator==(Guard const& other) const -> bool = default;
+};
+
 /// Command node - represents build commands
 /// Note: Type is determined by is_command_id(), not a stored field.
 struct CommandNode {
@@ -55,6 +63,31 @@ struct CommandNode {
     std::optional<GeneratedOutput> generated_output = {}; ///< Output specification
     OutputAction output_action = {};                      ///< What to do with output
     NodeId parent_command = INVALID_NODE_ID;              ///< Parent command for InjectImplicitDeps
+
+    // Condition guards - command executes only if ALL guards are satisfied
+    // For nested conditionals, this accumulates all enclosing conditions
+    std::vector<Guard> guards = {};
+};
+
+/// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
+/// Used for phi-node model: both branches are in graph, guards determine which executes
+struct ConditionNode {
+    NodeId id = 0;
+    StringId expression = StringId::Empty;   ///< String representation of condition
+    bool current_value = false;              ///< Evaluated at graph time
+    NodeId config_var_dep = INVALID_NODE_ID; ///< Config var this depends on (if any)
+};
+
+/// Phi node - merges outputs from conditional branches
+/// When multiple commands produce the same output from different branches,
+/// the phi node resolves to the active branch's output
+struct PhiNode {
+    NodeId id = 0;
+    StringId name = StringId::Empty;      ///< Canonical output name
+    NodeId parent_dir = 0;                ///< Parent directory
+    NodeId condition = INVALID_NODE_ID;   ///< The condition determining which output to use
+    NodeId then_output = INVALID_NODE_ID; ///< Output when condition is true
+    NodeId else_output = INVALID_NODE_ID; ///< Output when condition is false
 };
 
 /// Key for directory + name lookup (interned)
@@ -137,13 +170,63 @@ struct StringHash {
     }
 };
 
+/// Condition ID flag - distinguishes condition nodes from file/command nodes
+inline constexpr auto CONDITION_ID_FLAG = NodeId { 0x40000000 };
+
+/// Phi ID flag - distinguishes phi nodes from file/command/condition nodes
+inline constexpr auto PHI_ID_FLAG = NodeId { 0x20000000 };
+
+/// Check if ID refers to a condition node
+[[nodiscard]]
+constexpr auto is_condition_id(NodeId id) -> bool
+{
+    return (id & CONDITION_ID_FLAG) != 0 && (id & COMMAND_ID_FLAG) == 0;
+}
+
+/// Check if ID refers to a phi node
+[[nodiscard]]
+constexpr auto is_phi_id(NodeId id) -> bool
+{
+    return (id & PHI_ID_FLAG) != 0 && (id & COMMAND_ID_FLAG) == 0 && (id & CONDITION_ID_FLAG) == 0;
+}
+
+/// Get array index for condition ID
+[[nodiscard]]
+constexpr auto condition_index(NodeId id) -> std::size_t
+{
+    return static_cast<std::size_t>(id & ~CONDITION_ID_FLAG);
+}
+
+/// Get array index for phi ID
+[[nodiscard]]
+constexpr auto phi_index(NodeId id) -> std::size_t
+{
+    return static_cast<std::size_t>(id & ~PHI_ID_FLAG);
+}
+
+/// Create condition ID from array index
+[[nodiscard]]
+constexpr auto make_condition_id(std::size_t idx) -> NodeId
+{
+    return static_cast<NodeId>(idx) | CONDITION_ID_FLAG;
+}
+
+/// Create phi ID from array index
+[[nodiscard]]
+constexpr auto make_phi_id(std::size_t idx) -> NodeId
+{
+    return static_cast<NodeId>(idx) | PHI_ID_FLAG;
+}
+
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
     StringPool strings; ///< Interned string storage
 
-    std::deque<FileNode> files;       ///< Files, directories, groups (non-command nodes)
-    std::deque<CommandNode> commands; ///< Command nodes only
-    std::vector<Edge> edges;          ///< Central edge storage (single source of truth)
+    std::deque<FileNode> files;           ///< Files, directories, groups (non-command nodes)
+    std::deque<CommandNode> commands;     ///< Command nodes only
+    std::deque<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
+    std::deque<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
+    std::vector<Edge> edges;              ///< Central edge storage (single source of truth)
 
     // Edge indices: map NodeId -> indices into edges vector
     std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index;   ///< Edges pointing TO this node
@@ -158,8 +241,10 @@ struct Graph {
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
     mutable std::unordered_map<NodeId, std::string> path_cache;
 
-    NodeId next_file_id = 2;                     ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
-    NodeId next_command_id = make_command_id(1); ///< Next command node ID
+    NodeId next_file_id = 2;                         ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
+    NodeId next_command_id = make_command_id(1);     ///< Next command node ID
+    NodeId next_condition_id = make_condition_id(1); ///< Next condition node ID
+    NodeId next_phi_id = make_phi_id(1);             ///< Next phi node ID
 };
 
 /// Create a new empty graph with build root initialized
@@ -201,6 +286,38 @@ auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
 /// Get a command node by ID (const) - returns nullptr for file IDs
 [[nodiscard]]
 auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
+
+/// Add a condition node to the graph
+[[nodiscard]]
+auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
+
+/// Get a condition node by ID (mutable) - returns nullptr for non-condition IDs
+[[nodiscard]]
+auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*;
+
+/// Get a condition node by ID (const) - returns nullptr for non-condition IDs
+[[nodiscard]]
+auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
+
+/// Add a phi node to the graph
+[[nodiscard]]
+auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>;
+
+/// Get a phi node by ID (mutable) - returns nullptr for non-phi IDs
+[[nodiscard]]
+auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*;
+
+/// Get a phi node by ID (const) - returns nullptr for non-phi IDs
+[[nodiscard]]
+auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*;
+
+/// Resolve a phi node to its active output based on current condition values
+[[nodiscard]]
+auto resolve_phi_node(Graph const& graph, NodeId phi_id) -> NodeId;
+
+/// Check if all guards on a command are satisfied
+[[nodiscard]]
+auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool;
 
 /// Find a node by parent directory and basename (tup-style lookup)
 [[nodiscard]]
@@ -386,6 +503,54 @@ public:
     auto get_command_node(NodeId id) const -> CommandNode const*
     {
         return graph::get_command_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto add_condition_node(ConditionNode node) -> Result<NodeId>
+    {
+        return graph::add_condition_node(graph_, std::move(node));
+    }
+
+    [[nodiscard]]
+    auto get_condition_node(NodeId id) -> ConditionNode*
+    {
+        return graph::get_condition_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto get_condition_node(NodeId id) const -> ConditionNode const*
+    {
+        return graph::get_condition_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto add_phi_node(PhiNode node) -> Result<NodeId>
+    {
+        return graph::add_phi_node(graph_, std::move(node));
+    }
+
+    [[nodiscard]]
+    auto get_phi_node(NodeId id) -> PhiNode*
+    {
+        return graph::get_phi_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto get_phi_node(NodeId id) const -> PhiNode const*
+    {
+        return graph::get_phi_node(graph_, id);
+    }
+
+    [[nodiscard]]
+    auto resolve_phi_node(NodeId phi_id) const -> NodeId
+    {
+        return graph::resolve_phi_node(graph_, phi_id);
+    }
+
+    [[nodiscard]]
+    auto is_guard_satisfied(CommandNode const& cmd) const -> bool
+    {
+        return graph::is_guard_satisfied(graph_, cmd);
     }
 
     [[nodiscard]]

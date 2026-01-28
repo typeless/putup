@@ -4069,3 +4069,182 @@ SCENARIO("show var displays variable assignments", "[e2e][show][var]")
         }
     }
 }
+
+// =============================================================================
+// Phi-Node Model Tests (Conditional Stability)
+// =============================================================================
+
+SCENARIO("Phi-node model processes both conditional branches", "[e2e][phi]")
+{
+    GIVEN("a project with conditional compilation")
+    {
+        auto f = E2EFixture { "phi_conditional" };
+        f.write_file("Tupfile", R"(
+CC = gcc
+CFLAGS = -Wall
+
+ifeq (@(MODE),debug)
+CFLAGS += -g -O0
+else
+CFLAGS += -O2
+endif
+
+: main.c |> $(CC) $(CFLAGS) -o %o %f |> program
+)");
+        f.write_file("main.c", R"(
+#include <stdio.h>
+int main(void) { printf("Hello\n"); return 0; }
+)");
+        f.mkdir("build");
+
+        WHEN("built with MODE=debug")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("executable is created")
+            {
+                REQUIRE(f.exists("build/program"));
+            }
+        }
+    }
+}
+
+SCENARIO("Inactive conditional branch commands are skipped", "[e2e][phi][guards]")
+{
+    GIVEN("a project with ifeq conditional")
+    {
+        auto f = E2EFixture { "phi_conditional" };
+        f.write_file("Tupfile", R"(
+ifeq (@(BUILD),release)
+: src.c |> gcc -O2 -o %o %f |> release_out
+else
+: src.c |> gcc -g -o %o %f |> debug_out
+endif
+)");
+        f.write_file("src.c", "int main(){return 0;}\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_BUILD=debug\n");
+
+        WHEN("built with BUILD=debug")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("debug output is created")
+            {
+                REQUIRE(f.exists("build/debug_out"));
+            }
+
+            THEN("release output is NOT created")
+            {
+                REQUIRE_FALSE(f.exists("build/release_out"));
+            }
+        }
+
+        WHEN("toggled to BUILD=release")
+        {
+            REQUIRE(f.init().success());
+            (void)f.build({ "-B", "build", "-j1" }); // First build with debug
+
+            // Toggle to release
+            f.write_file("build/tup.config", "CONFIG_BUILD=release\n");
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("release output is created")
+            {
+                REQUIRE(f.exists("build/release_out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Conditional branches only contribute active outputs to groups", "[e2e][phi][groups]")
+{
+    GIVEN("a project with conditional outputs to the same group")
+    {
+        auto f = E2EFixture { "conditional_groups" };
+        f.write_file("Tupfile", R"(
+ifeq (@(USE_PLATFORM),ios)
+: ios_impl.c |> gcc -c %f -o %o |> ios_impl.o {objs}
+else
+: linux_impl.c |> gcc -c %f -o %o |> linux_impl.o {objs}
+endif
+
+: {objs} |> ar rcs %o %f |> libplatform.a
+)");
+        f.write_file("ios_impl.c", "int platform_init(void) { return 1; }\n");
+        f.write_file("linux_impl.c", "int platform_init(void) { return 2; }\n");
+        f.mkdir("build");
+
+        WHEN("built with USE_PLATFORM=linux (default/else branch)")
+        {
+            f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=linux\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("only linux_impl.o is created")
+            {
+                REQUIRE(f.exists("build/linux_impl.o"));
+                REQUIRE_FALSE(f.exists("build/ios_impl.o"));
+            }
+
+            THEN("archive contains only linux_impl.o")
+            {
+                auto ar_result = f.run("/usr/bin/ar", { "-t", "build/libplatform.a" });
+                REQUIRE(ar_result.success());
+                REQUIRE(ar_result.stdout_output.find("linux_impl.o") != std::string::npos);
+                REQUIRE(ar_result.stdout_output.find("ios_impl.o") == std::string::npos);
+            }
+        }
+
+        WHEN("built with USE_PLATFORM=ios (then branch)")
+        {
+            f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=ios\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("only ios_impl.o is created")
+            {
+                REQUIRE(f.exists("build/ios_impl.o"));
+                REQUIRE_FALSE(f.exists("build/linux_impl.o"));
+            }
+
+            THEN("archive contains only ios_impl.o")
+            {
+                auto ar_result = f.run("/usr/bin/ar", { "-t", "build/libplatform.a" });
+                REQUIRE(ar_result.success());
+                REQUIRE(ar_result.stdout_output.find("ios_impl.o") != std::string::npos);
+                REQUIRE(ar_result.stdout_output.find("linux_impl.o") == std::string::npos);
+            }
+        }
+    }
+}

@@ -108,9 +108,9 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-    // Paths are source-relative. Generated files exist at build_dir.
-    // For in-tree builds, build_dir == root, so this works for both cases.
-    auto result = remove_indexed_outputs(index_path, ctx->build_dir, mode, variant_name);
+    // Paths are source-relative and include build root prefix for variant builds
+    // (e.g., "build/hello.o"). Use root so root / path gives correct absolute path.
+    auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
         result.output_dirs, ctx->build_dir, ctx->root, mode
@@ -140,8 +140,8 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
     if (std::filesystem::exists(index_path)) {
-        // Paths are source-relative. Generated files exist at build_dir.
-        auto result = remove_indexed_outputs(index_path, ctx->build_dir, mode, variant_name);
+        // Paths are source-relative and include build root prefix for variant builds.
+        auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
         error_count += result.error_count;
         output_dirs = std::move(result.output_dirs);
     }

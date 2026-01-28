@@ -115,7 +115,9 @@ enum class NodeType : std::uint8_t {
     Ghost,          // Missing file placeholder
     Group,          // Named group {objs}
     GeneratedDir,   // Auto-created directory
-    Root            // Project root
+    Root,           // Project root
+    Condition,      // Conditional guard (ifeq/ifdef)
+    Phi             // Merges outputs from conditional branches
 };
 ```
 
@@ -407,6 +409,33 @@ struct CommandNode {
     std::optional<GeneratedOutput> generated_output;  // Output specification
     OutputAction output_action;           // What to do with output
     NodeId parent_command;                // Parent command for InjectImplicitDeps
+
+    // Guards for conditional execution (phi-node model)
+    // List of (condition_id, polarity) pairs - ALL must be satisfied
+    // For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
+    //   → guards = [(condA, true), (condB, true)]
+    std::vector<std::pair<NodeId, bool>> guards = {};
+};
+
+/// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
+struct ConditionNode {
+    NodeId id = 0;
+    NodeType type = NodeType::Condition;
+    StringId expression = StringId::Empty;  // String representation of condition
+    bool current_value = false;             // Evaluated at graph time
+    NodeId config_var_dep = INVALID_NODE_ID; // Config var this depends on (if any)
+};
+
+/// Phi node - merges outputs from conditional branches
+/// Created when same output name appears in both branches of a conditional
+struct PhiNode {
+    NodeId id = 0;
+    NodeType type = NodeType::Phi;
+    StringId name = StringId::Empty;      // Canonical output name
+    NodeId parent_dir = 0;
+    NodeId condition = INVALID_NODE_ID;   // The condition
+    NodeId then_output = INVALID_NODE_ID; // Output when condition true
+    NodeId else_output = INVALID_NODE_ID; // Output when condition false
 };
 
 struct Edge {
@@ -430,6 +459,10 @@ struct Graph {
     std::deque<FileNode> files;       // Files, directories, groups
     std::deque<CommandNode> commands; // Command nodes only
     std::vector<Edge> edges;          // Central edge storage
+
+    // Phi-node model structures
+    std::deque<ConditionNode> conditions;  // Conditional guards
+    std::deque<PhiNode> phi_nodes;         // Output merges from conditional branches
 
     // Edge indices: NodeId -> indices into edges vector
     std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index;   // Edges TO node
@@ -748,6 +781,10 @@ struct BuildJob {
     bool capture_stdout = false;             // Capture stdout for depfile parsing
     bool inject_implicit_deps = false;       // Parse stdout as depfile
     NodeId parent_command = INVALID_NODE_ID; // Parent command for implicit deps
+
+    // Phi-node model: guards for conditional execution
+    std::vector<std::pair<NodeId, bool>> guards = {};  // Copied from CommandNode
+    bool guard_active = true;  // All guards satisfied? (evaluated at schedule time)
 };
 
 struct JobResult {
@@ -1461,6 +1498,76 @@ With edge preservation:
 1. Parse aaa_consumer → Ghost for `zzz_producer/helper.c`, edge from command to ghost
 2. Parse zzz_producer → upgrade Ghost→Generated, **keep edge** ✓
 3. Result: aaa_consumer's command correctly depends on the generated file
+
+### Why Phi-Node Model for Conditionals?
+
+When building with different conditional values (e.g., `-D TESTS=n` vs `-D TESTS=y`), a naive approach skips statements in inactive branches entirely. This causes problems:
+
+1. Commands disappear from graph when condition is false
+2. Index prunes disappeared commands
+3. Toggling condition back rebuilds everything from scratch
+
+**Solution**: Inspired by SSA (Static Single Assignment) form in compilers, use a phi-node model where both branches always exist in the graph with guards determining execution.
+
+**Example:**
+```tup
+ifeq (@(DEBUG),y)
+  : foo.c |> gcc -g -o %o %f |> app
+else
+  : foo.c |> gcc -O2 -o %o %f |> app
+endif
+```
+
+**Graph structure:**
+```
+foo.c ─────┬─→ [cmd1: gcc -g]  ─→ app@DEBUG=y ──┐
+           │       ↑ guard                      │
+           │   DEBUG=y                          ├─→ φ(app) ─→ downstream
+           │                                    │
+           └─→ [cmd2: gcc -O2] ─→ app@DEBUG=n ──┘
+                   ↑ guard
+               DEBUG=n
+```
+
+**Key properties:**
+
+1. **Both branches always in graph** - Stable structure across condition toggles
+2. **Commands are guarded** - Have a `(condition_id, polarity)` dependency
+3. **Phi-nodes merge outputs** - Represent the "canonical" file for downstream consumers
+4. **Execution filters by guard** - Scheduler checks `guard_active` before running
+5. **Index stays constant** - No churn when toggling configurations
+
+**Guard evaluation in scheduler:**
+
+```cpp
+// When building job list, evaluate ALL guards
+job.guard_active = true;
+for (auto const& [cond_id, polarity] : cmd->guards) {
+    auto const* cond = graph.get_condition_node(cond_id);
+    if (cond->current_value != polarity) {
+        job.guard_active = false;
+        break;
+    }
+}
+
+// Jobs with inactive guards are skipped, not executed
+if (!job.guard_active) {
+    mark_job_skipped(i);
+    continue;
+}
+```
+
+**Nested conditionals**: Guards are a list of `(condition, polarity)` pairs. For nested ifeq/ifdef blocks, ALL pairs must be satisfied:
+
+```tup
+ifeq (@(A),x)           # cond1
+  ifeq (@(B),y)         # cond2
+    : s.c |> ... |> out # guards = [(cond1,true), (cond2,true)]
+  else
+    : s.c |> ... |> out # guards = [(cond1,true), (cond2,false)]
+  endif
+endif
+```
 
 ### Why (parent_dir, name) Path Storage?
 

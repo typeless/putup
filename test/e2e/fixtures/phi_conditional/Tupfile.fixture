@@ -1,0 +1,11 @@
+# Test phi-node model: both branches always in graph
+CC = gcc
+CFLAGS = -Wall
+
+ifeq (@(MODE),debug)
+CFLAGS += -g -O0
+else
+CFLAGS += -O2
+endif
+
+: main.c |> $(CC) $(CFLAGS) -o %o %f |> program

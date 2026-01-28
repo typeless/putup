@@ -45,6 +45,20 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
         }
         return graph.commands[idx].id == id;
     }
+    if (is_condition_id(id)) {
+        auto idx = condition_index(id);
+        if (idx == 0 || idx >= graph.conditions.size()) {
+            return false;
+        }
+        return graph.conditions[idx].id == id;
+    }
+    if (is_phi_id(id)) {
+        auto idx = phi_index(id);
+        if (idx == 0 || idx >= graph.phi_nodes.size()) {
+            return false;
+        }
+        return graph.phi_nodes[idx].id == id;
+    }
     auto idx = file_index(id);
     if (idx >= graph.files.size()) {
         return false;
@@ -164,6 +178,103 @@ auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
     }
     auto const& node = graph.commands[idx];
     return node.id == id ? &node : nullptr;
+}
+
+auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
+{
+    auto const id = graph.next_condition_id;
+    graph.next_condition_id = make_condition_id(condition_index(graph.next_condition_id) + 1);
+    node.id = id;
+
+    auto const idx = condition_index(id);
+    if (idx >= graph.conditions.size()) {
+        graph.conditions.resize(idx + 1);
+    }
+    graph.conditions[idx] = std::move(node);
+
+    return id;
+}
+
+auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
+    return const_cast<ConditionNode*>(get_condition_node(std::as_const(graph), id));
+}
+
+auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*
+{
+    if (!is_condition_id(id)) {
+        return nullptr;
+    }
+    auto const idx = condition_index(id);
+    if (idx == 0 || idx >= graph.conditions.size()) {
+        return nullptr;
+    }
+    auto const& node = graph.conditions[idx];
+    return node.id == id ? &node : nullptr;
+}
+
+auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>
+{
+    auto const id = graph.next_phi_id;
+    graph.next_phi_id = make_phi_id(phi_index(graph.next_phi_id) + 1);
+    node.id = id;
+
+    auto const idx = phi_index(id);
+    if (idx >= graph.phi_nodes.size()) {
+        graph.phi_nodes.resize(idx + 1);
+    }
+    graph.phi_nodes[idx] = std::move(node);
+
+    return id;
+}
+
+auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
+    return const_cast<PhiNode*>(get_phi_node(std::as_const(graph), id));
+}
+
+auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*
+{
+    if (!is_phi_id(id)) {
+        return nullptr;
+    }
+    auto const idx = phi_index(id);
+    if (idx == 0 || idx >= graph.phi_nodes.size()) {
+        return nullptr;
+    }
+    auto const& node = graph.phi_nodes[idx];
+    return node.id == id ? &node : nullptr;
+}
+
+auto resolve_phi_node(Graph const& graph, NodeId phi_id) -> NodeId
+{
+    auto const* phi = get_phi_node(graph, phi_id);
+    if (!phi) {
+        return INVALID_NODE_ID;
+    }
+
+    auto const* cond = get_condition_node(graph, phi->condition);
+    if (!cond) {
+        return INVALID_NODE_ID;
+    }
+
+    return cond->current_value ? phi->then_output : phi->else_output;
+}
+
+auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool
+{
+    for (auto const& guard : cmd.guards) {
+        auto const* cond = get_condition_node(graph, guard.condition);
+        if (!cond) {
+            return false;
+        }
+        if (cond->current_value != guard.polarity) {
+            return false;
+        }
+    }
+    return true;
 }
 
 auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
@@ -335,6 +446,8 @@ auto clear(Graph& graph) -> void
 
     graph.files.clear();
     graph.commands.clear();
+    graph.conditions.clear();
+    graph.phi_nodes.clear();
     graph.edges.clear();
     graph.edges_to_index.clear();
     graph.edges_from_index.clear();
@@ -363,6 +476,8 @@ auto clear(Graph& graph) -> void
     };
     graph.next_file_id = 2;
     graph.next_command_id = make_command_id(1);
+    graph.next_condition_id = make_condition_id(1);
+    graph.next_phi_id = make_phi_id(1);
 }
 
 auto all_nodes(Graph const& graph) -> std::vector<NodeId>

@@ -92,6 +92,16 @@ struct BuilderContext {
 
     /// Pending weak (??=) assignments - applied before rules, last wins
     std::vector<PendingWeakAssignment> pending_weak_assignments = {};
+
+    /// Condition stack for phi-node model - tracks nested conditional guards
+    /// Each entry is (condition_id, polarity). Commands created while in a conditional
+    /// will have these guards applied.
+    std::vector<Guard> condition_stack = {};
+
+    /// Config variables used in enclosing conditions (for phi-node model).
+    /// Commands inside conditionals need to depend on these vars to rebuild when
+    /// the condition's value changes.
+    std::set<std::string> condition_config_vars = {};
 };
 
 // ============================================================================

@@ -170,7 +170,6 @@ auto collect_upstream_files(
 
 auto find_changed_files_with_implicit(
     std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root,
     pup::index::Index const& old_index,
     std::vector<std::string> const& scopes,
     std::set<std::string> const& upstream_files,
@@ -195,11 +194,9 @@ auto find_changed_files_with_implicit(
         ++metrics.files_checked;
 
         // File resolution:
-        // Paths are source-relative. Generated files exist at output_root,
-        // source files exist at source_root.
-        auto const& root = (file.type == pup::NodeType::Generated) ? output_root : source_root;
+        // All paths are now source-relative (generated files include build root, e.g., "build/program").
         auto file_path = std::filesystem::path { file.path };
-        auto path = file_path.is_absolute() ? file_path : root / file_path;
+        auto path = file_path.is_absolute() ? file_path : source_root / file_path;
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
@@ -383,12 +380,15 @@ auto serialize_graph_nodes(
                 continue;
             }
 
+            // For generated files, strip build root for filesystem path construction
+            // (output_root already contains the build root, so we need just the relative part)
+            auto fs_path = node_path;
             if (node->type == pup::NodeType::Generated) {
-                strip_build_root_prefix(node_path, graph.get_build_root_name());
+                strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
 
             auto file_path = (node->type == pup::NodeType::Generated)
-                ? output_root / node_path
+                ? output_root / fs_path
                 : source_root / node_path;
 
             auto content_hash = pup::Hash256 {};
@@ -421,12 +421,9 @@ auto serialize_graph_nodes(
             path_to_id[node_path] = id;
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = graph.get_full_path(id);
-            if (node->type == pup::NodeType::GeneratedDir) {
-                strip_build_root_prefix(node_path, graph.get_build_root_name());
-            }
 
             auto node_name_sv = pup::graph::get_name(graph.graph(), id);
-            auto entry_name = (id == pup::BUILD_ROOT_ID) ? std::string {} : std::string { node_name_sv };
+            auto entry_name = std::string { node_name_sv };
 
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -523,7 +520,6 @@ auto compute_next_id(pup::graph::BuildGraph const& graph) -> pup::NodeId
 /// Adds new file entries and implicit edges to the index.
 auto process_implicit_deps(
     std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
-    pup::graph::BuildGraph const& graph,
     ImplicitDepContext& ctx
 ) -> void
 {
@@ -538,8 +534,6 @@ auto process_implicit_deps(
             } else {
                 rel_path = abs_path.string();
             }
-
-            strip_build_root_prefix(rel_path, graph.get_build_root_name());
 
             auto it = ctx.path_to_id.find(rel_path);
             auto dep_id = it != ctx.path_to_id.end()
@@ -696,7 +690,7 @@ auto build_index(
     };
 
     // Process discovered implicit dependencies from compiler output
-    process_implicit_deps(discovered_deps, graph, ctx);
+    process_implicit_deps(discovered_deps, ctx);
 
     // Preserve implicit edges from the old index for commands that weren't rebuilt
     if (old_index) {
@@ -777,7 +771,7 @@ auto detect_new_commands(
 auto remove_stale_outputs(
     pup::graph::BuildGraph const& graph,
     pup::index::Index const& idx,
-    std::filesystem::path const& output_root,
+    std::filesystem::path const& source_root,
     std::string_view variant_name,
     bool dry_run,
     bool verbose
@@ -794,7 +788,8 @@ auto remove_stale_outputs(
                 continue;
             }
 
-            auto abs_path = output_root / file->path;
+            // Paths now include build root (e.g., "build/program")
+            auto abs_path = source_root / file->path;
             if (std::filesystem::exists(abs_path)) {
                 if (dry_run) {
                     vprint(variant_name, "Would remove stale: %s\n", file->path.c_str());
@@ -933,7 +928,6 @@ auto build_single_variant(
 
         changed_files = find_changed_files_with_implicit(
             ctx.layout().source_root,
-            ctx.layout().output_root,
             idx,
             scopes,
             upstream_files,
@@ -964,7 +958,7 @@ auto build_single_variant(
         remove_stale_outputs(
             ctx.graph(),
             idx,
-            ctx.layout().output_root,
+            ctx.layout().source_root,
             variant_name,
             opts.dry_run,
             opts.verbose
@@ -1133,7 +1127,9 @@ auto build_single_variant(
     }
 
     auto const& stats = *build_result;
-    if (stats.failed_jobs > 0) {
+    if (stats.completed_jobs == 0 && stats.failed_jobs == 0) {
+        vprint(variant_name, "Nothing to do.\n");
+    } else if (stats.failed_jobs > 0) {
         vprint(variant_name, "Build completed: %zu commands (%zu failed) in %ldms\n", stats.completed_jobs, stats.failed_jobs, static_cast<long>(duration.count()));
     } else {
         vprint(variant_name, "Build completed: %zu commands in %ldms\n", stats.completed_jobs, static_cast<long>(duration.count()));

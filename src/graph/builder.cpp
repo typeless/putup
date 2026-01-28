@@ -438,6 +438,19 @@ auto process_conditional(
     parser::Conditional const& cond
 ) -> Result<void>;
 
+/// Check if all guards in the condition stack are satisfied (current context is active)
+/// Returns true if no guards or all guards match their expected polarity
+auto is_context_active(BuilderContext const& ctx) -> bool
+{
+    for (auto const& guard : ctx.condition_stack) {
+        auto const* cond = ctx.graph->get_condition_node(guard.condition);
+        if (cond && cond->current_value != guard.polarity) {
+            return false;
+        }
+    }
+    return true;
+}
+
 auto process_include(
     BuilderContext& ctx,
     BuilderState& state,
@@ -997,21 +1010,111 @@ auto process_assignment(
     return {};
 }
 
+/// Format a conditional expression as a string for the condition node
+auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const& cond) -> std::string
+{
+    switch (cond.kind) {
+    case parser::Conditional::Kind::Ifdef:
+        return "ifdef(" + cond.var_name + ")";
+    case parser::Conditional::Kind::Ifndef:
+        return "ifndef(" + cond.var_name + ")";
+    case parser::Conditional::Kind::Ifeq: {
+        auto lhs = parser::expand(eval, cond.lhs).value_or("");
+        auto rhs = parser::expand(eval, cond.rhs).value_or("");
+        return "ifeq(" + lhs + "," + rhs + ")";
+    }
+    case parser::Conditional::Kind::Ifneq: {
+        auto lhs = parser::expand(eval, cond.lhs).value_or("");
+        auto rhs = parser::expand(eval, cond.rhs).value_or("");
+        return "ifneq(" + lhs + "," + rhs + ")";
+    }
+    }
+    return "";
+}
+
 auto process_conditional(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Conditional const& cond
 ) -> Result<void>
 {
+    // Clear used_config_vars before evaluating condition to capture which vars are used
+    auto saved_config_vars = ctx.used_config_vars;
+    ctx.used_config_vars.clear();
+
+    // Evaluate condition value - this may use config vars like @(MODE)
     auto condition_true = parser::evaluate_condition(*ctx.eval, cond);
 
-    auto const& body = condition_true ? cond.then_body : cond.else_body;
+    // Capture config vars used in the condition expression
+    // These need to be dependencies for commands in both branches
+    auto condition_vars = std::move(ctx.used_config_vars);
+    ctx.used_config_vars = std::move(saved_config_vars);
 
-    for (auto const& stmt : body) {
-        auto result = Result<void> { process_statement(ctx, state, *stmt) };
-        if (!result) {
-            return pup::unexpected<Error>(result.error());
+    // Add condition's config vars to the condition_config_vars set
+    // (accumulated for nested conditionals)
+    auto saved_condition_vars = ctx.condition_config_vars;
+    ctx.condition_config_vars.insert(condition_vars.begin(), condition_vars.end());
+    auto restore_condition_vars = ScopeGuard([&] {
+        ctx.condition_config_vars = std::move(saved_condition_vars);
+    });
+
+    // Create condition node for phi-node model
+    auto cond_expr = format_condition_expr(*ctx.eval, cond);
+    auto cond_node = ConditionNode {
+        .expression = ctx.graph->intern(cond_expr),
+        .current_value = condition_true,
+    };
+
+    auto cond_id_result = ctx.graph->add_condition_node(std::move(cond_node));
+    if (!cond_id_result) {
+        return pup::unexpected<Error>(cond_id_result.error());
+    }
+    auto cond_id = *cond_id_result;
+
+    // Helper to check if a statement should be processed in an inactive branch
+    // These statements are needed even when branch is inactive:
+    // - Rules: get guards attached, kept in graph for phi-node model
+    // - Conditionals: may contain rules that need processing
+    // - Includes: define macros needed by rules
+    // - BangMacros: define macros needed by rules
+    auto should_process_in_inactive_branch = [](parser::Statement const& stmt) {
+        return stmt.is<parser::Rule>()
+            || stmt.is<parser::Conditional>()
+            || stmt.is<parser::Include>()
+            || stmt.is<parser::BangMacro>();
+    };
+
+    // Helper to process a branch with given polarity
+    auto process_branch = [&](
+        std::vector<std::unique_ptr<parser::Statement>> const& body,
+        bool polarity,
+        bool is_active
+    ) -> Result<void> {
+        ctx.condition_stack.push_back(Guard { .condition = cond_id, .polarity = polarity });
+        auto pop_guard = ScopeGuard([&] { ctx.condition_stack.pop_back(); });
+
+        for (auto const& stmt : body) {
+            if (!is_active && !should_process_in_inactive_branch(*stmt)) {
+                continue;
+            }
+            auto result = process_statement(ctx, state, *stmt);
+            if (!result) {
+                return pup::unexpected<Error>(result.error());
+            }
         }
+        return {};
+    };
+
+    // Process THEN branch (polarity=true means "condition must be true")
+    auto then_result = process_branch(cond.then_body, true, condition_true);
+    if (!then_result) {
+        return pup::unexpected<Error>(then_result.error());
+    }
+
+    // Process ELSE branch (polarity=false means "condition must be false")
+    auto else_result = process_branch(cond.else_body, false, !condition_true);
+    if (!else_result) {
+        return pup::unexpected<Error>(else_result.error());
     }
 
     return {};
@@ -1501,21 +1604,24 @@ auto expand_rule(
         }
 
         // Add to output group {name} if specified
+        // Only add if the current context is active (guards satisfied)
+        // This prevents inactive branches from contributing to groups
         auto output_group = rule.output_group;
         if (!output_group && macro_ptr && macro_ptr->output_group) {
             output_group = macro_ptr->output_group;
         }
-        if (output_group) {
+        if (output_group && is_context_active(ctx)) {
             ctx.groups[*output_group].push_back(*output_id);
         }
 
         // Add to order-only group <name> if specified
         // Supports path/<group> syntax where path specifies the group's directory
+        // Only add if context is active (prevents inactive branches from contributing)
         auto output_oo_group = rule.output_order_only_group;
         if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group) {
             output_oo_group = macro_ptr->output_order_only_group;
         }
-        if (output_oo_group) {
+        if (output_oo_group && is_context_active(ctx)) {
             auto dir = std::string {};
 
             // Get directory from path prefix if specified
@@ -1986,6 +2092,7 @@ auto create_command_node(
         .display = ctx.graph->intern(display),
         .source_dir = ctx.graph->intern(ctx.current_dir.string()),
         .exported_vars = std::move(exported_var_ids),
+        .guards = ctx.condition_stack, // Apply current guards from condition stack
     };
 
     auto cmd_id_result = ctx.graph->add_command_node(std::move(node));
@@ -2002,6 +2109,16 @@ auto create_command_node(
 
     // Add sticky edges from used config variables (fine-grained dependency tracking)
     for (auto const& var_name : ctx.used_config_vars) {
+        auto it = state.config_var_nodes.find(var_name);
+        if (it != state.config_var_nodes.end()) {
+            (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
+        }
+    }
+
+    // Add sticky edges from condition config variables (phi-node model)
+    // Commands inside conditionals need to depend on the config vars used in the condition
+    // so they rebuild when the condition's value changes
+    for (auto const& var_name : ctx.condition_config_vars) {
         auto it = state.config_var_nodes.find(var_name);
         if (it != state.config_var_nodes.end()) {
             (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
