@@ -823,6 +823,14 @@ auto process_rule(
         return pup::unexpected<Error>(inputs.error());
     }
 
+    // Skip rules where input pattern evaluated to empty (tup behavior)
+    // - rule.inputs.empty() means no input pattern was specified (": |> cmd")
+    // - inputs->empty() means the pattern(s) evaluated to no files
+    // Only skip if pattern was specified but produced nothing
+    if (!rule.foreach_ && !rule.inputs.empty() && inputs->empty()) {
+        return {};
+    }
+
     if (rule.foreach_) {
         // Separate glob patterns from files
         // expand_inputs() now returns [pattern, file1, file2, ...] for globs

@@ -4641,3 +4641,32 @@ SCENARIO("Percent-d expands to Tupfile directory name", "[e2e][percent]")
         }
     }
 }
+
+SCENARIO("Rules with empty input patterns are skipped", "[e2e][empty-input]")
+{
+    GIVEN("a rule with input pattern that evaluates to empty")
+    {
+        auto f = E2EFixture { "empty_input" };
+        f.write_file("Tupfile", R"(
+# undefined-y is empty, so this rule should be skipped
+: $(undefined-y) |> echo should-not-run > %o |> skipped.txt
+# This rule has no input pattern, so it should run
+: |> echo ran > %o |> ran.txt
+)");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("rule with empty pattern is skipped, rule without pattern runs")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/skipped.txt"));
+                REQUIRE(f.exists("build/ran.txt"));
+            }
+        }
+    }
+}
