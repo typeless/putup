@@ -4352,3 +4352,186 @@ endif
         }
     }
 }
+
+SCENARIO("Phi-node allows same output from complementary conditional branches", "[e2e][phi][same-output]")
+{
+    GIVEN("a project where both ifeq branches produce the same output")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", R"(
+ifeq (@(MODE),release)
+: input.txt |> cp %f %o && echo "release" >> %o |> output.txt
+else
+: input.txt |> cp %f %o && echo "debug" >> %o |> output.txt
+endif
+)");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+
+        WHEN("built with MODE=debug (else branch)")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds without duplicate output error")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output contains debug marker")
+            {
+                REQUIRE(f.exists("build/output.txt"));
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("debug") != std::string::npos);
+                REQUIRE(content.find("release") == std::string::npos);
+            }
+        }
+
+        WHEN("built with MODE=release (then branch)")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=release\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds without duplicate output error")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output contains release marker")
+            {
+                REQUIRE(f.exists("build/output.txt"));
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("release") != std::string::npos);
+                REQUIRE(content.find("debug") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Phi-node allows same output from nested complementary conditionals", "[e2e][phi][same-output][nested]")
+{
+    GIVEN("a project with nested conditionals producing the same output")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", R"(
+ifeq (@(PLATFORM),linux)
+  ifeq (@(ARCH),x86)
+    : input.txt |> cp %f %o && echo "linux-x86" >> %o |> output.txt
+  else
+    : input.txt |> cp %f %o && echo "linux-arm" >> %o |> output.txt
+  endif
+endif
+)");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+
+        WHEN("built with PLATFORM=linux and ARCH=x86")
+        {
+            f.write_file("build/tup.config", "CONFIG_PLATFORM=linux\nCONFIG_ARCH=x86\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds without duplicate output error")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output contains linux-x86 marker")
+            {
+                REQUIRE(f.exists("build/output.txt"));
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("linux-x86") != std::string::npos);
+                REQUIRE(content.find("linux-arm") == std::string::npos);
+            }
+        }
+
+        WHEN("built with PLATFORM=linux and ARCH=arm")
+        {
+            f.write_file("build/tup.config", "CONFIG_PLATFORM=linux\nCONFIG_ARCH=arm\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds without duplicate output error")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("output contains linux-arm marker")
+            {
+                REQUIRE(f.exists("build/output.txt"));
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("linux-arm") != std::string::npos);
+                REQUIRE(content.find("linux-x86") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Phi-node allows same output from chained else-ifeq conditionals", "[e2e][phi][same-output][chained]")
+{
+    GIVEN("a project with chained else-ifeq producing same output")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", R"(
+ifeq (@(MODE),debug)
+  : input.txt |> cp %f %o && echo "debug" >> %o |> output.txt
+else
+  ifeq (@(MODE),release)
+    : input.txt |> cp %f %o && echo "release" >> %o |> output.txt
+  else
+    : input.txt |> cp %f %o && echo "default" >> %o |> output.txt
+  endif
+endif
+)");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+
+        WHEN("built with MODE=debug")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds and output contains debug marker")
+            {
+                REQUIRE(result.success());
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("debug") != std::string::npos);
+            }
+        }
+
+        WHEN("built with MODE=release")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=release\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds and output contains release marker")
+            {
+                REQUIRE(result.success());
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("release") != std::string::npos);
+            }
+        }
+
+        WHEN("built with MODE=other (default branch)")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=other\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds and output contains default marker")
+            {
+                REQUIRE(result.success());
+                auto content = f.read_file("build/output.txt");
+                REQUIRE(content.find("default") != std::string::npos);
+            }
+        }
+    }
+}

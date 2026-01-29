@@ -406,6 +406,37 @@ auto is_context_active(BuilderContext const& ctx) -> bool
     return true;
 }
 
+/// Check if two guard sets are mutually exclusive (cannot both be satisfied)
+/// This allows phi-node conditionals where branches produce the same output
+/// but only one executes based on config values.
+///
+/// Mutually exclusive if guards diverge at some position with complementary values.
+/// Examples:
+/// - [(C1, true)] vs [(C1, false), (C2, true)]: Position 0 differs, complementary -> exclusive
+/// - [(C1, false), (C2, true)] vs [(C1, false), (C2, false)]: Position 1 differs, complementary -> exclusive
+/// - [(C1, true)] vs [(C1, true), (C2, true)]: All shared guards identical -> NOT exclusive
+auto are_guards_mutually_exclusive(
+    std::vector<Guard> const& guards_a,
+    std::vector<Guard> const& guards_b
+) -> bool
+{
+    if (guards_a.empty() || guards_b.empty()) {
+        return false;
+    }
+
+    auto min_len = std::min(guards_a.size(), guards_b.size());
+
+    for (std::size_t i = 0; i < min_len; ++i) {
+        if (guards_a[i] != guards_b[i]) {
+            auto const& a = guards_a[i];
+            auto const& b = guards_b[i];
+            return a.condition == b.condition && a.polarity != b.polarity;
+        }
+    }
+
+    return false;
+}
+
 auto process_include(
     BuilderContext& ctx,
     BuilderState& state,
@@ -1558,6 +1589,13 @@ auto expand_rule(
         if (!output_inputs.empty()) {
             for (auto existing_id : output_inputs) {
                 if (node_id::is_command(existing_id)) {
+                    // Check if this is a phi-node case (complementary guards)
+                    // Allow multiple commands producing the same output if they have
+                    // mutually exclusive guards (same condition, opposite polarity)
+                    auto const* existing_cmd = ctx.graph->get_command_node(existing_id);
+                    if (existing_cmd && are_guards_mutually_exclusive(existing_cmd->guards, ctx.condition_stack)) {
+                        continue;
+                    }
                     auto existing_cmd_str = expand_instruction(ctx.graph->graph(), existing_id, ctx.graph->path_cache());
                     if (existing_cmd_str.empty()) {
                         existing_cmd_str = "<unknown>";
