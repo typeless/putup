@@ -399,21 +399,6 @@ auto parse_directory(std::filesystem::path const& rel_dir, ParseContext& ctx) ->
     return result;
 }
 
-auto make_layout_options(Options const& opts) -> LayoutOptions
-{
-    auto layout_opts = LayoutOptions {};
-    if (!opts.source_dir.empty()) {
-        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
-    }
-    if (!opts.config_dir.empty()) {
-        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
-    }
-    if (!opts.build_dirs.empty()) {
-        layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
-    }
-    return layout_opts;
-}
-
 auto try_auto_init(ProjectLayout const& layout) -> void
 {
     auto pup_dir = layout.pup_dir();
@@ -519,6 +504,21 @@ auto sort_dirs_by_depth(std::set<std::filesystem::path> const& available) -> std
 }
 
 } // namespace
+
+auto make_layout_options(Options const& opts) -> LayoutOptions
+{
+    auto layout_opts = LayoutOptions {};
+    if (!opts.source_dir.empty()) {
+        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
+    }
+    if (!opts.config_dir.empty()) {
+        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
+    }
+    if (!opts.build_dirs.empty()) {
+        layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
+    }
+    return layout_opts;
+}
 
 struct BuildContext::Impl {
     ProjectLayout layout;

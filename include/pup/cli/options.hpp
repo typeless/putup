@@ -34,6 +34,7 @@ struct Options {
     std::vector<std::string> targets = {};
     std::vector<std::string> output_targets = {};
     bool show_json = false;
+    std::string config_file = {}; // path to config file for --config
 };
 
 /// Parse command-line arguments

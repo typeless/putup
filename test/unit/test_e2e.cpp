@@ -3282,6 +3282,106 @@ SCENARIO("Build skips config-generating rules", "[e2e][configure][build]")
     }
 }
 
+SCENARIO("configure with --config installs specified file", "[e2e][configure]")
+{
+    GIVEN("a project and an external config file")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        f.write_file("external.config", "CONFIG_TEST=external_value\n");
+
+        WHEN("configure is run with --config")
+        {
+            auto result = f.pup({ "configure", "--config", "external.config" });
+
+            THEN("the config file is installed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("tup.config"));
+                auto content = f.read_file("tup.config");
+                REQUIRE(content.find("CONFIG_TEST=external_value") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("configure with --config and -B installs to variant", "[e2e][configure]")
+{
+    GIVEN("a project and an external config file")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        f.write_file("myconfig.config", "CONFIG_VARIANT=debug\n");
+
+        WHEN("configure is run with --config and -B")
+        {
+            auto result = f.pup({ "configure", "-B", "build-debug", "--config", "myconfig.config" });
+
+            THEN("the config file is installed to the variant directory")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build-debug/tup.config"));
+                auto content = f.read_file("build-debug/tup.config");
+                REQUIRE(content.find("CONFIG_VARIANT=debug") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("configure with --config fails for missing file", "[e2e][configure]")
+{
+    GIVEN("a project")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("configure is run with non-existent config")
+        {
+            auto result = f.pup({ "configure", "--config", "nonexistent.config" });
+
+            THEN("it fails with error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("not found") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("configure with --config followed by build works", "[e2e][configure][build]")
+{
+    GIVEN("a project configured with --config")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        f.write_file("build.config", "CONFIG_BUILD_TYPE=release\n");
+        auto configure_result = f.pup({ "configure", "--config", "build.config" });
+        REQUIRE(configure_result.success());
+
+        WHEN("build is run")
+        {
+            auto result = f.build();
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("hello"));
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Duplicate Output Detection Tests
 // =============================================================================

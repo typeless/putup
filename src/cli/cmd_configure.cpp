@@ -19,11 +19,44 @@ namespace pup::cli {
 
 namespace {
 
+auto install_config_file(
+    Options const& opts,
+    std::string_view variant_name
+) -> int
+{
+    auto config_path = std::filesystem::path { opts.config_file };
+    if (config_path.is_relative()) {
+        config_path = std::filesystem::current_path() / config_path;
+    }
+
+    if (!std::filesystem::exists(config_path)) {
+        fprintf(stderr, "[%.*s] Error: Config file not found: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str());
+        return EXIT_FAILURE;
+    }
+
+    auto layout = discover_layout(make_layout_options(opts));
+    if (!layout) {
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().message.c_str());
+        return EXIT_FAILURE;
+    }
+
+    auto dest = layout->output_root / "tup.config";
+    std::filesystem::create_directories(dest.parent_path());
+    std::filesystem::copy_file(config_path, dest, std::filesystem::copy_options::overwrite_existing);
+
+    printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str(), dest.string().c_str());
+    return EXIT_SUCCESS;
+}
+
 auto configure_single_variant(
     Options const& opts,
     std::string_view variant_name
 ) -> int
 {
+    if (!opts.config_file.empty()) {
+        return install_config_file(opts, variant_name);
+    }
+
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,

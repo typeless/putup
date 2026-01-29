@@ -192,8 +192,21 @@ putup              # Pass 2: Build with generated configs
 - `-k` - Continue after failures
 - `-n` - Dry-run: show what would execute
 - `-B DIR` - Specify build directory (created automatically if it doesn't exist)
+- `-c, --config FILE` - Use FILE as tup.config directly (skip config-generating rules)
 
 **Note:** The `-B` flag creates the output directory if needed. After configure runs, the directory contains `tup.config` which marks it as a variant for subsequent builds. If no config-generating rules exist, an empty `tup.config` is created automatically. The `.pup/` index is NOT created during configure (it's created on first build).
+
+**Using --config for pre-made configs:**
+
+The `--config` option copies an existing config file directly to the output directory, skipping config-generating rules entirely. Useful for:
+- Cross-compilation with pre-made toolchain configs
+- CI/CD where configs are externally managed
+- Quick testing with different configurations
+
+```bash
+putup configure -B build --config configs/arm-cross.config
+putup configure -B build-debug -c debug.config
+```
 
 **Important:** You must run `putup configure` before `putup build`. If you skip the configure step, `putup build` will error:
 
@@ -417,6 +430,7 @@ Estimated savings: 92% (instruction + operands vs full strings)
 | `-S DIR` | | Source directory. Overrides auto-detection. |
 | `-C DIR` | `--config-dir` | Config directory (where Tupfiles live). |
 | `-B DIR` | | Build/output directory (can use multiple times). |
+| `-c FILE` | `--config` | Use FILE as tup.config (configure command only). |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
 | | `--stat` | Print build statistics after completion. |
@@ -2085,9 +2099,9 @@ project/
 
 **Creating variants:**
 ```bash
-pup configure -B build-debug      # Creates build-debug/tup.config
-pup configure -B build-release    # Creates build-release/tup.config
-pup configure -B build-win32      # Creates build-win32/tup.config
+putup configure -B build-debug --config configs/debug.config
+putup configure -B build-release --config configs/release.config
+putup configure -B build-win32 --config configs/win32.config
 ```
 
 **Config file template:**

@@ -96,6 +96,10 @@ auto parse_args(int argc, char** argv) -> Options
             if (i + 1 < argc) {
                 opts.build_dirs.emplace_back(argv[++i]);
             }
+        } else if (arg == "-c" || arg == "--config") {
+            if (i + 1 < argc) {
+                opts.config_file = std::string { argv[++i] };
+            }
         } else if (arg == "--summary") {
             opts.summary = true;
         } else if (arg == "-a" || arg == "--all-deps") {
@@ -156,6 +160,7 @@ auto print_usage() -> void
            "  -S DIR             Source directory (where source files live)\n"
            "  -C DIR             Config directory (where Tupfiles live)\n"
            "  -B DIR             Build/output directory (can use multiple times)\n"
+           "  -c, --config FILE  Use FILE as tup.config (skip config rules)\n"
            "  --summary          Human-readable output (for show graph)\n"
            "  --stat             Print build statistics\n"
            "  -A, --all          Full project build (ignore cwd scoping)\n"

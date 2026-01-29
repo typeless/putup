@@ -18,6 +18,7 @@
 
 namespace pup {
 struct ProjectLayout;
+struct LayoutOptions;
 namespace parser {
 class VarDb;
 }
@@ -116,6 +117,10 @@ auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
 ) -> std::vector<std::string>;
+
+/// Convert CLI options to layout discovery options
+[[nodiscard]]
+auto make_layout_options(Options const& opts) -> LayoutOptions;
 
 /// Context for clean commands
 struct CleanContext {

@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/multi_variant.hpp"
+#include "pup/cli/context.hpp"
 #include "pup/cli/target.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path_utils.hpp"
@@ -78,18 +79,7 @@ auto for_each_variant(
 ) -> int
 {
     // Discover project layout
-    auto layout_opts = LayoutOptions {};
-    if (!opts.source_dir.empty()) {
-        layout_opts.source_dir = std::filesystem::path { opts.source_dir };
-    }
-    if (!opts.config_dir.empty()) {
-        layout_opts.config_dir = std::filesystem::path { opts.config_dir };
-    }
-    if (!opts.build_dirs.empty()) {
-        layout_opts.build_dir = std::filesystem::path { opts.build_dirs[0] };
-    }
-
-    auto layout_result = Result<ProjectLayout> { discover_layout(layout_opts) };
+    auto layout_result = Result<ProjectLayout> { discover_layout(make_layout_options(opts)) };
     if (!layout_result) {
         fprintf(stderr, "Error: %s\n", layout_result.error().message.c_str());
         return EXIT_FAILURE;
