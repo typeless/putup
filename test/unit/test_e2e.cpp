@@ -4535,6 +4535,85 @@ endif
         }
     }
 }
+
+SCENARIO("Phi-node with different output tags in conditional branches", "[e2e][phi][groups]")
+{
+    GIVEN("a project where conditional branches produce same file with different tags")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", R"(
+ifeq (@(MODE),special)
+: input.txt |> cp %f %o |> output.dat {special}
+else
+: input.txt |> cp %f %o |> output.dat {normal}
+endif
+: {normal} |> cat %f > %o |> result.txt
+)");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+
+        WHEN("built with MODE=normal (else branch active)")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=normal\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/result.txt"));
+            }
+        }
+
+        WHEN("built with MODE=special (if branch active)")
+        {
+            f.write_file("build/tup.config", "CONFIG_MODE=special\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds with if-branch output")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/output.dat"));
+            }
+        }
+    }
+}
+
+SCENARIO("Phi-node consumer depends on group from active branch only", "[e2e][phi][groups]")
+{
+    GIVEN("conditional branches produce same file into different groups, consumer uses active group")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", R"(
+ifeq (@(ENCRYPT),y)
+: input.txt |> cp %f %o |> intermediate.elf {rawelf}
+else
+: input.txt |> cp %f %o |> intermediate.elf {elf}
+endif
+: {elf} |> cat %f > %o |> final.bin
+)");
+        f.write_file("input.txt", "payload\n");
+        f.mkdir("build");
+
+        WHEN("built with ENCRYPT=n (else branch active, {elf} group active)")
+        {
+            f.write_file("build/tup.config", "CONFIG_ENCRYPT=n\n");
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds - consumer depends on active producer only")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/intermediate.elf"));
+                REQUIRE(f.exists("build/final.bin"));
+                auto content = f.read_file("build/final.bin");
+                REQUIRE(content == "payload\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Percent-d expands to Tupfile directory name", "[e2e][percent]")
 {
     GIVEN("a subdirectory with a Tupfile using %d")

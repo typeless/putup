@@ -1,0 +1,2 @@
+# Placeholder - overwritten by test
+: input.txt |> cp %f %o |> output.txt

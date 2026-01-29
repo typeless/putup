@@ -57,18 +57,25 @@ auto resolve_variant_path(
 }
 
 /// Add job dependencies for any command that produces the given node.
+/// For phi-nodes (multiple producers), only add active producers when consumer is active.
 auto add_producer_dependencies(
     graph::BuildGraph const& graph,
     std::unordered_map<NodeId, std::size_t> const& cmd_to_job,
+    std::vector<BuildJob> const& jobs,
     NodeId node_id,
     std::size_t current_job,
     std::unordered_set<std::size_t>& dependencies
 ) -> void
 {
+    auto current_active = jobs[current_job].guard_active;
+
     for (auto producer_id : graph.get_inputs(node_id)) {
         if (node_id::is_command(producer_id)) {
             if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != current_job) {
-                dependencies.insert(it->second);
+                // Only add dependency if: current is inactive OR producer is active
+                if (!current_active || jobs[it->second].guard_active) {
+                    dependencies.insert(it->second);
+                }
             }
         }
     }
@@ -118,7 +125,7 @@ auto build_dependency_map(
             }
 
             // Case 2: Input is a file produced by another command
-            add_producer_dependencies(graph, cmd_to_job, input_id, j, dependencies);
+            add_producer_dependencies(graph, cmd_to_job, jobs, input_id, j, dependencies);
         }
 
         // Case 3: Order-only inputs (groups and files)
@@ -139,7 +146,7 @@ auto build_dependency_map(
                     }
 
                     // Also check for commands that produce this member file
-                    add_producer_dependencies(graph, cmd_to_job, member_id, j, dependencies);
+                    add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
                 }
             } else {
                 // Regular file - check if it's a direct output of another job
@@ -148,7 +155,7 @@ auto build_dependency_map(
                 }
 
                 // Check for commands that produce this file
-                add_producer_dependencies(graph, cmd_to_job, oo_id, j, dependencies);
+                add_producer_dependencies(graph, cmd_to_job, jobs, oo_id, j, dependencies);
             }
         }
 
