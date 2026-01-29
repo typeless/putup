@@ -4535,3 +4535,30 @@ endif
         }
     }
 }
+SCENARIO("Percent-d expands to Tupfile directory name", "[e2e][percent]")
+{
+    GIVEN("a subdirectory with a Tupfile using %d")
+    {
+        auto f = E2EFixture { "percent_d" };
+        f.mkdir("mymod");
+        f.write_file("mymod/Tupfile", R"(
+: ../input.txt |> echo %d > %o |> dirname.txt
+)");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("%d expands to the Tupfile directory name")
+            {
+                REQUIRE(result.success());
+                auto content = f.read_file("build/mymod/dirname.txt");
+                REQUIRE(content.find("mymod") != std::string::npos);
+            }
+        }
+    }
+}

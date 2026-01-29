@@ -685,15 +685,6 @@ auto path_extension(std::string_view name) -> std::string_view
     return pos == std::string_view::npos ? std::string_view {} : name.substr(pos + 1);
 }
 
-auto path_parent(std::string_view path) -> std::string_view
-{
-    auto pos = path.rfind('/');
-    if (pos == std::string_view::npos) {
-        return {};
-    }
-    return path.substr(0, pos);
-}
-
 } // namespace
 
 auto compute_source_to_root(std::string_view source_dir) -> std::string
@@ -868,8 +859,13 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
             break;
         }
         case 'd': {
-            if (!cmd->inputs.empty()) {
-                result += path_parent(get_operand_path(cmd->inputs[0]));
+            if (!source_dir.empty()) {
+                auto slash = source_dir.rfind('/');
+                if (slash != std::string_view::npos) {
+                    result += source_dir.substr(slash + 1);
+                } else {
+                    result += source_dir;
+                }
             }
             break;
         }

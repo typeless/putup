@@ -818,31 +818,35 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         CHECK(result == "echo c");
     }
 
-    SECTION("%d (parent directory of first input)")
+    SECTION("%d (Tupfile directory name)")
     {
-        // For "src/foo.c" relative to source_dir "src" → "foo.c" → parent is empty
-        // Let's use a deeper path to test %d meaningfully
-        auto sub_dir = graph.add_file_node(FileNode {
-            .type = NodeType::Directory,
-            .name = graph.intern("sub"),
-            .parent_dir = *src_dir,
-        });
-        auto deep_file = graph.add_file_node(FileNode {
-            .name = graph.intern("deep.c"),
-            .parent_dir = *sub_dir,
-        });
-        REQUIRE(deep_file.has_value());
-
+        // %d expands to the lowest-level directory name of the Tupfile (source_dir)
+        // For source_dir="src", %d should be "src"
         auto node = CommandNode {
             .source_dir = graph.intern("src"),
             .instruction_id = graph.intern("echo %d"),
-            .inputs = { *deep_file },
+            .inputs = { *foo_c },
         };
         auto cmd_id = graph.add_command_node(std::move(node));
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo sub");
+        CHECK(result == "echo src");
+    }
+
+    SECTION("%d with nested source_dir")
+    {
+        // For source_dir="foo/bar/baz", %d should be "baz" (last component)
+        auto node = CommandNode {
+            .source_dir = graph.intern("foo/bar/baz"),
+            .instruction_id = graph.intern("echo %d"),
+            .inputs = { *foo_c },
+        };
+        auto cmd_id = graph.add_command_node(std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(graph.graph(), *cmd_id);
+        CHECK(result == "echo baz");
     }
 
     SECTION("%O (basename of first output)")
