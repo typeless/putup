@@ -1009,7 +1009,7 @@ auto changed = find_changed_files(root, *old_index);
 changed = expand_with_implicit_deps(changed, *old_index);
 
 // 4. Incremental build
-auto stats = scheduler.build_incremental(*graph, *old_index, changed);
+auto stats = scheduler.build_incremental(*graph, changed);
 ```
 
 **Change detection algorithm:**

@@ -8,7 +8,7 @@ Putup uses Tup's Tupfile syntax. This document covers supported features and dif
 |-------------|----------------|--------|
 | `tup` | `putup` | ✅ Implemented |
 | `tup upd` | `putup` | ✅ Implemented |
-| `tup init` | (auto) | ✅ Auto-initializes on first build |
+| `tup init` | `putup configure` | ✅ Creates tup.config and initializes project |
 | `tup refactor` | `putup parse` | ✅ Implemented |
 | `tup graph` | `putup show graph` | ✅ Implemented |
 | `tup compiledb` | `putup show compdb` | ✅ Implemented |
@@ -166,7 +166,7 @@ Workaround: Run the script manually before building, or use a rule:
 Putup includes E2E tests that verify tup-compatible behavior:
 
 ```bash
-./test/e2e/run_tests.sh
+./build/test/unit/putup_test '[e2e]'
 ```
 
 Test fixtures cover:

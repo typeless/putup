@@ -45,6 +45,7 @@ make test                                 # All tests
 | `[layout]` | Project layout detection |
 | `[multi-variant]` | Multi-variant parallel builds |
 | `[platform]` | Platform conditionals (`ifdef`, `ifeq`) |
+| `[scope]` | Scoped build tests (mm/mma behavior, `-A` flag) |
 | `[scoped-config]` | Scoped configure commands |
 | `[shell]` | Shell fixture tests (`test.sh`) |
 | `[show]` | Show command (script, compdb, graph) |
@@ -117,14 +118,23 @@ auto env = EnvGuard { "VAR_NAME", "value" };  // RAII - restores on scope exit
 
 ### Shell Fixtures
 
-For tests that need shell scripts:
+For tests that need shell scripts, use `run_shell_fixture()` (defined in `e2e_fixture.{hpp,cpp}`):
 
 ```cpp
-auto result = run_shell_fixture("fixture_name");  // Runs test.sh
+auto result = run_shell_fixture("fixture_name");  // Runs test.sh in fixture dir
 REQUIRE(result.success());
 ```
 
-The `test.sh` receives `$PUP` environment variable pointing to putup binary.
+The `test.sh` script receives the `$PUP` environment variable pointing to the putup binary. The fixture directory must contain a `test.sh` file that performs the test and exits with 0 on success.
+
+Example `test.sh`:
+```bash
+#!/bin/bash
+set -e
+$PUP configure
+$PUP
+test -f expected_output.txt
+```
 
 ## Adding New Tests
 

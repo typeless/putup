@@ -4,17 +4,93 @@
 
 ### 1.1 What is Putup?
 
+Putup is a build system that uses [Tup's](https://gittup.org/tup/) Tupfile syntax. It provides fast incremental builds through content-based change detection (SHA-256 hashing) and a dependency graph that tracks exactly what needs to rebuild.
+
+Key characteristics:
+- **Compatible with Tup** - Parses existing Tupfiles without modification
+- **Content hashing** - SHA-256 for precise change detection beyond timestamps
+- **No FUSE** - Works anywhere without filesystem dependencies
+- **Binary index** - Fast, portable build state (no SQLite)
+- **Parallel execution** - Automatic parallelism within dependency constraints
+
 ### 1.2 Compatibility with Tup
 
+Putup supports the core Tupfile syntax and most tup commands. See [Appendix A](#a-tup-compatibility-matrix) for a detailed compatibility matrix.
+
+**What works:**
+- Rules, foreach, bang macros, variables, conditionals
+- Groups (bins) and order-only dependencies
+- Multi-directory projects with cross-directory dependencies
+- Variant (out-of-tree) builds
+
+**What's different:**
+- No FUSE sandbox (uses explicit `-MD` flags for header tracking)
+- No Lua scripting
+- No `run` directive (shell execution during parse)
+- Binary index format instead of SQLite database
+
 ### 1.3 Key Differences from Tup
+
+| Aspect | Tup | Putup |
+|--------|-----|-------|
+| Change detection | FUSE interception | Index comparison + SHA-256 |
+| Header tracking | Automatic via FUSE | Requires `-MD` compiler flag |
+| Database | SQLite | Binary index file |
+| Scripting | Lua support | None |
+| Init command | `tup init` | `putup configure` |
 
 ## 2. Quick Start
 
 ### 2.1 Installation
 
+Build from source (requires C++20 compiler):
+
+```bash
+git clone https://github.com/user/putup
+cd putup
+make
+sudo install build/putup /usr/local/bin/
+```
+
 ### 2.2 Your First Build
 
+Create a simple project:
+
+```bash
+mkdir hello && cd hello
+echo 'int main() { return 0; }' > main.c
+echo ': main.c |> gcc %f -o %o |> hello' > Tupfile
+touch Tupfile.ini
+
+putup configure    # Initialize (creates tup.config)
+putup              # Build
+./hello            # Run
+```
+
 ### 2.3 Project Structure
+
+A minimal putup project:
+
+```
+project/
+├── Tupfile.ini     # Project root marker (can be empty)
+├── Tupfile         # Build rules
+├── tup.config      # Configuration variables (created by configure)
+└── .pup/           # Build state index (created on first build)
+```
+
+For variant (out-of-tree) builds:
+
+```
+project/
+├── Tupfile.ini
+├── Tupfile
+├── src/
+└── build/          # Variant directory
+    ├── tup.config  # Variant-specific config
+    ├── .pup/       # Variant's index
+    └── hello       # Build output
+```
 
 ## 3. Command Reference
 

@@ -145,8 +145,8 @@ Key points:
 pup/
 ├── build/              # Build output (tup variant directory)
 │   ├── tup.config      # Variant configuration
-│   ├── pup             # Main binary
-│   └── test/unit/pup_test
+│   ├── putup           # Main binary
+│   └── test/unit/putup_test
 ├── include/pup/
 │   ├── cli/            # Command-line interface, options, output
 │   ├── core/           # Core types, hash, result, platform
