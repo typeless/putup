@@ -41,4 +41,25 @@ auto is_path_in_any_scope(
     std::vector<std::string> const& scopes
 ) -> bool;
 
+/// Compute the "../" prefix needed to navigate from source_dir back to project root.
+/// E.g., "src/lib" → "../../", "" → ""
+[[nodiscard]]
+auto compute_source_to_root(std::string_view source_dir) -> std::string;
+
+/// Transform a project-root-relative path to be relative to a Tupfile's source directory.
+/// Used for command expansion where commands run from the Tupfile directory.
+///
+/// Examples (source_dir = "src/lib", source_to_root = "../../"):
+///   "src/lib/foo.c" → "foo.c"       (local file, strip prefix)
+///   "src/lib"       → "."           (exact match)
+///   "include/bar.h" → "../../include/bar.h" (other dir, prepend source_to_root)
+///   "../data.txt"   → "../../../data.txt"   (already relative, prepend source_to_root)
+///   "/usr/include"  → "/usr/include"        (absolute, unchanged)
+[[nodiscard]]
+auto make_source_relative(
+    std::string_view path,
+    std::string_view source_to_root,
+    std::string_view source_dir
+) -> std::string;
+
 } // namespace pup

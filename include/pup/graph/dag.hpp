@@ -381,20 +381,6 @@ auto get_string(Graph const& graph, StringId id) -> std::string_view;
 [[nodiscard]]
 auto get_name(Graph const& graph, NodeId id) -> std::string_view;
 
-/// Compute the "../" prefix needed to navigate from source_dir back to project root.
-/// E.g., "src/lib" → "../../"
-[[nodiscard]]
-auto compute_source_to_root(std::string_view source_dir) -> std::string;
-
-/// Transform a project-root-relative path to be relative to a Tupfile's source directory.
-/// Used for command expansion where commands run from the Tupfile directory.
-[[nodiscard]]
-auto make_source_relative(
-    std::string_view path,
-    std::string_view source_to_root,
-    std::string_view source_dir
-) -> std::string;
-
 /// Expand instruction pattern into full command string by substituting
 /// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
 [[nodiscard]]

@@ -3,6 +3,7 @@
 
 #include "pup/index/entry.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/path_utils.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -397,52 +398,10 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::str
         }
     }
 
-    // Compute source_to_root (e.g., "include/generated" -> "../../")
-    // Must match graph::compute_source_to_root() exactly
-    auto compute_source_to_root = [](std::string_view dir) -> std::string {
-        if (dir.empty()) {
-            return {};
-        }
-        auto result = std::string {};
-        auto pos = std::size_t { 0 };
-        while (pos < dir.size()) {
-            auto slash = dir.find('/', pos);
-            auto segment = slash == std::string_view::npos
-                ? dir.substr(pos)
-                : dir.substr(pos, slash - pos);
-            if (!segment.empty() && segment != ".") {
-                result += "../";
-            }
-            pos = slash == std::string_view::npos ? dir.size() : slash + 1;
-        }
-        return result;
-    };
+    auto source_to_root = pup::compute_source_to_root(source_dir);
 
-    auto source_to_root = compute_source_to_root(source_dir);
-
-    // Helper to get path relative to source directory
-    // Must match graph::make_source_relative() exactly for command string matching
-    auto get_relative_path = [&source_dir, &source_to_root](std::string_view path) -> std::string {
-        if (path.empty() || path[0] == '/') {
-            return std::string { path };
-        }
-        if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
-            if (!source_to_root.empty() && !source_dir.empty()) {
-                return source_to_root + std::string { path };
-            }
-            return std::string { path };
-        }
-        if (source_to_root.empty()) {
-            return std::string { path };
-        }
-        auto dir_prefix = std::string { source_dir } + "/";
-        if (path.starts_with(dir_prefix)) {
-            return std::string { path.substr(dir_prefix.size()) };
-        }
-        if (path == source_dir) {
-            return ".";
-        }
-        return source_to_root + std::string { path };
+    auto get_relative_path = [&source_dir, &source_to_root](std::string_view path) {
+        return pup::make_source_relative(path, source_to_root, source_dir);
     };
 
     auto result = std::string {};

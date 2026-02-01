@@ -97,4 +97,52 @@ auto is_path_in_any_scope(
     });
 }
 
+auto compute_source_to_root(std::string_view source_dir) -> std::string
+{
+    if (source_dir.empty()) {
+        return {};
+    }
+    auto result = std::string {};
+    auto pos = std::size_t { 0 };
+    while (pos < source_dir.size()) {
+        auto slash = source_dir.find('/', pos);
+        auto segment = slash == std::string_view::npos
+            ? source_dir.substr(pos)
+            : source_dir.substr(pos, slash - pos);
+        if (!segment.empty() && segment != ".") {
+            result += "../";
+        }
+        pos = slash == std::string_view::npos ? source_dir.size() : slash + 1;
+    }
+    return result;
+}
+
+auto make_source_relative(
+    std::string_view path,
+    std::string_view source_to_root,
+    std::string_view source_dir
+) -> std::string
+{
+    if (path.empty() || path[0] == '/') {
+        return std::string { path };
+    }
+    if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
+        if (!source_to_root.empty() && !source_dir.empty()) {
+            return std::string { source_to_root } + std::string { path };
+        }
+        return std::string { path };
+    }
+    if (source_to_root.empty()) {
+        return std::string { path };
+    }
+    auto dir_prefix = std::string { source_dir } + "/";
+    if (path.starts_with(dir_prefix)) {
+        return std::string { path.substr(dir_prefix.size()) };
+    }
+    if (path == source_dir) {
+        return ".";
+    }
+    return std::string { source_to_root } + std::string { path };
+}
+
 } // namespace pup

@@ -3,6 +3,7 @@
 
 #include "pup/graph/builder.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/path_utils.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/parser/eval.hpp"
@@ -160,7 +161,7 @@ struct PathTransformContext {
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
     return PathTransformContext {
-        .source_to_root = compute_source_to_root(ctx.current_dir.string()),
+        .source_to_root = pup::compute_source_to_root(ctx.current_dir.string()),
         .current_dir_str = ctx.current_dir.string(),
         .source_root = ctx.options.source_root,
         .output_root = ctx.options.output_root,
@@ -181,7 +182,7 @@ auto transform_input_path(
     if (auto node_id = graph.find_by_path(inp, BUILD_ROOT_ID)) {
         auto full_path = graph.get_full_path(*node_id);
         if (!full_path.empty()) {
-            return make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
+            return pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
         }
     }
 
@@ -192,12 +193,12 @@ auto transform_input_path(
         auto build_path = tc.output_root / inp;
         if (fs::exists(build_path)) {
             auto full_path = build_root_name + "/" + inp;
-            return make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
+            return pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
         }
     }
 
     // Source file or not found - use path as-is
-    return make_source_relative(inp, tc.source_to_root, tc.current_dir_str);
+    return pup::make_source_relative(inp, tc.source_to_root, tc.current_dir_str);
 }
 
 /// Transform an output path to Tupfile-relative for command expansion.
@@ -210,7 +211,7 @@ auto transform_output_path(
 {
     // Outputs are already variant-mapped (stored under BUILD_ROOT_ID by expand_outputs).
     // Just make the path relative to the Tupfile directory.
-    return make_source_relative(out, tc.source_to_root, tc.current_dir_str);
+    return pup::make_source_relative(out, tc.source_to_root, tc.current_dir_str);
 }
 
 /// Get all files that are members of a group (via file → group edges)
@@ -2431,7 +2432,7 @@ auto resolve_deferred_order_only_edges(
                     // Construct path transform context from command's source_dir
                     auto source_dir_str = std::string { graph.str(cmd_node->source_dir) };
                     auto tc = PathTransformContext {
-                        .source_to_root = compute_source_to_root(source_dir_str),
+                        .source_to_root = pup::compute_source_to_root(source_dir_str),
                         .current_dir_str = source_dir_str,
                         .source_root = state.options.source_root,
                         .output_root = state.options.output_root,
