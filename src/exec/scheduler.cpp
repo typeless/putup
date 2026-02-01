@@ -510,6 +510,11 @@ auto Scheduler::execute_parallel(
     auto active_count = static_cast<std::size_t>(std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return j.guard_active; }));
     impl_->stats.skipped_jobs += jobs.size() - active_count;
 
+    // If no jobs are active, we're done
+    if (active_count == 0) {
+        return {};
+    }
+
     // Only queue active jobs with no dependencies
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         if (in_degree[i] == 0 && jobs[i].guard_active) {

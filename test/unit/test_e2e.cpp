@@ -4670,3 +4670,41 @@ SCENARIO("Rules with empty input patterns are skipped", "[e2e][empty-input]")
         }
     }
 }
+
+// =============================================================================
+// Incremental Build Command String Mismatch Tests
+// =============================================================================
+
+SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
+{
+    // This tests the command string matching between graph and index.
+    // Pattern from spos: Tupfile at include/generated/ referencing ../data.txt
+    // Bug: Index uses std::filesystem::relative() while graph uses make_source_relative()
+    // These produce different paths for cross-directory references.
+    GIVEN("a variant build with sibling directory input")
+    {
+        auto f = E2EFixture { "sibling_dir_inputs" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        auto first_build = f.build({ "-B", "build" });
+        INFO("first build stdout: " << first_build.stdout_output);
+        INFO("first build stderr: " << first_build.stderr_output);
+        REQUIRE(first_build.success());
+        REQUIRE(f.exists("build/include/generated/output.txt"));
+
+        WHEN("rebuilding without changes")
+        {
+            auto rebuild = f.build({ "-B", "build" });
+
+            THEN("rebuild is a no-op")
+            {
+                INFO("rebuild stdout: " << rebuild.stdout_output);
+                INFO("rebuild stderr: " << rebuild.stderr_output);
+                REQUIRE(rebuild.success());
+                REQUIRE(rebuild.is_noop());
+            }
+        }
+    }
+}

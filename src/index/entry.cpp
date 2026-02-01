@@ -380,15 +380,6 @@ auto get_extension(std::string_view name) -> std::string_view
     return pos == std::string_view::npos ? std::string_view {} : name.substr(pos + 1);
 }
 
-auto get_parent_path(std::string_view path) -> std::string_view
-{
-    auto pos = path.rfind('/');
-    if (pos == std::string_view::npos) {
-        return {};
-    }
-    return path.substr(0, pos);
-}
-
 } // namespace
 
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string
@@ -398,31 +389,60 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::str
     }
 
     // Get directory path for relativization (if command has a source dir)
-    // Pre-create filesystem::path once to avoid repeated construction in the lambda
-    auto dir_fs_path = std::filesystem::path {};
+    auto source_dir = std::string_view {};
     if (cmd.dir_id != 0) {
         auto const* dir = index.find_file_by_id(cmd.dir_id);
         if (dir && !dir->path.empty()) {
-            dir_fs_path = dir->path;
+            source_dir = dir->path;
         }
     }
 
+    // Compute source_to_root (e.g., "include/generated" -> "../../")
+    // Must match graph::compute_source_to_root() exactly
+    auto compute_source_to_root = [](std::string_view dir) -> std::string {
+        if (dir.empty()) {
+            return {};
+        }
+        auto result = std::string {};
+        auto pos = std::size_t { 0 };
+        while (pos < dir.size()) {
+            auto slash = dir.find('/', pos);
+            auto segment = slash == std::string_view::npos
+                ? dir.substr(pos)
+                : dir.substr(pos, slash - pos);
+            if (!segment.empty() && segment != ".") {
+                result += "../";
+            }
+            pos = slash == std::string_view::npos ? dir.size() : slash + 1;
+        }
+        return result;
+    };
+
+    auto source_to_root = compute_source_to_root(source_dir);
+
     // Helper to get path relative to source directory
-    // Uses std::filesystem::relative for proper cross-directory handling (e.g., ../sibling/file)
-    auto get_relative_path = [&dir_fs_path](std::string_view path) -> std::string {
-        if (dir_fs_path.empty()) {
+    // Must match graph::make_source_relative() exactly for command string matching
+    auto get_relative_path = [&source_dir, &source_to_root](std::string_view path) -> std::string {
+        if (path.empty() || path[0] == '/') {
             return std::string { path };
         }
-        auto ec = std::error_code {};
-        auto rel = std::filesystem::relative(
-            std::filesystem::path { path },
-            dir_fs_path,
-            ec
-        );
-        if (ec || rel.empty()) {
-            return std::string { path };  // Fall back to full path on error
+        if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
+            if (!source_to_root.empty() && !source_dir.empty()) {
+                return source_to_root + std::string { path };
+            }
+            return std::string { path };
         }
-        return rel.string();
+        if (source_to_root.empty()) {
+            return std::string { path };
+        }
+        auto dir_prefix = std::string { source_dir } + "/";
+        if (path.starts_with(dir_prefix)) {
+            return std::string { path.substr(dir_prefix.size()) };
+        }
+        if (path == source_dir) {
+            return ".";
+        }
+        return source_to_root + std::string { path };
     };
 
     auto result = std::string {};
@@ -553,10 +573,14 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::str
             break;
         }
         case 'd': {
-            if (!cmd.inputs.empty()) {
-                auto const* file = index.find_file_by_id(cmd.inputs[0]);
-                if (file) {
-                    result += get_parent_path(get_relative_path(file->path));
+            // %d expands to the basename of the source directory (where Tupfile is)
+            // Must match graph::expand_instruction() exactly
+            if (!source_dir.empty()) {
+                auto slash = source_dir.rfind('/');
+                if (slash != std::string_view::npos) {
+                    result += source_dir.substr(slash + 1);
+                } else {
+                    result += source_dir;
                 }
             }
             break;

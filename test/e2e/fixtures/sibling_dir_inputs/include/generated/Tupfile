@@ -1,0 +1,2 @@
+# Command referencing sibling directory file (../data.txt)
+: ../data.txt |> cat %f > %o |> output.txt
