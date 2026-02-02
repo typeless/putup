@@ -121,6 +121,19 @@ enum class NodeType : std::uint8_t {
 };
 ```
 
+### Node State Flags
+
+```cpp
+enum class NodeFlags : std::uint16_t {
+    None = 0,
+    Modified = 1 << 0,  // Content changed since last build
+    Created = 1 << 1,   // Newly created
+    Deleted = 1 << 2,   // Marked for deletion
+    ConfigDep = 1 << 3, // Depends on configuration
+    Transient = 1 << 4, // Temporary file
+};
+```
+
 ### Edge Classification
 
 ```cpp
@@ -566,6 +579,7 @@ auto find_by_dir_name(Graph const&, parent_id, name) -> std::optional<NodeId>;
 auto find_by_path(Graph const&, path) -> std::optional<NodeId>;
 auto get_inputs(Graph const&, id) -> std::vector<NodeId>;
 auto get_outputs(Graph const&, id) -> std::vector<NodeId>;
+auto get_sticky_outputs(Graph const&, id) -> std::vector<NodeId>;  // Tupfile/config deps
 auto nodes_of_type(Graph const&, type) -> std::vector<NodeId>;
 
 // Type-specific accessors
@@ -587,6 +601,14 @@ auto get_source_dir(Graph const&, id) -> std::string_view;
 auto get_instruction_pattern(Graph const&, id) -> std::string_view;
 auto expand_instruction(Graph const&, id, PathCache&) -> std::string;
 auto expand_instruction(Graph const&, id) -> std::string;
+
+// Command index for find_by_command() lookups
+auto build_command_index(Graph&, PathCache&) -> void;
+
+// Build root management (for variant builds)
+auto set_build_root_name(Graph&, name) -> void;
+auto get_build_root_name(Graph const&) -> std::string_view;
+auto is_under_build_root(Graph const&, id) -> bool;
 ```
 
 ### Topological Sort
@@ -741,7 +763,7 @@ v8 introduces **instruction-based command storage** for significant space saving
 ├─────────────────────────────────────┤
 │ CommandEntry[] (16 bytes each)      │
 │   dir_id: u32                       │
-│   instruction_offset: u32           │  ← Was cmd_offset
+│   cmd_offset: u32                   │  ← Template string with %f/%o patterns (v8)
 │   display_offset: u32               │
 │   env_offset: u32                   │
 │   (id = index | 0x80000000)         │
@@ -923,8 +945,9 @@ using ProgressCallback = std::function<void(std::size_t completed, std::size_t t
 
 class Scheduler {
     auto build(graph) -> Result<BuildStats>;
-    auto build_incremental(graph, old_index, changed) -> Result<BuildStats>;
+    auto build_incremental(graph, changed_files) -> Result<BuildStats>;
     auto build_subset(graph, command_ids) -> Result<BuildStats>;
+    auto build_targets(graph, target_ids) -> Result<BuildStats>;
     auto on_job_start(callback) -> void;
     auto on_job_complete(callback) -> void;
     auto on_progress(callback) -> void;
@@ -933,6 +956,32 @@ class Scheduler {
     auto stats() const -> BuildStats;
 };
 ```
+
+**Build methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `build()` | Full build - execute all commands in topological order |
+| `build_incremental()` | Rebuild commands whose inputs changed |
+| `build_subset()` | Build only specified command IDs |
+| `build_targets()` | Build specific outputs and their dependencies (reverse traversal) |
+
+**Build mode selection:**
+
+```cpp
+enum class BuildMode {
+    Incremental,  // Old index exists, files changed
+    Targets,      // Specific outputs requested (--output-targets)
+    Subset,       // Exclude config commands from full build
+    Full,         // Build everything
+};
+```
+
+Mode precedence (highest to lowest):
+1. **Incremental** - if old index exists and files changed
+2. **Targets** - if specific output targets requested (and not incremental)
+3. **Subset** - exclude config commands from full build
+4. **Full** - build everything
 
 **Parallel execution algorithm:**
 
@@ -997,25 +1046,45 @@ IndexWriter::write(root / ".pup" / "index", make_index(*graph));
 
 ### Incremental Build
 
+The incremental build pipeline performs seven steps to determine what needs rebuilding:
+
 ```cpp
-// 1. Load previous index
-auto reader = IndexReader::open(root / ".pup" / "index");
-auto old_index = reader.read();
+// 1. Build command index for find_by_command() lookups
+//    Must happen after parsing when operands are set
+graph.build_command_index();
 
-// 2. Find changed files (mtime → size → hash)
-auto changed = find_changed_files(root, *old_index);
+// 2. Compute build scopes (if scoped build via -d or CWD)
+auto scopes = compute_build_scopes(opts, layout);
+auto upstream_files = collect_upstream_files(graph, scopes);
 
-// 3. Expand with implicit dependencies
-changed = expand_with_implicit_deps(changed, *old_index);
+// 3. Find changed files with scope filtering
+//    Compares size then hash against old index
+auto changed = find_changed_files_with_implicit(
+    source_root, old_index, scopes, upstream_files);
 
-// 4. Incremental build
-auto stats = scheduler.build_incremental(*graph, changed);
+// 4. Expand implicit dependencies
+//    Header changes → affected command outputs added
+changed = expand_implicit_deps(changed, old_index, graph);
+
+// 5. Force output targets to rebuild (if --output-targets specified)
+for (auto const& target : output_targets) {
+    changed.push_back(build_root_prefix + target);
+}
+
+// 6. Detect new commands (in graph but not index)
+auto new_outputs = detect_new_commands(graph, old_index);
+changed.insert(changed.end(), new_outputs.begin(), new_outputs.end());
+
+// 7. Remove stale outputs from deleted commands
+remove_stale_outputs(graph, old_index, source_root);
+
+// Execute incremental build
+auto stats = scheduler.build_incremental(graph, changed);
 ```
 
 **Change detection algorithm:**
-1. Compare modification times - if different, rebuild
-2. If mtime matches, compare file sizes - if different, rebuild
-3. If size matches, compute SHA-256 hash - if different, rebuild
+1. Compare file sizes - if different, rebuild
+2. If size matches, compute SHA-256 hash - if different, rebuild
 
 This hierarchy minimizes expensive hash computations while ensuring correctness.
 
