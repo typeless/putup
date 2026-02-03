@@ -12,8 +12,8 @@ A build system using the [Tupfile](https://gittup.org/tup/) format.
 ## Installation
 
 ```bash
-git clone https://github.com/user/pup.git
-cd pup
+git clone <repository-url>
+cd putup
 make
 ```
 
