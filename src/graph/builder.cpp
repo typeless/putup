@@ -144,6 +144,32 @@ auto strip_build_prefix(
     return std::string { path };
 }
 
+/// Normalize a path that may point to the output directory to its canonical form.
+/// In cross-project builds, paths like "../../pup/build/busybox-test/include/autoconf.h"
+/// may be normalized to "../pup/build/busybox-test/include/autoconf.h" when combined with
+/// a subdirectory, causing strip_build_prefix to fail. This function resolves such paths
+/// by checking if they point to output_root and returning the relative path within it.
+auto normalize_to_output_relative(
+    std::string_view path,
+    fs::path const& source_root,
+    fs::path const& output_root
+) -> std::string
+{
+    if (!path.starts_with("..")) {
+        return std::string { path };
+    }
+
+    auto abs_path = (source_root / path).lexically_normal();
+    auto output_prefix = output_root.lexically_normal();
+
+    auto rel_to_output = abs_path.lexically_relative(output_prefix);
+    if (!rel_to_output.empty() && !rel_to_output.string().starts_with("..")) {
+        return rel_to_output.string();
+    }
+
+    return std::string { path };
+}
+
 /// Context for transforming paths to Tupfile-relative coordinates.
 ///
 /// Commands execute from the Tupfile's source directory, so all paths in commands
@@ -1951,10 +1977,22 @@ auto get_or_create_file_node(
     // We must strip the prefix and look up under BUILD_ROOT_ID before any other
     // path manipulation that could corrupt the lookup.
     auto build_root_name = ctx.graph->get_build_root_name();
+
     if (type == NodeType::Generated && !build_root_name.empty()) {
         auto lookup_path = strip_build_prefix(path, build_root_name);
+
         if (lookup_path != path) { // Had prefix
             if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
+                return *existing;
+            }
+        }
+    }
+
+    // For cross-project paths, also check after normalizing through output_root
+    if (type == NodeType::Generated && path.starts_with("..")) {
+        auto normalized = normalize_to_output_relative(path, ctx.options.source_root, ctx.options.output_root);
+        if (normalized != path) {
+            if (auto existing = ctx.graph->find_by_path(normalized, BUILD_ROOT_ID)) {
                 return *existing;
             }
         }
@@ -2026,10 +2064,31 @@ auto resolve_input_node(
     // Input paths are already source-relative from expand_inputs() which normalizes them
     // by combining with current_dir. No further normalization needed here.
 
+    // Track whether the path originally had the build prefix or pointed to output_root.
+    // This indicates the path should reference a generated file, not a source file.
+    auto had_build_prefix = false;
+
     // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
     // already have the build root prefix. Strip it to get source-relative paths.
     auto build_root_name = ctx.graph->get_build_root_name();
     auto normalized_path = strip_build_prefix(path, build_root_name);
+    if (normalized_path != path) {
+        had_build_prefix = true;
+    }
+
+    // For cross-project builds, paths may start with ".." and point to output_root
+    // with a different number of "../" components than build_root_name. In that case,
+    // strip_build_prefix won't match. Resolve by checking if the absolute path
+    // is under output_root.
+    if (normalized_path.starts_with("..")) {
+        auto before = normalized_path;
+        normalized_path = normalize_to_output_relative(
+            normalized_path, ctx.options.source_root, ctx.options.output_root
+        );
+        if (before != normalized_path) {
+            had_build_prefix = true;
+        }
+    }
 
     // With BUILD_ROOT_ID model:
     // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths
@@ -2038,6 +2097,13 @@ auto resolve_input_node(
     // First check if node exists under BUILD_ROOT_ID (generated files)
     if (auto existing = ctx.graph->find_by_path(normalized_path, BUILD_ROOT_ID)) {
         return *existing;
+    }
+
+    // If path had build prefix, it's referencing a generated file. Even if a source file
+    // exists at the same path, create a Ghost node under BUILD_ROOT_ID so it can be
+    // upgraded to Generated when the output rule is processed.
+    if (had_build_prefix) {
+        return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
     }
 
     // Check under SOURCE_ROOT_ID (source files)
