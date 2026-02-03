@@ -9,12 +9,13 @@ A reimplementation of the [Tup build system](https://gittup.org/tup/).
 3. [Core Types](#core-types)
 4. [Parser Module](#parser-module)
 5. [Graph Module](#graph-module)
-6. [Index Module](#index-module)
-7. [Execution Module](#execution-module)
-8. [Build Pipeline](#build-pipeline)
-9. [Multi-Directory Builds](#multi-directory-builds)
-10. [Variant Builds](#variant-builds)
-11. [Design Decisions](#design-decisions)
+6. [Rule Generation Module](#rule-generation-module)
+7. [Index Module](#index-module)
+8. [Execution Module](#execution-module)
+9. [Build Pipeline](#build-pipeline)
+10. [Multi-Directory Builds](#multi-directory-builds)
+11. [Variant Builds](#variant-builds)
+12. [Design Decisions](#design-decisions)
 
 ---
 
@@ -726,6 +727,105 @@ struct BuilderContext {
     std::unordered_map<std::string, std::vector<NodeId>> groups;
 };
 ```
+
+---
+
+## Rule Generation Module
+
+Pup can auto-generate auxiliary rules from user commands, primarily for implicit
+dependency extraction. When a compilation command is detected, pup generates a
+parallel "DEP" command that extracts header dependencies.
+
+### Core Types
+
+```cpp
+/// Command metadata for pattern matching
+struct CommandInfo {
+    NodeId node_id;
+    std::string command;
+    std::string display;
+    std::vector<std::string> inputs;
+    std::vector<std::string> order_only_inputs;
+    std::vector<std::string> outputs;
+    std::string working_dir;
+};
+
+/// Output specification for generated rules
+struct GeneratedOutput {
+    enum class Type { File, Stdout, Stderr };
+    Type type = Type::File;
+    std::string path;
+};
+
+/// How to process generated rule output
+enum class OutputAction {
+    Normal,            // Regular file output
+    InjectImplicitDeps // Parse as depfile, add edges to parent command
+};
+
+/// Complete specification of an auto-generated rule
+struct GeneratedRule {
+    std::vector<std::string> inputs;
+    std::vector<std::string> order_only_inputs;
+    std::string command;
+    std::string display;
+    std::vector<GeneratedOutput> outputs;
+    OutputAction action = OutputAction::Normal;
+    NodeId parent_command = INVALID_NODE_ID;
+};
+```
+
+### Dep Scanner Interface
+
+Scanners detect compiler commands and generate dependency extraction commands:
+
+```cpp
+class DepScanner {
+    virtual auto matches(CommandInfo const&) const -> bool = 0;
+    virtual auto has_dep_flags(std::string const&) const -> bool = 0;
+    virtual auto build_dep_command(CommandInfo const&) -> std::optional<std::string> = 0;
+};
+
+class DepScannerRegistry {
+    auto register_scanner(std::unique_ptr<DepScanner>) -> void;
+    auto match_and_generate(CommandInfo const&) -> std::vector<GeneratedRule>;
+};
+```
+
+The `GccScanner` implementation handles GCC, Clang, and compatible compilers.
+
+### Generation Flow
+
+```
+User rule: : main.c |> gcc -c %f -o %o |> main.o
+                │
+                ▼ Scanner matches "gcc ... -c ..."
+        ┌───────────────────┐
+        │ Generate DEP rule │
+        │ gcc -M main.c     │
+        └───────────────────┘
+                │
+                ▼ Add to graph
+        ┌───────────────────┐
+        │   DEP command     │──────┐
+        └───────────────────┘      │
+                │                  │ edge (DEP runs before compile)
+                ▼                  ▼
+        ┌───────────────────┐
+        │ Compile command   │
+        └───────────────────┘
+```
+
+### Execution Integration
+
+When the scheduler executes a command with `OutputAction::InjectImplicitDeps`:
+
+1. Capture stdout (DEP command outputs dependency list)
+2. Parse as depfile format: `target: dep1 dep2 dep3`
+3. Add discovered files as implicit edges to parent command
+4. Store in index for incremental rebuilds
+
+Commands with existing `-MD` flags are skipped (user handles deps manually).
 
 ---
 
