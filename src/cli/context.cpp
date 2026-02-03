@@ -53,7 +53,7 @@ auto compute_build_scopes(
 
     // Compute scope from current working directory
     auto cwd = std::filesystem::current_path();
-    auto source_root = std::filesystem::canonical(layout.source_root);
+    auto const& source_root = layout.source_root;
 
     // If cwd is source_root, build all
     if (cwd == source_root) {
@@ -64,7 +64,7 @@ auto compute_build_scopes(
     // build all. The user is in the build directory, not a source subdirectory.
     // Source files are under source_root, not output_root, so scoping to output_root
     // would incorrectly skip all source file change detection.
-    auto output_root = std::filesystem::canonical(layout.output_root);
+    auto const& output_root = layout.output_root;
     if (source_root != output_root && pup::is_path_under(cwd, output_root)) {
         return {};
     }
