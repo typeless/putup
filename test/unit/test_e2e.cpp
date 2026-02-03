@@ -4100,6 +4100,105 @@ SCENARIO("Config tree inside source tree", "[e2e][out-of-tree-config]")
     }
 }
 
+SCENARIO("Cross-project order-only dependency resolution", "[e2e][out-of-tree-config][variant]")
+{
+    // This tests the bug where order-only deps using $(B) paths in 3-tree builds
+    // create Ghost nodes instead of resolving to existing Generated nodes.
+    // Pattern from busybox:
+    //   root/Tupfile:    : |> ... |> include/autoconf.h  # output at build/include/autoconf.h
+    //   applets/Tupfile: : main.c | $(B)/include/autoconf.h |> ...
+    //
+    // The bug manifests when:
+    // 1. source and output are in completely different filesystem trees
+    // 2. build_root_name has N levels of "../" (e.g., "../../../../tmp/build")
+    // 3. From a subdirectory, $(B) normalizes to N-1 levels of "../"
+    //    because one "../" cancels with the subdirectory name
+    // 4. strip_build_prefix() fails to match the different prefix depths
+    //
+    // Example with busybox:
+    //   source = /home/user/src/busybox
+    //   output = /tmp/build
+    //   build_root_name = ../../../../tmp/build (5 levels up from source)
+    //   From applets/: $(B) = TUP_VARIANT_OUTPUTDIR/..
+    //     = ../../../../tmp/build/applets/.. = ../../../tmp/build (4 levels)
+    //   strip_build_prefix("../../../tmp/build/include/x.h", "../../../../tmp/build")
+    //   FAILS - prefixes don't match due to depth difference!
+    GIVEN("a 3-tree project with asymmetric directory depths")
+    {
+        auto f = E2EFixture { "cross_project_order_only" };
+
+        // Create asymmetric setup: source at 3 levels deep, output at 1 level
+        // source_root = workdir/a/b/c/source (3 dirs deep)
+        // output_root = workdir/out (1 dir deep)
+        // build_root_name = relative(out, a/b/c/source) = ../../../../out (4 ../)
+        // From consumer/: $(B) expands and normalizes to ../../../out (3 ../)
+        // The prefix mismatch causes strip_build_prefix to fail
+        auto source_dir = f.workdir() / "a" / "b" / "c" / "source";
+        auto config_dir = f.workdir() / "a" / "b" / "c" / "config";
+        auto build_dir = f.workdir() / "out";
+
+        f.mkdir("a/b/c/source/consumer");
+        f.mkdir("a/b/c/config/consumer");
+        f.mkdir("out");
+        f.write_file("out/tup.config", "");
+
+        // Copy fixture files to the asymmetric locations
+        f.write_file("a/b/c/source/consumer/main.c", f.read_file("source/consumer/main.c"));
+        f.write_file("a/b/c/config/Tupfile.ini", "");
+        f.write_file("a/b/c/config/Tuprules.tup", f.read_file("config/Tuprules.tup"));
+        f.write_file("a/b/c/config/Tupfile", f.read_file("config/Tupfile"));
+        f.write_file("a/b/c/config/consumer/Tupfile", f.read_file("config/consumer/Tupfile"));
+
+        WHEN("building with asymmetric directory depths")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-j1"
+            });
+
+            THEN("build succeeds with correct ordering")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("generated header is created before consumer compiles")
+            {
+                REQUIRE(f.exists("out/include/generated.h"));
+                REQUIRE(f.exists("out/consumer/main.o"));
+            }
+        }
+
+        WHEN("checking dry-run output order with asymmetric depths")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-n"
+            });
+
+            INFO("stdout: " << result.stdout_output);
+            INFO("stderr: " << result.stderr_output);
+            REQUIRE(result.success());
+
+            THEN("header generation is scheduled before compilation")
+            {
+                // Find positions in output
+                auto gen_pos = result.stdout_output.find("generated.h");
+                auto gcc_pos = result.stdout_output.find("gcc");
+                // Header generation should appear before gcc compilation
+                REQUIRE(gen_pos != std::string::npos);
+                REQUIRE(gcc_pos != std::string::npos);
+                REQUIRE(gen_pos < gcc_pos);
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Show Var Command Tests
 // =============================================================================

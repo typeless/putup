@@ -77,13 +77,28 @@ auto collect_command_dependencies(
             }
         }
 
-        for (auto oo_id : graph.get_order_only(cmd_id)) {
-            for (auto producer_id : graph.get_inputs(oo_id)) {
+        auto add_producers = [&](NodeId file_id) {
+            for (auto producer_id : graph.get_inputs(file_id)) {
                 if (node_id::is_command(producer_id)) {
                     if (result.insert(producer_id).second) {
                         worklist.push_back(producer_id);
                     }
                 }
+            }
+        };
+
+        for (auto oo_id : graph.get_order_only(cmd_id)) {
+            auto const* oo_node = graph.get_file_node(oo_id);
+            if (!oo_node) {
+                continue;
+            }
+
+            if (oo_node->type == NodeType::Group) {
+                for (auto member_id : graph.get_inputs(oo_id)) {
+                    add_producers(member_id);
+                }
+            } else {
+                add_producers(oo_id);
             }
         }
     }

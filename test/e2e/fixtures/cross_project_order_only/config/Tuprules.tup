@@ -1,0 +1,5 @@
+# S/B convention for variant builds (like busybox)
+# S = path back to source root from current Tupfile
+# B = path to build root from current Tupfile
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)

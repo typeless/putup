@@ -58,8 +58,8 @@ struct Guard {
 struct CommandNode {
     NodeId id = 0;
 
-    StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
-    StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
+    StringId display = StringId::Empty;        ///< Display text (from ^ ^ markers, interned)
+    StringId source_dir = StringId::Empty;     ///< Tupfile directory (relative to root, interned)
     StringId instruction_id = StringId::Empty; ///< Instruction pattern (e.g. "gcc -c %f -o %o")
 
     std::vector<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion

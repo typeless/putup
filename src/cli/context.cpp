@@ -337,27 +337,25 @@ auto parse_directory(std::filesystem::path const& rel_dir, ParseContext& ctx) ->
     }
 
     auto tup_cwd = normalized_dir.string();
-    auto tup_variantdir = compute_tup_variantdir(normalize_to_empty(rel_dir), ctx.config_root, ctx.output_root);
 
-    // Compute TUP_SRCDIR: relative path from config dir to source dir
-    // For traditional builds (config == source): "."
-    // For 3-tree builds: e.g., "../../busybox/coreutils" from config/coreutils/
+    // In the "overlay" model, Tupfiles from config_root are treated as if they
+    // were in source_root. Commands run from source_root, so all relative paths
+    // (TUP_VARIANTDIR, TUP_OUTDIR, etc.) must be computed relative to source_root.
     auto rel_dir_normalized = normalize_to_empty(rel_dir);
-    auto tup_srcdir = std::string { "." };
-    if (ctx.config_root != ctx.source_root) {
-        auto config_dir = join_path(ctx.config_root, rel_dir_normalized);
-        auto source_dir = join_path(ctx.source_root, rel_dir_normalized);
-        tup_srcdir = std::filesystem::relative(source_dir, config_dir).string();
-    }
+    auto tup_variantdir = compute_tup_variantdir(rel_dir_normalized, ctx.source_root, ctx.output_root);
 
-    // Compute TUP_OUTDIR: relative path from config dir to output dir
-    // For in-tree builds (config == output): "."
-    // For variant builds: e.g., "../../build/coreutils" from config/coreutils/
+    // TUP_SRCDIR: relative path to source files from where commands run.
+    // In overlay model, commands run from source_root, so TUP_SRCDIR is always "."
+    auto tup_srcdir = std::string { "." };
+
+    // TUP_OUTDIR: relative path from source dir (where commands run) to output dir.
+    // For in-tree builds (source == output): "."
+    // For variant builds: e.g., "../../build/coreutils" from source/coreutils/
     auto tup_outdir = std::string { "." };
-    if (ctx.config_root != ctx.output_root) {
-        auto config_dir = join_path(ctx.config_root, rel_dir_normalized);
+    if (ctx.source_root != ctx.output_root) {
+        auto source_dir = join_path(ctx.source_root, rel_dir_normalized);
         auto output_dir = join_path(ctx.output_root, rel_dir_normalized);
-        tup_outdir = std::filesystem::relative(output_dir, config_dir).string();
+        tup_outdir = std::filesystem::relative(output_dir, source_dir).string();
     }
 
     // Get the scoped config for this directory (walks up tree to find nearest tup.config)

@@ -27,18 +27,18 @@ inline constexpr auto INDEX_VERSION = std::uint32_t { 8 };
 
 /// Index file header (48 bytes) - v8
 struct alignas(8) RawHeader {
-    std::array<char, 4> magic = INDEX_MAGIC;  ///< "PUPI"
-    std::uint32_t version = INDEX_VERSION;    ///< Format version
-    std::uint32_t file_count = 0;             ///< Number of file entries
-    std::uint32_t command_count = 0;          ///< Number of command entries
-    std::uint32_t edge_count = 0;             ///< Number of edge entries
-    std::uint32_t string_table_size = 0;      ///< Size of string table in bytes
-    std::uint32_t file_offset = 0;            ///< Offset to file entries
-    std::uint32_t command_offset = 0;         ///< Offset to command entries
-    std::uint32_t edge_offset = 0;            ///< Offset to edge entries
-    std::uint32_t operand_table_offset = 0;   ///< Offset to operand offset table (v8)
-    std::uint32_t operand_data_offset = 0;    ///< Offset to operand data (v8)
-    std::uint32_t string_offset = 0;          ///< Offset to string table
+    std::array<char, 4> magic = INDEX_MAGIC; ///< "PUPI"
+    std::uint32_t version = INDEX_VERSION;   ///< Format version
+    std::uint32_t file_count = 0;            ///< Number of file entries
+    std::uint32_t command_count = 0;         ///< Number of command entries
+    std::uint32_t edge_count = 0;            ///< Number of edge entries
+    std::uint32_t string_table_size = 0;     ///< Size of string table in bytes
+    std::uint32_t file_offset = 0;           ///< Offset to file entries
+    std::uint32_t command_offset = 0;        ///< Offset to command entries
+    std::uint32_t edge_offset = 0;           ///< Offset to edge entries
+    std::uint32_t operand_table_offset = 0;  ///< Offset to operand offset table (v8)
+    std::uint32_t operand_data_offset = 0;   ///< Offset to operand data (v8)
+    std::uint32_t string_offset = 0;         ///< Offset to string table
 };
 
 static_assert(sizeof(RawHeader) == 48, "RawHeader must be 48 bytes");

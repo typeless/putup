@@ -50,8 +50,8 @@ struct CommandEntry {
     NodeId dir_id = 0; ///< Directory where command runs
 
     std::string instruction_pattern = {}; ///< Instruction pattern with %f/%o markers
-    std::string display = {};      ///< Display text (from ^ ^ markers)
-    std::string env = {};          ///< Environment variables
+    std::string display = {};             ///< Display text (from ^ ^ markers)
+    std::string env = {};                 ///< Environment variables
 
     std::vector<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
     std::vector<NodeId> outputs = {}; ///< Output file operands (for %o expansion)

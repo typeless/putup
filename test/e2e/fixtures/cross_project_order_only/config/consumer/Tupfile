@@ -1,0 +1,12 @@
+include_rules
+
+# Consumer references the generated header using $(B) path
+# The $(B) path crosses project boundaries in 3-tree builds:
+#   B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
+#   TUP_VARIANT_OUTPUTDIR = ../../build/consumer (from consumer/ to build/consumer/)
+#   S = .. (from consumer/ back to source root)
+#   B = ../../build/consumer/.. = ../../build
+#
+# This tests that $(B)/include/generated.h correctly resolves to the
+# Generated node at build/include/generated.h, not a Ghost node
+: main.c | $(B)/include/generated.h |> gcc -I$(B)/include -c %f -o %o |> main.o

@@ -249,8 +249,7 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
 
     // Build header
     auto header = build_header(
-        index, strings, file_offset, command_offset, edge_offset,
-        operand_table_offset, operand_data_offset, string_offset
+        index, strings, file_offset, command_offset, edge_offset, operand_table_offset, operand_data_offset, string_offset
     );
 
     // Allocate result buffer

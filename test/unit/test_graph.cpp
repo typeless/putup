@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/cli/config_commands.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/topo.hpp"
 
@@ -931,4 +932,79 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         auto result = expand_instruction(graph.graph(), *cmd_id);
         CHECK(result.empty());
     }
+}
+
+TEST_CASE("collect_command_dependencies follows order-only deps through groups", "[graph][groups][order-only]")
+{
+    using pup::LinkType;
+    auto graph = BuildGraph {};
+
+    // Scenario: c1 produces file1, file1 is added to group1, c2 has order-only dep on group1
+    //
+    // c1 ---(normal)---> file1 ---(group)---> group1 <---(order-only)--- c2 ---> file2
+    //
+    // When collecting dependencies of c2, we must find c1 through the group.
+
+    auto c1 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("producer") });
+    auto file1 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("file1") });
+    auto group1 = graph.add_file_node(FileNode { .type = NodeType::Group, .name = graph.intern("<group>") });
+
+    REQUIRE(c1.has_value());
+    REQUIRE(file1.has_value());
+    REQUIRE(group1.has_value());
+
+    (void)graph.add_edge(*c1, *file1, LinkType::Normal);
+    (void)graph.add_edge(*file1, *group1, LinkType::Group);
+
+    auto c2 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("consumer") });
+    auto file2 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("file2") });
+
+    REQUIRE(c2.has_value());
+    REQUIRE(file2.has_value());
+
+    (void)graph.add_order_only_edge(*group1, *c2);
+    (void)graph.add_edge(*c2, *file2, LinkType::Normal);
+
+    auto commands = std::set<pup::NodeId> { *c2 };
+    auto deps = pup::cli::collect_command_dependencies(graph, commands);
+
+    REQUIRE(deps.count(*c2) == 1);
+    REQUIRE(deps.count(*c1) == 1);
+}
+
+TEST_CASE("Topological sort respects order-only deps through groups", "[topo][groups][order-only]")
+{
+    using pup::LinkType;
+    auto graph = BuildGraph {};
+
+    // c1: produces file1, file1 is in group1
+    auto c1 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("producer") });
+    auto file1 = graph.add_file_node(FileNode { .type = NodeType::Generated, .name = graph.intern("file1") });
+    auto group1 = graph.add_file_node(FileNode { .type = NodeType::Group, .name = graph.intern("<group>") });
+
+    REQUIRE(c1.has_value());
+    REQUIRE(file1.has_value());
+    REQUIRE(group1.has_value());
+
+    (void)graph.add_edge(*c1, *file1, LinkType::Normal);
+    (void)graph.add_edge(*file1, *group1, LinkType::Group);
+
+    // c2: has order-only dep on group1
+    auto c2 = graph.add_command_node(CommandNode { .instruction_id = graph.intern("consumer") });
+    REQUIRE(c2.has_value());
+    (void)graph.add_order_only_edge(*group1, *c2);
+
+    auto result = topological_sort(graph);
+    REQUIRE_FALSE(result.has_cycle);
+
+    auto find_pos = [&](pup::NodeId id) -> std::size_t {
+        for (auto i = std::size_t { 0 }; i < result.order.size(); ++i) {
+            if (result.order[i] == id) return i;
+        }
+        return result.order.size();
+    };
+
+    auto c1_pos = find_pos(*c1);
+    auto c2_pos = find_pos(*c2);
+    REQUIRE(c1_pos < c2_pos);
 }
