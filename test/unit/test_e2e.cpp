@@ -4614,6 +4614,61 @@ endif
     }
 }
 
+SCENARIO("Order-only dependency on conditional output uses active producer", "[e2e][phi][order-only]")
+{
+    GIVEN("a project with conditional file generation and order-only dependency")
+    {
+        auto f = E2EFixture { "phi_order_only_conditional" };
+        f.write_file("Tupfile", R"(
+ifeq (@(GEN_PARSER),1)
+: src.l |> echo "generated from flex" > %o |> generated.h
+else
+: generated.h.shipped |> cp %f %o |> generated.h
+endif
+
+: main.c | generated.h |> cc -c %f -o %o |> main.o
+)");
+        f.write_file("src.l", "/* flex source */\n");
+        f.write_file("generated.h.shipped", "/* shipped header */\n");
+        f.write_file("main.c", "int main() { return 0; }\n");
+        f.mkdir("build");
+
+        WHEN("built with GEN_PARSER=0 (else branch active)")
+        {
+            f.write_file("build/tup.config", "CONFIG_GEN_PARSER=0\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds using cp from else branch")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/generated.h"));
+                REQUIRE(f.exists("build/main.o"));
+            }
+        }
+
+        WHEN("built with GEN_PARSER=1 (if branch active)")
+        {
+            f.write_file("build/tup.config", "CONFIG_GEN_PARSER=1\n");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds using echo from if branch")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/generated.h"));
+                REQUIRE(f.exists("build/main.o"));
+            }
+        }
+    }
+}
+
 SCENARIO("Percent-d expands to Tupfile directory name", "[e2e][percent]")
 {
     GIVEN("a subdirectory with a Tupfile using %d")

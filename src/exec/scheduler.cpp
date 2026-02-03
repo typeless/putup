@@ -102,26 +102,22 @@ auto build_dependency_map(
         cmd_to_job[jobs[i].id] = i;
     }
 
-    // Build map from output NodeId -> job index that produces it
-    // (output nodes point back to the command that created them via inputs)
-    auto output_to_job = std::unordered_map<NodeId, std::size_t> {};
-    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        for (auto output_id : graph.get_outputs(jobs[i].id)) {
-            output_to_job[output_id] = i;
-        }
-    }
-
     // For each job, find dependencies via input edges
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
         auto dependencies = std::unordered_set<std::size_t> {};
         auto cmd_id = jobs[j].id;
+
+        auto current_active = jobs[j].guard_active;
 
         // Check regular inputs - traverse graph edges
         for (auto input_id : graph.get_inputs(cmd_id)) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
             if (node_id::is_command(input_id)) {
                 if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j) {
-                    dependencies.insert(it->second);
+                    // Apply guard filtering: skip inactive producers when current job is active
+                    if (!current_active || jobs[it->second].guard_active) {
+                        dependencies.insert(it->second);
+                    }
                 }
                 continue;
             }
@@ -140,23 +136,10 @@ auto build_dependency_map(
 
             // For Group nodes, get member files and find their producers
             if (oo_node->type == NodeType::Group) {
-                // Group members are found via file → group edges (group.inputs = files)
                 for (auto member_id : graph.get_inputs(oo_id)) {
-                    // Check if member is a direct output of another job
-                    if (auto it = output_to_job.find(member_id); it != output_to_job.end() && it->second != j) {
-                        dependencies.insert(it->second);
-                    }
-
-                    // Also check for commands that produce this member file
                     add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
                 }
             } else {
-                // Regular file - check if it's a direct output of another job
-                if (auto it = output_to_job.find(oo_id); it != output_to_job.end() && it->second != j) {
-                    dependencies.insert(it->second);
-                }
-
-                // Check for commands that produce this file
                 add_producer_dependencies(graph, cmd_to_job, jobs, oo_id, j, dependencies);
             }
         }
