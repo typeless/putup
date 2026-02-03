@@ -2,12 +2,14 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/scheduler.hpp"
+#include "pup/core/metrics.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstdlib>
 #include <queue>
@@ -764,6 +766,8 @@ auto Scheduler::build_job_list(
     graph::BuildGraph const& graph
 ) -> Result<std::vector<BuildJob>>
 {
+    auto job_list_start = std::chrono::high_resolution_clock::now();
+
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
     if (topo_result.has_cycle) {
@@ -902,6 +906,9 @@ auto Scheduler::build_job_list(
 
         jobs.push_back(std::move(job));
     }
+
+    auto job_list_elapsed = std::chrono::high_resolution_clock::now() - job_list_start;
+    thread_metrics().job_list_time += std::chrono::duration_cast<std::chrono::microseconds>(job_list_elapsed);
 
     return jobs;
 }

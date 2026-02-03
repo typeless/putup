@@ -17,6 +17,17 @@ struct Metrics {
     std::chrono::milliseconds index_load_time { 0 };
     std::chrono::milliseconds index_save_time { 0 };
 
+    // Phase timing (microseconds for precision)
+    std::chrono::microseconds command_index_time { 0 };
+    std::chrono::microseconds change_detection_time { 0 };
+    std::chrono::microseconds implicit_deps_time { 0 };
+    std::chrono::microseconds new_commands_time { 0 };
+    std::chrono::microseconds stale_outputs_time { 0 };
+    std::chrono::microseconds job_list_time { 0 };
+
+    // Command expansion stats
+    std::size_t command_expansions = 0;
+
     auto operator+=(Metrics const& other) -> Metrics&;
 };
 

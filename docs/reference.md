@@ -1904,17 +1904,55 @@ Useful for:
 
 **Statistics (`--stat`)**
 
-Print build statistics:
+Print build statistics and performance profiling:
 
 ```bash
 putup --stat
 ```
 
 Shows:
-- Total files/commands
-- Files changed
-- Commands executed
-- Build time
+- Tupfiles parsed
+- Commands (total and executed)
+- Files checked and changed
+- Files, edges, and implicit deps in index
+- Hash computations and stat calls
+- Index I/O time (load/save)
+
+**Phase timing breakdown** (for diagnosing slow incremental builds):
+
+```
+Stats:
+  Tupfiles parsed:         3
+  Commands:              146 total, 0 executed
+  Files checked:         657 (0 changed)
+  Files in index:        722
+  Edges in graph:      22842
+  Implicit deps:       21718
+  Hash computations:     657
+  Stat calls:            657
+  Index I/O:               2ms load, 0ms save
+
+  Phase timing:
+    Command index:       0.1ms (146 expansions)
+    Change detection:   92.9ms (657 stats, 657 hashes)
+    Implicit deps:       0.6ms
+    New commands:        0.1ms
+    Stale outputs:       0.0ms
+  Total overhead:       93.7ms
+```
+
+**Phase descriptions:**
+
+| Phase | Description |
+|-------|-------------|
+| Command index | Build command string index for lookup |
+| Change detection | Stat and hash files to find changes |
+| Implicit deps | Expand implicit dependency edges |
+| New commands | Detect commands added since last build |
+| Stale outputs | Remove outputs from deleted commands |
+| Job list | Build topologically-sorted job list (only shown when commands execute) |
+
+This breakdown helps identify bottlenecks in no-op builds. For most projects, change detection (stat + hash) dominates the overhead
 
 **Graph visualization**
 

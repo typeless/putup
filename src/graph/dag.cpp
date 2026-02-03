@@ -3,6 +3,7 @@
 
 #include "pup/graph/dag.hpp"
 
+#include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 
 #include <algorithm>
@@ -843,6 +844,7 @@ auto build_command_index(Graph& graph, PathCache& cache) -> void
 {
     graph.command_str_index.clear();
     graph.command_index_built = true;
+    auto& metrics = thread_metrics();
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
         auto const& cmd = graph.commands[i];
         auto const id = node_id::make_command(i);
@@ -850,6 +852,7 @@ auto build_command_index(Graph& graph, PathCache& cache) -> void
             continue;
         }
         auto cmd_str = expand_instruction(graph, id, cache);
+        ++metrics.command_expansions;
         if (!cmd_str.empty()) {
             graph.command_str_index[std::move(cmd_str)] = id;
         }

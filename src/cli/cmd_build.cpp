@@ -59,6 +59,37 @@ auto print_stats(
     if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
         printf("  Index I/O:          %6ldms load, %ldms save\n", static_cast<long>(metrics.index_load_time.count()), static_cast<long>(metrics.index_save_time.count()));
     }
+
+    // Phase timing breakdown (shown if any phase was timed)
+    auto total_phase_us = metrics.command_index_time.count()
+        + metrics.change_detection_time.count()
+        + metrics.implicit_deps_time.count()
+        + metrics.new_commands_time.count()
+        + metrics.stale_outputs_time.count()
+        + metrics.job_list_time.count();
+
+    if (total_phase_us > 0) {
+        printf("\n  Phase timing:\n");
+        if (metrics.command_index_time.count() > 0) {
+            printf("    Command index:    %6.1fms (%zu expansions)\n", metrics.command_index_time.count() / 1000.0, metrics.command_expansions);
+        }
+        if (metrics.change_detection_time.count() > 0) {
+            printf("    Change detection: %6.1fms (%zu stats, %zu hashes)\n", metrics.change_detection_time.count() / 1000.0, metrics.stat_calls, metrics.hash_computations);
+        }
+        if (metrics.implicit_deps_time.count() > 0) {
+            printf("    Implicit deps:    %6.1fms\n", metrics.implicit_deps_time.count() / 1000.0);
+        }
+        if (metrics.new_commands_time.count() > 0) {
+            printf("    New commands:     %6.1fms\n", metrics.new_commands_time.count() / 1000.0);
+        }
+        if (metrics.stale_outputs_time.count() > 0) {
+            printf("    Stale outputs:    %6.1fms\n", metrics.stale_outputs_time.count() / 1000.0);
+        }
+        if (metrics.job_list_time.count() > 0) {
+            printf("    Job list:         %6.1fms\n", metrics.job_list_time.count() / 1000.0);
+        }
+        printf("  Total overhead:     %6.1fms\n", total_phase_us / 1000.0);
+    }
 }
 
 auto strip_build_root_prefix(std::string& path, std::string_view build_root_name) -> void
@@ -928,7 +959,10 @@ auto build_single_variant(
 
         // Build command string index for find_by_command() lookups
         // Must happen after parsing (operands set) but before incremental logic
+        auto cmd_index_start = std::chrono::high_resolution_clock::now();
         ctx.graph().build_command_index();
+        auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
+        pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
         if (opts.verbose && idx.has_merkle_hashes()) {
             vprint(variant_name, "Index has Merkle hashes (v4 format)\n");
@@ -954,6 +988,7 @@ auto build_single_variant(
             }
         }
 
+        auto change_detect_start = std::chrono::high_resolution_clock::now();
         changed_files = find_changed_files_with_implicit(
             ctx.layout().source_root,
             idx,
@@ -961,7 +996,13 @@ auto build_single_variant(
             upstream_files,
             opts.verbose
         );
+        auto change_detect_elapsed = std::chrono::high_resolution_clock::now() - change_detect_start;
+        pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
+
+        auto implicit_deps_start = std::chrono::high_resolution_clock::now();
         changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
+        auto implicit_deps_elapsed = std::chrono::high_resolution_clock::now() - implicit_deps_start;
+        pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
         // Add output targets to force their rebuild
         // Output targets are source-relative (e.g., "hello"), but changed_files uses
@@ -980,9 +1021,13 @@ auto build_single_variant(
             }
         }
 
+        auto new_cmds_start = std::chrono::high_resolution_clock::now();
         auto new_cmd_outputs = detect_new_commands(ctx.graph(), idx, variant_name, opts.verbose);
+        auto new_cmds_elapsed = std::chrono::high_resolution_clock::now() - new_cmds_start;
+        pup::thread_metrics().new_commands_time = std::chrono::duration_cast<std::chrono::microseconds>(new_cmds_elapsed);
         changed_files.insert(changed_files.end(), new_cmd_outputs.begin(), new_cmd_outputs.end());
 
+        auto stale_start = std::chrono::high_resolution_clock::now();
         remove_stale_outputs(
             ctx.graph(),
             idx,
@@ -991,6 +1036,8 @@ auto build_single_variant(
             opts.dry_run,
             opts.verbose
         );
+        auto stale_elapsed = std::chrono::high_resolution_clock::now() - stale_start;
+        pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 
         if (changed_files.empty()) {
             vprint(variant_name, "Nothing to do (up to date).\n");

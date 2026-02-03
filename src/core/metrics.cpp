@@ -17,6 +17,13 @@ auto Metrics::operator+=(Metrics const& other) -> Metrics&
     stat_calls += other.stat_calls;
     index_load_time += other.index_load_time;
     index_save_time += other.index_save_time;
+    command_index_time += other.command_index_time;
+    change_detection_time += other.change_detection_time;
+    implicit_deps_time += other.implicit_deps_time;
+    new_commands_time += other.new_commands_time;
+    stale_outputs_time += other.stale_outputs_time;
+    job_list_time += other.job_list_time;
+    command_expansions += other.command_expansions;
     return *this;
 }
 
