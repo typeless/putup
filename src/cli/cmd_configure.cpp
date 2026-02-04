@@ -148,7 +148,7 @@ auto configure_single_variant(
 
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         if (!opts.verbose) {
-            printf("[%.*s] [%zu/%zu] ", static_cast<int>(variant_name.size()), variant_name.data(), done, total);
+            printf("\r[%.*s] [%zu/%zu] ", static_cast<int>(variant_name.size()), variant_name.data(), done, total);
             std::fflush(stdout);
         }
     });
