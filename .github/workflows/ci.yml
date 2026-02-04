@@ -11,12 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install clang-format
-        run: sudo apt-get install -y clang-format-17
       - name: Check formatting
         run: |
           find src include -name '*.cpp' -o -name '*.hpp' | \
-            xargs clang-format-17 --dry-run --Werror
+            xargs clang-format --dry-run --Werror
 
   build-linux:
     needs: format-check
@@ -112,8 +110,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install clang-tidy
-        run: sudo apt-get install -y clang-tidy-17
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -124,4 +120,4 @@ jobs:
       - name: Generate compile_commands.json
         run: ./build/putup show compdb -B build > compile_commands.json
       - name: Run clang-tidy
-        run: run-clang-tidy-17 -p .
+        run: run-clang-tidy -p .
