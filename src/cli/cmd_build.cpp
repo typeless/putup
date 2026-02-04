@@ -779,9 +779,6 @@ auto build_index(
         preserve_old_implicit_edges(*old_index, discovered_deps, ctx);
     }
 
-    // Compute Merkle hashes for directories (enables O(log n) change detection)
-    index.compute_merkle_hashes();
-
     return index;
 }
 
@@ -986,10 +983,6 @@ auto build_single_variant(
         ctx.graph().build_command_index();
         auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
-
-        if (opts.verbose && idx.has_merkle_hashes()) {
-            vprint(variant_name, "Index has Merkle hashes (v4 format)\n");
-        }
 
         auto scopes = compute_build_scopes(opts, ctx.layout());
         auto upstream_files = std::set<std::string> {};

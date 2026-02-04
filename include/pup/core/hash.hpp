@@ -12,8 +12,6 @@
 #include <filesystem>
 #include <span>
 #include <string_view>
-#include <tuple>
-#include <vector>
 
 namespace pup {
 
@@ -68,12 +66,5 @@ auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool;
 
 /// Zero hash constant
 inline constexpr auto ZERO_HASH = Hash256 {};
-
-/// Compute Merkle hash for a directory from sorted children entries
-/// Each entry is (name, type, hash_ptr) - sorted by name before hashing
-[[nodiscard]]
-auto compute_merkle_hash(
-    std::vector<std::tuple<std::string_view, NodeType, Hash256 const*>> const& children
-) -> Hash256;
 
 } // namespace pup

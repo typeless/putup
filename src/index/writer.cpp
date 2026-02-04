@@ -253,8 +253,9 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     // Get current time for racy-clean detection
     auto now = std::chrono::system_clock::now();
     auto save_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        now.time_since_epoch()
-    ).count();
+                            now.time_since_epoch()
+    )
+                            .count();
 
     // Build header
     auto header = build_header(

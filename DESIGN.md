@@ -440,7 +440,7 @@ struct FileNode {
     NodeFlags flags;        // Modified, Created, Deleted, etc.
     StringId name;          // Basename only (interned, tup-style identification)
     NodeId parent_dir;      // Parent directory node (used with name for lookup)
-    Hash256 content_hash;   // Content hash for files, Merkle hash for directories
+    Hash256 content_hash;   // Content hash for files (directories have zero hash)
 };
 
 /// Guard entry - condition + required polarity
@@ -902,7 +902,7 @@ Version history:
 - v1: Initial format with full path strings
 - v2: Added name field for (parent_dir, name) identification
 - v3: Removed path field, paths reconstructed from parent chain
-- v4: Directory content_hash stores Merkle hash
+- v4: (removed) Directory Merkle hashes - not useful for change detection
 - v5: Removed mtime, change detection uses size + content hash
 - v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
 - v7: Tagged ID spaces (files vs commands), ID computed from array index

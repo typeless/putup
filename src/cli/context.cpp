@@ -452,7 +452,6 @@ auto load_old_index(std::filesystem::path const& output_root, bool verbose) -> I
     }
 
     result.index = std::move(*index_result);
-    result.index->build_children_index();
 
     auto index_load_end = std::chrono::steady_clock::now();
     pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(

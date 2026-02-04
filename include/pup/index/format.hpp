@@ -18,7 +18,7 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   1 - Initial format with full path strings
 ///   2 - Added name field for tup-style (parent_dir, name) identification
 ///   3 - Removed path field, only name stored (path reconstructed at load time)
-///   4 - Directory content_hash stores Merkle hash for O(log n) change detection
+///   4 - (removed) Directory Merkle hashes - not useful for change detection
 ///   5 - Removed mtime fields, change detection uses size + content hash only
 ///   6 - Compact format: 32-bit IDs/offsets, length-prefixed strings
 ///   7 - Separate ID spaces: files 1..N, commands 0x80000001...; ID field removed
