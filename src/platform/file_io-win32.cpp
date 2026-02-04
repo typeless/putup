@@ -136,8 +136,18 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
     file_size.LowPart = attrs.nFileSizeLow;
     file_size.HighPart = attrs.nFileSizeHigh;
 
+    // Convert FILETIME to nanoseconds since Unix epoch
+    // FILETIME is 100-nanosecond intervals since Jan 1, 1601
+    // Unix epoch is Jan 1, 1970 - difference is 116444736000000000 100-ns intervals
+    auto mtime = ULARGE_INTEGER {};
+    mtime.LowPart = attrs.ftLastWriteTime.dwLowDateTime;
+    mtime.HighPart = attrs.ftLastWriteTime.dwHighDateTime;
+    auto constexpr UNIX_EPOCH_OFFSET = 116444736000000000ULL;
+    auto mtime_ns = static_cast<std::int64_t>((mtime.QuadPart - UNIX_EPOCH_OFFSET) * 100);
+
     return FileStat {
         .size = file_size.QuadPart,
+        .mtime_ns = mtime_ns,
     };
 }
 

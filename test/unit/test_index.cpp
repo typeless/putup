@@ -29,14 +29,14 @@ auto find_file_by_path(Index const& index, std::string_view path) -> FileEntry c
 
 TEST_CASE("Index format struct sizes", "[index]")
 {
-    SECTION("RawHeader is 48 bytes (v8)")
+    SECTION("RawHeader is 56 bytes (v9)")
     {
-        REQUIRE(sizeof(RawHeader) == 48);
+        REQUIRE(sizeof(RawHeader) == 56);
     }
 
-    SECTION("RawFileEntry is 56 bytes")
+    SECTION("RawFileEntry is 64 bytes (v9)")
     {
-        REQUIRE(sizeof(RawFileEntry) == 56);
+        REQUIRE(sizeof(RawFileEntry) == 64);
     }
 
     SECTION("RawCommandEntry is 16 bytes")

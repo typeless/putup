@@ -23,9 +23,10 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   6 - Compact format: 32-bit IDs/offsets, length-prefixed strings
 ///   7 - Separate ID spaces: files 1..N, commands 0x80000001...; ID field removed
 ///   8 - Template deduplication: commands store template + operands, reconstruct lazily
-inline constexpr auto INDEX_VERSION = std::uint32_t { 8 };
+///   9 - Stat cache: mtime_ns in file entries, save_time_ns in header for racy-clean detection
+inline constexpr auto INDEX_VERSION = std::uint32_t { 9 };
 
-/// Index file header (48 bytes) - v8
+/// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
     std::array<char, 4> magic = INDEX_MAGIC; ///< "PUPI"
     std::uint32_t version = INDEX_VERSION;   ///< Format version
@@ -39,11 +40,12 @@ struct alignas(8) RawHeader {
     std::uint32_t operand_table_offset = 0;  ///< Offset to operand offset table (v8)
     std::uint32_t operand_data_offset = 0;   ///< Offset to operand data (v8)
     std::uint32_t string_offset = 0;         ///< Offset to string table
+    std::int64_t save_time_ns = 0;           ///< Index save time (nanoseconds since epoch, v9)
 };
 
-static_assert(sizeof(RawHeader) == 48, "RawHeader must be 48 bytes");
+static_assert(sizeof(RawHeader) == 56, "RawHeader must be 56 bytes");
 
-/// Raw file entry (56 bytes)
+/// Raw file entry (64 bytes) - v9
 /// Represents source files, generated files, directories, groups, etc.
 /// Node ID is computed from array position: id = array_index (files start at 1)
 struct alignas(8) RawFileEntry {
@@ -55,10 +57,11 @@ struct alignas(8) RawFileEntry {
     std::uint8_t flags_high = 0;    ///< NodeFlags (high byte)
     std::uint8_t reserved_byte = 0; ///< Padding for 8-byte alignment of size
     std::uint64_t size = 0;         ///< File size
+    std::int64_t mtime_ns = 0;      ///< Modification time (nanoseconds since epoch, v9)
     Hash256 content_hash = {};      ///< SHA-256 content hash
 };
 
-static_assert(sizeof(RawFileEntry) == 56, "RawFileEntry must be 56 bytes");
+static_assert(sizeof(RawFileEntry) == 64, "RawFileEntry must be 64 bytes");
 
 /// Raw command entry (16 bytes) - v8
 /// Represents build commands. In v8, cmd_offset points to template string (with %f/%o patterns)

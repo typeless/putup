@@ -93,6 +93,12 @@ auto read_index(IndexFile const& f) -> Result<Index>
 
     auto index = Index {};
 
+    // Read save_time_ns from header
+    auto const* hdr = index_header(f);
+    if (hdr) {
+        index.set_save_time_ns(hdr->save_time_ns);
+    }
+
     // Read file entries
     auto files = index_raw_files(f);
     for (auto i = std::size_t { 0 }; i < files.size(); ++i) {

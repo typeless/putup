@@ -20,6 +20,7 @@ auto FileEntry::to_raw(std::uint32_t name_offset) const -> RawFileEntry
     raw.src_id = src_id;
     raw.name_offset = name_offset;
     raw.size = size;
+    raw.mtime_ns = mtime_ns;
     raw.type = static_cast<std::uint8_t>(type);
     set_node_flags(raw, flags);
     raw.content_hash = content_hash;
@@ -41,6 +42,7 @@ auto FileEntry::from_raw(
         .name = std::string { name_str },
         .path = {},
         .size = raw.size,
+        .mtime_ns = raw.mtime_ns,
         .content_hash = raw.content_hash,
     };
 }

@@ -55,6 +55,7 @@ auto print_stats(
     printf("  Edges in graph:     %6zu\n", index.edge_count());
     printf("  Implicit deps:      %6zu\n", implicit_deps_count);
     printf("  Hash computations:  %6zu\n", metrics.hash_computations);
+    printf("  Hashes skipped:     %6zu (stat cache)\n", metrics.hashes_skipped);
     printf("  Stat calls:         %6zu\n", metrics.stat_calls);
     if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
         printf("  Index I/O:          %6ldms load, %ldms save\n", static_cast<long>(metrics.index_load_time.count()), static_cast<long>(metrics.index_save_time.count()));
@@ -74,7 +75,7 @@ auto print_stats(
             printf("    Command index:    %6.1fms (%zu expansions)\n", metrics.command_index_time.count() / 1000.0, metrics.command_expansions);
         }
         if (metrics.change_detection_time.count() > 0) {
-            printf("    Change detection: %6.1fms (%zu stats, %zu hashes)\n", metrics.change_detection_time.count() / 1000.0, metrics.stat_calls, metrics.hash_computations);
+            printf("    Change detection: %6.1fms (%zu stats, %zu hashes, %zu skipped)\n", metrics.change_detection_time.count() / 1000.0, metrics.stat_calls, metrics.hash_computations, metrics.hashes_skipped);
         }
         if (metrics.implicit_deps_time.count() > 0) {
             printf("    Implicit deps:    %6.1fms\n", metrics.implicit_deps_time.count() / 1000.0);
@@ -210,6 +211,10 @@ auto find_changed_files_with_implicit(
     auto changed = std::vector<std::string> {};
     auto& metrics = pup::thread_metrics();
 
+    // Racy-clean threshold: files modified within 1 second of index save
+    auto const save_time_ns = old_index.save_time_ns();
+    auto constexpr RACY_CLEAN_THRESHOLD_NS = std::int64_t { 1'000'000'000 };
+
     for (auto const& file : old_index.files()) {
         if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated) {
             continue;
@@ -248,6 +253,18 @@ auto find_changed_files_with_implicit(
             }
             ++metrics.files_changed;
             changed.push_back(file.path);
+            continue;
+        }
+
+        // Stat cache: skip hash if size + mtime match and not racy-clean
+        auto const current_mtime_ns = stat_result->mtime_ns;
+        auto const cached_mtime_ns = file.mtime_ns;
+        auto const is_racy_clean = save_time_ns > 0
+            && cached_mtime_ns >= save_time_ns - RACY_CLEAN_THRESHOLD_NS;
+
+        if (cached_mtime_ns != 0 && current_mtime_ns == cached_mtime_ns && !is_racy_clean) {
+            // Stat cache hit: size + mtime match, trust cached hash
+            ++metrics.hashes_skipped;
             continue;
         }
 
@@ -313,6 +330,7 @@ auto get_or_create_dir(
             .name = "/",
             .path = "/",
             .size = 0,
+            .mtime_ns = 0,
             .content_hash = {},
         };
         ctx.index.add_file(std::move(entry));
@@ -334,6 +352,7 @@ auto get_or_create_dir(
         .name = basename,
         .path = path_str,
         .size = 0,
+        .mtime_ns = 0,
         .content_hash = {},
     };
     ctx.index.add_file(std::move(entry));
@@ -351,6 +370,7 @@ auto create_implicit_file(
 {
     auto content_hash = pup::Hash256 {};
     auto file_size = std::uint64_t { 0 };
+    auto mtime_ns = std::int64_t { 0 };
     if (std::filesystem::exists(abs_path)) {
         auto hash_result = pup::sha256_file(abs_path);
         if (hash_result) {
@@ -359,8 +379,11 @@ auto create_implicit_file(
             fprintf(stderr, "Warning: Failed to hash file: %s\n", abs_path.c_str());
         }
 
-        auto ec = std::error_code {};
-        file_size = std::filesystem::file_size(abs_path, ec);
+        auto stat_result = pup::platform::stat_file(abs_path);
+        if (stat_result) {
+            file_size = stat_result->size;
+            mtime_ns = stat_result->mtime_ns;
+        }
     }
 
     auto fs_path = std::filesystem::path { rel_path };
@@ -378,6 +401,7 @@ auto create_implicit_file(
         .name = basename,
         .path = rel_path,
         .size = file_size,
+        .mtime_ns = mtime_ns,
         .content_hash = content_hash,
     };
     ctx.index.add_file(std::move(entry));
@@ -424,6 +448,7 @@ auto serialize_graph_nodes(
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
+            auto mtime_ns = std::int64_t { 0 };
 
             if (std::filesystem::exists(file_path)) {
                 auto hash_result = pup::sha256_file(file_path);
@@ -433,8 +458,11 @@ auto serialize_graph_nodes(
                     fprintf(stderr, "Warning: Failed to hash file: %s\n", file_path.c_str());
                 }
 
-                auto ec = std::error_code {};
-                file_size = std::filesystem::file_size(file_path, ec);
+                auto stat_result = pup::platform::stat_file(file_path);
+                if (stat_result) {
+                    file_size = stat_result->size;
+                    mtime_ns = stat_result->mtime_ns;
+                }
             }
 
             auto entry = pup::index::FileEntry {
@@ -446,6 +474,7 @@ auto serialize_graph_nodes(
                 .name = std::string { pup::graph::get_name(graph.graph(), id) },
                 .path = node_path,
                 .size = file_size,
+                .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
             };
             index.add_file(std::move(entry));
@@ -465,6 +494,7 @@ auto serialize_graph_nodes(
                 .name = entry_name,
                 .path = node_path,
                 .size = 0,
+                .mtime_ns = 0,
                 .content_hash = {},
             };
             index.add_file(std::move(entry));

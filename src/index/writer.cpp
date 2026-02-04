@@ -5,6 +5,7 @@
 #include "pup/core/hash.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <span>
@@ -101,7 +102,8 @@ auto build_header(
     std::uint32_t edge_offset,
     std::uint32_t operand_table_offset,
     std::uint32_t operand_data_offset,
-    std::uint32_t string_offset
+    std::uint32_t string_offset,
+    std::int64_t save_time_ns
 ) -> RawHeader
 {
     return RawHeader {
@@ -117,6 +119,7 @@ auto build_header(
         .operand_table_offset = operand_table_offset,
         .operand_data_offset = operand_data_offset,
         .string_offset = string_offset,
+        .save_time_ns = save_time_ns,
     };
 }
 
@@ -247,9 +250,15 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     auto const footer_offset = string_offset + string_size;
     auto const total_size = static_cast<std::uint32_t>(total_size_64);
 
+    // Get current time for racy-clean detection
+    auto now = std::chrono::system_clock::now();
+    auto save_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now.time_since_epoch()
+    ).count();
+
     // Build header
     auto header = build_header(
-        index, strings, file_offset, command_offset, edge_offset, operand_table_offset, operand_data_offset, string_offset
+        index, strings, file_offset, command_offset, edge_offset, operand_table_offset, operand_data_offset, string_offset, save_time_ns
     );
 
     // Allocate result buffer

@@ -13,6 +13,7 @@ struct Metrics {
     std::size_t files_checked = 0;
     std::size_t files_changed = 0;
     std::size_t hash_computations = 0;
+    std::size_t hashes_skipped = 0; ///< Hash computations skipped due to stat cache hit
     std::size_t stat_calls = 0;
     std::chrono::milliseconds index_load_time { 0 };
     std::chrono::milliseconds index_save_time { 0 };

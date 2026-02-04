@@ -110,8 +110,12 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
         return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
     }
 
+    auto mtime_ns = static_cast<std::int64_t>(st.st_mtim.tv_sec) * 1'000'000'000LL
+        + static_cast<std::int64_t>(st.st_mtim.tv_nsec);
+
     return FileStat {
         .size = static_cast<std::uint64_t>(st.st_size),
+        .mtime_ns = mtime_ns,
     };
 }
 

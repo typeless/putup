@@ -26,6 +26,7 @@ struct FileEntry {
     std::string name = {}; ///< Basename only (tup-style identification)
     std::string path = {}; ///< Full path (computed from parent_id/name chain, not serialized)
     std::uint64_t size = 0;
+    std::int64_t mtime_ns = 0; ///< Modification time (nanoseconds since epoch)
     Hash256 content_hash = {};
 
     /// Convert to raw format for serialization
@@ -215,6 +216,16 @@ public:
         return edges_.size();
     }
 
+    /// Get index save time (nanoseconds since epoch)
+    [[nodiscard]]
+    auto save_time_ns() const -> std::int64_t
+    {
+        return save_time_ns_;
+    }
+
+    /// Set index save time (used by reader)
+    auto set_save_time_ns(std::int64_t ns) -> void { save_time_ns_ = ns; }
+
 private:
     std::vector<FileEntry> files_ = {};
     std::vector<CommandEntry> commands_ = {};
@@ -229,6 +240,9 @@ private:
 
     // Command index for O(1) lookup by command string (index into commands_ vector)
     std::unordered_map<std::string, std::size_t> command_index_ = {};
+
+    // Index save time (nanoseconds since epoch) for racy-clean detection
+    std::int64_t save_time_ns_ = 0;
 
     [[nodiscard]]
     auto lookup_edges(

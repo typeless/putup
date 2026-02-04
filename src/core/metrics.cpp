@@ -14,6 +14,7 @@ auto Metrics::operator+=(Metrics const& other) -> Metrics&
     files_checked += other.files_checked;
     files_changed += other.files_changed;
     hash_computations += other.hash_computations;
+    hashes_skipped += other.hashes_skipped;
     stat_calls += other.stat_calls;
     index_load_time += other.index_load_time;
     index_save_time += other.index_save_time;

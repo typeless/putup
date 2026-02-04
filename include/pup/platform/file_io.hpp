@@ -15,6 +15,7 @@ namespace pup::platform {
 /// File metadata from stat
 struct FileStat {
     std::uint64_t size = 0;
+    std::int64_t mtime_ns = 0; ///< Modification time (nanoseconds since epoch)
 };
 
 /// Get file metadata
