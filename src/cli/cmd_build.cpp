@@ -913,6 +913,7 @@ auto build_single_variant(
         .keep_going = opts.keep_going,
         .auto_init = true,
         .root_config_only = false,
+        .require_config = true,
         .scanner_registry = scanner_ptr,
     };
 
@@ -923,14 +924,6 @@ auto build_single_variant(
     }
 
     auto& ctx = *result;
-
-    // Build requires tup.config (configure creates it)
-    auto config_path = ctx.layout().output_root / "tup.config";
-    if (!std::filesystem::exists(config_path)) {
-        veprint(variant_name, "Error: No tup.config found. Run 'pup configure' first.\n");
-        return EXIT_FAILURE;
-    }
-
     auto num_commands = std::size_t { ctx.graph().nodes_of_type(pup::NodeType::Command).size() };
 
     if (num_commands == 0) {

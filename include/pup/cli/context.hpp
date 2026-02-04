@@ -52,6 +52,7 @@ struct BuildContextOptions {
     bool keep_going = false;
     bool auto_init = false;
     bool root_config_only = false;
+    bool require_config = false;
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};

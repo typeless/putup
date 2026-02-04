@@ -587,6 +587,17 @@ auto build_context(
     auto ctx = BuildContext {};
     ctx.impl_->layout = std::move(*layout_result);
 
+    // Early tup.config check (before expensive parsing)
+    if (ctx_opts.require_config) {
+        auto config_path = ctx.impl_->layout.output_root / "tup.config";
+        if (!std::filesystem::exists(config_path)) {
+            return make_error<BuildContext>(
+                ErrorCode::NotFound,
+                "No tup.config found. Run 'pup configure' first."
+            );
+        }
+    }
+
     // Set build root name for variant builds (before parsing)
     if (ctx.impl_->layout.source_root != ctx.impl_->layout.output_root) {
         auto build_root_name = std::filesystem::relative(
