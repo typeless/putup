@@ -12,9 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check formatting
-        run: |
-          find src include -name '*.cpp' -o -name '*.hpp' | \
-            xargs clang-format --dry-run --Werror
+        run: make format-check
 
   build-linux:
     needs: format-check
@@ -75,7 +73,7 @@ jobs:
       - name: Fix permissions
         run: chmod +x build/putup build/test/unit/putup_test
       - name: Run tests
-        run: ./build/test/unit/putup_test
+        run: make test
 
   test-macos:
     needs: build-macos
@@ -90,7 +88,7 @@ jobs:
       - name: Fix permissions
         run: chmod +x build/putup build/test/unit/putup_test
       - name: Run tests
-        run: ./build/test/unit/putup_test
+        run: make test
 
   test-windows:
     needs: build-windows
@@ -117,7 +115,5 @@ jobs:
           path: build/
       - name: Fix permissions
         run: chmod +x build/putup
-      - name: Generate compile_commands.json
-        run: ./build/putup show compdb -B build > compile_commands.json
       - name: Run clang-tidy
-        run: run-clang-tidy -p .
+        run: make tidy PUTUP=./build/putup

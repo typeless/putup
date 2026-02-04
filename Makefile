@@ -10,7 +10,7 @@
 #   make distclean    # Full reset: remove build directory
 
 PREFIX ?= $(HOME)
-PUTUP := $(PREFIX)/bin/putup
+PUTUP ?= $(PREFIX)/bin/putup
 BUILD_DIR := build
 
 # Detect mold linker
