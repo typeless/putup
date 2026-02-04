@@ -125,29 +125,10 @@ auto parse_group_reference(
     return GroupReference { std::move(group_name), std::move(group_dir) };
 }
 
-/// Strip the build root prefix from a path if present.
-/// E.g., "build/src/main.o" → "src/main.o" when build_root_name is "build"
-auto strip_build_prefix(
-    std::string_view path,
-    std::string_view build_root_name
-) -> std::string
-{
-    if (build_root_name.empty()) {
-        return std::string { path };
-    }
-    auto prefix_len = build_root_name.size() + 1; // includes "/"
-    if (path.size() > prefix_len
-        && path.substr(0, build_root_name.size()) == build_root_name
-        && path[build_root_name.size()] == '/') {
-        return std::string { path.substr(prefix_len) };
-    }
-    return std::string { path };
-}
-
 /// Normalize a path that may point to the output directory to its canonical form.
 /// In cross-project builds, paths like "../../pup/build/busybox-test/include/autoconf.h"
 /// may be normalized to "../pup/build/busybox-test/include/autoconf.h" when combined with
-/// a subdirectory, causing strip_build_prefix to fail. This function resolves such paths
+/// a subdirectory, causing strip_path_prefix to fail. This function resolves such paths
 /// by checking if they point to output_root and returning the relative path within it.
 auto normalize_to_output_relative(
     std::string_view path,
@@ -155,18 +136,9 @@ auto normalize_to_output_relative(
     fs::path const& output_root
 ) -> std::string
 {
-    if (!path.starts_with("..")) {
-        return std::string { path };
+    if (auto resolved = pup::resolve_under_root(path, source_root, output_root)) {
+        return *resolved;
     }
-
-    auto abs_path = (source_root / path).lexically_normal();
-    auto output_prefix = output_root.lexically_normal();
-
-    auto rel_to_output = abs_path.lexically_relative(output_prefix);
-    if (!rel_to_output.empty() && !rel_to_output.string().starts_with("..")) {
-        return rel_to_output.string();
-    }
-
     return std::string { path };
 }
 
@@ -625,7 +597,7 @@ auto expand_glob_pattern(
             continue;
         }
         // Strip build root prefix to get source-relative path for matching
-        auto match_path = strip_build_prefix(node_path, build_root_name);
+        auto match_path = pup::strip_path_prefix(node_path, build_root_name);
         if (glob.matches(match_path)) {
             result.push_back(std::move(node_path));
         }
@@ -1979,7 +1951,7 @@ auto get_or_create_file_node(
     auto build_root_name = ctx.graph->get_build_root_name();
 
     if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path = strip_build_prefix(path, build_root_name);
+        auto lookup_path = pup::strip_path_prefix(path, build_root_name);
 
         if (lookup_path != path) { // Had prefix
             if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
@@ -2018,7 +1990,7 @@ auto get_or_create_file_node(
     // For Generated nodes, check if node was already created under BUILD_ROOT_ID
     // by expand_outputs. This handles paths without the build prefix.
     if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path = strip_build_prefix(normalized, build_root_name);
+        auto lookup_path = pup::strip_path_prefix(normalized, build_root_name);
         if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
             return *existing;
         }
@@ -2071,14 +2043,14 @@ auto resolve_input_node(
     // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
     // already have the build root prefix. Strip it to get source-relative paths.
     auto build_root_name = ctx.graph->get_build_root_name();
-    auto normalized_path = strip_build_prefix(path, build_root_name);
+    auto normalized_path = pup::strip_path_prefix(path, build_root_name);
     if (normalized_path != path) {
         had_build_prefix = true;
     }
 
     // For cross-project builds, paths may start with ".." and point to output_root
     // with a different number of "../" components than build_root_name. In that case,
-    // strip_build_prefix won't match. Resolve by checking if the absolute path
+    // strip_path_prefix won't match. Resolve by checking if the absolute path
     // is under output_root.
     if (normalized_path.starts_with("..")) {
         auto before = normalized_path;

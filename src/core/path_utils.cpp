@@ -4,6 +4,7 @@
 #include "pup/core/path_utils.hpp"
 
 #include <algorithm>
+#include <optional>
 
 namespace pup {
 
@@ -143,6 +144,41 @@ auto make_source_relative(
         return ".";
     }
     return std::string { source_to_root } + std::string { path };
+}
+
+auto strip_path_prefix(
+    std::string_view path,
+    std::string_view prefix
+) -> std::string
+{
+    if (prefix.empty()) {
+        return std::string { path };
+    }
+    auto prefix_with_slash = std::string { prefix } + "/";
+    if (path.starts_with(prefix_with_slash)) {
+        return std::string { path.substr(prefix_with_slash.size()) };
+    }
+    return std::string { path };
+}
+
+auto resolve_under_root(
+    std::string_view path,
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& target_root
+) -> std::optional<std::string>
+{
+    if (!path.starts_with("..")) {
+        return std::nullopt;
+    }
+
+    auto abs_path = (source_root / path).lexically_normal();
+    auto target_prefix = target_root.lexically_normal();
+    auto rel = abs_path.lexically_relative(target_prefix);
+
+    if (!rel.empty() && !rel.string().starts_with("..")) {
+        return rel.string();
+    }
+    return std::nullopt;
 }
 
 } // namespace pup
