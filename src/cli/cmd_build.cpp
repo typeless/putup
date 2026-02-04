@@ -19,6 +19,7 @@
 #include "pup/index/entry.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/platform/file_io.hpp"
+#include "pup/platform/path.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -376,7 +377,7 @@ auto create_implicit_file(
         if (hash_result) {
             content_hash = *hash_result;
         } else {
-            fprintf(stderr, "Warning: Failed to hash file: %s\n", abs_path.c_str());
+            fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::platform::to_utf8(abs_path).c_str());
         }
 
         auto stat_result = pup::platform::stat_file(abs_path);
@@ -455,7 +456,7 @@ auto serialize_graph_nodes(
                 if (hash_result) {
                     content_hash = *hash_result;
                 } else {
-                    fprintf(stderr, "Warning: Failed to hash file: %s\n", file_path.c_str());
+                    fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::platform::to_utf8(file_path).c_str());
                 }
 
                 auto stat_result = pup::platform::stat_file(file_path);

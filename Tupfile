@@ -58,6 +58,7 @@ srcs-y += src/cli/target.cpp
 srcs-y += src/platform/process-$(_os_api).cpp
 srcs-y += src/platform/file_io-$(_os_api).cpp
 srcs-y += src/platform/env-$(_os_api).cpp
+srcs-y += src/platform/path-$(_os_api).cpp
 
 # Compile
 : foreach $(c-srcs-y) |> !cc |> {lib_objs}
