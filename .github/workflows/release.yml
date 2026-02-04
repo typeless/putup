@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap build
+        run: ./bootstrap-linux.sh
+      - name: Run tests
+        run: ./build/test/unit/putup_test
+      - name: Strip binary
+        run: strip build/putup
+      - name: Rename artifact
+        run: mv build/putup putup-linux-x86_64
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: putup-linux-x86_64
+          path: putup-linux-x86_64
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap build
+        run: ./bootstrap-macos.sh
+      - name: Run tests
+        run: ./build/test/unit/putup_test
+      - name: Strip binary
+        run: strip build/putup
+      - name: Rename artifact
+        run: mv build/putup putup-macos-arm64
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: putup-macos-arm64
+          path: putup-macos-arm64
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc make
+      - name: Bootstrap build
+        run: ./bootstrap-win32.sh
+      - name: Run tests
+        run: ./build/test/unit/putup_test.exe
+      - name: Strip binary
+        run: strip build/putup.exe
+      - name: Rename artifact
+        shell: pwsh
+        run: Move-Item build/putup.exe putup-windows-x86_64.exe
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: putup-windows-x86_64.exe
+          path: putup-windows-x86_64.exe
+
+  release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            putup-linux-x86_64/putup-linux-x86_64
+            putup-macos-arm64/putup-macos-arm64
+            putup-windows-x86_64.exe/putup-windows-x86_64.exe
+          generate_release_notes: true
