@@ -57,7 +57,7 @@ jobs:
           msystem: UCRT64
           install: mingw-w64-ucrt-x86_64-gcc make
       - name: Bootstrap build
-        run: ./bootstrap-win32.sh
+        run: ./bootstrap-mingw.sh
       - name: Run tests
         run: ./build/test/unit/putup_test.exe
       - name: Strip binary

@@ -3,6 +3,8 @@
 
 #include "pup/core/terminal.hpp"
 
+#include <cstdio>
+
 #if defined(_WIN32)
 #    include <io.h>
 #    include <windows.h>
@@ -24,8 +26,10 @@ auto is_tty(int fd) -> bool
 
 auto stdout_is_tty() -> bool
 {
-#if defined(_WIN32)
+#if defined(_MSC_VER)
     return is_tty(_fileno(stdout));
+#elif defined(_WIN32)
+    return is_tty(fileno(stdout));
 #else
     return is_tty(STDOUT_FILENO);
 #endif
@@ -33,8 +37,10 @@ auto stdout_is_tty() -> bool
 
 auto stderr_is_tty() -> bool
 {
-#if defined(_WIN32)
+#if defined(_MSC_VER)
     return is_tty(_fileno(stderr));
+#elif defined(_WIN32)
+    return is_tty(fileno(stderr));
 #else
     return is_tty(STDERR_FILENO);
 #endif

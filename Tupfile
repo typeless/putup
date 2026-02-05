@@ -60,8 +60,8 @@ srcs-y += src/platform/file_io-$(_os_api).cpp
 srcs-y += src/platform/env-$(_os_api).cpp
 srcs-y += src/platform/path-$(_os_api).cpp
 
-# Compile
-: foreach $(c-srcs-y) |> !cc |> {lib_objs}
+# Compile (third-party C without -Werror)
+: foreach $(c-srcs-y) |> !cc_thirdparty |> {lib_objs}
 : foreach $(srcs-y) |> !cxx |> {lib_objs}
 
 # Static library

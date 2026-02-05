@@ -2072,6 +2072,13 @@ SCENARIO("Show script generates shell build script", "[e2e][show]")
         auto f = E2EFixture { "simple_c" };
         REQUIRE(f.init().success());
 
+        // Add required script config variables
+        f.append_file("tup.config",
+            "CONFIG_SCRIPT_PROLOGUE=#!/bin/sh\\nset -ex\\ncd \"$(dirname \"$0\")\"\n"
+            "CONFIG_SCRIPT_RUN=(cd \"%DIR\" && %CMD)\n"
+            "CONFIG_SCRIPT_MKDIR=mkdir -p \"%DIR\"\n"
+            "CONFIG_SCRIPT_COMMENT=#\n");
+
         WHEN("show script is run")
         {
             auto result = f.pup({ "show", "script" });

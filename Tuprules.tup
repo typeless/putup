@@ -9,35 +9,36 @@ else
 _os_api = @(OS_API)
 endif
 
-# Toolchain
-import CROSS_COMPILE=
-import CC=$(CROSS_COMPILE)gcc
-import CXX=$(CROSS_COMPILE)g++
-import AR=$(CROSS_COMPILE)ar
+# Object extension from config (default: o)
+ifeq (@(OBJ_EXT),)
+_obj = o
+else
+_obj = @(OBJ_EXT)
+endif
 
-# Base flags
-CFLAGS = -std=c11 -Wall -Wextra -Werror -fPIC
+# Toolchain from config
+CC = @(CC)
+CXX = @(CXX)
+AR = @(AR)
+LINKER = @(LINKER)
+
+# Flags from config
+CFLAGS = @(CFLAGS)
 CFLAGS += -I$(ROOT)/third_party
 
-CXXFLAGS = -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC
-CXXFLAGS += -fno-exceptions -fno-rtti
+CXXFLAGS = @(CXXFLAGS)
 CXXFLAGS += -I$(ROOT)/include -I$(ROOT)/third_party
 
-# Build mode: debug or release (default)
-CFLAGS += @(DEBUG_CFLAGS)
-CXXFLAGS += @(DEBUG_CXXFLAGS)
-LDFLAGS += @(DEBUG_LDFLAGS)
+LDFLAGS = @(RELEASE_LDFLAGS) @(PLATFORM_LDFLAGS)
 
-CFLAGS += @(RELEASE_CFLAGS)
-CXXFLAGS += @(RELEASE_CXXFLAGS)
-LDFLAGS += @(RELEASE_LDFLAGS)
+# Build mode flags
+CFLAGS += @(DEBUG_CFLAGS) @(RELEASE_CFLAGS)
+CXXFLAGS += @(DEBUG_CXXFLAGS) @(RELEASE_CXXFLAGS)
 
-# Platform-specific flags
-LDFLAGS += @(PLATFORM_LDFLAGS)
-
-# Macros
-!cc = |> ^ CC %f^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
-!cxx = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
-!cxx_thirdparty = |> ^ CXX %f^ $(CXX) $(CXXFLAGS) -Wno-error -c %f -o %o |> %B.o
-!link = |> ^ LINK %o^ $(CXX) %f -o %o $(LDFLAGS) |>
-!ar = |> ^ AR %o^ $(AR) rcs %o %f |>
+# Macros - commands from config
+!cc = |> ^ CC %f^ @(CC_CMD) |> %B.$(_obj)
+!cc_thirdparty = |> ^ CC %f^ @(CC_THIRDPARTY_CMD) |> %B.$(_obj)
+!cxx = |> ^ CXX %f^ @(CXX_CMD) |> %B.$(_obj)
+!cxx_thirdparty = |> ^ CXX %f^ @(CXX_THIRDPARTY_CMD) |> %B.$(_obj)
+!link = |> ^ LINK %o^ @(LINK_CMD) |>
+!ar = |> ^ AR %o^ @(AR_CMD) |>

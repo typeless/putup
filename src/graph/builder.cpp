@@ -1442,8 +1442,8 @@ auto expand_rule(
                 } else {
                     // Preserve %<group> pattern literally - will be expanded in resolve_deferred_order_only_edges()
                     // This ensures the pattern isn't lost during command expansion
-                    auto pattern = std::format("%<{}>", group_ref->group_name);
-                    rule_order_only_groups[group_ref->group_name] = { std::move(pattern) };
+                    auto group_pattern = std::format("%<{}>", group_ref->group_name);
+                    rule_order_only_groups[group_ref->group_name] = { std::move(group_pattern) };
                 }
                 // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
                 deferred_group_ids.insert(group_id);

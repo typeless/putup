@@ -26,14 +26,14 @@ Putup is self-hosting (builds itself), but bootstrap scripts are provided for in
 ```bash
 ./bootstrap-linux.sh    # Linux
 ./bootstrap-macos.sh    # macOS
-./bootstrap-win32.sh    # Windows (MSYS2/MinGW)
+./bootstrap-mingw.sh    # Windows (MSYS2/MinGW)
 ```
 
 To regenerate bootstrap scripts after changes:
 ```bash
 putup show script -B build > bootstrap-linux.sh
-TUP_PLATFORM=macos putup show script -B build > bootstrap-macos.sh
-TUP_PLATFORM=win32 putup show script -B build > bootstrap-win32.sh
+CONFIG=macosx putup show script -B build > bootstrap-macos.sh
+CONFIG=mingw putup show script -B build > bootstrap-mingw.sh
 ```
 
 ## Quick Start

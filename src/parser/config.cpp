@@ -21,6 +21,37 @@ auto trim(std::string_view s) -> std::string_view
     return s;
 }
 
+auto expand_escapes(std::string_view s) -> std::string
+{
+    auto result = std::string {};
+    result.reserve(s.size());
+
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            switch (s[i + 1]) {
+            case 'n':
+                result += '\n';
+                ++i;
+                break;
+            case 't':
+                result += '\t';
+                ++i;
+                break;
+            case '\\':
+                result += '\\';
+                ++i;
+                break;
+            default:
+                result += s[i];
+                break;
+            }
+        } else {
+            result += s[i];
+        }
+    }
+    return result;
+}
+
 constexpr auto CONFIG_PREFIX = std::string_view { "CONFIG_" };
 
 } // namespace
@@ -65,8 +96,9 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
         // - Stripped form (FOO) for @(FOO) syntax
         // - Full form (CONFIG_FOO) for $(CONFIG_FOO) syntax
         auto stripped_name = name.substr(CONFIG_PREFIX.size());
-        db.set(stripped_name, std::string { value });
-        db.set(name, std::string { value });
+        auto expanded_value = expand_escapes(value);
+        db.set(stripped_name, expanded_value);
+        db.set(name, std::move(expanded_value));
     }
 
     return db;

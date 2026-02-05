@@ -299,10 +299,10 @@ Putup uses `putup configure` for its own build. The `configs/Tupfile` generates 
 ```tup
 # configs/Tupfile - Generate tup.config for the variant build
 
-ifeq ($(TUP_PLATFORM),win32)
-  CONFIG_FILE = win32.config
+ifeq ($(TUP_PLATFORM),mingw)
+  CONFIG_FILE = mingw.config
 else
-  CONFIG_FILE = posix.config
+  CONFIG_FILE = linux.config
 endif
 
 : $(CONFIG_FILE) |> install -D %f %o |> ../tup.config
@@ -2150,7 +2150,7 @@ CONFIG_OS_API=posix
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG -ffunction-sections -fdata-sections
 CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 
-# configs/win32.config
+# configs/mingw.config
 CONFIG_OS_API=win32
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
 CONFIG_PLATFORM_LDFLAGS=-static
@@ -2207,7 +2207,7 @@ project/
 │   ├── default.config    # Default (release, native)
 │   ├── debug.config      # Debug with sanitizers
 │   ├── release.config    # Optimized release
-│   └── win32.config      # Windows cross-compile
+│   └── mingw.config      # Windows MinGW cross-compile
 └── src/
 ```
 
@@ -2215,7 +2215,7 @@ project/
 ```bash
 putup configure -B build-debug --config configs/debug.config
 putup configure -B build-release --config configs/release.config
-putup configure -B build-win32 --config configs/win32.config
+putup configure -B build-mingw --config configs/mingw.config
 ```
 
 **Config file template:**
