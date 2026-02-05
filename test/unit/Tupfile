@@ -39,5 +39,5 @@ test-srcs-y += test_var_tracking.cpp
 : foreach $(test-srcs-y) |> !cxx |> {test_objs}
 
 # Link test runner
-: {test_objs} {test_support} $(ROOT)/libputup.a |> !link |> putup_test
+: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> !link |> putup_test$(_exe)
 endif

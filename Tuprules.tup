@@ -16,6 +16,16 @@ else
 _obj = @(OBJ_EXT)
 endif
 
+# Library extension from config (default: a)
+ifeq (@(LIB_EXT),)
+_lib = a
+else
+_lib = @(LIB_EXT)
+endif
+
+# Executable extension from config (default: empty)
+_exe = @(EXE_EXT)
+
 # Toolchain from config
 CC = @(CC)
 CXX = @(CXX)
