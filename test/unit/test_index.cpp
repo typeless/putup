@@ -559,7 +559,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     {
         auto corrupted = *data;
         auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->file_offset = corrupted.size() + 1000;
+        hdr->file_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
 
         std::ofstream out { temp_path, std::ios::binary };
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
@@ -597,7 +597,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     {
         auto corrupted = *data;
         auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->command_offset = corrupted.size() + 1000;
+        hdr->command_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
 
         std::ofstream out { temp_path, std::ios::binary };
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
@@ -635,7 +635,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     {
         auto corrupted = *data;
         auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->edge_offset = corrupted.size() + 1000;
+        hdr->edge_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
 
         std::ofstream out { temp_path, std::ios::binary };
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
@@ -675,7 +675,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
         // Set offset to valid position, but count would overflow
         hdr->file_offset = sizeof(RawHeader);
-        hdr->file_count = (corrupted.size() / sizeof(RawFileEntry)) + 100;
+        hdr->file_count = static_cast<std::uint32_t>(corrupted.size() / sizeof(RawFileEntry)) + 100;
 
         std::ofstream out { temp_path, std::ios::binary };
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
@@ -694,7 +694,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
     {
         auto corrupted = *data;
         auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->string_offset = corrupted.size() + 1000;
+        hdr->string_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
 
         std::ofstream out { temp_path, std::ios::binary };
         out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
