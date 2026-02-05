@@ -110,8 +110,13 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
         return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
     }
 
+#ifdef __APPLE__
+    auto mtime_ns = static_cast<std::int64_t>(st.st_mtimespec.tv_sec) * 1'000'000'000LL
+        + static_cast<std::int64_t>(st.st_mtimespec.tv_nsec);
+#else
     auto mtime_ns = static_cast<std::int64_t>(st.st_mtim.tv_sec) * 1'000'000'000LL
         + static_cast<std::int64_t>(st.st_mtim.tv_nsec);
+#endif
 
     return FileStat {
         .size = static_cast<std::uint64_t>(st.st_size),
