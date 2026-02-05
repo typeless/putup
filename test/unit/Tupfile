@@ -2,10 +2,10 @@ ifeq (@(TESTS),y)
 include_rules
 
 # Catch2 amalgamated
-: $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx_thirdparty |> catch_amalgamated.o {test_support}
+: $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx_thirdparty |> catch_amalgamated.$(_obj) {test_support}
 
 # E2E test fixture
-: e2e_fixture.cpp |> !cxx |> e2e_fixture.o {test_support}
+: e2e_fixture.cpp |> !cxx |> e2e_fixture.$(_obj) {test_support}
 
 # Test sources
 TEST_CXXFLAGS = $(CXXFLAGS)
@@ -36,7 +36,7 @@ test-srcs-y += test_types.cpp
 test-srcs-y += test_var_tracking.cpp
 
 # Compile test sources
-: foreach $(test-srcs-y) |> ^ CXX %f^ $(CXX) $(TEST_CXXFLAGS) -c %f -o %o |> %B.o {test_objs}
+: foreach $(test-srcs-y) |> !cxx |> {test_objs}
 
 # Link test runner
 : {test_objs} {test_support} $(ROOT)/libputup.a |> !link |> putup_test

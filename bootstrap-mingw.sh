@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 mkdir -p "build"
 mkdir -p "build/test/unit"
 
-(cd "configs" && cp mingw.config ../build/tup.config)
+(cd "configs" && cp linux.config ../build/tup.config)
 (cd "." && g++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -Wno-error=free-nonheap-object -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -c src/main.cpp -o build/main.o)
 (cd "." && g++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -Wno-error=free-nonheap-object -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -c src/platform/path-win32.cpp -o build/path-win32.o)
 (cd "." && g++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -Wno-error=free-nonheap-object -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -c src/platform/env-win32.cpp -o build/env-win32.o)
