@@ -4,73 +4,70 @@ A build system using the [Tupfile](https://gittup.org/tup/) format.
 
 > **Note:** The binary is named `putup`, but `pup` works as an alias.
 
-- **Tupfile-based** - Uses Tup's Tupfile syntax for build rules
-- **Content hashing** - SHA-256 for change detection
-- **Scoped builds** - Limit builds to specific subdirectories
-- **No FUSE** - Index-based tracking, works everywhere
-
-## Installation
-
-```bash
-git clone <repository-url>
-cd putup
-make
 ```
+putup - build system using Tupfile format
 
-Requirements: C++20 compiler (GCC 11+, Clang 14+)
+Usage: putup [OPTIONS] [TARGETS]
+       putup [OPTIONS] <command>
 
-### Bootstrapping
+Running 'putup' executes the build. Use a command for other operations.
 
-Putup is self-hosting (builds itself), but bootstrap scripts are provided for initial installation:
+Commands:
+  configure         Generate tup.config files (two-stage build)
+  clean             Remove generated files
+  distclean         Full reset: remove .pup and variant directory
+  parse             Parse and validate Tupfiles
+  show <format>     Show build info:
+                      script  - Shell script
+                      compdb  - compile_commands.json
+                      graph   - DOT format (--summary for text)
+                      var [NAME] [--json] - Variable tracking
 
-```bash
-./bootstrap-linux.sh    # Linux
-./bootstrap-macos.sh    # macOS
-./bootstrap-mingw.sh    # Windows (MSYS2/MinGW)
-```
+Options:
+  -j, --jobs N       Run N jobs in parallel
+  -k, --keep-going   Continue after failures
+  -n, --dry-run      Print commands without executing
+  -v, --verbose      Verbose output
+  -D, --define VAR=value
+                     Override config variable (-D VAR is shorthand for -D VAR=y)
+  -S DIR             Source directory (where source files live)
+  -C DIR             Config directory (where Tupfiles live)
+  -B DIR             Build/output directory (can use multiple times)
+  -c, --config FILE  Use FILE as tup.config (skip config rules)
+  --summary          Human-readable output (for show graph)
+  --stat             Print build statistics
+  -A, --all          Full project build (ignore cwd scoping)
+  -a, --all-deps     Include upstream deps in scoped builds
+  --                 End of options; remaining args are targets
+  --version          Print version
+  -h, --help         Print this help
 
-To regenerate bootstrap scripts after changes:
-```bash
-putup show script -B build > bootstrap-linux.sh
-CONFIG=macosx putup show script -B build > bootstrap-macos.sh
-CONFIG=mingw putup show script -B build > bootstrap-mingw.sh
-```
+Targets:
+  A variant is a directory containing tup.config. Anything else is a scope.
 
-## Quick Start
+  TARGET              VARIANT       SCOPE
+  build               build         (all)       # if build/tup.config exists
+  build/src/lib       build         src/lib
+  src/lib             (none)        src/lib     # no tup.config in src/
+  build/foo.o         build         foo.o       # single output rebuild
+  build-*             (glob)        (all)       # multiple variants
 
-Create a simple project:
+Examples:
+  putup                Build all variants
+  putup build-debug    Build single variant
+  putup build-*        Build all matching variants
+  putup src/lib        Scoped build across all variants
 
-```bash
-mkdir hello && cd hello
-```
-
-**Tupfile** - defines how to build:
-```tup
-: hello.c |> gcc %f -o %o |> hello
-```
-
-**hello.c** - your source:
-```c
-#include <stdio.h>
-int main() { printf("Hello, world!\n"); return 0; }
-```
-
-Build it:
-```bash
-putup configure    # Set up build (creates tup.config)
-putup              # Build
-./hello            # Run it
-```
-
-Common commands:
-```bash
-putup -j8          # Build with 8 parallel jobs
-putup -n           # Dry-run: show what would build
-putup clean        # Remove generated files
+Environment:
+  PUP_SOURCE_DIR     Source directory (overridden by -S)
+  PUP_CONFIG_DIR     Config directory (overridden by -C)
+  PUP_BUILD_DIR      Build directory (overridden by -B)
+  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)
 ```
 
 ## Documentation
 
+- **[Installation](INSTALL.md)** - Requirements, building from source, bootstrapping
 - **[Reference Manual](docs/reference.md)** - Complete user guide: commands, Tupfile syntax, configuration
 - **[Compatibility](COMPATIBILITY.md)** - Tup compatibility matrix and migration guide
 - **[CLAUDE.md](CLAUDE.md)** - Developer guide: building, testing, project structure
