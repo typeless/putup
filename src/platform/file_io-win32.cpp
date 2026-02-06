@@ -3,6 +3,8 @@
 
 #include "pup/platform/file_io.hpp"
 
+#include <random>
+
 #include <windows.h>
 
 namespace pup::platform {
@@ -168,9 +170,12 @@ auto atomic_write(
     auto temp_path = path;
     temp_path += L".tmp.";
 
+    auto rd = std::random_device {};
+    auto gen = std::mt19937 { std::random_device::result_type { rd() } };
+    auto dist = std::uniform_int_distribution<> { 0, 15 };
     WCHAR temp_suffix[16];
     for (int i = 0; i < 8; ++i) {
-        temp_suffix[i] = L"0123456789abcdef"[rand() % 16];
+        temp_suffix[i] = L"0123456789abcdef"[dist(gen)];
     }
     temp_suffix[8] = L'\0';
     temp_path += temp_suffix;
