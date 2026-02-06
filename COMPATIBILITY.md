@@ -199,6 +199,20 @@ Features in putup that extend beyond tup:
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
 | **Configure command** | `putup configure` runs config rules and ensures `tup.config` exists |
 
+## Known Compiler Issues
+
+### MSVC: NRVO not applied to `make_graph()` return value
+
+**Affected**: MSVC 19.38+ (Visual Studio 2022 17.8) with `/Zc:nrvo /std:c++20 /O2`
+
+`Graph::make_graph()` returns a `Graph` by value. The `Graph` owns a `StringPool` and an `unordered_map` whose hash/equal functors hold a `StringPool*` pointing into the same object. Under NRVO the returned object is constructed directly in the caller's storage, so the pointers remain valid.
+
+MSVC does not apply NRVO here. It constructs the `Graph` locally, then move-constructs into the caller. After the move, `StringPool` lives at a new address but `DirNameKeyHash`/`DirNameKeyEqual` still hold the old pointer — any subsequent map lookup dereferences freed memory.
+
+The MS docs list only two NRVO exclusions (multiple return variables, `throw` in scope), neither of which applies. This appears to be an undocumented limitation triggered when a function re-assigns an `unordered_map` member whose hash/equal functors contain pointers to the local object's own fields.
+
+**Status**: MSVC CI jobs are disabled. MinGW (GCC on Windows) is unaffected and remains in CI.
+
 ## Reporting Issues
 
 If you find a Tupfile that works with tup but not putup:
