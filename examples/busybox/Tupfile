@@ -1,8 +1,8 @@
 include_rules
 
 # Usage:
-#   CONFIG=android_defconfig pup configure -B build-android
-#   CONFIG=freebsd_defconfig pup configure -B build-freebsd
+#   CONFIG=android_defconfig pup configure -S ../busybox -C . -B ../build-android
+#   CONFIG=freebsd_defconfig pup configure -S ../busybox -C . -B ../build-freebsd
 
 import CONFIG=defconfig
 

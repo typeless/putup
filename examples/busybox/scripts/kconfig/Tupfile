@@ -4,7 +4,7 @@ include_rules
 #
 # By default uses _shipped pre-generated files (no bison/flex/gperf needed).
 # Set LKC_GENPARSER=1 to regenerate from source:
-#   LKC_GENPARSER=1 pup configure -B build
+#   LKC_GENPARSER=1 pup configure -S ../busybox -C . -B ../build
 
 HOSTCC = gcc
 

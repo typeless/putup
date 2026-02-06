@@ -10,24 +10,17 @@ Build [Busybox](https://busybox.net/) using putup. Files in `busybox/`.
 # 1. Download and extract busybox
 wget https://busybox.net/downloads/busybox-1.38.0.tar.bz2
 tar xjf busybox-1.38.0.tar.bz2
-cd busybox-1.38.0
 
-# 2. Copy putup build files
-rsync -av /path/to/putup/examples/busybox/ ./
-
-# 3. Build (generates .config automatically from defconfig)
-make -f Makefile.pup
+# 2. Build (generates .config automatically from defconfig)
+putup -S busybox-1.38.0 -C examples/busybox -B build
 ```
 
 Or with a specific configuration:
 
 ```bash
 # Android config
-CONFIG=android_defconfig make -f Makefile.pup
-
-# Or use putup directly
-CONFIG=android_defconfig putup configure -B build-android
-putup -B build-android
+CONFIG=android_defconfig putup configure -S busybox-1.38.0 -C examples/busybox -B build-android
+putup -S busybox-1.38.0 -C examples/busybox -B build-android
 ```
 
 ## Multi-Variant Builds
@@ -35,8 +28,8 @@ putup -B build-android
 Build multiple configurations in parallel:
 
 ```bash
-CONFIG=android_defconfig make -f Makefile.pup BUILD=build-android configure
-CONFIG=freebsd_defconfig make -f Makefile.pup BUILD=build-freebsd configure
+CONFIG=android_defconfig putup configure -S busybox-1.38.0 -C examples/busybox -B build-android
+CONFIG=freebsd_defconfig putup configure -S busybox-1.38.0 -C examples/busybox -B build-freebsd
 putup build-android build-freebsd -j$(nproc)
 ```
 
@@ -64,8 +57,8 @@ The build generates these headers from `.config`:
 
 ## Build Output
 
-- `build/build/busybox` - Main binary (~1.2MB, 403 applets)
-- `build/build/**/*.o` - Object files
+- `build/busybox` - Main binary (~1.2MB, 403 applets)
+- `build/**/*.o` - Object files
 
 ## Notes
 
@@ -74,8 +67,8 @@ The build generates these headers from `.config`:
 - Requires: gcc, bzip2, od (for embedded scripts)
 - If the build fails with TC errors (missing kernel headers), use `notc_defconfig`:
   ```bash
-  CONFIG=notc_defconfig putup configure -B build
-  CONFIG=notc_defconfig putup -B build
+  CONFIG=notc_defconfig putup configure -S busybox-1.38.0 -C examples/busybox -B build
+  putup -S busybox-1.38.0 -C examples/busybox -B build
   ```
 - **With `PUP_IMPLICIT_DEPS=1`**: Pass CONFIG in both configure and build phases.
   Implicit deps re-parses Tupfiles after discovering dependencies, and CONFIG must
