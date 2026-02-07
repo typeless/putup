@@ -51,13 +51,15 @@ compdb: configure
 	@echo "Generating compile_commands.json..."
 	@$(PUTUP) show compdb -B $(BUILD_DIR) > $(COMPDB)
 
+RUN_CLANG_TIDY ?= run-clang-tidy
+
 tidy: compdb
 	@echo "Running clang-tidy..."
-	@run-clang-tidy -p .
+	@$(RUN_CLANG_TIDY) -p . $(TIDY_FLAGS)
 
 tidy-fix: compdb
 	@echo "Running clang-tidy with fixes..."
-	@run-clang-tidy -p . -fix
+	@$(RUN_CLANG_TIDY) -p . -fix $(TIDY_FLAGS)
 
 format:
 	@echo "Formatting sources..."
