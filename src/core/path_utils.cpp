@@ -176,7 +176,7 @@ auto resolve_under_root(
     auto rel = abs_path.lexically_relative(target_prefix);
 
     if (!rel.empty() && !rel.string().starts_with("..")) {
-        return rel.string();
+        return rel.generic_string();
     }
     return std::nullopt;
 }
