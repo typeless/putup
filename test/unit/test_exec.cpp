@@ -14,6 +14,8 @@
 using namespace pup;
 using namespace pup::exec;
 
+#ifndef _WIN32
+
 TEST_CASE("CommandRunner basic execution", "[exec]")
 {
     auto runner = CommandRunner {};
@@ -122,6 +124,8 @@ TEST_CASE("CommandRunner with callback", "[exec]")
         REQUIRE(stderr_received == "stderr_test\n");
     }
 }
+
+#endif // !_WIN32
 
 TEST_CASE("parse_command", "[exec]")
 {
@@ -420,6 +424,8 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
     }
 }
 
+#ifndef _WIN32
+
 TEST_CASE("Scheduler exported_vars", "[exec]")
 {
     SECTION("exported_vars passed to command environment")
@@ -509,3 +515,5 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         pup::platform::unset_env("PUP_TEST_HIDDEN_VAR");
     }
 }
+
+#endif // !_WIN32
