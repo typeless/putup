@@ -361,7 +361,10 @@ auto get_pup_binary() -> fs::path
 {
     // Check environment variable first
     if (auto const* env = std::getenv("PUP")) {
-        return fs::path { env };
+        auto p = fs::path { env };
+        if (fs::exists(p))
+            return fs::canonical(p);
+        return p;
     }
 
     // Try to find relative to current executable or common paths

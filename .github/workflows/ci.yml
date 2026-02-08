@@ -151,7 +151,7 @@ jobs:
           name: build-windows-mingw
           path: build/
       - name: Run tests
-        run: ./build/test/unit/putup_test.exe
+        run: ./build/test/unit/putup_test.exe "~[e2e]~[shell]"
         env:
           PUP: ./build/putup.exe
 

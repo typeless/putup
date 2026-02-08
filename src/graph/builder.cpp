@@ -71,7 +71,7 @@ auto normalize_group_dir(
         }
     }
 
-    return path.empty() ? "." : path.string();
+    return path.empty() ? "." : path.generic_string();
 }
 
 /// Parsed group reference from a path like "../include/<gen-headers>"
@@ -159,8 +159,8 @@ struct PathTransformContext {
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
     return PathTransformContext {
-        .source_to_root = pup::compute_source_to_root(ctx.current_dir.string()),
-        .current_dir_str = ctx.current_dir.string(),
+        .source_to_root = pup::compute_source_to_root(ctx.current_dir.generic_string()),
+        .current_dir_str = ctx.current_dir.generic_string(),
         .source_root = ctx.options.source_root,
         .output_root = ctx.options.output_root,
     };
@@ -1379,7 +1379,7 @@ auto expand_rule(
                     group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
                 }
             } else {
-                group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+                group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.generic_string();
             }
 
             // Demand-driven parsing: request the directory's Tupfile if not yet parsed
@@ -1663,7 +1663,7 @@ auto expand_rule(
             }
 
             if (dir.empty()) {
-                dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+                dir = ctx.current_dir.empty() ? "." : ctx.current_dir.generic_string();
             }
 
             // Create or get the Group node
@@ -1740,7 +1740,7 @@ auto expand_inputs(
                     request_demand_driven_parse(*ctx.eval, fs::path { group_dir });
                 }
             } else {
-                group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+                group_dir = ctx.current_dir.empty() ? "." : ctx.current_dir.generic_string();
             }
 
             // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
@@ -2162,7 +2162,7 @@ auto create_command_node(
 
     auto node = CommandNode {
         .display = ctx.graph->intern(display),
-        .source_dir = ctx.graph->intern(ctx.current_dir.string()),
+        .source_dir = ctx.graph->intern(ctx.current_dir.generic_string()),
         .instruction_id = ctx.graph->intern(instruction),
         .exported_vars = std::move(exported_var_ids),
         .guards = ctx.condition_stack, // Apply current guards from condition stack
@@ -2396,7 +2396,7 @@ auto add_tupfile(
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
                                     ) -> std::vector<std::string> {
-        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.string();
+        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.generic_string();
         auto key = GroupKey { dir, std::string { name } };
         auto it = state.group_nodes.find(key);
         if (it == state.group_nodes.end()) {
