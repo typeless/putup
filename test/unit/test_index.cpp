@@ -572,6 +572,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto files = index_raw_files(*reader_result);
         REQUIRE(files.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -591,6 +592,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto files = index_raw_files(*reader_result);
         REQUIRE(files.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -610,6 +612,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto commands = index_raw_commands(*reader_result);
         REQUIRE(commands.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -629,6 +632,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto commands = index_raw_commands(*reader_result);
         REQUIRE(commands.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -648,6 +652,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto edges = index_raw_edges(*reader_result);
         REQUIRE(edges.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -667,6 +672,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto edges = index_raw_edges(*reader_result);
         REQUIRE(edges.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -688,6 +694,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto files = index_raw_files(*reader_result);
         REQUIRE(files.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 
@@ -708,6 +715,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto str = index_get_string(*reader_result, 0);
         REQUIRE(str.empty());
 
+        reader_result->file.close();
         std::filesystem::remove(temp_path);
     }
 }
