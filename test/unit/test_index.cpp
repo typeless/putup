@@ -434,7 +434,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     }
     REQUIRE(found_implicit);
 
-    // Cleanup
+    idx_file.file.close();
     std::filesystem::remove(temp_path);
 }
 
@@ -513,6 +513,7 @@ TEST_CASE("Index ID contiguity requirement", "[index]")
     REQUIRE(lib != nullptr);
     REQUIRE(lib->type == NodeType::Directory);
 
+    reader_result->file.close();
     std::filesystem::remove(temp_path);
 }
 
@@ -1139,6 +1140,6 @@ TEST_CASE("v8 roundtrip with operand sections", "[index][v8]")
     auto cmd3_str = get_command_string(restored, *cmd3);
     REQUIRE(cmd3_str == "g++ build/main.o build/util.o -o build/program");
 
-    // Cleanup
+    reader_result->file.close();
     std::filesystem::remove(temp_path);
 }
