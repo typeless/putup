@@ -13,11 +13,13 @@ namespace {
 #ifdef _WIN32
 auto const ECHO_CMD = std::string { "cmd /c echo" };
 auto const FALSE_CMD = std::string { "cmd /c exit 1" };
-auto const CAT_CMD = std::string { "cmd /c type CON" };
+auto const CAT_CMD = std::string { "more" };
+auto const PWD_CMD = std::string { "cd" };
 #else
 auto const ECHO_CMD = std::string { "echo" };
 auto const FALSE_CMD = std::string { "false" };
 auto const CAT_CMD = std::string { "cat" };
+auto const PWD_CMD = std::string { "pwd" };
 #endif
 
 auto make_opts(std::string cmd) -> ProcessOptions
@@ -88,7 +90,7 @@ SCENARIO("run_process respects working directory", "[platform][process]")
         auto f = E2EFixture { "simple_c" };
         f.mkdir("subdir");
 
-        auto opts = make_opts("pwd");
+        auto opts = make_opts(PWD_CMD);
         opts.working_dir = f.workdir() / "subdir";
         opts.capture_stdout = true;
 
