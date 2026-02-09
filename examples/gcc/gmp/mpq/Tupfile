@@ -1,0 +1,14 @@
+include_rules
+
+# MPQ - multiprecision rationals
+
+srcs  = abs.c aors.c canonicalize.c clear.c clears.c
+srcs += cmp.c cmp_si.c cmp_ui.c div.c equal.c
+srcs += get_d.c get_den.c get_num.c get_str.c
+srcs += init.c inits.c inp_str.c inv.c md_2exp.c mul.c neg.c out_str.c
+srcs += set.c set_d.c set_den.c set_f.c set_num.c
+srcs += set_si.c set_str.c set_ui.c set_z.c swap.c
+
+: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> mpq.a

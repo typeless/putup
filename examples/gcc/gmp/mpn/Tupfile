@@ -1,0 +1,125 @@
+include_rules
+
+# MPN — low-level multiprecision arithmetic (generic C, no assembly)
+#
+# All mpn sources are compiled with -DOPERATION_<basename>.
+# Five "template" files produce multiple objects via different -DOPERATION_ values:
+#   logops_n.c   → and_n andn_n ior_n iorn_n nand_n nior_n xnor_n xor_n
+#   popham.c     → popcount hamdist
+#   sec_aors_1.c → sec_add_1 sec_sub_1
+#   sec_div.c    → sec_div_qr sec_div_r
+#   sec_pi1_div.c→ sec_pi1_div_qr sec_pi1_div_r
+
+!cc-mpn = | $(S)/gmp/<gen-headers> |> ^ CC %b^ $(CC) $(GMP_CFLAGS) -DOPERATION_%B -c %f -o %o |> %B.o <objs>
+
+# --- Regular generic sources ---
+# Source list from configure --disable-assembly, minus templates and generated tables.
+
+srcs  = generic/add_1.c generic/add.c generic/add_err1_n.c
+srcs += generic/add_err2_n.c generic/add_err3_n.c generic/addmul_1.c
+srcs += generic/add_n.c generic/add_n_sub_n.c
+srcs += generic/bdiv_dbm1c.c generic/bdiv_q_1.c generic/bdiv_q.c generic/bdiv_qr.c
+srcs += generic/binvert.c generic/broot.c generic/brootinv.c
+srcs += generic/bsqrt.c generic/bsqrtinv.c
+srcs += generic/cmp.c generic/cnd_add_n.c generic/cnd_sub_n.c generic/cnd_swap.c
+srcs += generic/comb_tables.c generic/com.c generic/compute_powtab.c
+srcs += generic/copyd.c generic/copyi.c
+srcs += generic/dcpi1_bdiv_q.c generic/dcpi1_bdiv_qr.c generic/dcpi1_divappr_q.c
+srcs += generic/dcpi1_div_q.c generic/dcpi1_div_qr.c
+srcs += generic/dive_1.c generic/diveby3.c generic/divexact.c generic/divis.c
+srcs += generic/div_q.c generic/div_qr_1.c generic/div_qr_1n_pi1.c
+srcs += generic/div_qr_2.c generic/div_qr_2n_pi1.c generic/div_qr_2u_pi1.c
+srcs += generic/divrem_1.c generic/divrem_2.c generic/divrem.c
+srcs += generic/dump.c generic/fib2m.c generic/fib2_ui.c
+srcs += generic/gcd_11.c generic/gcd_1.c generic/gcd_22.c generic/gcd.c
+srcs += generic/gcdext_1.c generic/gcdext.c generic/gcdext_lehmer.c
+srcs += generic/gcd_subdiv_step.c
+srcs += generic/get_d.c generic/get_str.c
+srcs += generic/hgcd2.c generic/hgcd2_jacobi.c generic/hgcd_appr.c generic/hgcd.c
+srcs += generic/hgcd_jacobi.c generic/hgcd_matrix.c
+srcs += generic/hgcd_reduce.c generic/hgcd_step.c
+srcs += generic/invertappr.c generic/invert.c
+srcs += generic/jacbase.c generic/jacobi_2.c generic/jacobi.c
+srcs += generic/lshift.c generic/lshiftc.c
+srcs += generic/matrix22_mul1_inverse_vector.c generic/matrix22_mul.c
+srcs += generic/mod_1_1.c generic/mod_1_2.c generic/mod_1_3.c generic/mod_1_4.c
+srcs += generic/mod_1.c generic/mod_34lsub1.c generic/mode1o.c
+srcs += generic/mu_bdiv_q.c generic/mu_bdiv_qr.c
+srcs += generic/mu_divappr_q.c generic/mu_div_q.c generic/mu_div_qr.c
+srcs += generic/mul_1.c generic/mul_basecase.c generic/mul.c generic/mul_fft.c
+srcs += generic/mullo_basecase.c generic/mullo_n.c
+srcs += generic/mulmid_basecase.c generic/mulmid.c generic/mulmid_n.c
+srcs += generic/mulmod_bnm1.c generic/mul_n.c
+srcs += generic/neg.c generic/nussbaumer_mul.c
+srcs += generic/perfpow.c generic/perfsqr.c
+srcs += generic/pow_1.c generic/powlo.c generic/powm.c
+srcs += generic/pre_divrem_1.c generic/pre_mod_1.c
+srcs += generic/random2.c generic/random.c
+srcs += generic/redc_1.c generic/redc_2.c generic/redc_n.c
+srcs += generic/remove.c generic/rootrem.c generic/rshift.c
+srcs += generic/sbpi1_bdiv_q.c generic/sbpi1_bdiv_qr.c generic/sbpi1_bdiv_r.c
+srcs += generic/sbpi1_divappr_q.c generic/sbpi1_div_q.c generic/sbpi1_div_qr.c
+srcs += generic/scan0.c generic/scan1.c
+srcs += generic/sec_invert.c generic/sec_mul.c generic/sec_powm.c
+srcs += generic/sec_sqr.c generic/sec_tabselect.c
+srcs += generic/set_str.c generic/sizeinbase.c
+srcs += generic/sqr_basecase.c generic/sqr.c
+srcs += generic/sqrlo_basecase.c generic/sqrlo.c generic/sqrmod_bnm1.c
+srcs += generic/sqrtrem.c generic/strongfibo.c
+srcs += generic/sub_1.c generic/sub.c
+srcs += generic/sub_err1_n.c generic/sub_err2_n.c generic/sub_err3_n.c
+srcs += generic/submul_1.c generic/sub_n.c
+srcs += generic/tdiv_qr.c
+srcs += generic/toom22_mul.c generic/toom2_sqr.c generic/toom32_mul.c
+srcs += generic/toom33_mul.c generic/toom3_sqr.c generic/toom42_mul.c
+srcs += generic/toom42_mulmid.c generic/toom43_mul.c generic/toom44_mul.c
+srcs += generic/toom4_sqr.c generic/toom52_mul.c generic/toom53_mul.c
+srcs += generic/toom54_mul.c generic/toom62_mul.c generic/toom63_mul.c
+srcs += generic/toom6h_mul.c generic/toom6_sqr.c
+srcs += generic/toom8h_mul.c generic/toom8_sqr.c
+srcs += generic/toom_couple_handling.c
+srcs += generic/toom_eval_dgr3_pm1.c generic/toom_eval_dgr3_pm2.c
+srcs += generic/toom_eval_pm1.c generic/toom_eval_pm2.c
+srcs += generic/toom_eval_pm2exp.c generic/toom_eval_pm2rexp.c
+srcs += generic/toom_interpolate_12pts.c generic/toom_interpolate_16pts.c
+srcs += generic/toom_interpolate_5pts.c generic/toom_interpolate_6pts.c
+srcs += generic/toom_interpolate_7pts.c generic/toom_interpolate_8pts.c
+srcs += generic/trialdiv.c
+srcs += generic/zero.c generic/zero_p.c
+
+: foreach $(srcs) |> !cc-mpn |>
+
+# --- Multi-function templates ---
+# Each template is compiled N times with different -DOPERATION_ to produce N objects.
+
+# logops_n.c → and_n andn_n ior_n iorn_n nand_n nior_n xnor_n xor_n
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC and_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_and_n -c %f -o %o |> and_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC andn_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_andn_n -c %f -o %o |> andn_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC ior_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_ior_n -c %f -o %o |> ior_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC iorn_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_iorn_n -c %f -o %o |> iorn_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC nand_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_nand_n -c %f -o %o |> nand_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC nior_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_nior_n -c %f -o %o |> nior_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC xnor_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_xnor_n -c %f -o %o |> xnor_n.o <objs>
+: generic/logops_n.c | $(S)/gmp/<gen-headers> |> ^ CC xor_n^ $(CC) $(GMP_CFLAGS) -DOPERATION_xor_n -c %f -o %o |> xor_n.o <objs>
+
+# popham.c → popcount hamdist
+: generic/popham.c | $(S)/gmp/<gen-headers> |> ^ CC popcount^ $(CC) $(GMP_CFLAGS) -DOPERATION_popcount -c %f -o %o |> popcount.o <objs>
+: generic/popham.c | $(S)/gmp/<gen-headers> |> ^ CC hamdist^ $(CC) $(GMP_CFLAGS) -DOPERATION_hamdist -c %f -o %o |> hamdist.o <objs>
+
+# sec_aors_1.c → sec_add_1 sec_sub_1
+: generic/sec_aors_1.c | $(S)/gmp/<gen-headers> |> ^ CC sec_add_1^ $(CC) $(GMP_CFLAGS) -DOPERATION_sec_add_1 -c %f -o %o |> sec_add_1.o <objs>
+: generic/sec_aors_1.c | $(S)/gmp/<gen-headers> |> ^ CC sec_sub_1^ $(CC) $(GMP_CFLAGS) -DOPERATION_sec_sub_1 -c %f -o %o |> sec_sub_1.o <objs>
+
+# sec_div.c → sec_div_qr sec_div_r
+: generic/sec_div.c | $(S)/gmp/<gen-headers> |> ^ CC sec_div_qr^ $(CC) $(GMP_CFLAGS) -DOPERATION_sec_div_qr -c %f -o %o |> sec_div_qr.o <objs>
+: generic/sec_div.c | $(S)/gmp/<gen-headers> |> ^ CC sec_div_r^ $(CC) $(GMP_CFLAGS) -DOPERATION_sec_div_r -c %f -o %o |> sec_div_r.o <objs>
+
+# sec_pi1_div.c → sec_pi1_div_qr sec_pi1_div_r
+: generic/sec_pi1_div.c | $(S)/gmp/<gen-headers> |> ^ CC sec_pi1_div_qr^ $(CC) $(GMP_CFLAGS) -DOPERATION_sec_pi1_div_qr -c %f -o %o |> sec_pi1_div_qr.o <objs>
+: generic/sec_pi1_div.c | $(S)/gmp/<gen-headers> |> ^ CC sec_pi1_div_r^ $(CC) $(GMP_CFLAGS) -DOPERATION_sec_pi1_div_r -c %f -o %o |> sec_pi1_div_r.o <objs>
+
+# --- Generated table sources (produced by gmp/Tupfile generators) ---
+: foreach fib_table.c mp_bases.c |> !cc-mpn |>
+
+# --- Archive all mpn objects ---
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> mpn.a

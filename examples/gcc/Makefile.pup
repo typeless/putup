@@ -1,0 +1,27 @@
+# Makefile.pup - Build GCC prerequisite libraries with putup
+#
+# Usage:
+#   make -f Makefile.pup                # Build GMP + MPFR + MPC
+#   make -f Makefile.pup clean          # Clean build artifacts
+#   make -f Makefile.pup distclean      # Full clean
+
+.PHONY: all build configure clean distclean
+
+SRCDIR ?= ../gcc-15.2.0
+BUILD ?= ../build-gcc
+CONFIG ?= configs/x86_64-linux.config
+
+all: build
+
+build:
+	putup configure --config $(CONFIG) -S $(SRCDIR) -B $(BUILD)
+	putup build -S $(SRCDIR) -B $(BUILD) -j$$(nproc)
+
+configure:
+	putup configure --config $(CONFIG) -S $(SRCDIR) -B $(BUILD)
+
+clean:
+	putup clean -S $(SRCDIR) -B $(BUILD)
+
+distclean:
+	putup distclean -S $(SRCDIR) -B $(BUILD)
