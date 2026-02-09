@@ -50,7 +50,7 @@ auto resolve_variant_path(
     std::filesystem::path const& path
 ) -> std::filesystem::path
 {
-    auto path_str = path.string();
+    auto path_str = path.generic_string();
     if (!output_root_prefix.empty() && path_str.starts_with(output_root_prefix)
         && (path_str.size() == output_root_prefix.size() || path_str[output_root_prefix.size()] == '/')) {
         return source_root / path;
@@ -656,7 +656,7 @@ auto Scheduler::execute_job(
         impl_->options.output_root,
         source_root
     );
-    auto output_root_prefix = relative_output_root.string();
+    auto output_root_prefix = relative_output_root.generic_string();
     for (auto const& output : job.outputs) {
         auto output_path = std::filesystem::path { output };
         if (!output_path.is_absolute()) {

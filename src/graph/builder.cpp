@@ -44,7 +44,7 @@ auto normalize_path(std::string const& path_str) -> std::string
         return path_str;
     }
     auto path = fs::path { path_str }.lexically_normal();
-    return path.string();
+    return path.generic_string();
 }
 
 /// Normalize a directory path for group key lookup.
@@ -315,7 +315,7 @@ auto walk_to_file_node(
     // Walk to parent directory
     auto target_dir_id = start_id;
     if (!parent_path.empty() && parent_path != ".") {
-        target_dir_id = walk_path_to_directory(graph, start_id, parent_path.string());
+        target_dir_id = walk_path_to_directory(graph, start_id, parent_path.generic_string());
     }
 
     // Find or create the file node
@@ -570,7 +570,7 @@ auto expand_glob_pattern(
         for (auto& p : *expanded) {
             // Prefix with current_dir to make path relative to project root
             if (!ctx.current_dir.empty()) {
-                result.push_back((ctx.current_dir / p).string());
+                result.push_back((ctx.current_dir / p).generic_string());
             } else {
                 result.push_back(std::move(p));
             }
@@ -588,7 +588,7 @@ auto expand_glob_pattern(
     // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
     // but the glob pattern is relative to current directory (e.g., *.o)
     // We need to strip the build root prefix and match against the relative path
-    auto pattern_path = ctx.current_dir.empty() ? path : (ctx.current_dir / path).lexically_normal().string();
+    auto pattern_path = ctx.current_dir.empty() ? path : (ctx.current_dir / path).lexically_normal().generic_string();
     auto glob = parser::Glob { pattern_path };
     auto build_root_name = ctx.graph->get_build_root_name();
     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
@@ -630,15 +630,15 @@ auto apply_exclusions(
                 if (expanded && !expanded->empty()) {
                     for (auto const& p : *expanded) {
                         auto normalized = ctx.current_dir.empty()
-                            ? fs::path { p }.lexically_normal().string()
-                            : (ctx.current_dir / p).lexically_normal().string();
+                            ? fs::path { p }.lexically_normal().generic_string()
+                            : (ctx.current_dir / p).lexically_normal().generic_string();
                         std::erase(result, normalized);
                     }
                 }
             } else {
                 auto normalized_excl = ctx.current_dir.empty()
-                    ? fs::path { excl }.lexically_normal().string()
-                    : (ctx.current_dir / excl).lexically_normal().string();
+                    ? fs::path { excl }.lexically_normal().generic_string()
+                    : (ctx.current_dir / excl).lexically_normal().generic_string();
                 std::erase(result, normalized_excl);
             }
         }
@@ -1136,13 +1136,13 @@ auto process_include(
         if (tuprules.empty()) {
             return {}; // No Tuprules.tup found, silently continue
         }
-        include_path = tuprules.string();
+        include_path = tuprules.generic_string();
     } else {
         auto resolved = resolve_include_path(ctx, include_root, inc.path);
         if (!resolved) {
             return pup::unexpected<Error>(resolved.error());
         }
-        include_path = resolved->string();
+        include_path = resolved->generic_string();
     }
 
     // Prevent infinite recursion
@@ -1153,7 +1153,7 @@ auto process_include(
 
     // Add included file to sticky_sources for dependency tracking
     // Included files live in config_root, so use include_root for relative path
-    auto inc_rel = fs::relative(include_path, include_root).string();
+    auto inc_rel = fs::relative(include_path, include_root).generic_string();
     auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
     if (inc_node_result) {
         ctx.sticky_sources.push_back(*inc_node_result);
@@ -1187,7 +1187,7 @@ auto process_include(
         // Compute relative path from Tupfile directory to include file's directory
         auto include_dir = fs::path { include_path }.parent_path();
         auto rel_path = fs::relative(include_dir, include_root / ctx.current_dir);
-        ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.string();
+        ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.generic_string();
     }
 
     // Save and update current_file for variable tracking callback
@@ -1551,7 +1551,7 @@ auto expand_rule(
         .inputs = file_inputs,
         .order_only_inputs = order_only_paths,
         .outputs = *outputs,
-        .working_dir = ctx.current_dir.string(),
+        .working_dir = ctx.current_dir.generic_string(),
     };
 
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
@@ -1770,7 +1770,7 @@ auto expand_inputs(
             // Include the path (pattern or literal)
             // For globs, this preserves the pattern for %g expansion in foreach rules
             if (!ctx.current_dir.empty()) {
-                result.push_back((ctx.current_dir / path).lexically_normal().string());
+                result.push_back((ctx.current_dir / path).lexically_normal().generic_string());
             } else {
                 result.push_back(path);
             }
@@ -1825,7 +1825,7 @@ auto expand_outputs(
 
             // Combine with current directory and normalize
             // Output paths are relative to Tupfile directory
-            auto full_output_path = (ctx.current_dir / output_path).lexically_normal().string();
+            auto full_output_path = (ctx.current_dir / output_path).lexically_normal().generic_string();
 
             // All outputs go under BUILD_ROOT_ID.
             // This ensures Ghost nodes (created for inputs referencing not-yet-generated files)
@@ -1978,9 +1978,9 @@ auto get_or_create_file_node(
         if (normalized.string().starts_with("..")) {
             // Use absolute path for out-of-tree files (without resolving symlinks)
             auto abs = (ctx.options.source_root / normalized).lexically_normal();
-            resolved = abs.string();
+            resolved = abs.generic_string();
         } else {
-            resolved = normalized.string();
+            resolved = normalized.generic_string();
         }
     }
 
@@ -2244,7 +2244,7 @@ auto build_graph(
     // For in-tree builds (source == output), this is empty.
     // For variant builds (-B build), this is "build".
     if (state.options.source_root != state.options.output_root) {
-        auto build_root_name = fs::relative(state.options.output_root, state.options.source_root).string();
+        auto build_root_name = fs::relative(state.options.output_root, state.options.source_root).generic_string();
         graph.set_build_root_name(std::move(build_root_name));
     }
 
@@ -2286,7 +2286,7 @@ auto add_tupfile(
 
     // Create Tupfile node and add to sticky_sources for dependency tracking
     // For 3-tree builds, store relative to config_root (Tupfile's actual location)
-    auto tupfile_rel = std::filesystem::relative(tupfile.filename, tupfile_root).string();
+    auto tupfile_rel = std::filesystem::relative(tupfile.filename, tupfile_root).generic_string();
     auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
     if (tupfile_node_result) {
         ctx.sticky_sources.push_back(*tupfile_node_result);
@@ -2300,7 +2300,7 @@ auto add_tupfile(
         auto config_dir_id = NodeId { 0 };
         if (!state.options.config_path.empty()) {
             auto config_parent = std::filesystem::path { state.options.config_path }.parent_path();
-            auto config_dir_rel = std::filesystem::relative(config_parent, state.options.source_root).string();
+            auto config_dir_rel = std::filesystem::relative(config_parent, state.options.source_root).generic_string();
             if (config_dir_rel.empty() || config_dir_rel == ".") {
                 config_dir_rel = "";
             }

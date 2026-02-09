@@ -502,7 +502,7 @@ auto expand_path(
         if (end > start) {
             // Normalize path to remove // and resolve . and .. components
             auto path_str = expanded.substr(start, end - start);
-            auto normalized = std::filesystem::path { path_str }.lexically_normal().string();
+            auto normalized = std::filesystem::path { path_str }.lexically_normal().generic_string();
             result.push_back(std::move(normalized));
         }
         start = end;

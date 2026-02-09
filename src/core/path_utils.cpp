@@ -13,11 +13,11 @@ auto is_path_under(
     std::filesystem::path const& root
 ) -> bool
 {
-    auto path_str = path.string();
-    auto root_str = root.string();
+    auto path_str = path.generic_string();
+    auto root_str = root.generic_string();
 
     // Handle trailing slash
-    while (!root_str.empty() && (root_str.back() == '/' || root_str.back() == '\\')) {
+    while (!root_str.empty() && root_str.back() == '/') {
         root_str.pop_back();
     }
 
@@ -32,8 +32,7 @@ auto is_path_under(
     }
 
     // Ensure we match at directory boundary
-    auto const sep = path_str[root_str.size()];
-    return sep == '/' || sep == '\\';
+    return path_str[root_str.size()] == '/';
 }
 
 auto relative_to_root(
@@ -45,11 +44,11 @@ auto relative_to_root(
         return "";
     }
 
-    auto path_str = path.string();
-    auto root_str = root.string();
+    auto path_str = path.generic_string();
+    auto root_str = root.generic_string();
 
     // Handle trailing slash
-    while (!root_str.empty() && (root_str.back() == '/' || root_str.back() == '\\')) {
+    while (!root_str.empty() && root_str.back() == '/') {
         root_str.pop_back();
     }
 

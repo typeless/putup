@@ -49,16 +49,16 @@ auto parse_targets_for_variants(
             if (!target.scope_or_output.empty()) {
                 if (target.is_output) {
                     // Store source-root-relative path (graph uses source-root-relative)
-                    result.output_targets.push_back(target.scope_or_output.string());
+                    result.output_targets.push_back(target.scope_or_output.generic_string());
                 } else {
-                    result.scopes.push_back(target.scope_or_output.string());
+                    result.scopes.push_back(target.scope_or_output.generic_string());
                 }
             }
         } else {
             if (target.is_output) {
-                result.output_targets.push_back(target.scope_or_output.string());
+                result.output_targets.push_back(target.scope_or_output.generic_string());
             } else {
-                result.scopes.push_back(target.scope_or_output.string());
+                result.scopes.push_back(target.scope_or_output.generic_string());
             }
         }
     }

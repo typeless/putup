@@ -152,7 +152,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             if (node_id::is_command(input_id)) {
                 auto path = std::filesystem::path { node_path };
                 if (path.has_parent_path()) {
-                    auto parent = path.parent_path().string();
+                    auto parent = path.parent_path().generic_string();
                     if (!parent.empty() && parent != ".") {
                         output_dirs.insert(parent);
                     }
@@ -377,13 +377,13 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 
         // Convert project-root-relative paths to working-dir-relative
         auto source_abs = ctx.layout().source_root / source_file;
-        auto source_rel = std::filesystem::relative(source_abs, working_dir).string();
+        auto source_rel = std::filesystem::relative(source_abs, working_dir).generic_string();
 
         auto output_rel = std::string {};
         if (!output_file.empty()) {
             // Generated files exist at output_root
             auto output_abs = ctx.layout().output_root / output_file;
-            output_rel = std::filesystem::relative(output_abs, working_dir).string();
+            output_rel = std::filesystem::relative(output_abs, working_dir).generic_string();
         }
 
         auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);

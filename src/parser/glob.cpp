@@ -232,8 +232,8 @@ auto glob_expand(
         // For recursive, match against relative path
         if (is_recursive) {
             auto rel = fs::relative(path, search_dir);
-            if (glob.matches(rel.string())) {
-                auto result_path = dir_part.empty() ? rel.string() : std::string { dir_part } + "/" + rel.string();
+            if (glob.matches(rel.generic_string())) {
+                auto result_path = dir_part.empty() ? rel.generic_string() : std::string { dir_part } + "/" + rel.generic_string();
                 results.push_back(result_path);
             }
         } else {
