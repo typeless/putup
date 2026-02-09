@@ -103,9 +103,9 @@ public:
     auto tupfile_path(std::string_view dir) const -> std::string
     {
         if (dir.empty() || dir == ".") {
-            return (test_root_ / "Tupfile").string();
+            return (test_root_ / "Tupfile").generic_string();
         }
-        return (test_root_ / dir / "Tupfile").string();
+        return (test_root_ / dir / "Tupfile").generic_string();
     }
 
 private:
@@ -185,7 +185,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
     auto vars = VarDb {};
-    vars.set("ROOT", fixture.root().string());
+    vars.set("ROOT", fixture.root().generic_string());
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {

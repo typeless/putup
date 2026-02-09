@@ -310,7 +310,7 @@ auto get_or_create_dir(
 ) -> pup::NodeId
 {
     auto normalized = dir_path.lexically_normal();
-    auto path_str = normalized.string();
+    auto path_str = normalized.generic_string();
 
     if (path_str.empty() || path_str == ".") {
         return pup::NodeId { 0 };
@@ -611,9 +611,9 @@ auto process_implicit_deps(
 
             auto rel_path = std::string {};
             if (pup::is_path_under(abs_path, ctx.source_root)) {
-                rel_path = std::filesystem::relative(abs_path, ctx.source_root).string();
+                rel_path = std::filesystem::relative(abs_path, ctx.source_root).generic_string();
             } else {
-                rel_path = abs_path.string();
+                rel_path = abs_path.generic_string();
             }
 
             auto it = ctx.path_to_id.find(rel_path);
@@ -1142,9 +1142,9 @@ auto build_single_variant(
                         }
                         continue;
                     }
-                    deps.push_back(rel.string());
+                    deps.push_back(rel.generic_string());
                 } else {
-                    deps.push_back(resolved.string());
+                    deps.push_back(resolved.generic_string());
                 }
             }
         }

@@ -118,7 +118,7 @@ auto compute_tup_variantdir(
         auto output_dir = output_root / source_dir;
         auto src_dir = source_root / source_dir;
         auto rel = std::filesystem::relative(output_dir, src_dir);
-        return rel.string();
+        return rel.generic_string();
     }
 
     return ".";
@@ -336,7 +336,7 @@ auto parse_directory(std::filesystem::path const& rel_dir, ParseContext& ctx) ->
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
 
-    auto tup_cwd = normalized_dir.string();
+    auto tup_cwd = normalized_dir.generic_string();
 
     // In the "overlay" model, Tupfiles from config_root are treated as if they
     // were in source_root. Commands run from source_root, so all relative paths
@@ -355,7 +355,7 @@ auto parse_directory(std::filesystem::path const& rel_dir, ParseContext& ctx) ->
     if (ctx.source_root != ctx.output_root) {
         auto source_dir = join_path(ctx.source_root, rel_dir_normalized);
         auto output_dir = join_path(ctx.output_root, rel_dir_normalized);
-        tup_outdir = std::filesystem::relative(output_dir, source_dir).string();
+        tup_outdir = std::filesystem::relative(output_dir, source_dir).generic_string();
     }
 
     // Get the scoped config for this directory (walks up tree to find nearest tup.config)
@@ -603,7 +603,7 @@ auto build_context(
                                    ctx.impl_->layout.output_root,
                                    ctx.impl_->layout.source_root
         )
-                                   .string();
+                                   .generic_string();
         ctx.impl_->graph.set_build_root_name(std::move(build_root_name));
     }
 
