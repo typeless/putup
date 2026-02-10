@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -1392,21 +1393,8 @@ auto expand_rule(
             }
             auto group_id = *group_id_result;
 
-            // Get files that are members of this group (via file → group edges)
-            auto members = get_group_members(*ctx.graph, group_id);
-            if (!members.empty()) {
-                // Populate rule_order_only_groups for %<group> command expansion
-                // Group members are outputs, so use transform_output_path for variant mapping
-                auto& paths = rule_order_only_groups[pattern.group_name];
-                for (auto id : members) {
-                    auto path = ctx.graph->get_full_path(id);
-                    if (!path.empty()) {
-                        auto transformed = transform_output_path(tc, path);
-                        paths.push_back(std::move(transformed));
-                    }
-                }
-            }
-            // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
+            // Preserve %<group> literally — resolved after all Tupfiles are parsed
+            rule_order_only_groups[pattern.group_name] = { std::format("%<{}>", pattern.group_name) };
             deferred_group_ids.insert(group_id);
         } else if (!pattern.path.empty()) {
             // Path expression that may contain <group> suffix: ../include/<gen-headers>
@@ -1426,45 +1414,33 @@ auto expand_rule(
                 }
                 auto group_id = *group_id_result;
 
-                // Get files that are members of this group (via file → group edges)
-                auto members = get_group_members(*ctx.graph, group_id);
-                if (!members.empty()) {
-                    // Populate rule_order_only_groups for %<group> command expansion
-                    // Group members are outputs, so use transform_output_path for variant mapping
-                    auto& paths = rule_order_only_groups[group_ref->group_name];
-                    for (auto id : members) {
-                        auto p = ctx.graph->get_full_path(id);
-                        if (!p.empty()) {
-                            auto transformed = transform_output_path(tc, p);
-                            paths.push_back(std::move(transformed));
-                        }
-                    }
-                } else {
-                    // Preserve %<group> pattern literally - will be expanded in resolve_deferred_order_only_edges()
-                    // This ensures the pattern isn't lost during command expansion
-                    auto group_pattern = std::format("%<{}>", group_ref->group_name);
-                    rule_order_only_groups[group_ref->group_name] = { std::move(group_pattern) };
-                }
-                // ALWAYS defer edge creation - the group might grow as more Tupfiles are parsed
+                // Preserve %<group> literally — resolved after all Tupfiles are parsed
+                rule_order_only_groups[group_ref->group_name] = { std::format("%<{}>", group_ref->group_name) };
                 deferred_group_ids.insert(group_id);
             }
         }
     }
 
-    // Temporarily enhance resolve_order_only_group to include this rule's groups
-    // ScopeGuard ensures restoration even on early returns
+    // Override resolve_order_only_group for this rule's command expansion.
+    // All %<group> patterns are preserved literally for deferred resolution.
+    // ScopeGuard ensures restoration even on early returns.
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
-    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &original_resolver](std::string_view name
+    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &deferred_group_ids, &ctx, &state](std::string_view name
                                          ) -> std::vector<std::string> {
-        // First check groups referenced by this rule (handles cross-directory)
         auto it = rule_order_only_groups.find(std::string { name });
         if (it != rule_order_only_groups.end()) {
             return it->second;
         }
-        // Fall back to original resolver (local groups)
-        if (original_resolver) {
-            return original_resolver(name);
+        // Local group not in this rule's inputs — also defer
+        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir.generic_string();
+        auto key = GroupKey { dir, std::string { name } };
+        auto found = state.group_nodes.find(key);
+        if (found != state.group_nodes.end()) {
+            deferred_group_ids.insert(found->second);
+            auto pattern = std::vector<std::string> { std::format("%<{}>", name) };
+            rule_order_only_groups[std::string { name }] = pattern;
+            return pattern;
         }
         return {};
     };
@@ -2442,82 +2418,86 @@ auto resolve_deferred_order_only_edges(
     BuilderState& state
 ) -> Result<void>
 {
-    // Resolve deferred order-only edges
-    // With groups as first-class nodes, we create a single edge: group → command
+    // Pass 1: Create graph edges and accumulate members per (command, group_name).
+    // Same-named groups from different directories contribute to the same replacement.
+    using MemberKey = std::pair<NodeId, std::string>; // (command_id, group_name)
+    auto accumulated = std::map<MemberKey, std::vector<NodeId>> {};
+
     for (auto const& edge : state.deferred_edges) {
-        // Verify group node exists and has members
         auto const* group_node = graph.get_file_node(edge.group_id);
         if (!group_node || group_node->type != NodeType::Group) {
             continue;
         }
 
         auto members = get_group_members(graph, edge.group_id);
-        if (!members.empty()) {
-            // Create single order-only edge: group → command
-            (void)graph.add_order_only_edge(edge.group_id, edge.command_id);
-
-            // Expand %<group> pattern in command string (was preserved during parsing)
-            // Extract group name from node's basename (e.g., "<archives>" -> "archives")
-            auto group_basename = std::string { graph.str(group_node->name) };
-            if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
-                auto group_name = group_basename.substr(1, group_basename.size() - 2);
-                auto pattern = std::format("%<{}>", group_name);
-
-                // Get command node and check if pattern exists
-                auto* cmd_node = graph.get_command_node(edge.command_id);
-                auto cmd_str = std::string { graph.str(cmd_node->instruction_id) };
-                if (cmd_node && cmd_str.find(pattern) != std::string::npos) {
-                    // Construct path transform context from command's source_dir
-                    auto source_dir_str = std::string { graph.str(cmd_node->source_dir) };
-                    auto tc = PathTransformContext {
-                        .source_to_root = pup::compute_source_to_root(source_dir_str),
-                        .current_dir_str = source_dir_str,
-                        .source_root = state.options.source_root,
-                        .output_root = state.options.output_root,
-                    };
-
-                    // Transform member paths and build replacement string
-                    auto replacement = std::string {};
-                    for (auto id : members) {
-                        auto p = graph.get_full_path(id);
-                        if (!p.empty()) {
-                            if (!replacement.empty()) {
-                                replacement += ' ';
-                            }
-                            replacement += transform_output_path(tc, p);
-                        }
-                    }
-
-                    // Replace pattern in command
-                    auto pos = cmd_str.find(pattern);
-                    while (pos != std::string::npos) {
-                        cmd_str.replace(pos, pattern.size(), replacement);
-                        pos = cmd_str.find(pattern, pos + replacement.size());
-                    }
-                    cmd_node->instruction_id = graph.intern(cmd_str);
-
-                    // Also update display if it contains the pattern
-                    auto display_str = std::string { graph.str(cmd_node->display) };
-                    if (display_str.find(pattern) != std::string::npos) {
-                        pos = display_str.find(pattern);
-                        while (pos != std::string::npos) {
-                            display_str.replace(pos, pattern.size(), replacement);
-                            pos = display_str.find(pattern, pos + replacement.size());
-                        }
-                        cmd_node->display = graph.intern(display_str);
-                    }
-                }
-            }
-        } else {
-            // Group exists but has no members - warn about potential typo
+        if (members.empty()) {
             auto group_path = graph.get_full_path(edge.group_id);
             state.warnings.push_back(std::format("order-only group {} has no members", group_path));
+            continue;
+        }
+
+        (void)graph.add_order_only_edge(edge.group_id, edge.command_id);
+
+        auto group_basename = std::string { graph.str(group_node->name) };
+        if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
+            auto group_name = group_basename.substr(1, group_basename.size() - 2);
+            auto& all_members = accumulated[{ edge.command_id, group_name }];
+            all_members.insert(all_members.end(), members.begin(), members.end());
         }
     }
 
-    // Clear deferred edges after resolution
-    state.deferred_edges.clear();
+    // Pass 2: Replace %<group> patterns with the full accumulated member lists.
+    for (auto const& [key, members] : accumulated) {
+        auto const& [command_id, group_name] = key;
+        auto pattern = std::format("%<{}>", group_name);
 
+        auto* cmd_node = graph.get_command_node(command_id);
+        if (!cmd_node) {
+            continue;
+        }
+        auto cmd_str = std::string { graph.str(cmd_node->instruction_id) };
+        if (cmd_str.find(pattern) == std::string::npos) {
+            continue;
+        }
+
+        auto source_dir_str = std::string { graph.str(cmd_node->source_dir) };
+        auto tc = PathTransformContext {
+            .source_to_root = pup::compute_source_to_root(source_dir_str),
+            .current_dir_str = source_dir_str,
+            .source_root = state.options.source_root,
+            .output_root = state.options.output_root,
+        };
+
+        auto replacement = std::string {};
+        for (auto id : members) {
+            auto p = graph.get_full_path(id);
+            if (!p.empty()) {
+                if (!replacement.empty()) {
+                    replacement += ' ';
+                }
+                replacement += transform_output_path(tc, p);
+            }
+        }
+
+        auto pos = cmd_str.find(pattern);
+        while (pos != std::string::npos) {
+            cmd_str.replace(pos, pattern.size(), replacement);
+            pos = cmd_str.find(pattern, pos + replacement.size());
+        }
+        cmd_node->instruction_id = graph.intern(cmd_str);
+
+        auto display_str = std::string { graph.str(cmd_node->display) };
+        if (display_str.find(pattern) != std::string::npos) {
+            pos = display_str.find(pattern);
+            while (pos != std::string::npos) {
+                display_str.replace(pos, pattern.size(), replacement);
+                pos = display_str.find(pattern, pos + replacement.size());
+            }
+            cmd_node->display = graph.intern(display_str);
+        }
+    }
+
+    state.deferred_edges.clear();
     return {};
 }
 
