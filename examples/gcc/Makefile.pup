@@ -4,24 +4,30 @@
 #   make -f Makefile.pup                # Build GMP + MPFR + MPC
 #   make -f Makefile.pup clean          # Clean build artifacts
 #   make -f Makefile.pup distclean      # Full clean
+#
+# 3-tree layout:
+#   -C .             Tupfiles live here (examples/gcc/)
+#   -S $(SRCDIR)     GCC source tree (read-only)
+#   -B $(BUILD)      Build output directory
 
 .PHONY: all build configure clean distclean
 
 SRCDIR ?= ../gcc-15.2.0
 BUILD ?= ../build-gcc
 CONFIG ?= configs/x86_64-linux.config
+TREES = -C . -S $(SRCDIR) -B $(BUILD)
 
 all: build
 
 build:
-	putup configure --config $(CONFIG) -S $(SRCDIR) -B $(BUILD)
-	putup build -S $(SRCDIR) -B $(BUILD) -j$$(nproc)
+	putup configure --config $(CONFIG) $(TREES)
+	putup $(TREES) -j$$(nproc)
 
 configure:
-	putup configure --config $(CONFIG) -S $(SRCDIR) -B $(BUILD)
+	putup configure --config $(CONFIG) $(TREES)
 
 clean:
-	putup clean -S $(SRCDIR) -B $(BUILD)
+	putup clean $(TREES)
 
 distclean:
-	putup distclean -S $(SRCDIR) -B $(BUILD)
+	putup distclean $(TREES)

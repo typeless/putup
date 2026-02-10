@@ -11,19 +11,19 @@ wget https://gcc.gnu.org/pub/gcc/releases/gcc-15.2.0/gcc-15.2.0.tar.xz
 tar xf gcc-15.2.0.tar.xz
 cd gcc-15.2.0 && ./contrib/download_prerequisites && cd ..
 
-# 2. Build
-cd examples/gcc   # or wherever the Tupfiles are
-putup configure --config configs/x86_64-linux.config -S ../gcc-15.2.0 -B build
-putup build -S ../gcc-15.2.0 -B build
+# 2. Build (3-tree: -C = Tupfiles, -S = GCC sources, -B = output)
+cd examples/gcc
+putup configure --config configs/x86_64-linux.config -C . -S /path/to/gcc-15.2.0 -B build
+putup -C . -S /path/to/gcc-15.2.0 -B build
 ```
 
 ## What Gets Built
 
 | Library | Version | Sources | Output |
 |---------|---------|---------|--------|
-| GMP | 6.2.1 | ~420 files across 8 directories | `build/gmp/libgmp.a` |
-| MPFR | 4.1.0 | ~220 files in src/ | `build/mpfr/src/libmpfr.a` |
-| MPC | 1.2.1 | ~80 files in src/ | `build/mpc/src/libmpc.a` |
+| GMP | 6.2.1 | 515 objects across 8 directories | `build/gmp/libgmp.a` (1.4M) |
+| MPFR | 4.1.0 | 241 objects in src/ | `build/mpfr/src/libmpfr.a` (1.2M) |
+| MPC | 1.2.1 | 82 objects in src/ | `build/mpc/src/libmpc.a` (267K) |
 
 ## Dependency Chain
 
@@ -40,7 +40,7 @@ MPC (needs GMP + MPFR headers) → libmpc.a
 Platform-specific settings live in `tup.config`, populated from a config file:
 
 ```bash
-putup configure --config configs/x86_64-linux.config -B build
+putup configure --config configs/x86_64-linux.config -C . -S /path/to/gcc-15.2.0 -B build
 ```
 
 The config maps `CONFIG_<LIB>_*` variables to `#define` statements in each library's
@@ -68,7 +68,8 @@ and pass it to `putup configure`.
 - **tup.config-driven config.h generation**: Platform defines from `tup.config` via `!gen-config`
 - **Multi-directory builds**: GMP spans 8 subdirectories, each with its own Tupfile
 - **Host tool generation**: GMP table generators compiled and run during the build
-- **Cross-directory groups**: Subdirectory objects collected via `<gmp-objs>` group
+- **3-tree builds**: Tupfiles, GCC sources, and build output in separate directories (`-C`, `-S`, `-B`)
+- **Cross-directory groups**: Subdirectory objects collected via `<objs>` groups
 - **Header generation**: gmp.h generated from template via sed with `@()` substitutions
 - **Inter-library dependencies**: Order-only groups ensure correct build ordering
 
@@ -91,5 +92,6 @@ and pass it to `putup configure`.
 
 - Uses generic C implementations only (no assembly) -- equivalent to `--disable-assembly`
 - Requires: gcc (or compatible C compiler)
-- The GMP build compiles ~420 source files using mini-gmp-based generators for lookup tables
+- 1708 build commands total, completes in ~10 seconds on a modern machine
+- The GMP build compiles 515 source files using mini-gmp-based generators for lookup tables
 - MPFR's `mpfr-mini-gmp.c` compiles to empty when not using mini-gmp mode
