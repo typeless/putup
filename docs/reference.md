@@ -1092,6 +1092,41 @@ If only `CONFIG_CFLAGS` changes:
 
 This matches tup's fine-grained variable tracking behavior.
 
+**Scoped Config Merging:**
+
+Subdirectories can have their own `tup.config` files. When a Tupfile in `sub/` is parsed, putup collects every `tup.config` from the output root down to `sub/` and merges them. **Parent configs override child configs on collision** — the integrator always wins:
+
+```
+build/tup.config           # Integrator overrides (highest precedence)
+build/sub/tup.config       # Component defaults (lowest precedence)
+```
+
+This is the config counterpart of `Tuprules.tup` `?=` defaults: a component can ship sensible defaults that an integrator overrides simply by setting the same variable in a parent `tup.config`.
+
+```ini
+# build/gmp/tup.config — component defaults
+CONFIG_CC=gcc
+CONFIG_CFLAGS=-O2
+```
+
+```ini
+# build/tup.config — integrator overrides
+CONFIG_CC=clang
+```
+
+In `gmp/`, `@(CC)` resolves to `clang` (parent wins) and `@(CFLAGS)` resolves to `-O2` (inherited from child, no collision).
+
+**Precedence (highest to lowest):**
+
+1. `-D` command-line overrides
+2. Root `tup.config` (integrator)
+3. Intermediate `tup.config` files
+4. Leaf `tup.config` (component defaults)
+
+**Clearing a variable:** Set it to empty in the parent config (`CONFIG_FOO=`) to explicitly blank a child's default.
+
+**Empty config files:** An empty `tup.config` is transparent — parent variables merge through it. This differs from the walk-up model where an empty config would block inheritance.
+
 ### 6.2 .pupignore / .tupignore
 
 Ignore files specify directories and files that putup should skip during scanning.
@@ -1588,6 +1623,8 @@ S = ../..  GMP_DIR = gmp  → $(S)/$(GMP_DIR) = ../../gmp  ✓
 # Standalone (mpfr is root, from mpfr/src/)
 S = ..     GMP_DIR = ../gmp → $(S)/$(GMP_DIR) = ../../gmp  ✓
 ```
+
+**Scoped `tup.config` defaults:** Components can also ship default config values in their own `tup.config` — parent configs override child configs on collision (see §6.1 *Scoped Config Merging*).
 
 See `examples/gcc/` for a complete working example with three interdependent libraries.
 
