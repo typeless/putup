@@ -2887,9 +2887,9 @@ SCENARIO("Target-based build with variant", "[e2e][target][variant]")
 // Scoped tup.config tests
 // =============================================================================
 
-SCENARIO("Subdir uses its own tup.config", "[e2e][scoped-config]")
+SCENARIO("Subdir merges parent and local config", "[e2e][scoped-config]")
 {
-    GIVEN("a project with sub/Tupfile using @(SUB_VAR)")
+    GIVEN("a project with root and sub configs defining different vars")
     {
         auto f = E2EFixture { "scoped_config" };
         f.mkdir("build/sub");
@@ -2901,15 +2901,15 @@ SCENARIO("Subdir uses its own tup.config", "[e2e][scoped-config]")
         {
             auto result = f.build({ "-B", "build" });
 
-            THEN("@(SUB_VAR) resolves to 'from_sub'")
+            THEN("@(SUB_VAR) resolves to 'from_sub' from local config")
             {
                 REQUIRE(result.success());
                 REQUIRE(f.read_file("build/sub/sub.txt") == "from_sub\n");
             }
 
-            THEN("@(ROOT_VAR) in sub/ resolves to '' (not inherited)")
+            THEN("@(ROOT_VAR) in sub/ resolves to 'from_root' (merged from parent)")
             {
-                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "\n");
+                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "from_root\n");
             }
         }
     }
@@ -2962,24 +2962,124 @@ SCENARIO("Root config used when no intermediate configs", "[e2e][scoped-config]"
     }
 }
 
-SCENARIO("Empty subdir config blocks inheritance", "[e2e][scoped-config]")
+SCENARIO("Empty subdir config does not block parent merge", "[e2e][scoped-config]")
 {
-    GIVEN("a project with sub/Tupfile using @(ROOT_VAR)")
+    GIVEN("a project with an empty sub config and a populated root config")
     {
         auto f = E2EFixture { "scoped_config" };
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
-        f.write_file("build/sub/tup.config", ""); // Empty config blocks lookup
+        f.write_file("build/sub/tup.config", ""); // Empty — parent vars merge through
         REQUIRE(f.init().success());
 
         WHEN("pup builds the project")
         {
             auto result = f.build({ "-B", "build" });
 
-            THEN("@(ROOT_VAR) in sub/ resolves to '' (empty config blocks lookup)")
+            THEN("@(ROOT_VAR) in sub/ resolves to 'from_root' (parent merges through)")
             {
                 REQUIRE(result.success());
-                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "\n");
+                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "from_root\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Parent config overrides child on collision", "[e2e][scoped-config]")
+{
+    GIVEN("root and sub configs both define SUB_VAR")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub");
+        f.write_file("build/tup.config", "CONFIG_SUB_VAR=from_root_override\n");
+        f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("@(SUB_VAR) in sub/ resolves to root's value (parent wins)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/sub.txt") == "from_root_override\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Multi-level config merge", "[e2e][scoped-config]")
+{
+    GIVEN("configs at root, sub, and sub/deep levels")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub/deep");
+        f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
+        f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("build/sub/deep/tup.config", "CONFIG_DEEP_VAR=from_deep\n");
+        // Custom Tupfile to test all three vars at the deep level
+        f.write_file("sub/deep/Tupfile",
+            ": |> echo \"@(ROOT_VAR)\" > %o |> root_from_deep.txt\n"
+            ": |> echo \"@(SUB_VAR)\" > %o |> sub_from_deep.txt\n"
+            ": |> echo \"@(DEEP_VAR)\" > %o |> deep.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("all three levels merge into sub/deep/")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/deep/root_from_deep.txt") == "from_root\n");
+                REQUIRE(f.read_file("build/sub/deep/sub_from_deep.txt") == "from_sub\n");
+                REQUIRE(f.read_file("build/sub/deep/deep.txt") == "from_deep\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Parent can explicitly clear a child config var", "[e2e][scoped-config]")
+{
+    GIVEN("sub defines SUB_VAR and root clears it with empty value")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub");
+        f.write_file("build/tup.config", "CONFIG_SUB_VAR=\n");
+        f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=default_value\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds the project")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("@(SUB_VAR) in sub/ is empty (parent's explicit clear wins)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/sub.txt") == "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("-D config overrides win over all config files", "[e2e][scoped-config]")
+{
+    GIVEN("root and sub configs both define SUB_VAR")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.mkdir("build/sub");
+        f.write_file("build/tup.config", "CONFIG_SUB_VAR=from_root\n");
+        f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        REQUIRE(f.init().success());
+
+        WHEN("pup builds with -D SUB_VAR=from_cli")
+        {
+            auto result = f.build({ "-B", "build", "-D", "SUB_VAR=from_cli" });
+
+            THEN("@(SUB_VAR) in sub/ resolves to CLI value (highest precedence)")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/sub.txt") == "from_cli\n");
             }
         }
     }

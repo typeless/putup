@@ -104,7 +104,8 @@ struct TupfileParseState {
     std::set<std::filesystem::path> available;
     std::set<std::filesystem::path> parsed;
     std::set<std::filesystem::path> parsing;
-    std::map<std::filesystem::path, parser::VarDb> scoped_configs;                    // Cache of per-dir configs
+    std::map<std::filesystem::path, parser::VarDb> parsed_configs;                    // Cache of parsed tup.config files (by path)
+    std::map<std::filesystem::path, parser::VarDb> scoped_configs;                    // Cache of merged per-dir configs
     std::vector<std::pair<std::string, std::string>> const* config_defines = nullptr; // CLI overrides
 };
 
@@ -223,8 +224,30 @@ auto apply_config_overrides(
     }
 }
 
-/// Find the tup.config for a directory by walking up the tree
-/// Returns pointer to the cached VarDb for that directory
+/// Parse a tup.config file, returning a cached result on repeat calls.
+auto get_or_parse_config(
+    std::filesystem::path const& path,
+    TupfileParseState& state
+) -> parser::VarDb const*
+{
+    if (auto it = state.parsed_configs.find(path); it != state.parsed_configs.end()) {
+        return &it->second;
+    }
+
+    auto result = parser::parse_config(path);
+    if (!result) {
+        fprintf(stderr, "Warning: Failed to parse %s: %s\n", path.string().c_str(), result.error().message.c_str());
+        return nullptr;
+    }
+
+    auto [it, _] = state.parsed_configs.emplace(path, std::move(*result));
+    return &it->second;
+}
+
+/// Merge all tup.config files from root down to target directory.
+/// Parent configs override child configs on collision (same authority
+/// model as Tuprules.tup ?= defaults).
+/// Returns pointer to the cached VarDb for that directory.
 auto find_config_for_dir(
     std::filesystem::path const& rel_dir,
     std::filesystem::path const& output_root,
@@ -238,35 +261,44 @@ auto find_config_for_dir(
         return &it->second;
     }
 
-    // Walk up from output_root/dir/ looking for tup.config
-    auto search_path = output_root / normalized;
-    while (true) {
-        auto config_path = search_path / "tup.config";
-        if (std::filesystem::exists(config_path)) {
-            // Found a config - load and cache it
-            auto config_result = parser::parse_config(config_path);
-            if (config_result) {
-                apply_config_overrides(*config_result, state.config_defines);
-                auto [it, _] = state.scoped_configs.emplace(normalized, std::move(*config_result));
-                return &it->second;
-            }
-            // Parse failed - warn user and return empty config (blocks inheritance)
-            fprintf(stderr, "Warning: Failed to parse %s: %s\n", config_path.string().c_str(), config_result.error().message.c_str());
-            auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
-            return &it->second;
-        }
+    // Collect all tup.config paths from root down to target directory
+    auto config_paths = std::vector<std::filesystem::path> {};
 
-        // Check if we've reached the output_root
-        if (search_path == output_root || !search_path.has_parent_path()
-            || search_path.parent_path() == search_path) {
-            break;
-        }
-
-        search_path = search_path.parent_path();
+    auto root_config = output_root / "tup.config";
+    if (std::filesystem::exists(root_config)) {
+        config_paths.push_back(root_config);
     }
 
-    // No config found - cache empty config
-    auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
+    if (!normalized.empty()) {
+        auto accumulated = output_root;
+        for (auto const& component : normalized) {
+            accumulated /= component;
+            auto config_path = accumulated / "tup.config";
+            if (std::filesystem::exists(config_path)) {
+                config_paths.push_back(config_path);
+            }
+        }
+    }
+
+    if (config_paths.empty()) {
+        auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
+        return &it->second;
+    }
+
+    // Merge leaf first (defaults), then each parent on top (overrides).
+    // config_paths is root-to-leaf, so reverse iteration gives leaf→root.
+    auto merged = parser::VarDb {};
+    for (auto it = config_paths.rbegin(); it != config_paths.rend(); ++it) {
+        auto const* cfg = get_or_parse_config(*it, state);
+        if (cfg) {
+            for (auto const& name : cfg->names()) {
+                merged.set(std::string { name }, std::string { cfg->get(name) });
+            }
+        }
+    }
+
+    apply_config_overrides(merged, state.config_defines);
+    auto [it, _] = state.scoped_configs.emplace(normalized, std::move(merged));
     return &it->second;
 }
 
@@ -624,12 +656,12 @@ auto build_context(
         printf("Found %zu directories with Tupfiles\n", ctx.impl_->state.available.size());
     }
 
-    // 4. Load config
+    // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
     auto config_path = ctx.impl_->layout.output_root / "tup.config";
     if (std::filesystem::exists(config_path)) {
-        auto config_result = Result<parser::VarDb> { parser::parse_config(config_path) };
-        if (config_result) {
-            ctx.impl_->config_vars = std::move(*config_result);
+        auto const* root_cfg = get_or_parse_config(config_path, ctx.impl_->state);
+        if (root_cfg) {
+            ctx.impl_->config_vars = *root_cfg;
             if (ctx_opts.verbose) {
                 printf("Loaded %zu config variables from %s\n", ctx.impl_->config_vars.names().size(), config_path.string().c_str());
             }

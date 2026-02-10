@@ -81,6 +81,8 @@ public:
     auto graph() const -> graph::BuildGraph const&;
     [[nodiscard]]
     auto graph() -> graph::BuildGraph&;
+    /// Root-level config vars (from output_root/tup.config + -D overrides).
+    /// Per-directory Tupfile evaluation uses scoped merged configs instead.
     [[nodiscard]]
     auto config_vars() const -> parser::VarDb const&;
     [[nodiscard]]
