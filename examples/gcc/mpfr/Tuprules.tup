@@ -1,0 +1,14 @@
+# MPFR build rules (self-contained with ?= defaults)
+
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CC ?= gcc
+AR ?= ar
+GMP_DIR ?= ../gmp
+MPFR_DIR ?= .
+
+CFLAGS  = -O2 -std=gnu11 -DHAVE_CONFIG_H
+CFLAGS += -I$(B)/$(MPFR_DIR) -I$(B)/$(MPFR_DIR)/src -I$(S)/$(MPFR_DIR)/src
+CFLAGS += -I$(B)/$(GMP_DIR) -I$(S)/$(GMP_DIR)
+
+!cc = | $(S)/$(GMP_DIR)/<gen-headers> $(S)/$(MPFR_DIR)/<mpfr-gen> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o

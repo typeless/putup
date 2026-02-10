@@ -17,6 +17,4 @@ srcs += set_q.c set_si.c set_str.c set_ui.c set_z.c
 srcs += size.c sqrt.c sqrt_ui.c sub.c sub_ui.c swap.c trunc.c
 srcs += ui_div.c ui_sub.c urandomb.c
 
-: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
-
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> mpf.a
+: foreach $(srcs) |> !cc |> %B.o ../<objs>

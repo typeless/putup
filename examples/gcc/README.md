@@ -69,9 +69,11 @@ and pass it to `putup configure`.
 - **Multi-directory builds**: GMP spans 8 subdirectories, each with its own Tupfile
 - **Host tool generation**: GMP table generators compiled and run during the build
 - **3-tree builds**: Tupfiles, GCC sources, and build output in separate directories (`-C`, `-S`, `-B`)
-- **Cross-directory groups**: Subdirectory objects collected via `<objs>` groups
+- **Cross-directory groups**: Subdirectory objects collected via `../<objs>` into parent
 - **Header generation**: gmp.h generated from template via sed with `@()` substitutions
 - **Inter-library dependencies**: Order-only groups ensure correct build ordering
+- **Self-contained libraries**: Each library has its own `Tuprules.tup` with `?=` defaults; buildable alone or composed
+- **Nested `include_rules`**: Root `Tuprules.tup` sets toolchain, per-library `Tuprules.tup` adds flags and bang macros
 
 ## Files
 
@@ -79,14 +81,17 @@ and pass it to `putup configure`.
 |------|---------|
 | `Makefile.pup` | Make wrapper for putup commands |
 | `Tupfile.ini` | Project root marker |
-| `Tuprules.tup` | S/B convention, CFLAGS, bang macros, `!gen-config` |
+| `Tuprules.tup` | Toolchain vars (CC, AR), library directory names, `!gen-config` |
+| `gmp/Tuprules.tup` | GMP CFLAGS and `!cc` |
+| `mpfr/Tuprules.tup` | MPFR CFLAGS and `!cc` |
+| `mpc/Tuprules.tup` | MPC CFLAGS and `!cc` |
 | `configs/x86_64-linux.config` | Platform config (x86-64 Linux) |
-| `gmp/Tupfile` | GMP config generation, table generators, top-level sources |
-| `gmp/{mpn,mpz,mpq,mpf,printf,scanf,rand}/Tupfile` | Per-directory compilation |
+| `gmp/Tupfile` | GMP config generation, table generators, top-level sources, archive |
+| `gmp/{mpn,mpz,mpq,mpf,printf,scanf,rand}/Tupfile` | Per-directory compilation → `../<objs>` |
 | `mpfr/Tupfile` | MPFR config generation |
-| `mpfr/src/Tupfile` | MPFR source compilation |
+| `mpfr/src/Tupfile` | MPFR source compilation + archive |
 | `mpc/Tupfile` | MPC config generation |
-| `mpc/src/Tupfile` | MPC source compilation |
+| `mpc/src/Tupfile` | MPC source compilation + archive |
 
 ## Notes
 

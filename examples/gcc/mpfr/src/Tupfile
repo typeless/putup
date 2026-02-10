@@ -50,7 +50,7 @@ srcs += yn.c zeta.c zeta_ui.c
 # Generated source
 srcs += get_patches.c
 
-: foreach $(srcs) |> !cc-mpfr |> {objs}
+: foreach $(srcs) |> !cc |> <objs>
 
 # Archive
-: {objs} |> ^ AR %o^ $(AR) rcs %o %f |> libmpfr.a $(S)/<libs>
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libmpfr.a $(S)/<libs>

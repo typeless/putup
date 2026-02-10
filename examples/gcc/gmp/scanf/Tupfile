@@ -5,6 +5,4 @@ include_rules
 srcs = doscan.c fscanf.c fscanffuns.c scanf.c sscanf.c sscanffuns.c
 srcs += vfscanf.c vscanf.c vsscanf.c
 
-: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
-
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> scanf.a
+: foreach $(srcs) |> !cc |> %B.o ../<objs>

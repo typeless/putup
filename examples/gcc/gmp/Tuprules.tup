@@ -1,0 +1,19 @@
+# GMP build rules (self-contained with ?= defaults)
+#
+# Composed mode: parent sets S, B, CC, AR, HOSTCC, GMP_DIR before this runs.
+# Standalone mode: ?= defaults take effect.
+
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CC ?= gcc
+AR ?= ar
+HOSTCC ?= gcc
+LIMB_BITS ?= 64
+NAIL_BITS ?= 0
+GMP_DIR ?= .
+
+CFLAGS  = -O2 -std=gnu11
+CFLAGS += -D__GMP_WITHIN_GMP -DHAVE_CONFIG_H
+CFLAGS += -I$(B)/$(GMP_DIR) -I$(S)/$(GMP_DIR)
+
+!cc = | $(S)/$(GMP_DIR)/<gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o

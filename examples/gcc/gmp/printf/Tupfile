@@ -8,6 +8,4 @@ srcs += printf.c printffuns.c repl-vsnprintf.c
 srcs += snprintf.c snprntffuns.c sprintf.c sprintffuns.c
 srcs += vasprintf.c vfprintf.c vprintf.c vsnprintf.c vsprintf.c
 
-: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
-
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> printf.a
+: foreach $(srcs) |> !cc |> %B.o ../<objs>

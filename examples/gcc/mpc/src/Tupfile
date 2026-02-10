@@ -19,7 +19,7 @@ srcs += sin.c sin_cos.c sinh.c sqr.c sqrt.c strtoc.c
 srcs += sub.c sub_fr.c sub_ui.c sum.c swap.c
 srcs += tan.c tanh.c uceil_log2.c ui_div.c ui_ui_sub.c urandom.c
 
-: foreach $(srcs) |> !cc-mpc |> {objs}
+: foreach $(srcs) |> !cc |> <objs>
 
 # Archive
-: {objs} |> ^ AR %o^ $(AR) rcs %o %f |> libmpc.a $(S)/<libs>
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libmpc.a $(S)/<libs>

@@ -1,53 +1,24 @@
-# Tuprules.tup - GCC in-tree library build rules
+# Tuprules.tup - GCC in-tree library build (root rules)
 #
-# Builds GMP, MPFR, MPC from GCC's bundled sources.
-#
-# S/B Convention:
-#   S = source root path (auto-computed via TUP_CWD during includes)
-#   B = build root path (derived from TUP_VARIANT_OUTPUTDIR)
+# Sets project-wide variables from tup.config.
+# Per-library CFLAGS and !cc live in
+# gmp/Tuprules.tup, mpfr/Tuprules.tup, mpc/Tuprules.tup.
 
 S = $(TUP_CWD)
 B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
 
-# Toolchain (from tup.config)
 CC = @(CC)
 AR = @(AR)
 HOSTCC = @(HOSTCC)
-
-# Target parameters (from tup.config)
 LIMB_BITS = @(GMP_LIMB_BITS)
 NAIL_BITS = @(GMP_NAIL_BITS)
 
-# Generate config.h from tup.config (autoconf style)
-#
-# Set LIB before invoking. Filters CONFIG_<LIB>_* entries from tup.config,
-# strips the prefix, and emits #define lines.
-# Follows the same pattern as spos/gen-autoconf_h.awk.
+GMP_DIR = gmp
+MPFR_DIR = mpfr
+MPC_DIR = mpc
+
+# Generate config.h from tup.config. Set LIB before invoking.
+# Filters CONFIG_<LIB>_* entries, strips prefix, emits #define lines.
 !gen-config = |> ^ GEN %o^ awk -F= -v pfx=CONFIG_$(LIB)_ \
   '/^CONFIG_/{if(index($1,pfx)==1){k=substr($1,length(pfx)+1);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}}' \
   $(B)/tup.config > %o |>
-
-# --- GMP flags ---
-GMP_CFLAGS  = -O2 -std=gnu11
-GMP_CFLAGS += -D__GMP_WITHIN_GMP -DHAVE_CONFIG_H
-GMP_CFLAGS += -I$(B)/gmp -I$(S)/gmp
-
-# --- MPFR flags ---
-MPFR_CFLAGS  = -O2 -std=gnu11
-MPFR_CFLAGS += -DHAVE_CONFIG_H
-MPFR_CFLAGS += -I$(B)/mpfr -I$(B)/mpfr/src -I$(S)/mpfr/src
-MPFR_CFLAGS += -I$(B)/gmp -I$(S)/gmp
-
-# --- MPC flags ---
-MPC_CFLAGS  = -O2 -std=gnu11
-MPC_CFLAGS += -I$(B)/mpc -I$(S)/mpc/src
-MPC_CFLAGS += -I$(B)/mpfr -I$(B)/mpfr/src -I$(S)/mpfr/src
-MPC_CFLAGS += -I$(B)/gmp -I$(S)/gmp
-
-# --- Compilation macros ---
-
-!cc-gmp = | $(S)/gmp/<gen-headers> |> ^ CC %b^ $(CC) $(GMP_CFLAGS) -c %f -o %o |> %B.o
-
-!cc-mpfr = | $(S)/gmp/<gen-headers> $(S)/mpfr/<mpfr-gen> |> ^ CC %b^ $(CC) $(MPFR_CFLAGS) -c %f -o %o |> %B.o
-
-!cc-mpc = | $(S)/gmp/<gen-headers> $(S)/mpc/<mpc-gen> |> ^ CC %b^ $(CC) $(MPC_CFLAGS) -c %f -o %o |> %B.o

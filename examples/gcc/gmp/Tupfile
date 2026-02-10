@@ -50,14 +50,9 @@ srcs += mp_get_fns.c mp_set_fns.c
 srcs += version.c nextprime.c primesieve.c
 srcs += tal-reent.c
 
-: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
+: foreach $(srcs) |> !cc |> %B.o <objs>
 
 # --- Phase 5: Archive all GMP objects into libgmp.a ---
-# Each subdirectory produces a partial archive; merge them using ar MRI mode.
+# All subdirectories contribute objects to <objs> via ../<objs>.
 
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> gmp-core.a
-
-PARTS  = gmp-core.a mpn/mpn.a mpz/mpz.a mpq/mpq.a
-PARTS += mpf/mpf.a printf/printf.a scanf/scanf.a rand/rand.a
-
-: $(PARTS) |> ^ AR %o^ { printf 'CREATE %o\n'; printf 'ADDLIB %s\n' %f; printf 'SAVE\nEND\n'; } | $(AR) -M |> libgmp.a $(S)/<libs>
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libgmp.a $(S)/<libs>

@@ -9,6 +9,4 @@ srcs += init.c inits.c inp_str.c inv.c md_2exp.c mul.c neg.c out_str.c
 srcs += set.c set_d.c set_den.c set_f.c set_num.c
 srcs += set_si.c set_str.c set_ui.c set_z.c swap.c
 
-: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
-
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> mpq.a
+: foreach $(srcs) |> !cc |> %B.o ../<objs>

@@ -42,6 +42,4 @@ srcs += tdiv_qr.c tdiv_qr_ui.c
 srcs += tdiv_r.c tdiv_r_2exp.c tdiv_r_ui.c tdiv_ui.c
 srcs += tstbit.c ui_pow_ui.c ui_sub.c urandomb.c urandomm.c xor.c
 
-: foreach $(srcs) |> !cc-gmp |> %B.o <objs>
-
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> mpz.a
+: foreach $(srcs) |> !cc |> %B.o ../<objs>
