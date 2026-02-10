@@ -4868,6 +4868,37 @@ SCENARIO("Rules with empty input patterns are skipped", "[e2e][empty-input]")
 // Incremental Build Command String Mismatch Tests
 // =============================================================================
 
+SCENARIO("include_rules includes all Tuprules.tup from root to leaf", "[e2e][build]")
+{
+    GIVEN("a project with Tuprules.tup at root and in a subdirectory")
+    {
+        auto f = E2EFixture { "include_rules_nested" };
+        REQUIRE(f.init().success());
+
+        WHEN("building the subdirectory Tupfile")
+        {
+            auto result = f.build();
+
+            THEN("both root and sub Tuprules.tup are included")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+
+                auto content = f.read_file("sub/result.txt");
+                INFO("result.txt: " << content);
+
+                // ROOT comes from root Tuprules.tup (TUP_CWD = .. from sub/)
+                REQUIRE(content.find("..") != std::string::npos);
+                // CC = gcc (root sets it first, sub's ?= doesn't override)
+                REQUIRE(content.find("gcc") != std::string::npos);
+                // SUBVAR comes from sub/Tuprules.tup
+                REQUIRE(content.find("from_sub") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
     // This tests the command string matching between graph and index.

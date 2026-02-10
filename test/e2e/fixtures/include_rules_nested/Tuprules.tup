@@ -1,0 +1,2 @@
+ROOT = $(TUP_CWD)
+CC ?= gcc
