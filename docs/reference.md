@@ -258,31 +258,53 @@ putup              # Pass 2: Build with generated configs
 ```
 
 **How it works:**
-1. Parses all Tupfiles using root `tup.config` only
-2. Identifies rules where any output ends with `tup.config`
-3. Executes only those rules (plus their dependencies)
-4. Does not write to `.pup/index` (avoids conflict with subsequent build)
+1. Installs root config if `--config` is specified
+2. Copies subdir `tup.config` files from config root to build tree (out-of-tree only)
+3. Parses all Tupfiles using root `tup.config` only
+4. Identifies rules where any output ends with `tup.config`
+5. Executes only those rules (plus their dependencies)
+6. Does not write to `.pup/index` (avoids conflict with subsequent build)
 
 **Relevant Options:**
 - `-v` - Verbose output
 - `-k` - Continue after failures
 - `-n` - Dry-run: show what would execute
 - `-B DIR` - Specify build directory (created automatically if it doesn't exist)
-- `-c, --config FILE` - Use FILE as tup.config directly (skip config-generating rules)
+- `-c, --config FILE` - Install FILE as root tup.config before running config rules
 
 **Note:** The `-B` flag creates the output directory if needed. After configure runs, the directory contains `tup.config` which marks it as a variant for subsequent builds. If no config-generating rules exist, an empty `tup.config` is created automatically. The `.pup/` index is NOT created during configure (it's created on first build).
 
 **Using --config for pre-made configs:**
 
-The `--config` option copies an existing config file directly to the output directory, skipping config-generating rules entirely. Useful for:
+The `--config` option copies an existing config file to the output directory as the root `tup.config`. It then continues with steps 2–6 above: copying subdir configs and running any config-generating rules. Useful for:
 - Cross-compilation with pre-made toolchain configs
 - CI/CD where configs are externally managed
-- Quick testing with different configurations
+- Mixed workflows with a static root config + auto-generated subdir configs
 
 ```bash
 putup configure -B build --config configs/arm-cross.config
 putup configure -B build-debug -c debug.config
 ```
+
+**Subdir tup.config copying (step 2):**
+
+For out-of-tree builds (`config_root != output_root`), configure automatically copies any `tup.config` files found in subdirectories of the config root to the corresponding locations in the build tree. The root-level `tup.config` is excluded (handled by `--config` or config-generating rules).
+
+This enables per-component scoped configs: each subdirectory ships a `tup.config` alongside its Tupfile. At configure time, these are installed into the build tree where scoped config merging (§6.1) picks them up during the build.
+
+```bash
+# Config root has per-component configs:
+#   gmp/tup.config, mpfr/tup.config, mpc/tup.config
+#
+# configure installs root config AND copies subdir configs:
+putup configure --config configs/toolchain.config -C . -S ../src -B ../build
+#   → ../build/tup.config          (from --config)
+#   → ../build/gmp/tup.config      (copied from gmp/tup.config)
+#   → ../build/mpfr/tup.config     (copied from mpfr/tup.config)
+#   → ../build/mpc/tup.config      (copied from mpc/tup.config)
+```
+
+For in-tree builds (`config_root == output_root`), step 2 is a no-op — the configs are already in place.
 
 **Important:** You must run `putup configure` before `putup build`. If you skip the configure step, `putup build` will error:
 
@@ -506,7 +528,7 @@ Estimated savings: 92% (instruction + operands vs full strings)
 | `-S DIR` | | Source directory. Overrides auto-detection. |
 | `-C DIR` | `--config-dir` | Config directory (where Tupfiles live). |
 | `-B DIR` | | Build/output directory (can use multiple times). |
-| `-c FILE` | `--config` | Use FILE as tup.config (configure command only). |
+| `-c FILE` | `--config` | Install FILE as root tup.config (configure command only). |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
 | | `--stat` | Print build statistics after completion. |

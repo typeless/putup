@@ -195,13 +195,6 @@ auto discover_tupfile_dirs(
         }
 
         auto dir = std::filesystem::path { entry.path().parent_path() };
-
-        // Skip variant directories (have tup.config but are not the source root)
-        // The source root may have both Tupfile and tup.config
-        if (dir != root && std::filesystem::exists(dir / "tup.config")) {
-            continue;
-        }
-
         auto dir_rel = std::filesystem::relative(dir, root);
         dirs.insert(normalize_to_dot(dir_rel));
     }

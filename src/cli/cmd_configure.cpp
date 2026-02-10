@@ -20,11 +20,12 @@ namespace pup::cli {
 namespace {
 
 auto install_config_file(
-    Options const& opts,
+    ProjectLayout const& layout,
+    std::string const& config_file,
     std::string_view variant_name
 ) -> int
 {
-    auto config_path = std::filesystem::path { opts.config_file };
+    auto config_path = std::filesystem::path { config_file };
     if (config_path.is_relative()) {
         config_path = std::filesystem::current_path() / config_path;
     }
@@ -34,13 +35,7 @@ auto install_config_file(
         return EXIT_FAILURE;
     }
 
-    auto layout = discover_layout(make_layout_options(opts));
-    if (!layout) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().message.c_str());
-        return EXIT_FAILURE;
-    }
-
-    auto dest = layout->output_root / "tup.config";
+    auto dest = layout.output_root / "tup.config";
     std::filesystem::create_directories(dest.parent_path());
     std::filesystem::copy_file(config_path, dest, std::filesystem::copy_options::overwrite_existing);
 
@@ -48,15 +43,81 @@ auto install_config_file(
     return EXIT_SUCCESS;
 }
 
+auto install_source_configs(
+    ProjectLayout const& layout,
+    std::string_view variant_name,
+    bool verbose
+) -> int
+{
+    if (layout.config_root == layout.output_root) {
+        return 0;
+    }
+
+    auto config_canonical = std::filesystem::weakly_canonical(layout.config_root);
+    auto output_canonical = std::filesystem::weakly_canonical(layout.output_root);
+    auto count = 0;
+    auto ec = std::error_code {};
+
+    for (auto it = std::filesystem::recursive_directory_iterator(config_canonical, ec);
+         it != std::filesystem::recursive_directory_iterator();
+         ++it) {
+        if (ec) {
+            break;
+        }
+
+        // Skip the output tree if it lives inside config_root (e.g., -B build)
+        if (it->is_directory() && it->path() == output_canonical) {
+            it.disable_recursion_pending();
+            continue;
+        }
+
+        if (!it->is_regular_file() || it->path().filename() != "tup.config") {
+            continue;
+        }
+
+        auto rel = std::filesystem::relative(it->path(), config_canonical);
+        if (rel == "tup.config") {
+            continue;
+        }
+
+        auto dest = layout.output_root / rel;
+        std::filesystem::create_directories(dest.parent_path());
+        std::filesystem::copy_file(it->path(), dest, std::filesystem::copy_options::overwrite_existing);
+        if (verbose) {
+            printf("[%.*s] Copied %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), it->path().string().c_str(), dest.string().c_str());
+        }
+        ++count;
+    }
+    if (count > 0) {
+        printf("[%.*s] Installed %d source config(s)\n", static_cast<int>(variant_name.size()), variant_name.data(), count);
+    }
+    return count;
+}
+
 auto configure_single_variant(
     Options const& opts,
     std::string_view variant_name
 ) -> int
 {
-    if (!opts.config_file.empty()) {
-        return install_config_file(opts, variant_name);
+    // Discover layout once for steps 1 & 2
+    auto layout = discover_layout(make_layout_options(opts));
+    if (!layout) {
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().message.c_str());
+        return EXIT_FAILURE;
     }
 
+    // Step 1: Install root config if --config specified
+    if (!opts.config_file.empty()) {
+        auto rc = install_config_file(*layout, opts.config_file, variant_name);
+        if (rc != EXIT_SUCCESS) {
+            return rc;
+        }
+    }
+
+    // Step 2: Copy source subdir tup.config files to build tree
+    install_source_configs(*layout, variant_name, opts.verbose);
+
+    // Step 3: Run config-generating rules
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
