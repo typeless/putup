@@ -920,10 +920,11 @@ include config.tup
 include ../common/rules.tup
 ```
 
-**`include_rules`** - Include Tuprules.tup from current and parent directories:
+**`include_rules`** - Include all `Tuprules.tup` files from the project root down to the current directory, in root-first order. Each directory in the path from root to the Tupfile's directory is checked; gaps (directories without a `Tuprules.tup`) are silently skipped. For `sub/deep/Tupfile`, this is equivalent to:
 ```tup
-include_rules
-# Searches upward for Tuprules.tup files
+include ../../Tuprules.tup   # root
+include ../Tuprules.tup      # sub/ (if it exists)
+include Tuprules.tup          # sub/deep/ (if it exists)
 ```
 
 **`export`** - Export variable to command environment:
@@ -1528,6 +1529,67 @@ When `-C` is not specified:
 1. If source has `Tupfile.ini` → use source as config root (traditional)
 2. If output has `Tupfile.ini` → use output as config root (two-tree)
 3. Otherwise → use source as config root (simple projects)
+
+### 7.6 Self-Contained Library Convention
+
+Large projects often contain multiple libraries that share a build (GMP + MPFR + MPC inside GCC, for example). This convention makes each library buildable on its own while staying composable in the larger project.
+
+**The pattern:**
+
+1. **Root `Tuprules.tup`** sets the project layout — toolchain variables and directory names for each library:
+
+```tup
+# Root Tuprules.tup
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CC = @(CC)
+AR = @(AR)
+
+GMP_DIR = gmp
+MPFR_DIR = mpfr
+```
+
+2. **Each library's `Tuprules.tup`** provides `?=` defaults for standalone use. In composed mode, root's assignments win and the defaults are no-ops:
+
+```tup
+# mpfr/Tuprules.tup
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CC ?= gcc
+AR ?= ar
+GMP_DIR ?= ../gmp
+MPFR_DIR ?= .
+
+CFLAGS  = -O2 -DHAVE_CONFIG_H
+CFLAGS += -I$(S)/$(MPFR_DIR)/src
+CFLAGS += -I$(S)/$(GMP_DIR)
+
+!cc = | $(S)/$(GMP_DIR)/<gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+```
+
+3. **Tupfiles** use unprefixed names (`CFLAGS`, `!cc`) — each library's `Tuprules.tup` is only visible to its own subtree via `include_rules`.
+
+**Why directory names are prefixed (`GMP_DIR`, not `DIR`):**
+
+A library that depends on another needs to reference both directories in the same file. MPC's `Tuprules.tup` has `-I$(S)/$(GMP_DIR)`, `-I$(S)/$(MPFR_DIR)/src`, and `-I$(S)/$(MPC_DIR)/src` — three different paths that need three different names. The root also sets all of them in one shared scope, so a single `DIR` variable would collide.
+
+CFLAGS and bang macros (`!cc`, `!gen-config`) don't need prefixes because each library's `Tuprules.tup` is only included by Tupfiles in its own subtree — there's no shared scope where they could collide.
+
+**How `include_rules` enables this:**
+
+`include_rules` includes every `Tuprules.tup` from the project root down to the current directory. For `mpfr/src/Tupfile`, this means root's `Tuprules.tup` runs first (setting `S`, `GMP_DIR = gmp`, `MPFR_DIR = mpfr`), then `mpfr/Tuprules.tup` runs second (its `?=` defaults are no-ops, but it defines `CFLAGS` and `!cc`).
+
+**Standalone vs composed paths:**
+
+```
+# Composed (from mpfr/src/, root is ../..)
+S = ../..  GMP_DIR = gmp  → $(S)/$(GMP_DIR) = ../../gmp  ✓
+
+# Standalone (mpfr is root, from mpfr/src/)
+S = ..     GMP_DIR = ../gmp → $(S)/$(GMP_DIR) = ../../gmp  ✓
+```
+
+See `examples/gcc/` for a complete working example with three interdependent libraries.
 
 ## 8. Implicit Dependencies
 
