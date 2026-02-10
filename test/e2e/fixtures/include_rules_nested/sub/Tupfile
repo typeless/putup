@@ -1,0 +1,2 @@
+include_rules
+: |> echo $(ROOT) $(CC) $(SUBVAR) > %o |> result.txt

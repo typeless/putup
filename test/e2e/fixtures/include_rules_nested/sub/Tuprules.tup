@@ -1,0 +1,2 @@
+SUBVAR = from_sub
+CC ?= clang

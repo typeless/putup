@@ -511,27 +511,37 @@ auto create_command_node(
     std::string const& display
 ) -> Result<NodeId>;
 
-/// Search up the directory tree for Tuprules.tup
-/// Returns empty path if not found
-auto find_tuprules_file(
+/// Collect all Tuprules.tup files from root to start_dir (root-first order).
+/// Per tup semantics, include_rules includes every Tuprules.tup from the
+/// project root down to the current directory. Gaps are allowed.
+auto find_tuprules_files(
     fs::path const& start_dir,
     fs::path const& root
-) -> fs::path
+) -> std::vector<fs::path>
 {
+    auto dirs = std::vector<fs::path> {};
     auto search_dir = start_dir;
 
     while (search_dir >= root) {
-        auto tuprules = fs::path { search_dir / "Tuprules.tup" };
-        if (fs::exists(tuprules)) {
-            return tuprules;
-        }
+        dirs.push_back(search_dir);
         if (search_dir == root) {
             break;
         }
         search_dir = search_dir.parent_path();
     }
 
-    return {};
+    // Reverse to root-first order
+    std::reverse(dirs.begin(), dirs.end());
+
+    auto results = std::vector<fs::path> {};
+    for (auto const& dir : dirs) {
+        auto tuprules = dir / "Tuprules.tup";
+        if (fs::exists(tuprules)) {
+            results.push_back(tuprules);
+        }
+    }
+
+    return results;
 }
 
 /// Resolve an explicit include path (not include_rules)
@@ -1120,47 +1130,25 @@ auto process_conditional(
     return {};
 }
 
-auto process_include(
+auto include_single_file(
     BuilderContext& ctx,
     BuilderState& state,
-    parser::Include const& inc
+    fs::path const& include_root,
+    std::string const& include_path,
+    bool is_rules
 ) -> Result<void>
 {
-    // Include files (Tuprules.tup, etc.) live in config_root (same as Tupfiles)
-    // Use config_root if set, otherwise fall back to source_root for traditional builds
-    auto const& include_root = ctx.options.config_root.empty() ? ctx.options.source_root : ctx.options.config_root;
-
-    // Find the include file path
-    auto include_path = std::string {};
-    if (inc.is_rules) {
-        auto tuprules = find_tuprules_file(include_root / ctx.current_dir, include_root);
-        if (tuprules.empty()) {
-            return {}; // No Tuprules.tup found, silently continue
-        }
-        include_path = tuprules.generic_string();
-    } else {
-        auto resolved = resolve_include_path(ctx, include_root, inc.path);
-        if (!resolved) {
-            return pup::unexpected<Error>(resolved.error());
-        }
-        include_path = resolved->generic_string();
-    }
-
-    // Prevent infinite recursion
     if (ctx.included_files.contains(include_path)) {
         return {};
     }
     ctx.included_files.insert(include_path);
 
-    // Add included file to sticky_sources for dependency tracking
-    // Included files live in config_root, so use include_root for relative path
     auto inc_rel = fs::relative(include_path, include_root).generic_string();
     auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
     if (inc_node_result) {
         ctx.sticky_sources.push_back(*inc_node_result);
     }
 
-    // Read the include file
     auto file = std::ifstream { include_path };
     if (!file) {
         return make_error<void>(ErrorCode::IoError, "Cannot open include file: " + include_path);
@@ -1170,7 +1158,6 @@ auto process_include(
     ss << file.rdbuf();
     auto source = std::string { ss.str() };
 
-    // Parse the include file
     auto parse_result = parser::parse_tupfile(source, include_path);
     if (!parse_result.success()) {
         for (auto const& err : parse_result.errors) {
@@ -1179,41 +1166,60 @@ auto process_include(
         return make_error<void>(ErrorCode::ParseError, "Parse error in include file: " + include_path);
     }
 
-    // For include_rules, temporarily set TUP_CWD to the relative path from
-    // the Tupfile directory back to the Tuprules.tup directory. This allows
-    // patterns like ROOT = $(TUP_CWD) to work correctly.
     auto old_tup_cwd = std::string {};
-    if (inc.is_rules && ctx.eval) {
+    if (is_rules && ctx.eval) {
         old_tup_cwd = ctx.eval->tup_cwd;
-        // Compute relative path from Tupfile directory to include file's directory
         auto include_dir = fs::path { include_path }.parent_path();
         auto rel_path = fs::relative(include_dir, include_root / ctx.current_dir);
         ctx.eval->tup_cwd = rel_path.empty() ? "." : rel_path.generic_string();
     }
 
-    // Save and update current_file for variable tracking callback
     auto old_current_file = ctx.current_file;
     ctx.current_file = include_path;
 
-    // Process statements from the included file
     for (auto const& stmt : parse_result.tupfile.statements) {
         auto result = Result<void> { process_statement(ctx, state, *stmt) };
         if (!result) {
             ctx.current_file = old_current_file;
-            if (inc.is_rules && ctx.eval) {
+            if (is_rules && ctx.eval) {
                 ctx.eval->tup_cwd = old_tup_cwd;
             }
             return pup::unexpected<Error>(result.error());
         }
     }
 
-    // Restore original current_file and TUP_CWD
     ctx.current_file = old_current_file;
-    if (inc.is_rules && ctx.eval) {
+    if (is_rules && ctx.eval) {
         ctx.eval->tup_cwd = old_tup_cwd;
     }
 
     return {};
+}
+
+auto process_include(
+    BuilderContext& ctx,
+    BuilderState& state,
+    parser::Include const& inc
+) -> Result<void>
+{
+    auto const& include_root = ctx.options.config_root.empty() ? ctx.options.source_root : ctx.options.config_root;
+
+    if (inc.is_rules) {
+        auto tuprules_files = find_tuprules_files(include_root / ctx.current_dir, include_root);
+        for (auto const& tuprules : tuprules_files) {
+            auto result = include_single_file(ctx, state, include_root, tuprules.generic_string(), true);
+            if (!result) {
+                return pup::unexpected<Error>(result.error());
+            }
+        }
+        return {};
+    }
+
+    auto resolved = resolve_include_path(ctx, include_root, inc.path);
+    if (!resolved) {
+        return pup::unexpected<Error>(resolved.error());
+    }
+    return include_single_file(ctx, state, include_root, resolved->generic_string(), false);
 }
 
 auto process_import(
