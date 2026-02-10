@@ -3521,6 +3521,123 @@ SCENARIO("configure with --config followed by build works", "[e2e][configure][bu
     }
 }
 
+SCENARIO("configure copies source subdir configs to build tree", "[e2e][configure]")
+{
+    GIVEN("a project with a subdir tup.config")
+    {
+        auto f = E2EFixture { "simple_c" };
+        f.mkdir("sub");
+        f.write_file("sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("root.config", "CONFIG_ROOT_VAR=from_root\n");
+        REQUIRE(f.init().success());
+
+        WHEN("configure is run with --config and -B")
+        {
+            auto result = f.pup({ "configure", "--config", "root.config", "-B", "build" });
+
+            THEN("root config is installed to build/tup.config")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/tup.config"));
+                auto content = f.read_file("build/tup.config");
+                REQUIRE(content.find("CONFIG_ROOT_VAR=from_root") != std::string::npos);
+            }
+
+            THEN("subdir config is copied to build/sub/tup.config")
+            {
+                REQUIRE(f.exists("build/sub/tup.config"));
+                auto content = f.read_file("build/sub/tup.config");
+                REQUIRE(content.find("CONFIG_SUB_VAR=from_sub") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("configure --config + subdir configs + build uses scoped merge", "[e2e][configure][scoped-config]")
+{
+    GIVEN("a project with root config and subdir tup.config in source tree")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.write_file("sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("root.config", "CONFIG_ROOT_VAR=from_root\n");
+        REQUIRE(f.init().success());
+
+        auto configure_result = f.pup({ "configure", "--config", "root.config", "-B", "build" });
+        REQUIRE(configure_result.success());
+
+        WHEN("build is run")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("sub/ sees both root and subdir vars via scoped merge")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/sub/sub.txt") == "from_sub\n");
+                REQUIRE(f.read_file("build/sub/root_from_sub.txt") == "from_root\n");
+            }
+        }
+    }
+}
+
+SCENARIO("configure skips subdir config copy for in-tree", "[e2e][configure]")
+{
+    GIVEN("a project with -C matching output root")
+    {
+        auto f = E2EFixture { "scoped_config" };
+        f.write_file("tup.config", "CONFIG_ROOT_VAR=from_root\n");
+        REQUIRE(f.init().success());
+
+        WHEN("configure is run without -B")
+        {
+            auto result = f.pup({ "configure" });
+
+            THEN("configure succeeds without copying configs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("source config") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("configure handles mixed static + auto-gen configs", "[e2e][configure]")
+{
+    GIVEN("a project with a static subdir config and auto-gen config rules")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
+        f.write_file("sub/tup.config", "CONFIG_STATIC_VAR=static_value\n");
+        REQUIRE(f.init().success());
+
+        WHEN("configure is run with -B")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("auto-gen config is produced")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/configs/tup.config"));
+            }
+
+            THEN("static subdir config is copied")
+            {
+                REQUIRE(f.exists("build/sub/tup.config"));
+                auto content = f.read_file("build/sub/tup.config");
+                REQUIRE(content.find("CONFIG_STATIC_VAR=static_value") != std::string::npos);
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Duplicate Output Detection Tests
 // =============================================================================
