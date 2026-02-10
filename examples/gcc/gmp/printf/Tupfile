@@ -1,0 +1,11 @@
+include_rules
+
+# GMP printf functions
+
+srcs  = asprintf.c asprntffuns.c doprnt.c doprntf.c doprnti.c fprintf.c
+srcs += obprintf.c obprntffuns.c obvprintf.c
+srcs += printf.c printffuns.c repl-vsnprintf.c
+srcs += snprintf.c snprntffuns.c sprintf.c sprintffuns.c
+srcs += vasprintf.c vfprintf.c vprintf.c vsnprintf.c vsprintf.c
+
+: foreach $(srcs) |> !cc |> %B.o ../<objs>

@@ -1,0 +1,32 @@
+# GMP build rules (self-contained with ?= defaults)
+#
+# Composed mode: parent sets S, B, CC, AR, HOSTCC, GMP_DIR before this runs.
+# Standalone mode: ?= defaults take effect.
+
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CC ?= gcc
+AR ?= ar
+HOSTCC ?= gcc
+LIMB_BITS ?= @(LIMB_BITS)
+NAIL_BITS ?= @(NAIL_BITS)
+GMP_DIR ?= .
+
+CFLAGS  = -O2 -std=gnu11
+CFLAGS += -D__GMP_WITHIN_GMP -DHAVE_CONFIG_H
+CFLAGS += -I$(B)/$(GMP_DIR) -I$(S)/$(GMP_DIR)
+
+!cc = | $(S)/$(GMP_DIR)/<gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
+
+!m4asm = | $(S)/$(GMP_DIR)/<gen-headers> |> ^ M4ASM %b^ \
+  m4 -DPIC -DOPERATION_%B \
+    -I$(S)/$(GMP_DIR)/mpn \
+    -I$(S)/$(GMP_DIR)/mpn/@(MPN_ARCH) \
+    $(B)/$(GMP_DIR)/config.m4 \
+    $(S)/$(GMP_DIR)/mpn/asm-defs.m4 \
+    %f \
+  | $(CC) -c -x assembler - -o %o |> %B.o
+
+!gen-config = |> ^ GEN %o^ awk -F= \
+  '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
+  $(B)/tup.config > %o |>

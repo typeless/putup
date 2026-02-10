@@ -1,0 +1,11 @@
+include_rules
+
+# MPFR 4.1.0 - generated files
+
+: |> !gen-config |> config.h <mpfr-gen>
+
+# mparam.h - architecture-specific tuning (auto-selects via compiler macros)
+: src/mparam_h.in |> ^ GEN %o^ cp %f %o |> src/mparam.h <mpfr-gen>
+
+# get_patches.c - empty patch list
+: |> ^ GEN %o^ printf '#include <stddef.h>\nconst char * const mpfr_patches[] = { NULL };\n' > %o |> src/get_patches.c <mpfr-gen>
