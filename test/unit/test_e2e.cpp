@@ -454,6 +454,38 @@ SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
     }
 }
 
+SCENARIO("Multi-directory group producers all contribute to percent-group expansion", "[e2e][groups]")
+{
+    GIVEN("a group receiving members from two separate directories")
+    {
+        auto f = E2EFixture { "groups_multi_dir_producers" };
+        REQUIRE(f.init().success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-j1" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+            }
+
+            THEN("both producers contribute output")
+            {
+                REQUIRE(f.exists("dir_a/a.txt"));
+                REQUIRE(f.exists("dir_b/b.txt"));
+            }
+
+            THEN("percent-group expansion includes members from all directories")
+            {
+                auto content = f.read_file("link/combined.txt");
+                auto has_both = (content == "a\nb\n" || content == "b\na\n");
+                REQUIRE(has_both);
+            }
+        }
+    }
+}
+
 SCENARIO("Build fails when command fails", "[e2e][build]")
 {
     GIVEN("an initialized failure project with invalid source")
