@@ -47,10 +47,10 @@ auto install_source_configs(
     ProjectLayout const& layout,
     std::string_view variant_name,
     bool verbose
-) -> int
+) -> void
 {
     if (layout.config_root == layout.output_root) {
-        return 0;
+        return;
     }
 
     auto config_canonical = std::filesystem::weakly_canonical(layout.config_root);
@@ -60,8 +60,9 @@ auto install_source_configs(
 
     for (auto it = std::filesystem::recursive_directory_iterator(config_canonical, ec);
          it != std::filesystem::recursive_directory_iterator();
-         ++it) {
+         it.increment(ec)) {
         if (ec) {
+            fprintf(stderr, "[%.*s] Warning: error scanning configs: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), ec.message().c_str());
             break;
         }
 
@@ -91,7 +92,6 @@ auto install_source_configs(
     if (count > 0) {
         printf("[%.*s] Installed %d source config(s)\n", static_cast<int>(variant_name.size()), variant_name.data(), count);
     }
-    return count;
 }
 
 auto configure_single_variant(

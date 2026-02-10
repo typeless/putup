@@ -1,0 +1,25 @@
+include_rules
+
+# MPC 1.2.1 - all library sources
+
+srcs  = abs.c acos.c acosh.c add.c add_fr.c add_si.c add_ui.c arg.c
+srcs += asin.c asinh.c atan.c atanh.c
+srcs += clear.c cmp.c cmp_abs.c cmp_si_si.c conj.c cos.c cosh.c
+srcs += div.c div_2si.c div_2ui.c div_fr.c div_ui.c dot.c
+srcs += exp.c fma.c fr_div.c fr_sub.c
+srcs += get_prec.c get_prec2.c get_version.c get_x.c
+srcs += imag.c init2.c init3.c inp_str.c
+srcs += log.c log10.c mem.c
+srcs += mul.c mul_2si.c mul_2ui.c mul_fr.c mul_i.c mul_si.c mul_ui.c
+srcs += neg.c norm.c out_str.c
+srcs += pow.c pow_d.c pow_fr.c pow_ld.c pow_si.c pow_ui.c pow_z.c
+srcs += proj.c real.c rootofunity.c
+srcs += set.c set_prec.c set_str.c set_x.c set_x_x.c
+srcs += sin.c sin_cos.c sinh.c sqr.c sqrt.c strtoc.c
+srcs += sub.c sub_fr.c sub_ui.c sum.c swap.c
+srcs += tan.c tanh.c uceil_log2.c ui_div.c ui_ui_sub.c urandom.c
+
+: foreach $(srcs) |> !cc |> <objs>
+
+# Archive
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libmpc.a $(S)/<libs>

@@ -1,0 +1,5 @@
+include_rules
+
+# MPC 1.2.1 - generated files
+
+: |> !gen-config |> config.h <mpc-gen>

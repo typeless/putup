@@ -1,0 +1,66 @@
+include_rules
+
+# ============================================================
+# GMP 6.2.1
+# ============================================================
+
+# --- Phase 1: Generate config.h, gmp-mparam.h, gmp.h, and config.m4 ---
+
+: |> !gen-config |> config.h <gen-headers>
+
+: @(GMP_MPARAM) |> ^ GEN %o^ cp %f %o |> gmp-mparam.h <gen-headers>
+
+ifeq (@(ASM_ENABLED),y)
+: |> ^ GEN %o^ ( \
+  echo 'changequote(<,>)ifdef(<__CONFIG_M4_INCLUDED__>,,<define(<__CONFIG_M4_INCLUDED__>)'; \
+  echo 'define(<GMP_LIMB_BITS>,<$(LIMB_BITS)>)'; \
+  echo 'define(<GMP_NAIL_BITS>,<$(NAIL_BITS)>)'; \
+  echo 'define(<WANT_PROFILING>,<no>)define(<PIC_ALWAYS>,1)>)' \
+  ) > %o |> config.m4 <gen-headers>
+endif
+
+: gmp-h.in |> ^ GEN %o^ sed \
+  -e 's/@HAVE_HOST_CPU_FAMILY_power@/0/g' \
+  -e 's/@HAVE_HOST_CPU_FAMILY_powerpc@/0/g' \
+  -e 's/@GMP_LIMB_BITS@/@(LIMB_BITS)/g' \
+  -e 's/@GMP_NAIL_BITS@/@(NAIL_BITS)/g' \
+  -e 's/@DEFN_LONG_LONG_LIMB@//g' \
+  -e 's/@LIBGMP_DLL@/0/g' \
+  -e 's/@CC@/@(CC)/g' \
+  -e 's/@CFLAGS@//g' \
+  %f > %o |> gmp.h <gen-headers>
+
+# --- Phase 2: Build table generators (self-contained via mini-gmp) ---
+
+: gen-fac.c |> ^ HOSTCC %o^ $(HOSTCC) %f -o %o |> gen-fac
+: gen-fib.c |> ^ HOSTCC %o^ $(HOSTCC) %f -o %o |> gen-fib
+: gen-bases.c |> ^ HOSTCC %o^ $(HOSTCC) %f -o %o -lm |> gen-bases
+: gen-trialdivtab.c |> ^ HOSTCC %o^ $(HOSTCC) %f -o %o -lm |> gen-trialdivtab
+: gen-jacobitab.c |> ^ HOSTCC %o^ $(HOSTCC) %f -o %o |> gen-jacobitab
+: gen-psqr.c |> ^ HOSTCC %o^ $(HOSTCC) %f -o %o -lm |> gen-psqr
+
+# --- Phase 3: Generate table headers and sources ---
+
+: gen-fac |> ^ GEN %o^ %f $(LIMB_BITS) $(NAIL_BITS) > %o |> fac_table.h <gen-headers>
+: gen-fib |> ^ GEN %o^ %f header $(LIMB_BITS) $(NAIL_BITS) > %o |> fib_table.h <gen-headers>
+: gen-fib |> ^ GEN %o^ %f table $(LIMB_BITS) $(NAIL_BITS) > %o |> mpn/fib_table.c <gen-headers>
+: gen-bases |> ^ GEN %o^ %f header $(LIMB_BITS) $(NAIL_BITS) > %o |> mp_bases.h <gen-headers>
+: gen-bases |> ^ GEN %o^ %f table $(LIMB_BITS) $(NAIL_BITS) > %o |> mpn/mp_bases.c <gen-headers>
+: gen-trialdivtab |> ^ GEN %o^ %f $(LIMB_BITS) 8000 > %o |> trialdivtab.h <gen-headers>
+: gen-jacobitab |> ^ GEN %o^ %f > %o |> jacobitab.h <gen-headers>
+: gen-psqr |> ^ GEN %o^ %f $(LIMB_BITS) $(NAIL_BITS) > %o |> perfsqr.h <gen-headers>
+
+# --- Phase 4: Compile top-level GMP sources ---
+
+srcs  = assert.c compat.c errno.c extract-dbl.c invalid.c memory.c
+srcs += mp_bpl.c mp_clz_tab.c mp_dv_tab.c mp_minv_tab.c
+srcs += mp_get_fns.c mp_set_fns.c
+srcs += version.c nextprime.c primesieve.c
+srcs += tal-reent.c
+
+: foreach $(srcs) |> !cc |> %B.o <objs>
+
+# --- Phase 5: Archive all GMP objects into libgmp.a ---
+# All subdirectories contribute objects to <objs> via ../<objs>.
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libgmp.a $(S)/<libs>

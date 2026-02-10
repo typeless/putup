@@ -1,0 +1,56 @@
+include_rules
+
+# MPFR 4.1.0 - all library sources
+
+srcs  = abort_prec_max.c acos.c acosh.c add.c add1.c add1sp.c add_d.c add_ui.c
+srcs += agm.c ai.c asin.c asinh.c atan.c atan2.c atanh.c
+srcs += bernoulli.c beta.c buildopt.c
+srcs += cache.c cbrt.c check.c clear.c clears.c
+srcs += cmp.c cmp2.c cmpabs.c cmpabs_ui.c cmp_d.c cmp_ld.c cmp_si.c cmp_ui.c
+srcs += comparisons.c constant.c const_catalan.c const_euler.c const_log2.c const_pi.c
+srcs += copysign.c cos.c cosh.c cot.c coth.c csc.c csch.c
+srcs += d_div.c d_sub.c digamma.c dim.c
+srcs += div.c div_2exp.c div_2si.c div_2ui.c div_d.c div_ui.c dot.c dump.c
+srcs += eint.c eq.c erandom.c erf.c erfc.c exceptions.c
+srcs += exp.c exp10.c exp_2.c exp2.c exp3.c expm1.c extract.c
+srcs += factorial.c fits_intmax.c fits_sint.c fits_slong.c fits_sshort.c
+srcs += fits_uint.c fits_uintmax.c fits_ulong.c fits_ushort.c
+srcs += fma.c fmma.c fms.c fpif.c frac.c free_cache.c frexp.c
+srcs += gamma.c gamma_inc.c gammaonethird.c get_d.c get_d128.c get_d64.c
+srcs += get_exp.c get_f.c get_float128.c get_flt.c get_ld.c get_q.c
+srcs += get_si.c get_sj.c get_str.c get_ui.c get_uj.c get_z.c get_z_exp.c
+srcs += gmp_op.c grandom.c hypot.c
+srcs += init.c init2.c inits.c inits2.c inp_str.c int_ceil_log2.c
+srcs += isinf.c isinteger.c isnan.c isnum.c isqrt.c isregular.c iszero.c
+srcs += jn.c li2.c lngamma.c
+srcs += log.c log10.c log1p.c log2.c log_ui.c logging.c
+srcs += min_prec.c minmax.c modf.c mp_clz_tab.c mpfr-gmp.c mpfr-mini-gmp.c mpn_exp.c
+srcs += mul.c mul_2exp.c mul_2si.c mul_2ui.c mul_d.c mulders.c mul_ui.c
+srcs += nbits_ulong.c neg.c next.c nrandom.c odd_p.c out_str.c pool.c
+srcs += pow.c pow_si.c pow_ui.c pow_z.c powerof2.c
+srcs += printf.c print_raw.c print_rnd_mode.c
+srcs += random_deviate.c rec_sqrt.c reldiff.c rem1.c rint.c rndna.c root.c
+srcs += round_near_x.c round_p.c round_prec.c
+srcs += scale2.c sec.c sech.c
+srcs += set.c set_d.c set_d128.c set_d64.c set_dfl_prec.c set_exp.c set_f.c
+srcs += set_float128.c set_flt.c set_inf.c set_ld.c
+srcs += set_nan.c set_prc_raw.c set_prec.c set_q.c set_rnd.c
+srcs += set_si.c set_si_2exp.c set_sj.c set_str.c set_str_raw.c
+srcs += set_ui.c set_ui_2exp.c set_uj.c set_z.c set_z_exp.c set_zero.c
+srcs += setmax.c setmin.c setsign.c sgn.c signbit.c
+srcs += si_op.c sin.c sin_cos.c sinh.c sinh_cosh.c sqr.c sqrt.c sqrt_ui.c
+srcs += stack_interface.c strtofr.c sub.c sub1.c sub1sp.c sub_d.c sub_ui.c
+srcs += subnormal.c sum.c swap.c
+srcs += tan.c tanh.c total_order.c ubf.c
+srcs += uceil_exp2.c uceil_log2.c ufloor_log2.c
+srcs += ui_div.c ui_pow.c ui_pow_ui.c ui_sub.c
+srcs += urandom.c urandomb.c vasprintf.c version.c volatile.c
+srcs += yn.c zeta.c zeta_ui.c
+
+# Generated source
+srcs += get_patches.c
+
+: foreach $(srcs) |> !cc |> <objs>
+
+# Archive
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libmpfr.a $(S)/<libs>

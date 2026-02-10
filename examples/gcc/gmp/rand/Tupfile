@@ -1,0 +1,9 @@
+include_rules
+
+# GMP random number generation
+
+srcs  = rand.c randbui.c randclr.c randdef.c randiset.c
+srcs += randlc2s.c randlc2x.c randmt.c randmts.c randmui.c
+srcs += rands.c randsd.c randsdui.c
+
+: foreach $(srcs) |> !cc |> %B.o ../<objs>

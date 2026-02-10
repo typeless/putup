@@ -1,0 +1,67 @@
+# Makefile.pup - Build GCC prerequisite libraries with putup
+#
+# Usage:
+#   make -f Makefile.pup                # Build GMP + MPFR + MPC
+#   make -f Makefile.pup clean          # Clean build artifacts
+#   make -f Makefile.pup distclean      # Full clean
+#
+# Assembly support:
+#   make -f Makefile.pup MPN_CPU=x86_64           # x86-64 arch-level assembly
+#   make -f Makefile.pup MPN_CPU=x86_64/core2     # CPU-specific assembly
+#   make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
+#
+# 3-tree layout:
+#   -C .             Tupfiles live here (examples/gcc/)
+#   -S $(SRCDIR)     GCC source tree (read-only)
+#   -B $(BUILD)      Build output directory
+
+.PHONY: all build configure resolve-mpn clean distclean
+
+PLATFORM ?= x86_64-linux
+SRCDIR ?= ../gcc-15.2.0
+BUILD ?= ../build-gcc
+MPN_CPU ?= generic
+TREES = -C . -S $(SRCDIR) -B $(BUILD)
+
+all: build
+
+build: resolve-mpn
+	putup configure --config configs/$(PLATFORM).config $(TREES)
+	putup $(TREES) -j$$(nproc)
+
+configure: resolve-mpn
+	putup configure --config configs/$(PLATFORM).config $(TREES)
+
+# Resolve mpn sources for the selected CPU target.
+# - gmp/mpn/tup.config: source lists and per-function toggles (child scope)
+# - gmp/tup.config: GMP_MPARAM and ASM_ENABLED (parent scope, visible to gmp/Tupfile)
+resolve-mpn:
+	@scripts/resolve-mpn.sh $(MPN_CPU) $(SRCDIR)/gmp/mpn > gmp/mpn/tup.config
+	@sed -i '/^CONFIG_GMP_MPARAM=/d;/^CONFIG_ASM_ENABLED=/d;/^CONFIG_NO_ASM=/d' gmp/tup.config
+	@if [ "$(MPN_CPU)" != "generic" ]; then \
+		arch=$${MPN_CPU%%/*}; \
+		if [ -f "$(SRCDIR)/gmp/mpn/$$arch/gmp-mparam.h" ]; then \
+			echo "CONFIG_GMP_MPARAM=mpn/$$arch/gmp-mparam.h" >> gmp/tup.config; \
+		else \
+			echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gmp/tup.config; \
+		fi; \
+		echo "CONFIG_ASM_ENABLED=y" >> gmp/tup.config; \
+	else \
+		echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gmp/tup.config; \
+		echo "CONFIG_NO_ASM=1" >> gmp/tup.config; \
+	fi
+
+# Multi-variant: build for multiple platforms in parallel
+#   make -f Makefile.pup multi SRCDIR=../gcc-15.2.0
+PLATFORMS ?= x86_64-linux aarch64-linux
+multi:
+	@for p in $(PLATFORMS); do \
+		putup configure --config configs/$$p.config -C . -S $(SRCDIR) -B $(BUILD)-$$p; \
+	done
+	putup $(foreach p,$(PLATFORMS),-B $(BUILD)-$(p)) -C . -S $(SRCDIR) -j$$(nproc)
+
+clean:
+	putup clean $(TREES)
+
+distclean:
+	putup distclean $(TREES)

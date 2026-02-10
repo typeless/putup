@@ -1,0 +1,7 @@
+include_rules
+
+# Root Tupfile - nothing to do here
+# Libraries are built by their respective Tupfiles:
+#   gmp/Tupfile      → libgmp.a
+#   mpfr/src/Tupfile → libmpfr.a
+#   mpc/src/Tupfile  → libmpc.a
