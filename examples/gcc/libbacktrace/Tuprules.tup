@@ -9,9 +9,10 @@ LIBBACKTRACE_DIR ?= .
 CFLAGS  = -O2 -std=gnu11
 CFLAGS += -DHAVE_CONFIG_H
 CFLAGS += -I$(B)/$(LIBBACKTRACE_DIR) -I$(S)/$(LIBBACKTRACE_DIR)
+CFLAGS += -I$(S)/$(LIBBACKTRACE_DIR)/../include
 
 !cc = | $(S)/$(LIBBACKTRACE_DIR)/<gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 
 !gen-config = |> ^ GEN %o^ awk -F= \
   '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
-  $(B)/tup.config > %o |>
+  $(B)/$(LIBBACKTRACE_DIR)/tup.config > %o |>

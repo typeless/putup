@@ -13,18 +13,8 @@ wget https://gcc.gnu.org/pub/gcc/releases/gcc-15.2.0/gcc-15.2.0.tar.xz
 tar xf gcc-15.2.0.tar.xz
 cd gcc-15.2.0 && ./contrib/download_prerequisites && cd ..
 
-# 2. Generate pre-generated files (gengtype outputs)
-cd gcc-15.2.0 && mkdir build && cd build
-../configure --disable-bootstrap --enable-languages=c && make -j$(nproc)
-cd ../..
-
-# 3. Copy pre-generated files into the example
+# 2. Build cc1
 cd examples/gcc
-cp /path/to/gcc-15.2.0/build/gcc/gtype-desc.cc gcc/pre-generated/
-cp /path/to/gcc-15.2.0/build/gcc/gtype-desc.h gcc/pre-generated/
-cp /path/to/gcc-15.2.0/build/gcc/gt-*.h gcc/pre-generated/
-
-# 4. Build cc1
 make -f Makefile.pup SRCDIR=/path/to/gcc-15.2.0 BUILD=../build-gcc
 ```
 
@@ -64,19 +54,6 @@ libbacktrace ──────────────→ libbacktrace.a ──
                                                        ↑
 libcpp ────────────────────→ libcpp.a ─────────────────┘
 ```
-
-## Pre-generated Files
-
-One GCC generator is too complex to implement initially:
-
-- **gengtype** scans all source files to produce GC type descriptors
-  (`gtype-desc.cc`, `gtype-desc.h`, `gt-*.h`)
-
-These must be copied from a configured GCC build into `gcc/pre-generated/`.
-The outputs are target-independent, so they only need to be generated once.
-
-**genmatch** (which produces `gimple-match-*.cc` and `generic-match-*.cc`)
-is built and run as part of the normal build, using libcpp for tokenization.
 
 ## Per-Component Configuration
 
@@ -155,6 +132,10 @@ genconditions → gencondmd.cc → compile+link gencondmd → insn-conditions.md
 All other generators (read .md files, produce insn-*.h / insn-*.cc)
   → genattr, genattrtab, genautomata, gencodes, genconfig, ...
   → genemit (10 split outputs), genrecog (10 split outputs + header)
+
+gengtype (GC type descriptors, needs libiberty)
+  → parses GTY annotations from gtyp-input.list
+  → gtype-desc.cc, gtype-desc.h, gtype-c.h, gt-*.h (~60 headers)
 ```
 
 ## Assembly Support
@@ -201,12 +182,13 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 | `gcc/c-family/Tupfile` | C-family shared objects |
 | `gcc/analyzer/Tupfile` | Static analyzer objects |
 | `gcc/config/i386/Tupfile` | x86_64 target-specific objects |
-| `gcc/pre-generated/` | gengtype outputs |
+| `gcc/Tupfile` (gtyp section) | gengtype input file list (inline, from GTFILES) |
 
 ## Build Features Demonstrated
 
 - **Host-tool bootstrapping**: ~25 generator programs compiled and run during the build
 - **Generated source pipeline**: `.md` → generators → `insn-*.h` / `insn-*.cc` → cc1
+- **GC type descriptor generation**: gengtype parses GTY annotations across all source files, producing `gtype-desc.cc` and ~60 `gt-*.h` headers
 - **Multi-output generators**: genemit produces 10 split files, genrecog produces 10 + header
 - **~500-file C++ compilation**: Full GCC backend with analyzer, C frontend, target-specific code
 - **Cross-directory groups**: Subdirectory objects collected via `../<cc1-objs>` into parent
@@ -224,4 +206,4 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 
 - Requires: gcc, g++, m4 (for GMP assembly mode), gawk (for GCC options pipeline)
 - Target: x86_64-linux native (host == target)
-- Pre-generated gengtype files must be provided from a configured GCC build (see Quick Start)
+- All generators (including gengtype) are built and run as part of the normal build — no `./configure && make` step required

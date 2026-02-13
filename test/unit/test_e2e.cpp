@@ -4180,6 +4180,71 @@ SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[
     }
 }
 
+SCENARIO("Cross-directory groups in 3-tree builds", "[e2e][out-of-tree-config][groups]")
+{
+    GIVEN("a 3-tree project with cross-directory group references via variables")
+    {
+        // Mirrors the GCC example pattern:
+        //   root Tuprules.tup: S = $(TUP_CWD); LIB_DIR = gcc
+        //   gcc/Tuprules.tup:  S ?= ...; LIB_DIR ?= .; macros use $(S)/$(LIB_DIR)/<group>
+        //   gcc/Tupfile:       produces <gen-headers>, consumes via macros
+        auto f = E2EFixture { "groups_cross_dir_3tree" };
+        auto source_dir = f.workdir() / "source";
+        auto config_dir = f.workdir() / "config";
+        auto build_dir = f.workdir() / "build";
+
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("parsing with -S, -C, and -B options")
+        {
+            auto result = f.pup({
+                "parse",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-v"
+            });
+
+            THEN("parse succeeds without group warnings")
+            {
+                INFO("stdout:\n" << result.stdout_output);
+                INFO("stderr:\n" << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("has no members") == std::string::npos);
+            }
+        }
+
+        WHEN("building with -S, -C, and -B options")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-j1"
+            });
+
+            THEN("build succeeds without group warnings")
+            {
+                INFO("stdout:\n" << result.stdout_output);
+                INFO("stderr:\n" << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("has no members") == std::string::npos);
+            }
+
+            THEN("generated header exists in build directory")
+            {
+                REQUIRE(f.exists("build/gcc/config.h"));
+            }
+
+            THEN("output files are created from source globs")
+            {
+                REQUIRE(f.exists("build/gcc/hello.out"));
+            }
+        }
+    }
+}
+
 SCENARIO("Out-of-tree configuration with TUP_SRCDIR and TUP_OUTDIR variables", "[e2e][out-of-tree-config]")
 {
     GIVEN("a project using TUP_SRCDIR and TUP_OUTDIR in Tupfiles")

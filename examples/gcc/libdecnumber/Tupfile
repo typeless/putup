@@ -10,6 +10,9 @@ include_rules
 
 : |> !gen-config |> config.h <gen-headers>
 
+# gstdint.h — configure-generated wrapper around system <stdint.h>
+: |> ^ GEN %o^ echo '#include <stdint.h>' > %o |> gstdint.h <gen-headers>
+
 # --- Phase 2: Compile sources ---
 # BID variant (Binary Integer Decimal) — x86/x86_64 use BID per dfp.m4.
 
