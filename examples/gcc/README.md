@@ -13,7 +13,7 @@ wget https://gcc.gnu.org/pub/gcc/releases/gcc-15.2.0/gcc-15.2.0.tar.xz
 tar xf gcc-15.2.0.tar.xz
 cd gcc-15.2.0 && ./contrib/download_prerequisites && cd ..
 
-# 2. Generate pre-generated files (gengtype/genmatch outputs)
+# 2. Generate pre-generated files (gengtype outputs)
 cd gcc-15.2.0 && mkdir build && cd build
 ../configure --disable-bootstrap --enable-languages=c && make -j$(nproc)
 cd ../..
@@ -21,10 +21,8 @@ cd ../..
 # 3. Copy pre-generated files into the example
 cd examples/gcc
 cp /path/to/gcc-15.2.0/build/gcc/gtype-desc.cc gcc/pre-generated/
-cp /path/to/gcc-15.2.0/build/gcc/gt-*.h gcc/pre-generated/
 cp /path/to/gcc-15.2.0/build/gcc/gtype-desc.h gcc/pre-generated/
-cp /path/to/gcc-15.2.0/build/gcc/gimple-match-*.cc gcc/pre-generated/
-cp /path/to/gcc-15.2.0/build/gcc/generic-match-*.cc gcc/pre-generated/
+cp /path/to/gcc-15.2.0/build/gcc/gt-*.h gcc/pre-generated/
 
 # 4. Build cc1
 make -f Makefile.pup SRCDIR=/path/to/gcc-15.2.0 BUILD=../build-gcc
@@ -69,16 +67,16 @@ libcpp ────────────────────→ libcpp.a 
 
 ## Pre-generated Files
 
-Two GCC generators are too complex to implement initially:
+One GCC generator is too complex to implement initially:
 
 - **gengtype** scans all source files to produce GC type descriptors
   (`gtype-desc.cc`, `gtype-desc.h`, `gt-*.h`)
-- **genmatch** depends on libcpp and produces pattern matchers
-  (`gimple-match-*.cc`, `generic-match-*.cc`)
 
 These must be copied from a configured GCC build into `gcc/pre-generated/`.
-The outputs are target-independent (gengtype) or stable across x86_64 builds
-(genmatch), so they only need to be generated once.
+The outputs are target-independent, so they only need to be generated once.
+
+**genmatch** (which produces `gimple-match-*.cc` and `generic-match-*.cc`)
+is built and run as part of the normal build, using libcpp for tokenization.
 
 ## Per-Component Configuration
 
@@ -203,7 +201,7 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 | `gcc/c-family/Tupfile` | C-family shared objects |
 | `gcc/analyzer/Tupfile` | Static analyzer objects |
 | `gcc/config/i386/Tupfile` | x86_64 target-specific objects |
-| `gcc/pre-generated/` | gengtype + genmatch outputs |
+| `gcc/pre-generated/` | gengtype outputs |
 
 ## Build Features Demonstrated
 
@@ -226,4 +224,4 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 
 - Requires: gcc, g++, m4 (for GMP assembly mode), gawk (for GCC options pipeline)
 - Target: x86_64-linux native (host == target)
-- Pre-generated files must be provided from a configured GCC build (see Quick Start)
+- Pre-generated gengtype files must be provided from a configured GCC build (see Quick Start)

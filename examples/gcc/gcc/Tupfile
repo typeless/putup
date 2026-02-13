@@ -11,7 +11,7 @@ include_rules
 #   4. Backend + common object compilation
 #   5. cc1 link
 #
-# Pre-generated files (gtype-desc.cc, gimple-match-*, generic-match-*)
+# Pre-generated files (gtype-desc.cc, gtype-desc.h, gt-*.h)
 # must be placed in pre-generated/ from a configured GCC build.
 
 SRC = $(S)/$(GCC_DIR)
@@ -254,6 +254,42 @@ BUILD_ERRORS = host-errors.o
   ^ LINK gencfn-macros^ $(HOSTCC) %f -o %o |> gencfn-macros
 : | gencfn-macros |> ^ GEN %o^ ./gencfn-macros -c > %o \
   |> case-cfn-macros.h <gen-insn-headers>
+: | gencfn-macros |> ^ GEN %o^ ./gencfn-macros -o > %o \
+  |> cfn-operators.pd
+
+# genmatch (reads match.pd via libcpp tokenizer)
+: genmatch.cc | $(BUILD_RTL_DEPS) <gen-config-headers> |> ^ HOSTCXX %b^ \
+  $(HOSTCC) $(HOST_CXXFLAGS) -c %f -o %o |> host-genmatch.o
+
+: host-genmatch.o $(BUILD_ERRORS) host-vec.o host-hash-table.o host-sort.o \
+  $(LIBCPP_A) $(LIBIBERTY_A) |> \
+  ^ LINK genmatch^ $(HOSTCC) %f -o %o |> genmatch
+
+: $(SRC)/match.pd | genmatch cfn-operators.pd |> ^ GEN gimple-match-*^ \
+  ./genmatch --gimple \
+  --header=gimple-match-auto.h --include=gimple-match-auto.h \
+  %f \
+  gimple-match-1.cc gimple-match-2.cc gimple-match-3.cc \
+  gimple-match-4.cc gimple-match-5.cc gimple-match-6.cc \
+  gimple-match-7.cc gimple-match-8.cc gimple-match-9.cc \
+  gimple-match-10.cc \
+  |> gimple-match-auto.h gimple-match-1.cc gimple-match-2.cc \
+     gimple-match-3.cc gimple-match-4.cc gimple-match-5.cc \
+     gimple-match-6.cc gimple-match-7.cc gimple-match-8.cc \
+     gimple-match-9.cc gimple-match-10.cc <gen-insn-headers>
+
+: $(SRC)/match.pd | genmatch cfn-operators.pd |> ^ GEN generic-match-*^ \
+  ./genmatch --generic \
+  --header=generic-match-auto.h --include=generic-match-auto.h \
+  %f \
+  generic-match-1.cc generic-match-2.cc generic-match-3.cc \
+  generic-match-4.cc generic-match-5.cc generic-match-6.cc \
+  generic-match-7.cc generic-match-8.cc generic-match-9.cc \
+  generic-match-10.cc \
+  |> generic-match-auto.h generic-match-1.cc generic-match-2.cc \
+     generic-match-3.cc generic-match-4.cc generic-match-5.cc \
+     generic-match-6.cc generic-match-7.cc generic-match-8.cc \
+     generic-match-9.cc generic-match-10.cc <gen-insn-headers>
 
 # genconstants (MD input only, no insn-conditions.md)
 : genconstants.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genconstants.o
@@ -422,13 +458,26 @@ gen_srcs += insn-automata.cc insn-extract.cc insn-output.cc insn-peep.cc
 gen_srcs += insn-preds.cc insn-opinit.cc insn-enums.cc
 : foreach $(gen_srcs) |> !cxx |> %B.o <cc1-objs>
 
+# gimple-match split (from genmatch --gimple)
+: foreach gimple-match-1.cc gimple-match-2.cc gimple-match-3.cc gimple-match-4.cc \
+          gimple-match-5.cc gimple-match-6.cc gimple-match-7.cc gimple-match-8.cc \
+          gimple-match-9.cc gimple-match-10.cc |> !cxx |> %B.o <cc1-objs>
+
+# generic-match split (from genmatch --generic)
+: foreach generic-match-1.cc generic-match-2.cc generic-match-3.cc generic-match-4.cc \
+          generic-match-5.cc generic-match-6.cc generic-match-7.cc generic-match-8.cc \
+          generic-match-9.cc generic-match-10.cc |> !cxx |> %B.o <cc1-objs>
+
+# gimple-match-exports (hand-written API wrapper for generated match code)
+: gimple-match-exports.cc |> !cxx |> gimple-match-exports.o <cc1-objs>
+
 # ============================================================
 # Phase 5: Backend objects (OBJS from Makefile.in)
 # ============================================================
 # ~445 source files from gcc/. Excludes:
 #   - analyzer/* (compiled in analyzer/Tupfile)
 #   - config/i386/* (compiled in config/i386/Tupfile)
-#   - pre-generated gtype-desc.cc, gimple-match-*, generic-match-*
+#   - pre-generated gtype-desc.cc (gengtype output)
 #   - Generated insn-*.cc and options*.cc (compiled above)
 
 objs  = ggc-page.cc adjust-alignment.cc alias.cc alloc-pool.cc
@@ -650,25 +699,16 @@ common += hooks.cc file-find.cc opt-suggestions.cc
 : attribs.cc |> !cxx |> attribs.o <cc1-objs>
 
 # ============================================================
-# Phase 7: Pre-generated sources
+# Phase 7: Pre-generated sources (gengtype only)
 # ============================================================
-# gengtype and genmatch outputs must be copied from a configured
-# GCC build into pre-generated/ before building.
+# gengtype outputs must be copied from a configured GCC build
+# into pre-generated/ before building.
 #
-#   cp build-gcc/gcc/gtype-desc.cc         pre-generated/
-#   cp build-gcc/gcc/gimple-match-*.cc     pre-generated/
-#   cp build-gcc/gcc/gimple-match-auto.h   pre-generated/
-#   cp build-gcc/gcc/gimple-match-exports.cc pre-generated/
-#   cp build-gcc/gcc/generic-match-*.cc    pre-generated/
-#   cp build-gcc/gcc/generic-match-auto.h  pre-generated/
-#   cp build-gcc/gcc/gt-*.h               pre-generated/
-#   cp build-gcc/gcc/gtype-desc.h         pre-generated/
+#   cp build-gcc/gcc/gtype-desc.cc  pre-generated/
+#   cp build-gcc/gcc/gtype-desc.h   pre-generated/
+#   cp build-gcc/gcc/gt-*.h         pre-generated/
 
 : pre-generated/gtype-desc.cc |> !cxx |> gtype-desc.o <cc1-objs>
-: pre-generated/gimple-match-exports.cc |> !cxx |> gimple-match-exports.o <cc1-objs>
-
-: foreach pre-generated/gimple-match-[0-9]*.cc |> !cxx |> %B.o <cc1-objs>
-: foreach pre-generated/generic-match-[0-9]*.cc |> !cxx |> %B.o <cc1-objs>
 
 # ============================================================
 # Phase 8: Link cc1
