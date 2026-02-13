@@ -47,8 +47,9 @@ srcs += ui_div.c ui_pow.c ui_pow_ui.c ui_sub.c
 srcs += urandom.c urandomb.c vasprintf.c version.c volatile.c
 srcs += yn.c zeta.c zeta_ui.c
 
-# Generated source
-srcs += get_patches.c
+# get_patches.c - empty patch list (generated here, not from source tree)
+: |> ^ GEN %o^ printf '#include <stddef.h>\nconst char * const mpfr_patches[] = { NULL };\n' > %o |> get_patches.c
+: get_patches.c |> !cc |> <objs>
 
 : foreach $(srcs) |> !cc |> <objs>
 

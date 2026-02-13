@@ -41,7 +41,7 @@ GCC_INCLUDES += -I$(B)/$(MPC_DIR)/src -I$(S)/$(MPC_DIR)/src
 # --- HOST compilation (generators) ---
 
 HOST_CXXFLAGS  = -O0 -std=gnu++14
-HOST_CXXFLAGS += -DGENERATOR_FILE -DHAVE_CONFIG_H
+HOST_CXXFLAGS += -DIN_GCC -DGENERATOR_FILE -DHAVE_CONFIG_H
 HOST_CXXFLAGS += $(GCC_INCLUDES)
 
 !hostcxx = | $(S)/$(GCC_DIR)/<gen-config-headers> |> \
@@ -53,9 +53,10 @@ TARGET_CXXFLAGS  = -O2 -std=gnu++14
 TARGET_CXXFLAGS += -DIN_GCC -DHAVE_CONFIG_H
 TARGET_CXXFLAGS += $(GCC_INCLUDES)
 
-!cxx = | $(S)/$(GCC_DIR)/<gen-config-headers> $(S)/$(GCC_DIR)/<gen-insn-headers> |> \
+!cxx = | $(S)/$(GCC_DIR)/<gen-config-headers> $(S)/$(GCC_DIR)/<gen-insn-headers> \
+        $(S)/$(GCC_DIR)/<gen-gtype-headers> |> \
   ^ CXX %b^ $(CXX) $(TARGET_CXXFLAGS) -c %f -o %o |>
 
 !gen-config = |> ^ GEN %o^ awk -F= \
   '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
-  $(B)/tup.config > %o |>
+  $(B)/$(GCC_DIR)/tup.config > %o |>
