@@ -1,0 +1,28 @@
+include_rules
+
+# ============================================================
+# gcc/analyzer/ — Static analyzer (GCC 15.2.0)
+# ============================================================
+# Objects contribute to ../<cc1-objs> for the cc1 link.
+# Source list from ANALYZER_OBJS in Makefile.in.
+
+srcs  = access-diagram.cc analysis-plan.cc analyzer.cc
+srcs += analyzer-language.cc analyzer-logging.cc analyzer-pass.cc
+srcs += analyzer-selftests.cc bar-chart.cc bounds-checking.cc
+srcs += call-details.cc call-info.cc call-string.cc call-summary.cc
+srcs += checker-event.cc checker-path.cc complexity.cc
+srcs += constraint-manager.cc diagnostic-manager.cc
+srcs += engine.cc feasible-graph.cc function-set.cc
+srcs += infinite-loop.cc infinite-recursion.cc
+srcs += kf.cc kf-analyzer.cc kf-lang-cp.cc
+srcs += known-function-manager.cc pending-diagnostic.cc
+srcs += program-point.cc program-state.cc
+srcs += ranges.cc record-layout.cc region.cc region-model.cc
+srcs += region-model-asm.cc region-model-manager.cc
+srcs += region-model-reachability.cc
+srcs += sm.cc sm-file.cc sm-fd.cc sm-malloc.cc
+srcs += sm-pattern-test.cc sm-sensitive.cc sm-signal.cc sm-taint.cc
+srcs += state-purge.cc store.cc supergraph.cc
+srcs += svalue.cc symbol.cc trimmed-graph.cc varargs.cc
+
+: foreach $(srcs) |> !cxx |> %B.o ../<cc1-objs>

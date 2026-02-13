@@ -1,0 +1,19 @@
+# libcpp build rules (self-contained with ?= defaults)
+
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CXX ?= g++
+AR ?= ar
+LIBCPP_DIR ?= .
+LIBIBERTY_DIR ?= libiberty
+
+CXXFLAGS  = -O2 -std=gnu++14 -fno-exceptions -fno-rtti
+CXXFLAGS += -DHAVE_CONFIG_H
+CXXFLAGS += -I$(B)/$(LIBCPP_DIR) -I$(S)/$(LIBCPP_DIR) -I$(S)/$(LIBCPP_DIR)/include
+CXXFLAGS += -I$(S)/$(LIBCPP_DIR)/../include
+
+!cxx = | $(S)/$(LIBCPP_DIR)/<gen-headers> |> ^ CXX %b^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
+
+!gen-config = |> ^ GEN %o^ awk -F= \
+  '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
+  $(B)/tup.config > %o |>

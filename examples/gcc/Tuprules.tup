@@ -1,16 +1,22 @@
-# Tuprules.tup - GCC in-tree library build (root rules)
+# Tuprules.tup - GCC in-tree build (root rules)
 #
 # Sets project-wide variables from tup.config.
-# Per-library CFLAGS, !cc, and !gen-config live in
-# gmp/Tuprules.tup, mpfr/Tuprules.tup, mpc/Tuprules.tup.
+# Per-library CFLAGS, !cc, and !gen-config live in each
+# library's own Tuprules.tup (gmp/, mpfr/, mpc/, libiberty/, etc.).
 
 S = $(TUP_CWD)
 B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
 
 CC = @(CC)
+CXX = @(CXX)
 AR = @(AR)
 HOSTCC = @(HOSTCC)
 
 GMP_DIR = gmp
 MPFR_DIR = mpfr
 MPC_DIR = mpc
+LIBIBERTY_DIR = libiberty
+LIBCPP_DIR = libcpp
+LIBDECNUMBER_DIR = libdecnumber
+LIBBACKTRACE_DIR = libbacktrace
+GCC_DIR = gcc

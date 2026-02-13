@@ -1,7 +1,7 @@
-# Makefile.pup - Build GCC prerequisite libraries with putup
+# Makefile.pup - Build GCC's cc1 C compiler with putup
 #
 # Usage:
-#   make -f Makefile.pup                # Build GMP + MPFR + MPC
+#   make -f Makefile.pup                # Build cc1 (all libraries + compiler)
 #   make -f Makefile.pup clean          # Clean build artifacts
 #   make -f Makefile.pup distclean      # Full clean
 #

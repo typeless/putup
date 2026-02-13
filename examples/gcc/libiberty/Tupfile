@@ -1,0 +1,41 @@
+include_rules
+
+# ============================================================
+# libiberty - GCC utility library
+# ============================================================
+
+# --- Phase 1: Generate config.h ---
+
+: |> !gen-config |> config.h <gen-headers>
+
+# --- Phase 2: Compile REQUIRED_OFILES ---
+# Source list from libiberty/Makefile.in REQUIRED_OFILES.
+# @pexecute@ = pex-unix on Linux.
+
+srcs  = regex.c cplus-dem.c cp-demangle.c md5.c sha1.c alloca.c
+srcs += argv.c bsearch_r.c
+srcs += choose-temp.c concat.c cp-demint.c crc32.c d-demangle.c
+srcs += dwarfnames.c dyn-string.c
+srcs += fdmatch.c fibheap.c filedescriptor.c filename_cmp.c floatformat.c
+srcs += fnmatch.c fopen_unlocked.c
+srcs += getopt.c getopt1.c getpwd.c getruntime.c
+srcs += hashtab.c hex.c
+srcs += lbasename.c ldirname.c lrealpath.c
+srcs += make-relative-prefix.c make-temp-file.c
+srcs += objalloc.c obstack.c
+srcs += partition.c pexecute.c physmem.c pex-common.c pex-one.c pex-unix.c
+srcs += vprintf-support.c rust-demangle.c
+srcs += safe-ctype.c
+srcs += simple-object.c simple-object-coff.c simple-object-elf.c
+srcs += simple-object-mach-o.c simple-object-xcoff.c
+srcs += sort.c spaces.c splay-tree.c stack-limit.c
+srcs += strerror.c strsignal.c
+srcs += timeval-utils.c unlink-if-ordinary.c
+srcs += xasprintf.c xatexit.c xexit.c xmalloc.c xmemdup.c xstrdup.c
+srcs += xstrerror.c xstrndup.c xvasprintf.c
+
+: foreach $(srcs) |> !cc |> %B.o <objs>
+
+# --- Phase 3: Archive ---
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libiberty.a $(S)/<libs>

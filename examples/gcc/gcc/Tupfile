@@ -1,0 +1,687 @@
+include_rules
+
+# ============================================================
+# GCC 15.2.0 — C compiler backend (x86_64-linux)
+# ============================================================
+#
+# Builds cc1 from the GCC source tree via five phases:
+#   1. Config headers + options pipeline
+#   2. Generator bootstrap (genmodes → BUILD_RTL → generators)
+#   3. Machine-description → insn-*.h / insn-*.cc
+#   4. Backend + common object compilation
+#   5. cc1 link
+#
+# Pre-generated files (gtype-desc.cc, gimple-match-*, generic-match-*)
+# must be placed in pre-generated/ from a configured GCC build.
+
+SRC = $(S)/$(GCC_DIR)
+
+# Machine description inputs (x86_64-linux)
+MD = common.md config/i386/i386.md
+
+# ============================================================
+# Phase 1: Config headers → <gen-config-headers>
+# ============================================================
+
+# auto-host.h from tup.config
+: |> !gen-config |> auto-host.h <gen-config-headers>
+
+# bconfig.h — build-machine config (generators only)
+: |> ^ GEN %o^ echo '#include "auto-host.h"' > %o |> bconfig.h <gen-config-headers>
+
+# config.h — target config (not for generators)
+: |> ^ GEN %o^ ( \
+  echo '#ifndef GCC_CONFIG_H'; \
+  echo '#define GCC_CONFIG_H'; \
+  echo '#ifdef GENERATOR_FILE'; \
+  echo '#error config.h is not for generator programs'; \
+  echo '#endif'; \
+  echo '#include "auto-host.h"'; \
+  echo '#endif'; \
+  ) > %o |> config.h <gen-config-headers>
+
+# bversion.h
+: |> ^ GEN %o^ ( \
+  echo '#define BUILDING_GCC_MAJOR 15'; \
+  echo '#define BUILDING_GCC_MINOR 2'; \
+  echo '#define BUILDING_GCC_PATCHLEVEL 0'; \
+  echo '#define BUILDING_GCC_VERSION (BUILDING_GCC_MAJOR * 1000 + BUILDING_GCC_MINOR)'; \
+  ) > %o |> bversion.h <gen-config-headers>
+
+# version.h
+: |> ^ GEN %o^ ( \
+  echo '#ifndef VERSION_H'; \
+  echo '#define VERSION_H'; \
+  echo '#define GCC_major_version 15'; \
+  echo '#define version_string "15.2.0"'; \
+  echo '#define pkgversion_string "(Tup) "'; \
+  echo '#define bug_report_url ""'; \
+  echo '#define GCOV_VERSION ((gcov_unsigned_t)0x4235322a)'; \
+  echo '#endif'; \
+  ) > %o |> version.h <gen-config-headers>
+
+# configargs.h — configure arguments (stub for tup build)
+: |> ^ GEN %o^ ( \
+  echo 'static const char configuration_arguments[] = "tup-build x86_64-pc-linux-gnu";'; \
+  echo 'static const char thread_model[] = "posix";'; \
+  echo 'static const struct { const char *name, *value; } configure_default_options[] = { { NULL, NULL } };'; \
+  ) > %o |> configargs.h <gen-config-headers>
+
+# --- Options pipeline ---
+# .opt files → optionlist → options.h, options.cc, options-save.cc, options-urls.cc
+
+OPT_FILES  = c-family/c.opt common.opt params.opt analyzer/analyzer.opt
+OPT_FILES += config/i386/i386.opt config/fused-madd.opt config/linux-android.opt
+
+: $(OPT_FILES) |> ^ GEN optionlist^ \
+  LC_ALL=C awk -f $(SRC)/opt-gather.awk %f > %o \
+  |> optionlist
+
+: optionlist |> ^ GEN %o^ \
+  awk -f $(SRC)/opt-functions.awk -f $(SRC)/opt-read.awk \
+      -f $(SRC)/opth-gen.awk < %f > %o \
+  |> options.h <gen-config-headers>
+
+: optionlist |> ^ GEN %o^ \
+  awk -f $(SRC)/opt-functions.awk -f $(SRC)/opt-read.awk \
+      -f $(SRC)/optc-gen.awk \
+      -v header_name="config.h system.h coretypes.h options.h tm.h" < %f > %o \
+  |> options.cc
+
+: optionlist |> ^ GEN %o^ \
+  awk -f $(SRC)/opt-functions.awk -f $(SRC)/opt-read.awk \
+      -f $(SRC)/optc-save-gen.awk \
+      -v header_name="config.h system.h coretypes.h tm.h" < %f > %o \
+  |> options-save.cc
+
+: optionlist |> ^ GEN %o^ \
+  awk -f $(SRC)/opt-functions.awk -f $(SRC)/opt-read.awk \
+      -f $(SRC)/options-urls-cc-gen.awk \
+      -v header_name="config.h system.h coretypes.h tm.h" < %f > %o \
+  |> options-urls.cc
+
+# tm_p.h — target machine prototypes for x86_64-linux-gnu
+: |> ^ GEN %o^ ( \
+  echo '#ifndef GCC_TM_P_H'; \
+  echo '#define GCC_TM_P_H'; \
+  echo '#ifdef IN_GCC'; \
+  echo '# include "config/i386/i386-protos.h"'; \
+  echo '#endif'; \
+  echo '#endif'; \
+  ) > %o |> tm_p.h <gen-config-headers>
+
+# tm.h — target machine description for x86_64-linux-gnu
+# Includes options.h and the i386 target header chain.
+: |> ^ GEN %o^ ( \
+  echo '#ifndef GCC_TM_H'; \
+  echo '#define GCC_TM_H'; \
+  echo '#define LIBC_GLIBC 1'; \
+  echo '#define LIBC_UCLIBC 2'; \
+  echo '#define LIBC_BIONIC 3'; \
+  echo '#define LIBC_MUSL 4'; \
+  echo '#ifdef IN_GCC'; \
+  echo '# include "options.h"'; \
+  echo '# include "config/i386/i386.h"'; \
+  echo '# include "config/i386/unix.h"'; \
+  echo '# include "config/i386/att.h"'; \
+  echo '# include "config/elfos.h"'; \
+  echo '# include "config/gnu-user.h"'; \
+  echo '# include "config/glibc-stdint.h"'; \
+  echo '# include "config/i386/x86-64.h"'; \
+  echo '# include "config/i386/gnu-user-common.h"'; \
+  echo '# include "config/i386/gnu-user64.h"'; \
+  echo '# include "config/linux.h"'; \
+  echo '# include "config/linux-android.h"'; \
+  echo '# include "config/i386/linux-common.h"'; \
+  echo '# include "config/i386/linux64.h"'; \
+  echo '# include "config/initfini-array.h"'; \
+  echo '#endif'; \
+  echo '#if defined IN_GCC && !defined GENERATOR_FILE && !defined USED_FOR_TARGET'; \
+  echo '# include "insn-constants.h"'; \
+  echo '# include "insn-flags.h"'; \
+  echo '#endif'; \
+  echo '#if defined IN_GCC && !defined GENERATOR_FILE'; \
+  echo '# include "insn-modes.h"'; \
+  echo '#endif'; \
+  echo '#include "defaults.h"'; \
+  echo '#endif'; \
+  ) > %o |> tm.h <gen-config-headers>
+
+# ============================================================
+# Phase 2: Generator bootstrap
+# ============================================================
+#
+# Bootstrap chain:
+#   errors.o → genmodes → insn-modes.h
+#   insn-modes.h → BUILD_RTL objects
+#   BUILD_RTL + BUILD_MD → genconditions → gencondmd → insn-conditions.md
+#   insn-conditions.md → all RTL generators
+
+# Host support objects (prefixed to avoid collision with target objects)
+: errors.cc |> !hostcxx |> host-errors.o
+
+# genmodes needs EXTRA_MODES_FILE for i386
+: genmodes.cc |> ^ HOSTCXX %b^ $(HOSTCC) $(HOST_CXXFLAGS) \
+  -DEXTRA_MODES_FILE=\"config/i386/i386-modes.def\" -c %f -o %o \
+  |> host-genmodes.o
+
+: host-genmodes.o host-errors.o |> ^ LINK genmodes^ $(HOSTCC) %f -o %o |> genmodes
+
+: | genmodes |> ^ GEN %o^ ./genmodes -h > %o |> insn-modes.h <gen-insn-headers>
+: | genmodes |> ^ GEN %o^ ./genmodes -i > %o |> insn-modes-inline.h <gen-insn-headers>
+: | genmodes |> ^ GEN %o^ ./genmodes > %o    |> insn-modes.cc
+: | genmodes |> ^ GEN %o^ ./genmodes -m > %o |> min-insn-modes.cc
+
+# min-insn-modes.o (host, from generated source)
+: min-insn-modes.cc | <gen-config-headers> |> \
+  ^ HOSTCXX %b^ $(HOSTCC) $(HOST_CXXFLAGS) -c %f -o %o |> host-min-insn-modes.o
+
+# BUILD_RTL objects (need insn-modes.h + insn-modes-inline.h)
+BUILD_RTL_DEPS = insn-modes.h insn-modes-inline.h
+
+: rtl.cc        | $(BUILD_RTL_DEPS) |> !hostcxx |> host-rtl.o
+: read-rtl.cc   | $(BUILD_RTL_DEPS) |> !hostcxx |> host-read-rtl.o
+: ggc-none.cc   | $(BUILD_RTL_DEPS) |> !hostcxx |> host-ggc-none.o
+: vec.cc        | $(BUILD_RTL_DEPS) |> !hostcxx |> host-vec.o
+: gensupport.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-gensupport.o
+: print-rtl.cc  | $(BUILD_RTL_DEPS) |> !hostcxx |> host-print-rtl.o
+: hash-table.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-hash-table.o
+: sort.cc       | $(BUILD_RTL_DEPS) |> !hostcxx |> host-sort.o
+: inchash.cc    | $(BUILD_RTL_DEPS) |> !hostcxx |> host-inchash.o
+
+# BUILD_MD
+: read-md.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-read-md.o
+
+BUILD_RTL  = host-rtl.o host-read-rtl.o host-ggc-none.o host-vec.o
+BUILD_RTL += host-min-insn-modes.o host-gensupport.o host-print-rtl.o
+BUILD_RTL += host-hash-table.o host-sort.o
+BUILD_MD   = host-read-md.o
+BUILD_ERRORS = host-errors.o
+
+# --- genconditions → gencondmd bootstrap ---
+
+: genconditions.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genconditions.o
+
+: host-genconditions.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) \
+  $(LIBIBERTY_A) |> ^ LINK genconditions^ $(HOSTCC) %f -o %o |> genconditions
+
+: $(MD) | genconditions |> ^ GEN %o^ ./genconditions %f > %o |> gencondmd.cc
+
+: gencondmd.cc | <gen-config-headers> |> \
+  ^ HOSTCXX %b^ $(HOSTCC) $(HOST_CXXFLAGS) -c %f -o %o |> host-gencondmd.o
+
+: host-gencondmd.o $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK gencondmd^ $(HOSTCC) %f -o %o |> gencondmd
+
+: | gencondmd |> ^ GEN %o^ ./gencondmd > %o |> insn-conditions.md
+
+# ============================================================
+# Phase 3: Generators
+# ============================================================
+#
+# Each generator: compile → link → run.
+# RTL generators link with BUILD_RTL + BUILD_MD + BUILD_ERRORS.
+# Non-RTL generators link with BUILD_ERRORS only.
+
+# --- Helper: compile + link an RTL generator ---
+# (Each generator is hand-written for clarity)
+
+# gengenrtl (no MD input, uses rtl.def)
+: gengenrtl.cc |> !hostcxx |> host-gengenrtl.o
+: host-gengenrtl.o $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK gengenrtl^ $(HOSTCC) %f -o %o |> gengenrtl
+: | gengenrtl |> ^ GEN %o^ ./gengenrtl > %o |> genrtl.h <gen-insn-headers>
+
+# gencheck (no MD input, uses tree.def)
+: gencheck.cc |> !hostcxx |> host-gencheck.o
+: host-gencheck.o $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK gencheck^ $(HOSTCC) %f -o %o |> gencheck
+: | gencheck |> ^ GEN %o^ ./gencheck > %o |> tree-check.h <gen-insn-headers>
+
+# genhooks (no MD input, produces multiple hook headers)
+: genhooks.cc |> !hostcxx |> host-genhooks.o
+: host-genhooks.o $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genhooks^ $(HOSTCC) %f -o %o |> genhooks
+: | genhooks |> ^ GEN %o^ ./genhooks "Target Hook" > %o \
+  |> target-hooks-def.h <gen-insn-headers>
+: | genhooks |> ^ GEN %o^ ./genhooks "Common Target Hook" > %o \
+  |> common-target-hooks-def.h <gen-insn-headers>
+
+# gencfn-macros (no MD input)
+: gencfn-macros.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-gencfn-macros.o
+: host-gencfn-macros.o $(BUILD_ERRORS) host-hash-table.o host-vec.o \
+  host-ggc-none.o host-sort.o $(LIBIBERTY_A) |> \
+  ^ LINK gencfn-macros^ $(HOSTCC) %f -o %o |> gencfn-macros
+: | gencfn-macros |> ^ GEN %o^ ./gencfn-macros -c > %o \
+  |> case-cfn-macros.h <gen-insn-headers>
+
+# genconstants (MD input only, no insn-conditions.md)
+: genconstants.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genconstants.o
+: host-genconstants.o $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genconstants^ $(HOSTCC) %f -o %o |> genconstants
+: $(MD) | genconstants |> ^ GEN %o^ ./genconstants %f > %o \
+  |> insn-constants.h <gen-insn-headers>
+
+# genenums (MD input only)
+: genenums.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genenums.o
+: host-genenums.o $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genenums^ $(HOSTCC) %f -o %o |> genenums
+: $(MD) | genenums |> ^ GEN %o^ ./genenums %f > %o |> insn-enums.cc
+
+# --- Simple RTL generators (MD + insn-conditions.md → header output) ---
+
+: genattr.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genattr.o
+: host-genattr.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genattr^ $(HOSTCC) %f -o %o |> genattr
+: $(MD) insn-conditions.md | genattr |> ^ GEN %o^ ./genattr %f > %o \
+  |> insn-attr.h <gen-insn-headers>
+
+: genattr-common.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genattr-common.o
+: host-genattr-common.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genattr-common^ $(HOSTCC) %f -o %o |> genattr-common
+: $(MD) insn-conditions.md | genattr-common |> ^ GEN %o^ ./genattr-common %f > %o \
+  |> insn-attr-common.h <gen-insn-headers>
+
+: gencodes.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-gencodes.o
+: host-gencodes.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK gencodes^ $(HOSTCC) %f -o %o |> gencodes
+: $(MD) insn-conditions.md | gencodes |> ^ GEN %o^ ./gencodes %f > %o \
+  |> insn-codes.h <gen-insn-headers>
+
+: genconfig.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genconfig.o
+: host-genconfig.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genconfig^ $(HOSTCC) %f -o %o |> genconfig
+: $(MD) insn-conditions.md | genconfig |> ^ GEN %o^ ./genconfig %f > %o \
+  |> insn-config.h <gen-insn-headers>
+
+: genflags.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genflags.o
+: host-genflags.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genflags^ $(HOSTCC) %f -o %o |> genflags
+: $(MD) insn-conditions.md | genflags |> ^ GEN %o^ ./genflags %f > %o \
+  |> insn-flags.h <gen-insn-headers>
+
+: gentarget-def.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-gentarget-def.o
+: host-gentarget-def.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK gentarget-def^ $(HOSTCC) %f -o %o |> gentarget-def
+: $(MD) insn-conditions.md | gentarget-def |> ^ GEN %o^ ./gentarget-def %f > %o \
+  |> insn-target-def.h <gen-insn-headers>
+
+# --- Simple RTL generators (MD + insn-conditions.md → source output) ---
+
+: genautomata.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genautomata.o
+: host-genautomata.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genautomata^ $(HOSTCC) %f -o %o -lm |> genautomata
+: $(MD) insn-conditions.md | genautomata |> ^ GEN %o^ ./genautomata %f > %o \
+  |> insn-automata.cc
+
+: genextract.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genextract.o
+: host-genextract.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genextract^ $(HOSTCC) %f -o %o |> genextract
+: $(MD) insn-conditions.md | genextract |> ^ GEN %o^ ./genextract %f > %o \
+  |> insn-extract.cc
+
+: genoutput.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genoutput.o
+: host-genoutput.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genoutput^ $(HOSTCC) %f -o %o |> genoutput
+: $(MD) insn-conditions.md | genoutput |> ^ GEN %o^ ./genoutput %f > %o \
+  |> insn-output.cc
+
+: genpeep.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genpeep.o
+: host-genpeep.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genpeep^ $(HOSTCC) %f -o %o |> genpeep
+: $(MD) insn-conditions.md | genpeep |> ^ GEN %o^ ./genpeep %f > %o \
+  |> insn-peep.cc
+
+# --- Multi-output RTL generators ---
+
+# genattrtab → 3 files
+: genattrtab.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genattrtab.o
+: host-genattrtab.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genattrtab^ $(HOSTCC) %f -o %o |> genattrtab
+: $(MD) insn-conditions.md | genattrtab |> ^ GEN insn-attrtab^ \
+  ./genattrtab %f -Ainsn-attrtab.cc -Dinsn-dfatab.cc -Linsn-latencytab.cc \
+  |> insn-attrtab.cc insn-dfatab.cc insn-latencytab.cc
+
+# genopinit → 2 files
+: genopinit.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genopinit.o
+: host-genopinit.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genopinit^ $(HOSTCC) %f -o %o |> genopinit
+: $(MD) insn-conditions.md | genopinit |> ^ GEN insn-opinit^ \
+  ./genopinit %f -hinsn-opinit.h -cinsn-opinit.cc \
+  |> insn-opinit.h insn-opinit.cc <gen-insn-headers>
+
+# genpreds → 3 files (separate invocations)
+: genpreds.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genpreds.o
+: host-genpreds.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genpreds^ $(HOSTCC) %f -o %o |> genpreds
+: $(MD) | genpreds |> ^ GEN %o^ ./genpreds %f > %o    |> insn-preds.cc
+: $(MD) | genpreds |> ^ GEN %o^ ./genpreds -h %f > %o |> tm-preds.h <gen-insn-headers>
+: $(MD) | genpreds |> ^ GEN %o^ ./genpreds -c %f > %o |> tm-constrs.h <gen-insn-headers>
+
+# genemit → 10 split files
+: genemit.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genemit.o
+: host-genemit.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) $(LIBIBERTY_A) |> \
+  ^ LINK genemit^ $(HOSTCC) %f -o %o |> genemit
+: $(MD) insn-conditions.md | genemit |> ^ GEN insn-emit-*^ \
+  ./genemit %f \
+  -O insn-emit-1.cc  -O insn-emit-2.cc  -O insn-emit-3.cc \
+  -O insn-emit-4.cc  -O insn-emit-5.cc  -O insn-emit-6.cc \
+  -O insn-emit-7.cc  -O insn-emit-8.cc  -O insn-emit-9.cc \
+  -O insn-emit-10.cc \
+  |> insn-emit-1.cc insn-emit-2.cc insn-emit-3.cc insn-emit-4.cc \
+     insn-emit-5.cc insn-emit-6.cc insn-emit-7.cc insn-emit-8.cc \
+     insn-emit-9.cc insn-emit-10.cc
+
+# genrecog → 10 split files + header
+: genrecog.cc | $(BUILD_RTL_DEPS) |> !hostcxx |> host-genrecog.o
+: host-genrecog.o $(BUILD_RTL) $(BUILD_MD) $(BUILD_ERRORS) \
+  host-hash-table.o host-inchash.o $(LIBIBERTY_A) |> \
+  ^ LINK genrecog^ $(HOSTCC) %f -o %o |> genrecog
+: $(MD) insn-conditions.md | genrecog |> ^ GEN insn-recog-*^ \
+  ./genrecog %f -Hinsn-recog.h \
+  -O insn-recog-1.cc  -O insn-recog-2.cc  -O insn-recog-3.cc \
+  -O insn-recog-4.cc  -O insn-recog-5.cc  -O insn-recog-6.cc \
+  -O insn-recog-7.cc  -O insn-recog-8.cc  -O insn-recog-9.cc \
+  -O insn-recog-10.cc \
+  |> insn-recog.h insn-recog-1.cc insn-recog-2.cc insn-recog-3.cc \
+     insn-recog-4.cc insn-recog-5.cc insn-recog-6.cc insn-recog-7.cc \
+     insn-recog-8.cc insn-recog-9.cc insn-recog-10.cc <gen-insn-headers>
+
+# --- Other generated headers ---
+
+# pass-instances.def from passes.def
+: passes.def |> ^ GEN %o^ \
+  awk -f $(SRC)/gen-pass-instances.awk %f > %o \
+  |> pass-instances.def <gen-insn-headers>
+
+# ============================================================
+# Phase 4: Generated source compilation → <cc1-objs>
+# ============================================================
+
+# Options pipeline outputs
+: options.cc      |> !cxx |> options.o      <cc1-objs>
+: options-save.cc |> !cxx |> options-save.o <cc1-objs>
+: options-urls.cc |> !cxx |> options-urls.o <cc1-objs>
+
+# insn-modes (from genmodes)
+: insn-modes.cc |> !cxx |> insn-modes.o <cc1-objs>
+
+# insn-emit split (from genemit)
+: foreach insn-emit-1.cc insn-emit-2.cc insn-emit-3.cc insn-emit-4.cc \
+          insn-emit-5.cc insn-emit-6.cc insn-emit-7.cc insn-emit-8.cc \
+          insn-emit-9.cc insn-emit-10.cc |> !cxx |> %B.o <cc1-objs>
+
+# insn-recog split (from genrecog)
+: foreach insn-recog-1.cc insn-recog-2.cc insn-recog-3.cc insn-recog-4.cc \
+          insn-recog-5.cc insn-recog-6.cc insn-recog-7.cc insn-recog-8.cc \
+          insn-recog-9.cc insn-recog-10.cc |> !cxx |> %B.o <cc1-objs>
+
+# Other generated sources
+gen_srcs  = insn-attrtab.cc insn-dfatab.cc insn-latencytab.cc
+gen_srcs += insn-automata.cc insn-extract.cc insn-output.cc insn-peep.cc
+gen_srcs += insn-preds.cc insn-opinit.cc insn-enums.cc
+: foreach $(gen_srcs) |> !cxx |> %B.o <cc1-objs>
+
+# ============================================================
+# Phase 5: Backend objects (OBJS from Makefile.in)
+# ============================================================
+# ~445 source files from gcc/. Excludes:
+#   - analyzer/* (compiled in analyzer/Tupfile)
+#   - config/i386/* (compiled in config/i386/Tupfile)
+#   - pre-generated gtype-desc.cc, gimple-match-*, generic-match-*
+#   - Generated insn-*.cc and options*.cc (compiled above)
+
+objs  = ggc-page.cc adjust-alignment.cc alias.cc alloc-pool.cc
+objs += auto-inc-dec.cc auto-profile.cc
+objs += bb-reorder.cc bitmap.cc builtins.cc caller-save.cc
+objs += calls.cc ccmp.cc cfg.cc cfganal.cc cfgbuild.cc cfgcleanup.cc
+objs += cfgexpand.cc cfghooks.cc cfgloop.cc cfgloopanal.cc
+objs += cfgloopmanip.cc cfgrtl.cc
+objs += ctfc.cc ctfout.cc btfout.cc
+objs += symtab.cc symtab-thunks.cc symtab-clones.cc
+objs += cgraph.cc cgraphbuild.cc cgraphunit.cc cgraphclones.cc
+objs += combine.cc combine-stack-adj.cc compare-elim.cc context.cc
+objs += convert.cc coroutine-passes.cc coverage.cc
+objs += cppdefault.cc cprop.cc cse.cc cselib.cc
+objs += data-streamer.cc data-streamer-in.cc data-streamer-out.cc
+objs += dbgcnt.cc dce.cc ddg.cc debug.cc
+objs += df-core.cc df-problems.cc df-scan.cc dfp.cc digraph.cc
+objs += dojump.cc dominance.cc domwalk.cc double-int.cc dse.cc
+objs += dumpfile.cc dwarf2asm.cc dwarf2cfi.cc
+objs += dwarf2codeview.cc dwarf2ctf.cc dwarf2out.cc
+objs += early-remat.cc emit-rtl.cc et-forest.cc except.cc
+objs += explow.cc expmed.cc expr.cc ext-dce.cc
+objs += fibonacci_heap.cc file-prefix-map.cc final.cc fixed-value.cc
+objs += fold-const.cc fold-const-call.cc fold-mem-offsets.cc
+objs += function.cc function-abi.cc function-tests.cc fwprop.cc
+objs += gcc-attribute-urlifier.cc gcc-rich-location.cc gcc-urlifier.cc
+objs += gcse.cc gcse-common.cc ggc-common.cc ggc-tests.cc
+objs += gimple.cc gimple-array-bounds.cc gimple-builder.cc
+objs += gimple-expr.cc gimple-if-to-switch.cc gimple-iterator.cc
+objs += gimple-fold.cc gimple-harden-conditionals.cc
+objs += gimple-harden-control-flow.cc gimple-laddress.cc
+objs += gimple-loop-interchange.cc gimple-loop-jam.cc
+objs += gimple-loop-versioning.cc gimple-low.cc gimple-lower-bitint.cc
+objs += gimple-predicate-analysis.cc gimple-pretty-print.cc
+objs += gimple-range.cc gimple-range-cache.cc gimple-range-edge.cc
+objs += gimple-range-fold.cc gimple-range-gori.cc gimple-range-infer.cc
+objs += gimple-range-op.cc gimple-range-phi.cc gimple-range-trace.cc
+objs += gimple-ssa-backprop.cc gimple-ssa-isolate-paths.cc
+objs += gimple-ssa-nonnull-compare.cc gimple-ssa-sccopy.cc
+objs += gimple-ssa-split-paths.cc gimple-ssa-store-merging.cc
+objs += gimple-ssa-strength-reduction.cc gimple-ssa-sprintf.cc
+objs += gimple-ssa-warn-access.cc gimple-ssa-warn-alloca.cc
+objs += gimple-ssa-warn-restrict.cc
+objs += gimple-streamer-in.cc gimple-streamer-out.cc
+objs += gimple-walk.cc gimple-warn-recursion.cc
+objs += gimplify.cc gimplify-me.cc godump.cc graph.cc
+objs += graphds.cc graphviz.cc
+objs += graphite.cc graphite-isl-ast-to-gimple.cc
+objs += graphite-dependences.cc graphite-optimize-isl.cc
+objs += graphite-poly.cc graphite-scop-detection.cc
+objs += graphite-sese-to-poly.cc
+objs += haifa-sched.cc hash-map-tests.cc hash-set-tests.cc
+objs += hw-doloop.cc hwint.cc ifcvt.cc ree.cc
+objs += inchash.cc incpath.cc init-regs.cc internal-fn.cc
+objs += ipa-locality-cloning.cc ipa-cp.cc ipa-sra.cc ipa-devirt.cc
+objs += ipa-fnsummary.cc ipa-polymorphic-call.cc ipa-split.cc
+objs += ipa-inline.cc ipa-comdats.cc ipa-free-lang-data.cc
+objs += ipa-visibility.cc ipa-inline-analysis.cc ipa-inline-transform.cc
+objs += ipa-modref.cc ipa-modref-tree.cc ipa-predicate.cc ipa-profile.cc
+objs += ipa-prop.cc ipa-param-manipulation.cc ipa-pure-const.cc
+objs += ipa-icf.cc ipa-icf-gimple.cc ipa-reference.cc
+objs += ipa-ref.cc ipa-utils.cc ipa-strub.cc ipa.cc
+objs += ira.cc pair-fusion.cc ira-build.cc ira-costs.cc
+objs += ira-conflicts.cc ira-color.cc ira-emit.cc ira-lives.cc
+objs += jump.cc langhooks.cc late-combine.cc lazy-diagnostic-path.cc
+objs += lcm.cc lists.cc
+objs += loop-doloop.cc loop-init.cc loop-invariant.cc loop-iv.cc
+objs += loop-unroll.cc lower-subreg.cc
+objs += lra.cc lra-assigns.cc lra-coalesce.cc lra-constraints.cc
+objs += lra-eliminations.cc lra-lives.cc lra-remat.cc lra-spills.cc
+objs += lto-cgraph.cc lto-streamer.cc lto-streamer-out.cc
+objs += lto-section-in.cc lto-section-out.cc
+objs += lto-opts.cc lto-compress.cc
+objs += mcf.cc mode-switching.cc modulo-sched.cc multiple_target.cc
+objs += omp-offload.cc omp-expand.cc omp-general.cc omp-low.cc
+objs += omp-oacc-kernels-decompose.cc omp-oacc-neuter-broadcast.cc
+objs += omp-simd-clone.cc opt-problem.cc
+objs += optabs.cc optabs-libfuncs.cc optabs-query.cc optabs-tree.cc
+objs += optinfo.cc opts-global.cc
+objs += ordered-hash-map-tests.cc passes.cc prime-paths.cc path-coverage.cc
+objs += plugin.cc pointer-query.cc postreload-gcse.cc postreload.cc
+objs += predict.cc print-rtl.cc print-rtl-function.cc print-tree.cc
+objs += profile.cc profile-count.cc
+objs += range.cc range-op.cc range-op-float.cc range-op-ptr.cc
+objs += read-md.cc read-rtl.cc read-rtl-function.cc
+objs += real.cc realmpfr.cc recog.cc reg-stack.cc
+objs += regcprop.cc reginfo.cc regrename.cc regstat.cc
+objs += reload.cc reload1.cc reorg.cc resource.cc rtl-error.cc
+objs += rtl-ssa/accesses.cc rtl-ssa/blocks.cc rtl-ssa/changes.cc
+objs += rtl-ssa/functions.cc rtl-ssa/insns.cc rtl-ssa/movement.cc
+objs += rtl-tests.cc rtl.cc rtlhash.cc rtlanal.cc rtlhooks.cc
+objs += rtx-vector-builder.cc run-rtl-passes.cc
+objs += sched-deps.cc sched-ebb.cc sched-rgn.cc
+objs += sel-sched-ir.cc sel-sched-dump.cc sel-sched.cc
+objs += selftest-rtl.cc selftest-run-tests.cc
+objs += sese.cc shrink-wrap.cc simplify-rtx.cc
+objs += sparseset.cc spellcheck.cc spellcheck-tree.cc
+objs += splay-tree-utils.cc sreal.cc stack-ptr-mod.cc statistics.cc
+objs += stmt.cc stor-layout.cc avoid-store-forwarding.cc store-motion.cc
+objs += streamer-hooks.cc stringpool.cc substring-locations.cc
+objs += target-globals.cc targhooks.cc timevar.cc tracer.cc
+objs += trans-mem.cc tree-affine.cc
+objs += asan.cc tsan.cc ubsan.cc sanopt.cc sancov.cc
+objs += simple-diagnostic-path.cc
+objs += tree-assume.cc tree-call-cdce.cc tree-cfg.cc tree-cfgcleanup.cc
+objs += tree-chrec.cc tree-complex.cc tree-data-ref.cc tree-dfa.cc
+objs += tree-diagnostic.cc
+objs += tree-dump.cc tree-eh.cc tree-emutls.cc tree-if-conv.cc
+objs += tree-inline.cc tree-into-ssa.cc tree-iterator.cc
+objs += tree-logical-location.cc tree-loop-distribution.cc
+objs += crc-verification.cc gimple-crc-optimization.cc
+objs += sym-exec/sym-exec-expression.cc sym-exec/sym-exec-state.cc
+objs += sym-exec/sym-exec-condition.cc
+objs += tree-nested.cc tree-nrv.cc tree-object-size.cc tree-outof-ssa.cc
+objs += tree-parloops.cc tree-phinodes.cc tree-predcom.cc
+objs += tree-pretty-print.cc tree-profile.cc tree-scalar-evolution.cc
+objs += tree-sra.cc tree-switch-conversion.cc
+objs += tree-ssa-address.cc tree-ssa-alias.cc tree-ssa-ccp.cc
+objs += tree-ssa-coalesce.cc tree-ssa-copy.cc tree-ssa-dce.cc
+objs += tree-ssa-dom.cc tree-ssa-dse.cc tree-ssa-forwprop.cc
+objs += tree-ssa-ifcombine.cc tree-ssa-live.cc tree-ssa-loop-ch.cc
+objs += tree-ssa-loop-im.cc tree-ssa-loop-ivcanon.cc
+objs += tree-ssa-loop-ivopts.cc tree-ssa-loop-manip.cc
+objs += tree-ssa-loop-niter.cc tree-ssa-loop-prefetch.cc
+objs += tree-ssa-loop-split.cc tree-ssa-loop-unswitch.cc
+objs += tree-ssa-loop.cc tree-ssa-math-opts.cc tree-ssa-operands.cc
+objs += gimple-range-path.cc tree-ssa-phiopt.cc tree-ssa-phiprop.cc
+objs += tree-ssa-pre.cc tree-ssa-propagate.cc tree-ssa-reassoc.cc
+objs += tree-ssa-sccvn.cc tree-ssa-scopedtables.cc tree-ssa-sink.cc
+objs += tree-ssa-strlen.cc tree-ssa-structalias.cc
+objs += tree-ssa-tail-merge.cc tree-ssa-ter.cc
+objs += tree-ssa-threadbackward.cc tree-ssa-threadedge.cc
+objs += tree-ssa-threadupdate.cc tree-ssa-uncprop.cc
+objs += tree-ssa-uninit.cc tree-ssa.cc tree-ssanames.cc tree-stdarg.cc
+objs += tree-streamer.cc tree-streamer-in.cc tree-streamer-out.cc
+objs += tree-tailcall.cc tree-vect-generic.cc gimple-isel.cc
+objs += tree-vect-patterns.cc tree-vect-data-refs.cc
+objs += tree-vect-stmts.cc tree-vect-loop.cc tree-vect-loop-manip.cc
+objs += tree-vect-slp.cc tree-vect-slp-patterns.cc tree-vectorizer.cc
+objs += tree-vector-builder.cc tree-vrp.cc tree.cc
+objs += tristate.cc typed-splay-tree.cc valtrack.cc
+objs += value-pointer-equiv.cc value-query.cc value-range.cc
+objs += value-range-pretty-print.cc value-range-storage.cc
+objs += value-relation.cc value-prof.cc var-tracking.cc
+objs += varasm.cc varpool.cc vec-perm-indices.cc vmsdbgout.cc
+objs += vr-values.cc vtable-verify.cc warning-control.cc web.cc
+objs += wide-int.cc wide-int-print.cc
+
+# Special -D flags for a few objects
+: toplev.cc | <gen-config-headers> <gen-insn-headers> |> ^ CXX %b^ \
+  $(CXX) $(TARGET_CXXFLAGS) -DTARGET_NAME=\"x86_64-pc-linux-gnu\" -c %f -o %o \
+  |> toplev.o <cc1-objs>
+
+: lto-streamer-in.cc | <gen-config-headers> <gen-insn-headers> |> ^ CXX %b^ \
+  $(CXX) $(TARGET_CXXFLAGS) -DTARGET_MACHINE=\"x86_64-pc-linux-gnu\" -c %f -o %o \
+  |> lto-streamer-in.o <cc1-objs>
+
+: optinfo-emit-json.cc | <gen-config-headers> <gen-insn-headers> |> ^ CXX %b^ \
+  $(CXX) $(TARGET_CXXFLAGS) -DTARGET_NAME=\"x86_64-pc-linux-gnu\" -c %f -o %o \
+  |> optinfo-emit-json.o <cc1-objs>
+
+: tree-diagnostic-client-data-hooks.cc | <gen-config-headers> <gen-insn-headers> |> ^ CXX %b^ \
+  $(CXX) $(TARGET_CXXFLAGS) -DTARGET_NAME=\"x86_64-pc-linux-gnu\" -c %f -o %o \
+  |> tree-diagnostic-client-data-hooks.o <cc1-objs>
+
+: cppbuiltin.cc | <gen-config-headers> <gen-insn-headers> |> ^ CXX %b^ \
+  $(CXX) $(TARGET_CXXFLAGS) -DBASEVER=\"15.2.0\" -c %f -o %o \
+  |> cppbuiltin.o <cc1-objs>
+
+: foreach $(objs) |> !cxx |> %B.o <cc1-objs>
+
+# ============================================================
+# Phase 6: Common objects (OBJS-libcommon + OBJS-libcommon-target)
+# ============================================================
+# These are utility objects shared across GCC frontends.
+# For cc1, we compile them once and link directly.
+
+common  = diagnostic-spec.cc diagnostic.cc diagnostic-color.cc
+common += diagnostic-format-json.cc diagnostic-format-sarif.cc
+common += diagnostic-format-text.cc diagnostic-global-context.cc
+common += diagnostic-macro-unwinding.cc diagnostic-path.cc
+common += diagnostic-show-locus.cc edit-context.cc
+common += pretty-print.cc intl.cc json.cc json-parsing.cc
+common += sbitmap.cc vec.cc input.cc hash-table.cc memory-block.cc
+common += selftest.cc selftest-diagnostic.cc sort.cc
+common += selftest-diagnostic-path.cc selftest-json.cc
+common += selftest-logical-location.cc
+common += text-art/box-drawing.cc text-art/canvas.cc text-art/ruler.cc
+common += text-art/selftests.cc text-art/style.cc text-art/styled-string.cc
+common += text-art/table.cc text-art/theme.cc text-art/tree-widget.cc
+common += text-art/widget.cc
+
+# OBJS-libcommon-target (unique entries not in common or main objs)
+common += opts.cc opts-common.cc opts-diagnostic.cc
+common += hooks.cc file-find.cc opt-suggestions.cc
+
+: foreach $(common) |> !cxx |> %B.o <cc1-objs>
+
+: prefix.cc | <gen-config-headers> <gen-insn-headers> |> ^ CXX %b^ \
+  $(CXX) $(TARGET_CXXFLAGS) -DPREFIX=\"/usr/local\" -DBASEVER=\"15.2.0\" -c %f -o %o \
+  |> prefix.o <cc1-objs>
+
+# Target-specific common objects (from subdirectories)
+: common/common-targhooks.cc |> !cxx |> common-targhooks.o <cc1-objs>
+: common/config/i386/i386-common.cc |> !cxx |> i386-common.o <cc1-objs>
+
+# Host hooks (Linux host)
+: config/host-linux.cc |> !cxx |> host-linux.o <cc1-objs>
+
+# main.o
+: main.cc |> !cxx |> main.o <cc1-objs>
+
+# cc1-checksum.o (stub — real GCC uses genchecksum to embed a binary hash)
+: |> ^ GEN %o^ echo 'const unsigned char executable_checksum[16] = {0};' > %o \
+  |> cc1-checksum.cc
+: cc1-checksum.cc |> !cxx |> cc1-checksum.o <cc1-objs>
+
+# attribs.o (C frontend, but compiled in gcc/)
+: attribs.cc |> !cxx |> attribs.o <cc1-objs>
+
+# ============================================================
+# Phase 7: Pre-generated sources
+# ============================================================
+# gengtype and genmatch outputs must be copied from a configured
+# GCC build into pre-generated/ before building.
+#
+#   cp build-gcc/gcc/gtype-desc.cc         pre-generated/
+#   cp build-gcc/gcc/gimple-match-*.cc     pre-generated/
+#   cp build-gcc/gcc/gimple-match-auto.h   pre-generated/
+#   cp build-gcc/gcc/gimple-match-exports.cc pre-generated/
+#   cp build-gcc/gcc/generic-match-*.cc    pre-generated/
+#   cp build-gcc/gcc/generic-match-auto.h  pre-generated/
+#   cp build-gcc/gcc/gt-*.h               pre-generated/
+#   cp build-gcc/gcc/gtype-desc.h         pre-generated/
+
+: pre-generated/gtype-desc.cc |> !cxx |> gtype-desc.o <cc1-objs>
+: pre-generated/gimple-match-exports.cc |> !cxx |> gimple-match-exports.o <cc1-objs>
+
+: foreach pre-generated/gimple-match-[0-9]*.cc |> !cxx |> %B.o <cc1-objs>
+: foreach pre-generated/generic-match-[0-9]*.cc |> !cxx |> %B.o <cc1-objs>
+
+# ============================================================
+# Phase 8: Link cc1
+# ============================================================
+# Collects objects from this directory and subdirectories:
+#   gcc/c/        → ../<cc1-objs>  (C frontend)
+#   gcc/c-family/ → ../<cc1-objs>  (C-family shared code)
+#   gcc/analyzer/ → ../<cc1-objs>  (static analyzer)
+#   gcc/config/i386/ → ../../<cc1-objs>  (x86_64 target)
+
+: <cc1-objs> $(LIBCPP_A) $(LIBDECNUMBER_A) $(LIBBACKTRACE_A) \
+  $(LIBIBERTY_A) $(LIBGMP_A) $(LIBMPFR_A) $(LIBMPC_A) |> \
+  ^ LINK cc1^ $(CXX) %<cc1-objs> \
+  $(LIBCPP_A) $(LIBDECNUMBER_A) $(LIBBACKTRACE_A) $(LIBIBERTY_A) \
+  $(LIBGMP_A) $(LIBMPFR_A) $(LIBMPC_A) \
+  -lm -ldl -lpthread -lz -o %o |> cc1

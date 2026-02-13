@@ -1,0 +1,25 @@
+include_rules
+
+# ============================================================
+# libdecnumber - BID decimal floating-point (GCC 15.2.0)
+# ============================================================
+
+# --- Phase 1: Generate config.h ---
+# dconfig.h includes config.h (when not IN_LIBGCC2).
+# x86-64 is little-endian so WORDS_BIGENDIAN is not defined.
+
+: |> !gen-config |> config.h <gen-headers>
+
+# --- Phase 2: Compile sources ---
+# BID variant (Binary Integer Decimal) — x86/x86_64 use BID per dfp.m4.
+
+srcs  = decNumber.c decContext.c
+srcs += bid/decimal32.c bid/decimal64.c bid/decimal128.c
+srcs += bid/bid2dpd_dpd2bid.c bid/host-ieee32.c
+srcs += bid/host-ieee64.c bid/host-ieee128.c
+
+: foreach $(srcs) |> !cc |> %B.o <objs>
+
+# --- Phase 3: Archive ---
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libdecnumber.a $(S)/<libs>
