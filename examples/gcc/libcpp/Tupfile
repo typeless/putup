@@ -1,0 +1,24 @@
+include_rules
+
+# ============================================================
+# libcpp - C preprocessor library (GCC 15.2.0)
+# ============================================================
+
+# --- Phase 1: Generate config.h + localedir.h ---
+
+: |> !gen-config |> config.h <gen-headers>
+
+: |> ^ GEN %o^ echo '#define LOCALEDIR ""' > %o |> localedir.h <gen-headers>
+
+# --- Phase 2: Compile sources ---
+# Source list from libcpp/Makefile.in libcpp_a_OBJS.
+
+srcs  = charset.cc directives.cc errors.cc expr.cc files.cc
+srcs += identifiers.cc init.cc lex.cc line-map.cc macro.cc
+srcs += mkdeps.cc pch.cc symtab.cc traditional.cc
+
+: foreach $(srcs) |> !cxx |> %B.o <objs>
+
+# --- Phase 3: Archive ---
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libcpp.a $(S)/<libs>

@@ -1,0 +1,29 @@
+include_rules
+
+# ============================================================
+# libbacktrace - stack trace support (GCC 15.2.0)
+# ============================================================
+
+# --- Phase 1: Generate config.h and backtrace-supported.h ---
+
+: |> !gen-config |> config.h <gen-headers>
+
+: backtrace-supported.h.in |> ^ GEN %o^ sed \
+  -e 's/@BACKTRACE_SUPPORTED@/1/g' \
+  -e 's/@BACKTRACE_USES_MALLOC@/0/g' \
+  -e 's/@BACKTRACE_SUPPORTS_THREADS@/1/g' \
+  -e 's/@BACKTRACE_SUPPORTS_DATA@/1/g' \
+  %f > %o |> backtrace-supported.h <gen-headers>
+
+# --- Phase 2: Compile sources ---
+# Linux-specific selection: ELF + mmapio + unwind-based backtrace.
+
+srcs  = atomic.c dwarf.c fileline.c
+srcs += mmapio.c mmap.c posix.c print.c sort.c state.c
+srcs += elf.c backtrace.c simple.c
+
+: foreach $(srcs) |> !cc |> %B.o <objs>
+
+# --- Phase 3: Archive ---
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libbacktrace.a $(S)/<libs>

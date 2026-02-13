@@ -1,0 +1,12 @@
+include_rules
+
+# ============================================================
+# gcc/c/ — C language frontend (GCC 15.2.0)
+# ============================================================
+# Objects contribute to ../<cc1-objs> for the cc1 link.
+
+srcs  = c-lang.cc c-errors.cc c-decl.cc c-typeck.cc
+srcs += c-convert.cc c-aux-info.cc c-objc-common.cc
+srcs += c-parser.cc c-fold.cc gimple-parser.cc
+
+: foreach $(srcs) |> !cxx |> %B.o ../<cc1-objs>
