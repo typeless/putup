@@ -61,6 +61,10 @@ srcs += tal-reent.c
 : foreach $(srcs) |> !cc |> %B.o <objs>
 
 # --- Phase 5: Archive all GMP objects into libgmp.a ---
-# All subdirectories contribute objects to <objs> via ../<objs>.
+# Use shell glob to collect objects from all subdirectories.
+# Order-only deps on subdirectory groups ensure correct build order.
 
-: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libgmp.a $(S)/<libs>
+: <objs> | mpn/<objs> mpz/<objs> mpq/<objs> mpf/<objs> \
+  printf/<objs> scanf/<objs> rand/<objs> |> \
+  ^ AR %o^ sh -c '$(AR) rcs %o %<objs> $(TUP_VARIANT_OUTPUTDIR)/mpn/*.o $(TUP_VARIANT_OUTPUTDIR)/mpz/*.o $(TUP_VARIANT_OUTPUTDIR)/mpq/*.o $(TUP_VARIANT_OUTPUTDIR)/mpf/*.o $(TUP_VARIANT_OUTPUTDIR)/printf/*.o $(TUP_VARIANT_OUTPUTDIR)/scanf/*.o $(TUP_VARIANT_OUTPUTDIR)/rand/*.o' \
+  |> libgmp.a $(S)/<libs>

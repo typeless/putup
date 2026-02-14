@@ -155,9 +155,11 @@ auto is_source_file(std::string const& word) -> bool
 }
 
 /// Regex to match GCC/Clang compile commands
+/// Requires compiler name followed by whitespace (not /) to avoid matching
+/// directory names like "build-gcc/gcc/genpreds"
 auto gcc_pattern() -> std::regex const&
 {
-    static auto const pattern = std::regex { R"((gcc|g\+\+|clang|clang\+\+|cc|c\+\+).*\s-c\s)" };
+    static auto const pattern = std::regex { R"((?:^|/)(gcc|g\+\+|clang|clang\+\+|cc|c\+\+)\s.*\s-c\s)" };
     return pattern;
 }
 

@@ -55,12 +55,20 @@ popcount hamdist sec_add_1 sec_sub_1 sec_div_qr sec_div_r sec_pi1_div_qr sec_pi1
 
 # --- Generic mode ---
 
+is_arch_specific() {
+    case "$1" in
+        udiv_w_sdiv) return 0 ;;  # requires sdiv_qrnnd (68k/PowerPC only)
+        *) return 1 ;;
+    esac
+}
+
 if [ "$cpu" = "generic" ]; then
     c_files=""
     for f in "$mpn_src"/generic/*.c; do
         [ -f "$f" ] || continue
         func=$(basename "$f" .c)
         is_template_file "$func" && continue
+        is_arch_specific "$func" && continue
         c_files="${c_files:+$c_files }generic/$(basename "$f")"
     done
 

@@ -1,0 +1,18 @@
+# libcody build rules (self-contained with ?= defaults)
+
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CXX ?= g++
+AR ?= ar
+LIBCODY_DIR ?= .
+
+CXXFLAGS  = -O2 -std=gnu++14 -fno-exceptions
+CXXFLAGS += -include $(B)/$(LIBCODY_DIR)/config.h
+CXXFLAGS += -I$(S)/$(LIBCODY_DIR)
+CXXFLAGS += -DSRCDIR=\"\"
+
+!cxx = | $(S)/$(LIBCODY_DIR)/<gen-headers> |> ^ CXX %b^ $(CXX) $(CXXFLAGS) -c %f -o %o |> %B.o
+
+!gen-config = |> ^ GEN %o^ awk -F= \
+  '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
+  $(B)/$(LIBCODY_DIR)/tup.config > %o |>
