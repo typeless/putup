@@ -18,6 +18,7 @@ LIBIBERTY_DIR ?= libiberty
 LIBCPP_DIR ?= libcpp
 LIBDECNUMBER_DIR ?= libdecnumber
 LIBBACKTRACE_DIR ?= libbacktrace
+LIBCODY_DIR ?= libcody
 
 # Resolved library paths
 LIBIBERTY_A    = $(B)/$(LIBIBERTY_DIR)/libiberty.a
@@ -27,16 +28,19 @@ LIBBACKTRACE_A = $(B)/$(LIBBACKTRACE_DIR)/libbacktrace.a
 LIBGMP_A       = $(B)/$(GMP_DIR)/libgmp.a
 LIBMPFR_A      = $(B)/$(MPFR_DIR)/src/libmpfr.a
 LIBMPC_A       = $(B)/$(MPC_DIR)/src/libmpc.a
+LIBCODY_A      = $(B)/$(LIBCODY_DIR)/libcody.a
 
 # Common include paths
 GCC_INCLUDES  = -I$(B)/$(GCC_DIR) -I$(S)/$(GCC_DIR)
 GCC_INCLUDES += -I$(S)/$(GCC_DIR)/../include
 GCC_INCLUDES += -I$(S)/$(LIBCPP_DIR)/include
 GCC_INCLUDES += -I$(B)/$(LIBDECNUMBER_DIR) -I$(S)/$(LIBDECNUMBER_DIR)
+GCC_INCLUDES += -I$(S)/$(LIBDECNUMBER_DIR)/@(DECIMAL_FORMAT)
 GCC_INCLUDES += -I$(B)/$(LIBBACKTRACE_DIR) -I$(S)/$(LIBBACKTRACE_DIR)
 GCC_INCLUDES += -I$(B)/$(GMP_DIR) -I$(S)/$(GMP_DIR)
 GCC_INCLUDES += -I$(B)/$(MPFR_DIR)/src -I$(S)/$(MPFR_DIR)/src
 GCC_INCLUDES += -I$(B)/$(MPC_DIR)/src -I$(S)/$(MPC_DIR)/src
+GCC_INCLUDES += -I$(S)/$(LIBCODY_DIR)
 
 # --- HOST compilation (generators) ---
 
@@ -47,6 +51,14 @@ HOST_CXXFLAGS += $(GCC_INCLUDES)
 !hostcxx = | $(S)/$(GCC_DIR)/<gen-config-headers> |> \
   ^ HOSTCXX %b^ $(HOSTCC) $(HOST_CXXFLAGS) -c %f -o %o |> %B.o
 
+# gengtype uses -DHOST_GENERATOR_FILE (not -DGENERATOR_FILE) for full host header access
+GENGTYPE_CXXFLAGS  = -O0 -std=gnu++14
+GENGTYPE_CXXFLAGS += -DIN_GCC -DHOST_GENERATOR_FILE -DHAVE_CONFIG_H
+GENGTYPE_CXXFLAGS += $(GCC_INCLUDES)
+
+!hostcxx-gengtype = | $(S)/$(GCC_DIR)/<gen-config-headers> |> \
+  ^ HOSTCXX %b^ $(HOSTCC) $(GENGTYPE_CXXFLAGS) -c %f -o %o |> host-%B.o
+
 # --- TARGET compilation (cc1 objects) ---
 
 TARGET_CXXFLAGS  = -O2 -std=gnu++14
@@ -56,6 +68,11 @@ TARGET_CXXFLAGS += $(GCC_INCLUDES)
 !cxx = | $(S)/$(GCC_DIR)/<gen-config-headers> $(S)/$(GCC_DIR)/<gen-insn-headers> \
         $(S)/$(GCC_DIR)/<gen-gtype-headers> |> \
   ^ CXX %b^ $(CXX) $(TARGET_CXXFLAGS) -c %f -o %o |>
+
+# Like !cxx but with $(EXTRA_DEFS) for per-file -D flags
+!cxx-defs = | $(S)/$(GCC_DIR)/<gen-config-headers> $(S)/$(GCC_DIR)/<gen-insn-headers> \
+             $(S)/$(GCC_DIR)/<gen-gtype-headers> |> \
+  ^ CXX %b^ $(CXX) $(TARGET_CXXFLAGS) $(EXTRA_DEFS) -c %f -o %o |>
 
 !gen-config = |> ^ GEN %o^ awk -F= \
   '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \

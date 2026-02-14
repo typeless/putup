@@ -1,7 +1,7 @@
-# Makefile.pup - Build GCC's cc1 C compiler with putup
+# Makefile.pup - Build GCC cross-compiler toolchain with putup
 #
 # Usage:
-#   make -f Makefile.pup                # Build cc1 (all libraries + compiler)
+#   make -f Makefile.pup                # Build toolchain (libraries + compilers + tools)
 #   make -f Makefile.pup clean          # Clean build artifacts
 #   make -f Makefile.pup distclean      # Full clean
 #
@@ -10,14 +10,18 @@
 #   make -f Makefile.pup MPN_CPU=x86_64/core2     # CPU-specific assembly
 #   make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 #
+# Cross-compiler (macOS host → x86-64 Linux target):
+#   make -f Makefile.pup PLATFORM=darwin-x86_64-linux HOST=darwin
+#
 # 3-tree layout:
 #   -C .             Tupfiles live here (examples/gcc/)
 #   -S $(SRCDIR)     GCC source tree (read-only)
 #   -B $(BUILD)      Build output directory
 
-.PHONY: all build configure resolve-mpn clean distclean
+.PHONY: all build configure resolve-mpn setup-host-configs clean distclean download-source
 
 PLATFORM ?= x86_64-linux
+HOST ?= linux
 SRCDIR ?= ../gcc-15.2.0
 BUILD ?= ../build-gcc
 MPN_CPU ?= generic
@@ -25,12 +29,24 @@ TREES = -C . -S $(SRCDIR) -B $(BUILD)
 
 all: build
 
-build: resolve-mpn
+build: resolve-mpn setup-host-configs
 	putup configure --config configs/$(PLATFORM).config $(TREES)
 	putup $(TREES) -j$$(nproc)
 
-configure: resolve-mpn
+configure: resolve-mpn setup-host-configs
 	putup configure --config configs/$(PLATFORM).config $(TREES)
+
+# Copy host-specific library configs when building for non-Linux hosts.
+# Linux configs are the in-tree defaults; other hosts overlay from configs/host-$(HOST)/.
+# To restore Linux defaults: git checkout -- */tup.config
+setup-host-configs:
+	@if [ "$(HOST)" != "linux" ] && [ -d configs/host-$(HOST) ]; then \
+		for cfg in configs/host-$(HOST)/*.config; do \
+			lib=$$(basename "$$cfg" .config); \
+			echo "  COPY $$lib/tup.config (host-$(HOST))"; \
+			cp "$$cfg" "$$lib/tup.config"; \
+		done; \
+	fi
 
 # Resolve mpn sources for the selected CPU target.
 # - gmp/mpn/tup.config: source lists and per-function toggles (child scope)
@@ -59,6 +75,17 @@ multi:
 		putup configure --config configs/$$p.config -C . -S $(SRCDIR) -B $(BUILD)-$$p; \
 	done
 	putup $(foreach p,$(PLATFORMS),-B $(BUILD)-$(p)) -C . -S $(SRCDIR) -j$$(nproc)
+
+# Download GCC source for reference/building
+GCC_VERSION ?= 15.2.0
+download-source:
+	@if [ ! -d "$(SRCDIR)" ]; then \
+		echo "Downloading GCC $(GCC_VERSION)..."; \
+		curl -L "https://ftp.gnu.org/gnu/gcc/gcc-$(GCC_VERSION)/gcc-$(GCC_VERSION).tar.xz" \
+		  | tar xJ -C $$(dirname $(SRCDIR)); \
+	else \
+		echo "$(SRCDIR) already exists"; \
+	fi
 
 clean:
 	putup clean $(TREES)

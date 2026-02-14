@@ -16,11 +16,11 @@ include_rules
   %f > %o |> backtrace-supported.h <gen-headers>
 
 # --- Phase 2: Compile sources ---
-# Linux-specific selection: ELF + mmapio + unwind-based backtrace.
+# Format selection: @(BACKTRACE_FORMAT) = elf (Linux) or macho (macOS)
 
 srcs  = atomic.c dwarf.c fileline.c
 srcs += mmapio.c mmap.c posix.c print.c sort.c state.c
-srcs += elf.c backtrace.c simple.c
+srcs += @(BACKTRACE_FORMAT).c backtrace.c simple.c
 
 : foreach $(srcs) |> !cc |> %B.o <objs>
 

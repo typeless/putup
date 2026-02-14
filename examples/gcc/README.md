@@ -1,8 +1,9 @@
-# GCC cc1 — C Compiler from Source
+# GCC Cross-Compiler Toolchain from Source
 
-Build GCC's `cc1` C compiler from the GCC 15.2.0 source tree using putup.
+Build a complete GCC 15.2.0 cross-compiler toolchain using putup.
 This builds everything from source: prerequisite math libraries, compiler support
-libraries, ~25 host generator programs, and the ~500-file cc1 backend.
+libraries, ~25 host generator programs, the ~500-file compiler backend, C/C++
+frontends, driver programs, and developer tools — 3500+ build commands in ~130s.
 
 ## Quick Start
 
@@ -21,7 +22,7 @@ make -f Makefile.pup SRCDIR=/path/to/gcc-15.2.0 BUILD=../build-gcc
 ## What Gets Built
 
 ```
-Phase 1-4 (independent libraries, parallel):
+Libraries (parallel):
   gmp/           → libgmp.a          Math library
   mpfr/          → libmpfr.a         Multi-precision floats (needs GMP)
   mpc/           → libmpc.a          Complex arithmetic (needs GMP + MPFR)
@@ -29,13 +30,27 @@ Phase 1-4 (independent libraries, parallel):
   libdecnumber/  → libdecnumber.a    Decimal floating-point (DPD variant)
   libbacktrace/  → libbacktrace.a    Stack unwinding (ELF/mmap)
   libcpp/        → libcpp.a          C preprocessor
+  libcody/       → libcody.a         C++ modules protocol
 
-Phase 5 (generators, need libiberty):
+Generators (need libiberty):
   gcc/           → genmodes, genattr, genemit, genrecog, ... (~25 host programs)
                  → insn-*.h, insn-*.cc (generated machine descriptions)
+                 → gtype-desc.cc, gt-*.h (~60 GC type descriptor headers)
 
-Phase 6 (cc1, needs everything):
-  gcc/           → cc1              C compiler (~500 objects)
+Compilers:
+  gcc/           → cc1              C compiler backend (~500 objects)
+  gcc/           → cc1plus          C++ compiler backend (+ 40 cp/ objects)
+
+Drivers:
+  gcc/           → xgcc             C compiler driver
+  gcc/           → xg++             C++ compiler driver
+  gcc/           → cpp              C preprocessor driver
+
+Tools:
+  gcc/           → collect2         Linker wrapper (C++ ctor/dtor collection)
+  gcc/           → lto-wrapper      LTO linker plugin interface
+  gcc/           → gcov             Code coverage analysis
+  gcc/           → gcov-dump        Coverage data inspector
 ```
 
 ## Dependency Chain
@@ -94,6 +109,28 @@ cd gmp && putup configure && putup
 When composed under the root project, the root `Tuprules.tup` sets toolchain variables
 that override each library's `?=` defaults. The same `tup.config` file serves as the
 root config in standalone mode and as a scoped subdir config in composed mode.
+
+### Multi-Platform Support
+
+The build uses config-variable substitution for platform selection. Target-specific
+rules (tm.h, tm_p.h, MD files, gtyp entries) live in `gcc/targets/@(TARGET).tup`:
+
+```
+configs/x86_64-linux.config         → Native Linux x86-64
+configs/darwin-x86_64-linux.config  → macOS host, Linux x86-64 target
+configs/host-darwin/                → macOS-specific library configs
+gcc/targets/x86_64-pc-linux-gnu.tup → x86_64-linux target rules
+```
+
+**Cross-compiler (macOS host → x86-64 Linux target):**
+
+```bash
+make -f Makefile.pup PLATFORM=darwin-x86_64-linux HOST=darwin
+```
+
+This builds cc1 using Apple Clang on macOS, producing a compiler that generates
+x86_64 Linux code. The `HOST=darwin` flag copies macOS-specific library configs
+(feature detection for macOS: no `-ldl`, Mach-O libbacktrace, different iconv, etc.)
 
 ### Multi-Variant Builds
 
@@ -176,13 +213,16 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 | `libbacktrace/{Tuprules.tup,tup.config,Tupfile}` | Backtrace library |
 | **libcpp** | |
 | `libcpp/{Tuprules.tup,tup.config,Tupfile}` | C preprocessor library |
-| **GCC (cc1)** | |
-| `gcc/{Tuprules.tup,tup.config,Tupfile}` | Config headers, generators, backend |
+| **libcody** | |
+| `libcody/{Tuprules.tup,tup.config,Tupfile}` | C++ modules protocol library |
+| **GCC (compilers + tools)** | |
+| `gcc/{Tuprules.tup,tup.config,Tupfile}` | Config headers, generators, backend, tools |
 | `gcc/c/Tupfile` | C frontend objects |
+| `gcc/cp/Tupfile` | C++ frontend objects |
 | `gcc/c-family/Tupfile` | C-family shared objects |
 | `gcc/analyzer/Tupfile` | Static analyzer objects |
 | `gcc/config/i386/Tupfile` | x86_64 target-specific objects |
-| `gcc/Tupfile` (gtyp section) | gengtype input file list (inline, from GTFILES) |
+| `gcc/targets/x86_64-pc-linux-gnu.tup` | Target-specific machine description rules |
 
 ## Build Features Demonstrated
 

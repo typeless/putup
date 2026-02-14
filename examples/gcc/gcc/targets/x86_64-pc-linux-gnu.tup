@@ -1,0 +1,122 @@
+# targets/x86_64-pc-linux-gnu.tup — x86_64 Linux with glibc
+#
+# Target-specific configuration for the cc1 build.
+# Included by gcc/Tupfile via: include targets/@(TARGET).tup
+#
+# Provides:
+#   MD               — machine description inputs
+#   TARGET_OPT_FILES — target-specific .opt files
+#   target_gtyp_src  — gengtype source entries for this target
+#   target_GT_H      — gengtype output headers for this target
+# Generates:
+#   tm.h, tm_p.h     — target machine headers → <gen-config-headers>
+# Compiles:
+#   i386-common.cc   — target-specific common object → <cc1-objs>
+
+# Machine description inputs
+MD = common.md config/i386/i386.md
+
+# Target-specific .opt files
+TARGET_OPT_FILES = config/i386/i386.opt config/fused-madd.opt config/linux.opt config/linux-android.opt
+
+# tm_p.h — target machine prototypes
+: |> ^ GEN %o^ ( \
+  echo '#ifndef GCC_TM_P_H'; \
+  echo '#define GCC_TM_P_H'; \
+  echo '#ifdef IN_GCC'; \
+  echo '# include "config/i386/i386-protos.h"'; \
+  echo '# include "config/linux-protos.h"'; \
+  echo '# include "tm-preds.h"'; \
+  echo '#endif'; \
+  echo '#endif'; \
+  ) > %o |> tm_p.h <gen-config-headers>
+
+# tm.h — target machine description
+# Matches the real configure-generated tm.h layout.
+: |> ^ GEN %o^ ( \
+  echo '#ifndef GCC_TM_H'; \
+  echo '#define GCC_TM_H'; \
+  echo '#ifndef LIBC_GLIBC'; \
+  echo '# define LIBC_GLIBC 1'; \
+  echo '#endif'; \
+  echo '#ifndef LIBC_UCLIBC'; \
+  echo '# define LIBC_UCLIBC 2'; \
+  echo '#endif'; \
+  echo '#ifndef LIBC_BIONIC'; \
+  echo '# define LIBC_BIONIC 3'; \
+  echo '#endif'; \
+  echo '#ifndef LIBC_MUSL'; \
+  echo '# define LIBC_MUSL 4'; \
+  echo '#endif'; \
+  echo '#ifndef DEFAULT_LIBC'; \
+  echo '# define DEFAULT_LIBC LIBC_GLIBC'; \
+  echo '#endif'; \
+  echo '#ifndef ANDROID_DEFAULT'; \
+  echo '# define ANDROID_DEFAULT 0'; \
+  echo '#endif'; \
+  echo '#ifndef HEAP_TRAMPOLINES_INIT'; \
+  echo '# define HEAP_TRAMPOLINES_INIT 0'; \
+  echo '#endif'; \
+  echo '#ifdef IN_GCC'; \
+  echo '# include "options.h"'; \
+  echo '# include "insn-constants.h"'; \
+  echo '# include "config/vxworks-dummy.h"'; \
+  echo '# include "config/i386/biarch64.h"'; \
+  echo '# include "config/i386/i386.h"'; \
+  echo '# include "config/i386/unix.h"'; \
+  echo '# include "config/i386/att.h"'; \
+  echo '# include "config/elfos.h"'; \
+  echo '# include "config/gnu-user.h"'; \
+  echo '# include "config/glibc-stdint.h"'; \
+  echo '# include "config/i386/x86-64.h"'; \
+  echo '# include "config/i386/gnu-user-common.h"'; \
+  echo '# include "config/i386/gnu-user64.h"'; \
+  echo '# include "config/linux.h"'; \
+  echo '# include "config/linux-android.h"'; \
+  echo '# include "config/i386/linux-common.h"'; \
+  echo '# include "config/i386/linux64.h"'; \
+  echo '# include "config/initfini-array.h"'; \
+  echo '#endif'; \
+  echo '#if defined IN_GCC && !defined GENERATOR_FILE && !defined USED_FOR_TARGET'; \
+  echo '# include "insn-flags.h"'; \
+  echo '#endif'; \
+  echo '#if defined IN_GCC && !defined GENERATOR_FILE'; \
+  echo '# include "insn-modes.h"'; \
+  echo '#endif'; \
+  echo '# include "defaults.h"'; \
+  echo '#endif'; \
+  ) > %o |> tm.h <gen-config-headers>
+
+# Target-specific gtyp_src entries (appended by main Tupfile)
+target_gtyp_src  = config/i386/i386.h config/i386/unix.h config/i386/att.h
+target_gtyp_src += config/elfos.h config/gnu-user.h config/glibc-stdint.h
+target_gtyp_src += config/i386/x86-64.h config/i386/gnu-user-common.h config/i386/gnu-user64.h
+target_gtyp_src += config/linux.h config/linux-android.h config/i386/linux-common.h
+target_gtyp_src += config/i386/linux64.h config/initfini-array.h
+target_gtyp_src += config/i386/i386.cc
+target_gtyp_src += config/i386/i386-builtins.cc config/i386/i386-expand.cc config/i386/i386-options.cc
+
+# Target-specific GT_H entries
+target_GT_H = gt-i386.h gt-i386-builtins.h gt-i386-expand.h gt-i386-options.h
+
+# i386-builtin-types.inc — generated from .def via AWK
+: $(SRC)/config/i386/i386-builtin-types.def |> ^ GEN %o^ \
+  awk -f $(SRC)/config/i386/i386-builtin-types.awk %f > %o \
+  |> i386-builtin-types.inc <gen-config-headers>
+
+# Target-specific common object (config.gcc: i386_common_objs)
+: common/config/i386/i386-common.cc |> !cxx |> i386-common.o <cc1-objs>
+
+# i386 backend objects (config.gcc: out_file + extra_objs + c_target_objs)
+target_srcs  = config/i386/i386.cc
+target_srcs += config/i386/i386-c.cc config/i386/i386-options.cc
+target_srcs += config/i386/i386-builtins.cc config/i386/i386-expand.cc
+target_srcs += config/i386/i386-features.cc
+target_srcs += config/i386/x86-tune-sched.cc config/i386/x86-tune-sched-bd.cc
+target_srcs += config/i386/x86-tune-sched-atom.cc config/i386/x86-tune-sched-core.cc
+target_srcs += config/i386/gnu-property.cc
+
+target_srcs += config/linux.cc
+target_srcs += config/glibc-c.cc
+
+: foreach $(target_srcs) |> !cxx |> %B.o <cc1-objs>

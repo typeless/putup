@@ -1,0 +1,21 @@
+include_rules
+
+# ============================================================
+# libcody - C++ modules protocol library
+# ============================================================
+
+# --- Phase 1: Generate config.h ---
+
+: |> !gen-config |> config.h <gen-headers>
+
+# --- Phase 2: Compile sources ---
+
+srcs  = buffer.cc client.cc fatal.cc
+srcs += netclient.cc netserver.cc packet.cc
+srcs += resolver.cc server.cc
+
+: foreach $(srcs) |> !cxx |> %B.o <objs>
+
+# --- Phase 3: Archive ---
+
+: <objs> |> ^ AR %o^ $(AR) rcs %o %<objs> |> libcody.a $(S)/<libs>
