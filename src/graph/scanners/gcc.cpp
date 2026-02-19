@@ -159,7 +159,7 @@ auto is_source_file(std::string const& word) -> bool
 /// directory names like "build-gcc/gcc/genpreds"
 auto gcc_pattern() -> std::regex const&
 {
-    static auto const pattern = std::regex { R"((?:^|/)(gcc|g\+\+|clang|clang\+\+|cc|c\+\+)\s.*\s-c\s)" };
+    static auto const pattern = std::regex { R"((?:^|/|\s)(gcc|g\+\+|clang|clang\+\+|cc|c\+\+)\s(?:.*\s)?-c(?:\s|$))" };
     return pattern;
 }
 
