@@ -18,7 +18,8 @@
 #   -S $(SRCDIR)     GCC source tree (read-only)
 #   -B $(BUILD)      Build output directory
 
-.PHONY: all build configure resolve-mpn setup-host-configs clean distclean download-source
+.PHONY: all build configure resolve-mpn resolve-binutils-src setup-host-configs \
+       clean distclean download-source download-binutils
 
 PLATFORM ?= x86_64-linux
 HOST ?= linux
@@ -29,11 +30,11 @@ TREES = -C . -S $(SRCDIR) -B $(BUILD)
 
 all: build
 
-build: resolve-mpn setup-host-configs
+build: resolve-mpn setup-host-configs resolve-binutils-src
 	putup configure --config configs/$(PLATFORM).config $(TREES)
 	putup $(TREES) -j$$(nproc)
 
-configure: resolve-mpn setup-host-configs
+configure: resolve-mpn setup-host-configs resolve-binutils-src
 	putup configure --config configs/$(PLATFORM).config $(TREES)
 
 # Copy host-specific library configs when building for non-Linux hosts.
@@ -53,7 +54,7 @@ setup-host-configs:
 # - gmp/tup.config: GMP_MPARAM and ASM_ENABLED (parent scope, visible to gmp/Tupfile)
 resolve-mpn:
 	@scripts/resolve-mpn.sh $(MPN_CPU) $(SRCDIR)/gmp/mpn > gmp/mpn/tup.config
-	@sed -i '/^CONFIG_GMP_MPARAM=/d;/^CONFIG_ASM_ENABLED=/d;/^CONFIG_NO_ASM=/d' gmp/tup.config
+	@grep -v '^CONFIG_GMP_MPARAM=\|^CONFIG_ASM_ENABLED=\|^CONFIG_NO_ASM=' gmp/tup.config > gmp/tup.config.tmp && mv gmp/tup.config.tmp gmp/tup.config
 	@if [ "$(MPN_CPU)" != "generic" ]; then \
 		arch=$${MPN_CPU%%/*}; \
 		if [ -f "$(SRCDIR)/gmp/mpn/$$arch/gmp-mparam.h" ]; then \
@@ -67,6 +68,18 @@ resolve-mpn:
 		echo "CONFIG_NO_ASM=1" >> gmp/tup.config; \
 	fi
 
+# Resolve binutils source to an absolute path.
+# Commands run from the config tree (putup falls back when the source
+# subdir doesn't exist in the -S tree), so absolute paths ensure the
+# compiler can always find binutils sources regardless of working directory.
+resolve-binutils-src:
+	@if [ -d "$(BINUTILS_DIR)" ]; then \
+		abs=$$(cd "$(BINUTILS_DIR)" && pwd); \
+		grep -v '^CONFIG_BINUTILS_SRC=' binutils/tup.config > binutils/tup.config.tmp; \
+		echo "CONFIG_BINUTILS_SRC=$$abs" >> binutils/tup.config.tmp; \
+		mv binutils/tup.config.tmp binutils/tup.config; \
+	fi
+
 # Multi-variant: build for multiple platforms in parallel
 #   make -f Makefile.pup multi SRCDIR=../gcc-15.2.0
 PLATFORMS ?= x86_64-linux aarch64-linux
@@ -78,13 +91,25 @@ multi:
 
 # Download GCC source for reference/building
 GCC_VERSION ?= 15.2.0
-download-source:
+BINUTILS_VERSION ?= 2.44
+BINUTILS_DIR ?= ../binutils-$(BINUTILS_VERSION)
+
+download-source: download-binutils
 	@if [ ! -d "$(SRCDIR)" ]; then \
 		echo "Downloading GCC $(GCC_VERSION)..."; \
 		curl -L "https://ftp.gnu.org/gnu/gcc/gcc-$(GCC_VERSION)/gcc-$(GCC_VERSION).tar.xz" \
 		  | tar xJ -C $$(dirname $(SRCDIR)); \
 	else \
 		echo "$(SRCDIR) already exists"; \
+	fi
+
+download-binutils:
+	@if [ ! -d "$(BINUTILS_DIR)" ]; then \
+		echo "Downloading binutils $(BINUTILS_VERSION)..."; \
+		curl -L "https://ftp.gnu.org/gnu/binutils/binutils-$(BINUTILS_VERSION).tar.xz" \
+		  | tar xJ -C $$(dirname $(BINUTILS_DIR)); \
+	else \
+		echo "$(BINUTILS_DIR) already exists"; \
 	fi
 
 clean:

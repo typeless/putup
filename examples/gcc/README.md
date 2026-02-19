@@ -3,7 +3,8 @@
 Build a complete GCC 15.2.0 cross-compiler toolchain using putup.
 This builds everything from source: prerequisite math libraries, compiler support
 libraries, ~25 host generator programs, the ~500-file compiler backend, C/C++
-frontends, driver programs, and developer tools — 3500+ build commands in ~130s.
+frontends, driver programs, developer tools, and GNU binutils (assembler + archiver)
+— 3600+ build commands in ~140s.
 
 ## Quick Start
 
@@ -14,8 +15,11 @@ wget https://gcc.gnu.org/pub/gcc/releases/gcc-15.2.0/gcc-15.2.0.tar.xz
 tar xf gcc-15.2.0.tar.xz
 cd gcc-15.2.0 && ./contrib/download_prerequisites && cd ..
 
-# 2. Build cc1
+# 2. Download binutils (assembler + archiver)
 cd examples/gcc
+make -f Makefile.pup download-binutils
+
+# 3. Build toolchain
 make -f Makefile.pup SRCDIR=/path/to/gcc-15.2.0 BUILD=../build-gcc
 ```
 
@@ -51,6 +55,10 @@ Tools:
   gcc/           → lto-wrapper      LTO linker plugin interface
   gcc/           → gcov             Code coverage analysis
   gcc/           → gcov-dump        Coverage data inspector
+
+Binutils (separate source tree):
+  binutils/      → as               Cross-assembler (x86_64 ELF)
+  binutils/      → ar               Cross-archiver
 ```
 
 ## Dependency Chain
@@ -68,6 +76,10 @@ libdecnumber ──────────────→ libdecnumber.a ┘   
 libbacktrace ──────────────→ libbacktrace.a ───────────┘
                                                        ↑
 libcpp ────────────────────→ libcpp.a ─────────────────┘
+
+binutils (separate source):
+  libiberty.a ──→ bfd + opcodes + gas ──→ as
+  libiberty.a ──→ bfd + ar objects ─────→ ar
 ```
 
 ## Per-Component Configuration
@@ -85,6 +97,7 @@ libdecnumber/tup.config        → libdecnumber: endianness, float format
 libbacktrace/tup.config        → libbacktrace: BACKTRACE_ELF_SIZE, HAVE_DL_ITERATE_PHDR, ...
 libcpp/tup.config              → libcpp: HAVE_ICONV, ENABLE_NLS, ...
 gcc/tup.config                 → GCC: HOST_BITS_PER_*, SIZEOF_*, HAVE_*, ...
+binutils/tup.config            → binutils: BFD64, target arch, host capabilities
 ```
 
 `putup configure --config` installs the root config and copies subdir configs to the
@@ -223,6 +236,8 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 | `gcc/analyzer/Tupfile` | Static analyzer objects |
 | `gcc/config/i386/Tupfile` | x86_64 target-specific objects |
 | `gcc/targets/x86_64-pc-linux-gnu.tup` | Target-specific machine description rules |
+| **binutils** (separate source tree) | |
+| `binutils/{Tuprules.tup,tup.config,Tupfile}` | Cross-assembler + cross-archiver |
 
 ## Build Features Demonstrated
 
@@ -241,6 +256,7 @@ make -f Makefile.pup MPN_CPU=generic           # Pure C (default)
 - **Self-contained libraries**: Each library has its own `Tuprules.tup` with `?=` defaults; buildable alone or composed
 - **Nested `include_rules`**: Root `Tuprules.tup` sets toolchain, per-library `Tuprules.tup` adds flags and bang macros
 - **Inter-library dependencies**: Order-only groups ensure correct build ordering
+- **Multi-source-tree packages**: binutils uses `@(BINUTILS_SRC)` for its own source tree, separate from GCC's `-S`
 
 ## Notes
 
