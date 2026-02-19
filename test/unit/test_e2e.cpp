@@ -510,6 +510,26 @@ SCENARIO("Build fails when command fails", "[e2e][build]")
     }
 }
 
+SCENARIO("Dollar-dollar escapes to literal dollar in shell commands", "[e2e][build]")
+{
+    GIVEN("a project with $$ in a command")
+    {
+        auto f = E2EFixture { "dollar_escape" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("build succeeds and $$ becomes $ for the shell")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("output.txt") == "hello\n");
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Incremental Build Tests
 // =============================================================================

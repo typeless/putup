@@ -274,6 +274,13 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<std::string>
         // Add text before the variable
         result += text.substr(pos, next - pos);
 
+        // Handle $$ escape → literal $ for shell commands
+        if (text[next] == '$' && next + 1 < text.size() && text[next + 1] == '$') {
+            result += '$';
+            pos = next + 2;
+            continue;
+        }
+
         // Check for variable reference pattern: X(name)
         if (next + 1 < text.size() && text[next + 1] == '(') {
             auto close = text.find(')', next + 2);
