@@ -1,0 +1,181 @@
+include_rules
+
+# ============================================================
+# binutils — cross-assembler (as) + cross-archiver (ar)
+#
+# First external package: source via @(BINUTILS_SRC), not -S.
+# Single Tupfile avoids cross-directory group issues in 3-tree mode.
+#
+# Source paths use $(BFD)/, $(GAS)/, $(OPC)/, $(BIN)/ prefixes.
+# Because the binutils source tree is outside the -S tree, sources
+# are referenced only in command strings, not as tup inputs.
+# putup falls back to the config tree as working directory when
+# the source subdir doesn't exist in -S.
+# ============================================================
+
+BFD = $(BU)/bfd
+GAS = $(BU)/gas
+OPC = $(BU)/opcodes
+BIN = $(BU)/binutils
+OUT = $(B)/$(BINUTILS_DIR)
+
+# --- Phase 1: Generated headers ---
+
+# config.h from tup.config
+: |> !gen-config |> config.h <gen-headers>
+
+# bfd.h — substitute autoconf placeholders in bfd-in2.h
+: |> ^ GEN %o^ sed \
+  -e 's/@wordsize@/64/g' \
+  -e 's/@bfd_default_target_size@/64/g' \
+  -e 's/@BFD_DEFAULT_TARGET_SIZE@/64/g' \
+  -e 's/@BFD64@/#define BFD64 1/g' \
+  -e 's/@BFD_HOST_64BIT_LONG@/1/g' \
+  -e 's/@BFD_HOST_LONG_LONG@/1/g' \
+  -e 's/@BFD_HOST_64_BIT@/long/g' \
+  -e 's/@BFD_HOST_U_64_BIT@/unsigned long/g' \
+  -e 's/@bfd_file_ptr@/long/g' \
+  -e 's/@bfd_ufile_ptr@/unsigned long/g' \
+  -e 's/@supports_plugins@/0/g' \
+  $(BFD)/bfd-in2.h > %o |> bfd.h <gen-headers>
+
+# bfd_stdint.h — trivial wrapper (modern systems have stdint.h)
+: |> ^ GEN %o^ printf '%s\n' '#include <stdint.h>' > %o |> bfd_stdint.h <gen-headers>
+
+# targmatch.h — target matching table for x86_64 ELF targets
+: |> ^ GEN %o^ printf '%s\n' \
+  '/* Generated — x86_64-pc-linux-gnu target */' \
+  '{ "x86_64-*-linux*", &x86_64_elf64_vec },' \
+  '{ "x86_64-*-elf*", &x86_64_elf64_vec },' \
+  '{ "i[3-7]86-*-linux*", &i386_elf32_vec },' > %o |> targmatch.h <gen-headers>
+
+# bfdver.h — substitute version placeholders in version.h
+: |> ^ GEN %o^ sed \
+  -e 's/@bfd_version@/244000000/g' \
+  -e 's/@bfd_version_string@/"2.44"/g' \
+  -e 's/@bfd_version_package@/"(GNU Binutils)"/g' \
+  -e 's/@report_bugs_to@/""/g' \
+  $(BFD)/version.h > %o |> bfdver.h <gen-headers>
+
+# gas target headers — redirect to concrete config files for x86_64-linux-elf
+: |> ^ GEN %o^ echo '#include "tc-i386.h"' > %o |> targ-cpu.h <gen-headers>
+: |> ^ GEN %o^ echo '#include "obj-elf.h"' > %o |> obj-format.h <gen-headers>
+: |> ^ GEN %o^ echo '#include "te-linux.h"' > %o |> targ-env.h <gen-headers>
+
+# elf32-target.h / elf64-target.h — elfxx-target.h with NN substitution
+: |> ^ GEN %o^ sed 's/elfNN/elf32/g;s/ELFNN/ELF32/g' $(BFD)/elfxx-target.h > %o |> elf32-target.h <gen-headers>
+: |> ^ GEN %o^ sed 's/elfNN/elf64/g;s/ELFNN/ELF64/g' $(BFD)/elfxx-target.h > %o |> elf64-target.h <gen-headers>
+
+# --- Phase 2: BFD objects ---
+# Core BFD library + ELF x86_64 backend.
+# Batch compile: sources are outside the project tree, so we reference
+# them only in the command (not as tup inputs). Output prefix bfd-
+# avoids collisions with gas (both have hash.c, stabs.c).
+
+bfd_names  = archive archures bfd bfdio cache
+bfd_names += coffgen compress corefile format hash
+bfd_names += init libbfd linker merge opncls
+bfd_names += reloc section simple stab-syms stabs
+bfd_names += syms targets
+bfd_names += elf elf-properties elf-strtab elflink
+bfd_names += elf-eh-frame elf-ifunc elf-vxworks elf-attrs elf-sframe
+bfd_names += dwarf1 dwarf2 archive64
+bfd_names += elf64 elf64-x86-64 elfxx-x86 cpu-i386
+bfd_names += elf64-gen elf32-gen elf32 elf32-i386
+bfd_names += binary ihex srec tekhex verilog
+
+: | <gen-headers> |> ^ CC-BFD (38 files)^ for f in $(bfd_names); do \
+  $(CC) $(CFLAGS) $(BFD_INCLUDES) -c $(BFD)/$$f.c -o $(OUT)/bfd-$$f.o || exit 1; \
+  done |> \
+  bfd-archive.o bfd-archures.o bfd-bfd.o bfd-bfdio.o bfd-cache.o \
+  bfd-coffgen.o bfd-compress.o bfd-corefile.o bfd-format.o bfd-hash.o \
+  bfd-init.o bfd-libbfd.o bfd-linker.o bfd-merge.o bfd-opncls.o \
+  bfd-reloc.o bfd-section.o bfd-simple.o bfd-stab-syms.o bfd-stabs.o \
+  bfd-syms.o bfd-targets.o \
+  bfd-elf.o bfd-elf-properties.o bfd-elf-strtab.o bfd-elflink.o \
+  bfd-elf-eh-frame.o bfd-elf-ifunc.o bfd-elf-vxworks.o bfd-elf-attrs.o bfd-elf-sframe.o \
+  bfd-dwarf1.o bfd-dwarf2.o bfd-archive64.o \
+  bfd-elf64.o bfd-elf64-x86-64.o bfd-elfxx-x86.o bfd-cpu-i386.o \
+  bfd-elf64-gen.o bfd-elf32-gen.o bfd-elf32.o bfd-elf32-i386.o \
+  bfd-binary.o bfd-ihex.o bfd-srec.o bfd-tekhex.o bfd-verilog.o \
+  <bfd-objs>
+
+# --- Phase 2b: libsframe objects ---
+# SFrame stack-trace format library, needed by elf-sframe.c in BFD.
+
+SFRAME = $(BU)/libsframe
+SFRAME_INCLUDES = -I$(B)/$(BINUTILS_DIR) -I$(SFRAME) -I$(BU)/libctf -I$(BU)/include
+
+sframe_names = sframe sframe-error
+
+: | <gen-headers> |> ^ CC-SFRAME (2 files)^ for f in $(sframe_names); do \
+  $(CC) $(CFLAGS) $(SFRAME_INCLUDES) -c $(SFRAME)/$$f.c -o $(OUT)/sframe-$$f.o || exit 1; \
+  done |> \
+  sframe-sframe.o sframe-sframe-error.o \
+  <sframe-objs>
+
+# --- Phase 3: Opcodes objects ---
+# x86 instruction decode/encode tables
+
+opc_names = dis-init disassemble dis-buf i386-dis
+
+: | <gen-headers> |> ^ CC-OPC (4 files)^ for f in $(opc_names); do \
+  $(CC) $(CFLAGS) $(BFD_INCLUDES) -I$(OPC) -c $(OPC)/$$f.c -o $(OUT)/opc-$$f.o || exit 1; \
+  done |> \
+  opc-dis-init.o opc-disassemble.o opc-dis-buf.o opc-i386-dis.o \
+  <opcodes-objs>
+
+# --- Phase 4: Gas (assembler) objects ---
+# Output prefix gas- avoids collisions with bfd (hash.c, stabs.c).
+
+gas_names  = app as atof-generic compress-debug cond
+gas_names += depend dwarf2dbg dw2gencfi ecoff ehopt
+gas_names += expr flonum-copy flonum-konst flonum-mult
+gas_names += frags hash input-file input-scrub listing
+gas_names += literal macro messages output-file read
+gas_names += remap sb stabs subsegs symbols write
+gas_names += ginsn scfi scfidw2gen gen-sframe sframe-opt codeview
+
+gas_target_names = tc-i386 obj-elf atof-ieee
+
+: | <gen-headers> |> ^ CC-GAS (39 files)^ \
+  for f in $(gas_names); do \
+    $(CC) $(CFLAGS) $(GAS_INCLUDES) $(BFD_INCLUDES) -c $(GAS)/$$f.c -o $(OUT)/gas-$$f.o || exit 1; \
+  done; \
+  for f in $(gas_target_names); do \
+    $(CC) $(CFLAGS) $(GAS_INCLUDES) $(BFD_INCLUDES) -c $(GAS)/config/$$f.c -o $(OUT)/gas-$$f.o || exit 1; \
+  done |> \
+  gas-app.o gas-as.o gas-atof-generic.o gas-compress-debug.o gas-cond.o \
+  gas-depend.o gas-dwarf2dbg.o gas-dw2gencfi.o gas-ecoff.o gas-ehopt.o \
+  gas-expr.o gas-flonum-copy.o gas-flonum-konst.o gas-flonum-mult.o \
+  gas-frags.o gas-hash.o gas-input-file.o gas-input-scrub.o gas-listing.o \
+  gas-literal.o gas-macro.o gas-messages.o gas-output-file.o gas-read.o \
+  gas-remap.o gas-sb.o gas-stabs.o gas-subsegs.o gas-symbols.o gas-write.o \
+  gas-ginsn.o gas-scfi.o gas-scfidw2gen.o gas-gen-sframe.o gas-sframe-opt.o gas-codeview.o \
+  gas-tc-i386.o gas-obj-elf.o gas-atof-ieee.o \
+  <gas-objs>
+
+# --- Phase 5: Link as (cross-assembler) ---
+
+: <gas-objs> <bfd-objs> <sframe-objs> <opcodes-objs> $(LIBIBERTY_A) |> ^ LINK as^ \
+  $(CC) %<gas-objs> %<bfd-objs> %<sframe-objs> %<opcodes-objs> $(LIBIBERTY_A) \
+  -lz @(PLATFORM_LDFLAGS) -o %o |> as
+
+# --- Phase 6: ar (cross-archiver) objects ---
+
+ar_names = ar arsup not-ranlib bucomm rename binemul emul_vanilla version filemode arparse arlex
+
+: | <gen-headers> |> ^ CC-BU (11 files)^ for f in $(ar_names); do \
+  $(CC) $(CFLAGS) $(BINUTILS_INCLUDES) $(BFD_INCLUDES) \
+  -Dbin_dummy_emulation=bin_vanilla_emulation \
+  -c $(BIN)/$$f.c -o $(OUT)/$$f.o || exit 1; \
+  done |> \
+  ar.o arsup.o not-ranlib.o bucomm.o rename.o binemul.o emul_vanilla.o \
+  version.o filemode.o arparse.o arlex.o \
+  <ar-objs>
+
+# --- Phase 7: Link ar (cross-archiver) ---
+
+: <ar-objs> <bfd-objs> <sframe-objs> $(LIBIBERTY_A) |> ^ LINK ar^ \
+  $(CC) %<ar-objs> %<bfd-objs> %<sframe-objs> $(LIBIBERTY_A) \
+  -lz @(PLATFORM_LDFLAGS) -o %o |> ar

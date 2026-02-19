@@ -1,0 +1,37 @@
+# binutils build rules (self-contained with ?= defaults)
+#
+# Composed mode: parent sets S, B, CC, AR, LIBIBERTY_DIR, BINUTILS_DIR.
+# Standalone mode: ?= defaults take effect.
+#
+# Source is a separate tree from GCC, referenced via @(BINUTILS_SRC).
+
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+CC ?= clang
+AR_CMD ?= ar
+LIBIBERTY_DIR ?= libiberty
+BINUTILS_DIR ?= .
+
+# Binutils source root (separate from GCC -S tree).
+# Resolved to an absolute path by Makefile.pup (resolve-binutils-src)
+# so commands work from the build variant directory.
+BU = @(BINUTILS_SRC)
+
+# Resolved library paths
+LIBIBERTY_A = $(B)/$(LIBIBERTY_DIR)/libiberty.a
+
+# Include paths
+BFD_INCLUDES  = -I$(B)/$(BINUTILS_DIR) -I$(BU)/bfd -I$(BU)/include
+GAS_INCLUDES  = -I$(B)/$(BINUTILS_DIR) -I$(BU)/gas -I$(BU)/gas/config -I$(BU)/include -I$(BU)/bfd -I$(BU)
+BINUTILS_INCLUDES = -I$(B)/$(BINUTILS_DIR) -I$(BU)/binutils -I$(BU)/include -I$(BU)/bfd
+
+CFLAGS = -O2 -DHAVE_CONFIG_H
+
+!cc-bfd = | $(S)/$(BINUTILS_DIR)/<gen-headers> |> ^ CC-BFD %b^ $(CC) $(CFLAGS) $(BFD_INCLUDES) -c %f -o %o |>
+!cc-opcodes = | $(S)/$(BINUTILS_DIR)/<gen-headers> |> ^ CC-OPC %b^ $(CC) $(CFLAGS) $(BFD_INCLUDES) -I$(BU)/opcodes -c %f -o %o |>
+!cc-gas = | $(S)/$(BINUTILS_DIR)/<gen-headers> |> ^ CC-GAS %b^ $(CC) $(CFLAGS) $(GAS_INCLUDES) $(BFD_INCLUDES) -c %f -o %o |>
+!cc-binutils = | $(S)/$(BINUTILS_DIR)/<gen-headers> |> ^ CC-BU %b^ $(CC) $(CFLAGS) $(BINUTILS_INCLUDES) $(BFD_INCLUDES) -c %f -o %o |>
+
+!gen-config = |> ^ GEN %o^ awk -F= \
+  '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2);if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
+  $(B)/$(BINUTILS_DIR)/tup.config > %o |>

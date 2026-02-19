@@ -21,3 +21,4 @@ LIBDECNUMBER_DIR = libdecnumber
 LIBBACKTRACE_DIR = libbacktrace
 LIBCODY_DIR = libcody
 GCC_DIR = gcc
+BINUTILS_DIR = binutils
