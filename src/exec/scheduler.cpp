@@ -806,6 +806,17 @@ auto Scheduler::build_job_list(
         if (!source_dir.empty()) {
             working_dir /= source_dir;
         }
+        // In overlay mode (3-tree builds), config-tree directories are projected
+        // onto the source tree. If this subdir exists in the config tree but not
+        // the source tree, create it so commands can run from it.
+        if (!std::filesystem::is_directory(working_dir)
+            && !impl_->options.config_root.empty()
+            && !source_dir.empty()) {
+            auto config_dir = impl_->options.config_root / source_dir;
+            if (std::filesystem::is_directory(config_dir)) {
+                std::filesystem::create_directories(working_dir);
+            }
+        }
 
         // Check if this is a generated rule that captures stdout
         auto capture_stdout = false;
