@@ -69,9 +69,8 @@ resolve-mpn:
 	fi
 
 # Resolve binutils source to an absolute path.
-# Commands run from the config tree (putup falls back when the source
-# subdir doesn't exist in the -S tree), so absolute paths ensure the
-# compiler can always find binutils sources regardless of working directory.
+# The source tree must have a binutils/ directory — created by the user
+# when setting up their source tree (e.g., symlink, download script).
 resolve-binutils-src:
 	@if [ -d "$(BINUTILS_DIR)" ]; then \
 		abs=$$(cd "$(BINUTILS_DIR)" && pwd); \

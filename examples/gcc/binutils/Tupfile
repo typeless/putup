@@ -3,14 +3,13 @@ include_rules
 # ============================================================
 # binutils — cross-assembler (as) + cross-archiver (ar)
 #
-# First external package: source via @(BINUTILS_SRC), not -S.
+# External package: source via @(BINUTILS_SRC), not -S.
 # Single Tupfile avoids cross-directory group issues in 3-tree mode.
 #
 # Source paths use $(BFD)/, $(GAS)/, $(OPC)/, $(BIN)/ prefixes.
 # Because the binutils source tree is outside the -S tree, sources
 # are referenced only in command strings, not as tup inputs.
-# putup falls back to the config tree as working directory when
-# the source subdir doesn't exist in -S.
+# The source tree must have a binutils/ directory (Makefile.pup creates it).
 # ============================================================
 
 BFD = $(BU)/bfd
