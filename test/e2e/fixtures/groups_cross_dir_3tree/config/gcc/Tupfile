@@ -1,0 +1,5 @@
+include_rules
+
+: |> ^ GEN config.h^ echo '#define HAVE_CONFIG 1' > %o |> config.h <gen-headers>
+: foreach *.c |> !cc |>
+: *.o |> ^ LINK %o^ cc %f -o %o |> hello.out

@@ -1,0 +1,5 @@
+S ?= ..
+LIB_DIR ?= .
+include_rules
+
+!cc = | $(S)/$(LIB_DIR)/<gen-headers> |> ^ CC %o^ cc -c %f -o %o |> %B.o
