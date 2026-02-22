@@ -1,0 +1,27 @@
+# Tuprules.tup - BSP root rules
+#
+# Sets project-wide variables from tup.config.
+# Per-package rules live in each package's own Tuprules.tup.
+# Uses = (force-set) so these override ?= defaults in group/package rules.
+
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
+
+CC = @(CC)
+CXX = @(CXX)
+AR = @(AR)
+HOSTCC = @(HOSTCC)
+
+# GCC tarball group
+GCC_DIR = gcc/gcc
+GMP_DIR = gcc/gmp
+MPFR_DIR = gcc/mpfr
+MPC_DIR = gcc/mpc
+LIBIBERTY_DIR = gcc/libiberty
+LIBCPP_DIR = gcc/libcpp
+LIBDECNUMBER_DIR = gcc/libdecnumber
+LIBBACKTRACE_DIR = gcc/libbacktrace
+LIBCODY_DIR = gcc/libcody
+
+# binutils tarball group
+BINUTILS_DIR = binutils

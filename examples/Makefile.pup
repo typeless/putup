@@ -14,73 +14,62 @@
 #   make -f Makefile.pup PLATFORM=darwin-x86_64-linux HOST=darwin
 #
 # 3-tree layout:
-#   -C .             Tupfiles live here (examples/gcc/)
-#   -S $(SRCDIR)     GCC source tree (read-only)
+#   -C .             BSP root (examples/)
+#   -S $(SRCDIR)     Assembled source tree (gcc/, binutils/ subdirs)
 #   -B $(BUILD)      Build output directory
 
-.PHONY: all build configure resolve-mpn resolve-binutils-src setup-host-configs \
+.PHONY: all build configure resolve-mpn setup-host-configs \
        clean distclean download-source download-binutils
 
 PLATFORM ?= x86_64-linux
 HOST ?= linux
-SRCDIR ?= ../gcc-15.2.0
+SRCDIR ?= ../source-root
 BUILD ?= ../build-gcc
 MPN_CPU ?= generic
 TREES = -C . -S $(SRCDIR) -B $(BUILD)
 
 all: build
 
-build: resolve-mpn setup-host-configs resolve-binutils-src
+build: resolve-mpn setup-host-configs
 	putup configure --config configs/$(PLATFORM).config $(TREES)
 	putup $(TREES) -j$$(nproc)
 
-configure: resolve-mpn setup-host-configs resolve-binutils-src
+configure: resolve-mpn setup-host-configs
 	putup configure --config configs/$(PLATFORM).config $(TREES)
 
 # Copy host-specific library configs when building for non-Linux hosts.
 # Linux configs are the in-tree defaults; other hosts overlay from configs/host-$(HOST)/.
-# To restore Linux defaults: git checkout -- */tup.config
+# To restore Linux defaults: git checkout -- gcc/*/tup.config
 setup-host-configs:
 	@if [ "$(HOST)" != "linux" ] && [ -d configs/host-$(HOST) ]; then \
 		for cfg in configs/host-$(HOST)/*.config; do \
 			lib=$$(basename "$$cfg" .config); \
-			echo "  COPY $$lib/tup.config (host-$(HOST))"; \
-			cp "$$cfg" "$$lib/tup.config"; \
+			echo "  COPY gcc/$$lib/tup.config (host-$(HOST))"; \
+			cp "$$cfg" "gcc/$$lib/tup.config"; \
 		done; \
 	fi
 
 # Resolve mpn sources for the selected CPU target.
-# - gmp/mpn/tup.config: source lists and per-function toggles (child scope)
-# - gmp/tup.config: GMP_MPARAM and ASM_ENABLED (parent scope, visible to gmp/Tupfile)
+# - gcc/gmp/mpn/tup.config: source lists and per-function toggles (child scope)
+# - gcc/gmp/tup.config: GMP_MPARAM and ASM_ENABLED (parent scope, visible to gmp/Tupfile)
 resolve-mpn:
-	@scripts/resolve-mpn.sh $(MPN_CPU) $(SRCDIR)/gmp/mpn > gmp/mpn/tup.config
-	@grep -v '^CONFIG_GMP_MPARAM=\|^CONFIG_ASM_ENABLED=\|^CONFIG_NO_ASM=' gmp/tup.config > gmp/tup.config.tmp && mv gmp/tup.config.tmp gmp/tup.config
+	@scripts/resolve-mpn.sh $(MPN_CPU) $(SRCDIR)/gcc/gmp/mpn > gcc/gmp/mpn/tup.config
+	@grep -v '^CONFIG_GMP_MPARAM=\|^CONFIG_ASM_ENABLED=\|^CONFIG_NO_ASM=' gcc/gmp/tup.config > gcc/gmp/tup.config.tmp && mv gcc/gmp/tup.config.tmp gcc/gmp/tup.config
 	@if [ "$(MPN_CPU)" != "generic" ]; then \
 		arch=$${MPN_CPU%%/*}; \
-		if [ -f "$(SRCDIR)/gmp/mpn/$$arch/gmp-mparam.h" ]; then \
-			echo "CONFIG_GMP_MPARAM=mpn/$$arch/gmp-mparam.h" >> gmp/tup.config; \
+		if [ -f "$(SRCDIR)/gcc/gmp/mpn/$$arch/gmp-mparam.h" ]; then \
+			echo "CONFIG_GMP_MPARAM=mpn/$$arch/gmp-mparam.h" >> gcc/gmp/tup.config; \
 		else \
-			echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gmp/tup.config; \
+			echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gcc/gmp/tup.config; \
 		fi; \
-		echo "CONFIG_ASM_ENABLED=y" >> gmp/tup.config; \
+		echo "CONFIG_ASM_ENABLED=y" >> gcc/gmp/tup.config; \
 	else \
-		echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gmp/tup.config; \
-		echo "CONFIG_NO_ASM=1" >> gmp/tup.config; \
-	fi
-
-# Resolve binutils source to an absolute path.
-# The source tree must have a binutils/ directory — created by the user
-# when setting up their source tree (e.g., symlink, download script).
-resolve-binutils-src:
-	@if [ -d "$(BINUTILS_DIR)" ]; then \
-		abs=$$(cd "$(BINUTILS_DIR)" && pwd); \
-		grep -v '^CONFIG_BINUTILS_SRC=' binutils/tup.config > binutils/tup.config.tmp; \
-		echo "CONFIG_BINUTILS_SRC=$$abs" >> binutils/tup.config.tmp; \
-		mv binutils/tup.config.tmp binutils/tup.config; \
+		echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gcc/gmp/tup.config; \
+		echo "CONFIG_NO_ASM=1" >> gcc/gmp/tup.config; \
 	fi
 
 # Multi-variant: build for multiple platforms in parallel
-#   make -f Makefile.pup multi SRCDIR=../gcc-15.2.0
+#   make -f Makefile.pup multi SRCDIR=../source-root
 PLATFORMS ?= x86_64-linux aarch64-linux
 multi:
 	@for p in $(PLATFORMS); do \
@@ -88,27 +77,30 @@ multi:
 	done
 	putup $(foreach p,$(PLATFORMS),-B $(BUILD)-$(p)) -C . -S $(SRCDIR) -j$$(nproc)
 
-# Download GCC source for reference/building
+# Download and assemble source tree.
+# Source assembly: extract each tarball, rename into $(SRCDIR)/.
 GCC_VERSION ?= 15.2.0
 BINUTILS_VERSION ?= 2.44
-BINUTILS_DIR ?= ../binutils-$(BINUTILS_VERSION)
 
 download-source: download-binutils
-	@if [ ! -d "$(SRCDIR)" ]; then \
+	@if [ ! -d "$(SRCDIR)/gcc" ]; then \
 		echo "Downloading GCC $(GCC_VERSION)..."; \
+		mkdir -p $(SRCDIR)/gcc; \
 		curl -L "https://ftp.gnu.org/gnu/gcc/gcc-$(GCC_VERSION)/gcc-$(GCC_VERSION).tar.xz" \
-		  | tar xJ -C $$(dirname $(SRCDIR)); \
+		  | tar xJ --strip-components=1 -C $(SRCDIR)/gcc; \
+		cd $(SRCDIR)/gcc && ./contrib/download_prerequisites; \
 	else \
-		echo "$(SRCDIR) already exists"; \
+		echo "$(SRCDIR)/gcc already exists"; \
 	fi
 
 download-binutils:
-	@if [ ! -d "$(BINUTILS_DIR)" ]; then \
+	@if [ ! -d "$(SRCDIR)/binutils" ]; then \
 		echo "Downloading binutils $(BINUTILS_VERSION)..."; \
+		mkdir -p $(SRCDIR)/binutils; \
 		curl -L "https://ftp.gnu.org/gnu/binutils/binutils-$(BINUTILS_VERSION).tar.xz" \
-		  | tar xJ -C $$(dirname $(BINUTILS_DIR)); \
+		  | tar xJ --strip-components=1 -C $(SRCDIR)/binutils; \
 	else \
-		echo "$(BINUTILS_DIR) already exists"; \
+		echo "$(SRCDIR)/binutils already exists"; \
 	fi
 
 clean:

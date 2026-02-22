@@ -3,19 +3,14 @@ include_rules
 # ============================================================
 # binutils — cross-assembler (as) + cross-archiver (ar)
 #
-# External package: source via @(BINUTILS_SRC), not -S.
 # Single Tupfile avoids cross-directory group issues in 3-tree mode.
-#
-# Source paths use $(BFD)/, $(GAS)/, $(OPC)/, $(BIN)/ prefixes.
-# Because the binutils source tree is outside the -S tree, sources
-# are referenced only in command strings, not as tup inputs.
-# The source tree must have a binutils/ directory (Makefile.pup creates it).
+# Source paths use $(BFD)/, $(GAS)/, $(OPC)/, $(BU_BIN)/ prefixes.
 # ============================================================
 
 BFD = $(BU)/bfd
 GAS = $(BU)/gas
 OPC = $(BU)/opcodes
-BIN = $(BU)/binutils
+BU_BIN = $(BU)/binutils
 OUT = $(B)/$(BINUTILS_DIR)
 
 # --- Phase 1: Generated headers ---
@@ -167,7 +162,7 @@ ar_names = ar arsup not-ranlib bucomm rename binemul emul_vanilla version filemo
 : | <gen-headers> |> ^ CC-BU (11 files)^ for f in $(ar_names); do \
   $(CC) $(CFLAGS) $(BINUTILS_INCLUDES) $(BFD_INCLUDES) \
   -Dbin_dummy_emulation=bin_vanilla_emulation \
-  -c $(BIN)/$$f.c -o $(OUT)/$$f.o || exit 1; \
+  -c $(BU_BIN)/$$f.c -o $(OUT)/$$f.o || exit 1; \
   done |> \
   ar.o arsup.o not-ranlib.o bucomm.o rename.o binemul.o emul_vanilla.o \
   version.o filemode.o arparse.o arlex.o \
