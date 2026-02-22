@@ -2,8 +2,6 @@
 #
 # Composed mode: parent sets S, B, CC, AR, LIBIBERTY_DIR, BINUTILS_DIR.
 # Standalone mode: ?= defaults take effect.
-#
-# Source is a separate tree from GCC, referenced via @(BINUTILS_SRC).
 
 S ?= $(TUP_CWD)
 B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
@@ -12,10 +10,8 @@ AR_CMD ?= ar
 LIBIBERTY_DIR ?= libiberty
 BINUTILS_DIR ?= .
 
-# Binutils source root (separate from GCC -S tree).
-# Resolved to an absolute path by Makefile.pup (resolve-binutils-src)
-# so commands work from the build variant directory.
-BU = @(BINUTILS_SRC)
+# Binutils source root — resolved via $(S)/$(BINUTILS_DIR)
+BU = $(S)/$(BINUTILS_DIR)
 
 # Resolved library paths
 LIBIBERTY_A = $(B)/$(LIBIBERTY_DIR)/libiberty.a

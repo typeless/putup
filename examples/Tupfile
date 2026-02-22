@@ -1,0 +1,23 @@
+include_rules
+
+# Root Tupfile - nothing to do here
+# Packages are built by their respective Tupfiles:
+#
+# GCC tarball (gcc/):
+#   gcc/gmp/Tupfile            → libgmp.a
+#   gcc/mpfr/src/Tupfile       → libmpfr.a
+#   gcc/mpc/src/Tupfile        → libmpc.a
+#   gcc/libiberty/Tupfile      → libiberty.a
+#   gcc/libdecnumber/Tupfile   → libdecnumber.a
+#   gcc/libbacktrace/Tupfile   → libbacktrace.a
+#   gcc/libcpp/Tupfile         → libcpp.a
+#   gcc/libcody/Tupfile        → libcody.a
+#   gcc/gcc/Tupfile            → cc1, cc1plus, xgcc, xg++, cpp, collect2, ...
+#   gcc/gcc/c/Tupfile          → C frontend objects
+#   gcc/gcc/cp/Tupfile         → C++ frontend objects
+#   gcc/gcc/c-family/Tupfile   → C-family shared objects
+#   gcc/gcc/analyzer/Tupfile   → Static analyzer objects
+#   gcc/gcc/config/i386/Tupfile → x86_64 target-specific objects
+#
+# binutils tarball (binutils/):
+#   binutils/Tupfile           → as (cross-assembler), ar (cross-archiver)
