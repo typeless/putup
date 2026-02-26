@@ -176,3 +176,28 @@ jobs:
           sudo apt-get install -y clang-tidy-21
       - name: Run clang-tidy
         run: make tidy PUTUP=./build/putup RUN_CLANG_TIDY=run-clang-tidy-21 TIDY_FLAGS=-allow-no-checks
+
+  build-gcc-bsp:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux
+          path: build/
+      - name: Fix permissions
+        run: chmod +x build/putup
+      - name: Download source
+        working-directory: examples
+        run: make -f Makefile.pup download-source SRCDIR=../source-root
+      - name: Build
+        working-directory: examples
+        run: make -f Makefile.pup PUTUP=../build/putup SRCDIR=../source-root
+      - name: Smoke test cc1
+        run: |
+          echo 'int main() { return 0; }' > /tmp/test.c
+          build-gcc/gcc/gcc/cc1 /tmp/test.c -quiet -o /tmp/test.s
+          grep 'GCC.*15.2.0' /tmp/test.s

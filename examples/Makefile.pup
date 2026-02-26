@@ -26,16 +26,17 @@ HOST ?= linux
 SRCDIR ?= ../source-root
 BUILD ?= ../build-gcc
 MPN_CPU ?= generic
+PUTUP ?= putup
 TREES = -C . -S $(SRCDIR) -B $(BUILD)
 
 all: build
 
 build: resolve-mpn setup-host-configs
-	putup configure --config configs/$(PLATFORM).config $(TREES)
-	putup $(TREES) -j$$(nproc)
+	$(PUTUP) configure --config configs/$(PLATFORM).config $(TREES)
+	$(PUTUP) $(TREES) -j$$(nproc)
 
 configure: resolve-mpn setup-host-configs
-	putup configure --config configs/$(PLATFORM).config $(TREES)
+	$(PUTUP) configure --config configs/$(PLATFORM).config $(TREES)
 
 # Copy host-specific library configs when building for non-Linux hosts.
 # Linux configs are the in-tree defaults; other hosts overlay from configs/host-$(HOST)/.
@@ -78,9 +79,9 @@ resolve-mpn:
 PLATFORMS ?= x86_64-linux aarch64-linux
 multi:
 	@for p in $(PLATFORMS); do \
-		putup configure --config configs/$$p.config -C . -S $(SRCDIR) -B $(BUILD)-$$p; \
+		$(PUTUP) configure --config configs/$$p.config -C . -S $(SRCDIR) -B $(BUILD)-$$p; \
 	done
-	putup $(foreach p,$(PLATFORMS),-B $(BUILD)-$(p)) -C . -S $(SRCDIR) -j$$(nproc)
+	$(PUTUP) $(foreach p,$(PLATFORMS),-B $(BUILD)-$(p)) -C . -S $(SRCDIR) -j$$(nproc)
 
 # Download and assemble source tree.
 # Source assembly: extract each tarball, rename into $(SRCDIR)/.
@@ -109,7 +110,7 @@ download-binutils:
 	fi
 
 clean:
-	putup clean $(TREES)
+	$(PUTUP) clean $(TREES)
 
 distclean:
-	putup distclean $(TREES)
+	$(PUTUP) distclean $(TREES)
