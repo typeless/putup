@@ -1,194 +1,81 @@
 ---
-# clang-tidy configuration for uld_cpp
-# Based on Ladybird browser config, adapted for C++11 embedded/AOSP project
+# clang-tidy configuration for putup
+#
+# Approach: allowlist high-value checks, skip expensive analysis families.
+# Modeled after DuckDB (allowlist + cherry-pick) and Ladybird (no clang-analyzer
+# in CI). See https://github.com/duckdb/duckdb and
+# https://github.com/LadybirdBrowser/ladybird for reference.
+#
+# Families enabled in full: bugprone, cert, concurrency, misc, performance,
+#   portability, readability (with selective exclusions below).
+# Families cherry-picked: modernize (6 checks), cppcoreguidelines (7 checks).
+# Families omitted:
+#   clang-analyzer-* — path-sensitive symbolic execution; 10x slower than all
+#     other checks combined. DuckDB omits it; Ladybird only uses it locally.
+#   google-* — style rules for Google's C++ guidelines, not our style.
 #
 # =============================================================================
 # DISABLED CHECKS RATIONALE
 # =============================================================================
 #
-# bugprone-easily-swappable-parameters:
-#   This check warns when adjacent function parameters have similar types and
-#   could be accidentally swapped by callers. While the warning is valid, it's
-#   extremely noisy and the suggested fix (wrapping in structs) adds complexity.
-#   Example: void foo(int width, int height) triggers this warning.
-#
-# bugprone-macro-parentheses:
-#   Warns when macro arguments aren't parenthesized in expansion. Our ALOGE/ALOGI
-#   logging macros use variadic arguments that can't be parenthesized. Ladybird
-#   also disables this for code-generating macros.
-#
-# bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp:
-#   These warn about identifiers starting with underscore or containing double
-#   underscores. System headers and OpenSSL headers legitimately use these.
-#   cert-dcl37-c and cert-dcl51-cpp are aliases for bugprone-reserved-identifier.
-#
-# cert-err33-c:
-#   Requires checking return values of certain C functions including fprintf().
-#   Our logging macros (ALOGE, ALOGI, etc.) expand to fprintf() calls where
-#   ignoring the return value is intentional - logging failures shouldn't crash.
-#
-# cert-err58-cpp:
-#   ENABLED: Warns about exceptions in static object constructors. This project
-#   doesn't use exceptions, so no warnings expected.
-#
-# concurrency-mt-unsafe:
-#   Flags functions like strerror(), localtime(), getenv() as thread-unsafe.
-#   This project is single-threaded and these are standard C idioms. Using
-#   thread-safe alternatives (_r variants) would reduce portability.
-#
-# misc-const-correctness:
-#   Suggests adding const to variables that could be const. While good practice,
-#   enabling this generates hundreds of warnings requiring significant refactoring
-#   with minimal practical benefit for this codebase.
-#
-# misc-include-cleaner:
-#   Analyzes whether includes are necessary. Very noisy, reports many false
-#   positives, and the suggested changes often break compilation due to
-#   transitive includes.
-#
-# misc-no-recursion:
-#   Warns about recursive function calls. This project intentionally uses
-#   recursion for tree traversal and nested data structure parsing.
-#
-# misc-non-private-member-variables-in-classes:
-#   Warns when classes have non-private member variables. This project uses
-#   POD-style structs (CAPHeader, FileInfo, etc.) where public members are
-#   appropriate. The CheckOption IgnoreClassesWithAllMemberVariablesBeingPublic
-#   handles most cases but some edge cases remain.
-#
-# misc-unused-parameters:
-#   Warns about unused function parameters. These are not a security or safety
-#   concern. Some parameters are intentionally unused in stub implementations
-#   or virtual method overrides where the signature is fixed.
-#
-# misc-use-anonymous-namespace:
-#   Suggests using anonymous namespaces instead of static for internal linkage.
-#   We prefer static for C++11 compatibility and consistency with existing code.
-#   Anonymous namespaces can cause issues with some debuggers.
-#
-# modernize-avoid-c-arrays:
-#   Suggests replacing C arrays with std::array. This project uses fixed-size
-#   C arrays intentionally for protocol buffers, crypto operations, and embedded
-#   compatibility. std::array adds overhead and isn't always available on AOSP.
-#
-# modernize-use-auto:
-#   ENABLED: We now use auto declarations where the type is clear from context
-#   (e.g., auto it = container.begin(), auto result = SomeFunction()).
-#   Explicit types are still preferred for numeric types where precision matters.
-#
-# modernize-use-trailing-return-type:
-#   ENABLED: We now use trailing return type syntax (auto foo() -> ReturnType)
-#   for consistency with modern C++ style and better readability with complex
-#   return types.
-#
-# modernize-raw-string-literal:
-#   Suggests R"(...)" for strings with escapes. Not always clearer, especially
-#   for short strings, and can hurt readability for strings with mixed content.
-#
-# performance-enum-size:
-#   Suggests using smaller base types for enums (int8_t instead of int). While
-#   this could save memory, enums in this project are not in hot paths or large
-#   arrays where size matters. The default int size aids debugging.
-#
-# performance-trivially-destructible:
-#   Suggests defaulting empty destructors in class definitions to make them
-#   trivially destructible. While technically correct, explicit destructor
-#   declarations document intent and allow future extension.
-#
-# performance-no-int-to-ptr:
-#   Warns about integer-to-pointer casts. Low-level serial and crypto code
-#   sometimes requires legitimate pointer arithmetic. This check is overly
-#   broad for systems programming.
-#
-# performance-noexcept-move-constructor:
-#   Suggests adding noexcept to move constructors. This project doesn't use
-#   exceptions (-fno-exceptions on AOSP), so noexcept provides no benefit
-#   and adds visual noise.
-#
-# readability-braces-around-statements:
-#   ENABLED: Project style now requires braces around all if/for/while bodies
-#   for consistency and to prevent bugs from later additions.
-#
-# readability-convert-member-functions-to-static:
-#   Suggests making member functions static when they don't use 'this'. This
-#   is a design choice - keeping methods as non-static preserves API flexibility
-#   and allows future refactoring to use member state without API changes.
-#
-# readability-else-after-return:
-#   Warns about using 'else' after a return statement. While early return can
-#   be cleaner, explicit else blocks can improve readability by making all
-#   branches visually parallel, especially in switch-like if/else chains.
-#
-# readability-function-cognitive-complexity:
-#   Measures function complexity and warns above threshold. Complex functions
-#   in crypto and protocol parsing are sometimes unavoidable. Warnings are
-#   hard to fix without artificial refactoring that hurts readability.
-#
-# readability-function-size:
-#   Warns when functions exceed size thresholds. Crypto functions (OAEP,
-#   decryption) and protocol parsers are inherently complex and can't be
-#   split without hurting readability. Test runners also legitimately large.
-#
-# readability-identifier-length:
-#   Warns about short variable names (i, n, fd, etc.). These are idiomatic
-#   in C/C++ for loop indices, counts, and file descriptors. Longer names
-#   would hurt readability in tight loops.
-#
-# readability-implicit-bool-conversion:
-#   Warns about implicit conversions to bool (if (ptr) instead of if (ptr !=
-#   nullptr)). The implicit form is idiomatic C++ and often clearer.
-#
-# readability-magic-numbers:
-#   Warns about numeric literals in code. Despite recent cleanup to add named
-#   constants, many legitimate magic numbers remain (bit shifts, protocol
-#   offsets, etc.) where inline numbers are clearer than constants.
-#
-# readability-named-parameter:
-#   Requires naming all function parameters. We intentionally omit names for
-#   unused parameters to satisfy -Wunused-parameter: void foo(int /*unused*/)
-#
-# readability-simplify-boolean-expr:
-#   Suggests applying DeMorgan's theorem to simplify boolean expressions. While
-#   mathematically equivalent, the original form (explicit range checks like
-#   c >= '0' && c <= '9') is often more readable than the transformed version.
-#
-# readability-make-member-function-const:
-#   Suggests making member functions const when they don't modify member
-#   variables. This produces false positives for I/O methods that don't
-#   modify class state but have observable side effects (serial reads/writes,
-#   file operations). The check can't detect that calling read()/write()
-#   on a file descriptor has side effects.
-#
-# readability-uppercase-literal-suffix:
-#   Suggests 1UL instead of 1ul for literal suffixes. Low priority style issue
-#   with many occurrences. Can be enabled later for incremental cleanup.
+# bugprone-easily-swappable-parameters: too noisy, fix adds complexity
+# bugprone-macro-parentheses: variadic macros can't parenthesize args
+# cert-err33-c: fprintf return values in logging are intentionally ignored
+# concurrency-mt-unsafe: single-threaded project, standard C idioms fine
+# misc-const-correctness: hundreds of warnings, marginal benefit
+# misc-include-cleaner: noisy false positives, breaks transitive includes
+# misc-no-recursion: intentional recursion for tree traversal / parsing
+# misc-non-private-member-variables-in-classes: POD structs use public members
+# misc-unused-parameters: intentional in stubs and virtual overrides
+# performance-enum-size: not in hot paths; default int aids debugging
+# performance-no-int-to-ptr: legitimate in low-level pointer arithmetic
+# performance-noexcept-move-constructor: no exceptions in this project
+# readability-convert-member-functions-to-static: design choice for API flex
+# readability-function-cognitive-complexity: unavoidable in parsers
+# readability-function-size: large functions in parsers are sometimes clearest
+# readability-identifier-length: short names (i, n, fd) are idiomatic C++
+# readability-implicit-bool-conversion: if (ptr) is idiomatic
+# readability-magic-numbers: inline numbers often clearer than constants
+# readability-make-member-function-const: false positives on I/O methods
+# readability-named-parameter: intentionally omitted for unused params
+# readability-redundant-member-init: explicit init documents intent
+# readability-simplify-boolean-expr: explicit range checks are more readable
 #
 # =============================================================================
 
 Checks: >
   bugprone-*,
-  cert-*,
-  clang-analyzer-*,
-  -clang-analyzer-core.uninitialized.Assign,
-  concurrency-*,
-  misc-*,
-  modernize-*,
-  performance-*,
-  portability-*,
-  readability-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-macro-parentheses,
+  cert-*,
   -cert-err33-c,
+  concurrency-*,
   -concurrency-mt-unsafe,
+  cppcoreguidelines-avoid-non-const-global-variables,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-rvalue-reference-param-not-moved,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  misc-*,
   -misc-const-correctness,
   -misc-include-cleaner,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
   -misc-unused-parameters,
-  -modernize-raw-string-literal,
+  modernize-use-auto,
+  modernize-use-bool-literals,
+  modernize-use-emplace,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-trailing-return-type,
+  performance-*,
   -performance-enum-size,
   -performance-no-int-to-ptr,
   -performance-noexcept-move-constructor,
+  portability-*,
+  readability-*,
   -readability-convert-member-functions-to-static,
   -readability-function-cognitive-complexity,
   -readability-function-size,
@@ -199,12 +86,6 @@ Checks: >
   -readability-named-parameter,
   -readability-redundant-member-init,
   -readability-simplify-boolean-expr,
-  cppcoreguidelines-*,
-  -cppcoreguidelines-avoid-magic-numbers,
-  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
-  -cppcoreguidelines-pro-bounds-constant-array-index,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-pro-type-reinterpret-cast
 
 WarningsAsErrors: ''
 
@@ -219,9 +100,5 @@ CheckOptions:
     value: 'true'
   - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
     value: true
-  - key: readability-function-size.LineThreshold
-    value: 200
-  - key: readability-function-size.StatementThreshold
-    value: 400
   - key: modernize-use-trailing-return-type.AllowOverridingMethods
     value: true

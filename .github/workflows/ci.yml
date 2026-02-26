@@ -167,15 +167,8 @@ jobs:
           path: build/
       - name: Fix permissions
         run: chmod +x build/putup
-      # clang-tidy 18 (ubuntu default) errors on Checks: '-*' in
-      # third_party/.clang-tidy ("no checks enabled", exit 1).
-      # --allow-no-checks was added in 19. See llvm/llvm-project#86355
-      - name: Install LLVM 21
-        run: |
-          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
-          sudo apt-get install -y clang-tidy-21
       - name: Run clang-tidy
-        run: make tidy PUTUP=./build/putup RUN_CLANG_TIDY=run-clang-tidy-21 TIDY_FLAGS=-allow-no-checks
+        run: make tidy PUTUP=./build/putup RUN_CLANG_TIDY=run-clang-tidy-18
 
   build-gcc-bsp:
     needs: build-linux

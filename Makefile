@@ -55,11 +55,11 @@ RUN_CLANG_TIDY ?= run-clang-tidy
 
 tidy: compdb
 	@echo "Running clang-tidy..."
-	@$(RUN_CLANG_TIDY) -p . $(TIDY_FLAGS)
+	@$(RUN_CLANG_TIDY) -p . $(TIDY_FLAGS) 'src/|test/'
 
 tidy-fix: compdb
 	@echo "Running clang-tidy with fixes..."
-	@$(RUN_CLANG_TIDY) -p . -fix $(TIDY_FLAGS)
+	@$(RUN_CLANG_TIDY) -p . -fix $(TIDY_FLAGS) 'src/|test/'
 
 format:
 	@echo "Formatting sources..."
