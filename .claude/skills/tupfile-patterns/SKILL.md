@@ -142,8 +142,8 @@ For multi-library projects (like GCC with GMP, MPFR, MPC):
 ```tup
 S = $(TUP_CWD)
 B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
-GMP_DIR = gmp
-MPFR_DIR = mpfr
+GMP_DIR = gcc/gmp
+MPFR_DIR = gcc/mpfr
 ```
 
 **Each library's `Tuprules.tup`** — uses `?=` defaults for standalone builds:

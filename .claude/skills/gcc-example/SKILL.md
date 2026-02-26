@@ -1,37 +1,52 @@
 ---
 name: gcc-example
-description: Building GCC with putup. Use when working on the examples/gcc/ directory, debugging GCC build failures, adding new GCC source files to the build, fixing generator issues, or extending the cc1 build. Covers 3-tree mode workflow, generator patterns, config headers, and accumulated fixes.
+description: Building GCC with putup. Use when working on the examples/ BSP directory, debugging GCC build failures, adding new GCC source files to the build, fixing generator issues, or extending the toolchain. Covers 3-tree mode workflow, generator patterns, config headers, and accumulated fixes.
 ---
 
 # GCC Example Build
 
-The `examples/gcc/` directory builds GCC's cc1 C compiler from source using putup in 3-tree mode. This skill captures the architecture and hard-won knowledge from iterative debugging.
+The `examples/` BSP directory builds GCC and binutils from source using putup in 3-tree mode. GCC-specific Tupfiles live under `examples/gcc/`. This skill captures the architecture and hard-won knowledge from iterative debugging.
 
 ## Build Command
 
 ```bash
-cd /path/to/pup/examples/gcc && \
-  PUP_IMPLICIT_DEPS=0 putup -C . -S /path/to/gcc-15.2.0 -B ../../build-gcc -j$(nproc)
+cd /path/to/pup/examples && \
+  make -f Makefile.pup SRCDIR=../source-root
 ```
 
-- `-C .` — config tree (our Tupfiles, tup.config, Tuprules.tup)
-- `-S /path/to/gcc-15.2.0` — GCC source tree (read-only)
-- `-B ../../build-gcc` — build output directory
-- `PUP_IMPLICIT_DEPS=0` — workaround for 3-tree groups bug
+Or directly with putup:
+
+```bash
+cd /path/to/pup/examples && \
+  putup configure --config configs/x86_64-linux.config \
+    -C . -S ../source-root -B ../build-gcc
+  putup -C . -S ../source-root -B ../build-gcc -j$(nproc)
+```
+
+- `-C .` — config tree (BSP root: Tupfiles, tup.config, Tuprules.tup)
+- `-S ../source-root` — assembled source tree (gcc/ + binutils/ subdirs, read-only)
+- `-B ../build-gcc` — build output directory
 
 After editing any `tup.config`, re-run `putup configure` to propagate to the build dir.
 
 ## Architecture
 
-Seven build phases in `gcc/Tupfile`:
+14 build phases in `gcc/gcc/Tupfile`:
 
 1. **Config headers** (`<gen-config-headers>`) — auto-host.h, bconfig.h, config.h, tm.h, tm_p.h, options.h, etc.
 2. **Generator bootstrap** — genmodes → insn-modes.h → BUILD_RTL → genconditions → insn-conditions.md
 3. **RTL generators** — 20+ generators producing insn-*.h/cc files (`<gen-insn-headers>`)
 4. **Generated source compilation** — compile all generated .cc into `<cc1-objs>`
 5. **Backend objects** — ~445 source files from gcc/
-6. **Common objects** — from gcc/c/, gcc/c-family/, gcc/analyzer/, gcc/config/i386/
+6. **Common objects** — OBJS-libcommon + OBJS-libcommon-target
 7. **cc1 link** — link everything with library archives
+8. **xgcc driver** — main gcc/g++ driver executable
+9. **cc1plus** — C++ compiler (C++ frontend objects from gcc/cp/)
+10. **collect2** — linker wrapper
+11. **g++ driver** (xg++) — C++ compilation driver
+12. **cpp** — standalone C preprocessor
+13. **lto-wrapper** — LTO linker plugin interface
+14. **gcov + gcov-dump** — code coverage tools
 
 ### Group Dependencies
 

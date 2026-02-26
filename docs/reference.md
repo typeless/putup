@@ -269,6 +269,8 @@ putup              # Pass 2: Build with generated configs
 - `-v` - Verbose output
 - `-k` - Continue after failures
 - `-n` - Dry-run: show what would execute
+- `-C DIR` - Config directory (where Tupfiles and tup.config live)
+- `-S DIR` - Source directory (read-only source tree)
 - `-B DIR` - Specify build directory (created automatically if it doesn't exist)
 - `-c, --config FILE` - Install FILE as root tup.config before running config rules
 

@@ -96,9 +96,33 @@ putup configure -S /path/to/gcc-15.2.0 -B /path/to/build
 putup -S /path/to/gcc-15.2.0 -B /path/to/build
 ```
 
+## Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make -f Makefile.pup` | Full build (resolve-mpn + configure + build) |
+| `make -f Makefile.pup configure` | Configure only (no build) |
+| `make -f Makefile.pup download-source` | Download GCC + binutils tarballs into `SRCDIR` |
+| `make -f Makefile.pup clean` | Clean build artifacts |
+| `make -f Makefile.pup distclean` | Full clean (remove build directory) |
+| `make -f Makefile.pup multi` | Multi-variant parallel build for `PLATFORMS` |
+
+**Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PLATFORM` | `x86_64-linux` | Config file selector (`configs/$(PLATFORM).config`) |
+| `HOST` | `linux` | Host OS (overlays `configs/host-$(HOST)/` if not linux) |
+| `SRCDIR` | `../source-root` | Assembled source tree path |
+| `BUILD` | `../build-gcc` | Build output directory |
+| `MPN_CPU` | `generic` | GMP assembly target (`generic`, `x86_64`, `x86_64/core2`) |
+| `PUTUP` | `putup` | Path to putup binary (override for CI) |
+| `GCC_VERSION` | `15.2.0` | GCC tarball version for `download-source` |
+| `BINUTILS_VERSION` | `2.44` | binutils tarball version for `download-source` |
+
 ## Architecture
 
-- **Root `Tuprules.tup`** uses `=` (force-set) for all DIR variables with `gcc/` prefix
+- **Root `Tuprules.tup`** uses `=` (force-set) for all DIR variables (e.g. `GCC_DIR = gcc/gcc`, `BINUTILS_DIR = binutils`)
 - **Group `Tuprules.tup`** uses `?=` (default) — overridden in BSP mode, effective standalone
 - **Package `Tuprules.tup`** uses `?=` for toolchain vars — overridden by both root and group
 - `include_rules` processes root-first; BSP root wins over group defaults
@@ -106,4 +130,4 @@ putup -S /path/to/gcc-15.2.0 -B /path/to/build
 ## Known Limitations
 
 - putup `create_directories` crashes on symlinks in source tree
-- busybox and helloworld are not yet integrated into the BSP (use `$(CC)` from root config)
+- busybox and helloworld are not yet BSP-integrated (no `Tupfile.ini` — excluded from BSP scan)
