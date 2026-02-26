@@ -39,13 +39,18 @@ configure: resolve-mpn setup-host-configs
 
 # Copy host-specific library configs when building for non-Linux hosts.
 # Linux configs are the in-tree defaults; other hosts overlay from configs/host-$(HOST)/.
-# To restore Linux defaults: git checkout -- gcc/*/tup.config
+# To restore Linux defaults: git checkout -- gcc/*/tup.config binutils/tup.config
 setup-host-configs:
 	@if [ "$(HOST)" != "linux" ] && [ -d configs/host-$(HOST) ]; then \
 		for cfg in configs/host-$(HOST)/*.config; do \
 			lib=$$(basename "$$cfg" .config); \
-			echo "  COPY gcc/$$lib/tup.config (host-$(HOST))"; \
-			cp "$$cfg" "gcc/$$lib/tup.config"; \
+			if [ -f "$$lib/tup.config" ]; then \
+				echo "  COPY $$lib/tup.config (host-$(HOST))"; \
+				cp "$$cfg" "$$lib/tup.config"; \
+			elif [ -f "gcc/$$lib/tup.config" ]; then \
+				echo "  COPY gcc/$$lib/tup.config (host-$(HOST))"; \
+				cp "$$cfg" "gcc/$$lib/tup.config"; \
+			fi; \
 		done; \
 	fi
 

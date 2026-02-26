@@ -53,6 +53,7 @@ struct BuildContextOptions {
     bool auto_init = false;
     bool root_config_only = false;
     bool require_config = false;
+    std::vector<std::string> parse_scopes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};

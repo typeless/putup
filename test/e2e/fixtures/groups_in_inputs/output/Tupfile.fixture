@@ -1,4 +1,4 @@
 include_rules
 # Group reference in REGULAR inputs (before |), not order-only section
 # This tests that path/<group> syntax works in inputs and %<group> expands in command
-: modules/<json-headers> |> cat %<json-headers> > %o |> headers.txt
+: ../modules/<json-headers> |> cat %<json-headers> > %o |> headers.txt

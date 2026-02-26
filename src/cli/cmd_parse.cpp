@@ -17,8 +17,15 @@ namespace {
 
 auto parse_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
+    auto layout = discover_layout(make_layout_options(opts));
+    if (!layout) {
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().message.c_str());
+        return EXIT_FAILURE;
+    }
+
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
+        .parse_scopes = compute_build_scopes(opts, *layout),
     };
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
@@ -44,10 +51,11 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
     if (opts.verbose && !commands.empty()) {
         printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
+        auto cache = pup::graph::PathCache {};
         for (auto id : commands) {
             if (ctx.graph().get_command_node(id)) {
                 auto display_sv = pup::graph::get_display_str(ctx.graph().graph(), id);
-                auto cmd_sv = pup::graph::expand_instruction(ctx.graph().graph(), id);
+                auto cmd_sv = pup::graph::expand_instruction(ctx.graph().graph(), id, cache, ctx.layout().source_root);
                 auto label = display_sv.empty() ? cmd_sv : display_sv;
                 printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(label.size()), label.data());
             }

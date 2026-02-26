@@ -10,6 +10,7 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <set>
@@ -385,6 +386,17 @@ auto get_name(Graph const& graph, NodeId id) -> std::string_view;
 /// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
 [[nodiscard]]
 auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string;
+
+/// Expand instruction with canonical path resolution for symlinked source trees.
+/// When source_root is provided, build-tree paths are computed relative to the
+/// canonical (physical) CWD instead of the logical CWD.
+[[nodiscard]]
+auto expand_instruction(
+    Graph const& graph,
+    NodeId cmd_id,
+    PathCache& cache,
+    std::filesystem::path const& source_root
+) -> std::string;
 
 /// Expand instruction pattern (convenience overload, creates temporary cache)
 [[nodiscard]]

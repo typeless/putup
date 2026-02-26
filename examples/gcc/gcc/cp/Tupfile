@@ -3,7 +3,8 @@ include_rules
 # ============================================================
 # gcc/cp/ -- C++ language frontend (GCC 15.2.0)
 # ============================================================
-# Objects contribute to ../<cc1plus-objs> for the cc1plus link.
+# Objects contribute to <cc1plus-objs> for the cc1plus link.
+# Parent references this group as cp/<cc1plus-objs> in order-only deps.
 # Source list from CXX_AND_OBJCXX_OBJS + cp-lang.cc in cp/Make-lang.in.
 
 srcs  = cp-lang.cc
@@ -16,8 +17,8 @@ srcs += name-lookup.cc optimize.cc parser.cc pt.cc ptree.cc
 srcs += rtti.cc search.cc semantics.cc tree.cc typeck.cc typeck2.cc
 srcs += vtable-class-hierarchy.cc
 
-: foreach $(srcs) |> !cxx |> %B.o ../<cc1plus-objs>
+: foreach $(srcs) |> !cxx |> %B.o <cc1plus-objs>
 
 # module.cc needs special defines for C++ modules support
-EXTRA_DEFS = -DHOST_MACHINE=\"aarch64-apple-darwin\" -DTARGET_MACHINE=\"@(TARGET)\"
-: module.cc |> !cxx-defs |> module.o ../<cc1plus-objs>
+EXTRA_DEFS = -DHOST_MACHINE=\"@(TARGET)\" -DTARGET_MACHINE=\"@(TARGET)\"
+: module.cc |> !cxx-defs |> module.o <cc1plus-objs>

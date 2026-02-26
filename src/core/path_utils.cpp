@@ -70,6 +70,15 @@ auto is_path_in_scope(
         return true;
     }
 
+    // Strip trailing separators from scope
+    while (!scope.empty() && (scope.back() == '/' || scope.back() == '\\')) {
+        scope.remove_suffix(1);
+    }
+
+    if (scope.empty()) {
+        return true;
+    }
+
     if (!path.starts_with(scope)) {
         return false;
     }

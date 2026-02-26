@@ -690,7 +690,14 @@ auto path_extension(std::string_view name) -> std::string_view
 
 } // namespace
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string
+/// Core expansion logic parameterized on the path resolver.
+template<typename PathResolver>
+auto expand_instruction_impl(
+    Graph const& graph,
+    NodeId cmd_id,
+    PathCache& cache,
+    PathResolver const& get_operand_path
+) -> std::string
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
@@ -703,12 +710,6 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
     }
 
     auto source_dir = graph.strings.get(cmd->source_dir);
-    auto source_to_root = pup::compute_source_to_root(source_dir);
-
-    auto get_operand_path = [&](NodeId id) -> std::string {
-        auto full = get_full_path(graph, id, cache);
-        return pup::make_source_relative(full, source_to_root, source_dir);
-    };
 
     auto get_operand_name = [&](NodeId id) -> std::string_view {
         return get_name(graph, id);
@@ -832,6 +833,48 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
     }
 
     return result;
+}
+
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string
+{
+    auto const* cmd = get_command_node(graph, cmd_id);
+    if (!cmd) {
+        return {};
+    }
+    auto source_dir = graph.strings.get(cmd->source_dir);
+    auto source_to_root = pup::compute_source_to_root(source_dir);
+
+    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string {
+        auto full = get_full_path(graph, id, cache);
+        return pup::make_source_relative(full, source_to_root, source_dir);
+    });
+}
+
+auto expand_instruction(
+    Graph const& graph,
+    NodeId cmd_id,
+    PathCache& cache,
+    std::filesystem::path const& source_root
+) -> std::string
+{
+    auto const* cmd = get_command_node(graph, cmd_id);
+    if (!cmd) {
+        return {};
+    }
+    auto source_dir = graph.strings.get(cmd->source_dir);
+    auto source_to_root = pup::compute_source_to_root(source_dir);
+    auto canonical_cwd = source_root.empty()
+        ? std::filesystem::path {}
+        : std::filesystem::weakly_canonical(source_root / std::string { source_dir });
+
+    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string {
+        auto full = get_full_path(graph, id, cache);
+        if (!canonical_cwd.empty() && full.starts_with("..")) {
+            auto abs = std::filesystem::weakly_canonical(source_root / full);
+            return abs.lexically_relative(canonical_cwd).generic_string();
+        }
+        return pup::make_source_relative(full, source_to_root, source_dir);
+    });
 }
 
 auto expand_instruction(Graph const& graph, NodeId cmd_id) -> std::string

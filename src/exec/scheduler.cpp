@@ -787,6 +787,7 @@ auto Scheduler::build_job_list(
     }
 
     auto jobs = std::vector<BuildJob> {};
+    auto cache = graph::PathCache {};
 
     for (auto id : topo_result.order) {
         if (!node_id::is_command(id)) {
@@ -820,7 +821,7 @@ auto Scheduler::build_job_list(
         }
 
         // Expand command from instruction pattern + operands
-        auto cmd_str = expand_instruction(graph.graph(), id);
+        auto cmd_str = expand_instruction(graph.graph(), id, cache, impl_->options.source_root);
         auto display_str = std::string { get_display_str(graph.graph(), id) };
 
         // Convert exported_vars from StringIds to strings

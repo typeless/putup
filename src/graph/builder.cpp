@@ -59,15 +59,18 @@ auto normalize_group_dir(
 ) -> std::string
 {
     auto cleaned = strip_trailing_slashes(path_str);
-    auto path = fs::path { cleaned }.lexically_normal();
+    auto raw_path = fs::path { cleaned };
+    auto path = raw_path.lexically_normal();
 
     if (path.is_absolute()) {
         path = fs::relative(path, source_root);
     } else if (!current_dir.empty() && !path.empty()) {
-        // Only combine with current_dir if path needs parent resolution (starts with ..)
-        // Paths like $(ROOT)/foo expand to root-relative and should NOT be combined
-        auto first = *path.begin();
-        if (first == "..") {
+        // Check the pre-normalization first component to distinguish:
+        //   "./"  prefix (e.g. $(S)/foo/) → root-relative, do NOT combine
+        //   "../" prefix                  → parent traversal, combine with current_dir
+        //   bare name (e.g. mpn/)         → subdirectory reference, combine with current_dir
+        auto first = *raw_path.begin();
+        if (first != ".") {
             path = (current_dir / path).lexically_normal();
         }
     }
@@ -155,16 +158,33 @@ struct PathTransformContext {
     std::string current_dir_str;
     fs::path source_root;
     fs::path output_root;
+    fs::path canonical_cwd; // Canonical source CWD for symlink-safe path resolution
 };
 
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
+    auto canonical_cwd = fs::path {};
+    if (!ctx.options.source_root.empty() && !ctx.options.output_root.empty()
+        && ctx.options.source_root != ctx.options.output_root) {
+        canonical_cwd = fs::weakly_canonical(ctx.options.source_root / ctx.current_dir);
+    }
+
     return PathTransformContext {
         .source_to_root = pup::compute_source_to_root(ctx.current_dir.generic_string()),
         .current_dir_str = ctx.current_dir.generic_string(),
         .source_root = ctx.options.source_root,
         .output_root = ctx.options.output_root,
+        .canonical_cwd = std::move(canonical_cwd),
     };
+}
+
+/// Compute a canonical relative path from the source CWD to a build-tree file.
+/// Resolves symlinks in the source tree so that `../` components in command paths
+/// navigate correctly from the physical CWD (which the OS uses after resolving symlinks).
+auto make_canonical_relative(PathTransformContext const& tc, std::string const& path) -> std::string
+{
+    auto abs = fs::weakly_canonical(tc.source_root / path);
+    return abs.lexically_relative(tc.canonical_cwd).generic_string();
 }
 
 /// Transform an input path to Tupfile-relative for command expansion.
@@ -181,6 +201,9 @@ auto transform_input_path(
     if (auto node_id = graph.find_by_path(inp, BUILD_ROOT_ID)) {
         auto full_path = graph.get_full_path(*node_id);
         if (!full_path.empty()) {
+            if (!tc.canonical_cwd.empty() && full_path.starts_with("..")) {
+                return make_canonical_relative(tc, full_path);
+            }
             return pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
         }
     }
@@ -192,6 +215,9 @@ auto transform_input_path(
         auto build_path = tc.output_root / inp;
         if (fs::exists(build_path)) {
             auto full_path = build_root_name + "/" + inp;
+            if (!tc.canonical_cwd.empty() && full_path.starts_with("..")) {
+                return make_canonical_relative(tc, full_path);
+            }
             return pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
         }
     }
@@ -208,8 +234,9 @@ auto transform_output_path(
     std::string const& out
 ) -> std::string
 {
-    // Outputs are already variant-mapped (stored under BUILD_ROOT_ID by expand_outputs).
-    // Just make the path relative to the Tupfile directory.
+    if (!tc.canonical_cwd.empty() && out.starts_with("..")) {
+        return make_canonical_relative(tc, out);
+    }
     return pup::make_source_relative(out, tc.source_to_root, tc.current_dir_str);
 }
 
@@ -2467,11 +2494,17 @@ auto resolve_deferred_order_only_edges(
         }
 
         auto source_dir_str = std::string { graph.str(cmd_node->source_dir) };
+        auto canonical_cwd = fs::path {};
+        if (!state.options.source_root.empty() && !state.options.output_root.empty()
+            && state.options.source_root != state.options.output_root) {
+            canonical_cwd = fs::weakly_canonical(state.options.source_root / source_dir_str);
+        }
         auto tc = PathTransformContext {
             .source_to_root = pup::compute_source_to_root(source_dir_str),
             .current_dir_str = source_dir_str,
             .source_root = state.options.source_root,
             .output_root = state.options.output_root,
+            .canonical_cwd = std::move(canonical_cwd),
         };
 
         auto replacement = std::string {};

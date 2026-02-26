@@ -1,4 +1,4 @@
 include_rules
-# Use source-root-relative path for cross-directory group
-: |> echo "mod1" > %o |> mod1.header modules/<json-headers>
-: |> echo "mod2" > %o |> mod2.header modules/<json-headers>
+# Group lives in this directory (modules/)
+: |> echo "mod1" > %o |> mod1.header <json-headers>
+: |> echo "mod2" > %o |> mod2.header <json-headers>

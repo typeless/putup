@@ -118,11 +118,13 @@ auto configure_single_variant(
     install_source_configs(*layout, variant_name, opts.verbose);
 
     // Step 3: Run config-generating rules
+    auto scopes = compute_build_scopes(opts, *layout);
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
         .auto_init = false,       // Configure pass should not create .pup
         .root_config_only = true, // Configure uses only root tup.config
+        .parse_scopes = scopes,
         .scanner_registry = nullptr,
     };
 
@@ -153,7 +155,6 @@ auto configure_single_variant(
     }
 
     // Filter config commands by scope if specified
-    auto scopes = compute_build_scopes(opts, ctx.layout());
     auto config_commands = std::set<pup::NodeId> {};
     for (auto const& cfg : configs) {
         auto const* node = ctx.graph().get_command_node(cfg.cmd_id);
