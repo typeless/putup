@@ -36,7 +36,6 @@ putup build-android build-freebsd -j$(nproc)
 | File | Purpose |
 |------|---------|
 | `Makefile.pup` | Make wrapper for putup commands |
-| `Tupfile.ini` | Project root marker |
 | `Tuprules.tup` | Compiler flags and macros |
 | `Tupfile` | Config generation + source compilation rules |
 | `scripts/kconfig/Tupfile` | Builds kconfig conf tool |

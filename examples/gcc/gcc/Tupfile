@@ -4,14 +4,11 @@ include_rules
 # GCC 15.2.0 — C compiler backend
 # ============================================================
 #
-# Builds cc1 from the GCC source tree via seven phases:
-#   1. Config headers + options pipeline
-#   2. Generator bootstrap (genmodes → BUILD_RTL → generators)
-#   3. Machine-description generators + gengtype (GC type descriptors)
-#   4. Generated source compilation
-#   5. Backend + common object compilation
-#   6. Common objects
-#   7. cc1 link
+# Builds the GCC toolchain from source via 14 phases:
+#   1-3. Config headers, generator bootstrap, RTL generators
+#   4-6. Generated source, backend objects, common objects
+#   7.   cc1 link
+#   8-14. xgcc, cc1plus, collect2, g++, cpp, lto-wrapper, gcov
 #
 # Platform selection (from root tup.config):
 #   @(TARGET)           — target triple (e.g. x86_64-pc-linux-gnu)

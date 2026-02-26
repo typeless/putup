@@ -17,7 +17,7 @@ include_rules
 #   gcc/gcc/cp/Tupfile         → C++ frontend objects
 #   gcc/gcc/c-family/Tupfile   → C-family shared objects
 #   gcc/gcc/analyzer/Tupfile   → Static analyzer objects
-#   gcc/gcc/config/i386/Tupfile → x86_64 target-specific objects
+#   gcc/gcc/targets/x86_64-pc-linux-gnu.tup → x86_64 target rules (included by gcc/gcc/Tupfile)
 #
 # binutils tarball (binutils/):
 #   binutils/Tupfile           → as (cross-assembler), ar (cross-archiver)
