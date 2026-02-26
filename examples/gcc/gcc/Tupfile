@@ -88,9 +88,10 @@ SRC = $(S)/$(GCC_DIR)
   ) > %o |> omp-device-properties.h <gen-config-headers>
 
 # --- Target-specific headers and configuration ---
-# Sets: MD, TARGET_OPT_FILES, target_gtyp_src, target_GT_H
+# Sets: MD, TARGET_OPT_FILES, target_gtyp_src, target_GT_H, TARGET_DRIVER_LINK
 # Generates: tm.h, tm_p.h → <gen-config-headers>
-# Compiles: target-specific common objects → <cc1-objs>
+# Compiles: target-specific backend + driver objects → <cc1-objs>, <xgcc-objs>
+TARGET_DRIVER_LINK =
 include targets/@(TARGET).tup
 
 # --- Options pipeline ---
@@ -832,8 +833,7 @@ EXTRA_DEFS = -DPREFIX=\"/usr/local\" -DBASEVER=\"15.2.0\"
 # Target-specific common objects (from subdirectories)
 : common/common-targhooks.cc |> !cxx |> common-targhooks.o <cc1-objs>
 
-# Host hooks (default host hooks + platform-specific PCH helpers)
-: host-default.cc |> !cxx |> host-default.o <cc1-objs>
+# Host hooks (platform-specific replaces default when available)
 : config/host-@(HOST_OS).cc |> !cxx |> host-@(HOST_OS).o <cc1-objs>
 
 # main.o
@@ -860,11 +860,8 @@ EXTRA_DEFS = -DPREFIX=\"/usr/local\" -DBASEVER=\"15.2.0\"
   $(LIBIBERTY_A) $(LIBGMP_A) $(LIBMPFR_A) $(LIBMPC_A) \
   | c/<cc1-objs> c-family/<cc1-objs> analyzer/<cc1-objs> |> \
   ^ LINK cc1^ sh -c '$(CXX) %<cc1-objs> \
-  $(TUP_VARIANT_OUTPUTDIR)/c/*.o \
-  $(TUP_VARIANT_OUTPUTDIR)/c-family/*.o \
-  $(TUP_VARIANT_OUTPUTDIR)/analyzer/*.o \
-  $(LIBCPP_A) $(LIBDECNUMBER_A) $(LIBBACKTRACE_A) $(LIBIBERTY_A) \
-  $(LIBGMP_A) $(LIBMPFR_A) $(LIBMPC_A) \
+  $(LIBCPP_A) $(LIBDECNUMBER_A) $(LIBBACKTRACE_A) \
+  $(LIBMPC_A) $(LIBMPFR_A) $(LIBGMP_A) $(LIBIBERTY_A) \
   @(PLATFORM_LDFLAGS) -o %o' |> cc1
 
 # ============================================================
@@ -927,7 +924,7 @@ LIBCOMMON_OBJS += $(D)/opts-diagnostic.o $(D)/options.o $(D)/hooks.o
 LIBCOMMON_OBJS += $(D)/common-targhooks.o $(D)/file-find.o $(D)/spellcheck.o
 LIBCOMMON_OBJS += $(D)/opt-suggestions.o $(D)/options-urls.o $(D)/gcc-urlifier.o
 
-DRIVER_LIBS = $(LIBIBERTY_A) $(LIBCPP_A) $(LIBBACKTRACE_A) $(LIBDECNUMBER_A)
+DRIVER_LIBS = $(LIBCPP_A) $(LIBBACKTRACE_A) $(LIBDECNUMBER_A) $(LIBIBERTY_A)
 
 # Link xgcc
 : <xgcc-objs> $(DRIVER_LIBS) \
@@ -949,10 +946,8 @@ DRIVER_LIBS = $(LIBIBERTY_A) $(LIBCPP_A) $(LIBBACKTRACE_A) $(LIBDECNUMBER_A)
   | cp/<cc1plus-objs> c-family/<cc1-objs> analyzer/<cc1-objs> |> \
   ^ LINK cc1plus^ sh -c '$(CXX) %<cc1-objs> \
   $(TUP_VARIANT_OUTPUTDIR)/cp/*.o \
-  $(TUP_VARIANT_OUTPUTDIR)/c-family/*.o \
-  $(TUP_VARIANT_OUTPUTDIR)/analyzer/*.o \
-  $(LIBCPP_A) $(LIBDECNUMBER_A) $(LIBBACKTRACE_A) $(LIBIBERTY_A) \
-  $(LIBGMP_A) $(LIBMPFR_A) $(LIBMPC_A) $(LIBCODY_A) \
+  $(LIBCPP_A) $(LIBDECNUMBER_A) $(LIBBACKTRACE_A) \
+  $(LIBMPC_A) $(LIBMPFR_A) $(LIBGMP_A) $(LIBCODY_A) $(LIBIBERTY_A) \
   @(PLATFORM_LDFLAGS) -o %o' |> cc1plus
 
 # ============================================================
@@ -986,7 +981,7 @@ EXTRA_DEFS = $(DRIVER_DEFS)
 EXTRA_DEFS =
 : <xgpp-objs> $(DRIVER_LIBS) \
   | <xgcc-objs> <cc1-objs> |> ^ LINK xg++^ sh -c '$(CXX) \
-  $(D)/gcc-driver.o $(D)/gcc-main-driver.o $(D)/xgcc-ggc-none.o %<xgpp-objs> \
+  $(D)/gcc-driver.o $(D)/gcc-main-driver.o $(D)/xgcc-ggc-none.o $(TARGET_DRIVER_LINK) %<xgpp-objs> \
   $(LIBCOMMON_OBJS) $(DRIVER_LIBS) \
   @(PLATFORM_LDFLAGS) -o %o' |> xg++
 
@@ -1001,7 +996,7 @@ EXTRA_DEFS = $(DRIVER_DEFS)
 EXTRA_DEFS =
 : <cpp-objs> $(DRIVER_LIBS) \
   | <xgcc-objs> <cc1-objs> |> ^ LINK cpp^ sh -c '$(CXX) \
-  $(D)/gcc-driver.o $(D)/gcc-main-driver.o $(D)/xgcc-ggc-none.o %<cpp-objs> \
+  $(D)/gcc-driver.o $(D)/gcc-main-driver.o $(D)/xgcc-ggc-none.o $(TARGET_DRIVER_LINK) %<cpp-objs> \
   $(LIBCOMMON_OBJS) $(DRIVER_LIBS) \
   @(PLATFORM_LDFLAGS) -o %o' |> cpp
 

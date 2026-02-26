@@ -118,7 +118,11 @@ auto compute_tup_variantdir(
     if (!output_root.empty() && source_root != output_root) {
         auto output_dir = output_root / source_dir;
         auto src_dir = source_root / source_dir;
-        auto rel = std::filesystem::relative(output_dir, src_dir);
+        // Canonicalize to resolve symlinks — commands run from physical paths,
+        // so the relative path must work from the physical location.
+        auto src_canonical = std::filesystem::weakly_canonical(src_dir);
+        auto out_canonical = std::filesystem::weakly_canonical(output_dir);
+        auto rel = std::filesystem::relative(out_canonical, src_canonical);
         return rel.generic_string();
     }
 
@@ -378,8 +382,8 @@ auto parse_directory(std::filesystem::path const& rel_dir, ParseContext& ctx) ->
     // For variant builds: e.g., "../../build/coreutils" from source/coreutils/
     auto tup_outdir = std::string { "." };
     if (ctx.source_root != ctx.output_root) {
-        auto source_dir = join_path(ctx.source_root, rel_dir_normalized);
-        auto output_dir = join_path(ctx.output_root, rel_dir_normalized);
+        auto source_dir = std::filesystem::weakly_canonical(join_path(ctx.source_root, rel_dir_normalized));
+        auto output_dir = std::filesystem::weakly_canonical(join_path(ctx.output_root, rel_dir_normalized));
         tup_outdir = std::filesystem::relative(output_dir, source_dir).generic_string();
     }
 
@@ -708,6 +712,10 @@ auto build_context(
 
     for (auto const& dir : sort_dirs_by_depth(ctx.impl_->state.available)) {
         if (ctx.impl_->state.parsed.contains(dir)) {
+            continue;
+        }
+        if (!ctx_opts.parse_scopes.empty()
+            && !pup::is_path_in_any_scope(dir.generic_string(), ctx_opts.parse_scopes)) {
             continue;
         }
         auto result = Result<void> { parse_directory(dir, parse_ctx) };

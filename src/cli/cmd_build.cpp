@@ -936,12 +936,25 @@ auto build_single_variant(
         vprint(variant_name, "Implicit dependency tracking enabled\n");
     }
 
+    auto layout = discover_layout(make_layout_options(opts));
+    if (!layout) {
+        veprint(variant_name, "Error: %s\n", layout.error().message.c_str());
+        return EXIT_FAILURE;
+    }
+    auto scopes = compute_build_scopes(opts, *layout);
+
+    // Only scope parsing when explicit targets are given.
+    // CWD-derived scoping should still parse all Tupfiles so that
+    // out-of-scope Tupfile changes are detected for incremental builds.
+    auto parse_scopes = opts.targets.empty() ? std::vector<std::string> {} : scopes;
+
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
         .auto_init = true,
         .root_config_only = false,
         .require_config = true,
+        .parse_scopes = parse_scopes,
         .scanner_registry = scanner_ptr,
     };
 
@@ -985,7 +998,6 @@ auto build_single_variant(
         auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
-        auto scopes = compute_build_scopes(opts, ctx.layout());
         auto upstream_files = std::set<std::string> {};
         if (opts.include_all_deps && !scopes.empty()) {
             upstream_files = collect_upstream_files(ctx.graph(), scopes);

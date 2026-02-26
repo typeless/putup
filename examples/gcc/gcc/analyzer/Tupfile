@@ -3,7 +3,8 @@ include_rules
 # ============================================================
 # gcc/analyzer/ — Static analyzer (GCC 15.2.0)
 # ============================================================
-# Objects contribute to ../<cc1-objs> for the cc1 link.
+# Objects contribute to <cc1-objs> for the cc1 link.
+# Parent references this group as analyzer/<cc1-objs> in order-only deps.
 # Source list from ANALYZER_OBJS in Makefile.in.
 
 srcs  = access-diagram.cc analysis-plan.cc analyzer.cc
@@ -25,4 +26,4 @@ srcs += sm-pattern-test.cc sm-sensitive.cc sm-signal.cc sm-taint.cc
 srcs += state-purge.cc store.cc supergraph.cc
 srcs += svalue.cc symbol.cc trimmed-graph.cc varargs.cc
 
-: foreach $(srcs) |> !cxx |> %B.o ../<cc1-objs>
+: foreach $(srcs) |> !cxx |> %B.o <cc1-objs>
