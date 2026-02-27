@@ -184,11 +184,11 @@ jobs:
       - name: Fix permissions
         run: chmod +x build/putup
       - name: Download source
-        working-directory: examples
-        run: make -f Makefile.pup download-source SRCDIR=../source-root
+        working-directory: examples/bsp
+        run: make -f Makefile.pup download-source SRCDIR=../../source-root
       - name: Build
-        working-directory: examples
-        run: make -f Makefile.pup PUTUP=../build/putup SRCDIR=../source-root
+        working-directory: examples/bsp
+        run: make -f Makefile.pup PUTUP=../../build/putup SRCDIR=../../source-root
       - name: Smoke test cc1
         run: |
           echo 'int main() { return 0; }' > /tmp/test.c

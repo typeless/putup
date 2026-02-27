@@ -21,7 +21,6 @@ binutils/                    binutils tarball group (binutils-2.44)
                              Cross-assembler (as) + cross-archiver (ar)
 
 busybox/                     busybox (deferred — not yet BSP-integrated)
-helloworld/                  test package (deferred — not yet BSP-integrated)
 ```
 
 ## Source Tree Assembly
@@ -41,10 +40,10 @@ tar xf binutils-2.44.tar.xz
 mv binutils-2.44 source-root/binutils
 ```
 
-The config tree (`-C examples/`) mirrors the source tree (`-S source-root/`):
+The config tree (`-C examples/bsp/`) mirrors the source tree (`-S source-root/`):
 
 ```
-examples/           (config tree)     source-root/        (source tree)
+examples/bsp/       (config tree)     source-root/        (source tree)
 ├── gcc/                              ├── gcc/
 │   ├── gcc/                          │   ├── gcc/
 │   ├── gmp/                          │   ├── gmp/
@@ -55,18 +54,18 @@ examples/           (config tree)     source-root/        (source tree)
 ## Quick Start
 
 ```bash
-cd examples
+cd examples/bsp
 
 # Assemble source tree (or use: make -f Makefile.pup download-source)
 # ... see above ...
 
 # Build (macOS host → x86-64 Linux target)
-make -f Makefile.pup SRCDIR=../source-root PLATFORM=darwin-x86_64-linux HOST=darwin
+make -f Makefile.pup SRCDIR=../../source-root PLATFORM=darwin-x86_64-linux HOST=darwin
 
 # Or directly with putup:
 putup configure --config configs/darwin-x86_64-linux.config \
-    -C . -S ../source-root -B ../build-gcc
-putup -C . -S ../source-root -B ../build-gcc -j8
+    -C . -S ../../source-root -B ../../build-gcc
+putup -C . -S ../../source-root -B ../../build-gcc -j8
 ```
 
 ## Scoped Builds
@@ -75,13 +74,13 @@ Build individual packages without rebuilding everything:
 
 ```bash
 # Just binutils
-putup -C . -S ../source-root -B ../build-gcc binutils/
+putup -C . -S ../../source-root -B ../../build-gcc binutils/
 
 # Just the GCC compiler (assuming libraries are already built)
-putup -C . -S ../source-root -B ../build-gcc gcc/gcc/
+putup -C . -S ../../source-root -B ../../build-gcc gcc/gcc/
 
 # Just GMP
-putup -C . -S ../source-root -B ../build-gcc gcc/gmp/
+putup -C . -S ../../source-root -B ../../build-gcc gcc/gmp/
 ```
 
 ## Standalone Mode
@@ -113,8 +112,8 @@ putup -S /path/to/gcc-15.2.0 -B /path/to/build
 |----------|---------|-------------|
 | `PLATFORM` | `x86_64-linux` | Config file selector (`configs/$(PLATFORM).config`) |
 | `HOST` | `linux` | Host OS (overlays `configs/host-$(HOST)/` if not linux) |
-| `SRCDIR` | `../source-root` | Assembled source tree path |
-| `BUILD` | `../build-gcc` | Build output directory |
+| `SRCDIR` | `../../source-root` | Assembled source tree path |
+| `BUILD` | `../../build-gcc` | Build output directory |
 | `MPN_CPU` | `generic` | GMP assembly target (`generic`, `x86_64`, `x86_64/core2`) |
 | `PUTUP` | `putup` | Path to putup binary (override for CI) |
 | `GCC_VERSION` | `15.2.0` | GCC tarball version for `download-source` |
@@ -130,4 +129,5 @@ putup -S /path/to/gcc-15.2.0 -B /path/to/build
 ## Known Limitations
 
 - putup `create_directories` crashes on symlinks in source tree
-- busybox and helloworld are not yet BSP-integrated (no `Tupfile.ini` — excluded from BSP scan)
+- busybox is not yet BSP-integrated (no `Tupfile.ini` — excluded from BSP scan)
+- helloworld lives at `examples/helloworld/` (outside BSP scan tree)
