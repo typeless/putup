@@ -14,7 +14,7 @@
 #   make -f Makefile.pup PLATFORM=darwin-x86_64-linux HOST=darwin
 #
 # 3-tree layout:
-#   -C .             BSP root (examples/)
+#   -C .             BSP root (examples/bsp/)
 #   -S $(SRCDIR)     Assembled source tree (gcc/, binutils/ subdirs)
 #   -B $(BUILD)      Build output directory
 
@@ -23,8 +23,8 @@
 
 PLATFORM ?= x86_64-linux
 HOST ?= linux
-SRCDIR ?= ../source-root
-BUILD ?= ../build-gcc
+SRCDIR ?= ../../source-root
+BUILD ?= ../../build-gcc
 MPN_CPU ?= generic
 PUTUP ?= putup
 TREES = -C . -S $(SRCDIR) -B $(BUILD)
@@ -75,7 +75,7 @@ resolve-mpn:
 	fi
 
 # Multi-variant: build for multiple platforms in parallel
-#   make -f Makefile.pup multi SRCDIR=../source-root
+#   make -f Makefile.pup multi SRCDIR=../../source-root
 PLATFORMS ?= x86_64-linux aarch64-linux
 multi:
 	@for p in $(PLATFORMS); do \

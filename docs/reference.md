@@ -1650,7 +1650,7 @@ S = ..     GMP_DIR = ../gmp → $(S)/$(GMP_DIR) = ../../gmp  ✓
 
 **Scoped `tup.config` defaults:** Components can also ship default config values in their own `tup.config` — parent configs override child configs on collision (see §6.1 *Scoped Config Merging*).
 
-See `examples/gcc/` for a complete working example with three interdependent libraries.
+See `examples/bsp/gcc/` for a complete working example with three interdependent libraries.
 
 ## 8. Implicit Dependencies
 

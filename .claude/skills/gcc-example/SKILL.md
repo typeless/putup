@@ -1,26 +1,26 @@
 ---
 name: gcc-example
-description: Building GCC with putup. Use when working on the examples/ BSP directory, debugging GCC build failures, adding new GCC source files to the build, fixing generator issues, or extending the toolchain. Covers 3-tree mode workflow, generator patterns, config headers, and accumulated fixes.
+description: Building GCC with putup. Use when working on the examples/bsp/ BSP directory, debugging GCC build failures, adding new GCC source files to the build, fixing generator issues, or extending the toolchain. Covers 3-tree mode workflow, generator patterns, config headers, and accumulated fixes.
 ---
 
 # GCC Example Build
 
-The `examples/` BSP directory builds GCC and binutils from source using putup in 3-tree mode. GCC-specific Tupfiles live under `examples/gcc/`. This skill captures the architecture and hard-won knowledge from iterative debugging.
+The `examples/bsp/` BSP directory builds GCC and binutils from source using putup in 3-tree mode. GCC-specific Tupfiles live under `examples/bsp/gcc/`. This skill captures the architecture and hard-won knowledge from iterative debugging.
 
 ## Build Command
 
 ```bash
-cd /path/to/pup/examples && \
-  make -f Makefile.pup SRCDIR=../source-root
+cd /path/to/pup/examples/bsp && \
+  make -f Makefile.pup SRCDIR=../../source-root
 ```
 
 Or directly with putup:
 
 ```bash
-cd /path/to/pup/examples && \
+cd /path/to/pup/examples/bsp && \
   putup configure --config configs/x86_64-linux.config \
-    -C . -S ../source-root -B ../build-gcc
-  putup -C . -S ../source-root -B ../build-gcc -j$(nproc)
+    -C . -S ../../source-root -B ../../build-gcc
+  putup -C . -S ../../source-root -B ../../build-gcc -j$(nproc)
 ```
 
 - `-C .` — config tree (BSP root: Tupfiles, tup.config, Tuprules.tup)
