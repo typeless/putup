@@ -21,6 +21,42 @@ auto is_compiler_wrapper(std::string const& name) -> bool
     return name == "ccache" || name == "distcc" || name == "sccache" || name == "icecc";
 }
 
+/// Check if a binary name is a recognized compiler (possibly cross-prefixed or version-suffixed).
+/// Examples: gcc, g++, clang, x86_64-linux-gnu-gcc, arm-none-eabi-g++, gcc-15, clang++-18
+auto is_compiler_name(std::string_view name) -> bool
+{
+    static constexpr std::string_view compilers[] = {
+        "gcc",
+        "g++",
+        "cc",
+        "c++",
+        "clang",
+        "clang++",
+    };
+
+    // Strip version suffix: gcc-15 → gcc, clang++-18 → clang++
+    if (auto pos = name.rfind('-'); pos != std::string_view::npos) {
+        auto suffix = name.substr(pos + 1);
+        if (!suffix.empty()
+            && std::ranges::all_of(suffix, [](char c) {
+                   return std::isdigit(static_cast<unsigned char>(c)) || c == '.';
+               })) {
+            name = name.substr(0, pos);
+        }
+    }
+
+    for (auto c : compilers) {
+        if (name == c) {
+            return true;
+        }
+        if (name.size() > c.size() + 1 && name[name.size() - c.size() - 1] == '-'
+            && name.ends_with(c)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Check if a flag contains shell special characters that would cause issues
 auto has_shell_special(std::string const& flag) -> bool
 {
@@ -207,6 +243,14 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
 
     if (is_compiler_wrapper(first_basename) && words.size() > 1) {
         compiler_idx = 1;
+    }
+
+    auto compiler_basename = words[compiler_idx];
+    if (auto pos = compiler_basename.rfind('/'); pos != std::string::npos) {
+        compiler_basename = compiler_basename.substr(pos + 1);
+    }
+    if (!is_compiler_name(compiler_basename)) {
+        return std::nullopt;
     }
 
     auto dep_cmd = std::ostringstream {};

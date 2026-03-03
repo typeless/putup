@@ -408,6 +408,59 @@ TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
     }
 }
 
+TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("for loop with embedded compilation")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 20,
+            .command = "for f in archive bfd cache; do gcc -O2 -c /src/bfd/$f.c -o out/bfd-$f.o || exit 1; done",
+            .display = "CC-BFD (3 files)",
+            .inputs = {},
+            .order_only_inputs = {},
+            .outputs = { "bfd-archive.o", "bfd-bfd.o", "bfd-cache.o" },
+            .working_dir = ".",
+        };
+
+        auto dep_cmd = scanner.build_dep_command(cmd);
+        REQUIRE(!dep_cmd.has_value());
+    }
+
+    SECTION("cd-and-compile compound command")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 21,
+            .command = "cd /build && gcc -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = {},
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto dep_cmd = scanner.build_dep_command(cmd);
+        REQUIRE(!dep_cmd.has_value());
+    }
+
+    SECTION("env-var assignment before compiler")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 22,
+            .command = "SRCDIR=$PWD && cd /build && gcc -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = {},
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto dep_cmd = scanner.build_dep_command(cmd);
+        REQUIRE(!dep_cmd.has_value());
+    }
+}
+
 TEST_CASE("make_gcc_scanner factory", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::make_gcc_scanner();
