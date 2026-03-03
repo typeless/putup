@@ -19,8 +19,6 @@ gcc/                         GCC tarball group (gcc-15.2.0)
 
 binutils/                    binutils tarball group (binutils-2.44)
                              Cross-assembler (as) + cross-archiver (ar)
-
-busybox/                     busybox (deferred — not yet BSP-integrated)
 ```
 
 ## Source Tree Assembly
@@ -129,5 +127,4 @@ putup -S /path/to/gcc-15.2.0 -B /path/to/build
 ## Known Limitations
 
 - putup `create_directories` crashes on symlinks in source tree
-- busybox is not yet BSP-integrated (no `Tupfile.ini` — excluded from BSP scan)
-- helloworld lives at `examples/helloworld/` (outside BSP scan tree)
+- busybox and helloworld live at `examples/` (outside BSP scan tree)
