@@ -681,6 +681,38 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         REQUIRE(generated[0].command == "gcc -M -I../../../build-s1f3/include/generated driver.c");
     }
 
+    SECTION("skips compound shell commands with for loops")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 840,
+            .command = "for f in archive bfd cache; do gcc -O2 -c /src/bfd/$f.c -o out/bfd-$f.o || exit 1; done",
+            .display = "CC-BFD (3 files)",
+            .inputs = {},
+            .order_only_inputs = {},
+            .outputs = { "bfd-archive.o", "bfd-bfd.o", "bfd-cache.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.empty());
+    }
+
+    SECTION("skips cd-and-compile compound commands")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 841,
+            .command = "cd /build && gcc -c foo.c -o foo.o",
+            .display = "CC foo.o",
+            .inputs = {},
+            .order_only_inputs = {},
+            .outputs = { "foo.o" },
+            .working_dir = ".",
+        };
+
+        auto generated = registry.match_and_generate(cmd);
+        REQUIRE(generated.empty());
+    }
+
     SECTION("preserves current directory reference")
     {
         auto cmd = CommandInfo {
