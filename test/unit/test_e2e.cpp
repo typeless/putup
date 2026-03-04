@@ -3575,6 +3575,40 @@ SCENARIO("configure copies source subdir configs to build tree", "[e2e][configur
     }
 }
 
+SCENARIO("configure skips ignored directories when copying configs", "[e2e][configure]")
+{
+    GIVEN("a project with subdir configs and a .pupignore")
+    {
+        auto f = E2EFixture { "simple_c" };
+        f.mkdir("included");
+        f.write_file("included/tup.config", "CONFIG_INC=yes\n");
+        f.mkdir("ignored_dir");
+        f.write_file("ignored_dir/tup.config", "CONFIG_IGN=yes\n");
+        f.write_file(".pupignore", "ignored_dir\n");
+        f.write_file("root.config", "CONFIG_ROOT=1\n");
+        REQUIRE(f.init().success());
+
+        WHEN("configure is run with -B")
+        {
+            auto result = f.pup({ "configure", "--config", "root.config", "-B", "build" });
+
+            THEN("included subdir config is copied")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/included/tup.config"));
+            }
+
+            THEN("ignored subdir config is NOT copied")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/ignored_dir/tup.config"));
+            }
+        }
+    }
+}
+
 SCENARIO("configure --config + subdir configs + build uses scoped merge", "[e2e][configure][scoped-config]")
 {
     GIVEN("a project with root config and subdir tup.config in source tree")

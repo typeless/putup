@@ -439,27 +439,6 @@ auto try_auto_init(ProjectLayout const& layout) -> void
     printf("Initialized pup in \"%s\"\n", pup_dir.string().c_str());
 }
 
-auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
-{
-    auto ignore = pup::parser::IgnoreList::with_defaults();
-    for (auto const& root : { layout.config_root, layout.source_root }) {
-        auto ignore_path = root / ".pupignore";
-        if (!std::filesystem::exists(ignore_path)) {
-            continue;
-        }
-        auto ignore_result = pup::parser::IgnoreList::load(ignore_path);
-        if (!ignore_result) {
-            continue;
-        }
-        ignore = std::move(*ignore_result);
-        if (verbose) {
-            printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ignore_path.string().c_str());
-        }
-        break;
-    }
-    return ignore;
-}
-
 struct IndexLoadResult {
     std::optional<pup::index::Index> index;
     std::unordered_map<std::string, std::string> cached_env_vars;
@@ -530,6 +509,27 @@ auto sort_dirs_by_depth(std::set<std::filesystem::path> const& available) -> std
 }
 
 } // namespace
+
+auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
+{
+    auto ignore = pup::parser::IgnoreList::with_defaults();
+    for (auto const& root : { layout.config_root, layout.source_root }) {
+        auto ignore_path = root / ".pupignore";
+        if (!std::filesystem::exists(ignore_path)) {
+            continue;
+        }
+        auto ignore_result = pup::parser::IgnoreList::load(ignore_path);
+        if (!ignore_result) {
+            continue;
+        }
+        ignore = std::move(*ignore_result);
+        if (verbose) {
+            printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ignore_path.string().c_str());
+        }
+        break;
+    }
+    return ignore;
+}
 
 auto make_layout_options(Options const& opts) -> LayoutOptions
 {

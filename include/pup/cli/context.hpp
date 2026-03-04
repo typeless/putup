@@ -6,6 +6,7 @@
 #include "options.hpp"
 #include "pup/core/result.hpp"
 #include "pup/parser/ast.hpp"
+#include "pup/parser/ignore.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -125,6 +126,10 @@ auto compute_build_scopes(
 /// Convert CLI options to layout discovery options
 [[nodiscard]]
 auto make_layout_options(Options const& opts) -> LayoutOptions;
+
+/// Load .pupignore patterns (with built-in defaults)
+[[nodiscard]]
+auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> parser::IgnoreList;
 
 /// Context for clean commands
 struct CleanContext {

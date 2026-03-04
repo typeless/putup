@@ -9,6 +9,7 @@
 #include "pup/core/path_utils.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
+#include "pup/parser/ignore.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -46,7 +47,8 @@ auto install_config_file(
 auto install_source_configs(
     ProjectLayout const& layout,
     std::string_view variant_name,
-    bool verbose
+    bool verbose,
+    pup::parser::IgnoreList const& ignore
 ) -> void
 {
     if (layout.config_root == layout.output_root) {
@@ -70,6 +72,15 @@ auto install_source_configs(
         if (it->is_directory() && it->path() == output_canonical) {
             it.disable_recursion_pending();
             continue;
+        }
+
+        // Skip directories matched by .pupignore
+        if (it->is_directory()) {
+            auto rel = std::filesystem::relative(it->path(), config_canonical);
+            if (ignore.is_ignored(rel)) {
+                it.disable_recursion_pending();
+                continue;
+            }
         }
 
         if (!it->is_regular_file() || it->path().filename() != "tup.config") {
@@ -115,7 +126,8 @@ auto configure_single_variant(
     }
 
     // Step 2: Copy source subdir tup.config files to build tree
-    install_source_configs(*layout, variant_name, opts.verbose);
+    auto ignore = load_ignore_list(*layout, opts.verbose);
+    install_source_configs(*layout, variant_name, opts.verbose, ignore);
 
     // Step 3: Run config-generating rules
     auto scopes = compute_build_scopes(opts, *layout);
