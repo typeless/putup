@@ -157,6 +157,7 @@ struct PathTransformContext {
     std::string source_to_root;
     std::string current_dir_str;
     fs::path source_root;
+    fs::path config_root;
     fs::path output_root;
     fs::path canonical_cwd; // Canonical source CWD for symlink-safe path resolution
 };
@@ -173,6 +174,7 @@ auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
         .source_to_root = pup::compute_source_to_root(ctx.current_dir.generic_string()),
         .current_dir_str = ctx.current_dir.generic_string(),
         .source_root = ctx.options.source_root,
+        .config_root = ctx.options.config_root,
         .output_root = ctx.options.output_root,
         .canonical_cwd = std::move(canonical_cwd),
     };
@@ -219,6 +221,18 @@ auto transform_input_path(
                 return make_canonical_relative(tc, full_path);
             }
             return pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str);
+        }
+    }
+
+    // In 3-tree builds, files may live in config_root rather than source_root.
+    // Compute a path from the source cwd (where the command runs) to the config_root location.
+    if (!tc.config_root.empty() && tc.config_root != tc.source_root) {
+        auto config_path = tc.config_root / inp;
+        if (fs::exists(config_path)) {
+            auto source_cwd = tc.source_root / tc.current_dir_str;
+            auto canonical_source = fs::weakly_canonical(source_cwd);
+            auto canonical_config = fs::weakly_canonical(config_path);
+            return canonical_config.lexically_relative(canonical_source).generic_string();
         }
     }
 
@@ -2099,6 +2113,15 @@ auto resolve_input_node(
         return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
     }
 
+    // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
+    // source_root. Check config_root as a fallback for source file resolution.
+    if (!ctx.options.config_root.empty() && ctx.options.config_root != ctx.options.source_root) {
+        auto config_path = ctx.options.config_root / normalized_path;
+        if (fs::exists(config_path)) {
+            return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+        }
+    }
+
     // Check if file exists in build directory (e.g., tup.config, or already-generated files)
     auto build_path = ctx.options.output_root / normalized_path;
     if (fs::exists(build_path)) {
@@ -2503,6 +2526,7 @@ auto resolve_deferred_order_only_edges(
             .source_to_root = pup::compute_source_to_root(source_dir_str),
             .current_dir_str = source_dir_str,
             .source_root = state.options.source_root,
+            .config_root = state.options.config_root,
             .output_root = state.options.output_root,
             .canonical_cwd = std::move(canonical_cwd),
         };

@@ -1,4 +1,5 @@
 include_rules
+: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
 
 # ============================================================
 # libiberty - GCC utility library

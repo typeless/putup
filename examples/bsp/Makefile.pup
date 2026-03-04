@@ -40,38 +40,38 @@ configure: resolve-mpn setup-host-configs
 
 # Copy host-specific library configs when building for non-Linux hosts.
 # Linux configs are the in-tree defaults; other hosts overlay from configs/host-$(HOST)/.
-# To restore Linux defaults: git checkout -- gcc/*/tup.config binutils/tup.config
+# To restore Linux defaults: git checkout -- gcc/*/defaults.config binutils/defaults.config
 setup-host-configs:
 	@if [ "$(HOST)" != "linux" ] && [ -d configs/host-$(HOST) ]; then \
 		for cfg in configs/host-$(HOST)/*.config; do \
 			lib=$$(basename "$$cfg" .config); \
-			if [ -f "$$lib/tup.config" ]; then \
-				echo "  COPY $$lib/tup.config (host-$(HOST))"; \
-				cp "$$cfg" "$$lib/tup.config"; \
-			elif [ -f "gcc/$$lib/tup.config" ]; then \
-				echo "  COPY gcc/$$lib/tup.config (host-$(HOST))"; \
-				cp "$$cfg" "gcc/$$lib/tup.config"; \
+			if [ -f "$$lib/defaults.config" ]; then \
+				echo "  COPY $$lib/defaults.config (host-$(HOST))"; \
+				cp "$$cfg" "$$lib/defaults.config"; \
+			elif [ -f "gcc/$$lib/defaults.config" ]; then \
+				echo "  COPY gcc/$$lib/defaults.config (host-$(HOST))"; \
+				cp "$$cfg" "gcc/$$lib/defaults.config"; \
 			fi; \
 		done; \
 	fi
 
 # Resolve mpn sources for the selected CPU target.
-# - gcc/gmp/mpn/tup.config: source lists and per-function toggles (child scope)
-# - gcc/gmp/tup.config: GMP_MPARAM and ASM_ENABLED (parent scope, visible to gmp/Tupfile)
+# - gcc/gmp/mpn/defaults.config: source lists and per-function toggles (child scope)
+# - gcc/gmp/defaults.config: GMP_MPARAM and ASM_ENABLED (parent scope, visible to gmp/Tupfile)
 resolve-mpn:
-	@scripts/resolve-mpn.sh $(MPN_CPU) $(SRCDIR)/gcc/gmp/mpn > gcc/gmp/mpn/tup.config
-	@grep -v '^CONFIG_GMP_MPARAM=\|^CONFIG_ASM_ENABLED=\|^CONFIG_NO_ASM=' gcc/gmp/tup.config > gcc/gmp/tup.config.tmp && mv gcc/gmp/tup.config.tmp gcc/gmp/tup.config
+	@scripts/resolve-mpn.sh $(MPN_CPU) $(SRCDIR)/gcc/gmp/mpn > gcc/gmp/mpn/defaults.config
+	@grep -v '^CONFIG_GMP_MPARAM=\|^CONFIG_ASM_ENABLED=\|^CONFIG_NO_ASM=' gcc/gmp/defaults.config > gcc/gmp/defaults.config.tmp && mv gcc/gmp/defaults.config.tmp gcc/gmp/defaults.config
 	@if [ "$(MPN_CPU)" != "generic" ]; then \
 		arch=$${MPN_CPU%%/*}; \
 		if [ -f "$(SRCDIR)/gcc/gmp/mpn/$$arch/gmp-mparam.h" ]; then \
-			echo "CONFIG_GMP_MPARAM=mpn/$$arch/gmp-mparam.h" >> gcc/gmp/tup.config; \
+			echo "CONFIG_GMP_MPARAM=mpn/$$arch/gmp-mparam.h" >> gcc/gmp/defaults.config; \
 		else \
-			echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gcc/gmp/tup.config; \
+			echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gcc/gmp/defaults.config; \
 		fi; \
-		echo "CONFIG_ASM_ENABLED=y" >> gcc/gmp/tup.config; \
+		echo "CONFIG_ASM_ENABLED=y" >> gcc/gmp/defaults.config; \
 	else \
-		echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gcc/gmp/tup.config; \
-		echo "CONFIG_NO_ASM=1" >> gcc/gmp/tup.config; \
+		echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> gcc/gmp/defaults.config; \
+		echo "CONFIG_NO_ASM=1" >> gcc/gmp/defaults.config; \
 	fi
 
 # Multi-variant: build for multiple platforms in parallel

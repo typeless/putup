@@ -1,4 +1,5 @@
 include_rules
+: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
 
 # MPFR 4.1.0 - generated files
 

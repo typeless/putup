@@ -1,4 +1,5 @@
 include_rules
+: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
 
 # ============================================================
 # GCC 15.2.0 — C compiler backend

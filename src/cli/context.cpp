@@ -508,8 +508,6 @@ auto sort_dirs_by_depth(std::set<std::filesystem::path> const& available) -> std
     return dirs;
 }
 
-} // namespace
-
 auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
 {
     auto ignore = pup::parser::IgnoreList::with_defaults();
@@ -530,6 +528,8 @@ auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser:
     }
     return ignore;
 }
+
+} // namespace
 
 auto make_layout_options(Options const& opts) -> LayoutOptions
 {

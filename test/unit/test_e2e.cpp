@@ -3541,13 +3541,14 @@ SCENARIO("configure with --config followed by build works", "[e2e][configure][bu
     }
 }
 
-SCENARIO("configure copies source subdir configs to build tree", "[e2e][configure]")
+SCENARIO("configure installs subdir configs via Tupfile copy rules", "[e2e][configure]")
 {
-    GIVEN("a project with a subdir tup.config")
+    GIVEN("a project with a subdir config and a copy rule")
     {
         auto f = E2EFixture { "simple_c" };
         f.mkdir("sub");
-        f.write_file("sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("sub/defaults.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("sub/Tupfile", ": defaults.config |> cp %f %o |> tup.config\n");
         f.write_file("root.config", "CONFIG_ROOT_VAR=from_root\n");
         REQUIRE(f.init().success());
 
@@ -3565,7 +3566,7 @@ SCENARIO("configure copies source subdir configs to build tree", "[e2e][configur
                 REQUIRE(content.find("CONFIG_ROOT_VAR=from_root") != std::string::npos);
             }
 
-            THEN("subdir config is copied to build/sub/tup.config")
+            THEN("subdir config is produced by copy rule")
             {
                 REQUIRE(f.exists("build/sub/tup.config"));
                 auto content = f.read_file("build/sub/tup.config");
@@ -3575,46 +3576,15 @@ SCENARIO("configure copies source subdir configs to build tree", "[e2e][configur
     }
 }
 
-SCENARIO("configure skips ignored directories when copying configs", "[e2e][configure]")
-{
-    GIVEN("a project with subdir configs and a .pupignore")
-    {
-        auto f = E2EFixture { "simple_c" };
-        f.mkdir("included");
-        f.write_file("included/tup.config", "CONFIG_INC=yes\n");
-        f.mkdir("ignored_dir");
-        f.write_file("ignored_dir/tup.config", "CONFIG_IGN=yes\n");
-        f.write_file(".pupignore", "ignored_dir\n");
-        f.write_file("root.config", "CONFIG_ROOT=1\n");
-        REQUIRE(f.init().success());
-
-        WHEN("configure is run with -B")
-        {
-            auto result = f.pup({ "configure", "--config", "root.config", "-B", "build" });
-
-            THEN("included subdir config is copied")
-            {
-                INFO("stdout: " << result.stdout_output);
-                INFO("stderr: " << result.stderr_output);
-                REQUIRE(result.success());
-                REQUIRE(f.exists("build/included/tup.config"));
-            }
-
-            THEN("ignored subdir config is NOT copied")
-            {
-                REQUIRE(result.success());
-                REQUIRE_FALSE(f.exists("build/ignored_dir/tup.config"));
-            }
-        }
-    }
-}
-
 SCENARIO("configure --config + subdir configs + build uses scoped merge", "[e2e][configure][scoped-config]")
 {
-    GIVEN("a project with root config and subdir tup.config in source tree")
+    GIVEN("a project with root config and subdir config via copy rule")
     {
         auto f = E2EFixture { "scoped_config" };
-        f.write_file("sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("sub/defaults.config", "CONFIG_SUB_VAR=from_sub\n");
+        f.write_file("sub/Tupfile", ": defaults.config |> cp %f %o |> tup.config\n"
+                                    ": |> echo \"@(SUB_VAR)\" > %o |> sub.txt\n"
+                                    ": |> echo \"@(ROOT_VAR)\" > %o |> root_from_sub.txt\n");
         f.write_file("root.config", "CONFIG_ROOT_VAR=from_root\n");
         REQUIRE(f.init().success());
 
@@ -3637,37 +3607,16 @@ SCENARIO("configure --config + subdir configs + build uses scoped merge", "[e2e]
     }
 }
 
-SCENARIO("configure skips subdir config copy for in-tree", "[e2e][configure]")
+SCENARIO("configure handles mixed copy-rule + auto-gen configs", "[e2e][configure]")
 {
-    GIVEN("a project with -C matching output root")
-    {
-        auto f = E2EFixture { "scoped_config" };
-        f.write_file("tup.config", "CONFIG_ROOT_VAR=from_root\n");
-        REQUIRE(f.init().success());
-
-        WHEN("configure is run without -B")
-        {
-            auto result = f.pup({ "configure" });
-
-            THEN("configure succeeds without copying configs")
-            {
-                INFO("stdout: " << result.stdout_output);
-                INFO("stderr: " << result.stderr_output);
-                REQUIRE(result.success());
-                REQUIRE(result.stdout_output.find("source config") == std::string::npos);
-            }
-        }
-    }
-}
-
-SCENARIO("configure handles mixed static + auto-gen configs", "[e2e][configure]")
-{
-    GIVEN("a project with a static subdir config and auto-gen config rules")
+    GIVEN("a project with a copy-rule subdir config and auto-gen config rules")
     {
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
-        f.write_file("sub/tup.config", "CONFIG_STATIC_VAR=static_value\n");
+        f.mkdir("sub");
+        f.write_file("sub/defaults.config", "CONFIG_STATIC_VAR=static_value\n");
+        f.write_file("sub/Tupfile", ": defaults.config |> cp %f %o |> tup.config\n");
         REQUIRE(f.init().success());
 
         WHEN("configure is run with -B")
@@ -3682,7 +3631,7 @@ SCENARIO("configure handles mixed static + auto-gen configs", "[e2e][configure]"
                 REQUIRE(f.exists("build/configs/tup.config"));
             }
 
-            THEN("static subdir config is copied")
+            THEN("copy-rule subdir config is produced")
             {
                 REQUIRE(f.exists("build/sub/tup.config"));
                 auto content = f.read_file("build/sub/tup.config");
