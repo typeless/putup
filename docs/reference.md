@@ -259,11 +259,10 @@ putup              # Pass 2: Build with generated configs
 
 **How it works:**
 1. Installs root config if `--config` is specified
-2. Copies subdir `tup.config` files from config root to build tree (out-of-tree only)
-3. Parses all Tupfiles using root `tup.config` only
-4. Identifies rules where any output ends with `tup.config`
-5. Executes only those rules (plus their dependencies)
-6. Does not write to `.pup/index` (avoids conflict with subsequent build)
+2. Parses all Tupfiles using root `tup.config` only
+3. Identifies rules where any output ends with `tup.config`
+4. Executes only those rules (plus their dependencies)
+5. Does not write to `.pup/index` (avoids conflict with subsequent build)
 
 **Relevant Options:**
 - `-v` - Verbose output
@@ -278,7 +277,7 @@ putup              # Pass 2: Build with generated configs
 
 **Using --config for pre-made configs:**
 
-The `--config` option copies an existing config file to the output directory as the root `tup.config`. It then continues with steps 2–6 above: copying subdir configs and running any config-generating rules. Useful for:
+The `--config` option copies an existing config file to the output directory as the root `tup.config`. It then continues with steps 2–5 above, running any config-generating rules. Useful for:
 - Cross-compilation with pre-made toolchain configs
 - CI/CD where configs are externally managed
 - Mixed workflows with a static root config + auto-generated subdir configs
@@ -288,25 +287,24 @@ putup configure -B build --config configs/arm-cross.config
 putup configure -B build-debug -c debug.config
 ```
 
-**Subdir tup.config copying (step 2):**
+**Subdir config installation:**
 
-For out-of-tree builds (`config_root != output_root`), configure automatically copies any `tup.config` files found in subdirectories of the config root to the corresponding locations in the build tree. The root-level `tup.config` is excluded (handled by `--config` or config-generating rules).
+Subdirectory configs are installed via Tupfile copy rules — putup has no built-in config copying. Each subdirectory that needs a scoped `tup.config` ships a `defaults.config` alongside its Tupfile with a copy rule:
 
-This enables per-component scoped configs: each subdirectory ships a `tup.config` alongside its Tupfile. At configure time, these are installed into the build tree where scoped config merging (§6.1) picks them up during the build.
-
-```bash
-# Config root has per-component configs:
-#   gmp/tup.config, mpfr/tup.config, mpc/tup.config
-#
-# configure installs root config AND copies subdir configs:
-putup configure --config configs/toolchain.config -C . -S ../src -B ../build
-#   → ../build/tup.config          (from --config)
-#   → ../build/gmp/tup.config      (copied from gmp/tup.config)
-#   → ../build/mpfr/tup.config     (copied from mpfr/tup.config)
-#   → ../build/mpc/tup.config      (copied from mpc/tup.config)
+```tup
+: defaults.config |> cp %f %o |> tup.config
 ```
 
-For in-tree builds (`config_root == output_root`), step 2 is a no-op — the configs are already in place.
+At configure time, these rules are discovered and executed like any other config-generating rule. The resulting `tup.config` files are placed in the build tree where scoped config merging (§6.1) picks them up during the build.
+
+```bash
+# Each subdir Tupfile has a copy rule for its defaults.config:
+putup configure --config configs/toolchain.config -C . -S ../src -B ../build
+#   → ../build/tup.config          (from --config)
+#   → ../build/gmp/tup.config      (from gmp/Tupfile copy rule)
+#   → ../build/mpfr/tup.config     (from mpfr/Tupfile copy rule)
+#   → ../build/mpc/tup.config      (from mpc/Tupfile copy rule)
+```
 
 **Important:** You must run `putup configure` before `putup build`. If you skip the configure step, `putup build` will error:
 
@@ -1648,7 +1646,7 @@ S = ../..  GMP_DIR = gmp  → $(S)/$(GMP_DIR) = ../../gmp  ✓
 S = ..     GMP_DIR = ../gmp → $(S)/$(GMP_DIR) = ../../gmp  ✓
 ```
 
-**Scoped `tup.config` defaults:** Components can also ship default config values in their own `tup.config` — parent configs override child configs on collision (see §6.1 *Scoped Config Merging*).
+**Scoped `tup.config` defaults:** Components ship default config values in a `defaults.config` file with a Tupfile copy rule (`cp %f %o`) that installs it as `tup.config` during configure. Parent configs override child configs on collision (see §6.1 *Scoped Config Merging*).
 
 See `examples/bsp/gcc/` for a complete working example with three interdependent libraries.
 
