@@ -1088,6 +1088,7 @@ auto build_single_variant(
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
         .source_root = ctx.layout().source_root,
+        .config_root = ctx.layout().config_root,
         .output_root = ctx.layout().output_root,
     };
 

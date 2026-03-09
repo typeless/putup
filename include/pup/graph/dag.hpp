@@ -390,12 +390,15 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
 /// Expand instruction with canonical path resolution for symlinked source trees.
 /// When source_root is provided, build-tree paths are computed relative to the
 /// canonical (physical) CWD instead of the logical CWD.
+/// In 3-tree builds, config_root locates overlay files (like defaults.config)
+/// that live alongside Tupfiles rather than in source_root.
 [[nodiscard]]
 auto expand_instruction(
     Graph const& graph,
     NodeId cmd_id,
     PathCache& cache,
-    std::filesystem::path const& source_root
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& config_root = {}
 ) -> std::string;
 
 /// Expand instruction pattern (convenience overload, creates temporary cache)

@@ -854,7 +854,8 @@ auto expand_instruction(
     Graph const& graph,
     NodeId cmd_id,
     PathCache& cache,
-    std::filesystem::path const& source_root
+    std::filesystem::path const& source_root,
+    std::filesystem::path const& config_root
 ) -> std::string
 {
     auto const* cmd = get_command_node(graph, cmd_id);
@@ -872,6 +873,14 @@ auto expand_instruction(
         if (!canonical_cwd.empty() && full.starts_with("..")) {
             auto abs = std::filesystem::weakly_canonical(source_root / full);
             return abs.lexically_relative(canonical_cwd).generic_string();
+        }
+        // In 3-tree builds, files may live in config_root rather than source_root.
+        // Check config_root and compute a canonical relative path from source CWD.
+        if (!config_root.empty() && config_root != source_root
+            && !std::filesystem::exists(source_root / full)
+            && std::filesystem::exists(config_root / full)) {
+            auto canonical_config = std::filesystem::weakly_canonical(config_root / full);
+            return canonical_config.lexically_relative(canonical_cwd).generic_string();
         }
         return pup::make_source_relative(full, source_to_root, source_dir);
     });
