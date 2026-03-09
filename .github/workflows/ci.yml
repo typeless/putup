@@ -185,10 +185,13 @@ jobs:
         run: chmod +x build/putup
       - name: Download source
         working-directory: examples/bsp
-        run: make -f Makefile.pup download-source SRCDIR=../../source-root
+        run: scripts/download-source.sh ../../source-root
+      - name: Configure
+        working-directory: examples/bsp
+        run: ../../build/putup configure --config configs/x86_64-linux.config -C . -S ../../source-root -B ../../build-gcc
       - name: Build
         working-directory: examples/bsp
-        run: make -f Makefile.pup PUTUP=../../build/putup SRCDIR=../../source-root
+        run: ../../build/putup -C . -S ../../source-root -B ../../build-gcc -j$(nproc)
       - name: Smoke test cc1
         run: |
           echo 'int main() { return 0; }' > /tmp/test.c
