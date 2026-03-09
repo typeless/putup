@@ -54,16 +54,18 @@ examples/bsp/       (config tree)     source-root/        (source tree)
 ```bash
 cd examples/bsp
 
-# Assemble source tree (or use: make -f Makefile.pup download-source)
-# ... see above ...
+# Download source (or assemble manually — see above)
+scripts/download-source.sh ../../source-root
 
-# Build (macOS host → x86-64 Linux target)
-make -f Makefile.pup SRCDIR=../../source-root PLATFORM=darwin-x86_64-linux HOST=darwin
+# Configure + build (native x86-64 Linux)
+putup configure --config configs/x86_64-linux.config \
+    -C . -S ../../source-root -B ../../build-gcc
+putup -C . -S ../../source-root -B ../../build-gcc -j$(nproc)
 
-# Or directly with putup:
+# Cross-compile (macOS host → x86-64 Linux target)
 putup configure --config configs/darwin-x86_64-linux.config \
     -C . -S ../../source-root -B ../../build-gcc
-putup -C . -S ../../source-root -B ../../build-gcc -j8
+putup -C . -S ../../source-root -B ../../build-gcc -j$(nproc)
 ```
 
 ## Scoped Builds
@@ -93,29 +95,30 @@ putup configure -S /path/to/gcc-15.2.0 -B /path/to/build
 putup -S /path/to/gcc-15.2.0 -B /path/to/build
 ```
 
-## Makefile Targets
+## Build Commands
 
-| Target | Description |
-|--------|-------------|
-| `make -f Makefile.pup` | Full build (resolve-mpn + configure + build) |
-| `make -f Makefile.pup configure` | Configure only (no build) |
-| `make -f Makefile.pup download-source` | Download GCC + binutils tarballs into `SRCDIR` |
-| `make -f Makefile.pup clean` | Clean build artifacts |
-| `make -f Makefile.pup distclean` | Full clean (remove build directory) |
-| `make -f Makefile.pup multi` | Multi-variant parallel build for `PLATFORMS` |
+| Command | Description |
+|---------|-------------|
+| `scripts/download-source.sh [SRCDIR]` | Download GCC + binutils tarballs |
+| `putup configure --config configs/<platform>.config -C . -S <src> -B <build>` | Configure |
+| `putup -C . -S <src> -B <build> -j$(nproc)` | Build |
+| `putup clean -C . -S <src> -B <build>` | Clean build artifacts |
+| `putup distclean -C . -S <src> -B <build>` | Full clean (remove build directory) |
 
-**Variables:**
+**Platform configs:** `configs/x86_64-linux.config`, `configs/darwin-x86_64-linux.config`
+
+**Environment variables for `download-source.sh`:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PLATFORM` | `x86_64-linux` | Config file selector (`configs/$(PLATFORM).config`) |
-| `HOST` | `linux` | Host OS (overlays `configs/host-$(HOST)/` if not linux) |
-| `SRCDIR` | `../../source-root` | Assembled source tree path |
-| `BUILD` | `../../build-gcc` | Build output directory |
-| `MPN_CPU` | `generic` | GMP assembly target (`generic`, `x86_64`, `x86_64/core2`) |
-| `PUTUP` | `putup` | Path to putup binary (override for CI) |
-| `GCC_VERSION` | `15.2.0` | GCC tarball version for `download-source` |
-| `BINUTILS_VERSION` | `2.44` | binutils tarball version for `download-source` |
+| `GCC_VERSION` | `15.2.0` | GCC tarball version |
+| `BINUTILS_VERSION` | `2.44` | binutils tarball version |
+
+**Config variables (in platform config):**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CONFIG_MPN_CPU` | `generic` | GMP assembly target (`generic`, `x86_64`, `x86_64/core2`) |
 
 ## Architecture
 
