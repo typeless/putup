@@ -1,5 +1,9 @@
 include_rules
+ifeq (@(HOST_OS),darwin)
+: defaults-darwin.config |> ^ INSTALL %o^ cp %f %o |> tup.config
+else
 : defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
+endif
 
 # ============================================================
 # GCC 15.2.0 — C compiler backend
