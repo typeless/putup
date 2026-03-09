@@ -1,5 +1,18 @@
 include_rules
-: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
+: defaults.config |> ^ GEN %o^ cp %f %o && \
+  cpu="@(MPN_CPU)"; \
+  if [ -z "$cpu" ] || [ "$cpu" = "generic" ]; then \
+    echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> %o; \
+    echo "CONFIG_NO_ASM=1" >> %o; \
+  else \
+    arch="${cpu%%/*}"; \
+    if [ -f "mpn/$arch/gmp-mparam.h" ]; then \
+      echo "CONFIG_GMP_MPARAM=mpn/$arch/gmp-mparam.h" >> %o; \
+    else \
+      echo "CONFIG_GMP_MPARAM=mpn/generic/gmp-mparam.h" >> %o; \
+    fi; \
+    echo "CONFIG_ASM_ENABLED=y" >> %o; \
+  fi |> tup.config
 
 # ============================================================
 # GMP 6.2.1

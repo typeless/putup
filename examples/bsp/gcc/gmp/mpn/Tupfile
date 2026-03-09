@@ -1,5 +1,5 @@
 include_rules
-: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
+: $(S)/scripts/resolve-mpn.sh |> ^ RESOLVE-MPN %o^ sh %f @(MPN_CPU) . > %o |> tup.config
 
 # MPN — low-level multiprecision arithmetic
 #
