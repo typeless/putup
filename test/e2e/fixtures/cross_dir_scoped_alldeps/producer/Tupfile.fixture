@@ -1,0 +1,1 @@
+: input.txt |> cat %f > %o |> ../shared/lib.dat

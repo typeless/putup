@@ -1346,6 +1346,100 @@ SCENARIO("Scoped build with -a checks upstream deps (mma behavior)", "[e2e][incr
 }
 
 // =============================================================================
+// Cross-Directory Scoped Build with -a (all-deps) Tests
+// =============================================================================
+
+SCENARIO("Fresh scoped build with -a succeeds for cross-directory deps", "[e2e][scope]")
+{
+    GIVEN("a project with producer/consumer cross-directory dependencies")
+    {
+        auto f = E2EFixture { "cross_dir_scoped_alldeps" };
+        REQUIRE(f.init().success());
+
+        WHEN("consumer/ is built with -a on a fresh build (no index)")
+        {
+            auto result = f.build({ "-a", "consumer/" });
+
+            THEN("the build succeeds and both producer and consumer outputs exist")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("shared/lib.dat"));
+                REQUIRE(f.exists("consumer/result.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("Fresh scoped build WITHOUT -a fails for cross-directory deps", "[e2e][scope]")
+{
+    GIVEN("a project with producer/consumer cross-directory dependencies")
+    {
+        auto f = E2EFixture { "cross_dir_scoped_alldeps" };
+        REQUIRE(f.init().success());
+
+        WHEN("consumer/ is built without -a on a fresh build")
+        {
+            auto result = f.build({ "consumer/" });
+
+            THEN("the build fails with an unresolved ghost error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("unresolved ghost") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Fresh scoped build with -a does NOT build unrelated dirs", "[e2e][scope]")
+{
+    GIVEN("a project with producer, consumer, and unrelated directories")
+    {
+        auto f = E2EFixture { "cross_dir_scoped_alldeps" };
+        REQUIRE(f.init().success());
+
+        WHEN("consumer/ is built with -a")
+        {
+            auto result = f.build({ "-a", "consumer/" });
+
+            THEN("unrelated/stuff.txt is NOT built")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("unrelated/stuff.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("Incremental -a scoped build detects upstream changes", "[e2e][incremental][scope]")
+{
+    GIVEN("a fully built project with shared include directory")
+    {
+        auto f = E2EFixture { "scoped_upstream" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("an upstream header is modified and scoped build runs with -a and explicit target")
+        {
+            f.write_file("include/header.h", "#define VALUE 100\n");
+            auto result = f.build({ "-a", "lib" });
+
+            THEN("the scoped module is rebuilt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Clean/Distclean Tests
 // =============================================================================
 
