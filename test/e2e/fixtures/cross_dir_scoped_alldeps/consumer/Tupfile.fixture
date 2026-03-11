@@ -1,0 +1,1 @@
+: main.txt ../shared/lib.dat |> cat %f > %o |> result.txt

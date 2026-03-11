@@ -782,6 +782,7 @@ auto Scheduler::build_job_list(
             return make_error<std::vector<BuildJob>>(
                 ErrorCode::ParseError,
                 "Missing input file (unresolved ghost): " + path
+                    + "\n  Hint: try building with -a to include upstream dependencies"
             );
         }
     }

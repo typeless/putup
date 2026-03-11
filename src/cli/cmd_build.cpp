@@ -133,22 +133,21 @@ auto is_tupfile(std::string_view path) -> bool
         || path.ends_with("/tup.config") || path == "tup.config";
 }
 
-/// Collect all upstream input files for commands in the given scopes.
-/// Walks backwards through the DAG from commands to their transitive inputs.
-auto collect_upstream_files(
+/// Walk backward through the DAG from commands in scope, returning all
+/// reachable nodes (the transitive upstream closure).
+auto walk_upstream_from_scope(
     pup::graph::BuildGraph const& graph,
     std::vector<std::string> const& scopes
-) -> std::set<std::string>
+) -> std::set<pup::NodeId>
 {
     if (scopes.empty()) {
         return {};
     }
 
-    auto upstream = std::set<std::string> {};
     auto visited = std::set<pup::NodeId> {};
     auto stack = std::vector<pup::NodeId> {};
 
-    // Find commands in scope and seed the stack with their inputs
+    // Seed with commands whose source_dir is in scope
     for (auto id : graph.all_nodes()) {
         if (!pup::node_id::is_command(id)) {
             continue;
@@ -163,6 +162,8 @@ auto collect_upstream_files(
             continue;
         }
 
+        visited.insert(id);
+
         for (auto input_id : graph.get_inputs(id)) {
             stack.push_back(input_id);
         }
@@ -171,7 +172,6 @@ auto collect_upstream_files(
         }
     }
 
-    // Walk upstream iteratively
     while (!stack.empty()) {
         auto id = stack.back();
         stack.pop_back();
@@ -180,16 +180,6 @@ auto collect_upstream_files(
             continue;
         }
 
-        if (!pup::node_id::is_command(id)) {
-            auto const* node = graph.get_file_node(id);
-            if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
-                auto path = graph.get_full_path(id);
-                if (!path.empty()) {
-                    upstream.insert(path);
-                }
-            }
-        }
-
         for (auto input_id : graph.get_inputs(id)) {
             stack.push_back(input_id);
         }
@@ -198,7 +188,44 @@ auto collect_upstream_files(
         }
     }
 
+    return visited;
+}
+
+/// Collect all upstream input file paths for commands in the given scopes.
+auto collect_upstream_files(
+    pup::graph::BuildGraph const& graph,
+    std::vector<std::string> const& scopes
+) -> std::set<std::string>
+{
+    auto upstream = std::set<std::string> {};
+    for (auto id : walk_upstream_from_scope(graph, scopes)) {
+        if (pup::node_id::is_command(id)) {
+            continue;
+        }
+        auto const* node = graph.get_file_node(id);
+        if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
+            auto path = graph.get_full_path(id);
+            if (!path.empty()) {
+                upstream.insert(path);
+            }
+        }
+    }
     return upstream;
+}
+
+/// Collect commands in scope plus all transitive upstream producer commands.
+auto collect_scope_with_upstream_commands(
+    pup::graph::BuildGraph const& graph,
+    std::vector<std::string> const& scopes
+) -> std::set<pup::NodeId>
+{
+    auto commands = std::set<pup::NodeId> {};
+    for (auto id : walk_upstream_from_scope(graph, scopes)) {
+        if (pup::node_id::is_command(id) && graph.get_command_node(id)) {
+            commands.insert(id);
+        }
+    }
+    return commands;
 }
 
 auto find_changed_files_with_implicit(
@@ -895,11 +922,13 @@ auto remove_stale_outputs(
 
 /// Build mode precedence (highest to lowest):
 /// 1. Incremental - if old index exists and files changed
-/// 2. Targets - if specific output targets requested (and not incremental)
-/// 3. Subset - exclude config commands from full build
-/// 4. Full - build everything
+/// 2. ScopeWithUpstream - fresh build with -a and explicit targets
+/// 3. Targets - if specific output targets requested (and not incremental)
+/// 4. Subset - exclude config commands from full build
+/// 5. Full - build everything
 enum class BuildMode {
     Incremental,
+    ScopeWithUpstream,
     Targets,
     Subset,
     Full,
@@ -908,11 +937,15 @@ enum class BuildMode {
 auto determine_build_mode(
     bool has_targets,
     bool use_incremental,
-    bool has_config_cmds
+    bool has_config_cmds,
+    bool scope_with_upstream
 ) -> BuildMode
 {
     if (use_incremental) {
         return BuildMode::Incremental;
+    }
+    if (scope_with_upstream) {
+        return BuildMode::ScopeWithUpstream;
     }
     if (has_targets) {
         return BuildMode::Targets;
@@ -946,7 +979,11 @@ auto build_single_variant(
     // Only scope parsing when explicit targets are given.
     // CWD-derived scoping should still parse all Tupfiles so that
     // out-of-scope Tupfile changes are detected for incremental builds.
-    auto parse_scopes = opts.targets.empty() ? std::vector<std::string> {} : scopes;
+    // When -a is set, always parse all Tupfiles so that cross-directory
+    // producers are discovered and ghost nodes get resolved.
+    auto parse_scopes = (opts.targets.empty() || opts.include_all_deps)
+        ? std::vector<std::string> {}
+        : scopes;
 
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -1190,16 +1227,26 @@ auto build_single_variant(
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
 
+    auto scope_with_upstream = opts.include_all_deps && !scopes.empty() && !use_incremental;
     auto mode = determine_build_mode(
         !target_node_ids.empty(),
         use_incremental,
-        !config_cmd_ids.empty()
+        !config_cmd_ids.empty(),
+        scope_with_upstream
     );
 
     switch (mode) {
     case BuildMode::Incremental:
         build_result = scheduler.build_incremental(ctx.graph(), changed_files);
         break;
+    case BuildMode::ScopeWithUpstream: {
+        auto scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
+        for (auto cfg_id : config_cmd_ids) {
+            scope_cmds.erase(cfg_id);
+        }
+        build_result = scheduler.build_subset(ctx.graph(), scope_cmds);
+        break;
+    }
     case BuildMode::Targets:
         build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
         break;
