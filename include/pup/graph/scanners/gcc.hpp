@@ -12,7 +12,7 @@ namespace pup::graph::scanners {
 /// Dependency scanner for GCC/Clang C/C++ compilers.
 /// Detects gcc, g++, clang, clang++, cc, c++ commands with -c flag
 /// and generates -M dependency scan commands.
-class GccScanner : public DepScanner {
+class GccScanner final : public DepScanner {
 public:
     [[nodiscard]]
     auto matches(CommandInfo const& cmd) const -> bool override;

@@ -33,7 +33,7 @@ struct AstNode {
 };
 
 /// Variable reference: $(VAR), @(CONFIG), &(NODE)
-struct VarRef : AstNode {
+struct VarRef final : AstNode {
     enum class Kind { Regular,
                       Config,
                       Node };
@@ -51,7 +51,7 @@ struct VarRef : AstNode {
 };
 
 /// Expression that may contain literal text and variable references
-struct Expression : AstNode {
+struct Expression final : AstNode {
     struct Literal {
         std::string value;
     };
@@ -84,7 +84,7 @@ struct Expression : AstNode {
 };
 
 /// Input/output path pattern (may include globs, groups, exclusions)
-struct PathPattern : AstNode {
+struct PathPattern final : AstNode {
     Expression path;
     bool is_foreach = false;          ///< Part of foreach expansion
     bool is_exclusion = false;        ///< Starts with ! for input exclusion
@@ -95,7 +95,7 @@ struct PathPattern : AstNode {
 };
 
 /// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}] [<group>]
-struct Rule : AstNode {
+struct Rule final : AstNode {
     bool foreach_ = false;
     std::vector<PathPattern> inputs;
     std::vector<PathPattern> order_only_inputs;
@@ -109,7 +109,7 @@ struct Rule : AstNode {
 };
 
 /// Bang-macro definition: !name = |> command |> outputs
-struct BangMacro : AstNode {
+struct BangMacro final : AstNode {
     std::string name;
     bool foreach_ = false;
     std::vector<PathPattern> order_only_inputs;
@@ -123,7 +123,7 @@ struct BangMacro : AstNode {
 };
 
 /// Variable assignment: VAR = value, VAR += value, VAR := value, VAR ?= value, VAR ??= value
-struct Assignment : AstNode {
+struct Assignment final : AstNode {
     enum class Op {
         Set,     // =
         Append,  // +=
@@ -142,7 +142,7 @@ struct Assignment : AstNode {
 struct Statement;
 
 /// Conditional: ifdef, ifndef, ifeq, ifneq
-struct Conditional : AstNode {
+struct Conditional final : AstNode {
     enum class Kind { Ifdef,
                       Ifndef,
                       Ifeq,
@@ -164,24 +164,24 @@ struct Conditional : AstNode {
 };
 
 /// Include directive: include path, include_rules
-struct Include : AstNode {
+struct Include final : AstNode {
     Expression path;
     bool is_rules = false; ///< include_rules vs include
 };
 
 /// Export directive: export VAR
-struct Export : AstNode {
+struct Export final : AstNode {
     std::string var_name;
 };
 
 /// Import directive: import VAR[=default]
-struct Import : AstNode {
+struct Import final : AstNode {
     std::string var_name;
     std::optional<Expression> default_value;
 };
 
 /// Union of all statement types
-struct Statement : AstNode {
+struct Statement final : AstNode {
     std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import>
         content;
 
@@ -208,7 +208,7 @@ struct Statement : AstNode {
 };
 
 /// A complete Tupfile AST
-struct Tupfile : AstNode {
+struct Tupfile final : AstNode {
     std::string filename;
     std::vector<std::unique_ptr<Statement>> statements;
     std::vector<std::string> included_files;
