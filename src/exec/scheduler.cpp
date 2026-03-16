@@ -75,9 +75,9 @@ auto add_producer_dependencies(
     auto current_active = jobs[current_job].guard_active;
 
     for (auto producer_id : graph.get_inputs(node_id)) {
-        if (node_id::is_command(producer_id)) {
-            if (cmd_to_job.contains(producer_id) && cmd_to_job.get(producer_id) != current_job) {
-                auto dep_idx = cmd_to_job.get(producer_id);
+        if (node_id::is_command(producer_id) && cmd_to_job.contains(producer_id)) {
+            auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(producer_id));
+            if (dep_idx != current_job) {
                 if (!current_active || jobs[dep_idx].guard_active) {
                     dependencies.insert(dep_idx);
                 }
@@ -116,10 +116,12 @@ auto build_dependency_map(
         for (auto input_id : graph.get_inputs(cmd_id)) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
             if (node_id::is_command(input_id)) {
-                if (cmd_to_job.contains(input_id) && cmd_to_job.get(input_id) != j) {
-                    auto dep_idx = cmd_to_job.get(input_id);
-                    if (!current_active || jobs[dep_idx].guard_active) {
-                        dependencies.insert(dep_idx);
+                if (cmd_to_job.contains(input_id)) {
+                    auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(input_id));
+                    if (dep_idx != j) {
+                        if (!current_active || jobs[dep_idx].guard_active) {
+                            dependencies.insert(dep_idx);
+                        }
                     }
                 }
                 continue;
