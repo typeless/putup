@@ -40,34 +40,4 @@ private:
     IdBitSet present_;
 };
 
-class IdArray64 {
-public:
-    IdArray64() = default;
-    ~IdArray64();
-
-    IdArray64(IdArray64 const&) = delete;
-    auto operator=(IdArray64 const&) -> IdArray64& = delete;
-
-    IdArray64(IdArray64&&) noexcept;
-    auto operator=(IdArray64&&) noexcept -> IdArray64&;
-
-    auto resize(std::uint32_t max_id) -> void;
-    auto set(std::uint32_t id, std::uint64_t value) -> void;
-
-    [[nodiscard]]
-    auto get(std::uint32_t id) const -> std::uint64_t;
-
-    [[nodiscard]]
-    auto contains(std::uint32_t id) const -> bool;
-
-    auto clear() -> void;
-
-    auto for_each(void (*fn)(std::uint32_t id, std::uint64_t value, void* ctx), void* ctx) const -> void;
-
-private:
-    std::uint64_t* data_ = nullptr;
-    std::size_t capacity_ = 0;
-    IdBitSet present_;
-};
-
 } // namespace pup
