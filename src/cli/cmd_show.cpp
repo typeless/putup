@@ -23,7 +23,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
-#include <set>
 #include <unordered_map>
 
 namespace pup::cli {

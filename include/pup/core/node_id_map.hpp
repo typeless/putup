@@ -34,6 +34,12 @@ public:
         return select_const(id).contains(idx);
     }
 
+    auto remove(NodeId id) -> void
+    {
+        auto idx = static_cast<std::uint32_t>(node_id::index(id));
+        select(id).remove(idx);
+    }
+
     auto clear() -> void
     {
         files_.clear();
