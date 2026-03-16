@@ -19,6 +19,7 @@ test-srcs-y += test_eval.cpp
 test-srcs-y += test_exec.cpp
 test-srcs-y += test_glob.cpp
 test-srcs-y += test_graph.cpp
+test-srcs-y += test_arena.cpp
 test-srcs-y += test_hash.cpp
 test-srcs-y += test_id_array.cpp
 test-srcs-y += test_id_bitset.cpp
