@@ -5,6 +5,7 @@
 #include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/core/metrics.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
@@ -18,8 +19,6 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
-
-#include "pup/core/node_id_map.hpp"
 
 namespace pup::exec {
 

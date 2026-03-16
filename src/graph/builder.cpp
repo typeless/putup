@@ -3,6 +3,7 @@
 
 #include "pup/graph/builder.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
@@ -21,8 +22,6 @@
 #include <cstdlib>
 #include <map>
 #include <set>
-
-#include "pup/core/node_id_map.hpp"
 
 namespace pup::graph {
 
