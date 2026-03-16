@@ -94,7 +94,7 @@ auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> std::string
 
 } // anonymous namespace
 
-auto parse_depfile(std::filesystem::path const& path) -> Result<Depfile>
+auto parse_depfile(std::string const& path) -> Result<Depfile>
 {
     auto file = std::ifstream { path };
     if (!file) {

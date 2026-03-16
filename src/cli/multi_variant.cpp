@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/multi_variant.hpp"
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/target.hpp"
 #include "pup/core/layout.hpp"
@@ -19,14 +21,14 @@ namespace pup::cli {
 namespace {
 
 struct ParsedTargets {
-    std::vector<std::filesystem::path> variants;
+    std::vector<std::string> variants;
     std::vector<std::string> scopes;
-    std::vector<std::string> output_targets; // Specific output file targets
+    std::vector<std::string> output_targets;
     bool has_variant_targets = false;
 };
 
 auto parse_targets_for_variants(
-    std::filesystem::path const& source_root,
+    std::string const& source_root,
     std::vector<std::string> const& targets
 ) -> pup::Result<ParsedTargets>
 {
@@ -45,20 +47,19 @@ auto parse_targets_for_variants(
     for (auto const& target : *parsed) {
         if (target.variant.has_value()) {
             result.has_variant_targets = true;
-            variant_set.insert(target.variant->string());
+            variant_set.insert(*target.variant);
             if (!target.scope_or_output.empty()) {
                 if (target.is_output) {
-                    // Store source-root-relative path (graph uses source-root-relative)
-                    result.output_targets.push_back(target.scope_or_output.generic_string());
+                    result.output_targets.push_back(target.scope_or_output);
                 } else {
-                    result.scopes.push_back(target.scope_or_output.generic_string());
+                    result.scopes.push_back(target.scope_or_output);
                 }
             }
         } else {
             if (target.is_output) {
-                result.output_targets.push_back(target.scope_or_output.generic_string());
+                result.output_targets.push_back(target.scope_or_output);
             } else {
-                result.scopes.push_back(target.scope_or_output.generic_string());
+                result.scopes.push_back(target.scope_or_output);
             }
         }
     }
@@ -78,7 +79,6 @@ auto for_each_variant(
     std::string_view command_name
 ) -> int
 {
-    // Discover project layout
     auto layout_result = Result<ProjectLayout> { discover_layout(make_layout_options(opts)) };
     if (!layout_result) {
         fprintf(stderr, "Error: %s\n", layout_result.error().message.c_str());
@@ -87,15 +87,13 @@ auto for_each_variant(
 
     auto const& source_root = layout_result->source_root;
 
-    // Parse targets to extract variants and scopes
     auto parsed_targets = parse_targets_for_variants(source_root, opts.targets);
     if (!parsed_targets.has_value()) {
         fprintf(stderr, "Error: %s\n", parsed_targets.error().message.c_str());
         return EXIT_FAILURE;
     }
 
-    // Determine variants to process
-    auto variants = std::vector<std::filesystem::path> {};
+    auto variants = std::vector<std::string> {};
     auto scopes = std::vector<std::string> {};
     auto output_targets = std::vector<std::string> {};
 
@@ -115,7 +113,6 @@ auto for_each_variant(
         output_targets = parsed_targets->output_targets;
     }
 
-    // No variants found - in-tree operation
     if (variants.empty()) {
         auto modified_opts = Options { opts };
         modified_opts.targets = scopes;
@@ -123,42 +120,35 @@ auto for_each_variant(
         return handler(modified_opts, ".");
     }
 
-    // Check if cwd is inside one of the discovered variants.
-    // If so, let discover_layout detect it via its cwd/tup.config logic
-    // instead of setting build_dirs (which would resolve relative to cwd).
-    auto cwd = std::filesystem::current_path();
-    auto cwd_variant = std::optional<std::filesystem::path> {};
+    auto cwd = *pup::platform::current_directory();
+    auto cwd_variant = std::optional<std::string> {};
     for (auto const& variant : variants) {
-        auto variant_abs = source_root / variant;
+        auto variant_abs = pup::path::join(source_root, variant);
         if (pup::is_path_under(cwd, variant_abs)) {
             cwd_variant = variant;
             break;
         }
     }
 
-    // If cwd is inside a variant, use that variant without setting build_dirs
     if (cwd_variant) {
         auto single_opts = Options { opts };
-        // Don't set build_dirs - let discover_layout detect via cwd/tup.config
         single_opts.targets = scopes;
         single_opts.output_targets = output_targets;
-        return handler(single_opts, cwd_variant->filename().string());
+        return handler(single_opts, std::string { pup::path::filename(*cwd_variant) });
     }
 
-    // Single variant - direct call
     if (variants.size() == 1) {
         auto single_opts = Options { opts };
-        single_opts.build_dirs = { variants[0].string() };
+        single_opts.build_dirs = { variants[0] };
         single_opts.targets = scopes;
         single_opts.output_targets = output_targets;
-        return handler(single_opts, variants[0].filename().string());
+        return handler(single_opts, std::string { pup::path::filename(variants[0]) });
     }
 
-    // Multiple variants - parallel execution
     if (opts.verbose) {
         printf("%.*s %zu variants in parallel:\n", static_cast<int>(command_name.size()), command_name.data(), variants.size());
         for (auto const& v : variants) {
-            printf("  %s\n", v.string().c_str());
+            printf("  %s\n", v.c_str());
         }
     }
 
@@ -168,15 +158,14 @@ auto for_each_variant(
             std::launch::async,
             [&opts, &handler, &scopes, &output_targets, variant = variant] {
                 auto variant_opts = Options { opts };
-                variant_opts.build_dirs = { variant.string() };
+                variant_opts.build_dirs = { variant };
                 variant_opts.targets = scopes;
                 variant_opts.output_targets = output_targets;
-                return handler(variant_opts, variant.filename().string());
+                return handler(variant_opts, std::string { pup::path::filename(variant) });
             }
         ));
     }
 
-    // Collect results
     auto failed = 0;
     for (auto& future : futures) {
         if (future.get() != 0) {

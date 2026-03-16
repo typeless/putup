@@ -9,8 +9,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace pup {
@@ -50,7 +50,7 @@ auto sha256(std::string_view data) -> Hash256;
 
 /// Compute SHA-256 hash of a file
 [[nodiscard]]
-auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>;
+auto sha256_file(std::string const& path) -> Result<Hash256>;
 
 /// Convert hash to hex string (lowercase)
 [[nodiscard]]

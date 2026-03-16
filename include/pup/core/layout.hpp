@@ -3,108 +3,80 @@
 
 #pragma once
 
+#include "pup/core/path.hpp"
 #include "pup/core/result.hpp"
 
-#include <filesystem>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace pup {
 
-/// Encapsulates source/config/output directory layout for a build.
-/// Enables read-only source directories by separating source, config, and output trees.
-///
-/// Three-tree model:
-///   source_root - Where source files live (may be read-only, upstream code)
-///   config_root - Where Tupfiles live (may mirror source structure)
-///   output_root - Where outputs/.pup/tup.config go (writable)
-///
-/// Traditional builds: config_root == source_root (Tupfiles alongside sources)
-/// Out-of-tree config: config_root != source_root (separate config tree)
 struct ProjectLayout {
-    std::filesystem::path source_root; ///< Where source files live (may be read-only)
-    std::filesystem::path config_root; ///< Where Tupfiles live (may be separate from source)
-    std::filesystem::path output_root; ///< Where outputs/.pup/tup.config go (writable)
+    std::string source_root;
+    std::string config_root;
+    std::string output_root;
 
-    /// True if source and output are the same (in-tree build)
     [[nodiscard]]
     auto is_in_tree() const -> bool
     {
         return source_root == output_root;
     }
 
-    /// True if config tree is separate from source tree
     [[nodiscard]]
     auto has_separate_config() const -> bool
     {
         return config_root != source_root;
     }
 
-    /// Get path to .pup directory
     [[nodiscard]]
-    auto pup_dir() const -> std::filesystem::path
+    auto pup_dir() const -> std::string
     {
-        return output_root / ".pup";
+        return path::join(output_root, ".pup");
     }
 
-    /// Get path to index file
     [[nodiscard]]
-    auto index_path() const -> std::filesystem::path
+    auto index_path() const -> std::string
     {
-        return pup_dir() / "index";
+        return path::join(pup_dir(), "index");
     }
 
-    /// Resolve a source-relative path to absolute
     [[nodiscard]]
-    auto resolve_source(
-        std::filesystem::path const& rel
-    ) const -> std::filesystem::path
+    auto resolve_source(std::string const& rel) const -> std::string
     {
-        return source_root / rel;
+        return path::join(source_root, rel);
     }
 
-    /// Resolve a config-relative path to absolute
     [[nodiscard]]
-    auto resolve_config(
-        std::filesystem::path const& rel
-    ) const -> std::filesystem::path
+    auto resolve_config(std::string const& rel) const -> std::string
     {
-        return config_root / rel;
+        return path::join(config_root, rel);
     }
 
-    /// Resolve an output-relative path to absolute
     [[nodiscard]]
-    auto resolve_output(
-        std::filesystem::path const& rel
-    ) const -> std::filesystem::path
+    auto resolve_output(std::string const& rel) const -> std::string
     {
-        return output_root / rel;
+        return path::join(output_root, rel);
     }
 };
 
-/// Options for layout discovery
 struct LayoutOptions {
-    std::optional<std::filesystem::path> source_dir; ///< -S argument
-    std::optional<std::filesystem::path> config_dir; ///< -C argument
-    std::optional<std::filesystem::path> build_dir;  ///< -B argument
+    std::optional<std::string> source_dir;
+    std::optional<std::string> config_dir;
+    std::optional<std::string> build_dir;
 };
 
-/// Discover project layout from options and environment.
-/// Priority: CLI args > environment variables > cwd detection
 [[nodiscard]]
 auto discover_layout(LayoutOptions const& opts = {}) -> Result<ProjectLayout>;
 
-/// Find project root by walking up from start_dir looking for Tupfile.ini
 [[nodiscard]]
 auto find_project_root(
-    std::filesystem::path const& start_dir
-) -> std::optional<std::filesystem::path>;
+    std::string const& start_dir
+) -> std::optional<std::string>;
 
-/// Discover variant directories (subdirs containing tup.config or .pup/)
-/// Returns sorted list of variant paths relative to source_root
 [[nodiscard]]
 auto discover_variants(
-    std::filesystem::path const& source_root
-) -> std::vector<std::filesystem::path>;
+    std::string const& source_root
+) -> std::vector<std::string>;
 
 } // namespace pup

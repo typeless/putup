@@ -6,10 +6,12 @@
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <charconv>
-#include <filesystem>
 
 namespace pup::graph {
 
@@ -310,11 +312,13 @@ auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std
         return std::nullopt;
     }
 
-    auto p = std::filesystem::path { path };
     auto parent_id = root;
+    auto remaining = path;
 
-    for (auto const& component : p) {
-        auto name = component.string();
+    while (!remaining.empty()) {
+        auto slash = remaining.find('/');
+        auto name = std::string { slash == std::string_view::npos ? remaining : remaining.substr(0, slash) };
+        remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
         if (name.empty() || name == ".") {
             continue;
         }
@@ -854,8 +858,8 @@ auto expand_instruction(
     Graph const& graph,
     NodeId cmd_id,
     PathCache& cache,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& config_root
+    std::string const& source_root,
+    std::string const& config_root
 ) -> std::string
 {
     auto const* cmd = get_command_node(graph, cmd_id);
@@ -864,23 +868,31 @@ auto expand_instruction(
     }
     auto source_dir = graph.strings.get(cmd->source_dir);
     auto source_to_root = pup::compute_source_to_root(source_dir);
-    auto canonical_cwd = source_root.empty()
-        ? std::filesystem::path {}
-        : std::filesystem::weakly_canonical(source_root / std::string { source_dir });
+    auto canonical_cwd = std::string {};
+    if (!source_root.empty()) {
+        auto r = pup::platform::canonical(pup::path::join(source_root, std::string { source_dir }));
+        if (r) {
+            canonical_cwd = *r;
+        }
+    }
 
     return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string {
         auto full = get_full_path(graph, id, cache);
         if (!canonical_cwd.empty() && full.starts_with("..")) {
-            auto abs = std::filesystem::weakly_canonical(source_root / full);
-            return abs.lexically_relative(canonical_cwd).generic_string();
+            auto joined = pup::path::join(source_root, full);
+            auto abs = pup::platform::canonical(joined);
+            if (abs) {
+                return pup::path::relative(*abs, canonical_cwd);
+            }
+            return pup::path::relative(pup::path::normalize(joined), canonical_cwd);
         }
-        // In 3-tree builds, files may live in config_root rather than source_root.
-        // Check config_root and compute a canonical relative path from source CWD.
         if (!config_root.empty() && config_root != source_root
-            && !std::filesystem::exists(source_root / full)
-            && std::filesystem::exists(config_root / full)) {
-            auto canonical_config = std::filesystem::weakly_canonical(config_root / full);
-            return canonical_config.lexically_relative(canonical_cwd).generic_string();
+            && !pup::platform::exists(pup::path::join(source_root, full))
+            && pup::platform::exists(pup::path::join(config_root, full))) {
+            auto r = pup::platform::canonical(pup::path::join(config_root, full));
+            if (r) {
+                return pup::path::relative(*r, canonical_cwd);
+            }
         }
         return pup::make_source_relative(full, source_to_root, source_dir);
     });

@@ -10,7 +10,6 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include <deque>
-#include <filesystem>
 #include <functional>
 #include <optional>
 #include <set>
@@ -397,8 +396,8 @@ auto expand_instruction(
     Graph const& graph,
     NodeId cmd_id,
     PathCache& cache,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& config_root = {}
+    std::string const& source_root,
+    std::string const& config_root = {}
 ) -> std::string;
 
 /// Expand instruction pattern (convenience overload, creates temporary cache)

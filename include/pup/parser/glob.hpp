@@ -5,7 +5,6 @@
 
 #include "pup/core/result.hpp"
 
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -76,7 +75,7 @@ private:
 [[nodiscard]]
 auto glob_expand(
     std::string_view pattern,
-    std::filesystem::path const& base_dir,
+    std::string const& base_dir,
     GlobOptions const& options = {}
 ) -> Result<std::vector<std::string>>;
 
@@ -84,7 +83,7 @@ auto glob_expand(
 [[nodiscard]]
 auto glob_expand_all(
     std::vector<std::string> const& patterns,
-    std::filesystem::path const& base_dir,
+    std::string const& base_dir,
     GlobOptions const& options = {}
 ) -> Result<GlobResult>;
 

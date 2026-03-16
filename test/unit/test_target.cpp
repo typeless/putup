@@ -150,7 +150,7 @@ SCENARIO("Target parsing - glob expansion", "[target]")
                 auto variants = std::set<std::string> {};
                 for (auto const& t : result) {
                     REQUIRE(t.variant.has_value());
-                    variants.insert(t.variant->string());
+                    variants.insert(*t.variant);
                 }
                 REQUIRE(variants.count("build-debug") == 1);
                 REQUIRE(variants.count("build-release") == 1);

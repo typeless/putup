@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/path_utils.hpp"
+#include "pup/core/path.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -9,55 +10,46 @@
 namespace pup {
 
 auto is_path_under(
-    std::filesystem::path const& path,
-    std::filesystem::path const& root
+    std::string const& path_str,
+    std::string const& root
 ) -> bool
 {
-    auto path_str = path.generic_string();
-    auto root_str = root.generic_string();
+    auto root_str = root;
 
-    // Handle trailing slash
     while (!root_str.empty() && root_str.back() == '/') {
         root_str.pop_back();
     }
 
-    // Exact match
     if (path_str == root_str) {
         return true;
     }
 
-    // Check prefix with directory boundary
     if (!path_str.starts_with(root_str)) {
         return false;
     }
 
-    // Ensure we match at directory boundary
     return path_str[root_str.size()] == '/';
 }
 
 auto relative_to_root(
-    std::filesystem::path const& path,
-    std::filesystem::path const& root
+    std::string const& path_str,
+    std::string const& root
 ) -> std::string
 {
-    if (!is_path_under(path, root)) {
+    if (!is_path_under(path_str, root)) {
         return "";
     }
 
-    auto path_str = path.generic_string();
-    auto root_str = root.generic_string();
+    auto root_str = root;
 
-    // Handle trailing slash
     while (!root_str.empty() && root_str.back() == '/') {
         root_str.pop_back();
     }
 
-    // Exact match returns empty
     if (path_str == root_str) {
         return "";
     }
 
-    // Skip root prefix and separator
     return path_str.substr(root_str.size() + 1);
 }
 
@@ -70,7 +62,6 @@ auto is_path_in_scope(
         return true;
     }
 
-    // Strip trailing separators from scope
     while (!scope.empty() && (scope.back() == '/' || scope.back() == '\\')) {
         scope.remove_suffix(1);
     }
@@ -87,7 +78,6 @@ auto is_path_in_scope(
         return true;
     }
 
-    // Ensure directory boundary
     auto const sep = path[scope.size()];
     return sep == '/' || sep == '\\';
 }
@@ -127,64 +117,64 @@ auto compute_source_to_root(std::string_view source_dir) -> std::string
 }
 
 auto make_source_relative(
-    std::string_view path,
+    std::string_view path_sv,
     std::string_view source_to_root,
     std::string_view source_dir
 ) -> std::string
 {
-    if (path.empty() || path[0] == '/') {
-        return std::string { path };
+    if (path_sv.empty() || path_sv[0] == '/') {
+        return std::string { path_sv };
     }
-    if (path.size() >= 2 && path[0] == '.' && path[1] == '.') {
+    if (path_sv.size() >= 2 && path_sv[0] == '.' && path_sv[1] == '.') {
         if (!source_to_root.empty() && !source_dir.empty()) {
-            return std::string { source_to_root } + std::string { path };
+            return std::string { source_to_root } + std::string { path_sv };
         }
-        return std::string { path };
+        return std::string { path_sv };
     }
     if (source_to_root.empty()) {
-        return std::string { path };
+        return std::string { path_sv };
     }
     auto dir_prefix = std::string { source_dir } + "/";
-    if (path.starts_with(dir_prefix)) {
-        return std::string { path.substr(dir_prefix.size()) };
+    if (path_sv.starts_with(dir_prefix)) {
+        return std::string { path_sv.substr(dir_prefix.size()) };
     }
-    if (path == source_dir) {
+    if (path_sv == source_dir) {
         return ".";
     }
-    return std::string { source_to_root } + std::string { path };
+    return std::string { source_to_root } + std::string { path_sv };
 }
 
 auto strip_path_prefix(
-    std::string_view path,
+    std::string_view path_sv,
     std::string_view prefix
 ) -> std::string
 {
     if (prefix.empty()) {
-        return std::string { path };
+        return std::string { path_sv };
     }
     auto prefix_with_slash = std::string { prefix } + "/";
-    if (path.starts_with(prefix_with_slash)) {
-        return std::string { path.substr(prefix_with_slash.size()) };
+    if (path_sv.starts_with(prefix_with_slash)) {
+        return std::string { path_sv.substr(prefix_with_slash.size()) };
     }
-    return std::string { path };
+    return std::string { path_sv };
 }
 
 auto resolve_under_root(
-    std::string_view path,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& target_root
+    std::string_view path_sv,
+    std::string const& source_root,
+    std::string const& target_root
 ) -> std::optional<std::string>
 {
-    if (!path.starts_with("..")) {
+    if (!path_sv.starts_with("..")) {
         return std::nullopt;
     }
 
-    auto abs_path = (source_root / path).lexically_normal();
-    auto target_prefix = target_root.lexically_normal();
-    auto rel = abs_path.lexically_relative(target_prefix);
+    auto abs_path = path::normalize(path::join(source_root, path_sv));
+    auto target_prefix = path::normalize(target_root);
+    auto rel = path::relative(abs_path, target_prefix);
 
-    if (!rel.empty() && !rel.string().starts_with("..")) {
-        return rel.generic_string();
+    if (!rel.empty() && !rel.starts_with("..")) {
+        return rel;
     }
     return std::nullopt;
 }

@@ -5,7 +5,6 @@
 
 #include "pup/core/result.hpp"
 
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,7 +19,7 @@ struct Depfile {
 
 /// Parse a dependency file from a filesystem path
 [[nodiscard]]
-auto parse_depfile(std::filesystem::path const& path) -> Result<Depfile>;
+auto parse_depfile(std::string const& path) -> Result<Depfile>;
 
 /// Parse a dependency file from string content
 [[nodiscard]]

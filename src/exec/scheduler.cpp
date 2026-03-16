@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/scheduler.hpp"
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
@@ -44,18 +46,18 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 /// If the path is already prefixed with the variant output directory, use source_root as base.
 /// Otherwise, use output_root as base.
 auto resolve_variant_path(
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root,
+    std::string const& source_root,
+    std::string const& output_root,
     std::string_view output_root_prefix,
-    std::filesystem::path const& path
-) -> std::filesystem::path
+    std::string const& path
+) -> std::string
 {
-    auto path_str = path.generic_string();
+    auto path_str = path;
     if (!output_root_prefix.empty() && path_str.starts_with(output_root_prefix)
         && (path_str.size() == output_root_prefix.size() || path_str[output_root_prefix.size()] == '/')) {
-        return source_root / path;
+        return pup::path::join(source_root, path);
     }
-    return output_root / path;
+    return pup::path::join(output_root, path);
 }
 
 /// Add job dependencies for any command that produces the given node.
@@ -652,20 +654,19 @@ auto Scheduler::execute_job(
     // - Already variant-mapped (starts with relative output_root prefix): use source_root as base
     // - Source-relative: prepend output_root
     auto source_root = impl_->options.source_root;
-    auto relative_output_root = std::filesystem::relative(
+    auto relative_output_root = pup::path::relative(
         impl_->options.output_root,
         source_root
     );
-    auto output_root_prefix = relative_output_root.generic_string();
+    auto output_root_prefix = relative_output_root;
     for (auto const& output : job.outputs) {
-        auto output_path = std::filesystem::path { output };
-        if (!output_path.is_absolute()) {
+        auto output_path = std::string { output };
+        if (!pup::path::is_absolute(output_path)) {
             output_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, output);
         }
-        auto parent = output_path.parent_path();
+        auto parent = std::string { pup::path::parent(output_path) };
         if (!parent.empty()) {
-            auto ec = std::error_code {};
-            std::filesystem::create_directories(parent, ec);
+            (void)pup::platform::create_directories(parent);
         }
     }
 
@@ -717,8 +718,8 @@ auto Scheduler::execute_job(
 
         // Traditional .d file discovery
         for (auto const& output : job.outputs) {
-            auto output_path = std::filesystem::path { output };
-            auto ext = output_path.extension().string();
+            auto output_path = std::string { output };
+            auto ext = pup::path::extension(output_path);
 
             // Support common object file extensions (.o on Unix, .obj on Windows)
             if (ext != ".o" && ext != ".obj") {
@@ -726,10 +727,10 @@ auto Scheduler::execute_job(
             }
 
             // Compute filesystem path for the .d file
-            auto base_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, output_path.parent_path());
-            auto depfile_path = base_path / (output_path.stem().string() + ".d");
+            auto base_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, std::string { pup::path::parent(output_path) });
+            auto depfile_path = pup::path::join(base_path, std::string { pup::path::stem(output_path) } + ".d");
 
-            if (!std::filesystem::exists(depfile_path)) {
+            if (!pup::platform::exists(depfile_path)) {
                 continue;
             }
 
@@ -768,15 +769,15 @@ auto Scheduler::build_job_list(
             auto path = graph.get_full_path(id);
             // Check if file exists - if so, it's a valid input (not missing)
             auto build_root_name = std::string { graph.get_build_root_name() };
-            auto file_path = impl_->options.output_root / path;
+            auto file_path = pup::path::join(impl_->options.output_root, path);
             // Strip build prefix from path if present (for consistent file lookup)
             auto lookup_path = path;
             auto build_prefix = build_root_name + "/";
             if (!build_root_name.empty() && path.starts_with(build_prefix)) {
                 lookup_path = path.substr(build_prefix.size());
-                file_path = impl_->options.output_root / lookup_path;
+                file_path = pup::path::join(impl_->options.output_root, lookup_path);
             }
-            if (std::filesystem::exists(file_path)) {
+            if (pup::platform::exists(file_path)) {
                 continue; // File exists, not a missing input
             }
             return make_error<std::vector<BuildJob>>(
@@ -804,9 +805,9 @@ auto Scheduler::build_job_list(
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
         auto source_dir = get_source_dir(graph.graph(), id);
-        auto working_dir = std::filesystem::path { impl_->options.source_root };
+        auto working_dir = std::string { impl_->options.source_root };
         if (!source_dir.empty()) {
-            working_dir /= source_dir;
+            working_dir = pup::path::join(working_dir, std::string { source_dir });
         }
 
         // Check if this is a generated rule that captures stdout

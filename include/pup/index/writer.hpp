@@ -7,7 +7,7 @@
 #include "format.hpp"
 #include "pup/core/result.hpp"
 
-#include <filesystem>
+#include <string>
 #include <vector>
 
 namespace pup::index {
@@ -16,7 +16,7 @@ namespace pup::index {
 /// Uses a temporary file and rename for atomic operation
 [[nodiscard]]
 auto write_index(
-    std::filesystem::path const& path,
+    std::string const& path,
     Index const& index
 ) -> Result<void>;
 

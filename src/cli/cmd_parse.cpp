@@ -3,6 +3,7 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/core/path.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/types.hpp"
@@ -37,13 +38,13 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
     auto& ctx = *result;
 
     if (opts.verbose) {
-        printf("[%.*s] Project root: \"%s\"\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.layout().source_root.string().c_str());
+        printf("[%.*s] Project root: \"%s\"\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.layout().source_root.c_str());
         printf("[%.*s] Tupfiles:\n", static_cast<int>(variant_name.size()), variant_name.data());
         for (auto const& dir : ctx.parsed_dirs()) {
             auto tupfile_path = (dir == "." || dir.empty())
-                ? ctx.layout().source_root / "Tupfile"
-                : ctx.layout().source_root / dir / "Tupfile";
-            printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), tupfile_path.string().c_str());
+                ? pup::path::join(ctx.layout().source_root, "Tupfile")
+                : pup::path::join(pup::path::join(ctx.layout().source_root, dir), "Tupfile");
+            printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), tupfile_path.c_str());
         }
     }
 

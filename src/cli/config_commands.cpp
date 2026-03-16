@@ -2,8 +2,10 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/config_commands.hpp"
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 
-#include <filesystem>
+
 
 namespace pup::cli {
 
@@ -18,7 +20,7 @@ auto is_config_output(std::string const& path) -> bool
 
 auto find_config_commands(
     graph::BuildGraph const& graph,
-    std::filesystem::path const& source_root
+    std::string const& source_root
 ) -> std::vector<ConfigCommand>
 {
     auto result = std::vector<ConfigCommand> {};
@@ -36,11 +38,11 @@ auto find_config_commands(
             auto path = graph.get_full_path(output_id);
             if (is_config_output(path)) {
                 // Paths in graph are project-root-relative
-                auto full_path = source_root / path;
+                auto full_path = pup::path::join(source_root, path);
                 result.push_back({
                     .cmd_id = id,
                     .output_path = path,
-                    .exists = std::filesystem::exists(full_path),
+                    .exists = pup::platform::exists(full_path),
                 });
             }
         }

@@ -6,7 +6,6 @@
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 
-#include <filesystem>
 #include <set>
 #include <string>
 #include <vector>
@@ -27,7 +26,7 @@ struct ConfigCommand {
 /// to resolve the full filesystem path for existence checks.
 auto find_config_commands(
     graph::BuildGraph const& graph,
-    std::filesystem::path const& source_root
+    std::string const& source_root
 ) -> std::vector<ConfigCommand>;
 
 /// Collect all commands that the given commands depend on (transitively).

@@ -126,7 +126,7 @@ auto build_header(
 } // namespace
 
 auto write_index(
-    std::filesystem::path const& path,
+    std::string const& path,
     Index const& index
 ) -> Result<void>
 {

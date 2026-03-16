@@ -80,13 +80,13 @@ auto sha256(std::string_view data) -> Hash256
     return sha256_finalize(state);
 }
 
-auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
+auto sha256_file(std::string const& path) -> Result<Hash256>
 {
     ++thread_metrics().hash_computations;
 
     auto file = std::ifstream { path, std::ios::binary };
     if (!file) {
-        return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path.string());
+        return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path);
     }
 
     auto state = sha256_init();
@@ -98,7 +98,7 @@ auto sha256_file(std::filesystem::path const& path) -> Result<Hash256>
     }
 
     if (file.bad()) {
-        return make_error<Hash256>(ErrorCode::IoError, "Error reading file: " + path.string());
+        return make_error<Hash256>(ErrorCode::IoError, "Error reading file: " + path);
     }
 
     return sha256_finalize(state);

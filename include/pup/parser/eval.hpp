@@ -6,7 +6,6 @@
 #include "ast.hpp"
 #include "pup/core/result.hpp"
 
-#include <filesystem>
 #include <functional>
 #include <set>
 #include <string>
@@ -145,11 +144,11 @@ struct EvalContext {
     /// Callback for requesting a directory's Tupfile to be parsed (for cross-directory deps)
     /// Called when a path references another directory that may have a Tupfile.
     /// Returns success if directory was parsed, error if circular/missing.
-    std::function<Result<void>(std::filesystem::path const&)> request_directory = {};
+    std::function<Result<void>(std::string const&)> request_directory = {};
 
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
-    std::set<std::filesystem::path> const* available_tupfile_dirs = nullptr;
+    std::set<std::string> const* available_tupfile_dirs = nullptr;
 
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
