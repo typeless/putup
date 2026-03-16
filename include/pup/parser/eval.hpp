@@ -5,6 +5,7 @@
 
 #include "ast.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/string_hash.hpp"
 
 #include <functional>
 #include <set>
@@ -16,18 +17,7 @@
 
 namespace pup::parser {
 
-/// Transparent hash for heterogeneous lookup in VarDb
-struct StringHash {
-    using is_transparent = void;
-    auto operator()(std::string_view sv) const noexcept -> std::size_t
-    {
-        return std::hash<std::string_view> {}(sv);
-    }
-    auto operator()(std::string const& s) const noexcept -> std::size_t
-    {
-        return std::hash<std::string_view> {}(s);
-    }
-};
+using pup::StringHash;
 
 /// Variable database for storing and retrieving variable values
 class VarDb {

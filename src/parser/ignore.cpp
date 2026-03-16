@@ -2,8 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/ignore.hpp"
-
-#include <fstream>
+#include "pup/platform/file_io.hpp"
 
 namespace pup::parser {
 
@@ -13,34 +12,39 @@ namespace pup::parser {
 
 auto IgnoreList::load(std::string const& path) -> Result<IgnoreList>
 {
-    auto file = std::ifstream { path };
-    if (!file) {
+    auto content = pup::platform::read_file(path);
+    if (!content) {
         return make_error<IgnoreList>(ErrorCode::IoError, "Failed to open ignore file: " + path);
     }
 
     auto list = IgnoreList::with_defaults();
-    auto line = std::string {};
+    auto sv = std::string_view { *content };
 
-    while (std::getline(file, line)) {
-        // Skip empty lines and comments
-        if (line.empty()) {
+    while (!sv.empty()) {
+        auto nl = sv.find('\n');
+        auto raw = (nl == std::string_view::npos) ? sv : sv.substr(0, nl);
+        sv = (nl == std::string_view::npos) ? std::string_view {} : sv.substr(nl + 1);
+
+        // Strip \r
+        if (!raw.empty() && raw.back() == '\r') {
+            raw.remove_suffix(1);
+        }
+
+        if (raw.empty()) {
             continue;
         }
 
-        // Trim leading whitespace
-        auto start = line.find_first_not_of(" \t");
-        if (start == std::string::npos) {
+        auto start = raw.find_first_not_of(" \t");
+        if (start == std::string_view::npos) {
+            continue;
+        }
+        raw = raw.substr(start);
+
+        if (raw[0] == '#') {
             continue;
         }
 
-        line = line.substr(start);
-
-        // Skip comments
-        if (line[0] == '#') {
-            continue;
-        }
-
-        // Trim trailing whitespace (but preserve escaped spaces)
+        auto line = std::string { raw };
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) {
             if (line.size() >= 2 && line[line.size() - 2] == '\\') {
                 break;

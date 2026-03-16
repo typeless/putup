@@ -5,7 +5,6 @@
 #include "pup/core/hash.hpp"
 
 #include <cstring>
-#include <fstream>
 #include <span>
 
 namespace pup::index {
@@ -68,21 +67,15 @@ auto open_index(std::string const& path) -> Result<IndexFile>
 
 auto is_valid_index(std::string const& path) -> bool
 {
-    auto file = std::ifstream { path, std::ios::binary };
-    if (!file) {
+    auto file = pup::platform::MappedFile::open(path);
+    if (!file || file->size() < sizeof(RawHeader)) {
         return false;
     }
 
-    auto header = RawHeader {};
-    file.read(reinterpret_cast<char*>(&header), sizeof(header));
-
-    if (!file || file.gcount() != static_cast<std::streamsize>(sizeof(header))) {
-        return false;
-    }
-
-    // v8 format only
-    return std::memcmp(header.magic.data(), INDEX_MAGIC.data(), 4) == 0
-        && header.version == INDEX_VERSION;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* header = reinterpret_cast<RawHeader const*>(file->data());
+    return std::memcmp(header->magic.data(), INDEX_MAGIC.data(), 4) == 0
+        && header->version == INDEX_VERSION;
 }
 
 auto read_index(IndexFile const& f) -> Result<Index>
