@@ -5,10 +5,10 @@
 
 #include "pup/core/string_id.hpp"
 
+#include <cstdint>
 #include <deque>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 namespace pup {
 
@@ -53,8 +53,21 @@ public:
     auto reserve(std::size_t count) -> void;
 
 private:
+    struct Meta {
+        std::uint32_t hash = 0;
+        std::uint16_t displacement = 0;
+    };
+
+    auto key_at(std::size_t slot) const -> std::string_view;
+    auto probe_find(std::uint32_t h, std::string_view key) const -> StringId;
+    auto probe_insert(std::uint32_t h, StringId id) -> void;
+    auto grow() -> void;
+
     std::deque<std::string> storage_;
-    std::unordered_map<std::string_view, StringId> index_;
+    Meta* meta_ = nullptr;
+    StringId* values_ = nullptr;
+    std::size_t index_capacity_ = 0;
+    std::size_t index_count_ = 0;
 };
 
 } // namespace pup
