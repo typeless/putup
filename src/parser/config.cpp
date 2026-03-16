@@ -103,11 +103,11 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
     return db;
 }
 
-auto parse_config(std::filesystem::path const& path) -> Result<VarDb>
+auto parse_config(std::string const& path) -> Result<VarDb>
 {
     auto file = std::ifstream { path };
     if (!file) {
-        return make_error<VarDb>(ErrorCode::NotFound, "Cannot open config file: " + path.string());
+        return make_error<VarDb>(ErrorCode::NotFound, "Cannot open config file: " + path);
     }
 
     file.seekg(0, std::ios::end);

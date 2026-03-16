@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
@@ -39,8 +41,8 @@ auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> 
 }
 
 auto remove_indexed_outputs(
-    std::filesystem::path const& index_path,
-    std::filesystem::path const& root,
+    std::string const& index_path,
+    std::string const& root,
     OutputMode mode,
     std::string_view variant_name
 ) -> RemoveResult
@@ -60,15 +62,15 @@ auto remove_indexed_outputs(
             continue;
         }
 
-        auto rel_path = std::filesystem::path { file.path };
-        auto abs_path = root / rel_path;
-        for (auto parent = abs_path.parent_path();
-             !parent.empty() && parent != parent.parent_path();
-             parent = parent.parent_path()) {
+        auto rel_path = std::string { file.path };
+        auto abs_path = pup::path::join(root, rel_path);
+        for (auto parent = std::string { pup::path::parent(abs_path) };
+             !parent.empty() && parent != std::string { pup::path::parent(parent) };
+             parent = std::string { pup::path::parent(parent) }) {
             result.output_dirs.insert(parent);
         }
 
-        if (!std::filesystem::exists(abs_path)) {
+        if (!pup::platform::exists(abs_path)) {
             continue;
         }
 
@@ -78,14 +80,14 @@ auto remove_indexed_outputs(
             continue;
         }
 
-        auto ec = std::error_code {};
-        if (std::filesystem::remove(abs_path, ec)) {
+        auto r = pup::platform::remove_file(abs_path);
+        if (r) {
             ++result.removed_count;
             if (mode.verbose) {
                 vprint(variant_name, "Removed: %s\n", file.path.c_str());
             }
-        } else if (ec) {
-            veprint(variant_name, "Error removing %s: %s\n", file.path.c_str(), ec.message().c_str());
+        } else {
+            veprint(variant_name, "Error removing %s: %s\n", file.path.c_str(), r.error().message.c_str());
             ++result.error_count;
         }
     }
@@ -101,15 +103,15 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
         return EXIT_FAILURE;
     }
 
-    auto index_path = ctx->build_dir / ".pup" / "index";
-    if (!std::filesystem::exists(index_path)) {
+    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
+    if (!pup::platform::exists(index_path)) {
         vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
     // Paths are source-relative and include build root prefix for variant builds
-    // (e.g., "build/hello.o"). Use root so root / path gives correct absolute path.
+    // (e.g., "build/hello.o"). Use root so pup::path::join(root, path) gives correct absolute path.
     auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
@@ -133,40 +135,40 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         return EXIT_FAILURE;
     }
 
-    auto index_path = ctx->build_dir / ".pup" / "index";
+    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
     auto error_count = std::size_t { 0 };
-    auto output_dirs = std::set<std::filesystem::path> {};
+    auto output_dirs = std::set<std::string> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
-    if (std::filesystem::exists(index_path)) {
+    if (pup::platform::exists(index_path)) {
         // Paths are source-relative and include build root prefix for variant builds.
         auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
         error_count += result.error_count;
         output_dirs = std::move(result.output_dirs);
     }
 
-    auto pup_dir = ctx->build_dir / ".pup";
-    if (std::filesystem::exists(pup_dir)) {
+    auto pup_dir = pup::path::join(ctx->build_dir, ".pup");
+    if (pup::platform::exists(pup_dir)) {
         if (opts.dry_run) {
-            vprint(variant_name, "Would remove: %s\n", pup_dir.string().c_str());
+            vprint(variant_name, "Would remove: %s\n", pup_dir.c_str());
         } else {
             if (opts.verbose) {
-                vprint(variant_name, "Removing: %s\n", pup_dir.string().c_str());
+                vprint(variant_name, "Removing: %s\n", pup_dir.c_str());
             }
-            std::filesystem::remove_all(pup_dir);
+            (void)pup::platform::remove_all(pup_dir);
         }
     }
 
-    auto config_path = ctx->build_dir / "tup.config";
-    if (std::filesystem::exists(config_path)) {
+    auto config_path = pup::path::join(ctx->build_dir, "tup.config");
+    if (pup::platform::exists(config_path)) {
         if (opts.dry_run) {
-            vprint(variant_name, "Would remove: %s\n", config_path.string().c_str());
+            vprint(variant_name, "Would remove: %s\n", config_path.c_str());
         } else {
             if (opts.verbose) {
-                vprint(variant_name, "Removing: %s\n", config_path.string().c_str());
+                vprint(variant_name, "Removing: %s\n", config_path.c_str());
             }
-            std::filesystem::remove(config_path);
+            (void)pup::platform::remove_file(config_path);
         }
     }
 

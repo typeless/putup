@@ -2,29 +2,28 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/target.hpp"
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <algorithm>
 #include <set>
-
-namespace fs = std::filesystem;
 
 namespace pup {
 
 namespace {
 
-auto is_source_file(fs::path const& path) -> bool
+auto is_source_file(std::string const& p) -> bool
 {
-    auto const ext = path.extension().string();
+    auto ext = std::string { pup::path::extension(p) };
     static auto const source_exts = std::set<std::string> {
         ".c", ".cc", ".cpp", ".cxx", ".C", ".h", ".hh", ".hpp", ".hxx", ".H", ".s", ".S", ".asm"
     };
     return source_exts.contains(ext);
 }
 
-auto is_variant_dir(fs::path const& dir) -> bool
+auto is_variant_dir(std::string const& dir) -> bool
 {
-    auto config_path = dir / "tup.config";
-    return fs::exists(config_path);
+    return pup::platform::exists(pup::path::join(dir, "tup.config"));
 }
 
 auto fnmatch_simple(std::string const& pattern, std::string const& name) -> bool
@@ -44,10 +43,19 @@ auto fnmatch_simple(std::string const& pattern, std::string const& name) -> bool
     return name.starts_with(prefix) && name.ends_with(suffix);
 }
 
+auto split_first_component(std::string const& p) -> std::pair<std::string, std::string>
+{
+    auto slash = p.find('/');
+    if (slash == std::string::npos) {
+        return { p, {} };
+    }
+    return { p.substr(0, slash), p.substr(slash + 1) };
+}
+
 } // namespace
 
 auto parse_target(
-    fs::path const& project_root,
+    std::string const& project_root,
     std::string const& target_path
 ) -> Result<Target>
 {
@@ -55,52 +63,40 @@ auto parse_target(
         return unexpected<Error> { Error { ErrorCode::InvalidArgument, "empty target path" } };
     }
 
-    auto full_path = project_root / target_path;
+    auto full_path = pup::path::join(project_root, target_path);
     auto target = Target {};
-    auto path = fs::path { target_path };
-    auto first_component = *path.begin();
 
-    auto variant_path = project_root / first_component;
+    auto [first_component, remainder] = split_first_component(target_path);
+
+    auto variant_path = pup::path::join(project_root, first_component);
     if (is_variant_dir(variant_path)) {
         target.variant = first_component;
-
-        auto remainder = fs::path {};
-        auto it = path.begin();
-        ++it;
-        for (; it != path.end(); ++it) {
-            remainder /= *it;
-        }
-
         target.scope_or_output = remainder;
-        full_path = variant_path / remainder;
+        full_path = pup::path::join(variant_path, remainder);
     } else {
-        target.scope_or_output = path;
+        target.scope_or_output = target_path;
     }
 
-    if (fs::exists(full_path)) {
-        if (fs::is_regular_file(full_path)) {
+    if (pup::platform::exists(full_path)) {
+        if (pup::platform::is_file(full_path)) {
             if (is_source_file(full_path)) {
                 return unexpected<Error> { Error { ErrorCode::InvalidArgument, "source file, not build output: " + target_path } };
             }
-
             target.is_output = true;
         }
     } else {
-        // Path doesn't exist - check if parent exists (output target for from-scratch build)
-        auto parent = full_path.parent_path();
-        if (parent.empty()) {
-            parent = project_root;
+        auto par = std::string { pup::path::parent(full_path) };
+        if (par.empty()) {
+            par = project_root;
         }
-        if (!fs::exists(parent)) {
+        if (!pup::platform::exists(par)) {
             return unexpected<Error> { Error { ErrorCode::NotFound, "path not found: " + target_path } };
         }
 
-        // Reject source file extensions even for non-existent files
         if (is_source_file(full_path)) {
             return unexpected<Error> { Error { ErrorCode::InvalidArgument, "source file, not build output: " + target_path } };
         }
 
-        // Parent exists - assume output file (validate in cmd_build.cpp after graph is built)
         target.is_output = true;
     }
 
@@ -108,18 +104,17 @@ auto parse_target(
 }
 
 auto expand_glob_target(
-    fs::path const& project_root,
+    std::string const& project_root,
     std::string const& pattern
 ) -> std::vector<Target>
 {
     auto result = std::vector<Target> {};
-    auto path = fs::path { pattern };
 
-    if (path.empty()) {
+    if (pattern.empty()) {
         return result;
     }
 
-    auto first_component = path.begin()->string();
+    auto [first_component, remainder] = split_first_component(pattern);
     auto has_glob = first_component.find('*') != std::string::npos;
 
     if (!has_glob) {
@@ -130,40 +125,36 @@ auto expand_glob_target(
         return result;
     }
 
-    auto remainder = fs::path {};
-    auto it = path.begin();
-    ++it;
-    for (; it != path.end(); ++it) {
-        remainder /= *it;
+    auto entries = pup::platform::read_directory(project_root);
+    if (!entries) {
+        return result;
     }
 
-    std::error_code ec;
-    for (auto const& entry : fs::directory_iterator(project_root, ec)) {
-        if (!entry.is_directory()) {
+    for (auto const& entry : *entries) {
+        if (!entry.is_dir) {
             continue;
         }
 
-        auto name = entry.path().filename().string();
-        if (!fnmatch_simple(first_component, name)) {
+        if (!fnmatch_simple(first_component, entry.name)) {
             continue;
         }
 
-        if (!is_variant_dir(entry.path())) {
+        auto entry_path = pup::path::join(project_root, entry.name);
+        if (!is_variant_dir(entry_path)) {
             continue;
         }
 
         auto target = Target {};
-        target.variant = entry.path().filename();
+        target.variant = entry.name;
 
         if (!remainder.empty()) {
-            auto full_path = entry.path() / remainder;
+            auto full_path = pup::path::join(entry_path, remainder);
             target.scope_or_output = remainder;
-            if (fs::is_regular_file(full_path)) {
+            if (pup::platform::is_file(full_path)) {
                 target.is_output = true;
-            } else if (!fs::is_directory(full_path) && !is_source_file(full_path)) {
-                // Non-existent file that's not a source - assume output (validate later)
-                auto parent = full_path.parent_path();
-                if (!parent.empty() && fs::exists(parent)) {
+            } else if (!pup::platform::is_directory(full_path) && !is_source_file(full_path)) {
+                auto par = std::string { pup::path::parent(full_path) };
+                if (!par.empty() && pup::platform::exists(par)) {
                     target.is_output = true;
                 }
             }
@@ -185,12 +176,11 @@ auto is_glob_pattern(std::string const& s) -> bool
 } // namespace
 
 auto validate_target_consistency(
-    fs::path const& project_root,
+    std::string const& project_root,
     std::vector<std::string> const& targets
 ) -> Result<std::vector<Target>>
 {
     auto result = std::vector<Target> {};
-
     auto has_variant = std::optional<bool> {};
 
     for (auto const& target_str : targets) {

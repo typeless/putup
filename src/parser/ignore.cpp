@@ -11,11 +11,11 @@ namespace pup::parser {
 // IgnoreList
 // =============================================================================
 
-auto IgnoreList::load(std::filesystem::path const& path) -> Result<IgnoreList>
+auto IgnoreList::load(std::string const& path) -> Result<IgnoreList>
 {
     auto file = std::ifstream { path };
     if (!file) {
-        return make_error<IgnoreList>(ErrorCode::IoError, "Failed to open ignore file: " + path.string());
+        return make_error<IgnoreList>(ErrorCode::IoError, "Failed to open ignore file: " + path);
     }
 
     auto list = IgnoreList::with_defaults();
@@ -111,7 +111,7 @@ auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePat
     return p;
 }
 
-auto IgnoreList::is_ignored(std::filesystem::path const& rel_path) const -> bool
+auto IgnoreList::is_ignored(std::string const& rel_path) const -> bool
 {
     auto ignored = false;
 
@@ -125,24 +125,18 @@ auto IgnoreList::is_ignored(std::filesystem::path const& rel_path) const -> bool
     return ignored;
 }
 
-auto IgnoreList::match_pattern(IgnorePattern const& p, std::filesystem::path const& path) const -> bool
+auto IgnoreList::match_pattern(IgnorePattern const& p, std::string const& path_str) const -> bool
 {
-    auto path_str = path.generic_string();
-
-    // For anchored patterns, match against full path from root
-    // For unanchored patterns, match against any path component
     if (p.anchored) {
-        // Anchored: must match from start
         return glob_match(p.pattern, path_str);
     }
 
-    // Unanchored: try matching against basename first
-    auto basename = path.filename().string();
+    auto slash_pos = path_str.rfind('/');
+    auto basename = (slash_pos == std::string::npos) ? path_str : path_str.substr(slash_pos + 1);
     if (glob_match(p.pattern, basename)) {
         return true;
     }
 
-    // Also try matching against full path for patterns like **/foo
     if (p.pattern.starts_with("**")) {
         return glob_match(p.pattern, path_str);
     }

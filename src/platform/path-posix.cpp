@@ -5,9 +5,9 @@
 
 namespace pup::platform {
 
-auto to_utf8(std::filesystem::path const& path) -> std::string
+auto to_utf8(std::string const& path) -> std::string
 {
-    return path.string();
+    return path;
 }
 
 } // namespace pup::platform

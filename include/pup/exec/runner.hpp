@@ -7,7 +7,6 @@
 #include "pup/core/types.hpp"
 
 #include <chrono>
-#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -28,7 +27,7 @@ struct CommandResult {
 
 /// Options for running a command
 struct RunOptions {
-    std::filesystem::path working_dir = {};
+    std::string working_dir = {};
     std::vector<std::string> env = {};                ///< Additional environment variables
     bool inherit_env = true;                          ///< Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
@@ -66,7 +65,7 @@ public:
     ) -> Result<CommandResult>;
 
     /// Set the default working directory
-    auto set_working_dir(std::filesystem::path dir) -> void
+    auto set_working_dir(std::string dir) -> void
     {
         default_options_.working_dir = std::move(dir);
     }

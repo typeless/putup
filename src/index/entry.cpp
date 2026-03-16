@@ -6,7 +6,6 @@
 #include "pup/core/path_utils.hpp"
 
 #include <charconv>
-#include <filesystem>
 #include <functional>
 #include <unordered_set>
 

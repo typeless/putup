@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/glob.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -189,87 +190,66 @@ auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
 
 auto glob_expand(
     std::string_view pattern,
-    std::filesystem::path const& base_dir,
+    std::string const& base_dir,
     GlobOptions const& options
 ) -> Result<std::vector<std::string>>
 {
-    namespace fs = std::filesystem;
-
     auto results = std::vector<std::string> {};
 
-    // Check if pattern has wildcards
     if (!has_glob_chars(pattern)) {
-        // Literal path - just check if it exists
-        auto path = fs::path { base_dir / pattern };
-        if (fs::exists(path)) {
+        auto path = base_dir + "/" + std::string { pattern };
+        if (pup::platform::exists(path)) {
             results.emplace_back(pattern);
         }
         return results;
     }
 
-    // Split into directory and pattern parts
     auto [dir_part, file_pattern] = glob_split_path(pattern);
-    auto search_dir = fs::path { dir_part.empty() ? base_dir : base_dir / dir_part };
+    auto search_dir = dir_part.empty() ? base_dir : base_dir + "/" + std::string { dir_part };
 
-    if (!fs::exists(search_dir) || !fs::is_directory(search_dir)) {
+    if (!pup::platform::exists(search_dir) || !pup::platform::is_directory(search_dir)) {
         return results;
     }
 
     auto glob = Glob { file_pattern };
 
-    // Check if we need recursive search
     auto const is_recursive = glob.is_recursive() && options.recursive;
 
-    auto iterate = [&](auto const& entry) {
-        auto const& path = entry.path();
-        auto filename = path.filename().string();
-
-        // Skip hidden files unless requested
-        if (!options.include_hidden && !filename.empty() && filename[0] == '.') {
-            return;
-        }
-
-        // For recursive, match against relative path
-        if (is_recursive) {
-            auto rel = fs::relative(path, search_dir);
-            if (glob.matches(rel.generic_string())) {
-                auto result_path = dir_part.empty() ? rel.generic_string() : std::string { dir_part } + "/" + rel.generic_string();
-                results.push_back(result_path);
-            }
-        } else {
-            // Match just the filename
-            if (glob.matches(filename)) {
-                auto result_path = dir_part.empty() ? filename : std::string { dir_part } + "/" + filename;
-                results.push_back(result_path);
-            }
-        }
-    };
-
-    auto ec = std::error_code {};
     if (is_recursive) {
-        for (auto const& entry : fs::recursive_directory_iterator(search_dir, ec)) {
-            if (ec) {
-                break;
+        (void)pup::platform::walk_directory(search_dir, [&](pup::platform::DirEntry const& entry, std::string const& rel_path) -> bool {
+            auto name = entry.name;
+            if (!options.include_hidden && !name.empty() && name[0] == '.') {
+                return false;
             }
-            iterate(entry);
-        }
+            if (glob.matches(rel_path)) {
+                auto result_path = dir_part.empty() ? rel_path : std::string { dir_part } + "/" + rel_path;
+                results.push_back(result_path);
+            }
+            return true;
+        });
     } else {
-        for (auto const& entry : fs::directory_iterator(search_dir, ec)) {
-            if (ec) {
-                break;
+        auto entries = pup::platform::read_directory(search_dir);
+        if (entries) {
+            for (auto const& entry : *entries) {
+                auto const& name = entry.name;
+                if (!options.include_hidden && !name.empty() && name[0] == '.') {
+                    continue;
+                }
+                if (glob.matches(name)) {
+                    auto result_path = dir_part.empty() ? name : std::string { dir_part } + "/" + name;
+                    results.push_back(result_path);
+                }
             }
-            iterate(entry);
         }
     }
 
-    // Sort for consistent output
     std::ranges::sort(results);
     return results;
 }
 
 auto glob_expand_all(
     std::vector<std::string> const& patterns,
-    std::filesystem::path const& base_dir,
+    std::string const& base_dir,
     GlobOptions const& options
 ) -> Result<GlobResult>
 {

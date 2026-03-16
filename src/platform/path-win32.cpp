@@ -5,11 +5,9 @@
 
 namespace pup::platform {
 
-auto to_utf8(std::filesystem::path const& path) -> std::string
+auto to_utf8(std::string const& path) -> std::string
 {
-    auto u8 = path.u8string();
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return std::string { reinterpret_cast<char const*>(u8.data()), u8.size() };
+    return path;
 }
 
 } // namespace pup::platform

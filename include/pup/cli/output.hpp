@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstddef>
-#include <filesystem>
 #include <set>
 #include <string>
 #include <string_view>
@@ -21,15 +20,15 @@ struct OutputMode {
 struct RemoveResult {
     std::size_t removed_count = 0;
     std::size_t error_count = 0;
-    std::set<std::filesystem::path> output_dirs = {};
+    std::set<std::string> output_dirs = {};
 };
 
 /// Remove empty directories from deepest to shallowest
 /// Returns count of directories removed
 auto remove_empty_directories(
-    std::set<std::filesystem::path> const& dirs,
-    std::filesystem::path const& build_dir,
-    std::filesystem::path const& source_dir,
+    std::set<std::string> const& dirs,
+    std::string const& build_dir,
+    std::string const& source_dir,
     OutputMode mode
 ) -> std::size_t;
 

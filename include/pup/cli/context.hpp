@@ -8,7 +8,6 @@
 #include "pup/parser/ast.hpp"
 
 #include <cstdint>
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -89,7 +88,7 @@ public:
     [[nodiscard]]
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
-    auto parsed_dirs() const -> std::set<std::filesystem::path> const&;
+    auto parsed_dirs() const -> std::set<std::string> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load
@@ -128,8 +127,8 @@ auto make_layout_options(Options const& opts) -> LayoutOptions;
 
 /// Context for clean commands
 struct CleanContext {
-    std::filesystem::path root;
-    std::filesystem::path build_dir;
+    std::string root;
+    std::string build_dir;
     bool is_in_tree;
 };
 

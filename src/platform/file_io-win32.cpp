@@ -2,12 +2,37 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/platform/file_io.hpp"
-
-#include <random>
+#include "pup/core/path.hpp"
 
 #include <windows.h>
 
 namespace pup::platform {
+
+namespace {
+
+auto to_wide(std::string const& s) -> std::wstring
+{
+    if (s.empty()) {
+        return {};
+    }
+    auto len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    auto result = std::wstring(static_cast<std::size_t>(len), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), result.data(), len);
+    return result;
+}
+
+auto from_wide(std::wstring const& w) -> std::string
+{
+    if (w.empty()) {
+        return {};
+    }
+    auto len = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+    auto result = std::string(static_cast<std::size_t>(len), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), result.data(), len, nullptr, nullptr);
+    return result;
+}
+
+} // namespace
 
 struct MappedFile::Impl {
     std::byte* data = nullptr;
@@ -49,13 +74,14 @@ auto MappedFile::is_open() const -> bool
     return impl_ && impl_->data != nullptr;
 }
 
-auto MappedFile::open(std::filesystem::path const& path) -> Result<MappedFile>
+auto MappedFile::open(std::string const& path) -> Result<MappedFile>
 {
     auto file = MappedFile {};
     file.impl_ = std::make_unique<Impl>();
+    auto wpath = to_wide(path);
 
     file.impl_->file_handle = CreateFileW(
-        path.c_str(),
+        wpath.c_str(),
         GENERIC_READ,
         FILE_SHARE_READ,
         nullptr,
@@ -127,10 +153,11 @@ auto MappedFile::close() -> void
     impl_.reset();
 }
 
-auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
+auto stat_file(std::string const& path) -> Result<FileStat>
 {
+    auto wpath = to_wide(path);
     auto attrs = WIN32_FILE_ATTRIBUTE_DATA {};
-    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attrs)) {
+    if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &attrs)) {
         return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
     }
 
@@ -138,9 +165,6 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
     file_size.LowPart = attrs.nFileSizeLow;
     file_size.HighPart = attrs.nFileSizeHigh;
 
-    // Convert FILETIME to nanoseconds since Unix epoch
-    // FILETIME is 100-nanosecond intervals since Jan 1, 1601
-    // Unix epoch is Jan 1, 1970 - difference is 116444736000000000 100-ns intervals
     auto mtime = ULARGE_INTEGER {};
     mtime.LowPart = attrs.ftLastWriteTime.dwLowDateTime;
     mtime.HighPart = attrs.ftLastWriteTime.dwHighDateTime;
@@ -154,34 +178,30 @@ auto stat_file(std::filesystem::path const& path) -> Result<FileStat>
 }
 
 auto atomic_write(
-    std::filesystem::path const& path,
+    std::string const& path,
     std::span<std::byte const> data
 ) -> Result<void>
 {
-    auto parent = path.parent_path();
-    if (!parent.empty()) {
-        auto ec = std::error_code {};
-        std::filesystem::create_directories(parent, ec);
-        if (ec) {
-            return make_error<void>(ErrorCode::IoError, "Failed to create directory");
+    auto par = std::string { pup::path::parent(path) };
+    if (!par.empty()) {
+        auto r = create_directories(par);
+        if (!r) {
+            return r;
         }
     }
 
-    auto temp_path = path;
-    temp_path += L".tmp.";
+    auto temp_path = path + ".tmp.";
 
-    auto rd = std::random_device {};
-    auto gen = std::mt19937 { std::random_device::result_type { rd() } };
-    auto dist = std::uniform_int_distribution<> { 0, 15 };
-    WCHAR temp_suffix[16];
-    for (int i = 0; i < 8; ++i) {
-        temp_suffix[i] = L"0123456789abcdef"[dist(gen)];
+    auto seed = static_cast<unsigned>(GetCurrentProcessId()) ^ static_cast<unsigned>(GetTickCount());
+    auto const* const hex = "0123456789abcdef";
+    for (auto i = 0; i < 8; ++i) {
+        seed = seed * 1103515245u + 12345u;
+        temp_path += hex[(seed >> 16) & 0xF];
     }
-    temp_suffix[8] = L'\0';
-    temp_path += temp_suffix;
 
+    auto wtemp = to_wide(temp_path);
     auto file = CreateFileW(
-        temp_path.c_str(),
+        wtemp.c_str(),
         GENERIC_WRITE,
         0,
         nullptr,
@@ -200,16 +220,360 @@ auto atomic_write(
     CloseHandle(file);
 
     if (!write_ok || bytes_written != data.size() || !flush_ok) {
-        DeleteFileW(temp_path.c_str());
+        DeleteFileW(wtemp.c_str());
         return make_error<void>(ErrorCode::IoError, "Failed to write file");
     }
 
-    if (!MoveFileExW(temp_path.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        DeleteFileW(temp_path.c_str());
+    auto wpath = to_wide(path);
+    if (!MoveFileExW(wtemp.c_str(), wpath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(wtemp.c_str());
         return make_error<void>(ErrorCode::IoError, "Failed to rename file");
     }
 
     return {};
+}
+
+// Filesystem queries
+
+auto exists(std::string const& path) -> bool
+{
+    auto wpath = to_wide(path);
+    return GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+auto is_file(std::string const& path) -> bool
+{
+    auto wpath = to_wide(path);
+    auto attrs = GetFileAttributesW(wpath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+    return (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+auto is_directory(std::string const& path) -> bool
+{
+    auto wpath = to_wide(path);
+    auto attrs = GetFileAttributesW(wpath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+    return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+auto is_symlink(std::string const& path) -> bool
+{
+    auto wpath = to_wide(path);
+    auto attrs = GetFileAttributesW(wpath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+    return (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+}
+
+auto is_empty(std::string const& path) -> bool
+{
+    auto wpath = to_wide(path);
+    auto attrs = GetFileAttributesW(wpath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
+        auto search = wpath + L"\\*";
+        auto fd = WIN32_FIND_DATAW {};
+        auto h = FindFirstFileW(search.c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) {
+            return true;
+        }
+        auto empty = true;
+        do {
+            if (wcscmp(fd.cFileName, L".") != 0 && wcscmp(fd.cFileName, L"..") != 0) {
+                empty = false;
+                break;
+            }
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+        return empty;
+    }
+    auto file_data = WIN32_FILE_ATTRIBUTE_DATA {};
+    if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &file_data)) {
+        return true;
+    }
+    return file_data.nFileSizeHigh == 0 && file_data.nFileSizeLow == 0;
+}
+
+// Filesystem mutations
+
+auto create_directories(std::string const& path) -> Result<void>
+{
+    if (path.empty()) {
+        return {};
+    }
+    auto par = std::string { pup::path::parent(path) };
+    if (!par.empty() && par != path) {
+        auto r = create_directories(par);
+        if (!r) {
+            return r;
+        }
+    }
+    auto wpath = to_wide(path);
+    if (!CreateDirectoryW(wpath.c_str(), nullptr)) {
+        auto err = GetLastError();
+        if (err != ERROR_ALREADY_EXISTS) {
+            return make_error<void>(ErrorCode::IoError, "Failed to create directory: " + path);
+        }
+    }
+    return {};
+}
+
+auto remove_file(std::string const& path) -> Result<void>
+{
+    auto wpath = to_wide(path);
+    auto attrs = GetFileAttributesW(wpath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return {};
+    }
+    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
+        if (!RemoveDirectoryW(wpath.c_str())) {
+            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + path);
+        }
+    } else {
+        if (!DeleteFileW(wpath.c_str())) {
+            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + path);
+        }
+    }
+    return {};
+}
+
+auto remove_all(std::string const& path) -> Result<void>
+{
+    auto wpath = to_wide(path);
+    auto attrs = GetFileAttributesW(wpath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return {};
+    }
+    if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        if (!DeleteFileW(wpath.c_str())) {
+            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + path);
+        }
+        return {};
+    }
+    auto entries = read_directory(path);
+    if (entries) {
+        for (auto const& e : *entries) {
+            auto child = path + "/" + e.name;
+            auto r = remove_all(child);
+            if (!r) {
+                return r;
+            }
+        }
+    }
+    if (!RemoveDirectoryW(wpath.c_str())) {
+        return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + path);
+    }
+    return {};
+}
+
+auto rename_path(std::string const& from, std::string const& to) -> Result<void>
+{
+    auto wfrom = to_wide(from);
+    auto wto = to_wide(to);
+    if (!MoveFileExW(wfrom.c_str(), wto.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + from + " -> " + to);
+    }
+    return {};
+}
+
+auto copy_file(std::string const& from, std::string const& to) -> Result<void>
+{
+    auto wfrom = to_wide(from);
+    auto wto = to_wide(to);
+    if (!CopyFileW(wfrom.c_str(), wto.c_str(), FALSE)) {
+        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + from + " -> " + to);
+    }
+    return {};
+}
+
+// Path resolution
+
+auto current_directory() -> Result<std::string>
+{
+    auto len = GetCurrentDirectoryW(0, nullptr);
+    if (len == 0) {
+        return make_error<std::string>(ErrorCode::IoError, "Failed to get current directory");
+    }
+    auto buf = std::wstring(len, L'\0');
+    GetCurrentDirectoryW(len, buf.data());
+    buf.resize(len - 1);
+    auto result = from_wide(buf);
+    for (auto& c : result) {
+        if (c == '\\') {
+            c = '/';
+        }
+    }
+    return result;
+}
+
+auto canonical(std::string const& path) -> Result<std::string>
+{
+    auto wpath = to_wide(path);
+    auto len = GetFullPathNameW(wpath.c_str(), 0, nullptr, nullptr);
+    if (len == 0) {
+        return make_error<std::string>(ErrorCode::IoError, "Failed to resolve path: " + path);
+    }
+    auto buf = std::wstring(len, L'\0');
+    GetFullPathNameW(wpath.c_str(), len, buf.data(), nullptr);
+    buf.resize(len - 1);
+    auto result = from_wide(buf);
+    for (auto& c : result) {
+        if (c == '\\') {
+            c = '/';
+        }
+    }
+    return result;
+}
+
+auto absolute(std::string const& path) -> Result<std::string>
+{
+    return canonical(path);
+}
+
+auto read_symlink(std::string const& path) -> Result<std::string>
+{
+    auto wpath = to_wide(path);
+    auto h = CreateFileW(
+        wpath.c_str(),
+        0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        nullptr
+    );
+    if (h == INVALID_HANDLE_VALUE) {
+        return make_error<std::string>(ErrorCode::IoError, "Failed to read symlink: " + path);
+    }
+    auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
+    if (len == 0) {
+        CloseHandle(h);
+        return make_error<std::string>(ErrorCode::IoError, "Failed to read symlink: " + path);
+    }
+    auto buf = std::wstring(len, L'\0');
+    GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
+    CloseHandle(h);
+    buf.resize(len - 1);
+    auto result = from_wide(buf);
+    for (auto& c : result) {
+        if (c == '\\') {
+            c = '/';
+        }
+    }
+    return result;
+}
+
+// File I/O
+
+auto read_file(std::string const& path) -> Result<std::string>
+{
+    auto wpath = to_wide(path);
+    auto h = CreateFileW(
+        wpath.c_str(),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+    if (h == INVALID_HANDLE_VALUE) {
+        return make_error<std::string>(ErrorCode::IoError, "Failed to open file: " + path);
+    }
+    auto file_size = LARGE_INTEGER {};
+    GetFileSizeEx(h, &file_size);
+    auto size = static_cast<std::size_t>(file_size.QuadPart);
+    auto content = std::string(size, '\0');
+    auto bytes_read = DWORD {};
+    ReadFile(h, content.data(), static_cast<DWORD>(size), &bytes_read, nullptr);
+    CloseHandle(h);
+    content.resize(bytes_read);
+    return content;
+}
+
+auto write_file(std::string const& path, std::string_view data) -> Result<void>
+{
+    auto par = std::string { pup::path::parent(path) };
+    if (!par.empty()) {
+        auto r = create_directories(par);
+        if (!r) {
+            return r;
+        }
+    }
+    auto wpath = to_wide(path);
+    auto h = CreateFileW(
+        wpath.c_str(),
+        GENERIC_WRITE,
+        0,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
+    );
+    if (h == INVALID_HANDLE_VALUE) {
+        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + path);
+    }
+    auto bytes_written = DWORD {};
+    auto ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
+    CloseHandle(h);
+    if (!ok || bytes_written != data.size()) {
+        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + path);
+    }
+    return {};
+}
+
+// Directory traversal
+
+auto read_directory(std::string const& path) -> Result<std::vector<DirEntry>>
+{
+    auto wpath = to_wide(path) + L"\\*";
+    auto fd = WIN32_FIND_DATAW {};
+    auto h = FindFirstFileW(wpath.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return make_error<std::vector<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + path);
+    }
+    auto entries = std::vector<DirEntry> {};
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) {
+            continue;
+        }
+        auto name = from_wide(fd.cFileName);
+        auto is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        entries.push_back(DirEntry { std::move(name), is_dir });
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return entries;
+}
+
+auto walk_directory(std::string const& path, WalkVisitor const& visitor) -> Result<void>
+{
+    auto walk_impl = [&](auto& self, std::string const& base, std::string const& rel) -> Result<void> {
+        auto full = rel.empty() ? base : base + "/" + rel;
+        auto entries = read_directory(full);
+        if (!entries) {
+            return entries.error();
+        }
+        for (auto const& e : *entries) {
+            auto child_rel = rel.empty() ? e.name : rel + "/" + e.name;
+            auto should_recurse = visitor(e, child_rel);
+            if (e.is_dir && should_recurse) {
+                auto r = self(self, base, child_rel);
+                if (!r) {
+                    return r;
+                }
+            }
+        }
+        return {};
+    };
+    return walk_impl(walk_impl, path, "");
 }
 
 } // namespace pup::platform

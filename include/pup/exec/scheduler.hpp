@@ -8,7 +8,6 @@
 #include "runner.hpp"
 
 #include <atomic>
-#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -29,7 +28,7 @@ struct BuildJob {
     NodeId id = 0;
     std::string command = {};
     std::string display = {};
-    std::filesystem::path working_dir = {};
+    std::string working_dir = {};
     std::vector<std::string> inputs = {};
     std::vector<std::string> outputs = {};
     std::vector<std::string> order_only_inputs = {}; ///< Order-only dependencies
@@ -66,9 +65,9 @@ struct SchedulerOptions {
     bool keep_going = false;                          ///< Continue after failures
     bool dry_run = false;                             ///< Print commands without executing
     bool verbose = false;                             ///< Print commands as they run
-    std::filesystem::path source_root = {};           ///< Source tree root (where Tupfile.ini lives)
-    std::filesystem::path config_root = {};           ///< Config tree root (where Tupfiles live, for 3-tree builds)
-    std::filesystem::path output_root = {};           ///< Output tree root (where outputs/.pup go)
+    std::string source_root = {};
+    std::string config_root = {};
+    std::string output_root = {};           ///< Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 

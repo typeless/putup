@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/output.hpp"
+#include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -16,17 +18,17 @@ constexpr auto ASCII_CONTROL_CHAR_MAX = static_cast<unsigned char>(0x1F);
 }
 
 auto remove_empty_directories(
-    std::set<std::filesystem::path> const& output_dirs,
-    std::filesystem::path const& build_dir,
-    std::filesystem::path const& source_dir,
+    std::set<std::string> const& output_dirs,
+    std::string const& build_dir,
+    std::string const& source_dir,
     OutputMode mode
 ) -> std::size_t
 {
     auto removed = std::size_t { 0 };
 
-    auto dirs = std::vector<std::filesystem::path>(output_dirs.begin(), output_dirs.end());
+    auto dirs = std::vector<std::string>(output_dirs.begin(), output_dirs.end());
     std::ranges::sort(dirs, std::greater {}, [](auto const& p) {
-        return p.string().size();
+        return p.size();
     });
 
     for (auto const& dir : dirs) {
@@ -34,22 +36,22 @@ auto remove_empty_directories(
             continue;
         }
 
-        auto rel = std::filesystem::relative(dir, build_dir);
-        if (rel.string().starts_with("..")) {
+        auto rel = pup::path::relative(dir, build_dir);
+        if (rel.starts_with("..")) {
             continue;
         }
 
-        if (!std::filesystem::exists(dir) || !std::filesystem::is_empty(dir)) {
+        if (!pup::platform::exists(dir) || !pup::platform::is_empty(dir)) {
             continue;
         }
 
         if (mode.dry_run) {
-            printf("Would remove empty dir: %s\n", dir.string().c_str());
+            printf("Would remove empty dir: %s\n", dir.c_str());
         } else {
-            std::filesystem::remove(dir);
+            (void)pup::platform::remove_file(dir);
             ++removed;
             if (mode.verbose) {
-                printf("Removed empty dir: %s\n", dir.string().c_str());
+                printf("Removed empty dir: %s\n", dir.c_str());
             }
         }
     }

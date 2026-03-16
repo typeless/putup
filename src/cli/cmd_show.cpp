@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/core/path.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
@@ -39,7 +40,7 @@ auto load_index_for_all_deps(
     }
 
     auto index_path = layout.index_path();
-    if (!std::filesystem::exists(index_path)) {
+    if (!pup::platform::exists(index_path)) {
         fprintf(stderr, "Warning: No index found - run 'putup' first\n");
         return std::nullopt;
     }
@@ -150,9 +151,9 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         auto inputs = ctx.graph().get_inputs(id);
         for (auto input_id : inputs) {
             if (node_id::is_command(input_id)) {
-                auto path = std::filesystem::path { node_path };
-                if (path.has_parent_path()) {
-                    auto parent = path.parent_path().generic_string();
+                auto path = std::string { node_path };
+                if (!pup::path::parent(path).empty()) {
+                    auto parent = std::string { pup::path::parent(path) };
                     if (!parent.empty() && parent != ".") {
                         output_dirs.insert(parent);
                     }
@@ -372,18 +373,18 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
         auto working_dir = ctx.layout().source_root;
         if (!source_dir_sv.empty()) {
-            working_dir /= source_dir_sv;
+            working_dir = pup::path::join(working_dir, std::string { source_dir_sv });
         }
 
         // Convert project-root-relative paths to working-dir-relative
-        auto source_abs = ctx.layout().source_root / source_file;
-        auto source_rel = std::filesystem::relative(source_abs, working_dir).generic_string();
+        auto source_abs = pup::path::join(ctx.layout().source_root, source_file);
+        auto source_rel = pup::path::relative(source_abs, working_dir);
 
         auto output_rel = std::string {};
         if (!output_file.empty()) {
             // Generated files exist at output_root
-            auto output_abs = ctx.layout().output_root / output_file;
-            output_rel = std::filesystem::relative(output_abs, working_dir).generic_string();
+            auto output_abs = pup::path::join(ctx.layout().output_root, output_file);
+            output_rel = pup::path::relative(output_abs, working_dir);
         }
 
         auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
@@ -398,7 +399,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         first = false;
 
         printf("  {\n");
-        printf("    \"directory\": \"%s\",\n", escape_json(working_dir.string()).c_str());
+        printf("    \"directory\": \"%s\",\n", escape_json(working_dir).c_str());
 
         printf("    \"arguments\": [");
         for (std::size_t i = 0; i < args.size(); ++i) {

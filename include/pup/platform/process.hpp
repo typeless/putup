@@ -6,7 +6,6 @@
 #include "pup/core/result.hpp"
 
 #include <chrono>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,7 +26,7 @@ struct ProcessResult {
 /// Options for process execution
 struct ProcessOptions {
     std::string command;
-    std::filesystem::path working_dir;
+    std::string working_dir;
     std::vector<std::string> env;
     bool inherit_env = true;
     bool capture_stdout = true;

@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/platform/file_io.hpp"
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
@@ -25,21 +26,21 @@ auto install_config_file(
     std::string_view variant_name
 ) -> int
 {
-    auto config_path = std::filesystem::path { config_file };
-    if (config_path.is_relative()) {
-        config_path = std::filesystem::current_path() / config_path;
+    auto config_path = std::string { config_file };
+    if (!pup::path::is_absolute(config_path)) {
+        config_path = pup::path::join(*pup::platform::current_directory(), config_path);
     }
 
-    if (!std::filesystem::exists(config_path)) {
-        fprintf(stderr, "[%.*s] Error: Config file not found: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str());
+    if (!pup::platform::exists(config_path)) {
+        fprintf(stderr, "[%.*s] Error: Config file not found: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str());
         return EXIT_FAILURE;
     }
 
-    auto dest = layout.output_root / "tup.config";
-    std::filesystem::create_directories(dest.parent_path());
-    std::filesystem::copy_file(config_path, dest, std::filesystem::copy_options::overwrite_existing);
+    auto dest = pup::path::join(layout.output_root, "tup.config");
+    (void)pup::platform::create_directories(std::string { pup::path::parent(dest) });
+    (void)pup::platform::copy_file(config_path, dest);
 
-    printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str(), dest.string().c_str());
+    printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str(), dest.c_str());
     return EXIT_SUCCESS;
 }
 
@@ -83,12 +84,12 @@ auto configure_single_variant(
 
     // Helper to ensure tup.config exists for variant detection (only on success)
     auto ensure_config = [&]() {
-        auto config_path = ctx.layout().output_root / "tup.config";
-        if (!std::filesystem::exists(config_path)) {
-            std::filesystem::create_directories(config_path.parent_path());
+        auto config_path = pup::path::join(ctx.layout().output_root, "tup.config");
+        if (!pup::platform::exists(config_path)) {
+            (void)pup::platform::create_directories(std::string { pup::path::parent(config_path) });
             auto ofs = std::ofstream { config_path };
             ofs.close();
-            printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.string().c_str());
+            printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str());
         }
     };
 

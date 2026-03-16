@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/core/path.hpp"
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
@@ -229,7 +230,7 @@ auto collect_scope_with_upstream_commands(
 }
 
 auto find_changed_files_with_implicit(
-    std::filesystem::path const& source_root,
+    std::string const& source_root,
     pup::index::Index const& old_index,
     std::vector<std::string> const& scopes,
     std::set<std::string> const& upstream_files,
@@ -259,8 +260,8 @@ auto find_changed_files_with_implicit(
 
         // File resolution:
         // All paths are now source-relative (generated files include build root, e.g., "build/program").
-        auto file_path = std::filesystem::path { file.path };
-        auto path = file_path.is_absolute() ? file_path : source_root / file_path;
+        auto file_path = std::string { file.path };
+        auto path = pup::path::is_absolute(file_path) ? file_path : pup::path::join(source_root, file_path);
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
@@ -326,18 +327,18 @@ struct ImplicitDepContext {
     std::unordered_map<std::string, pup::NodeId>& path_to_id;
     pup::NodeId& next_id;
     std::set<std::pair<pup::NodeId, pup::NodeId>>& added_edges;
-    std::filesystem::path const& source_root;
+    std::string const& source_root;
 };
 
 /// Recursively get or create directory entries in the index.
 /// Returns the NodeId for the directory at dir_path.
 auto get_or_create_dir(
     ImplicitDepContext& ctx,
-    std::filesystem::path const& dir_path
+    std::string const& dir_path
 ) -> pup::NodeId
 {
-    auto normalized = dir_path.lexically_normal();
-    auto path_str = normalized.generic_string();
+    auto normalized = pup::path::normalize(dir_path);
+    auto path_str = normalized;
 
     if (path_str.empty() || path_str == ".") {
         return pup::NodeId { 0 };
@@ -366,9 +367,9 @@ auto get_or_create_dir(
         return dir_id;
     }
 
-    auto parent_path = normalized.parent_path();
+    auto parent_path = std::string { pup::path::parent(normalized) };
     auto parent_id = get_or_create_dir(ctx, parent_path);
-    auto basename = normalized.filename().string();
+    auto basename = std::string { pup::path::filename(normalized) };
 
     auto dir_id = ctx.next_id++;
     auto entry = pup::index::FileEntry {
@@ -392,14 +393,14 @@ auto get_or_create_dir(
 /// Creates parent directories as needed and returns the file's NodeId.
 auto create_implicit_file(
     ImplicitDepContext& ctx,
-    std::filesystem::path const& abs_path,
+    std::string const& abs_path,
     std::string const& rel_path
 ) -> pup::NodeId
 {
     auto content_hash = pup::Hash256 {};
     auto file_size = std::uint64_t { 0 };
     auto mtime_ns = std::int64_t { 0 };
-    if (std::filesystem::exists(abs_path)) {
+    if (pup::platform::exists(abs_path)) {
         auto hash_result = pup::sha256_file(abs_path);
         if (hash_result) {
             content_hash = *hash_result;
@@ -414,9 +415,9 @@ auto create_implicit_file(
         }
     }
 
-    auto fs_path = std::filesystem::path { rel_path };
-    auto parent_id = get_or_create_dir(ctx, fs_path.parent_path());
-    auto basename = fs_path.filename().string();
+    auto fs_path = std::string { rel_path };
+    auto parent_id = get_or_create_dir(ctx, std::string { pup::path::parent(fs_path) });
+    auto basename = std::string { pup::path::filename(fs_path) };
 
     auto file_id = ctx.next_id++;
 
@@ -441,8 +442,8 @@ auto create_implicit_file(
 /// Returns the populated index and a path-to-id mapping for later use.
 auto serialize_graph_nodes(
     pup::graph::BuildGraph const& graph,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root
+    std::string const& source_root,
+    std::string const& output_root
 ) -> std::pair<pup::index::Index, std::unordered_map<std::string, pup::NodeId>>
 {
     auto index = pup::index::Index {};
@@ -471,14 +472,14 @@ auto serialize_graph_nodes(
             }
 
             auto file_path = (node->type == pup::NodeType::Generated)
-                ? output_root / fs_path
-                : source_root / node_path;
+                ? pup::path::join(output_root, fs_path)
+                : pup::path::join(source_root, node_path);
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
             auto mtime_ns = std::int64_t { 0 };
 
-            if (std::filesystem::exists(file_path)) {
+            if (pup::platform::exists(file_path)) {
                 auto hash_result = pup::sha256_file(file_path);
                 if (hash_result) {
                     content_hash = *hash_result;
@@ -633,14 +634,14 @@ auto process_implicit_deps(
 {
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
-            auto dep_fs_path = std::filesystem::path { dep_path };
-            auto abs_path = dep_fs_path.is_absolute() ? dep_fs_path : ctx.source_root / dep_fs_path;
+            auto dep_fs_path = std::string { dep_path };
+            auto abs_path = pup::path::is_absolute(dep_fs_path) ? dep_fs_path : pup::path::join(ctx.source_root, dep_fs_path);
 
             auto rel_path = std::string {};
             if (pup::is_path_under(abs_path, ctx.source_root)) {
-                rel_path = std::filesystem::relative(abs_path, ctx.source_root).generic_string();
+                rel_path = pup::path::relative(abs_path, ctx.source_root);
             } else {
-                rel_path = abs_path.generic_string();
+                rel_path = abs_path;
             }
 
             auto it = ctx.path_to_id.find(rel_path);
@@ -688,8 +689,8 @@ auto preserve_old_implicit_edges(
         }
 
         auto new_file_it = ctx.path_to_id.find(old_file->path);
-        auto old_path = std::filesystem::path { old_file->path };
-        auto abs_path = old_path.is_absolute() ? old_path : ctx.source_root / old_path;
+        auto old_path = std::string { old_file->path };
+        auto abs_path = pup::path::is_absolute(old_path) ? old_path : pup::path::join(ctx.source_root, old_path);
         auto new_from_id = new_file_it != ctx.path_to_id.end()
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file->path);
@@ -774,8 +775,8 @@ auto expand_implicit_deps(
 auto build_index(
     pup::graph::BuildGraph const& graph,
     std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
-    std::filesystem::path const& source_root,
-    std::filesystem::path const& output_root,
+    std::string const& source_root,
+    std::string const& output_root,
     pup::index::Index const* old_index = nullptr
 ) -> pup::index::Index
 {
@@ -879,7 +880,7 @@ auto detect_new_commands(
 auto remove_stale_outputs(
     pup::graph::BuildGraph const& graph,
     pup::index::Index const& idx,
-    std::filesystem::path const& source_root,
+    std::string const& source_root,
     std::string_view variant_name,
     bool dry_run,
     bool verbose
@@ -899,13 +900,12 @@ auto remove_stale_outputs(
             }
 
             // Paths now include build root (e.g., "build/program")
-            auto abs_path = source_root / file->path;
-            if (std::filesystem::exists(abs_path)) {
+            auto abs_path = pup::path::join(source_root, file->path);
+            if (pup::platform::exists(abs_path)) {
                 if (dry_run) {
                     vprint(variant_name, "Would remove stale: %s\n", file->path.c_str());
                 } else {
-                    auto ec = std::error_code {};
-                    if (std::filesystem::remove(abs_path, ec)) {
+                    if (pup::platform::remove_file(abs_path)) {
                         if (verbose) {
                             vprint(variant_name, "  Removed stale: %s\n", file->path.c_str());
                         }
@@ -1170,31 +1170,29 @@ auto build_single_variant(
             auto& deps = discovered_deps[target_id];
 
             for (auto const& dep_path : job_result.discovered_deps) {
-                auto ec = std::error_code {};
-                auto resolved = std::filesystem::path {};
-                if (std::filesystem::path { dep_path }.is_absolute()) {
-                    resolved = std::filesystem::weakly_canonical(dep_path, ec);
-                } else {
-                    resolved = std::filesystem::weakly_canonical(job.working_dir / dep_path, ec);
-                }
-                if (ec) {
+                auto to_resolve = pup::path::is_absolute(dep_path)
+                    ? dep_path
+                    : pup::path::join(job.working_dir, dep_path);
+                auto resolved_result = pup::platform::canonical(to_resolve);
+                if (!resolved_result) {
                     if (opts.verbose) {
-                        fprintf(stderr, "Warning: Skipping dependency '%s': %s\n", dep_path.c_str(), ec.message().c_str());
+                        fprintf(stderr, "Warning: Skipping dependency '%s': %s\n", dep_path.c_str(), resolved_result.error().message.c_str());
                     }
                     continue;
                 }
+                auto resolved = *resolved_result;
 
                 if (pup::is_path_under(resolved, ctx.layout().source_root)) {
-                    auto rel = std::filesystem::relative(resolved, ctx.layout().source_root, ec);
-                    if (ec) {
+                    auto rel = pup::path::relative(resolved, ctx.layout().source_root);
+                    if (rel.starts_with("..")) {
                         if (opts.verbose) {
-                            fprintf(stderr, "Warning: Cannot relativize '%s': %s\n", resolved.string().c_str(), ec.message().c_str());
+                            fprintf(stderr, "Warning: Cannot relativize '%s'\n", resolved.c_str());
                         }
                         continue;
                     }
-                    deps.push_back(rel.generic_string());
+                    deps.push_back(rel);
                 } else {
-                    deps.push_back(resolved.generic_string());
+                    deps.push_back(resolved);
                 }
             }
         }

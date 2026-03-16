@@ -8,7 +8,6 @@
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
 
-#include <filesystem>
 #include <functional>
 #include <memory>
 #include <set>
@@ -31,10 +30,10 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    std::filesystem::path source_root;                                 ///< Source tree root (where source files live)
-    std::filesystem::path config_root;                                 ///< Config tree root (where Tupfiles live)
-    std::filesystem::path output_root;                                 ///< Output tree root (where outputs/.pup go)
-    std::filesystem::path config_path;                                 ///< Path to tup.config (for sticky edge tracking)
+    std::string source_root;                                 ///< Source tree root (where source files live)
+    std::string config_root;                                 ///< Config tree root (where Tupfiles live)
+    std::string output_root;                                 ///< Output tree root (where outputs/.pup go)
+    std::string config_path;                                 ///< Path to tup.config (for sticky edge tracking)
     bool expand_globs = true;                                          ///< Expand glob patterns
     bool validate_inputs = true;                                       ///< Check that input files exist
     bool verbose = false;                                              ///< Print verbose output
@@ -77,8 +76,8 @@ struct BuilderContext {
     std::unordered_set<std::string> included_files = {};
     std::set<std::string> exported_vars = {}; ///< Environment variables to export to commands
 
-    std::filesystem::path current_dir = {};
-    std::filesystem::path current_file = {};
+    std::string current_dir = {};
+    std::string current_file = {};
     std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     /// Config variables used during current command expansion (cleared per command)
