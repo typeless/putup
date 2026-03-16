@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string_hash.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
@@ -163,20 +164,7 @@ struct DirNameKeyEqual {
     }
 };
 
-/// Transparent hash for string heterogeneous lookup
-struct StringHash {
-    using is_transparent = void;
-
-    auto operator()(std::string_view sv) const noexcept -> std::size_t
-    {
-        return std::hash<std::string_view> {}(sv);
-    }
-
-    auto operator()(std::string const& s) const noexcept -> std::size_t
-    {
-        return std::hash<std::string_view> {}(s);
-    }
-};
+using pup::StringHash;
 
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {

@@ -9,7 +9,13 @@ extern "C" {
 }
 
 #include <cstring>
-#include <fstream>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace pup {
 
@@ -84,22 +90,46 @@ auto sha256_file(std::string const& path) -> Result<Hash256>
 {
     ++thread_metrics().hash_computations;
 
-    auto file = std::ifstream { path, std::ios::binary };
-    if (!file) {
+#ifdef _WIN32
+    auto wlen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, nullptr, 0);
+    auto wpath = std::wstring(static_cast<std::size_t>(wlen), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wpath.data(), wlen);
+
+    auto file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
         return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path);
     }
 
     auto state = sha256_init();
-    auto buffer = std::array<char, 8192> {};
+    char buffer[8192];
+    auto bytes_read = DWORD {};
 
-    while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
-        auto const bytes_read = static_cast<std::size_t>(file.gcount());
-        state = sha256_update(state, std::string_view { buffer.data(), bytes_read });
+    while (ReadFile(file, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
+        state = sha256_update(state, std::string_view { buffer, bytes_read });
     }
 
-    if (file.bad()) {
-        return make_error<Hash256>(ErrorCode::IoError, "Error reading file: " + path);
+    CloseHandle(file);
+#else
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+    auto fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path);
     }
+
+    auto state = sha256_init();
+    char buffer[8192];
+
+    while (true) {
+        auto n = ::read(fd, buffer, sizeof(buffer));
+        if (n <= 0) {
+            break;
+        }
+        state = sha256_update(state, std::string_view { buffer, static_cast<std::size_t>(n) });
+    }
+
+    ::close(fd);
+#endif
 
     return sha256_finalize(state);
 }
