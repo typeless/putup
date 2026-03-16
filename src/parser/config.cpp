@@ -4,7 +4,6 @@
 #include "pup/parser/config.hpp"
 
 #include <fstream>
-#include <sstream>
 
 namespace pup::parser {
 
@@ -111,10 +110,13 @@ auto parse_config(std::filesystem::path const& path) -> Result<VarDb>
         return make_error<VarDb>(ErrorCode::NotFound, "Cannot open config file: " + path.string());
     }
 
-    auto ss = std::ostringstream {};
-    ss << file.rdbuf();
+    file.seekg(0, std::ios::end);
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    auto content = std::string(static_cast<std::size_t>(size), '\0');
+    file.read(content.data(), size);
 
-    return parse_config_string(ss.str());
+    return parse_config_string(content);
 }
 
 } // namespace pup::parser

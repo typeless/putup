@@ -19,7 +19,7 @@ auto RulePatternRegistry::match_and_generate(CommandInfo const& cmd) const
     auto result = std::vector<GeneratedRule> {};
 
     for (auto const& pattern : patterns_) {
-        if (!std::regex_search(cmd.command, pattern.command_pattern)) {
+        if (!pattern.matches(cmd.command)) {
             continue;
         }
 
@@ -34,7 +34,7 @@ auto RulePatternRegistry::match_and_generate(CommandInfo const& cmd) const
 auto make_gcc_depfile_pattern() -> RulePattern
 {
     return RulePattern {
-        .command_pattern = std::regex { R"((gcc|g\+\+|clang|clang\+\+|cc|c\+\+).*\s-c\s)" },
+        .matches = scanners::matches_gcc_compile,
 
         .generate = [](CommandInfo const& cmd) -> std::optional<GeneratedRule> {
             static auto const scanner = scanners::GccScanner {};

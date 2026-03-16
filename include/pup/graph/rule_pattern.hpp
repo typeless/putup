@@ -7,7 +7,7 @@
 
 #include <functional>
 #include <optional>
-#include <regex>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -55,7 +55,7 @@ struct GeneratedRule {
 
 /// Pattern that generates additional rules when matched
 struct RulePattern {
-    std::regex command_pattern;
+    bool (*matches)(std::string_view command);
 
     /// Generate a rule from a matched command
     /// Returns nullopt if pattern matches but rule shouldn't be generated

@@ -4,7 +4,6 @@
 #include "pup/parser/depfile.hpp"
 
 #include <fstream>
-#include <sstream>
 
 namespace pup::parser {
 
@@ -102,9 +101,11 @@ auto parse_depfile(std::filesystem::path const& path) -> Result<Depfile>
         return make_error<Depfile>(ErrorCode::IoError, "Failed to open depfile");
     }
 
-    auto buffer = std::stringstream {};
-    buffer << file.rdbuf();
-    auto content = buffer.str();
+    file.seekg(0, std::ios::end);
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    auto content = std::string(static_cast<std::size_t>(size), '\0');
+    file.read(content.data(), size);
     return parse_depfile(std::string_view { content });
 }
 
