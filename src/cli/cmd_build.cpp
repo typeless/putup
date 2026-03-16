@@ -1244,12 +1244,9 @@ auto build_single_variant(
         build_result = scheduler.build_incremental(ctx.graph(), changed_files);
         break;
     case BuildMode::ScopeWithUpstream: {
-        auto all_scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
-        auto scope_cmds = pup::NodeIdMap32 {};
-        for (auto id : ctx.graph().all_nodes()) {
-            if (pup::node_id::is_command(id) && all_scope_cmds.contains(id) && !config_cmd_ids.contains(id)) {
-                scope_cmds.set(id, 1);
-            }
+        auto scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
+        for (auto const& cfg : config_cmds) {
+            scope_cmds.remove(cfg.cmd_id);
         }
         build_result = scheduler.build_subset(ctx.graph(), scope_cmds);
         break;

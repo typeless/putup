@@ -72,6 +72,11 @@ auto IdArray32::contains(std::uint32_t id) const -> bool
     return present_.contains(id);
 }
 
+auto IdArray32::remove(std::uint32_t id) -> void
+{
+    present_.remove(id);
+}
+
 auto IdArray32::clear() -> void
 {
     if (data_) {

@@ -962,7 +962,7 @@ auto Scheduler::build_targets(
     impl_->stats = BuildStats {};
 
     // Collect all commands needed to build these targets via reverse traversal
-    auto required_cmds = NodeIdMap32 { collect_required_commands(graph, target_ids) };
+    auto required_cmds = collect_required_commands(graph, target_ids);
 
     // Build all jobs, then filter to required commands
     auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };

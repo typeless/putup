@@ -30,6 +30,7 @@ public:
     [[nodiscard]]
     auto contains(std::uint32_t id) const -> bool;
 
+    auto remove(std::uint32_t id) -> void;
     auto clear() -> void;
 
     [[nodiscard]]
