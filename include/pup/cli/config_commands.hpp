@@ -3,10 +3,10 @@
 
 #pragma once
 
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 
-#include <set>
 #include <string>
 #include <vector>
 
@@ -32,7 +32,7 @@ auto find_config_commands(
 /// Collect all commands that the given commands depend on (transitively).
 auto collect_command_dependencies(
     graph::BuildGraph const& graph,
-    std::set<NodeId> const& commands
-) -> std::set<NodeId>;
+    NodeIdMap32 const& commands
+) -> NodeIdMap32;
 
 } // namespace pup::cli

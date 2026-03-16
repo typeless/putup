@@ -965,11 +965,12 @@ TEST_CASE("collect_command_dependencies follows order-only deps through groups",
     (void)graph.add_order_only_edge(*group1, *c2);
     (void)graph.add_edge(*c2, *file2, LinkType::Normal);
 
-    auto commands = std::set<pup::NodeId> { *c2 };
+    auto commands = pup::NodeIdMap32 {};
+    commands.set(*c2, 1);
     auto deps = pup::cli::collect_command_dependencies(graph, commands);
 
-    REQUIRE(deps.count(*c2) == 1);
-    REQUIRE(deps.count(*c1) == 1);
+    REQUIRE(deps.contains(*c2));
+    REQUIRE(deps.contains(*c1));
 }
 
 TEST_CASE("Topological sort respects order-only deps through groups", "[topo][groups][order-only]")

@@ -42,6 +42,13 @@ public:
         phis_.clear();
     }
 
+    [[nodiscard]] auto size() const -> std::size_t
+    {
+        return files_.count() + cmds_.count() + conds_.count() + phis_.count();
+    }
+
+    [[nodiscard]] auto empty() const -> bool { return size() == 0; }
+
 private:
     IdArray32 files_, cmds_, conds_, phis_;
 

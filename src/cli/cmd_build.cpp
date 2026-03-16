@@ -223,12 +223,12 @@ auto collect_upstream_files(
 auto collect_scope_with_upstream_commands(
     pup::graph::BuildGraph const& graph,
     std::vector<std::string> const& scopes
-) -> std::set<pup::NodeId>
+) -> pup::NodeIdMap32
 {
-    auto commands = std::set<pup::NodeId> {};
+    auto commands = pup::NodeIdMap32 {};
     for (auto id : walk_upstream_from_scope(graph, scopes)) {
         if (pup::node_id::is_command(id) && graph.get_command_node(id)) {
-            commands.insert(id);
+            commands.set(id, 1);
         }
     }
     return commands;
@@ -1244,9 +1244,12 @@ auto build_single_variant(
         build_result = scheduler.build_incremental(ctx.graph(), changed_files);
         break;
     case BuildMode::ScopeWithUpstream: {
-        auto scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
-        for (auto const& cfg : config_cmds) {
-            scope_cmds.erase(cfg.cmd_id);
+        auto all_scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
+        auto scope_cmds = pup::NodeIdMap32 {};
+        for (auto id : ctx.graph().all_nodes()) {
+            if (pup::node_id::is_command(id) && all_scope_cmds.contains(id) && !config_cmd_ids.contains(id)) {
+                scope_cmds.set(id, 1);
+            }
         }
         build_result = scheduler.build_subset(ctx.graph(), scope_cmds);
         break;
@@ -1255,10 +1258,10 @@ auto build_single_variant(
         build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
         break;
     case BuildMode::Subset: {
-        auto non_config_cmds = std::set<NodeId> {};
+        auto non_config_cmds = pup::NodeIdMap32 {};
         for (auto id : ctx.graph().all_nodes()) {
             if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
-                non_config_cmds.insert(id);
+                non_config_cmds.set(id, 1);
             }
         }
         build_result = scheduler.build_subset(ctx.graph(), non_config_cmds);

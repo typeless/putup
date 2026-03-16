@@ -32,6 +32,9 @@ public:
 
     auto clear() -> void;
 
+    [[nodiscard]]
+    auto count() const -> std::size_t { return present_.count(); }
+
     auto for_each(void (*fn)(std::uint32_t id, std::uint32_t value, void* ctx), void* ctx) const -> void;
 
 private:

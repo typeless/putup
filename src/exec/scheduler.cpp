@@ -189,10 +189,10 @@ auto validate_guard_dependencies(
 auto collect_required_commands(
     graph::BuildGraph const& graph,
     std::vector<NodeId> const& target_ids
-) -> std::set<NodeId>
+) -> NodeIdMap32
 {
     auto visited = NodeIdMap32 {};
-    auto commands = std::set<NodeId> {};
+    auto commands = NodeIdMap32 {};
     auto stack = std::vector<NodeId>(target_ids.begin(), target_ids.end());
 
     while (!stack.empty()) {
@@ -205,7 +205,7 @@ auto collect_required_commands(
         visited.set(id, 1);
 
         if (node_id::is_command(id) && graph.get_command_node(id)) {
-            commands.insert(id);
+            commands.set(id, 1);
         }
 
         for (auto input_id : graph.get_inputs(id)) {
@@ -386,13 +386,7 @@ auto Scheduler::build_incremental(
         return pup::unexpected<Error>(all_jobs.error());
     }
 
-    auto affected_set = std::set<NodeId> {};
-    for (auto const& job : *all_jobs) {
-        if (affected.contains(job.id)) {
-            affected_set.insert(job.id);
-        }
-    }
-    auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected_set) };
+    auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected) };
     impl_->stats.total_jobs = jobs.size();
     impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 
@@ -919,7 +913,7 @@ auto Scheduler::build_job_list(
 
 auto Scheduler::build_subset(
     graph::BuildGraph const& graph,
-    std::set<NodeId> const& command_ids
+    NodeIdMap32 const& command_ids
 ) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
@@ -968,7 +962,7 @@ auto Scheduler::build_targets(
     impl_->stats = BuildStats {};
 
     // Collect all commands needed to build these targets via reverse traversal
-    auto required_cmds = std::set<NodeId> { collect_required_commands(graph, target_ids) };
+    auto required_cmds = NodeIdMap32 { collect_required_commands(graph, target_ids) };
 
     // Build all jobs, then filter to required commands
     auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
@@ -1004,7 +998,7 @@ auto Scheduler::build_targets(
 
 auto Scheduler::filter_jobs(
     std::vector<BuildJob> const& all_jobs,
-    std::set<NodeId> const& affected_nodes
+    NodeIdMap32 const& affected_nodes
 ) -> std::vector<BuildJob>
 {
     auto result = std::vector<BuildJob> {};

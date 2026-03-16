@@ -52,11 +52,25 @@ auto find_config_commands(
 
 auto collect_command_dependencies(
     graph::BuildGraph const& graph,
-    std::set<NodeId> const& commands
-) -> std::set<NodeId>
+    NodeIdMap32 const& commands
+) -> NodeIdMap32
 {
-    auto result = std::set<NodeId> { commands };
-    auto worklist = std::vector<NodeId> { commands.begin(), commands.end() };
+    auto result = NodeIdMap32 {};
+    auto worklist = std::vector<NodeId> {};
+
+    auto try_add = [&](NodeId id) {
+        if (!result.contains(id)) {
+            result.set(id, 1);
+            worklist.push_back(id);
+        }
+    };
+
+    // Seed with initial commands — iterate all graph nodes, filter by membership
+    for (auto id : graph.all_nodes()) {
+        if (node_id::is_command(id) && commands.contains(id)) {
+            try_add(id);
+        }
+    }
 
     while (!worklist.empty()) {
         auto cmd_id = worklist.back();
@@ -64,17 +78,13 @@ auto collect_command_dependencies(
 
         for (auto input_id : graph.get_inputs(cmd_id)) {
             if (node_id::is_command(input_id)) {
-                if (result.insert(input_id).second) {
-                    worklist.push_back(input_id);
-                }
+                try_add(input_id);
                 continue;
             }
 
             for (auto producer_id : graph.get_inputs(input_id)) {
                 if (node_id::is_command(producer_id)) {
-                    if (result.insert(producer_id).second) {
-                        worklist.push_back(producer_id);
-                    }
+                    try_add(producer_id);
                 }
             }
         }
@@ -82,9 +92,7 @@ auto collect_command_dependencies(
         auto add_producers = [&](NodeId file_id) {
             for (auto producer_id : graph.get_inputs(file_id)) {
                 if (node_id::is_command(producer_id)) {
-                    if (result.insert(producer_id).second) {
-                        worklist.push_back(producer_id);
-                    }
+                    try_add(producer_id);
                 }
             }
         };
