@@ -3,28 +3,27 @@
 
 #include "pup/graph/topo.hpp"
 
+#include "pup/core/node_id_map.hpp"
+
 #include <algorithm>
 #include <stack>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace pup::graph {
 
 namespace {
 
-enum class Color { White,
-                   Gray,
-                   Black };
+enum class Color : std::uint32_t { White = 0,
+                                    Gray = 1,
+                                    Black = 2 };
 
 struct DfsState {
-    std::unordered_map<NodeId, Color> color;
-    std::unordered_map<NodeId, NodeId> parent;
+    NodeIdMap32 color;
+    NodeIdMap32 parent;
     std::vector<NodeId> order;
     std::vector<NodeId> cycle;
     bool has_cycle = false;
 };
 
-// Forward declaration for mutual recursion
 auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void;
 
 auto visit_neighbors(
@@ -38,17 +37,17 @@ auto visit_neighbors(
         if (state.has_cycle) {
             return;
         }
-        if (state.color[v] == Color::White) {
-            state.parent[v] = u;
+        if (state.color.get(v) == static_cast<std::uint32_t>(Color::White)) {
+            state.parent.set(v, u);
             dfs_visit(graph, v, state);
-        } else if (state.color[v] == Color::Gray) {
+        } else if (state.color.get(v) == static_cast<std::uint32_t>(Color::Gray)) {
             state.has_cycle = true;
             state.cycle.clear();
             state.cycle.push_back(v);
             auto curr = u;
             while (curr != v) {
                 state.cycle.push_back(curr);
-                curr = state.parent[curr];
+                curr = state.parent.get(curr);
             }
             state.cycle.push_back(v);
             std::ranges::reverse(state.cycle);
@@ -61,11 +60,11 @@ auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void
     if (state.has_cycle) {
         return;
     }
-    state.color[u] = Color::Gray;
+    state.color.set(u, static_cast<std::uint32_t>(Color::Gray));
     visit_neighbors(graph, u, graph.get_outputs(u), state);
     visit_neighbors(graph, u, graph.get_order_only_dependents(u), state);
     if (!state.has_cycle) {
-        state.color[u] = Color::Black;
+        state.color.set(u, static_cast<std::uint32_t>(Color::Black));
         state.order.push_back(u);
     }
 }
@@ -76,14 +75,12 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
 {
     auto state = DfsState {};
 
-    // Initialize all nodes as white (unvisited)
     for (auto id : graph.all_nodes()) {
-        state.color[id] = Color::White;
+        state.color.set(id, static_cast<std::uint32_t>(Color::White));
     }
 
-    // DFS from all unvisited nodes
     for (auto id : graph.all_nodes()) {
-        if (state.color[id] == Color::White) {
+        if (state.color.get(id) == static_cast<std::uint32_t>(Color::White)) {
             dfs_visit(graph, id, state);
         }
         if (state.has_cycle) {
@@ -91,7 +88,6 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
         }
     }
 
-    // Reverse for topological order (dependencies first)
     std::ranges::reverse(state.order);
 
     return TopoSortResult {
@@ -118,7 +114,7 @@ auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
         return true;
     }
 
-    auto visited = std::unordered_set<NodeId> {};
+    auto visited = NodeIdMap32 {};
     auto stack = std::stack<NodeId> {};
 
     stack.push(source);
@@ -135,7 +131,7 @@ auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool
             continue;
         }
 
-        visited.insert(u);
+        visited.set(u, 1);
 
         for (auto v : graph.get_outputs(u)) {
             if (!visited.contains(v)) {
