@@ -20,6 +20,7 @@ test-srcs-y += test_exec.cpp
 test-srcs-y += test_glob.cpp
 test-srcs-y += test_graph.cpp
 test-srcs-y += test_hash.cpp
+test-srcs-y += test_id_bitset.cpp
 test-srcs-y += test_ignore.cpp
 test-srcs-y += test_index.cpp
 test-srcs-y += test_layout.cpp
