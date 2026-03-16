@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/arena.hpp"
 #include "pup/core/id_array.hpp"
 #include "pup/core/types.hpp"
 
@@ -58,6 +59,53 @@ private:
         if (node_id::is_condition(id)) return conds_;
         if (node_id::is_phi(id)) return phis_;
         return files_;
+    }
+};
+
+struct NodeIdArenaIndex {
+    NodeIdMap32 offsets;
+    NodeIdMap32 lengths;
+
+    auto get_slice(NodeId id) const -> ArenaSlice
+    {
+        if (!offsets.contains(id))
+            return { 0, 0 };
+        return { offsets.get(id), lengths.get(id) };
+    }
+
+    auto set_slice(NodeId id, ArenaSlice s) -> void
+    {
+        offsets.set(id, s.offset);
+        lengths.set(id, s.length);
+    }
+
+    auto contains(NodeId id) const -> bool { return offsets.contains(id); }
+
+    auto resize_files(std::uint32_t n) -> void
+    {
+        offsets.resize_files(n);
+        lengths.resize_files(n);
+    }
+    auto resize_commands(std::uint32_t n) -> void
+    {
+        offsets.resize_commands(n);
+        lengths.resize_commands(n);
+    }
+    auto resize_conditions(std::uint32_t n) -> void
+    {
+        offsets.resize_conditions(n);
+        lengths.resize_conditions(n);
+    }
+    auto resize_phis(std::uint32_t n) -> void
+    {
+        offsets.resize_phis(n);
+        lengths.resize_phis(n);
+    }
+
+    auto clear() -> void
+    {
+        offsets.clear();
+        lengths.clear();
     }
 };
 
