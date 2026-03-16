@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include "pup/core/arena.hpp"
-#include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_hash.hpp"
 #include "pup/core/string_id.hpp"
@@ -178,11 +176,13 @@ struct Graph {
     std::deque<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
     std::vector<Edge> edges;              ///< Central edge storage (single source of truth)
 
-    Arena32 edge_arena;
-    NodeIdMap64 edges_to_index;
-    NodeIdMap64 edges_from_index;
-    NodeIdMap64 order_only_to;
-    NodeIdMap64 order_only_deps;
+    // Edge indices: map NodeId -> indices into edges vector
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index;   ///< Edges pointing TO this node
+    std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index; ///< Edges pointing FROM this node
+
+    // Order-only edges stored separately (not in edges vector)
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_to_index;   ///< Order-only deps OF this node
+    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents; ///< Nodes depending on this
 
     // Node lookup indices (with transparent lookup support)
     std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual> dir_name_index;
