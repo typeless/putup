@@ -62,51 +62,36 @@ private:
     }
 };
 
-struct NodeIdArenaIndex {
-    NodeIdMap32 offsets;
-    NodeIdMap32 lengths;
-
-    auto get_slice(NodeId id) const -> ArenaSlice
+/// Maps NodeId → ArenaSlice via two parallel NodeIdMap32 (offset + length).
+/// Absent nodes return {0, 0}. Invariant: set_slice is never called with
+/// length == 0, so length == 0 reliably means "not present".
+class NodeIdArenaIndex {
+public:
+    [[nodiscard]] auto get_slice(NodeId id) const -> ArenaSlice
     {
-        if (!offsets.contains(id))
+        if (!offsets_.contains(id))
             return { 0, 0 };
-        return { offsets.get(id), lengths.get(id) };
+        return { offsets_.get(id), lengths_.get(id) };
     }
 
     auto set_slice(NodeId id, ArenaSlice s) -> void
     {
-        offsets.set(id, s.offset);
-        lengths.set(id, s.length);
+        offsets_.set(id, s.offset);
+        lengths_.set(id, s.length);
     }
 
-    auto contains(NodeId id) const -> bool { return offsets.contains(id); }
+    [[nodiscard]] auto contains(NodeId id) const -> bool { return offsets_.contains(id); }
 
-    auto resize_files(std::uint32_t n) -> void
-    {
-        offsets.resize_files(n);
-        lengths.resize_files(n);
-    }
-    auto resize_commands(std::uint32_t n) -> void
-    {
-        offsets.resize_commands(n);
-        lengths.resize_commands(n);
-    }
-    auto resize_conditions(std::uint32_t n) -> void
-    {
-        offsets.resize_conditions(n);
-        lengths.resize_conditions(n);
-    }
-    auto resize_phis(std::uint32_t n) -> void
-    {
-        offsets.resize_phis(n);
-        lengths.resize_phis(n);
-    }
+    auto resize_files(std::uint32_t n) -> void { offsets_.resize_files(n); lengths_.resize_files(n); }
+    auto resize_commands(std::uint32_t n) -> void { offsets_.resize_commands(n); lengths_.resize_commands(n); }
+    auto resize_conditions(std::uint32_t n) -> void { offsets_.resize_conditions(n); lengths_.resize_conditions(n); }
+    auto resize_phis(std::uint32_t n) -> void { offsets_.resize_phis(n); lengths_.resize_phis(n); }
 
-    auto clear() -> void
-    {
-        offsets.clear();
-        lengths.clear();
-    }
+    auto clear() -> void { offsets_.clear(); lengths_.clear(); }
+
+private:
+    NodeIdMap32 offsets_;
+    NodeIdMap32 lengths_;
 };
 
 } // namespace pup
