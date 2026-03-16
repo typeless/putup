@@ -18,7 +18,6 @@
 #include <format>
 
 #include <algorithm>
-#include <atomic>
 #include <cstdlib>
 #include <map>
 #include <set>
@@ -856,12 +855,12 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) ->
          ++it) {
         if (!ctx.vars->contains(it->name)) {
             ctx.vars->set(it->name, it->value);
-            // Record transitive dependencies for this effective assignment
+            auto name_id = ctx.graph->intern(it->name);
             if (!it->config_deps.empty()) {
-                state.var_config_deps[it->name] = std::move(it->config_deps);
+                state.var_config_deps.get_or_create(name_id) = std::move(it->config_deps);
             }
             if (!it->env_deps.empty()) {
-                state.var_env_deps[it->name] = std::move(it->env_deps);
+                state.var_env_deps.get_or_create(name_id) = std::move(it->env_deps);
             }
         }
     }
@@ -961,10 +960,9 @@ auto process_assignment(
 
     // Save current tracking state and clear for value expansion
     // This lets us capture which config/env vars are used in the RHS
+    // SortedIdVec moved-from state is empty, so no explicit clear() needed
     auto saved_config_vars = std::move(ctx.used_config_vars);
     auto saved_env_vars = std::move(ctx.used_env_vars);
-    ctx.used_config_vars.clear();
-    ctx.used_env_vars.clear();
 
     // Evaluate the value - callbacks will populate used_*_vars
     auto value = parser::expand(*ctx.eval, assign.value);
@@ -996,25 +994,26 @@ auto process_assignment(
     auto is_effective = true;
 
     // Helper to record transitive dependencies for this variable
+    auto name_id = ctx.graph->intern(*name);
     auto record_deps = [&]() {
         if (!captured_config_deps.empty()) {
-            auto& deps = state.var_config_deps[*name];
+            auto& deps = state.var_config_deps.get_or_create(name_id);
             if (assign.op == parser::Assignment::Op::Set
                 || assign.op == parser::Assignment::Op::Define
                 || assign.op == parser::Assignment::Op::SoftSet) {
                 deps = std::move(captured_config_deps);
             } else if (assign.op == parser::Assignment::Op::Append) {
-                deps.merge(captured_config_deps);
+                deps.merge_from(captured_config_deps);
             }
         }
         if (!captured_env_deps.empty()) {
-            auto& deps = state.var_env_deps[*name];
+            auto& deps = state.var_env_deps.get_or_create(name_id);
             if (assign.op == parser::Assignment::Op::Set
                 || assign.op == parser::Assignment::Op::Define
                 || assign.op == parser::Assignment::Op::SoftSet) {
                 deps = std::move(captured_env_deps);
             } else if (assign.op == parser::Assignment::Op::Append) {
-                deps.merge(captured_env_deps);
+                deps.merge_from(captured_env_deps);
             }
         }
     };
@@ -1099,22 +1098,24 @@ auto process_conditional(
     parser::Conditional const& cond
 ) -> Result<void>
 {
-    // Clear used_config_vars before evaluating condition to capture which vars are used
-    auto saved_config_vars = ctx.used_config_vars;
-    ctx.used_config_vars.clear();
+    // Save and clear used_config_vars to capture which vars the condition uses
+    auto saved_config_vars = std::move(ctx.used_config_vars);
 
     // Evaluate condition value - this may use config vars like @(MODE)
     auto condition_true = parser::evaluate_condition(*ctx.eval, cond);
 
     // Capture config vars used in the condition expression
-    // These need to be dependencies for commands in both branches
     auto condition_vars = std::move(ctx.used_config_vars);
     ctx.used_config_vars = std::move(saved_config_vars);
 
-    // Add condition's config vars to the condition_config_vars set
-    // (accumulated for nested conditionals)
-    auto saved_condition_vars = ctx.condition_config_vars;
-    ctx.condition_config_vars.insert(condition_vars.begin(), condition_vars.end());
+    // Save condition_config_vars, then merge in condition-specific vars
+    auto saved_condition_vars = std::move(ctx.condition_config_vars);
+    // Rebuild: copy saved entries + merge condition_vars
+    auto const* d = saved_condition_vars.data();
+    for (std::size_t i = 0, n = saved_condition_vars.size(); i < n; ++i) {
+        ctx.condition_config_vars.insert(d[i]);
+    }
+    ctx.condition_config_vars.merge_from(condition_vars);
     auto restore_condition_vars = ScopeGuard([&] {
         ctx.condition_config_vars = std::move(saved_condition_vars);
     });
@@ -1189,10 +1190,11 @@ auto include_single_file(
     bool is_rules
 ) -> Result<void>
 {
-    if (ctx.included_files.contains(include_path)) {
+    auto include_path_id = to_underlying(ctx.graph->intern(include_path));
+    if (ctx.included_files.contains(include_path_id)) {
         return {};
     }
-    ctx.included_files.insert(include_path);
+    ctx.included_files.insert(include_path_id);
 
     auto inc_rel = pup::path::relative(include_path, include_root);
     auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
@@ -1300,22 +1302,20 @@ auto process_import(
     // If no env, no cache, and no default, variable remains empty (tup behavior)
 
     // Create/update Variable node under $ directory for persistence
+    auto var_name_id = to_underlying(ctx.graph->intern(imp.var_name));
     if (state.env_var_dir_id != INVALID_NODE_ID) {
         auto node_name = imp.var_name + "=" + value;
         auto content_hash = sha256(value);
 
-        // Check if we already have a node for this variable (from same build session)
-        auto it = state.imported_env_var_nodes.find(imp.var_name);
+        auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
         auto const name_id = ctx.graph->intern(node_name);
-        if (it != state.imported_env_var_nodes.end()) {
-            // Update existing node in-place if value changed
-            auto* existing = ctx.graph->get_file_node(it->second);
+        if (existing_node_id) {
+            auto* existing = ctx.graph->get_file_node(*existing_node_id);
             if (existing && existing->name != name_id) {
                 existing->name = name_id;
                 existing->content_hash = content_hash;
             }
         } else {
-            // Create new Variable node
             auto node = FileNode {
                 .type = NodeType::Variable,
                 .name = name_id,
@@ -1324,7 +1324,7 @@ auto process_import(
             };
             auto result = ctx.graph->add_file_node(std::move(node));
             if (result) {
-                state.imported_env_var_nodes[imp.var_name] = *result;
+                state.imported_env_var_nodes.insert(var_name_id, *result);
             }
         }
     }
@@ -1334,7 +1334,7 @@ auto process_import(
     }
 
     // Track this as an imported variable for fine-grained dependency tracking
-    state.imported_var_names.insert(imp.var_name);
+    state.imported_var_names.insert(var_name_id);
 
     return {};
 }
@@ -1346,7 +1346,7 @@ auto process_export(
 {
     // Per tup manual: "adds the environment variable VARIABLE to the export
     // list for future :-rules"
-    ctx.exported_vars.insert(exp.var_name);
+    ctx.exported_vars.insert(to_underlying(ctx.graph->intern(exp.var_name)));
     return {};
 }
 
@@ -1494,13 +1494,14 @@ auto expand_rule(
             return it->second;
         }
         // Local group not in this rule's inputs — also defer
-        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir;
-        auto key = GroupKey { dir, std::string { name } };
-        auto found = state.group_nodes.find(key);
-        if (found != state.group_nodes.end()) {
-            if (!deferred_group_ids.contains(found->second)) {
-                deferred_group_ids.set(found->second, 1);
-                deferred_group_vec.push_back(found->second);
+        auto dir = ctx.current_dir.empty() ? std::string { "." } : ctx.current_dir;
+        auto key_str = dir + "/" + std::string { name };
+        auto key_id = to_underlying(ctx.graph->intern(key_str));
+        auto const* node_id = state.group_nodes.find(key_id);
+        if (node_id) {
+            if (!deferred_group_ids.contains(*node_id)) {
+                deferred_group_ids.set(*node_id, 1);
+                deferred_group_vec.push_back(*node_id);
             }
             auto pattern = std::vector<std::string> { std::format("%<{}>", name) };
             rule_order_only_groups[std::string { name }] = pattern;
@@ -2152,10 +2153,11 @@ auto get_or_create_group_node(
 ) -> Result<NodeId>
 {
     // Check cache first (fast path)
-    auto key = GroupKey { directory, name };
-    auto it = state.group_nodes.find(key);
-    if (it != state.group_nodes.end()) {
-        return it->second;
+    auto key_str = directory + "/" + name;
+    auto key_id = to_underlying(ctx.graph->intern(key_str));
+    auto const* cached = state.group_nodes.find(key_id);
+    if (cached) {
+        return *cached;
     }
 
     // Get or create parent directory node
@@ -2169,7 +2171,7 @@ auto get_or_create_group_node(
     // Group nodes are stored with angle-bracket name like "<gen-headers>"
     auto group_basename = "<" + name + ">";
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, group_basename)) {
-        state.group_nodes[key] = *existing;
+        state.group_nodes.insert(key_id, *existing);
         return *existing;
     }
 
@@ -2182,7 +2184,7 @@ auto get_or_create_group_node(
 
     auto result = ctx.graph->add_file_node(std::move(node));
     if (result) {
-        state.group_nodes[key] = *result;
+        state.group_nodes.insert(key_id, *result);
     }
     return result;
 }
@@ -2194,10 +2196,11 @@ auto create_command_node(
     std::string const& display
 ) -> Result<NodeId>
 {
-    // Intern exported_vars
+    // Convert exported_vars SortedIdVec (already StringIds) to set<StringId>
     auto exported_var_ids = std::set<StringId> {};
-    for (auto const& var : ctx.exported_vars) {
-        exported_var_ids.insert(ctx.graph->intern(var));
+    auto const* ev = ctx.exported_vars.data();
+    for (std::size_t i = 0, n = ctx.exported_vars.size(); i < n; ++i) {
+        exported_var_ids.insert(make_string_id(ev[i]));
     }
 
     auto node = CommandNode {
@@ -2205,7 +2208,7 @@ auto create_command_node(
         .source_dir = ctx.graph->intern(ctx.current_dir),
         .instruction_id = ctx.graph->intern(instruction),
         .exported_vars = std::move(exported_var_ids),
-        .guards = ctx.condition_stack, // Apply current guards from condition stack
+        .guards = ctx.condition_stack,
     };
 
     auto cmd_id_result = ctx.graph->add_command_node(std::move(node));
@@ -2221,28 +2224,29 @@ auto create_command_node(
     }
 
     // Add sticky edges from used config variables (fine-grained dependency tracking)
-    for (auto const& var_name : ctx.used_config_vars) {
-        auto it = state.config_var_nodes.find(var_name);
-        if (it != state.config_var_nodes.end()) {
-            (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
+    auto const* cv = ctx.used_config_vars.data();
+    for (std::size_t i = 0, n = ctx.used_config_vars.size(); i < n; ++i) {
+        auto const* node_id = state.config_var_nodes.find(cv[i]);
+        if (node_id) {
+            (void)ctx.graph->add_edge(*node_id, cmd_id, LinkType::Sticky);
         }
     }
 
     // Add sticky edges from condition config variables (phi-node model)
-    // Commands inside conditionals need to depend on the config vars used in the condition
-    // so they rebuild when the condition's value changes
-    for (auto const& var_name : ctx.condition_config_vars) {
-        auto it = state.config_var_nodes.find(var_name);
-        if (it != state.config_var_nodes.end()) {
-            (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
+    auto const* ccv = ctx.condition_config_vars.data();
+    for (std::size_t i = 0, n = ctx.condition_config_vars.size(); i < n; ++i) {
+        auto const* node_id = state.config_var_nodes.find(ccv[i]);
+        if (node_id) {
+            (void)ctx.graph->add_edge(*node_id, cmd_id, LinkType::Sticky);
         }
     }
 
     // Add sticky edges from used imported env variables (fine-grained dependency tracking)
-    for (auto const& var_name : ctx.used_env_vars) {
-        auto it = state.imported_env_var_nodes.find(var_name);
-        if (it != state.imported_env_var_nodes.end()) {
-            (void)ctx.graph->add_edge(it->second, cmd_id, LinkType::Sticky);
+    auto const* uev = ctx.used_env_vars.data();
+    for (std::size_t i = 0, n = ctx.used_env_vars.size(); i < n; ++i) {
+        auto const* node_id = state.imported_env_var_nodes.find(uev[i]);
+        if (node_id) {
+            (void)ctx.graph->add_edge(*node_id, cmd_id, LinkType::Sticky);
         }
     }
 
@@ -2257,19 +2261,9 @@ auto create_command_node(
 
 auto make_builder_state(BuilderOptions opts) -> BuilderState
 {
-    return BuilderState {
-        .options = std::move(opts),
-        .errors = {},
-        .warnings = {},
-        .group_nodes = {},
-        .deferred_edges = {},
-        .config_var_nodes = {},
-        .env_var_dir_id = INVALID_NODE_ID,
-        .imported_env_var_nodes = {},
-        .imported_var_names = {},
-        .var_config_deps = {},
-        .var_env_deps = {},
-    };
+    auto state = BuilderState {};
+    state.options = std::move(opts);
+    return state;
 }
 
 auto build_graph(
@@ -2351,14 +2345,14 @@ auto add_tupfile(
         }
 
         for (auto const& var_name : eval.config_vars->names()) {
-            // Skip CONFIG_ prefixed names (we store the stripped version)
             if (var_name.starts_with(parser::builtin_vars::CONFIG_)) {
                 continue;
             }
 
-            // Check if node already exists (shouldn't happen with empty check above, but defensive)
+            auto var_name_id = to_underlying(graph.intern(var_name));
+
             if (auto existing = graph.find_by_dir_name(config_dir_id, var_name)) {
-                state.config_var_nodes[std::string { var_name }] = *existing;
+                state.config_var_nodes.insert(var_name_id, *existing);
                 continue;
             }
 
@@ -2372,7 +2366,7 @@ auto add_tupfile(
 
             auto var_id_result = graph.add_file_node(std::move(node));
             if (var_id_result) {
-                state.config_var_nodes[std::string { var_name }] = *var_id_result;
+                state.config_var_nodes.insert(var_name_id, *var_id_result);
             }
         }
     }
@@ -2397,20 +2391,21 @@ auto add_tupfile(
         }
     }
 
+    // Thread string pool into EvalContext for StringId lookups
+    eval.string_pool = &graph.graph().strings;
+
     // Set up callback to track which config variables are used during expansion
     eval.on_config_var_used = [&ctx](std::string_view name) {
-        ctx.used_config_vars.insert(std::string { name });
+        ctx.used_config_vars.insert(to_underlying(ctx.graph->intern(name)));
     };
 
     // Set up callback to track which imported env variables are used during expansion
     eval.imported_vars = &state.imported_var_names;
     eval.on_env_var_used = [&ctx](std::string_view name) {
-        ctx.used_env_vars.insert(std::string { name });
+        ctx.used_env_vars.insert(to_underlying(ctx.graph->intern(name)));
     };
 
-    // Wire up transitive dependency maps for variable tracking
-    // When $(CXXFLAGS) is expanded and CXXFLAGS depends on @(RELEASE_CXXFLAGS),
-    // the propagation in eval.cpp will call on_config_var_used("RELEASE_CXXFLAGS")
+    // Wire up transitive dependency trackers for variable tracking
     eval.var_config_deps = &state.var_config_deps;
     eval.var_env_deps = &state.var_env_deps;
 
@@ -2436,14 +2431,15 @@ auto add_tupfile(
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
                                     ) -> std::vector<std::string> {
-        auto dir = ctx.current_dir.empty() ? "." : ctx.current_dir;
-        auto key = GroupKey { dir, std::string { name } };
-        auto it = state.group_nodes.find(key);
-        if (it == state.group_nodes.end()) {
+        auto dir = ctx.current_dir.empty() ? std::string { "." } : ctx.current_dir;
+        auto key_str = dir + "/" + std::string { name };
+        auto key_id = to_underlying(ctx.graph->intern(key_str));
+        auto const* node_id = state.group_nodes.find(key_id);
+        if (!node_id) {
             return {};
         }
         auto paths = std::vector<std::string> {};
-        auto members = get_group_members(*ctx.graph, it->second);
+        auto members = get_group_members(*ctx.graph, *node_id);
         for (auto id : members) {
             auto path = ctx.graph->get_full_path(id);
             if (!path.empty()) {

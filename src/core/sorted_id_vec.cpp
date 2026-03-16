@@ -106,6 +106,14 @@ auto SortedIdVec::size() const -> std::size_t
     return size_;
 }
 
+auto SortedIdVec::merge_from(SortedIdVec const& other) -> void
+{
+    auto const* d = other.data();
+    for (auto i = std::size_t { 0 }; i < other.size(); ++i) {
+        insert(d[i]);
+    }
+}
+
 auto SortedIdVec::data() const -> std::uint32_t const*
 {
     return data_;
