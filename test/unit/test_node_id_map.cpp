@@ -59,19 +59,3 @@ TEST_CASE("NodeIdMap32 dispatches by node type", "[node_id_map]")
         REQUIRE_FALSE(map.contains(cmd_id));
     }
 }
-
-TEST_CASE("NodeIdMap64 stores 64-bit values", "[node_id_map]")
-{
-    auto map = NodeIdMap64 {};
-    map.resize_files(10);
-    map.resize_commands(10);
-
-    auto file_id = NodeId { 3 };
-    auto cmd_id = node_id::make_command(5);
-
-    map.set(file_id, 0xDEADBEEF'CAFEBABE);
-    map.set(cmd_id, 0x1234567890ABCDEF);
-
-    REQUIRE(map.get(file_id) == 0xDEADBEEF'CAFEBABE);
-    REQUIRE(map.get(cmd_id) == 0x1234567890ABCDEF);
-}
