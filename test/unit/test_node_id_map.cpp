@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
 
 using namespace pup;
@@ -57,5 +58,64 @@ TEST_CASE("NodeIdMap32 dispatches by node type", "[node_id_map]")
         map.clear();
         REQUIRE_FALSE(map.contains(file_id));
         REQUIRE_FALSE(map.contains(cmd_id));
+    }
+}
+
+TEST_CASE("NodeIdArenaIndex stores and retrieves slices", "[node_id_map]")
+{
+    auto arena = Arena32 {};
+    auto index = NodeIdArenaIndex {};
+    index.resize_files(10);
+    index.resize_commands(10);
+
+    auto file_id = NodeId { 3 };
+    auto cmd_id = node_id::make_command(5);
+
+    SECTION("absent node returns {0, 0}")
+    {
+        REQUIRE_FALSE(index.contains(file_id));
+        auto s = index.get_slice(file_id);
+        REQUIRE(s.offset == 0);
+        REQUIRE(s.length == 0);
+    }
+
+    SECTION("incremental append_extend builds slice")
+    {
+        auto s = index.get_slice(file_id);
+        s = arena.append_extend(s, 100);
+        index.set_slice(file_id, s);
+        s = arena.append_extend(s, 200);
+        index.set_slice(file_id, s);
+        s = arena.append_extend(s, 300);
+        index.set_slice(file_id, s);
+
+        REQUIRE(index.contains(file_id));
+        auto result = index.get_slice(file_id);
+        REQUIRE(result.length == 3);
+
+        auto span = arena.slice(result);
+        REQUIRE(span[0] == 100);
+        REQUIRE(span[1] == 200);
+        REQUIRE(span[2] == 300);
+    }
+
+    SECTION("different node types are independent")
+    {
+        auto sf = arena.append_extend(index.get_slice(file_id), 10);
+        index.set_slice(file_id, sf);
+
+        auto sc = arena.append_extend(index.get_slice(cmd_id), 20);
+        index.set_slice(cmd_id, sc);
+
+        REQUIRE(arena.slice(index.get_slice(file_id))[0] == 10);
+        REQUIRE(arena.slice(index.get_slice(cmd_id))[0] == 20);
+    }
+
+    SECTION("clear resets all")
+    {
+        auto s = arena.append_extend(index.get_slice(file_id), 42);
+        index.set_slice(file_id, s);
+        index.clear();
+        REQUIRE_FALSE(index.contains(file_id));
     }
 }
