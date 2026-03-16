@@ -13,7 +13,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <set>
 
 namespace pup::cli {
@@ -87,8 +86,7 @@ auto configure_single_variant(
         auto config_path = pup::path::join(ctx.layout().output_root, "tup.config");
         if (!pup::platform::exists(config_path)) {
             (void)pup::platform::create_directories(std::string { pup::path::parent(config_path) });
-            auto ofs = std::ofstream { config_path };
-            ofs.close();
+            (void)pup::platform::write_file(config_path, "");
             printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str());
         }
     };

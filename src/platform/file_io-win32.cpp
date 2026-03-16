@@ -15,7 +15,12 @@ auto to_wide(std::string const& s) -> std::wstring
     if (s.empty()) {
         return {};
     }
-    auto len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    auto len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+        s.data(), static_cast<int>(s.size()), nullptr, 0);
+    if (len == 0) {
+        len = MultiByteToWideChar(CP_UTF8, 0,
+            s.data(), static_cast<int>(s.size()), nullptr, 0);
+    }
     auto result = std::wstring(static_cast<std::size_t>(len), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), result.data(), len);
     return result;
@@ -26,9 +31,14 @@ auto from_wide(std::wstring const& w) -> std::string
     if (w.empty()) {
         return {};
     }
-    auto len = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+    auto len = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (len == 0) {
+        return {};
+    }
     auto result = std::string(static_cast<std::size_t>(len), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), result.data(), len, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
+        result.data(), len, nullptr, nullptr);
     return result;
 }
 
@@ -417,6 +427,36 @@ auto current_directory() -> Result<std::string>
 auto canonical(std::string const& path) -> Result<std::string>
 {
     auto wpath = to_wide(path);
+
+    // Try to open the path to resolve symlinks via GetFinalPathNameByHandleW
+    auto h = CreateFileW(
+        wpath.c_str(), 0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+
+    if (h != INVALID_HANDLE_VALUE) {
+        auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
+        if (len > 0) {
+            auto buf = std::wstring(len, L'\0');
+            GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
+            CloseHandle(h);
+            buf.resize(len - 1);
+            auto result = from_wide(buf);
+            // Strip \\?\ prefix
+            if (result.size() > 4 && result[0] == '\\' && result[1] == '\\' && result[2] == '?' && result[3] == '\\') {
+                result = result.substr(4);
+            }
+            for (auto& c : result) {
+                if (c == '\\') {
+                    c = '/';
+                }
+            }
+            return result;
+        }
+        CloseHandle(h);
+    }
+
+    // Fallback for non-existent paths: lexical resolution only
     auto len = GetFullPathNameW(wpath.c_str(), 0, nullptr, nullptr);
     if (len == 0) {
         return make_error<std::string>(ErrorCode::IoError, "Failed to resolve path: " + path);
@@ -489,13 +529,23 @@ auto read_file(std::string const& path) -> Result<std::string>
         return make_error<std::string>(ErrorCode::IoError, "Failed to open file: " + path);
     }
     auto file_size = LARGE_INTEGER {};
-    GetFileSizeEx(h, &file_size);
+    if (!GetFileSizeEx(h, &file_size)) {
+        CloseHandle(h);
+        return make_error<std::string>(ErrorCode::IoError, "Failed to get file size: " + path);
+    }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
     auto content = std::string(size, '\0');
-    auto bytes_read = DWORD {};
-    ReadFile(h, content.data(), static_cast<DWORD>(size), &bytes_read, nullptr);
+    auto total = std::size_t { 0 };
+    while (total < size) {
+        auto chunk = static_cast<DWORD>(std::min(size - total, std::size_t { 0x7FFF'FFFFu }));
+        auto bytes_read = DWORD {};
+        if (!ReadFile(h, content.data() + total, chunk, &bytes_read, nullptr) || bytes_read == 0) {
+            break;
+        }
+        total += bytes_read;
+    }
     CloseHandle(h);
-    content.resize(bytes_read);
+    content.resize(total);
     return content;
 }
 

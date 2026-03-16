@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
-#include <fstream>
 #include <map>
 #include <set>
 
@@ -1200,16 +1199,11 @@ auto include_single_file(
         ctx.sticky_sources.push_back(*inc_node_result);
     }
 
-    auto file = std::ifstream { include_path };
-    if (!file) {
+    auto source_result = pup::platform::read_file(include_path);
+    if (!source_result) {
         return make_error<void>(ErrorCode::IoError, "Cannot open include file: " + include_path);
     }
-
-    file.seekg(0, std::ios::end);
-    auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    auto source = std::string(static_cast<std::size_t>(size), '\0');
-    file.read(source.data(), size);
+    auto source = std::move(*source_result);
 
     auto parse_result = parser::parse_tupfile(source, include_path);
     if (!parse_result.success()) {
