@@ -65,7 +65,7 @@ auto resolve_variant_path(
 /// For phi-nodes (multiple producers), only add active producers when consumer is active.
 auto add_producer_dependencies(
     graph::BuildGraph const& graph,
-    std::unordered_map<NodeId, std::size_t> const& cmd_to_job,
+    NodeIdMap32 const& cmd_to_job,
     std::vector<BuildJob> const& jobs,
     NodeId node_id,
     std::size_t current_job,
@@ -76,10 +76,10 @@ auto add_producer_dependencies(
 
     for (auto producer_id : graph.get_inputs(node_id)) {
         if (node_id::is_command(producer_id)) {
-            if (auto it = cmd_to_job.find(producer_id); it != cmd_to_job.end() && it->second != current_job) {
-                // Only add dependency if: current is inactive OR producer is active
-                if (!current_active || jobs[it->second].guard_active) {
-                    dependencies.insert(it->second);
+            if (cmd_to_job.contains(producer_id) && cmd_to_job.get(producer_id) != current_job) {
+                auto dep_idx = cmd_to_job.get(producer_id);
+                if (!current_active || jobs[dep_idx].guard_active) {
+                    dependencies.insert(dep_idx);
                 }
             }
         }
@@ -100,9 +100,9 @@ auto build_dependency_map(
     auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
 
     // Build map from command NodeId -> job index
-    auto cmd_to_job = std::unordered_map<NodeId, std::size_t> {};
+    auto cmd_to_job = NodeIdMap32 {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        cmd_to_job[jobs[i].id] = i;
+        cmd_to_job.set(jobs[i].id, static_cast<std::uint32_t>(i));
     }
 
     // For each job, find dependencies via input edges
@@ -116,10 +116,10 @@ auto build_dependency_map(
         for (auto input_id : graph.get_inputs(cmd_id)) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
             if (node_id::is_command(input_id)) {
-                if (auto it = cmd_to_job.find(input_id); it != cmd_to_job.end() && it->second != j) {
-                    // Apply guard filtering: skip inactive producers when current job is active
-                    if (!current_active || jobs[it->second].guard_active) {
-                        dependencies.insert(it->second);
+                if (cmd_to_job.contains(input_id) && cmd_to_job.get(input_id) != j) {
+                    auto dep_idx = cmd_to_job.get(input_id);
+                    if (!current_active || jobs[dep_idx].guard_active) {
+                        dependencies.insert(dep_idx);
                     }
                 }
                 continue;
