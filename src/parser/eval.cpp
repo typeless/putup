@@ -17,51 +17,98 @@ namespace pup::parser {
 // VarDb
 // =============================================================================
 
+auto VarDb::find_entry(std::string_view name) -> Entry*
+{
+    auto lo = std::size_t { 0 };
+    auto hi = entries_.size();
+    while (lo < hi) {
+        auto mid = lo + (hi - lo) / 2;
+        if (entries_[mid].name < name) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if (lo < entries_.size() && entries_[lo].name == name) {
+        return &entries_[lo];
+    }
+    return nullptr;
+}
+
+auto VarDb::find_entry(std::string_view name) const -> Entry const*
+{
+    return const_cast<VarDb*>(this)->find_entry(name);
+}
+
 auto VarDb::set(std::string_view name, std::string value) -> void
 {
-    vars_[std::string { name }] = std::move(value);
+    if (auto* e = find_entry(name)) {
+        e->value = std::move(value);
+        return;
+    }
+    auto lo = std::size_t { 0 };
+    auto hi = entries_.size();
+    while (lo < hi) {
+        auto mid = lo + (hi - lo) / 2;
+        if (entries_[mid].name < name) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo),
+        Entry { std::string { name }, std::move(value) });
 }
 
 auto VarDb::append(std::string_view name, std::string_view value) -> void
 {
-    auto it = vars_.find(name); // Heterogeneous lookup
-    if (it == vars_.end()) {
-        vars_[std::string { name }] = std::string { value };
-    } else {
-        if (!it->second.empty()) {
-            it->second += ' ';
+    if (auto* e = find_entry(name)) {
+        if (!e->value.empty()) {
+            e->value += ' ';
         }
-        it->second += value;
+        e->value += value;
+        return;
     }
+    auto lo = std::size_t { 0 };
+    auto hi = entries_.size();
+    while (lo < hi) {
+        auto mid = lo + (hi - lo) / 2;
+        if (entries_[mid].name < name) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo),
+        Entry { std::string { name }, std::string { value } });
 }
 
 auto VarDb::get(std::string_view name) const -> std::string_view
 {
-    auto it = vars_.find(name); // Heterogeneous lookup - no temp string
-    if (it != vars_.end()) {
-        return it->second;
+    if (auto const* e = find_entry(name)) {
+        return e->value;
     }
     return {};
 }
 
 auto VarDb::contains(std::string_view name) const -> bool
 {
-    return vars_.contains(name);
+    return find_entry(name) != nullptr;
 }
 
 auto VarDb::names() const -> std::vector<std::string_view>
 {
     auto result = std::vector<std::string_view> {};
-    result.reserve(vars_.size());
-    for (auto const& [name, _] : vars_) {
-        result.push_back(name);
+    result.reserve(entries_.size());
+    for (auto const& e : entries_) {
+        result.push_back(e.name);
     }
     return result;
 }
 
 auto VarDb::clear() -> void
 {
-    vars_.clear();
+    entries_.clear();
 }
 
 // =============================================================================
