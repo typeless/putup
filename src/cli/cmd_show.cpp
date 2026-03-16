@@ -7,6 +7,7 @@
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/string_utils.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
@@ -24,8 +25,6 @@
 #include <optional>
 #include <set>
 #include <unordered_map>
-
-#include "pup/core/node_id_map.hpp"
 
 namespace pup::cli {
 

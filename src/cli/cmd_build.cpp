@@ -8,6 +8,7 @@
 #include "pup/cli/multi_variant.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/terminal.hpp"
@@ -29,8 +30,6 @@
 #include <mutex>
 #include <set>
 #include <unordered_map>
-
-#include "pup/core/node_id_map.hpp"
 
 namespace pup::cli {
 
