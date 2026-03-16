@@ -6,7 +6,7 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <sstream>
+#include <string>
 
 namespace pup::exec {
 
@@ -52,7 +52,7 @@ auto job_completed(ProgressState state, NodeId id, bool success) -> ProgressStat
 auto render_tty(ProgressState const& state, std::string_view variant) -> ProgressOutput
 {
     auto result = ProgressOutput {};
-    auto out = std::ostringstream {};
+    auto out = std::string {};
 
     auto term_width = static_cast<std::size_t>(pup::terminal_width());
 
@@ -70,54 +70,59 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
         current_display = sorted.back().display;
     }
 
-    // Build progress line prefix to calculate available width
-    auto prefix = std::ostringstream {};
+    auto prefix = std::string {};
     if (!variant.empty()) {
-        prefix << "[" << variant << "] ";
+        prefix += '[';
+        prefix += variant;
+        prefix += "] ";
     }
-    prefix << "[";
-    if (pct < 10) {
-        prefix << "  ";
-    } else if (pct < 100) {
-        prefix << " ";
-    }
-    prefix << pct << "% " << done << "/" << state.total << "] ";
-    auto prefix_str = prefix.str();
-    auto path_width = term_width > prefix_str.size() ? term_width - prefix_str.size() : std::size_t { 20 };
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "[%3zu%% %zu/%zu] ", pct, done, state.total);
+    prefix += buf;
+    auto path_width = term_width > prefix.size() ? term_width - prefix.size() : std::size_t { 20 };
 
-    out << prefix_str << truncate_left(current_display, path_width) << pup::ansi::clear_line;
+    out += prefix;
+    out += truncate_left(current_display, path_width);
+    out += pup::ansi::clear_line;
     result.line_count = 1;
 
-    // Exclude the last job (shown on progress line) from the running list
     auto list_size = sorted.size() > 1 ? sorted.size() - 1 : std::size_t { 0 };
     auto max_jobs = std::min(list_size, MAX_RUNNING_JOBS_DISPLAY);
 
-    // Running jobs prefix: "    M:SS " = 9 chars minimum (more for longer times)
     auto constexpr job_prefix_width = std::size_t { 9 };
     auto job_path_width = term_width > job_prefix_width ? term_width - job_prefix_width : std::size_t { 20 };
 
     for (std::size_t i = 0; i < max_jobs; ++i) {
         auto const& job = sorted[i];
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - job.start_time);
-        out << "\n    " << format_duration(elapsed) << " " << truncate_left(job.display, job_path_width) << pup::ansi::clear_line;
+        out += '\n';
+        out += "    ";
+        out += format_duration(elapsed);
+        out += ' ';
+        out += truncate_left(job.display, job_path_width);
+        out += pup::ansi::clear_line;
         ++result.line_count;
     }
 
-    result.text = out.str();
+    result.text = std::move(out);
     return result;
 }
 
 auto render_simple(ProgressState const& state, std::string_view variant) -> std::string
 {
-    auto out = std::ostringstream {};
+    auto out = std::string {};
     auto done = state.completed + state.failed;
 
     if (!variant.empty()) {
-        out << "[" << variant << "] ";
+        out += '[';
+        out += variant;
+        out += "] ";
     }
-    out << "[" << done << "/" << state.total << "]";
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "[%zu/%zu]", done, state.total);
+    out += buf;
 
-    return out.str();
+    return out;
 }
 
 auto format_duration(std::chrono::milliseconds ms) -> std::string

@@ -21,7 +21,6 @@
 #include <format>
 #include <fstream>
 #include <map>
-#include <sstream>
 #include <vector>
 
 namespace pup::cli {
@@ -162,9 +161,12 @@ auto read_file(std::filesystem::path const& path) -> std::optional<std::string>
         return std::nullopt;
     }
 
-    auto ss = std::stringstream {};
-    ss << file.rdbuf();
-    return ss.str();
+    file.seekg(0, std::ios::end);
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    auto content = std::string(static_cast<std::size_t>(size), '\0');
+    file.read(content.data(), size);
+    return content;
 }
 
 auto discover_tupfile_dirs(

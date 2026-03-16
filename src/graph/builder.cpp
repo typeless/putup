@@ -19,7 +19,6 @@
 #include <fstream>
 #include <map>
 #include <set>
-#include <sstream>
 
 namespace pup::graph {
 
@@ -1195,9 +1194,11 @@ auto include_single_file(
         return make_error<void>(ErrorCode::IoError, "Cannot open include file: " + include_path);
     }
 
-    auto ss = std::stringstream {};
-    ss << file.rdbuf();
-    auto source = std::string { ss.str() };
+    file.seekg(0, std::ios::end);
+    auto size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    auto source = std::string(static_cast<std::size_t>(size), '\0');
+    file.read(source.data(), size);
 
     auto parse_result = parser::parse_tupfile(source, include_path);
     if (!parse_result.success()) {

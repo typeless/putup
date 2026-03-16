@@ -8,8 +8,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <regex>
-#include <sstream>
 
 namespace pup::graph::scanners {
 
@@ -190,20 +188,45 @@ auto is_source_file(std::string const& word) -> bool
         || ext == ".S" || ext == ".s" || ext == ".asm";
 }
 
-/// Regex to match GCC/Clang compile commands
-/// Requires compiler name followed by whitespace (not /) to avoid matching
-/// directory names like "build-gcc/gcc/genpreds"
-auto gcc_pattern() -> std::regex const&
-{
-    static auto const pattern = std::regex { R"((?:^|/|\s)(gcc|g\+\+|clang|clang\+\+|cc|c\+\+)\s(?:.*\s)?-c(?:\s|$))" };
-    return pattern;
-}
-
 } // namespace
+
+auto matches_gcc_compile(std::string_view command) -> bool
+{
+    auto words = core::tokenize_shell_command(command);
+    if (words.empty()) {
+        return false;
+    }
+
+    auto compiler_idx = std::size_t { 0 };
+    auto first_basename = std::string_view { words[0] };
+    if (auto pos = first_basename.rfind('/'); pos != std::string_view::npos) {
+        first_basename = first_basename.substr(pos + 1);
+    }
+
+    if (is_compiler_wrapper(std::string { first_basename }) && words.size() > 1) {
+        compiler_idx = 1;
+    }
+
+    auto compiler_basename = std::string_view { words[compiler_idx] };
+    if (auto pos = compiler_basename.rfind('/'); pos != std::string_view::npos) {
+        compiler_basename = compiler_basename.substr(pos + 1);
+    }
+
+    if (!is_compiler_name(compiler_basename)) {
+        return false;
+    }
+
+    for (auto i = compiler_idx + 1; i < words.size(); ++i) {
+        if (words[i] == "-c") {
+            return true;
+        }
+    }
+    return false;
+}
 
 auto GccScanner::matches(CommandInfo const& cmd) const -> bool
 {
-    return std::regex_search(cmd.command, gcc_pattern());
+    return matches_gcc_compile(cmd.command);
 }
 
 auto GccScanner::has_dep_flags(std::string const& cmd) const -> bool
@@ -253,22 +276,23 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         return std::nullopt;
     }
 
-    auto dep_cmd = std::ostringstream {};
+    auto dep_cmd = std::string {};
 
     for (auto i = std::size_t { 0 }; i <= compiler_idx; ++i) {
         if (i > 0) {
-            dep_cmd << ' ';
+            dep_cmd += ' ';
         }
-        dep_cmd << words[i];
+        dep_cmd += words[i];
     }
 
-    dep_cmd << " -M";
+    dep_cmd += " -M";
 
     auto skip_next = false;
     auto source_files = std::vector<std::string> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
-            dep_cmd << ' ' << shell_quote(normalize_path_lexically(words[i]));
+            dep_cmd += ' ';
+            dep_cmd += shell_quote(normalize_path_lexically(words[i]));
             skip_next = false;
             continue;
         }
@@ -285,7 +309,8 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         }
 
         if (is_dep_relevant_flag(w)) {
-            dep_cmd << ' ' << shell_quote(normalize_flag_path(w));
+            dep_cmd += ' ';
+            dep_cmd += shell_quote(normalize_flag_path(w));
             if (w == "-I" || w == "-D" || w == "-U" || w == "-include"
                 || w == "-isystem" || w == "-iquote" || w == "-isysroot") {
                 skip_next = true;
@@ -299,10 +324,11 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     }
 
     for (auto const& src : source_files) {
-        dep_cmd << ' ' << shell_quote(src);
+        dep_cmd += ' ';
+        dep_cmd += shell_quote(src);
     }
 
-    return dep_cmd.str();
+    return dep_cmd;
 }
 
 auto GccScanner::dep_spec() const -> DepSpec

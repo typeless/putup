@@ -34,6 +34,11 @@ public:
 [[nodiscard]]
 auto make_gcc_scanner() -> std::unique_ptr<DepScanner>;
 
+/// Check if a command string is a GCC/Clang compile command (compiler + -c flag).
+/// Used as a lightweight predicate for RulePattern matching without std::regex.
+[[nodiscard]]
+auto matches_gcc_compile(std::string_view command) -> bool;
+
 // TODO: Add MsvcScanner for cl.exe using /showIncludes (stdout) or /sourceDependencies (file)
 
 } // namespace pup::graph::scanners
