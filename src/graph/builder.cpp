@@ -22,6 +22,8 @@
 #include <map>
 #include <set>
 
+#include "pup/core/node_id_map.hpp"
+
 namespace pup::graph {
 
 namespace {
@@ -1411,7 +1413,8 @@ auto expand_rule(
 
     // Track group NodeIds for deferred edge creation
     // Groups are first-class nodes; edges created after all Tupfiles are parsed
-    auto deferred_group_ids = std::set<NodeId> {};
+    auto deferred_group_ids = NodeIdMap32 {};
+    auto deferred_group_vec = std::vector<NodeId> {};
 
     // Also check regular inputs for order-only group references
     // In tup, <group> references are always order-only even when in the inputs section
@@ -1448,7 +1451,10 @@ auto expand_rule(
 
             // Preserve %<group> literally — resolved after all Tupfiles are parsed
             rule_order_only_groups[pattern.group_name] = { std::format("%<{}>", pattern.group_name) };
-            deferred_group_ids.insert(group_id);
+            if (!deferred_group_ids.contains(group_id)) {
+                deferred_group_ids.set(group_id, 1);
+                deferred_group_vec.push_back(group_id);
+            }
         } else if (!pattern.path.empty()) {
             // Path expression that may contain <group> suffix: ../include/<gen-headers>
             auto expanded = parser::expand(*ctx.eval, pattern.path);
@@ -1469,7 +1475,10 @@ auto expand_rule(
 
                 // Preserve %<group> literally — resolved after all Tupfiles are parsed
                 rule_order_only_groups[group_ref->group_name] = { std::format("%<{}>", group_ref->group_name) };
-                deferred_group_ids.insert(group_id);
+                if (!deferred_group_ids.contains(group_id)) {
+                    deferred_group_ids.set(group_id, 1);
+                    deferred_group_vec.push_back(group_id);
+                }
             }
         }
     }
@@ -1479,7 +1488,7 @@ auto expand_rule(
     // ScopeGuard ensures restoration even on early returns.
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
-    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &deferred_group_ids, &ctx, &state](std::string_view name
+    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
                                          ) -> std::vector<std::string> {
         auto it = rule_order_only_groups.find(std::string { name });
         if (it != rule_order_only_groups.end()) {
@@ -1490,7 +1499,10 @@ auto expand_rule(
         auto key = GroupKey { dir, std::string { name } };
         auto found = state.group_nodes.find(key);
         if (found != state.group_nodes.end()) {
-            deferred_group_ids.insert(found->second);
+            if (!deferred_group_ids.contains(found->second)) {
+                deferred_group_ids.set(found->second, 1);
+                deferred_group_vec.push_back(found->second);
+            }
             auto pattern = std::vector<std::string> { std::format("%<{}>", name) };
             rule_order_only_groups[std::string { name }] = pattern;
             return pattern;
@@ -1724,7 +1736,7 @@ auto expand_rule(
 
     // Store deferred edges for groups
     // These will be resolved after all Tupfiles are parsed (group might grow)
-    for (auto group_id : deferred_group_ids) {
+    for (auto group_id : deferred_group_vec) {
         state.deferred_edges.insert({ group_id, *cmd_id });
     }
 

@@ -19,6 +19,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "pup/core/node_id_map.hpp"
+
 namespace pup::exec {
 
 namespace {
@@ -188,7 +190,7 @@ auto collect_required_commands(
     std::vector<NodeId> const& target_ids
 ) -> std::set<NodeId>
 {
-    auto visited = std::set<NodeId> {};
+    auto visited = NodeIdMap32 {};
     auto commands = std::set<NodeId> {};
     auto stack = std::vector<NodeId>(target_ids.begin(), target_ids.end());
 
@@ -199,7 +201,7 @@ auto collect_required_commands(
         if (visited.contains(id)) {
             continue;
         }
-        visited.insert(id);
+        visited.set(id, 1);
 
         if (node_id::is_command(id) && graph.get_command_node(id)) {
             commands.insert(id);
@@ -328,19 +330,26 @@ auto Scheduler::build_incremental(
     }
 
     // Find all nodes affected by changes
-    auto affected = std::set<NodeId> {};
+    auto affected = NodeIdMap32 {};
+    auto affected_vec = std::vector<NodeId> {};
 
     for (auto const& file_path : changed_files) {
         auto it = path_to_id.find(file_path);
         if (it != path_to_id.end()) {
             auto id = it->second;
-            affected.insert(id);
+            if (!affected.contains(id)) {
+                affected.set(id, 1);
+                affected_vec.push_back(id);
+            }
 
             // For generated files that are missing/changed, also mark the producing command
             auto const* node = graph.get_file_node(id);
             if (node && node->type == NodeType::Generated) {
                 for (auto input_id : graph.get_inputs(id)) {
-                    affected.insert(input_id);
+                    if (!affected.contains(input_id)) {
+                        affected.set(input_id, 1);
+                        affected_vec.push_back(input_id);
+                    }
                 }
             }
         }
@@ -349,20 +358,22 @@ auto Scheduler::build_incremental(
     // Expand to include all dependent commands (including order-only)
     // get_outputs() excludes sticky edges by design (Tupfile/config dependencies
     // are parse-time deps, not build-time deps)
-    auto to_process = std::vector<NodeId>(affected.begin(), affected.end());
+    auto to_process = std::vector<NodeId>(affected_vec.begin(), affected_vec.end());
 
     while (!to_process.empty()) {
         auto id = NodeId { to_process.back() };
         to_process.pop_back();
 
         for (auto dep_id : graph.get_outputs(id)) {
-            if (affected.insert(dep_id).second) {
+            if (!affected.contains(dep_id)) {
+                affected.set(dep_id, 1);
                 to_process.push_back(dep_id);
             }
         }
 
         for (auto dep_id : graph.get_order_only_dependents(id)) {
-            if (affected.insert(dep_id).second) {
+            if (!affected.contains(dep_id)) {
+                affected.set(dep_id, 1);
                 to_process.push_back(dep_id);
             }
         }
@@ -374,7 +385,13 @@ auto Scheduler::build_incremental(
         return pup::unexpected<Error>(all_jobs.error());
     }
 
-    auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected) };
+    auto affected_set = std::set<NodeId> {};
+    for (auto const& job : *all_jobs) {
+        if (affected.contains(job.id)) {
+            affected_set.insert(job.id);
+        }
+    }
+    auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected_set) };
     impl_->stats.total_jobs = jobs.size();
     impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 

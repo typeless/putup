@@ -24,7 +24,8 @@
 #include <optional>
 #include <set>
 #include <unordered_map>
-#include <unordered_set>
+
+#include "pup/core/node_id_map.hpp"
 
 namespace pup::cli {
 
@@ -253,9 +254,9 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     printf("digraph G {\n");
     printf("  rankdir=LR;\n");
 
-    auto declared_nodes = std::unordered_set<pup::NodeId> {};
+    auto declared_nodes = pup::NodeIdMap32 {};
     for (auto id : ctx.graph().all_nodes()) {
-        declared_nodes.insert(id);
+        declared_nodes.set(id, 1);
 
         auto get_label = [&]() -> std::string {
             if (node_id::is_command(id)) {
@@ -284,7 +285,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     }
 
     if (index) {
-        auto implicit_nodes = std::unordered_set<pup::NodeId> {};
+        auto implicit_nodes = pup::NodeIdMap32 {};
 
         for (auto const& edge : index->edges()) {
             if (edge.type != pup::LinkType::Implicit) {
@@ -294,13 +295,13 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
             auto from_id = edge.from;
             auto to_id = edge.to;
 
-            if (declared_nodes.find(to_id) == declared_nodes.end()) {
+            if (!declared_nodes.contains(to_id)) {
                 continue;
             }
 
-            if (declared_nodes.find(from_id) == declared_nodes.end()) {
-                if (implicit_nodes.find(from_id) == implicit_nodes.end()) {
-                    implicit_nodes.insert(from_id);
+            if (!declared_nodes.contains(from_id)) {
+                if (!implicit_nodes.contains(from_id)) {
+                    implicit_nodes.set(from_id, 1);
                     auto const* file = index->find_file_by_id(from_id);
                     auto label = file ? escape_dot_label(file->path) : format_node_id(from_id);
                     printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).c_str(), label.c_str());
