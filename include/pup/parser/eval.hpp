@@ -5,19 +5,20 @@
 
 #include "ast.hpp"
 #include "pup/core/result.hpp"
-#include "pup/core/string_hash.hpp"
+#include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <functional>
 #include <set>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-namespace pup::parser {
+namespace pup::graph {
+struct VarDepTracker;
+}
 
-using pup::StringHash;
+namespace pup::parser {
 
 /// Variable database for storing and retrieving variable values
 class VarDb {
@@ -72,8 +73,11 @@ struct VarContext {
     std::string_view tup_srcdir = {};            ///< TUP_SRCDIR value
     std::string_view tup_outdir = {};            ///< TUP_OUTDIR value
 
-    /// Set of imported environment variable names
-    std::unordered_set<std::string> const* imported_vars = nullptr;
+    /// Set of imported variable name StringIds
+    SortedIdVec const* imported_vars = nullptr;
+
+    /// String pool for looking up StringIds (read-only during lookup)
+    StringPool const* string_pool = nullptr;
 };
 
 /// Result of variable lookup with bank information
@@ -143,24 +147,23 @@ struct EvalContext {
     /// a config variable is accessed via @(VAR) or $(CONFIG_VAR).
     std::function<void(std::string_view name)> on_config_var_used = {};
 
-    /// Set of imported environment variable names (for tracking which vars are imported)
-    std::unordered_set<std::string> const* imported_vars = nullptr;
+    /// Set of imported variable name StringIds
+    SortedIdVec const* imported_vars = nullptr;
 
     /// Callback for tracking imported env variable usage (for fine-grained dependency tracking)
     /// Called with the variable name when an imported env var is accessed via $(VAR).
     std::function<void(std::string_view name)> on_env_var_used = {};
 
-    /// Map of regular variable names to their transitive config var dependencies.
+    /// String pool for resolving StringIds during variable lookup
+    StringPool const* string_pool = nullptr;
+
+    /// Tracker for transitive config var dependencies of regular variables.
     /// When a variable is assigned a value containing @(CONFIG_VAR), record the dependency.
     /// When that variable is later expanded, propagate the dependency via on_config_var_used.
-    std::unordered_map<std::string, std::set<std::string>, StringHash, std::equal_to<>> const*
-        var_config_deps
-        = nullptr;
+    graph::VarDepTracker const* var_config_deps = nullptr;
 
-    /// Map of regular variable names to their transitive env var dependencies.
-    std::unordered_map<std::string, std::set<std::string>, StringHash, std::equal_to<>> const*
-        var_env_deps
-        = nullptr;
+    /// Tracker for transitive env var dependencies of regular variables.
+    graph::VarDepTracker const* var_env_deps = nullptr;
 
     /// Callback for tracking variable assignments (for show var command)
     /// Called when a variable is assigned with the variable name, operator, before/after values,

@@ -12,9 +12,79 @@ TEST_CASE("SortedIdVec empty state", "[sorted_id_vec]")
 {
     auto vec = pup::SortedIdVec {};
     REQUIRE(vec.size() == 0);
+    REQUIRE(vec.empty());
     REQUIRE_FALSE(vec.contains(0));
     REQUIRE_FALSE(vec.contains(42));
     REQUIRE(vec.data() == nullptr);
+}
+
+TEST_CASE("SortedIdVec empty returns false after insert", "[sorted_id_vec]")
+{
+    auto vec = pup::SortedIdVec {};
+    vec.insert(1);
+    REQUIRE_FALSE(vec.empty());
+}
+
+TEST_CASE("SortedIdVec merge_from combines disjoint sets", "[sorted_id_vec]")
+{
+    auto a = pup::SortedIdVec {};
+    a.insert(10);
+    a.insert(30);
+
+    auto b = pup::SortedIdVec {};
+    b.insert(20);
+    b.insert(40);
+
+    a.merge_from(b);
+    REQUIRE(a.size() == 4);
+    REQUIRE(a.data()[0] == 10);
+    REQUIRE(a.data()[1] == 20);
+    REQUIRE(a.data()[2] == 30);
+    REQUIRE(a.data()[3] == 40);
+}
+
+TEST_CASE("SortedIdVec merge_from deduplicates overlapping sets", "[sorted_id_vec]")
+{
+    auto a = pup::SortedIdVec {};
+    a.insert(1);
+    a.insert(2);
+    a.insert(3);
+
+    auto b = pup::SortedIdVec {};
+    b.insert(2);
+    b.insert(4);
+
+    a.merge_from(b);
+    REQUIRE(a.size() == 4);
+    REQUIRE(a.contains(1));
+    REQUIRE(a.contains(2));
+    REQUIRE(a.contains(3));
+    REQUIRE(a.contains(4));
+}
+
+TEST_CASE("SortedIdVec merge_from from empty is no-op", "[sorted_id_vec]")
+{
+    auto a = pup::SortedIdVec {};
+    a.insert(5);
+
+    auto b = pup::SortedIdVec {};
+    a.merge_from(b);
+    REQUIRE(a.size() == 1);
+    REQUIRE(a.contains(5));
+}
+
+TEST_CASE("SortedIdVec merge_from into empty", "[sorted_id_vec]")
+{
+    auto a = pup::SortedIdVec {};
+
+    auto b = pup::SortedIdVec {};
+    b.insert(7);
+    b.insert(3);
+
+    a.merge_from(b);
+    REQUIRE(a.size() == 2);
+    REQUIRE(a.data()[0] == 3);
+    REQUIRE(a.data()[1] == 7);
 }
 
 TEST_CASE("SortedIdVec insert maintains sorted order", "[sorted_id_vec]")

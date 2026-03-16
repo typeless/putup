@@ -28,7 +28,15 @@ public:
     auto clear() -> void;
 
     [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return size_ == 0;
+    }
+
+    [[nodiscard]]
     auto size() const -> std::size_t;
+
+    auto merge_from(SortedIdVec const& other) -> void;
 
     [[nodiscard]]
     auto data() const -> std::uint32_t const*;
@@ -66,6 +74,12 @@ public:
 
     auto remove(std::uint32_t key) -> bool;
     auto clear() -> void;
+
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return size_ == 0;
+    }
 
     [[nodiscard]]
     auto size() const -> std::size_t;

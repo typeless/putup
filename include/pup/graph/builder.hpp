@@ -5,15 +5,14 @@
 
 #include "dag.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
 
-#include <functional>
-#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace pup::parser {
@@ -30,10 +29,10 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    std::string source_root;                                 ///< Source tree root (where source files live)
-    std::string config_root;                                 ///< Config tree root (where Tupfiles live)
-    std::string output_root;                                 ///< Output tree root (where outputs/.pup go)
-    std::string config_path;                                 ///< Path to tup.config (for sticky edge tracking)
+    std::string source_root;                                           ///< Source tree root (where source files live)
+    std::string config_root;                                           ///< Config tree root (where Tupfiles live)
+    std::string output_root;                                           ///< Output tree root (where outputs/.pup go)
+    std::string config_path;                                           ///< Path to tup.config (for sticky edge tracking)
     bool expand_globs = true;                                          ///< Expand glob patterns
     bool validate_inputs = true;                                       ///< Check that input files exist
     bool verbose = false;                                              ///< Print verbose output
@@ -60,8 +59,8 @@ struct BangMacroDef {
 struct PendingWeakAssignment {
     std::string name;
     std::string value;
-    std::set<std::string> config_deps; ///< Config vars used in RHS
-    std::set<std::string> env_deps;    ///< Env vars used in RHS
+    SortedIdVec config_deps; ///< Config var StringIds used in RHS
+    SortedIdVec env_deps;    ///< Env var StringIds used in RHS
 };
 
 /// Context for building the graph (per-Tupfile state)
@@ -73,18 +72,18 @@ struct BuilderContext {
 
     std::unordered_map<std::string, BangMacroDef> macros = {};
     std::unordered_map<std::string, std::vector<NodeId>> groups = {};
-    std::unordered_set<std::string> included_files = {};
-    std::set<std::string> exported_vars = {}; ///< Environment variables to export to commands
+    SortedIdVec included_files = {};
+    SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 
     std::string current_dir = {};
     std::string current_file = {};
     std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
-    /// Config variables used during current command expansion (cleared per command)
-    std::set<std::string> used_config_vars = {};
+    /// Config variable StringIds used during current command expansion (cleared per command)
+    SortedIdVec used_config_vars = {};
 
-    /// Env variables used during current command expansion (cleared per command)
-    std::set<std::string> used_env_vars = {};
+    /// Env variable StringIds used during current command expansion (cleared per command)
+    SortedIdVec used_env_vars = {};
 
     std::vector<std::string> errors = {};
     std::vector<std::string> warnings = {};
@@ -97,37 +96,58 @@ struct BuilderContext {
     /// will have these guards applied.
     std::vector<Guard> condition_stack = {};
 
-    /// Config variables used in enclosing conditions (for phi-node model).
+    /// Config variable StringIds used in enclosing conditions (for phi-node model).
     /// Commands inside conditionals need to depend on these vars to rebuild when
     /// the condition's value changes.
-    std::set<std::string> condition_config_vars = {};
+    SortedIdVec condition_config_vars = {};
+};
+
+// ============================================================================
+// VarDepTracker - maps variable StringId to its set of dependency StringIds
+// ============================================================================
+
+struct VarDepTracker {
+    SortedPairVec name_to_idx;     ///< StringId → index into pool
+    std::vector<SortedIdVec> pool; ///< pool[idx] = dep set of StringIds
+
+    [[nodiscard]]
+    auto find(StringId key) const -> SortedIdVec const*
+    {
+        auto const* idx = name_to_idx.find(to_underlying(key));
+        if (!idx) {
+            return nullptr;
+        }
+        return &pool[*idx];
+    }
+
+    auto get_or_create(StringId key) -> SortedIdVec&
+    {
+        auto const* idx = name_to_idx.find(to_underlying(key));
+        if (idx) {
+            return pool[*idx];
+        }
+        auto new_idx = static_cast<std::uint32_t>(pool.size());
+        pool.emplace_back();
+        name_to_idx.insert(to_underlying(key), new_idx);
+        return pool.back();
+    }
+
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return name_to_idx.empty();
+    }
+
+    auto clear() -> void
+    {
+        name_to_idx.clear();
+        pool.clear();
+    }
 };
 
 // ============================================================================
 // BuilderState - Persistent state across multiple Tupfiles
 // ============================================================================
-
-/// Key for cross-directory group lookup
-struct GroupKey {
-    std::string directory;
-    std::string name;
-
-    auto operator==(GroupKey const& other) const -> bool = default;
-    auto operator<(GroupKey const& other) const -> bool
-    {
-        return std::tie(directory, name) < std::tie(other.directory, other.name);
-    }
-};
-
-/// Hash function for GroupKey
-struct GroupKeyHash {
-    auto operator()(GroupKey const& k) const -> std::size_t
-    {
-        auto h1 = std::hash<std::string> {}(k.directory);
-        auto h2 = std::hash<std::string> {}(k.name);
-        return h1 ^ (h2 << 1);
-    }
-};
 
 /// Deferred order-only edge reference for circular parsing situations
 struct DeferredOrderOnlyEdge {
@@ -146,32 +166,29 @@ struct BuilderState {
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
 
-    /// Group node lookup: (directory, name) → NodeId
-    std::unordered_map<GroupKey, NodeId, GroupKeyHash> group_nodes;
+    /// Group node lookup: interned "directory/name" StringId → NodeId
+    SortedPairVec group_nodes;
 
     /// Deferred edges to resolve after all Tupfiles are parsed
     std::set<DeferredOrderOnlyEdge> deferred_edges;
 
-    /// Config variable nodes (name -> NodeId) for fine-grained dependency tracking
-    std::unordered_map<std::string, NodeId> config_var_nodes;
+    /// Config variable nodes (interned name StringId → NodeId)
+    SortedPairVec config_var_nodes;
 
     /// Virtual $ directory for imported environment variables (like tup's env_dt)
     NodeId env_var_dir_id = INVALID_NODE_ID;
 
-    /// Imported environment variable nodes (var_name -> NodeId)
-    std::unordered_map<std::string, NodeId> imported_env_var_nodes;
+    /// Imported environment variable nodes (interned name StringId → NodeId)
+    SortedPairVec imported_env_var_nodes;
 
-    /// Set of imported variable names (for tracking which vars are imported)
-    std::unordered_set<std::string> imported_var_names;
+    /// Set of imported variable name StringIds
+    SortedIdVec imported_var_names;
 
     /// Track which regular variables depend on config vars (for transitive tracking)
-    /// When CXXFLAGS = @(RELEASE_CXXFLAGS), record: var_config_deps["CXXFLAGS"] = {"RELEASE_CXXFLAGS"}
-    std::unordered_map<std::string, std::set<std::string>, parser::StringHash, std::equal_to<>>
-        var_config_deps;
+    VarDepTracker var_config_deps;
 
     /// Track which regular variables depend on imported env vars (for transitive tracking)
-    std::unordered_map<std::string, std::set<std::string>, parser::StringHash, std::equal_to<>>
-        var_env_deps;
+    VarDepTracker var_env_deps;
 };
 
 // ============================================================================

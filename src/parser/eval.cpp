@@ -4,6 +4,8 @@
 #include "pup/parser/eval.hpp"
 
 #include "pup/core/platform.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/graph/builder.hpp"
 
 #include "pup/core/path.hpp"
 
@@ -56,8 +58,7 @@ auto VarDb::set(std::string_view name, std::string value) -> void
             hi = mid;
         }
     }
-    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo),
-        Entry { std::string { name }, std::move(value) });
+    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo), Entry { std::string { name }, std::move(value) });
 }
 
 auto VarDb::append(std::string_view name, std::string_view value) -> void
@@ -79,8 +80,7 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
             hi = mid;
         }
     }
-    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo),
-        Entry { std::string { name }, std::string { value } });
+    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo), Entry { std::string { name }, std::string { value } });
 }
 
 auto VarDb::get(std::string_view name) const -> std::string_view
@@ -183,8 +183,11 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
         // Regular variables have priority over config
         if (ctx.vars && ctx.vars->contains(name)) {
             // Check if this is an imported env var
-            if (ctx.imported_vars && ctx.imported_vars->contains(std::string { name })) {
-                return { ctx.vars->get(name), VarBank::Env };
+            if (ctx.imported_vars && ctx.string_pool) {
+                auto id = ctx.string_pool->find(name);
+                if (!pup::is_empty(id) && ctx.imported_vars->contains(pup::to_underlying(id))) {
+                    return { ctx.vars->get(name), VarBank::Env };
+                }
             }
             return { ctx.vars->get(name), VarBank::Regular };
         }
@@ -224,6 +227,7 @@ auto make_var_context(EvalContext const& ctx) -> VarContext
         .tup_srcdir = ctx.tup_srcdir,
         .tup_outdir = ctx.tup_outdir,
         .imported_vars = ctx.imported_vars,
+        .string_pool = ctx.string_pool,
     };
 }
 
@@ -243,11 +247,14 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
 
     // Propagate transitive config var dependencies for regular variables
     if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
-        && ctx.var_config_deps && ctx.on_config_var_used) {
-        auto it = ctx.var_config_deps->find(ref.name);
-        if (it != ctx.var_config_deps->end()) {
-            for (auto const& dep : it->second) {
-                ctx.on_config_var_used(dep);
+        && ctx.var_config_deps && ctx.on_config_var_used && ctx.string_pool) {
+        auto name_id = ctx.string_pool->find(ref.name);
+        if (!pup::is_empty(name_id)) {
+            if (auto const* deps = ctx.var_config_deps->find(name_id)) {
+                auto const* d = deps->data();
+                for (std::size_t i = 0, n = deps->size(); i < n; ++i) {
+                    ctx.on_config_var_used(ctx.string_pool->get(pup::make_string_id(d[i])));
+                }
             }
         }
     }
@@ -259,11 +266,14 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
 
     // Propagate transitive env var dependencies for regular variables
     if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
-        && ctx.var_env_deps && ctx.on_env_var_used) {
-        auto it = ctx.var_env_deps->find(ref.name);
-        if (it != ctx.var_env_deps->end()) {
-            for (auto const& dep : it->second) {
-                ctx.on_env_var_used(dep);
+        && ctx.var_env_deps && ctx.on_env_var_used && ctx.string_pool) {
+        auto name_id = ctx.string_pool->find(ref.name);
+        if (!pup::is_empty(name_id)) {
+            if (auto const* deps = ctx.var_env_deps->find(name_id)) {
+                auto const* d = deps->data();
+                for (std::size_t i = 0, n = deps->size(); i < n; ++i) {
+                    ctx.on_env_var_used(ctx.string_pool->get(pup::make_string_id(d[i])));
+                }
             }
         }
     }
