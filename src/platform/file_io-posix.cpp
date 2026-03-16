@@ -373,16 +373,23 @@ auto copy_file(std::string const& from, std::string const& to) -> Result<void>
     }
 
     char buf[8192];
-    ssize_t n = 0;
     auto ok = true;
-    while ((n = ::read(src_fd, buf, sizeof(buf))) > 0) {
+    while (true) {
+        auto n = ::read(src_fd, buf, sizeof(buf));
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            ok = false;
+            break;
+        }
+        if (n == 0) {
+            break;
+        }
         if (::write(dst_fd, buf, static_cast<std::size_t>(n)) != n) {
             ok = false;
             break;
         }
-    }
-    if (n < 0) {
-        ok = false;
     }
 
     ::close(src_fd);
@@ -484,7 +491,13 @@ auto read_file(std::string const& path) -> Result<std::string>
     auto total = std::size_t { 0 };
     while (total < size) {
         auto n = ::read(fd, content.data() + total, size - total);
-        if (n <= 0) {
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            break;
+        }
+        if (n == 0) {
             break;
         }
         total += static_cast<std::size_t>(n);
