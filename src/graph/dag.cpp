@@ -114,16 +114,18 @@ auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<voi
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
-    auto const edge_idx = graph.edges.size();
+    auto const edge_idx = static_cast<std::uint32_t>(graph.edges.size());
     graph.edges.push_back(Edge {
         .from = from,
         .to = to,
         .type = type,
     });
 
-    // Update edge indices
-    graph.edges_from_index[from].push_back(edge_idx);
-    graph.edges_to_index[to].push_back(edge_idx);
+    auto old_from = graph.edges_from_index.get_slice(from);
+    graph.edges_from_index.set_slice(from, graph.edge_arena.append_extend(old_from, edge_idx));
+
+    auto old_to = graph.edges_to_index.get_slice(to);
+    graph.edges_to_index.set_slice(to, graph.edge_arena.append_extend(old_to, edge_idx));
 
     return {};
 }
@@ -137,9 +139,11 @@ auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
-    // Order-only edges: 'to' depends on 'from' for ordering (not content)
-    graph.order_only_to_index[to].push_back(from);
-    graph.order_only_dependents[from].push_back(to);
+    auto old_to = graph.order_only_to_index.get_slice(to);
+    graph.order_only_to_index.set_slice(to, graph.edge_arena.append_extend(old_to, from));
+
+    auto old_deps = graph.order_only_dependents.get_slice(from);
+    graph.order_only_dependents.set_slice(from, graph.edge_arena.append_extend(old_deps, to));
 
     return {};
 }
@@ -362,14 +366,13 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
 
 auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto it = graph.edges_to_index.find(id);
-    if (it == graph.edges_to_index.end()) {
+    auto s = graph.edges_to_index.get_slice(id);
+    if (s.length == 0)
         return {};
-    }
-
+    auto span = graph.edge_arena.slice(s);
     auto result = std::vector<NodeId> {};
-    result.reserve(it->second.size());
-    for (auto idx : it->second) {
+    result.reserve(span.size());
+    for (auto idx : span) {
         result.push_back(graph.edges[idx].from);
     }
     return result;
@@ -377,13 +380,12 @@ auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 
 auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto it = graph.edges_from_index.find(id);
-    if (it == graph.edges_from_index.end()) {
+    auto s = graph.edges_from_index.get_slice(id);
+    if (s.length == 0)
         return {};
-    }
-
+    auto span = graph.edge_arena.slice(s);
     auto result = std::vector<NodeId> {};
-    for (auto idx : it->second) {
+    for (auto idx : span) {
         auto const& edge = graph.edges[idx];
         if (edge.type != LinkType::Sticky) {
             result.push_back(edge.to);
@@ -394,13 +396,12 @@ auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 
 auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto it = graph.edges_from_index.find(id);
-    if (it == graph.edges_from_index.end()) {
+    auto s = graph.edges_from_index.get_slice(id);
+    if (s.length == 0)
         return {};
-    }
-
+    auto span = graph.edge_arena.slice(s);
     auto result = std::vector<NodeId> {};
-    for (auto idx : it->second) {
+    for (auto idx : span) {
         auto const& edge = graph.edges[idx];
         if (edge.type == LinkType::Sticky) {
             result.push_back(edge.to);
@@ -411,20 +412,20 @@ auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 
 auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto it = graph.order_only_to_index.find(id);
-    if (it != graph.order_only_to_index.end()) {
-        return it->second;
-    }
-    return {};
+    auto s = graph.order_only_to_index.get_slice(id);
+    if (s.length == 0)
+        return {};
+    auto span = graph.edge_arena.slice(s);
+    return { span.begin(), span.end() };
 }
 
 auto get_order_only_dependents(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
-    auto it = graph.order_only_dependents.find(id);
-    if (it != graph.order_only_dependents.end()) {
-        return it->second;
-    }
-    return {};
+    auto s = graph.order_only_dependents.get_slice(id);
+    if (s.length == 0)
+        return {};
+    auto span = graph.edge_arena.slice(s);
+    return { span.begin(), span.end() };
 }
 
 auto node_count(Graph const& graph) -> std::size_t
@@ -454,6 +455,7 @@ auto clear(Graph& graph) -> void
     graph.conditions.clear();
     graph.phi_nodes.clear();
     graph.edges.clear();
+    graph.edge_arena.clear();
     graph.edges_to_index.clear();
     graph.edges_from_index.clear();
     graph.order_only_to_index.clear();
@@ -531,12 +533,11 @@ auto root_nodes(Graph const& graph) -> std::vector<NodeId>
 auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
 {
     auto has_outputs = [&](NodeId id) {
-        auto it = graph.edges_from_index.find(id);
-        if (it == graph.edges_from_index.end()) {
+        auto s = graph.edges_from_index.get_slice(id);
+        if (s.length == 0)
             return false;
-        }
-        // Check for non-sticky outputs
-        for (auto idx : it->second) {
+        auto span = graph.edge_arena.slice(s);
+        for (auto idx : span) {
             if (graph.edges[idx].type != LinkType::Sticky) {
                 return true;
             }
