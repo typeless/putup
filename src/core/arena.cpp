@@ -59,7 +59,11 @@ auto Arena32::append(std::uint32_t const* values, std::uint32_t count) -> ArenaS
         grow(needed);
     }
     auto const offset = static_cast<std::uint32_t>(size_);
-    std::memcpy(data_ + size_, values, count * sizeof(std::uint32_t));
+    if (values) {
+        std::memcpy(data_ + size_, values, count * sizeof(std::uint32_t));
+    } else {
+        std::memset(data_ + size_, 0, count * sizeof(std::uint32_t));
+    }
     size_ += count;
     return ArenaSlice { offset, count };
 }
@@ -70,6 +74,19 @@ auto Arena32::get(ArenaSlice slice) const -> std::uint32_t const*
         return nullptr;
     }
     return data_ + slice.offset;
+}
+
+auto Arena32::slice(ArenaSlice s) const -> Span
+{
+    if (s.length == 0) {
+        return { nullptr, 0 };
+    }
+    return { data_ + s.offset, s.length };
+}
+
+auto Arena32::at(std::uint32_t offset) -> std::uint32_t&
+{
+    return data_[offset];
 }
 
 auto Arena32::size() const -> std::size_t

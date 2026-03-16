@@ -29,6 +29,22 @@ public:
     [[nodiscard]]
     auto get(ArenaSlice slice) const -> std::uint32_t const*;
 
+    struct Span {
+        std::uint32_t const* data;
+        std::uint32_t length;
+        auto begin() const -> std::uint32_t const* { return data; }
+        auto end() const -> std::uint32_t const* { return data + length; }
+        auto operator[](std::uint32_t i) const -> std::uint32_t { return data[i]; }
+        [[nodiscard]] auto size() const -> std::uint32_t { return length; }
+        [[nodiscard]] auto empty() const -> bool { return length == 0; }
+    };
+
+    [[nodiscard]]
+    auto slice(ArenaSlice s) const -> Span;
+
+    [[nodiscard]]
+    auto at(std::uint32_t offset) -> std::uint32_t&;
+
     [[nodiscard]]
     auto size() const -> std::size_t;
 
