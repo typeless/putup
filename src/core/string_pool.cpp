@@ -133,6 +133,9 @@ auto StringPool::grow() -> void
 
     meta_ = static_cast<Meta*>(std::calloc(new_cap, sizeof(Meta)));
     values_ = static_cast<StringId*>(std::malloc(new_cap * sizeof(StringId)));
+    if (!meta_ || !values_) {
+        std::abort();
+    }
     index_capacity_ = new_cap;
 
     for (auto i = std::size_t { 0 }; i < old_cap; ++i) {
@@ -224,6 +227,9 @@ auto StringPool::reserve(std::size_t count) -> void
 
     meta_ = static_cast<Meta*>(std::calloc(cap, sizeof(Meta)));
     values_ = static_cast<StringId*>(std::malloc(cap * sizeof(StringId)));
+    if (!meta_ || !values_) {
+        std::abort();
+    }
     index_capacity_ = cap;
 
     for (auto i = std::size_t { 0 }; i < old_cap; ++i) {

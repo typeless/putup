@@ -39,7 +39,7 @@ auto SortedIdVec::grow() -> void
     auto const new_cap = capacity_ == 0 ? std::size_t { 8 } : capacity_ * 2;
     auto* p = static_cast<std::uint32_t*>(std::realloc(data_, new_cap * sizeof(std::uint32_t)));
     if (!p) {
-        return;
+        std::abort();
     }
     data_ = p;
     capacity_ = new_cap;
@@ -148,7 +148,7 @@ auto SortedPairVec::grow() -> void
     auto const new_cap = capacity_ == 0 ? std::size_t { 8 } : capacity_ * 2;
     auto* p = static_cast<Pair*>(std::realloc(data_, new_cap * sizeof(Pair)));
     if (!p) {
-        return;
+        std::abort();
     }
     data_ = p;
     capacity_ = new_cap;

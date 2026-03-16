@@ -137,3 +137,97 @@ TEST_CASE("Arena32 move semantics", "[arena]")
         REQUIRE(b.get(slice)[0] == 10);
     }
 }
+
+TEST_CASE("Arena32 slice() returns iterable span", "[arena]")
+{
+    auto arena = pup::Arena32 {};
+    std::uint32_t vals[] = { 5, 10, 15 };
+    auto s = arena.append(vals, 3);
+
+    SECTION("span has correct data")
+    {
+        auto span = arena.slice(s);
+        REQUIRE(span.size() == 3);
+        REQUIRE(span[0] == 5);
+        REQUIRE(span[1] == 10);
+        REQUIRE(span[2] == 15);
+    }
+
+    SECTION("span is iterable with range-for")
+    {
+        auto span = arena.slice(s);
+        auto sum = std::uint32_t { 0 };
+        for (auto v : span) {
+            sum += v;
+        }
+        REQUIRE(sum == 30);
+    }
+
+    SECTION("empty slice returns empty span")
+    {
+        auto empty = pup::ArenaSlice { 0, 0 };
+        auto span = arena.slice(empty);
+        REQUIRE(span.empty());
+        REQUIRE(span.size() == 0);
+    }
+}
+
+TEST_CASE("Arena32 at() provides mutable access", "[arena]")
+{
+    auto arena = pup::Arena32 {};
+    std::uint32_t vals[] = { 1, 2, 3 };
+    auto s = arena.append(vals, 3);
+
+    arena.at(s.offset + 1) = 42;
+    REQUIRE(arena.get(s)[1] == 42);
+}
+
+TEST_CASE("Arena32 append_extend copies old slice and appends value", "[arena]")
+{
+    auto arena = pup::Arena32 {};
+
+    SECTION("extend from empty")
+    {
+        auto s = pup::ArenaSlice { 0, 0 };
+        auto s2 = arena.append_extend(s, 42);
+        REQUIRE(s2.length == 1);
+        REQUIRE(arena.get(s2)[0] == 42);
+    }
+
+    SECTION("extend existing slice")
+    {
+        std::uint32_t vals[] = { 1, 2, 3 };
+        auto s = arena.append(vals, 3);
+        auto s2 = arena.append_extend(s, 4);
+        REQUIRE(s2.length == 4);
+        auto span = arena.slice(s2);
+        REQUIRE(span[0] == 1);
+        REQUIRE(span[1] == 2);
+        REQUIRE(span[2] == 3);
+        REQUIRE(span[3] == 4);
+    }
+
+    SECTION("multiple extends")
+    {
+        auto s = pup::ArenaSlice { 0, 0 };
+        for (std::uint32_t i = 0; i < 100; ++i) {
+            s = arena.append_extend(s, i);
+        }
+        REQUIRE(s.length == 100);
+        auto span = arena.slice(s);
+        for (std::uint32_t i = 0; i < 100; ++i) {
+            REQUIRE(span[i] == i);
+        }
+    }
+}
+
+TEST_CASE("Arena32 append with nullptr zero-initializes", "[arena]")
+{
+    auto arena = pup::Arena32 {};
+    auto s = arena.append(nullptr, 3);
+
+    REQUIRE(s.length == 3);
+    REQUIRE(arena.get(s)[0] == 0);
+    REQUIRE(arena.get(s)[1] == 0);
+    REQUIRE(arena.get(s)[2] == 0);
+}

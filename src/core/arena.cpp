@@ -3,6 +3,7 @@
 
 #include "pup/core/arena.hpp"
 
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <utility>
@@ -43,7 +44,7 @@ auto Arena32::grow(std::size_t needed) -> void
     }
     auto* p = static_cast<std::uint32_t*>(std::realloc(data_, new_cap * sizeof(std::uint32_t)));
     if (!p) {
-        return;
+        std::abort();
     }
     data_ = p;
     capacity_ = new_cap;
@@ -86,7 +87,24 @@ auto Arena32::slice(ArenaSlice s) const -> Span
 
 auto Arena32::at(std::uint32_t offset) -> std::uint32_t&
 {
+    assert(offset < size_);
     return data_[offset];
+}
+
+auto Arena32::append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSlice
+{
+    auto new_len = old.length + 1;
+    auto needed = size_ + new_len;
+    if (needed > capacity_) {
+        grow(needed);
+    }
+    auto new_offset = static_cast<std::uint32_t>(size_);
+    if (old.length > 0) {
+        std::memcpy(data_ + new_offset, data_ + old.offset, old.length * sizeof(std::uint32_t));
+    }
+    data_[new_offset + old.length] = new_value;
+    size_ += new_len;
+    return ArenaSlice { new_offset, new_len };
 }
 
 auto Arena32::size() const -> std::size_t
