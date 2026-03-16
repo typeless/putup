@@ -24,29 +24,27 @@ class VarDb {
 public:
     VarDb() = default;
 
-    /// Set a variable value (replaces existing)
     auto set(std::string_view name, std::string value) -> void;
-
-    /// Append to a variable value (space-separated)
     auto append(std::string_view name, std::string_view value) -> void;
 
-    /// Get a variable value (returns empty if not found)
     [[nodiscard]]
     auto get(std::string_view name) const -> std::string_view;
-
-    /// Check if variable exists
     [[nodiscard]]
     auto contains(std::string_view name) const -> bool;
-
-    /// Get all variable names
     [[nodiscard]]
     auto names() const -> std::vector<std::string_view>;
 
-    /// Clear all variables
     auto clear() -> void;
 
 private:
-    std::unordered_map<std::string, std::string, StringHash, std::equal_to<>> vars_;
+    struct Entry {
+        std::string name;
+        std::string value;
+    };
+    std::vector<Entry> entries_;
+
+    auto find_entry(std::string_view name) -> Entry*;
+    auto find_entry(std::string_view name) const -> Entry const*;
 };
 
 /// Identifies which variable bank a lookup resolved from
