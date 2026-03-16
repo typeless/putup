@@ -99,14 +99,14 @@ auto configure_single_variant(
     }
 
     // Filter config commands by scope if specified
-    auto config_commands = std::set<pup::NodeId> {};
+    auto config_commands = pup::NodeIdMap32 {};
     for (auto const& cfg : configs) {
         auto const* node = ctx.graph().get_command_node(cfg.cmd_id);
         auto source_dir_sv = node ? pup::graph::get_source_dir(ctx.graph().graph(), cfg.cmd_id) : std::string_view {};
         if (!scopes.empty() && node && !pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
             continue;
         }
-        config_commands.insert(cfg.cmd_id);
+        config_commands.set(cfg.cmd_id, 1);
         if (opts.verbose) {
             auto display_sv = node ? pup::graph::get_display_str(ctx.graph().graph(), cfg.cmd_id) : std::string_view { "<unknown>" };
             printf("[%.*s] Config rule: %.*s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data(), cfg.output_path.c_str());

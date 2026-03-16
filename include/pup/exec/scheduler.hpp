@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
 #include "runner.hpp"
@@ -108,7 +109,7 @@ public:
     [[nodiscard]]
     auto build_subset(
         graph::BuildGraph const& graph,
-        std::set<NodeId> const& command_ids
+        NodeIdMap32 const& command_ids
     ) -> Result<BuildStats>;
 
     /// Build specific targets and all required dependencies.
@@ -174,7 +175,7 @@ private:
     [[nodiscard]]
     auto filter_jobs(
         std::vector<BuildJob> const& all_jobs,
-        std::set<NodeId> const& affected_nodes
+        NodeIdMap32 const& affected_nodes
     ) -> std::vector<BuildJob>;
 };
 
