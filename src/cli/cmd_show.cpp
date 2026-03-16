@@ -133,7 +133,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     printf("%.*s\n\n", static_cast<int>(script_prologue.size()), script_prologue.data());
 
-    auto output_dirs = std::set<std::string> {};
+    auto output_dirs = std::vector<std::string> {};
     for (auto id : ctx.graph().all_nodes()) {
         auto const* node = ctx.graph().get_file_node(id);
         if (!node) {
@@ -155,13 +155,16 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
                 if (!pup::path::parent(path).empty()) {
                     auto parent = std::string { pup::path::parent(path) };
                     if (!parent.empty() && parent != ".") {
-                        output_dirs.insert(parent);
+                        output_dirs.push_back(std::move(parent));
                     }
                 }
                 break;
             }
         }
     }
+
+    std::ranges::sort(output_dirs);
+    output_dirs.erase(std::unique(output_dirs.begin(), output_dirs.end()), output_dirs.end());
 
     if (!output_dirs.empty()) {
         printf("%.*s Create output directories\n", static_cast<int>(script_comment.size()), script_comment.data());

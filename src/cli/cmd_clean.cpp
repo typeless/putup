@@ -12,7 +12,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <set>
 
 namespace pup::cli {
 
@@ -67,7 +66,7 @@ auto remove_indexed_outputs(
         for (auto parent = std::string { pup::path::parent(abs_path) };
              !parent.empty() && parent != std::string { pup::path::parent(parent) };
              parent = std::string { pup::path::parent(parent) }) {
-            result.output_dirs.insert(parent);
+            result.output_dirs.push_back(parent);
         }
 
         if (!pup::platform::exists(abs_path)) {
@@ -137,7 +136,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
 
     auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
     auto error_count = std::size_t { 0 };
-    auto output_dirs = std::set<std::string> {};
+    auto output_dirs = std::vector<std::string> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
@@ -172,7 +171,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    output_dirs.insert(ctx->build_dir);
+    output_dirs.push_back(ctx->build_dir);
     remove_empty_directories(output_dirs, ctx->build_dir, ctx->root, mode);
 
     if (!opts.dry_run) {

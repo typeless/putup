@@ -18,7 +18,7 @@ constexpr auto ASCII_CONTROL_CHAR_MAX = static_cast<unsigned char>(0x1F);
 }
 
 auto remove_empty_directories(
-    std::set<std::string> const& output_dirs,
+    std::vector<std::string> const& output_dirs,
     std::string const& build_dir,
     std::string const& source_dir,
     OutputMode mode
@@ -26,7 +26,9 @@ auto remove_empty_directories(
 {
     auto removed = std::size_t { 0 };
 
-    auto dirs = std::vector<std::string>(output_dirs.begin(), output_dirs.end());
+    auto dirs = output_dirs;
+    std::ranges::sort(dirs);
+    dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
     std::ranges::sort(dirs, std::greater {}, [](auto const& p) {
         return p.size();
     });
