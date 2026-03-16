@@ -114,6 +114,7 @@ auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<voi
         return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
     }
 
+    assert(graph.edges.size() < UINT32_MAX);
     auto const edge_idx = static_cast<std::uint32_t>(graph.edges.size());
     graph.edges.push_back(Edge {
         .from = from,
