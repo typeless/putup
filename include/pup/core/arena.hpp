@@ -48,6 +48,8 @@ public:
     [[nodiscard]]
     auto size() const -> std::size_t;
 
+    auto append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSlice;
+
     auto reserve(std::size_t total_elements) -> void;
     auto compact() -> void;
     auto clear() -> void;

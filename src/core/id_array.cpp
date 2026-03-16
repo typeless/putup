@@ -42,7 +42,7 @@ auto IdArray32::resize(std::uint32_t max_id) -> void
     }
     auto* p = static_cast<std::uint32_t*>(std::realloc(data_, needed * sizeof(std::uint32_t)));
     if (!p) {
-        return;
+        std::abort();
     }
     std::memset(p + capacity_, 0, (needed - capacity_) * sizeof(std::uint32_t));
     data_ = p;

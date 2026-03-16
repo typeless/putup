@@ -4,6 +4,8 @@
 #include "pup/core/id_bitset.hpp"
 
 #include <cstdlib>
+
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 
@@ -38,7 +40,7 @@ auto IdBitSet::resize(std::uint32_t max_id) -> void
     }
     auto* p = static_cast<std::uint64_t*>(std::realloc(words_, needed * sizeof(std::uint64_t)));
     if (!p) {
-        return;
+        std::abort();
     }
     std::memset(p + word_count_, 0, (needed - word_count_) * sizeof(std::uint64_t));
     words_ = p;
