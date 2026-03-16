@@ -26,6 +26,7 @@ test-srcs-y += test_layout.cpp
 test-srcs-y += test_lexer.cpp
 test-srcs-y += test_main.cpp
 test-srcs-y += test_parser.cpp
+test-srcs-y += test_path.cpp
 test-srcs-y += test_path_utils.cpp
 test-srcs-y += test_platform_file_io.cpp
 test-srcs-y += test_platform_process.cpp

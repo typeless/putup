@@ -118,6 +118,8 @@ auto normalize(std::string_view p) -> std::string
             // skip
         } else if (part == ".." && !parts.empty() && parts.back() != "..") {
             parts.pop_back();
+        } else if (part == ".." && absolute) {
+            // Cannot go above root — absorb
         } else {
             parts.push_back(part);
         }

@@ -676,20 +676,21 @@ namespace {
 
 auto path_basename(std::string_view path) -> std::string_view
 {
-    auto pos = path.rfind('/');
-    return pos == std::string_view::npos ? path : path.substr(pos + 1);
+    return pup::path::filename(path);
 }
 
 auto path_stem(std::string_view name) -> std::string_view
 {
-    auto pos = name.rfind('.');
-    return pos == std::string_view::npos ? name : name.substr(0, pos);
+    return pup::path::stem(name);
 }
 
 auto path_extension(std::string_view name) -> std::string_view
 {
-    auto pos = name.rfind('.');
-    return pos == std::string_view::npos ? std::string_view {} : name.substr(pos + 1);
+    auto ext = pup::path::extension(name);
+    if (!ext.empty() && ext[0] == '.') {
+        ext.remove_prefix(1);
+    }
+    return ext;
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/glob.hpp"
+#include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
@@ -335,40 +336,26 @@ auto has_glob_chars(std::string_view pattern) -> bool
 
 auto path_basename(std::string_view path) -> std::string_view
 {
-    auto last_slash = path.rfind('/');
-    if (last_slash == std::string_view::npos) {
-        return path;
-    }
-    return path.substr(last_slash + 1);
+    return pup::path::filename(path);
 }
 
 auto path_stem(std::string_view path) -> std::string_view
 {
-    auto base = path_basename(path);
-    auto dot = base.rfind('.');
-    if (dot == std::string_view::npos || dot == 0) {
-        return base;
-    }
-    return base.substr(0, dot);
+    return pup::path::stem(path);
 }
 
 auto path_extension(std::string_view path) -> std::string_view
 {
-    auto base = path_basename(path);
-    auto dot = base.rfind('.');
-    if (dot == std::string_view::npos || dot == 0) {
-        return {};
+    auto ext = pup::path::extension(path);
+    if (!ext.empty() && ext[0] == '.') {
+        ext.remove_prefix(1);
     }
-    return base.substr(dot + 1);
+    return ext;
 }
 
 auto path_directory(std::string_view path) -> std::string_view
 {
-    auto last_slash = path.rfind('/');
-    if (last_slash == std::string_view::npos) {
-        return {};
-    }
-    return path.substr(0, last_slash);
+    return pup::path::parent(path);
 }
 
 auto glob_match_extract(std::string_view pattern, std::string_view filename) -> std::string

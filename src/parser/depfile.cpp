@@ -2,8 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/depfile.hpp"
-
-#include <fstream>
+#include "pup/platform/file_io.hpp"
 
 namespace pup::parser {
 
@@ -96,17 +95,11 @@ auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> std::string
 
 auto parse_depfile(std::string const& path) -> Result<Depfile>
 {
-    auto file = std::ifstream { path };
-    if (!file) {
+    auto content = pup::platform::read_file(path);
+    if (!content) {
         return make_error<Depfile>(ErrorCode::IoError, "Failed to open depfile");
     }
-
-    file.seekg(0, std::ios::end);
-    auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    auto content = std::string(static_cast<std::size_t>(size), '\0');
-    file.read(content.data(), size);
-    return parse_depfile(std::string_view { content });
+    return parse_depfile(std::string_view { *content });
 }
 
 auto parse_depfile(std::string_view content) -> Result<Depfile>

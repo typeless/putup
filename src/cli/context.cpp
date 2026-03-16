@@ -20,7 +20,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <format>
-#include <fstream>
 #include <map>
 #include <vector>
 
@@ -164,17 +163,11 @@ auto find_build_subdir(
 
 auto read_file(std::string const& path) -> std::optional<std::string>
 {
-    auto file = std::ifstream { path };
-    if (!file) {
+    auto result = pup::platform::read_file(path);
+    if (!result) {
         return std::nullopt;
     }
-
-    file.seekg(0, std::ios::end);
-    auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    auto content = std::string(static_cast<std::size_t>(size), '\0');
-    file.read(content.data(), size);
-    return content;
+    return std::move(*result);
 }
 
 auto discover_tupfile_dirs(

@@ -2,8 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/config.hpp"
-
-#include <fstream>
+#include "pup/platform/file_io.hpp"
 
 namespace pup::parser {
 
@@ -105,18 +104,11 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
 
 auto parse_config(std::string const& path) -> Result<VarDb>
 {
-    auto file = std::ifstream { path };
-    if (!file) {
+    auto content = pup::platform::read_file(path);
+    if (!content) {
         return make_error<VarDb>(ErrorCode::NotFound, "Cannot open config file: " + path);
     }
-
-    file.seekg(0, std::ios::end);
-    auto size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    auto content = std::string(static_cast<std::size_t>(size), '\0');
-    file.read(content.data(), size);
-
-    return parse_config_string(content);
+    return parse_config_string(*content);
 }
 
 } // namespace pup::parser
