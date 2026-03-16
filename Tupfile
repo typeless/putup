@@ -7,6 +7,7 @@ c-srcs-y  = third_party/sha256/sha256.c
 srcs-y  = src/core/hash.cpp
 srcs-y += src/core/layout.cpp
 srcs-y += src/core/metrics.cpp
+srcs-y += src/core/path.cpp
 srcs-y += src/core/path_utils.cpp
 srcs-y += src/core/string_pool.cpp
 srcs-y += src/core/string_utils.cpp
