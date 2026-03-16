@@ -12,6 +12,7 @@ srcs-y += src/core/layout.cpp
 srcs-y += src/core/metrics.cpp
 srcs-y += src/core/path.cpp
 srcs-y += src/core/path_utils.cpp
+srcs-y += src/core/sorted_id_vec.cpp
 srcs-y += src/core/string_pool.cpp
 srcs-y += src/core/string_utils.cpp
 srcs-y += src/core/terminal.cpp
