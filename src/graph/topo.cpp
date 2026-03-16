@@ -12,9 +12,10 @@ namespace pup::graph {
 
 namespace {
 
-enum class Color : std::uint32_t { White = 0,
-                                    Gray = 1,
-                                    Black = 2 };
+// Values match NodeIdMap32::get() default (0 = unvisited)
+constexpr auto WHITE = std::uint32_t { 0 };
+constexpr auto GRAY = std::uint32_t { 1 };
+constexpr auto BLACK = std::uint32_t { 2 };
 
 struct DfsState {
     NodeIdMap32 color;
@@ -37,10 +38,10 @@ auto visit_neighbors(
         if (state.has_cycle) {
             return;
         }
-        if (state.color.get(v) == static_cast<std::uint32_t>(Color::White)) {
+        if (state.color.get(v) == WHITE) {
             state.parent.set(v, u);
             dfs_visit(graph, v, state);
-        } else if (state.color.get(v) == static_cast<std::uint32_t>(Color::Gray)) {
+        } else if (state.color.get(v) == GRAY) {
             state.has_cycle = true;
             state.cycle.clear();
             state.cycle.push_back(v);
@@ -60,11 +61,11 @@ auto dfs_visit(BuildGraph const& graph, NodeId u, DfsState& state) -> void
     if (state.has_cycle) {
         return;
     }
-    state.color.set(u, static_cast<std::uint32_t>(Color::Gray));
+    state.color.set(u, GRAY);
     visit_neighbors(graph, u, graph.get_outputs(u), state);
     visit_neighbors(graph, u, graph.get_order_only_dependents(u), state);
     if (!state.has_cycle) {
-        state.color.set(u, static_cast<std::uint32_t>(Color::Black));
+        state.color.set(u, BLACK);
         state.order.push_back(u);
     }
 }
@@ -76,11 +77,11 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
     auto state = DfsState {};
 
     for (auto id : graph.all_nodes()) {
-        state.color.set(id, static_cast<std::uint32_t>(Color::White));
+        state.color.set(id, WHITE);
     }
 
     for (auto id : graph.all_nodes()) {
-        if (state.color.get(id) == static_cast<std::uint32_t>(Color::White)) {
+        if (state.color.get(id) == WHITE) {
             dfs_visit(graph, id, state);
         }
         if (state.has_cycle) {
