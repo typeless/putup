@@ -30,6 +30,8 @@
 #include <set>
 #include <unordered_map>
 
+#include "pup/core/node_id_map.hpp"
+
 namespace pup::cli {
 
 namespace {
@@ -139,13 +141,14 @@ auto is_tupfile(std::string_view path) -> bool
 auto walk_upstream_from_scope(
     pup::graph::BuildGraph const& graph,
     std::vector<std::string> const& scopes
-) -> std::set<pup::NodeId>
+) -> std::vector<pup::NodeId>
 {
     if (scopes.empty()) {
         return {};
     }
 
-    auto visited = std::set<pup::NodeId> {};
+    auto visited = pup::NodeIdMap32 {};
+    auto result = std::vector<pup::NodeId> {};
     auto stack = std::vector<pup::NodeId> {};
 
     // Seed with commands whose source_dir is in scope
@@ -163,7 +166,8 @@ auto walk_upstream_from_scope(
             continue;
         }
 
-        visited.insert(id);
+        visited.set(id, 1);
+        result.push_back(id);
 
         for (auto input_id : graph.get_inputs(id)) {
             stack.push_back(input_id);
@@ -177,9 +181,11 @@ auto walk_upstream_from_scope(
         auto id = stack.back();
         stack.pop_back();
 
-        if (!visited.insert(id).second) {
+        if (visited.contains(id)) {
             continue;
         }
+        visited.set(id, 1);
+        result.push_back(id);
 
         for (auto input_id : graph.get_inputs(id)) {
             stack.push_back(input_id);
@@ -189,7 +195,7 @@ auto walk_upstream_from_scope(
         }
     }
 
-    return visited;
+    return result;
 }
 
 /// Collect all upstream input file paths for commands in the given scopes.
@@ -669,9 +675,9 @@ auto preserve_old_implicit_edges(
     ImplicitDepContext& ctx
 ) -> void
 {
-    auto commands_with_new_deps = std::set<pup::NodeId> {};
+    auto commands_with_new_deps = pup::NodeIdMap32 {};
     for (auto const& [cmd_id, _] : discovered_deps) {
-        commands_with_new_deps.insert(cmd_id);
+        commands_with_new_deps.set(cmd_id, 1);
     }
 
     for (auto const& edge : old_index.edges()) {
@@ -1217,9 +1223,10 @@ auto build_single_variant(
 
     // Identify config-generating commands to exclude from regular build
     // (config rules should only run during 'pup configure')
-    auto config_cmd_ids = std::set<NodeId> {};
-    for (auto const& cfg : find_config_commands(ctx.graph(), ctx.layout().source_root)) {
-        config_cmd_ids.insert(cfg.cmd_id);
+    auto config_cmds = find_config_commands(ctx.graph(), ctx.layout().source_root);
+    auto config_cmd_ids = NodeIdMap32 {};
+    for (auto const& cfg : config_cmds) {
+        config_cmd_ids.set(cfg.cmd_id, 1);
     }
 
     auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
@@ -1229,7 +1236,7 @@ auto build_single_variant(
     auto mode = determine_build_mode(
         !target_node_ids.empty(),
         use_incremental,
-        !config_cmd_ids.empty(),
+        !config_cmds.empty(),
         scope_with_upstream
     );
 
@@ -1239,8 +1246,8 @@ auto build_single_variant(
         break;
     case BuildMode::ScopeWithUpstream: {
         auto scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
-        for (auto cfg_id : config_cmd_ids) {
-            scope_cmds.erase(cfg_id);
+        for (auto const& cfg : config_cmds) {
+            scope_cmds.erase(cfg.cmd_id);
         }
         build_result = scheduler.build_subset(ctx.graph(), scope_cmds);
         break;
