@@ -5,8 +5,10 @@
 #include "pup/core/hash.hpp"
 #include "pup/core/path_utils.hpp"
 
+#include <cassert>
 #include <charconv>
 #include <functional>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace pup::index {
@@ -103,10 +105,15 @@ auto EdgeEntry::from_raw(RawEdge const& raw) -> EdgeEntry
 
 auto Index::add_edge(EdgeEntry entry) -> void
 {
-    auto const idx = edges_.size();
+    assert(edges_.size() < UINT32_MAX);
+    auto const idx = static_cast<std::uint32_t>(edges_.size());
     edges_.push_back(entry);
-    edges_from_index_[edges_[idx].from].push_back(idx);
-    edges_to_index_[edges_[idx].to].push_back(idx);
+
+    auto old_from = edges_from_index_.get_slice(edges_[idx].from);
+    edges_from_index_.set_slice(edges_[idx].from, edge_arena_.append_extend(old_from, idx));
+
+    auto old_to = edges_to_index_.get_slice(edges_[idx].to);
+    edges_to_index_.set_slice(edges_[idx].to, edge_arena_.append_extend(old_to, idx));
 }
 
 auto Index::find_file_by_id(NodeId id) const -> FileEntry const*
@@ -139,25 +146,29 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
 
 auto Index::find_command_by_command(std::string const& cmd) const -> CommandEntry const*
 {
-    auto it = command_index_.find(cmd);
-    if (it != command_index_.end()) {
-        return &commands_[it->second];
+    auto str_id = command_strings_.find(cmd);
+    if (is_empty(str_id)) {
+        return nullptr;
     }
-    return nullptr;
+    auto const* idx = command_index_.find(to_underlying(str_id));
+    if (!idx) {
+        return nullptr;
+    }
+    return &commands_[*idx];
 }
 
-auto Index::lookup_edges(
-    std::unordered_map<NodeId, std::vector<std::size_t>> const& index,
-    NodeId id
-) const -> std::vector<EdgeEntry const*>
+auto Index::lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
+    -> std::vector<EdgeEntry const*>
 {
+    auto s = index.get_slice(id);
+    if (s.length == 0) {
+        return {};
+    }
+    auto span = edge_arena_.slice(s);
     auto result = std::vector<EdgeEntry const*> {};
-    auto it = index.find(id);
-    if (it != index.end()) {
-        result.reserve(it->second.size());
-        for (auto idx : it->second) {
-            result.push_back(&edges_[idx]);
-        }
+    result.reserve(span.size());
+    for (auto idx : span) {
+        result.push_back(&edges_[idx]);
     }
     return result;
 }
@@ -174,26 +185,32 @@ auto Index::edges_to(NodeId id) const -> std::vector<EdgeEntry const*>
 
 auto Index::build_edge_indices() -> void
 {
+    edge_arena_.clear();
     edges_from_index_.clear();
     edges_to_index_.clear();
 
     for (auto i = std::size_t { 0 }; i < edges_.size(); ++i) {
-        edges_from_index_[edges_[i].from].push_back(i);
-        edges_to_index_[edges_[i].to].push_back(i);
+        auto const idx = static_cast<std::uint32_t>(i);
+        auto old_from = edges_from_index_.get_slice(edges_[i].from);
+        edges_from_index_.set_slice(edges_[i].from, edge_arena_.append_extend(old_from, idx));
+
+        auto old_to = edges_to_index_.get_slice(edges_[i].to);
+        edges_to_index_.set_slice(edges_[i].to, edge_arena_.append_extend(old_to, idx));
     }
 
-    // Rebuild command index using reconstructed command strings
     rebuild_command_index();
 }
 
 auto Index::rebuild_command_index() -> void
 {
+    command_strings_.clear();
     command_index_.clear();
 
     for (auto i = std::size_t { 0 }; i < commands_.size(); ++i) {
         auto cmd_str = get_command_string(*this, commands_[i]);
         if (!cmd_str.empty()) {
-            command_index_[std::move(cmd_str)] = i;
+            auto str_id = command_strings_.intern(cmd_str);
+            command_index_.insert(to_underlying(str_id), static_cast<std::uint32_t>(i));
         }
     }
 }
@@ -265,8 +282,11 @@ auto Index::clear() -> void
     files_.clear();
     commands_.clear();
     edges_.clear();
+    edge_arena_.clear();
     edges_from_index_.clear();
     edges_to_index_.clear();
+    command_strings_.clear();
+    command_index_.clear();
 }
 
 namespace {

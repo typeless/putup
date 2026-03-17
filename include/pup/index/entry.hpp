@@ -4,12 +4,15 @@
 #pragma once
 
 #include "format.hpp"
+#include "pup/core/arena.hpp"
+#include "pup/core/node_id_map.hpp"
+#include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace pup::index {
@@ -153,8 +156,7 @@ public:
     [[nodiscard]]
     auto find_command_by_id(NodeId id) const -> CommandEntry const*;
 
-    /// Find command by command string (requires prior build_command_lookup() call)
-    /// @deprecated Use build_command_lookup() for explicit lookup map management
+    /// Find command by expanded command string (requires prior build_edge_indices() call)
     [[nodiscard]]
     auto find_command_by_command(std::string const& cmd) const -> CommandEntry const*;
 
@@ -217,21 +219,21 @@ private:
     std::vector<CommandEntry> commands_ = {};
     std::vector<EdgeEntry> edges_ = {};
 
-    // Edge indices for O(1) lookup (indices into edges_ vector)
-    std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index_ = {};
-    std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index_ = {};
+    // Edge indices (indices into edges_ vector)
+    Arena32 edge_arena_;
+    NodeIdArenaIndex edges_from_index_;
+    NodeIdArenaIndex edges_to_index_;
 
-    // Command index for O(1) lookup by command string (index into commands_ vector)
-    std::unordered_map<std::string, std::size_t> command_index_ = {};
+    // Command index (command string → index into commands_ vector)
+    StringPool command_strings_;
+    SortedPairVec command_index_;
 
     // Index save time (nanoseconds since epoch) for racy-clean detection
     std::int64_t save_time_ns_ = 0;
 
     [[nodiscard]]
-    auto lookup_edges(
-        std::unordered_map<NodeId, std::vector<std::size_t>> const& index,
-        NodeId id
-    ) const -> std::vector<EdgeEntry const*>;
+    auto lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
+        -> std::vector<EdgeEntry const*>;
 };
 
 /// Reconstruct full command string from instruction + operands.
@@ -241,13 +243,5 @@ private:
 /// @return The fully expanded command string
 [[nodiscard]]
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string;
-
-/// Build a lookup map from command strings to command entries.
-/// This is O(N) reconstruction - call once when needed for change detection.
-/// @param index The index to build lookup from
-/// @return Map of command string -> command entry pointer
-[[nodiscard]]
-auto build_command_lookup(Index const& index)
-    -> std::unordered_map<std::string, CommandEntry const*>;
 
 } // namespace pup::index
