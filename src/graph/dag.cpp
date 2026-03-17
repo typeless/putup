@@ -303,11 +303,15 @@ auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view na
 auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>
 {
     assert(graph.command_index_built && "find_by_command() requires build_command_index() first");
-    auto it = graph.command_str_index.find(cmd);
-    if (it != graph.command_str_index.end()) {
-        return it->second;
+    auto cmd_id = graph.command_strings.find(cmd);
+    if (is_empty(cmd_id)) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    auto const* found = graph.command_index.find(to_underlying(cmd_id));
+    if (!found) {
+        return std::nullopt;
+    }
+    return *found;
 }
 
 auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>
@@ -471,7 +475,9 @@ auto clear(Graph& graph) -> void
     graph.order_only_to_index.clear();
     graph.order_only_dependents.clear();
     graph.dir_children.clear();
-    graph.command_str_index.clear();
+    graph.command_strings.clear();
+    graph.command_index.clear();
+    graph.command_index_built = false;
     graph.strings.clear();
 
     // Re-intern build root name
@@ -926,7 +932,8 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id) -> std::string
 
 auto build_command_index(Graph& graph, PathCache& cache) -> void
 {
-    graph.command_str_index.clear();
+    graph.command_strings.clear();
+    graph.command_index.clear();
     graph.command_index_built = true;
     auto& metrics = thread_metrics();
     for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
@@ -938,7 +945,8 @@ auto build_command_index(Graph& graph, PathCache& cache) -> void
         auto cmd_str = expand_instruction(graph, id, cache);
         ++metrics.command_expansions;
         if (!cmd_str.empty()) {
-            graph.command_str_index[std::move(cmd_str)] = id;
+            auto str_id = graph.command_strings.intern(cmd_str);
+            graph.command_index.insert(to_underlying(str_id), id);
         }
     }
 }

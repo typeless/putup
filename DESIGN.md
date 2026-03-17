@@ -548,7 +548,8 @@ struct Graph {
 
     // Node lookup indices
     std::vector<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
-    std::unordered_map<std::string, NodeId, ...> command_str_index;  // command -> NodeId
+    StringPool command_strings;               // Interned expanded command strings
+    SortedPairVec command_index;              // StringId(command) -> NodeId
 
     // ID generators (next available ID for each type)
     NodeId next_file_id = 2;                               // Starts at 2 (BUILD_ROOT is 1)
