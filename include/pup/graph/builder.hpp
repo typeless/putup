@@ -61,6 +61,37 @@ struct PendingWeakAssignment {
     SortedIdVec env_deps;    ///< Env var StringIds used in RHS
 };
 
+// ============================================================================
+// GroupMemberTable - maps interned group name to its list of member NodeIds
+// ============================================================================
+
+struct GroupMemberTable {
+    SortedPairVec name_to_idx;             ///< Interned group name → index into pool
+    std::vector<std::vector<NodeId>> pool; ///< pool[idx] = member NodeIds
+
+    [[nodiscard]]
+    auto find(std::uint32_t key) const -> std::vector<NodeId> const*
+    {
+        auto const* idx = name_to_idx.find(key);
+        if (!idx) {
+            return nullptr;
+        }
+        return &pool[*idx];
+    }
+
+    auto get_or_create(std::uint32_t key) -> std::vector<NodeId>&
+    {
+        auto const* idx = name_to_idx.find(key);
+        if (idx) {
+            return pool[*idx];
+        }
+        auto new_idx = static_cast<std::uint32_t>(pool.size());
+        pool.emplace_back();
+        name_to_idx.insert(key, new_idx);
+        return pool.back();
+    }
+};
+
 /// Context for building the graph (per-Tupfile state)
 struct BuilderContext {
     BuildGraph* graph = nullptr;
@@ -69,8 +100,7 @@ struct BuilderContext {
     BuilderOptions options = {};
 
     std::vector<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
-    SortedPairVec group_name_to_idx = {};                            ///< Interned group name → pool index
-    std::vector<std::vector<NodeId>> group_member_pool = {};         ///< Pool of member lists
+    GroupMemberTable groups = {};
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 

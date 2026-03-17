@@ -1690,14 +1690,7 @@ auto expand_rule(
         }
         if (output_group && is_context_active(ctx)) {
             auto gkey = to_underlying(ctx.graph->intern(*output_group));
-            auto const* gidx = ctx.group_name_to_idx.find(gkey);
-            if (gidx) {
-                ctx.group_member_pool[*gidx].push_back(*output_id);
-            } else {
-                auto new_idx = static_cast<std::uint32_t>(ctx.group_member_pool.size());
-                ctx.group_member_pool.emplace_back(std::vector<NodeId> { *output_id });
-                ctx.group_name_to_idx.insert(gkey, new_idx);
-            }
+            ctx.groups.get_or_create(gkey).push_back(*output_id);
         }
 
         // Add to order-only group <name> if specified
@@ -1786,9 +1779,8 @@ auto expand_inputs(
         if (pattern.is_group) {
             // Bin reference {name} - local to Tupfile
             auto gkey = to_underlying(ctx.graph->intern(pattern.group_name));
-            auto const* gidx = ctx.group_name_to_idx.find(gkey);
-            if (gidx) {
-                for (auto id : ctx.group_member_pool[*gidx]) {
+            if (auto const* members = ctx.groups.find(gkey)) {
+                for (auto id : *members) {
                     auto path = ctx.graph->get_full_path(id);
                     if (!path.empty()) {
                         result.push_back(std::move(path));
@@ -2438,12 +2430,12 @@ auto add_tupfile(
     eval.resolve_group = [&ctx](std::string_view name
                          ) -> std::vector<std::string> {
         auto gkey = to_underlying(ctx.graph->intern(name));
-        auto const* gidx = ctx.group_name_to_idx.find(gkey);
-        if (!gidx) {
+        auto const* members = ctx.groups.find(gkey);
+        if (!members) {
             return {};
         }
         auto paths = std::vector<std::string> {};
-        for (auto id : ctx.group_member_pool[*gidx]) {
+        for (auto id : *members) {
             auto path = ctx.graph->get_full_path(id);
             if (!path.empty()) {
                 paths.push_back(std::move(path));
