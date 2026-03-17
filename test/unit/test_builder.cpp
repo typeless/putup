@@ -90,6 +90,7 @@ public:
     }
 
     auto root() const -> fs::path const& { return test_root_; }
+    auto root_str() const -> std::string { return test_root_.string(); }
 
     auto create_file(fs::path const& rel_path) -> void
     {
@@ -131,8 +132,8 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[builde
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -189,8 +190,8 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -248,8 +249,8 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[buil
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -308,8 +309,8 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -397,8 +398,8 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[builder][glob]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = true,
@@ -436,9 +437,9 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[builder][glob]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
-        .output_root = fixture.root() / "build-variant",
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
+        .output_root = (fixture.root() / "build-variant").string(),
         .config_path = {},
         .expand_globs = true,
         .validate_inputs = false,
@@ -487,9 +488,9 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[builder][config]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
-        .output_root = fixture.root() / "build-variant",
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
+        .output_root = (fixture.root() / "build-variant").string(),
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -529,8 +530,8 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[builder][exclusio
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = true,
@@ -594,8 +595,8 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = true,
@@ -659,8 +660,8 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[builder][exclus
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = true,
@@ -728,8 +729,8 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -816,8 +817,8 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -899,9 +900,9 @@ TEST_CASE("GraphBuilder variant output mapping", "[builder][variant]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
-        .output_root = fixture.root() / "build-variant",
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
+        .output_root = (fixture.root() / "build-variant").string(),
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -949,8 +950,8 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[builder][deep-
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -1001,8 +1002,8 @@ TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -1069,12 +1070,12 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[builder
     auto ctx = EvalContext { .vars = &vars };
 
     // Simulate -B build-variant
-    auto output_root = fixture.root() / "build-variant";
-    fs::create_directories(output_root / "src");
+    auto output_root = (fixture.root() / "build-variant").string();
+    fs::create_directories(fs::path { output_root } / "src");
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = output_root,
         .config_path = {},
         .expand_globs = false,
@@ -1138,10 +1139,10 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     fs::create_directories(fixture.root() / "build-variant" / "boot");
     fs::create_directories(fixture.root() / "build-variant" / "output" / "hex");
 
-    auto output_root = fixture.root() / "build-variant";
+    auto output_root = (fixture.root() / "build-variant").string();
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = output_root,
         .config_path = {},
         .expand_globs = false,
@@ -1242,9 +1243,9 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
 
     // In-tree variant build
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
-        .output_root = fixture.root() / "build",
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
+        .output_root = (fixture.root() / "build").string(),
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -1307,8 +1308,8 @@ TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -1358,8 +1359,8 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -1413,8 +1414,8 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[buil
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
         .output_root = {},
         .config_path = {},
         .expand_globs = false,
@@ -1470,9 +1471,9 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
 
     // Variant build with output_root
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
-        .output_root = fixture.root() / "build",
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
+        .output_root = (fixture.root() / "build").string(),
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -1536,9 +1537,9 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root(),
-        .config_root = fixture.root(),
-        .output_root = fixture.root() / "build",
+        .source_root = fixture.root_str(),
+        .config_root = fixture.root_str(),
+        .output_root = (fixture.root() / "build").string(),
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,

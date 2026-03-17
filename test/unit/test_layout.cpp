@@ -56,9 +56,9 @@ TEST_CASE("find_project_root", "[layout]")
         auto tmp = TempDir {};
         tmp.create_file("Tupfile.ini");
 
-        auto result = pup::find_project_root(tmp.path());
+        auto result = pup::find_project_root(tmp.path().string());
         REQUIRE(result.has_value());
-        REQUIRE(*result == tmp.path());
+        REQUIRE(*result == tmp.path().string());
     }
 
     SECTION("finds Tupfile.ini in parent directory")
@@ -67,9 +67,9 @@ TEST_CASE("find_project_root", "[layout]")
         tmp.create_file("Tupfile.ini");
         tmp.create_dir("src/lib");
 
-        auto result = pup::find_project_root(tmp.path() / "src" / "lib");
+        auto result = pup::find_project_root((tmp.path() / "src" / "lib").string());
         REQUIRE(result.has_value());
-        REQUIRE(*result == tmp.path());
+        REQUIRE(*result == tmp.path().string());
     }
 
     SECTION("build directory with .pup should find source root in parent")
@@ -83,9 +83,9 @@ TEST_CASE("find_project_root", "[layout]")
 
         // When searching from build-release/, should find parent (with Tupfile.ini)
         // NOT stop at build-release/ just because it has .pup
-        auto result = pup::find_project_root(tmp.path() / "build-release");
+        auto result = pup::find_project_root((tmp.path() / "build-release").string());
         REQUIRE(result.has_value());
-        REQUIRE(*result == tmp.path());
+        REQUIRE(*result == tmp.path().string());
     }
 
     SECTION("returns nullopt when no project root found")
@@ -93,7 +93,7 @@ TEST_CASE("find_project_root", "[layout]")
         auto tmp = TempDir {};
         tmp.create_dir("empty");
 
-        auto result = pup::find_project_root(tmp.path() / "empty");
+        auto result = pup::find_project_root((tmp.path() / "empty").string());
         // Should walk up to tmp.path() but not find anything, then continue up
         // Eventually returns nullopt when reaching filesystem root
         // (This test may find a project root in parent dirs in dev environment)
@@ -119,7 +119,7 @@ TEST_CASE("discover_layout from build directory", "[layout]")
         fs::current_path(original_cwd);
 
         REQUIRE(result.has_value());
-        REQUIRE(fs::canonical(result->source_root) == fs::canonical(tmp.path()));
-        REQUIRE(fs::canonical(result->output_root) == fs::canonical(tmp.path() / "build"));
+        REQUIRE(fs::canonical(result->source_root) == fs::canonical(tmp.path()).string());
+        REQUIRE(fs::canonical(result->output_root) == fs::canonical(tmp.path() / "build").string());
     }
 }
