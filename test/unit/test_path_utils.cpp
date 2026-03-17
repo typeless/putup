@@ -13,37 +13,37 @@ TEST_CASE("is_path_under checks path containment", "[path_utils]")
 {
     SECTION("path directly under root")
     {
-        REQUIRE(pup::is_path_under(fs::path { "/root/file.c" }, fs::path { "/root" }));
-        REQUIRE(pup::is_path_under(fs::path { "/root/dir/file.c" }, fs::path { "/root" }));
+        REQUIRE(pup::is_path_under(std::string {"/root/file.c" }, std::string {"/root" }));
+        REQUIRE(pup::is_path_under(std::string {"/root/dir/file.c" }, std::string {"/root" }));
     }
 
     SECTION("path equals root")
     {
-        REQUIRE(pup::is_path_under(fs::path { "/root" }, fs::path { "/root" }));
+        REQUIRE(pup::is_path_under(std::string {"/root" }, std::string {"/root" }));
     }
 
     SECTION("path not under root")
     {
-        REQUIRE_FALSE(pup::is_path_under(fs::path { "/other/file.c" }, fs::path { "/root" }));
+        REQUIRE_FALSE(pup::is_path_under(std::string {"/other/file.c" }, std::string {"/root" }));
     }
 
     SECTION("handles trailing slashes on root")
     {
-        REQUIRE(pup::is_path_under(fs::path { "/root/file.c" }, fs::path { "/root/" }));
+        REQUIRE(pup::is_path_under(std::string {"/root/file.c" }, std::string {"/root/" }));
     }
 
     SECTION("handles relative paths")
     {
-        REQUIRE(pup::is_path_under(fs::path { "src/lib/file.c" }, fs::path { "src" }));
-        REQUIRE(pup::is_path_under(fs::path { "src/lib/file.c" }, fs::path { "src/lib" }));
-        REQUIRE_FALSE(pup::is_path_under(fs::path { "src/lib/file.c" }, fs::path { "other" }));
+        REQUIRE(pup::is_path_under(std::string {"src/lib/file.c" }, std::string {"src" }));
+        REQUIRE(pup::is_path_under(std::string {"src/lib/file.c" }, std::string {"src/lib" }));
+        REQUIRE_FALSE(pup::is_path_under(std::string {"src/lib/file.c" }, std::string {"other" }));
     }
 
     SECTION("handles directory boundary correctly")
     {
         // "src-new" should not be under "src"
-        REQUIRE_FALSE(pup::is_path_under(fs::path { "/root/src-new/file.c" }, fs::path { "/root/src" }));
-        REQUIRE(pup::is_path_under(fs::path { "/root/src/file.c" }, fs::path { "/root/src" }));
+        REQUIRE_FALSE(pup::is_path_under(std::string {"/root/src-new/file.c" }, std::string {"/root/src" }));
+        REQUIRE(pup::is_path_under(std::string {"/root/src/file.c" }, std::string {"/root/src" }));
     }
 }
 
@@ -51,23 +51,23 @@ TEST_CASE("relative_to_root computes relative paths", "[path_utils]")
 {
     SECTION("path under root")
     {
-        REQUIRE(pup::relative_to_root(fs::path { "/root/src/file.c" }, fs::path { "/root" }) == "src/file.c");
-        REQUIRE(pup::relative_to_root(fs::path { "/root/file.c" }, fs::path { "/root" }) == "file.c");
+        REQUIRE(pup::relative_to_root(std::string {"/root/src/file.c" }, std::string {"/root" }) == "src/file.c");
+        REQUIRE(pup::relative_to_root(std::string {"/root/file.c" }, std::string {"/root" }) == "file.c");
     }
 
     SECTION("path equals root returns empty")
     {
-        REQUIRE(pup::relative_to_root(fs::path { "/root" }, fs::path { "/root" }).empty());
+        REQUIRE(pup::relative_to_root(std::string {"/root" }, std::string {"/root" }).empty());
     }
 
     SECTION("path not under root returns empty")
     {
-        REQUIRE(pup::relative_to_root(fs::path { "/other/file.c" }, fs::path { "/root" }).empty());
+        REQUIRE(pup::relative_to_root(std::string {"/other/file.c" }, std::string {"/root" }).empty());
     }
 
     SECTION("handles trailing slashes")
     {
-        REQUIRE(pup::relative_to_root(fs::path { "/root/src/file.c" }, fs::path { "/root/" }) == "src/file.c");
+        REQUIRE(pup::relative_to_root(std::string {"/root/src/file.c" }, std::string {"/root/" }) == "src/file.c");
     }
 }
 
@@ -178,8 +178,8 @@ TEST_CASE("strip_path_prefix removes prefix from path", "[path_utils][path]")
 
 TEST_CASE("resolve_under_root resolves paths to target root", "[path_utils][path]")
 {
-    auto source_root = fs::path { "/home/user/src/project" };
-    auto target_root = fs::path { "/home/user/src/project/../build" };
+    auto source_root = std::string {"/home/user/src/project" };
+    auto target_root = std::string {"/home/user/src/project/../build" };
 
     SECTION("resolves path under target root")
     {
@@ -214,8 +214,8 @@ TEST_CASE("resolve_under_root resolves paths to target root", "[path_utils][path
         // - target_root = /home/user/src/pup/build/busybox
         // After joining "applets/../../pup/build/busybox/include/autoconf.h" with
         // current_dir and lexically_normal, we get "../pup/build/busybox/include/autoconf.h"
-        auto src = fs::path { "/home/user/src/busybox" };
-        auto tgt = fs::path { "/home/user/src/pup/build/busybox" };
+        auto src = std::string {"/home/user/src/busybox" };
+        auto tgt = std::string {"/home/user/src/pup/build/busybox" };
         auto result = pup::resolve_under_root("../pup/build/busybox/include/autoconf.h", src, tgt);
         REQUIRE(result.has_value());
         REQUIRE(*result == "include/autoconf.h");
