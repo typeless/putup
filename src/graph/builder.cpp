@@ -738,7 +738,11 @@ auto process_generated_rules(
                 // This is a group reference - get/create group node and defer edge
                 auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
                 if (group_id_result) {
-                    state.deferred_edges.insert({ *group_id_result, *gen_cmd_id });
+                    auto edge = DeferredOrderOnlyEdge { *group_id_result, *gen_cmd_id };
+                    auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
+                    if (pos == state.deferred_edges.end() || !(*pos == edge)) {
+                        state.deferred_edges.insert(pos, edge);
+                    }
                 }
             } else if (!parser::has_glob_chars(oi)) {
                 // Regular file path - create edge directly (skip glob patterns)
@@ -1736,7 +1740,11 @@ auto expand_rule(
     // Store deferred edges for groups
     // These will be resolved after all Tupfiles are parsed (group might grow)
     for (auto group_id : deferred_group_vec) {
-        state.deferred_edges.insert({ group_id, *cmd_id });
+        auto edge = DeferredOrderOnlyEdge { group_id, *cmd_id };
+        auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
+        if (pos == state.deferred_edges.end() || !(*pos == edge)) {
+            state.deferred_edges.insert(pos, edge);
+        }
     }
 
     return {};

@@ -10,7 +10,6 @@
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
 
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -158,6 +157,8 @@ struct DeferredOrderOnlyEdge {
     {
         return std::tie(group_id, command_id) < std::tie(other.group_id, other.command_id);
     }
+
+    auto operator==(DeferredOrderOnlyEdge const& other) const -> bool = default;
 };
 
 /// Per-session state that persists across multiple Tupfiles
@@ -170,7 +171,7 @@ struct BuilderState {
     SortedPairVec group_nodes;
 
     /// Deferred edges to resolve after all Tupfiles are parsed
-    std::set<DeferredOrderOnlyEdge> deferred_edges;
+    std::vector<DeferredOrderOnlyEdge> deferred_edges;
 
     /// Config variable nodes (interned name StringId → NodeId)
     SortedPairVec config_var_nodes;
