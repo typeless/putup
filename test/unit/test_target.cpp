@@ -59,7 +59,7 @@ SCENARIO("Target parsing - variant detection", "[target]")
 
         WHEN("parsing 'build-debug'")
         {
-            auto result = pup::parse_target(tmp.path(), "build-debug");
+            auto result = pup::parse_target(tmp.path().string(), "build-debug");
 
             THEN("variant=build-debug, scope=empty, is_output=false")
             {
@@ -74,7 +74,7 @@ SCENARIO("Target parsing - variant detection", "[target]")
         WHEN("parsing 'build-debug/src/lib'")
         {
             tmp.create_dir("build-debug/src/lib");
-            auto result = pup::parse_target(tmp.path(), "build-debug/src/lib");
+            auto result = pup::parse_target(tmp.path().string(), "build-debug/src/lib");
 
             THEN("variant=build-debug, scope=src/lib, is_output=false")
             {
@@ -89,7 +89,7 @@ SCENARIO("Target parsing - variant detection", "[target]")
         WHEN("parsing 'build-debug/src/lib/foo.o'")
         {
             tmp.create_file("build-debug/src/lib/foo.o");
-            auto result = pup::parse_target(tmp.path(), "build-debug/src/lib/foo.o");
+            auto result = pup::parse_target(tmp.path().string(), "build-debug/src/lib/foo.o");
 
             THEN("variant=build-debug, scope=src/lib/foo.o, is_output=true")
             {
@@ -103,7 +103,7 @@ SCENARIO("Target parsing - variant detection", "[target]")
 
         WHEN("parsing 'src/lib'")
         {
-            auto result = pup::parse_target(tmp.path(), "src/lib");
+            auto result = pup::parse_target(tmp.path().string(), "src/lib");
 
             THEN("variant=nullopt, scope=src/lib, is_output=false")
             {
@@ -117,7 +117,7 @@ SCENARIO("Target parsing - variant detection", "[target]")
         WHEN("parsing 'src/lib/foo.o'")
         {
             tmp.create_file("src/lib/foo.o");
-            auto result = pup::parse_target(tmp.path(), "src/lib/foo.o");
+            auto result = pup::parse_target(tmp.path().string(), "src/lib/foo.o");
 
             THEN("variant=nullopt, scope=src/lib/foo.o, is_output=true")
             {
@@ -142,7 +142,7 @@ SCENARIO("Target parsing - glob expansion", "[target]")
 
         WHEN("parsing 'build-*'")
         {
-            auto result = pup::expand_glob_target(tmp.path(), "build-*");
+            auto result = pup::expand_glob_target(tmp.path().string(), "build-*");
 
             THEN("expands to [build-debug, build-release]")
             {
@@ -161,7 +161,7 @@ SCENARIO("Target parsing - glob expansion", "[target]")
         {
             tmp.create_dir("build-debug/src/lib");
             tmp.create_dir("build-release/src/lib");
-            auto result = pup::expand_glob_target(tmp.path(), "build-*/src/lib");
+            auto result = pup::expand_glob_target(tmp.path().string(), "build-*/src/lib");
 
             THEN("expands to [(build-debug, src/lib), (build-release, src/lib)]")
             {
@@ -178,7 +178,7 @@ SCENARIO("Target parsing - glob expansion", "[target]")
         {
             tmp.create_file("build-debug/src/lib/foo.o");
             tmp.create_file("build-release/src/lib/foo.o");
-            auto result = pup::expand_glob_target(tmp.path(), "build-*/src/lib/foo.o");
+            auto result = pup::expand_glob_target(tmp.path().string(), "build-*/src/lib/foo.o");
 
             THEN("expands to [(build-debug, src/lib/foo.o), (build-release, src/lib/foo.o)]")
             {
@@ -203,7 +203,7 @@ SCENARIO("Target parsing - error cases", "[target]")
 
         WHEN("parsing 'src/lib/foo.c' as output target")
         {
-            auto result = pup::parse_target(tmp.path(), "src/lib/foo.c");
+            auto result = pup::parse_target(tmp.path().string(), "src/lib/foo.c");
 
             THEN("returns error: source file not build output")
             {
@@ -220,7 +220,7 @@ SCENARIO("Target parsing - error cases", "[target]")
 
         WHEN("parsing 'no_such_dir/nonexistent'")
         {
-            auto result = pup::parse_target(tmp.path(), "no_such_dir/nonexistent");
+            auto result = pup::parse_target(tmp.path().string(), "no_such_dir/nonexistent");
 
             THEN("returns error: path not found")
             {
@@ -237,7 +237,7 @@ SCENARIO("Target parsing - error cases", "[target]")
 
         WHEN("parsing 'nonexistent'")
         {
-            auto result = pup::parse_target(tmp.path(), "nonexistent");
+            auto result = pup::parse_target(tmp.path().string(), "nonexistent");
 
             THEN("treats as potential output target (validation deferred to build)")
             {
@@ -264,7 +264,7 @@ SCENARIO("Target parsing - consistency rule", "[target]")
             tmp.create_dir("build-debug/src");
             tmp.create_dir("src/test");
             auto targets = std::vector<std::string> { "build-debug/src", "src/test" };
-            auto result = pup::validate_target_consistency(tmp.path(), targets);
+            auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
             {
@@ -276,7 +276,7 @@ SCENARIO("Target parsing - consistency rule", "[target]")
         WHEN("parsing ['build-debug', 'src']")
         {
             auto targets = std::vector<std::string> { "build-debug", "src" };
-            auto result = pup::validate_target_consistency(tmp.path(), targets);
+            auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
             {
@@ -290,7 +290,7 @@ SCENARIO("Target parsing - consistency rule", "[target]")
             tmp.create_dir("build-debug/src");
             tmp.create_dir("build-release/test");
             auto targets = std::vector<std::string> { "build-debug/src", "build-release/test" };
-            auto result = pup::validate_target_consistency(tmp.path(), targets);
+            auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: both have explicit variants")
             {
@@ -301,7 +301,7 @@ SCENARIO("Target parsing - consistency rule", "[target]")
         WHEN("parsing ['src', 'test']")
         {
             auto targets = std::vector<std::string> { "src", "test" };
-            auto result = pup::validate_target_consistency(tmp.path(), targets);
+            auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: neither has explicit variant")
             {
