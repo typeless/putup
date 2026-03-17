@@ -23,8 +23,8 @@ namespace pup::graph {
 
 /// Path cache - maps NodeId to interned full path string
 struct PathCache {
-    NodeIdMap32 ids;   ///< NodeId → StringId (path interned in pool)
-    StringPool pool;   ///< Owns the full path strings
+    NodeIdMap32 ids; ///< NodeId → StringId (path interned in pool)
+    StringPool pool; ///< Owns the full path strings
 };
 
 /// Edge between nodes in the build graph
@@ -119,8 +119,8 @@ struct Graph {
 
     // Node lookup indices
     std::vector<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
-    StringPool command_strings;        ///< Interned expanded command strings
-    SortedPairVec command_index;       ///< StringId(command) → NodeId
+    StringPool command_strings;              ///< Interned expanded command strings
+    SortedPairVec command_index;             ///< StringId(command) → NodeId
     bool command_index_built = false;
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)

@@ -3,9 +3,9 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
-#include "pup/core/path.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 

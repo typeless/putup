@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/platform/file_io.hpp"
 #include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <cerrno>
 #include <cstdio>

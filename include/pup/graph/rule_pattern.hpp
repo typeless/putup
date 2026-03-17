@@ -7,8 +7,8 @@
 
 #include <functional>
 #include <optional>
-#include <string_view>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pup::graph {
