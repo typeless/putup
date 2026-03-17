@@ -10,9 +10,16 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <unordered_map>
 
 using namespace pup;
 using namespace pup::index;
+
+namespace pup::index {
+[[nodiscard]]
+auto build_command_lookup(Index const& index)
+    -> std::unordered_map<std::string, CommandEntry const*>;
+} // namespace pup::index
 
 namespace {
 
