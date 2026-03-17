@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <map>
-#include <unordered_map>
 
 namespace pup::graph {
 
@@ -1424,7 +1423,8 @@ auto expand_rule(
 
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
-    auto rule_order_only_groups = std::unordered_map<std::string, std::vector<std::string>> {};
+    // Stores known group names (sorted); the resolver constructs %<name> on the fly.
+    auto rule_order_only_group_names = std::vector<std::string> {};
 
     // Track group NodeIds for deferred edge creation
     // Groups are first-class nodes; edges created after all Tupfiles are parsed
@@ -1465,7 +1465,10 @@ auto expand_rule(
             auto group_id = *group_id_result;
 
             // Preserve %<group> literally — resolved after all Tupfiles are parsed
-            rule_order_only_groups[pattern.group_name] = { std::format("%<{}>", pattern.group_name) };
+            auto pos = std::lower_bound(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), pattern.group_name);
+            if (pos == rule_order_only_group_names.end() || *pos != pattern.group_name) {
+                rule_order_only_group_names.insert(pos, pattern.group_name);
+            }
             if (!deferred_group_ids.contains(group_id)) {
                 deferred_group_ids.set(group_id, 1);
                 deferred_group_vec.push_back(group_id);
@@ -1489,7 +1492,10 @@ auto expand_rule(
                 auto group_id = *group_id_result;
 
                 // Preserve %<group> literally — resolved after all Tupfiles are parsed
-                rule_order_only_groups[group_ref->group_name] = { std::format("%<{}>", group_ref->group_name) };
+                auto pos = std::lower_bound(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), group_ref->group_name);
+                if (pos == rule_order_only_group_names.end() || *pos != group_ref->group_name) {
+                    rule_order_only_group_names.insert(pos, group_ref->group_name);
+                }
                 if (!deferred_group_ids.contains(group_id)) {
                     deferred_group_ids.set(group_id, 1);
                     deferred_group_vec.push_back(group_id);
@@ -1503,15 +1509,15 @@ auto expand_rule(
     // ScopeGuard ensures restoration even on early returns.
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
-    ctx.eval->resolve_order_only_group = [&rule_order_only_groups, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
+    ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
                                          ) -> std::vector<std::string> {
-        auto it = rule_order_only_groups.find(std::string { name });
-        if (it != rule_order_only_groups.end()) {
-            return it->second;
+        auto name_str = std::string { name };
+        if (std::binary_search(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name_str)) {
+            return { std::format("%<{}>", name) };
         }
         // Local group not in this rule's inputs — also defer
         auto dir = ctx.current_dir.empty() ? std::string { "." } : ctx.current_dir;
-        auto key_str = dir + "/" + std::string { name };
+        auto key_str = dir + "/" + name_str;
         auto key_id = to_underlying(ctx.graph->intern(key_str));
         auto const* node_id = state.group_nodes.find(key_id);
         if (node_id) {
@@ -1519,9 +1525,11 @@ auto expand_rule(
                 deferred_group_ids.set(*node_id, 1);
                 deferred_group_vec.push_back(*node_id);
             }
-            auto pattern = std::vector<std::string> { std::format("%<{}>", name) };
-            rule_order_only_groups[std::string { name }] = pattern;
-            return pattern;
+            auto pos = std::lower_bound(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name_str);
+            if (pos == rule_order_only_group_names.end() || *pos != name_str) {
+                rule_order_only_group_names.insert(pos, name_str);
+            }
+            return { std::format("%<{}>", name) };
         }
         return {};
     };
