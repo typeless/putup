@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <map>
+#include <unordered_map>
 
 namespace pup::graph {
 
