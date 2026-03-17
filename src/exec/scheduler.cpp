@@ -838,9 +838,10 @@ auto Scheduler::build_job_list(
         auto cmd_str = expand_instruction(graph.graph(), id, cache, impl_->options.source_root, impl_->options.config_root);
         auto display_str = std::string { get_display_str(graph.graph(), id) };
 
-        auto exported_str = std::set<std::string> {};
+        auto exported_str = std::vector<std::string> {};
+        exported_str.reserve(node->exported_vars.size());
         for (auto raw_id : node->exported_vars) {
-            exported_str.insert(std::string { graph.graph().strings.get(make_string_id(raw_id)) });
+            exported_str.emplace_back(graph.graph().strings.get(make_string_id(raw_id)));
         }
 
         // Evaluate guards - command only executes if ALL guards are satisfied

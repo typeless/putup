@@ -1003,7 +1003,7 @@ struct BuildJob {
     std::vector<std::string> inputs = {};
     std::vector<std::string> outputs = {};
     std::vector<std::string> order_only_inputs = {};  // Order-only dependencies
-    std::set<std::string> exported_vars = {};         // Env vars to export to command
+    std::vector<std::string> exported_vars = {};      // Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             // Capture stdout for depfile parsing

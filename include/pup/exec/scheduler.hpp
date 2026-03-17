@@ -12,7 +12,6 @@
 #include <functional>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -33,7 +32,7 @@ struct BuildJob {
     std::vector<std::string> inputs = {};
     std::vector<std::string> outputs = {};
     std::vector<std::string> order_only_inputs = {}; ///< Order-only dependencies
-    std::set<std::string> exported_vars = {};        ///< Env vars to export to command
+    std::vector<std::string> exported_vars = {};      ///< Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             ///< Capture stdout for depfile parsing
@@ -62,13 +61,13 @@ using ProgressCallback = std::function<void(std::size_t completed, std::size_t t
 
 /// Scheduler options
 struct SchedulerOptions {
-    std::size_t jobs = 0;                             ///< Parallel jobs (0 = auto-detect)
-    bool keep_going = false;                          ///< Continue after failures
-    bool dry_run = false;                             ///< Print commands without executing
-    bool verbose = false;                             ///< Print commands as they run
+    std::size_t jobs = 0;    ///< Parallel jobs (0 = auto-detect)
+    bool keep_going = false; ///< Continue after failures
+    bool dry_run = false;    ///< Print commands without executing
+    bool verbose = false;    ///< Print commands as they run
     std::string source_root = {};
     std::string config_root = {};
-    std::string output_root = {};           ///< Output tree root (where outputs/.pup go)
+    std::string output_root = {};                     ///< Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 
