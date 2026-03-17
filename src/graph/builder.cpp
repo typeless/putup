@@ -24,6 +24,14 @@ namespace pup::graph {
 
 namespace {
 
+auto sorted_insert(std::vector<std::string>& v, std::string const& key) -> void
+{
+    auto pos = std::lower_bound(v.begin(), v.end(), key);
+    if (pos == v.end() || *pos != key) {
+        v.insert(pos, key);
+    }
+}
+
 /// Strip trailing slashes from a path string
 auto strip_trailing_slashes(std::string str) -> std::string
 {
@@ -1464,10 +1472,7 @@ auto expand_rule(
             auto group_id = *group_id_result;
 
             // Preserve %<group> literally — resolved after all Tupfiles are parsed
-            auto pos = std::lower_bound(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), pattern.group_name);
-            if (pos == rule_order_only_group_names.end() || *pos != pattern.group_name) {
-                rule_order_only_group_names.insert(pos, pattern.group_name);
-            }
+            sorted_insert(rule_order_only_group_names, pattern.group_name);
             if (!deferred_group_ids.contains(group_id)) {
                 deferred_group_ids.set(group_id, 1);
                 deferred_group_vec.push_back(group_id);
@@ -1491,10 +1496,7 @@ auto expand_rule(
                 auto group_id = *group_id_result;
 
                 // Preserve %<group> literally — resolved after all Tupfiles are parsed
-                auto pos = std::lower_bound(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), group_ref->group_name);
-                if (pos == rule_order_only_group_names.end() || *pos != group_ref->group_name) {
-                    rule_order_only_group_names.insert(pos, group_ref->group_name);
-                }
+                sorted_insert(rule_order_only_group_names, group_ref->group_name);
                 if (!deferred_group_ids.contains(group_id)) {
                     deferred_group_ids.set(group_id, 1);
                     deferred_group_vec.push_back(group_id);
@@ -1524,10 +1526,7 @@ auto expand_rule(
                 deferred_group_ids.set(*node_id, 1);
                 deferred_group_vec.push_back(*node_id);
             }
-            auto pos = std::lower_bound(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name_str);
-            if (pos == rule_order_only_group_names.end() || *pos != name_str) {
-                rule_order_only_group_names.insert(pos, name_str);
-            }
+            sorted_insert(rule_order_only_group_names, name_str);
             return { std::format("%<{}>", name) };
         }
         return {};
