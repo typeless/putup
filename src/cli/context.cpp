@@ -2,9 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/context.hpp"
-#include "pup/core/path.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/graph/builder.hpp"
@@ -17,6 +17,7 @@
 #include "pup/parser/parser.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
@@ -98,13 +99,33 @@ auto join_path(std::string const& base, std::string const& rel)
     return (rel.empty() || rel == ".") ? base : pup::path::join(base, rel);
 }
 
+auto sorted_contains(std::vector<std::string> const& v, std::string const& key) -> bool
+{
+    return std::binary_search(v.begin(), v.end(), key);
+}
+
+auto sorted_insert(std::vector<std::string>& v, std::string const& key) -> void
+{
+    auto pos = std::lower_bound(v.begin(), v.end(), key);
+    if (pos == v.end() || *pos != key) {
+        v.insert(pos, key);
+    }
+}
+
+auto sorted_erase(std::vector<std::string>& v, std::string const& key) -> void
+{
+    auto pos = std::lower_bound(v.begin(), v.end(), key);
+    assert(pos != v.end() && *pos == key);
+    v.erase(pos);
+}
+
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
-    std::set<std::string> available;
-    std::set<std::string> parsed;
-    std::set<std::string> parsing;
-    std::map<std::string, parser::VarDb> parsed_configs;                    // Cache of parsed tup.config files (by path)
-    std::map<std::string, parser::VarDb> scoped_configs;                    // Cache of merged per-dir configs
+    std::vector<std::string> available;
+    std::vector<std::string> parsed;
+    std::vector<std::string> parsing;
+    std::map<std::string, parser::VarDb> parsed_configs;                              // Cache of parsed tup.config files (by path)
+    std::map<std::string, parser::VarDb> scoped_configs;                              // Cache of merged per-dir configs
     std::vector<std::pair<std::string, std::string>> const* config_defines = nullptr; // CLI overrides
 };
 
@@ -173,12 +194,12 @@ auto read_file(std::string const& path) -> std::optional<std::string>
 auto discover_tupfile_dirs(
     std::string const& root,
     pup::parser::IgnoreList const& ignore = {}
-) -> std::set<std::string>
+) -> std::vector<std::string>
 {
-    auto dirs = std::set<std::string> {};
+    auto dirs = std::vector<std::string> {};
 
     if (pup::platform::exists(pup::path::join(root, "Tupfile"))) {
-        dirs.insert(".");
+        dirs.push_back(".");
     }
 
     (void)pup::platform::walk_directory(root, [&](pup::platform::DirEntry const& entry, std::string const& rel_path) -> bool {
@@ -188,12 +209,14 @@ auto discover_tupfile_dirs(
 
         if (!entry.is_dir && entry.name == "Tupfile") {
             auto dir_rel = std::string { pup::path::parent(rel_path) };
-            dirs.insert(normalize_to_dot(dir_rel));
+            dirs.push_back(normalize_to_dot(dir_rel));
         }
 
         return true;
     });
 
+    std::sort(dirs.begin(), dirs.end());
+    dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
     return dirs;
 }
 
@@ -331,15 +354,15 @@ auto parse_directory(std::string const& rel_dir, ParseContext& ctx) -> pup::Resu
     auto vars = pup::parser::VarDb { ctx.base_vars };
     auto normalized_dir = normalize_to_dot(rel_dir);
 
-    if (ctx.state.parsed.contains(normalized_dir)) {
+    if (sorted_contains(ctx.state.parsed, normalized_dir)) {
         return {};
     }
 
-    if (ctx.state.parsing.contains(normalized_dir)) {
+    if (sorted_contains(ctx.state.parsing, normalized_dir)) {
         return pup::unexpected<pup::Error>(make_circular_dep_error(normalized_dir));
     }
 
-    ctx.state.parsing.insert(normalized_dir);
+    sorted_insert(ctx.state.parsing, normalized_dir);
 
     // Tupfiles are found in config_root (may differ from source_root in 3-tree builds)
     auto tupfile_path = pup::path::join(join_path(ctx.config_root, normalize_to_empty(rel_dir)), "Tupfile");
@@ -350,13 +373,13 @@ auto parse_directory(std::string const& rel_dir, ParseContext& ctx) -> pup::Resu
 
     auto source = read_file(tupfile_path);
     if (!source) {
-        ctx.state.parsing.erase(normalized_dir);
+        sorted_erase(ctx.state.parsing, normalized_dir);
         return pup::unexpected<pup::Error>(make_read_error(tupfile_path));
     }
 
     auto parse_result = pup::parser::parse_tupfile(*source, tupfile_path);
     if (!parse_result.success()) {
-        ctx.state.parsing.erase(normalized_dir);
+        sorted_erase(ctx.state.parsing, normalized_dir);
         for (auto const& err : parse_result.errors) {
             fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.c_str(), err.location.line, err.location.column, err.message.c_str());
         }
@@ -416,8 +439,8 @@ auto parse_directory(std::string const& rel_dir, ParseContext& ctx) -> pup::Resu
 
     auto result = pup::Result<void> { ctx.builder.add_tupfile(ctx.graph, parse_result.tupfile, eval_ctx) };
 
-    ctx.state.parsing.erase(normalized_dir);
-    ctx.state.parsed.insert(normalized_dir);
+    sorted_erase(ctx.state.parsing, normalized_dir);
+    sorted_insert(ctx.state.parsed, normalized_dir);
 
     if (result) {
         ++pup::thread_metrics().tupfiles_parsed;
@@ -488,7 +511,7 @@ auto load_old_index(std::string const& output_root, bool verbose) -> IndexLoadRe
     return result;
 }
 
-auto sort_dirs_by_depth(std::set<std::string> const& available) -> std::vector<std::string>
+auto sort_dirs_by_depth(std::vector<std::string> const& available) -> std::vector<std::string>
 {
     auto root_rel = std::string { "." };
     auto dirs = std::vector<std::string> { available.begin(), available.end() };
@@ -591,7 +614,7 @@ auto BuildContext::vars() const -> parser::VarDb const&
     return impl_->vars;
 }
 
-auto BuildContext::parsed_dirs() const -> std::set<std::string> const&
+auto BuildContext::parsed_dirs() const -> std::vector<std::string> const&
 {
     return impl_->state.parsed;
 }
@@ -629,10 +652,9 @@ auto build_context(
     // Set build root name for variant builds (before parsing)
     if (ctx.impl_->layout.source_root != ctx.impl_->layout.output_root) {
         auto build_root_name = pup::path::relative(
-                                   ctx.impl_->layout.output_root,
-                                   ctx.impl_->layout.source_root
-        )
-                                   ;
+            ctx.impl_->layout.output_root,
+            ctx.impl_->layout.source_root
+        );
         ctx.impl_->graph.set_build_root_name(std::move(build_root_name));
     }
 
@@ -711,7 +733,7 @@ auto build_context(
     };
 
     for (auto const& dir : sort_dirs_by_depth(ctx.impl_->state.available)) {
-        if (ctx.impl_->state.parsed.contains(dir)) {
+        if (sorted_contains(ctx.impl_->state.parsed, dir)) {
             continue;
         }
         if (!ctx_opts.parse_scopes.empty()

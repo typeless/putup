@@ -9,7 +9,6 @@
 #include "pup/core/string_pool.hpp"
 
 #include <functional>
-#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -140,7 +139,7 @@ struct EvalContext {
 
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
-    std::set<std::string> const* available_tupfile_dirs = nullptr;
+    std::vector<std::string> const* available_tupfile_dirs = nullptr;
 
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when

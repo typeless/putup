@@ -97,7 +97,7 @@ auto request_demand_driven_parse(
 ) -> void
 {
     if (eval.request_directory && eval.available_tupfile_dirs) {
-        if (eval.available_tupfile_dirs->contains(dir_path)) {
+        if (std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_path)) {
             (void)eval.request_directory(dir_path);
         }
     }

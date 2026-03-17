@@ -11,7 +11,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -88,7 +87,7 @@ public:
     [[nodiscard]]
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
-    auto parsed_dirs() const -> std::set<std::string> const&;
+    auto parsed_dirs() const -> std::vector<std::string> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load
