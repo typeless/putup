@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <map>
 
 namespace pup::graph {
 
@@ -2506,8 +2505,12 @@ auto resolve_deferred_order_only_edges(
 {
     // Pass 1: Create graph edges and accumulate members per (command, group_name).
     // Same-named groups from different directories contribute to the same replacement.
-    using MemberKey = std::pair<NodeId, std::string>; // (command_id, group_name)
-    auto accumulated = std::map<MemberKey, std::vector<NodeId>> {};
+    // Key: packed (command_id << 32 | interned_group_name)
+    auto pack_key = [](NodeId cmd, std::uint32_t name_id) -> std::uint64_t {
+        return (static_cast<std::uint64_t>(cmd) << 32) | name_id;
+    };
+
+    auto accumulated = std::vector<std::pair<std::uint64_t, std::vector<NodeId>>> {};
 
     for (auto const& edge : state.deferred_edges) {
         auto const* group_node = graph.get_file_node(edge.group_id);
@@ -2524,17 +2527,25 @@ auto resolve_deferred_order_only_edges(
 
         (void)graph.add_order_only_edge(edge.group_id, edge.command_id);
 
-        auto group_basename = std::string { graph.str(group_node->name) };
+        auto group_basename = std::string_view { graph.str(group_node->name) };
         if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
-            auto group_name = group_basename.substr(1, group_basename.size() - 2);
-            auto& all_members = accumulated[{ edge.command_id, group_name }];
-            all_members.insert(all_members.end(), members.begin(), members.end());
+            auto bare_name = group_basename.substr(1, group_basename.size() - 2);
+            auto name_id = to_underlying(graph.intern(bare_name));
+            auto key = pack_key(edge.command_id, name_id);
+            auto it = std::lower_bound(accumulated.begin(), accumulated.end(), key, [](auto const& p, auto k) { return p.first < k; });
+            if (it != accumulated.end() && it->first == key) {
+                it->second.insert(it->second.end(), members.begin(), members.end());
+            } else {
+                accumulated.insert(it, { key, std::move(members) });
+            }
         }
     }
 
     // Pass 2: Replace %<group> patterns with the full accumulated member lists.
     for (auto const& [key, members] : accumulated) {
-        auto const& [command_id, group_name] = key;
+        auto command_id = static_cast<NodeId>(key >> 32);
+        auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
+        auto group_name = std::string { graph.str(name_id) };
         auto pattern = std::format("%<{}>", group_name);
 
         auto* cmd_node = graph.get_command_node(command_id);
