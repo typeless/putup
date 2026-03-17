@@ -21,7 +21,7 @@ SCENARIO("MappedFile provides read-only access to file contents", "[platform][fi
 
         WHEN("the file is memory-mapped")
         {
-            auto result = MappedFile::open(f.workdir() / "test.bin");
+            auto result = MappedFile::open((f.workdir() / "test.bin").string());
 
             THEN("the operation succeeds")
             {
@@ -50,7 +50,7 @@ SCENARIO("MappedFile handles missing files", "[platform][file_io]")
 {
     GIVEN("a path to a non-existent file")
     {
-        auto path = std::filesystem::path { "/tmp/pup_test_nonexistent_12345.bin" };
+        auto path = std::string { "/tmp/pup_test_nonexistent_12345.bin" };
 
         WHEN("attempting to memory-map the file")
         {
@@ -72,7 +72,7 @@ SCENARIO("MappedFile is move-only", "[platform][file_io]")
         auto f = E2EFixture { "simple_c" };
         f.write_file("test.bin", "test data");
 
-        auto original = MappedFile::open(f.workdir() / "test.bin");
+        auto original = MappedFile::open((f.workdir() / "test.bin").string());
         REQUIRE(original.has_value());
         auto original_data = original->data();
         auto original_size = original->size();
@@ -104,14 +104,14 @@ TEST_CASE("stat_file returns file metadata", "[platform][file_io]")
 
     SECTION("returns correct size for existing file")
     {
-        auto result = stat_file(f.workdir() / "stat_test.txt");
+        auto result = stat_file((f.workdir() / "stat_test.txt").string());
         REQUIRE(result.has_value());
         REQUIRE(result->size == content.size());
     }
 
     SECTION("returns error for non-existent file")
     {
-        auto result = stat_file(f.workdir() / "nonexistent.txt");
+        auto result = stat_file((f.workdir() / "nonexistent.txt").string());
         REQUIRE_FALSE(result.has_value());
         REQUIRE(result.error().code == pup::ErrorCode::IoError);
     }
@@ -128,7 +128,7 @@ TEST_CASE("atomic_write creates file atomically", "[platform][file_io]")
 
     SECTION("creates new file with correct contents")
     {
-        auto path = f.workdir() / "atomic_test.txt";
+        auto path = (f.workdir() / "atomic_test.txt").string();
 
         auto result = atomic_write(path, content_bytes);
         REQUIRE(result.has_value());
@@ -140,7 +140,7 @@ TEST_CASE("atomic_write creates file atomically", "[platform][file_io]")
     SECTION("overwrites existing file")
     {
         f.write_file("existing.txt", "old content");
-        auto path = f.workdir() / "existing.txt";
+        auto path = (f.workdir() / "existing.txt").string();
 
         auto result = atomic_write(path, content_bytes);
         REQUIRE(result.has_value());
@@ -151,7 +151,7 @@ TEST_CASE("atomic_write creates file atomically", "[platform][file_io]")
 
     SECTION("creates parent directories if needed")
     {
-        auto path = f.workdir() / "subdir" / "nested" / "atomic_test.txt";
+        auto path = (f.workdir() / "subdir" / "nested" / "atomic_test.txt").string();
 
         auto result = atomic_write(path, content_bytes);
         REQUIRE(result.has_value());

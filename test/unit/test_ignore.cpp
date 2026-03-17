@@ -17,19 +17,19 @@ TEST_CASE("IgnoreList default patterns", "[ignore]")
     SECTION("ignores .git directory")
     {
         REQUIRE(ignore.is_ignored(".git"));
-        REQUIRE(ignore.is_ignored(fs::path { ".git" }));
+
     }
 
     SECTION("ignores .pup directory")
     {
         REQUIRE(ignore.is_ignored(".pup"));
-        REQUIRE(ignore.is_ignored(fs::path { ".pup" }));
+
     }
 
     SECTION("ignores node_modules directory")
     {
         REQUIRE(ignore.is_ignored("node_modules"));
-        REQUIRE(ignore.is_ignored(fs::path { "node_modules" }));
+
     }
 
     SECTION("does not ignore regular directories")
@@ -140,7 +140,7 @@ TEST_CASE("IgnoreList path matching", "[ignore]")
     {
         ignore.add("vendor/");
         REQUIRE(ignore.is_ignored("vendor"));
-        REQUIRE(ignore.is_ignored(fs::path { "vendor" }));
+
     }
 
     SECTION("nested paths")
