@@ -364,7 +364,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     REQUIRE(data->size() > sizeof(RawHeader) + sizeof(RawFooter));
 
     // Write to temp file and read back
-    auto temp_path = std::filesystem::temp_directory_path() / "pup_test_index";
+    auto temp_path = (std::filesystem::temp_directory_path() / "pup_test_index").string();
 
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
@@ -499,7 +499,7 @@ TEST_CASE("Index ID contiguity requirement", "[index]")
     });
 
     // Serialize and read back
-    auto temp_path = std::filesystem::temp_directory_path() / "pup_test_contiguous";
+    auto temp_path = (std::filesystem::temp_directory_path() / "pup_test_contiguous").string();
         auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
@@ -540,7 +540,7 @@ TEST_CASE("Index reader validation", "[index]")
         auto index = Index {};
         index.add_file(FileEntry { .id = 1, .name = "test.c" });
 
-        auto temp_path = std::filesystem::temp_directory_path() / "pup_valid_test";
+        auto temp_path = (std::filesystem::temp_directory_path() / "pup_valid_test").string();
                 (void)write_index(temp_path, index);
 
         REQUIRE(is_valid_index(temp_path));
@@ -561,7 +561,7 @@ TEST_CASE("Index reader malicious data handling", "[index]")
         auto data = serialize_index(index);
     REQUIRE(data.has_value());
 
-    auto temp_path = std::filesystem::temp_directory_path() / "pup_malicious_test";
+    auto temp_path = (std::filesystem::temp_directory_path() / "pup_malicious_test").string();
 
     SECTION("file_offset beyond file size")
     {
@@ -1110,7 +1110,7 @@ TEST_CASE("v8 roundtrip with operand sections", "[index][v8]")
     REQUIRE(data.has_value());
 
     // Write and read back
-    auto temp_path = std::filesystem::temp_directory_path() / "pup_v8_roundtrip_test";
+    auto temp_path = (std::filesystem::temp_directory_path() / "pup_v8_roundtrip_test").string();
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
