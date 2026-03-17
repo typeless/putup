@@ -797,8 +797,10 @@ auto lookup_bang_macro(
         ? cmd_str.substr(1)
         : cmd_str.substr(1, name_end - 1);
 
-    auto it = ctx.macros.find(macro_name);
-    if (it == ctx.macros.end()) {
+    auto key = to_underlying(ctx.graph->intern(macro_name));
+    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key,
+        [](auto const& p, auto k) { return p.first < k; });
+    if (it == ctx.macros.end() || it->first != key) {
         return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, "Unknown bang macro: !" + macro_name);
     }
 
@@ -932,8 +934,7 @@ auto process_bang_macro(
     parser::BangMacro const& macro
 ) -> Result<void>
 {
-    // Store macro definition for later use
-    ctx.macros[macro.name] = BangMacroDef {
+    auto def = BangMacroDef {
         .name = macro.name,
         .foreach_ = macro.foreach_,
         .order_only_inputs = macro.order_only_inputs,
@@ -945,6 +946,14 @@ auto process_bang_macro(
         .output_order_only_group = macro.output_order_only_group,
         .output_order_only_group_dir = macro.output_order_only_group_dir,
     };
+    auto key = to_underlying(ctx.graph->intern(macro.name));
+    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key,
+        [](auto const& p, auto k) { return p.first < k; });
+    if (it != ctx.macros.end() && it->first == key) {
+        it->second = std::move(def);
+    } else {
+        ctx.macros.insert(it, { key, std::move(def) });
+    }
 
     return {};
 }

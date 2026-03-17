@@ -69,7 +69,7 @@ struct BuilderContext {
     parser::VarDb* vars = nullptr; ///< Variable database for import
     BuilderOptions options = {};
 
-    std::unordered_map<std::string, BangMacroDef> macros = {};
+    std::vector<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
     std::unordered_map<std::string, std::vector<NodeId>> groups = {};
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
