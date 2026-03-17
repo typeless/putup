@@ -443,8 +443,8 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         auto cmd_node = graph::CommandNode {
             .instruction_id = graph.intern("echo $PUP_TEST_EXPORT_VAR"),
         };
-        cmd_node.exported_vars.insert(graph.intern("PUP_TEST_EXPORT_VAR"));
-        auto cmd_id = graph.add_command_node(cmd_node);
+        cmd_node.exported_vars.insert(to_underlying(graph.intern("PUP_TEST_EXPORT_VAR")));
+        auto cmd_id = graph.add_command_node(std::move(cmd_node));
 
         auto output_id = graph.add_file_node(graph::FileNode {
             .type = NodeType::Generated,
@@ -486,7 +486,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
             .instruction_id = graph.intern("echo ${PUP_TEST_HIDDEN_VAR:-default}"),
         };
         // Note: exported_vars is empty
-        auto cmd_id = graph.add_command_node(cmd_node);
+        auto cmd_id = graph.add_command_node(std::move(cmd_node));
 
         auto output_id = graph.add_file_node(graph::FileNode {
             .type = NodeType::Generated,

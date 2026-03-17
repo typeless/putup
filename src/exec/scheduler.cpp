@@ -2,14 +2,14 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/scheduler.hpp"
-#include "pup/core/path.hpp"
-#include "pup/platform/file_io.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/path.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -838,10 +838,9 @@ auto Scheduler::build_job_list(
         auto cmd_str = expand_instruction(graph.graph(), id, cache, impl_->options.source_root, impl_->options.config_root);
         auto display_str = std::string { get_display_str(graph.graph(), id) };
 
-        // Convert exported_vars from StringIds to strings
         auto exported_str = std::set<std::string> {};
-        for (auto var_id : node->exported_vars) {
-            exported_str.insert(std::string { graph.graph().strings.get(var_id) });
+        for (auto raw_id : node->exported_vars) {
+            exported_str.insert(std::string { graph.graph().strings.get(make_string_id(raw_id)) });
         }
 
         // Evaluate guards - command only executes if ALL guards are satisfied
