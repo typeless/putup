@@ -76,7 +76,7 @@ E2EFixture::E2EFixture(std::string_view name)
     }
 
     copy_fixture(m_fixture_dir, m_workdir);
-    m_runner.set_working_dir(m_workdir);
+    m_runner.set_working_dir(m_workdir.string());
 }
 
 E2EFixture::~E2EFixture()
@@ -296,7 +296,7 @@ auto E2EFixture::run_pup_in_dir(
     }
 
     auto opts = exec::RunOptions {
-        .working_dir = working_dir,
+        .working_dir = working_dir.string(),
         .inherit_env = true,
     };
 
@@ -332,7 +332,7 @@ auto run_shell_fixture(std::string_view name) -> ProcessResult
 
     auto runner = exec::CommandRunner {};
     auto opts = exec::RunOptions {
-        .working_dir = workdir,
+        .working_dir = workdir.string(),
         .env = { "PUP=" + get_pup_binary().string() },
         .inherit_env = true,
     };
