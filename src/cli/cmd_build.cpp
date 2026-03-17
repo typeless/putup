@@ -813,7 +813,7 @@ auto build_index(
         preserve_old_implicit_edges(*old_index, discovered_deps, ctx);
     }
 
-    return index;
+    return std::move(index);
 }
 
 /// Validate output targets exist in the build graph.
