@@ -27,15 +27,15 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    std::string source_root;                                           ///< Source tree root (where source files live)
-    std::string config_root;                                           ///< Config tree root (where Tupfiles live)
-    std::string output_root;                                           ///< Output tree root (where outputs/.pup go)
-    std::string config_path;                                           ///< Path to tup.config (for sticky edge tracking)
-    bool expand_globs = true;                                          ///< Expand glob patterns
-    bool validate_inputs = true;                                       ///< Check that input files exist
-    bool verbose = false;                                              ///< Print verbose output
-    DepScannerRegistry const* scanner_registry = nullptr;              ///< Optional scanner registry for implicit deps
-    RulePatternRegistry const* pattern_registry = nullptr;             ///< Optional pattern registry for auto-generated rules
+    std::string source_root;                                               ///< Source tree root (where source files live)
+    std::string config_root;                                               ///< Config tree root (where Tupfiles live)
+    std::string output_root;                                               ///< Output tree root (where outputs/.pup go)
+    std::string config_path;                                               ///< Path to tup.config (for sticky edge tracking)
+    bool expand_globs = true;                                              ///< Expand glob patterns
+    bool validate_inputs = true;                                           ///< Check that input files exist
+    bool verbose = false;                                                  ///< Print verbose output
+    DepScannerRegistry const* scanner_registry = nullptr;                  ///< Optional scanner registry for implicit deps
+    RulePatternRegistry const* pattern_registry = nullptr;                 ///< Optional pattern registry for auto-generated rules
     std::vector<std::pair<std::string, std::string>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
 };
 
@@ -69,8 +69,8 @@ struct BuilderContext {
     BuilderOptions options = {};
 
     std::vector<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
-    SortedPairVec group_name_to_idx = {};                  ///< Interned group name → pool index
-    std::vector<std::vector<NodeId>> group_member_pool = {}; ///< Pool of member lists
+    SortedPairVec group_name_to_idx = {};                            ///< Interned group name → pool index
+    std::vector<std::vector<NodeId>> group_member_pool = {};         ///< Pool of member lists
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 
