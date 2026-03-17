@@ -230,6 +230,18 @@ struct Scheduler::Impl {
     JobStartCallback on_start;
     JobCompleteCallback on_complete;
     ProgressCallback on_progress;
+
+    auto execute_sequential(
+        std::vector<BuildJob> const& jobs,
+        graph::BuildGraph const& graph,
+        EnvCache const& env_cache
+    ) -> Result<void>;
+
+    auto execute_job(
+        BuildJob const& job,
+        CommandRunner& runner,
+        EnvCache const& env_cache
+    ) -> JobResult;
 };
 
 Scheduler::Scheduler(SchedulerOptions options)
@@ -402,18 +414,18 @@ auto Scheduler::build_incremental(
     return impl_->stats;
 }
 
-auto Scheduler::execute_sequential(
+auto Scheduler::Impl::execute_sequential(
     std::vector<BuildJob> const& jobs,
     graph::BuildGraph const& graph,
-    std::unordered_map<std::string, std::string> const& env_cache
+    EnvCache const& env_cache
 ) -> Result<void>
 {
     auto runner = CommandRunner {};
-    if (!impl_->options.source_root.empty()) {
-        runner.set_working_dir(impl_->options.source_root);
+    if (!options.source_root.empty()) {
+        runner.set_working_dir(options.source_root);
     }
-    if (impl_->options.timeout) {
-        runner.set_timeout(*impl_->options.timeout); // NOLINT(bugprone-unchecked-optional-access)
+    if (options.timeout) {
+        runner.set_timeout(*options.timeout); // NOLINT(bugprone-unchecked-optional-access)
     }
 
     auto [in_degree, dependents] = build_dependency_map(jobs, graph);
@@ -425,7 +437,7 @@ auto Scheduler::execute_sequential(
 
     // Count inactive jobs upfront (they never enter the queue)
     auto inactive_count = std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return !j.guard_active; });
-    impl_->stats.skipped_jobs += static_cast<std::size_t>(inactive_count);
+    stats.skipped_jobs += static_cast<std::size_t>(inactive_count);
 
     // Only queue active jobs with no dependencies
     auto ready_queue = std::queue<std::size_t> {};
@@ -436,7 +448,7 @@ auto Scheduler::execute_sequential(
     }
 
     while (!ready_queue.empty()) {
-        if (impl_->cancelled.load()) {
+        if (cancelled.load()) {
             break;
         }
 
@@ -444,34 +456,34 @@ auto Scheduler::execute_sequential(
         ready_queue.pop();
         auto const& job = jobs[job_idx];
 
-        if (impl_->on_start) {
-            impl_->on_start(job);
+        if (on_start) {
+            on_start(job);
         }
 
         auto result = JobResult { execute_job(job, runner, env_cache) };
 
-        if (impl_->on_complete) {
-            impl_->on_complete(job, result);
+        if (on_complete) {
+            on_complete(job, result);
         }
 
-        impl_->stats.build_time += result.duration;
+        stats.build_time += result.duration;
 
         if (result.success) {
-            ++impl_->stats.completed_jobs;
+            ++stats.completed_jobs;
             for (auto dep_idx : dependents[job_idx]) {
                 if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
                     ready_queue.push(dep_idx);
                 }
             }
         } else {
-            ++impl_->stats.failed_jobs;
-            if (!impl_->options.keep_going) {
+            ++stats.failed_jobs;
+            if (!options.keep_going) {
                 return make_error<void>(ErrorCode::CommandFailed, "Command failed");
             }
         }
 
-        if (impl_->on_progress) {
-            impl_->on_progress(impl_->stats.completed_jobs + impl_->stats.failed_jobs, impl_->stats.total_jobs);
+        if (on_progress) {
+            on_progress(stats.completed_jobs + stats.failed_jobs, stats.total_jobs);
         }
     }
 
@@ -486,7 +498,7 @@ auto Scheduler::execute_parallel(
     auto const env_cache = build_env_cache(jobs);
 
     if (impl_->options.jobs == 1 || jobs.size() == 1) {
-        return execute_sequential(jobs, graph, env_cache);
+        return impl_->execute_sequential(jobs, graph, env_cache);
     }
 
     // Parallel execution with dependency-aware ready queue
@@ -561,7 +573,7 @@ auto Scheduler::execute_parallel(
                 impl_->on_start(job);
             }
 
-            auto result = JobResult { execute_job(job, runner, env_cache) };
+            auto result = JobResult { impl_->execute_job(job, runner, env_cache) };
 
             {
                 auto lock = std::lock_guard { mutex };
@@ -640,10 +652,10 @@ auto Scheduler::execute_parallel(
     return {};
 }
 
-auto Scheduler::execute_job(
+auto Scheduler::Impl::execute_job(
     BuildJob const& job,
     CommandRunner& runner,
-    std::unordered_map<std::string, std::string> const& env_cache
+    EnvCache const& env_cache
 ) -> JobResult
 {
     auto result = JobResult {
@@ -654,7 +666,7 @@ auto Scheduler::execute_job(
         .duration = {},
     };
 
-    if (impl_->options.dry_run) {
+    if (options.dry_run) {
         result.success = true;
         return result;
     }
@@ -665,16 +677,16 @@ auto Scheduler::execute_job(
     // - Absolute: use as-is
     // - Already variant-mapped (starts with relative output_root prefix): use source_root as base
     // - Source-relative: prepend output_root
-    auto source_root = impl_->options.source_root;
+    auto source_root = options.source_root;
     auto relative_output_root = pup::path::relative(
-        impl_->options.output_root,
+        options.output_root,
         source_root
     );
     auto output_root_prefix = relative_output_root;
     for (auto const& output : job.outputs) {
         auto output_path = std::string { output };
         if (!pup::path::is_absolute(output_path)) {
-            output_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, output);
+            output_path = resolve_variant_path(source_root, options.output_root, output_root_prefix, output);
         }
         auto parent = std::string { pup::path::parent(output_path) };
         if (!parent.empty()) {
@@ -739,7 +751,7 @@ auto Scheduler::execute_job(
             }
 
             // Compute filesystem path for the .d file
-            auto base_path = resolve_variant_path(source_root, impl_->options.output_root, output_root_prefix, std::string { pup::path::parent(output_path) });
+            auto base_path = resolve_variant_path(source_root, options.output_root, output_root_prefix, std::string { pup::path::parent(output_path) });
             auto depfile_path = pup::path::join(base_path, std::string { pup::path::stem(output_path) } + ".d");
 
             if (!pup::platform::exists(depfile_path)) {
