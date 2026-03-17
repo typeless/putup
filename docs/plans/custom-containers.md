@@ -12,7 +12,7 @@ If all strings are interned, every key and value in the codebase reduces to a fi
 |---|---|---|
 | `std::string` (as key or value) | `StringId` | 32-bit |
 | `NodeId` | `NodeId` | 32-bit |
-| `DirNameKey` (parent_dir, name) | two-level lookup | — |
+| `DirNameKey` (parent_dir, name) | per-directory `SortedPairVec` | — |
 | `Color` (enum) | `uint8_t` (pad to 32) | 32-bit |
 | `vector<NodeId>` (edges, inputs) | arena slice `{offset, len}` | 64-bit |
 | `set<string>` | sorted `StringId[]` | 32-bit × N |
@@ -27,7 +27,7 @@ If all strings are interned, every key and value in the codebase reduces to a fi
 | **SortedIdVec** | sorted array of integer IDs | small `set<string>`, `set<StringId>` |
 | **StringPool** | the one string↔integer bridge | string interning (already exists) |
 
-No general-purpose hash table outside of `StringPool`. The `DirNameKey` reverse lookup uses a page-table-style two-level dense structure instead.
+No general-purpose hash table outside of `StringPool`. The directory-name reverse lookup uses per-directory `SortedPairVec` arrays indexed by parent directory ID.
 
 ## Design Principles
 
@@ -131,34 +131,19 @@ Sorted array of 32-bit IDs with hand-written binary search. For small sparse set
 
 **File:** `core/sorted_id_vec.{hpp,cpp}`
 
-## DirNameKey: Page-Table Lookup
+## DirNameKey: Per-Directory SortedPairVec ✅
 
-The `dir_name_index` maps `(parent_dir, name) → NodeId`. This is a reverse lookup over a product of two dense ID spaces. Instead of a hash table, use a page-table-style two-level structure:
+**Implemented.** The `dir_name_index` mapped `(parent_dir, name) → NodeId`. Replaced with `std::vector<SortedPairVec> dir_children` indexed by `node_id::index(parent_dir)`. Each directory gets its own sorted array of `(StringId, NodeId)` pairs. Lookup is O(1) dispatch to parent + O(log M) binary search (M = children per directory, typically 5-30).
 
-```
-Level 1:  IdArray64[parent_dir] → ArenaSlice into Level 2
-Level 2:  Arena of sorted (StringId, NodeId) pairs per directory
+The original design proposed a two-phase approach (SortedPairVec during construction, then compact into Arena32). Skipped compaction because `find_by_dir_name()` is called interleaved with `add_file_node()` — no clean boundary — and SortedPairVec is already contiguous and cache-friendly at these sizes.
 
-Lookup:   parent_dir → ArenaSlice → binary search on StringId → NodeId
-```
-
-**Why this works:**
-- Each directory has ~5-50 children. Binary search on 50 entries is ~6 comparisons.
-- Tupfile processing is directory-local — repeated lookups hit the same L1 entry, keeping the L2 slice hot in cache (same principle as TLB locality).
-- No hash table needed. Composes from existing primitives (IdArray + Arena).
-- Memory-proportional to actual entries. Zero waste.
-
-**Incremental insert:** During graph construction, nodes are added one at a time. Maintaining sorted order within a directory's Arena slice costs O(K) per insert (memmove within the slice, K = children per directory ≈ 20). Total cost ~200K comparisons for 10K nodes — negligible for a build system about to spawn compiler processes.
-
-**Alternative (build-then-sort):** Collect all `(parent_dir, name, NodeId)` tuples during construction, sort by `parent_dir` then `name`, and build the two-level structure in one pass. This avoids per-insert memmove but requires that lookups aren't needed during construction. If the graph builder can be restructured to separate node creation from node lookup, this is cleaner.
-
-**File:** Integrated into `graph/dag.{hpp,cpp}` (replaces `dir_name_index` map)
+**File:** Integrated into `graph/dag.{hpp,cpp}`
 
 ## GroupKey Migration
 
 `unordered_map<GroupKey, NodeId>` where `GroupKey = (directory, name)`. Group names are identifiers that never contain `/`.
 
-After interning, `directory` becomes a `StringId` and `name` becomes a `StringId`. Use the same page-table approach as DirNameKey:
+After interning, `directory` becomes a `StringId` and `name` becomes a `StringId`. Use the same per-directory SortedPairVec approach:
 
 ```
 Level 1:  IdArray64[dir_string_id] → ArenaSlice into Level 2
@@ -259,7 +244,7 @@ Build and test all primitives in isolation. No production code changes yet.
 - `StringPool` internal Robin Hood index
 
 ### Step 2: Graph internals
-Migrate `dag.hpp` node types to `StringId` + `ArenaSlice`. Replace edge index maps with `IdArray64`. Replace `dir_name_index` with page-table two-level lookup. Replace traversal sets with `IdBitSet`. This is the highest-impact change.
+Migrate `dag.hpp` node types to `StringId` + `ArenaSlice`. Replace edge index maps with `IdArray64`. Replace `dir_name_index` with per-directory `SortedPairVec` ✅. Replace traversal sets with `IdBitSet`. This is the highest-impact change.
 
 ### Step 3: Builder + evaluator
 Migrate `VarDb` to `SortedPairVec`. Migrate macro maps, group maps, config/env var tracking. Expand `StringPool` to cover all string storage in builder context.
@@ -301,4 +286,4 @@ Each primitive gets its own test file:
 - No performance regression (self-hosting build time within 10%)
 - All string data flows through `StringPool`
 - No general-purpose hash table outside of `StringPool`
-- `DirNameKey` lookup uses page-table structure, not hash table
+- Directory-name lookup uses per-directory `SortedPairVec`, not hash table

@@ -4,7 +4,7 @@
 
 **Goal:** Replace `std::unordered_map`, `std::unordered_set`, and `std::set` with tailored integer-keyed primitives backed by pervasive string interning.
 
-**Architecture:** All strings are interned into StringId handles via StringPool. All containers become flat arrays (dense IDs), bitsets (set membership), sorted integer arrays (small sets), or arena slices (variable-length lists). The only hash table in the system is StringPool's internal Robin Hood index. DirNameKey uses a page-table two-level lookup. NodeIds have flag bits in the high nibble, so IdArray dispatches across 4 per-type sub-arrays.
+**Architecture:** All strings are interned into StringId handles via StringPool. All containers become flat arrays (dense IDs), bitsets (set membership), sorted integer arrays (small sets), or arena slices (variable-length lists). The only hash table in the system is StringPool's internal Robin Hood index. Directory-name lookups use per-directory SortedPairVec arrays. NodeIds have flag bits in the high nibble, so IdArray dispatches across 4 per-type sub-arrays.
 
 **Tech Stack:** C++20, POSIX/Win32, Catch2 BDD tests, putup build system (Tupfiles).
 
@@ -865,49 +865,11 @@ storing ArenaSlice references into a shared Arena32."
 
 ---
 
-### Task 8: Migrate DirNameKey to page-table lookup
+### Task 8: Migrate DirNameKey to per-directory SortedPairVec ✅
 
-**Files:**
-- Modify: `include/pup/graph/dag.hpp` — replace `unordered_map<DirNameKey, ...>`, remove `DirNameKey`/`DirNameKeyHash`/`DirNameKeyEqual`
-- Modify: `src/graph/dag.cpp` — update `find_by_dir_name()`, `add_file_node()`, node creation
-- Modify: `src/graph/builder.cpp` — update callers of `find_by_dir_name()`
+**Completed.** Replaced `unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual>` with `std::vector<SortedPairVec> dir_children` indexed by parent directory. Removed 4 types (`DirNameKey`, `DirNameKeyView`, `DirNameKeyHash`, `DirNameKeyEqual`). Modified only `dag.hpp` and `dag.cpp` (no builder.cpp changes needed — public API unchanged).
 
-**Design decision: Two-phase approach.** The Arena is append-only, but `find_by_dir_name()` is called during graph construction (builder checks if a node exists before creating it). Solution:
-
-- **During construction:** Each parent directory gets a `SortedPairVec` (from Task 4) stored in an `IdArray` indexed by `node_id::index(parent_dir)`. This supports incremental insert + binary search lookup.
-- **After construction:** Call `compact_dir_index()` to flatten all per-directory `SortedPairVec`s into the shared `Arena32` for cache-friendly read-only access. The `IdArray64` then stores `ArenaSlice` references.
-
-This means the Graph holds two representations:
-```cpp
-// During construction:
-std::vector<SortedPairVec> dir_children_build_;  // indexed by file node index
-// After compact (read-only):
-Arena32 dir_children_arena_;
-IdArray64 dir_children_index_;  // node_id::index(parent) → ArenaSlice
-```
-
-- [ ] **Step 1: Write test for page-table lookup**
-
-```cpp
-TEST_CASE("DirNameKey page-table lookup", "[dag]")
-{
-    // Construct a small graph, add nodes with parent dirs,
-    // verify find_by_dir_name returns correct NodeIds
-    // both before and after compact
-}
-```
-
-- [ ] **Step 2: Implement two-phase dir index in dag.hpp/cpp**
-- [ ] **Step 3: Remove DirNameKey, DirNameKeyHash, DirNameKeyEqual**
-- [ ] **Step 4: Build, test full suite**
-- [ ] **Step 5: Commit**
-
-```bash
-git commit -m "Replace DirNameKey hash map with page-table two-level lookup
-
-During construction: per-directory SortedPairVec for incremental
-insert + lookup. After construction: compacted into Arena32 for
-cache-friendly read-only access."
+**Deviation from plan:** Skipped the two-phase compact-into-Arena32 step. `find_by_dir_name()` is called interleaved with `add_file_node()` during construction, so there's no clean construction/read-only boundary. `SortedPairVec` is already a contiguous array with binary search — cache-friendly enough for 5-30 children per directory.
 ```
 
 ---
@@ -1058,16 +1020,9 @@ Mechanical migration: same patterns as builder.
 
 ---
 
-### Task 15: Migrate PathCache
+### Task 15: Migrate PathCache ✅
 
-**Files:**
-- Modify: `include/pup/graph/dag.hpp` — change `using PathCache = unordered_map<NodeId, string>` to `NodeIdMap32` mapping `NodeId → StringId`
-- Modify: `src/graph/dag.cpp` — update `expand_instruction()` and callers that use PathCache
-- Modify: `src/cli/cmd_build.cpp` — update callers
-
-PathCache maps `NodeId → full path string` for command expansion. After interning, it becomes `NodeId → StringId` (intern the path, store the StringId). The `get_full_path()` function returns `pool.get(path_id)` instead of looking up a string directly.
-
-- [ ] **Steps: Modify, build, test, commit**
+**Completed.** Replaced `using PathCache = unordered_map<NodeId, string>` with `struct PathCache { NodeIdMap32 ids; StringPool pool; }`. PathCache owns its own StringPool because `get_full_path` takes `Graph const&` (can't intern into `Graph::strings`). Modified only `dag.hpp` and `dag.cpp` — no caller changes needed (all access through free functions). cmd_build.cpp did not need changes (false positive in original plan).
 
 ---
 

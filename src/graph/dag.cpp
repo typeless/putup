@@ -19,16 +19,12 @@ auto make_graph() -> Graph
 {
     auto graph = Graph {};
 
-    // Initialize dir_name_index with pool pointer for transparent lookup
-    graph.dir_name_index = std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual>(
-        0, DirNameKeyHash { &graph.strings }, DirNameKeyEqual { &graph.strings }
-    );
-
     // Reserve BUILD_ROOT_ID (1) for the build root node.
     // All Generated/Ghost nodes will be parented under this node.
     // The build root's filesystem location is determined at build time
     // (source_root for in-tree, output_root for variant builds).
     graph.files.resize(2); // Index 0 unused, index 1 = build root
+    graph.dir_children.resize(2);
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
@@ -78,15 +74,17 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     auto const id = graph.next_file_id++;
     node.id = id;
 
-    if (!is_empty(node.name)) {
-        graph.dir_name_index[DirNameKey { node.parent_dir, node.name }] = id;
-    }
-
     auto const idx = node_id::index(id);
     if (idx >= graph.files.size()) {
         graph.files.resize(idx + 1);
+        graph.dir_children.resize(idx + 1);
     }
     graph.files[idx] = std::move(node);
+
+    if (!is_empty(graph.files[idx].name)) {
+        auto const parent_idx = node_id::index(graph.files[idx].parent_dir);
+        graph.dir_children[parent_idx].insert(to_underlying(graph.files[idx].name), id);
+    }
 
     return id;
 }
@@ -287,13 +285,19 @@ auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool
 auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
     -> std::optional<NodeId>
 {
-    // Zero-allocation lookup using transparent hash/equal
-    auto view = DirNameKeyView { parent_dir, name };
-    auto it = graph.dir_name_index.find(view);
-    if (it != graph.dir_name_index.end()) {
-        return it->second;
+    auto name_id = graph.strings.find(name);
+    if (is_empty(name_id)) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    auto const parent_idx = node_id::index(parent_dir);
+    if (parent_idx >= graph.dir_children.size()) {
+        return std::nullopt;
+    }
+    auto const* found = graph.dir_children[parent_idx].find(to_underlying(name_id));
+    if (!found) {
+        return std::nullopt;
+    }
+    return *found;
 }
 
 auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>
@@ -368,8 +372,9 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
 auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
     auto s = graph.edges_to_index.get_slice(id);
-    if (s.length == 0)
+    if (s.length == 0) {
         return {};
+    }
     auto span = graph.edge_arena.slice(s);
     auto result = std::vector<NodeId> {};
     result.reserve(span.size());
@@ -382,8 +387,9 @@ auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
     auto s = graph.edges_from_index.get_slice(id);
-    if (s.length == 0)
+    if (s.length == 0) {
         return {};
+    }
     auto span = graph.edge_arena.slice(s);
     auto result = std::vector<NodeId> {};
     for (auto idx : span) {
@@ -398,8 +404,9 @@ auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
     auto s = graph.edges_from_index.get_slice(id);
-    if (s.length == 0)
+    if (s.length == 0) {
         return {};
+    }
     auto span = graph.edge_arena.slice(s);
     auto result = std::vector<NodeId> {};
     for (auto idx : span) {
@@ -414,8 +421,9 @@ auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
 auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
     auto s = graph.order_only_to_index.get_slice(id);
-    if (s.length == 0)
+    if (s.length == 0) {
         return {};
+    }
     auto span = graph.edge_arena.slice(s);
     return { span.begin(), span.end() };
 }
@@ -423,8 +431,9 @@ auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>
 auto get_order_only_dependents(Graph const& graph, NodeId id) -> std::vector<NodeId>
 {
     auto s = graph.order_only_dependents.get_slice(id);
-    if (s.length == 0)
+    if (s.length == 0) {
         return {};
+    }
     auto span = graph.edge_arena.slice(s);
     return { span.begin(), span.end() };
 }
@@ -461,26 +470,25 @@ auto clear(Graph& graph) -> void
     graph.edges_from_index.clear();
     graph.order_only_to_index.clear();
     graph.order_only_dependents.clear();
-    graph.dir_name_index.clear();
+    graph.dir_children.clear();
     graph.command_str_index.clear();
     graph.strings.clear();
-
-    // Re-initialize dir_name_index with pool pointer
-    graph.dir_name_index = std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual>(
-        0, DirNameKeyHash { &graph.strings }, DirNameKeyEqual { &graph.strings }
-    );
 
     // Re-intern build root name
     auto build_root_name = graph.strings.intern(build_root_name_str);
 
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
+    graph.dir_children.resize(2);
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = build_root_name,
         .parent_dir = SOURCE_ROOT_ID,
     };
+    if (!is_empty(build_root_name)) {
+        graph.dir_children[0].insert(to_underlying(build_root_name), BUILD_ROOT_ID);
+    }
     graph.next_file_id = 2;
     graph.next_command_id = node_id::make_command(1);
     graph.next_condition_id = node_id::make_condition(1);
@@ -535,8 +543,9 @@ auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
 {
     auto has_outputs = [&](NodeId id) {
         auto s = graph.edges_from_index.get_slice(id);
-        if (s.length == 0)
+        if (s.length == 0) {
             return false;
+        }
         auto span = graph.edge_arena.slice(s);
         for (auto idx : span) {
             if (graph.edges[idx].type != LinkType::Sticky) {
@@ -579,14 +588,15 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
         return "";
     }
 
-    if (auto it = cache.find(id); it != cache.end()) {
-        if (it->second.empty()) {
+    if (cache.ids.contains(id)) {
+        auto sid = make_string_id(cache.ids.get(id));
+        if (is_empty(sid)) {
             return name;
         }
-        return it->second;
+        return cache.pool.get(sid);
     }
 
-    cache[id] = "";
+    cache.ids.set(id, 0);
 
     auto path = std::string {};
     if (node->parent_dir != 0) {
@@ -604,8 +614,9 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
         path = std::string { name };
     }
 
-    cache[id] = path;
-    return cache[id];
+    auto path_id = cache.pool.intern(path);
+    cache.ids.set(id, to_underlying(path_id));
+    return cache.pool.get(path_id);
 }
 
 auto get_full_path(Graph const& graph, NodeId id) -> std::string
@@ -616,22 +627,28 @@ auto get_full_path(Graph const& graph, NodeId id) -> std::string
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
 {
-    cache.erase(id);
+    cache.ids.remove(id);
 }
 
 auto clear_path_cache(PathCache& cache) -> void
 {
-    cache.clear();
+    cache.ids.clear();
+    cache.pool.clear();
 }
 
 auto set_build_root_name(Graph& graph, std::string name) -> void
 {
+    auto old_name = graph.files[BUILD_ROOT_ID].name;
+    if (!is_empty(old_name)) {
+        graph.dir_children[0].remove(to_underlying(old_name));
+    }
+
     auto name_id = graph.strings.intern(name);
     graph.files[BUILD_ROOT_ID].name = name_id;
 
-    // Register in dir_name_index so lookups for "build" find BUILD_ROOT_ID
-    // (BUILD_ROOT_ID was created with empty name, so wasn't indexed initially)
-    graph.dir_name_index[DirNameKey { SOURCE_ROOT_ID, name_id }] = BUILD_ROOT_ID;
+    if (!is_empty(name_id)) {
+        graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
+    }
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view

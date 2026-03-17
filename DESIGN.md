@@ -546,8 +546,8 @@ struct Graph {
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_to_index;
     std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
 
-    // Node lookup indices (with transparent lookup support)
-    std::unordered_map<DirNameKey, NodeId, ...> dir_name_index;  // (parent, name) -> NodeId
+    // Node lookup indices
+    std::vector<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
     std::unordered_map<std::string, NodeId, ...> command_str_index;  // command -> NodeId
 
     // ID generators (next available ID for each type)
@@ -558,7 +558,10 @@ struct Graph {
 };
 
 // Path cache is stored externally in BuildGraph for const-correctness
-using PathCache = std::unordered_map<NodeId, std::string>;
+struct PathCache {
+    NodeIdMap32 ids;    // NodeId -> StringId (path interned in pool)
+    StringPool pool;    // Owns the full path strings
+};
 
 class BuildGraph {
     Graph graph_;
