@@ -12,10 +12,10 @@ extern "C" {
 #include <cstring>
 
 #ifdef _WIN32
-#include <windows.h>
+#    include <windows.h>
 #else
-#include <fcntl.h>
-#include <unistd.h>
+#    include <fcntl.h>
+#    include <unistd.h>
 #endif
 
 namespace pup {
@@ -92,18 +92,14 @@ auto sha256_file(std::string const& path) -> Result<Hash256>
     ++thread_metrics().hash_computations;
 
 #ifdef _WIN32
-    auto wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-        path.data(), static_cast<int>(path.size()), nullptr, 0);
+    auto wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path.data(), static_cast<int>(path.size()), nullptr, 0);
     if (wlen == 0) {
-        wlen = MultiByteToWideChar(CP_UTF8, 0,
-            path.data(), static_cast<int>(path.size()), nullptr, 0);
+        wlen = MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), nullptr, 0);
     }
     auto wpath = std::wstring(static_cast<std::size_t>(wlen), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()),
-        wpath.data(), wlen);
+    MultiByteToWideChar(CP_UTF8, 0, path.data(), static_cast<int>(path.size()), wpath.data(), wlen);
 
-    auto file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ,
-        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    auto file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
         return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path);
     }

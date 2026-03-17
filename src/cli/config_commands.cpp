@@ -5,8 +5,6 @@
 #include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
 
-
-
 namespace pup::cli {
 
 namespace {

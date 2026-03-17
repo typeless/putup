@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
-#include "pup/platform/file_io.hpp"
 #include "pup/core/path.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <windows.h>
 
@@ -15,11 +15,9 @@ auto to_wide(std::string const& s) -> std::wstring
     if (s.empty()) {
         return {};
     }
-    auto len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-        s.data(), static_cast<int>(s.size()), nullptr, 0);
+    auto len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), static_cast<int>(s.size()), nullptr, 0);
     if (len == 0) {
-        len = MultiByteToWideChar(CP_UTF8, 0,
-            s.data(), static_cast<int>(s.size()), nullptr, 0);
+        len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
     }
     auto result = std::wstring(static_cast<std::size_t>(len), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), result.data(), len);
@@ -31,14 +29,12 @@ auto from_wide(std::wstring const& w) -> std::string
     if (w.empty()) {
         return {};
     }
-    auto len = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-        nullptr, 0, nullptr, nullptr);
+    auto len = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
     if (len == 0) {
         return {};
     }
     auto result = std::string(static_cast<std::size_t>(len), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-        result.data(), len, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), result.data(), len, nullptr, nullptr);
     return result;
 }
 
@@ -430,9 +426,8 @@ auto canonical(std::string const& path) -> Result<std::string>
 
     // Try to open the path to resolve symlinks via GetFinalPathNameByHandleW
     auto h = CreateFileW(
-        wpath.c_str(), 0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+        wpath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr
+    );
 
     if (h != INVALID_HANDLE_VALUE) {
         auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);

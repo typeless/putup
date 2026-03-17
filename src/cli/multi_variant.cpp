@@ -2,13 +2,13 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/multi_variant.hpp"
-#include "pup/core/path.hpp"
-#include "pup/platform/file_io.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/target.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/result.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <cstdio>
 #include <cstdlib>

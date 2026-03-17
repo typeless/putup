@@ -35,8 +35,16 @@ public:
         auto begin() const -> std::uint32_t const* { return data; }
         auto end() const -> std::uint32_t const* { return data + length; }
         auto operator[](std::uint32_t i) const -> std::uint32_t { return data[i]; }
-        [[nodiscard]] auto size() const -> std::uint32_t { return length; }
-        [[nodiscard]] auto empty() const -> bool { return length == 0; }
+        [[nodiscard]]
+        auto size() const -> std::uint32_t
+        {
+            return length;
+        }
+        [[nodiscard]]
+        auto empty() const -> bool
+        {
+            return length == 0;
+        }
     };
 
     [[nodiscard]]
