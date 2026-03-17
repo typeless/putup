@@ -14,7 +14,6 @@
 #include <optional>
 #include <string>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 namespace pup::graph {
@@ -149,20 +148,6 @@ private:
         std::vector<BuildJob> const& jobs,
         graph::BuildGraph const& graph
     ) -> Result<void>;
-
-    /// Execute jobs sequentially with dependency ordering
-    auto execute_sequential(
-        std::vector<BuildJob> const& jobs,
-        graph::BuildGraph const& graph,
-        std::unordered_map<std::string, std::string> const& env_cache
-    ) -> Result<void>;
-
-    /// Execute a single job
-    auto execute_job(
-        BuildJob const& job,
-        CommandRunner& runner,
-        std::unordered_map<std::string, std::string> const& env_cache
-    ) -> JobResult;
 
     /// Build job list from graph in topological order
     [[nodiscard]]
