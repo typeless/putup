@@ -7,19 +7,16 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
-#include "pup/core/string_hash.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
 #include <deque>
-#include <functional>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace pup::graph {
@@ -104,8 +101,6 @@ struct PhiNode {
     NodeId else_output = INVALID_NODE_ID; ///< Output when condition is false
 };
 
-using pup::StringHash;
-
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
     StringPool strings; ///< Interned string storage
@@ -124,7 +119,8 @@ struct Graph {
 
     // Node lookup indices
     std::vector<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
-    std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
+    StringPool command_strings;        ///< Interned expanded command strings
+    SortedPairVec command_index;       ///< StringId(command) → NodeId
     bool command_index_built = false;
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
