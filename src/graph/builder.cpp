@@ -1290,8 +1290,12 @@ auto process_import(
         value = env_val;
     }
     // 2. Fall back to cached value from previous build (passed via options)
-    else if (auto it = state.options.cached_env_vars.find(imp.var_name);
-             it != state.options.cached_env_vars.end()) {
+    else if (auto it = std::lower_bound(
+                 state.options.cached_env_vars.begin(),
+                 state.options.cached_env_vars.end(),
+                 imp.var_name,
+                 [](auto const& p, auto const& k) { return p.first < k; });
+             it != state.options.cached_env_vars.end() && it->first == imp.var_name) {
         value = it->second;
     }
     // 3. Fall back to default value

@@ -37,7 +37,7 @@ struct BuilderOptions {
     bool verbose = false;                                              ///< Print verbose output
     DepScannerRegistry const* scanner_registry = nullptr;              ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr;             ///< Optional pattern registry for auto-generated rules
-    std::unordered_map<std::string, std::string> cached_env_vars = {}; ///< Cached env vars from previous build
+    std::vector<std::pair<std::string, std::string>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
 };
 
 /// Bang macro definition

@@ -464,7 +464,7 @@ auto try_auto_init(ProjectLayout const& layout) -> void
 
 struct IndexLoadResult {
     std::optional<pup::index::Index> index;
-    std::unordered_map<std::string, std::string> cached_env_vars;
+    std::vector<std::pair<std::string, std::string>> cached_env_vars;
 };
 
 auto load_old_index(std::string const& output_root, bool verbose) -> IndexLoadResult
@@ -500,9 +500,11 @@ auto load_old_index(std::string const& output_root, bool verbose) -> IndexLoadRe
         auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
         auto eq_pos = key_value.find('=');
         if (eq_pos != std::string::npos) {
-            result.cached_env_vars[std::string { key_value.substr(0, eq_pos) }] = std::string { key_value.substr(eq_pos + 1) };
+            result.cached_env_vars.emplace_back(std::string { key_value.substr(0, eq_pos) }, std::string { key_value.substr(eq_pos + 1) });
         }
     }
+
+    std::sort(result.cached_env_vars.begin(), result.cached_env_vars.end());
 
     if (verbose && !result.cached_env_vars.empty()) {
         printf("Loaded %zu cached env vars from index\n", result.cached_env_vars.size());
