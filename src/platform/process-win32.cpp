@@ -150,7 +150,11 @@ auto run_process_with_callback(
     // Convert working directory
     auto working_dir = std::wstring {};
     if (!opts.working_dir.empty()) {
-        working_dir = opts.working_dir.wstring();
+        auto len = MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.c_str(), -1, nullptr, 0);
+        if (len > 0) {
+            working_dir.resize(len - 1);
+            MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.c_str(), -1, working_dir.data(), len);
+        }
     }
 
     // Create process
