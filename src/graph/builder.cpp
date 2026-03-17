@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <map>
-#include <set>
 
 namespace pup::graph {
 
@@ -2196,18 +2195,14 @@ auto create_command_node(
     std::string const& display
 ) -> Result<NodeId>
 {
-    // Convert exported_vars SortedIdVec (already StringIds) to set<StringId>
-    auto exported_var_ids = std::set<StringId> {};
-    auto const* ev = ctx.exported_vars.data();
-    for (std::size_t i = 0, n = ctx.exported_vars.size(); i < n; ++i) {
-        exported_var_ids.insert(make_string_id(ev[i]));
-    }
+    auto exported = SortedIdVec {};
+    exported.merge_from(ctx.exported_vars);
 
     auto node = CommandNode {
         .display = ctx.graph->intern(display),
         .source_dir = ctx.graph->intern(ctx.current_dir),
         .instruction_id = ctx.graph->intern(instruction),
-        .exported_vars = std::move(exported_var_ids),
+        .exported_vars = std::move(exported),
         .guards = ctx.condition_stack,
     };
 

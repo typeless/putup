@@ -41,6 +41,12 @@ public:
     [[nodiscard]]
     auto data() const -> std::uint32_t const*;
 
+    [[nodiscard]]
+    auto begin() const -> std::uint32_t const* { return data_; }
+
+    [[nodiscard]]
+    auto end() const -> std::uint32_t const* { return data_ + size_; }
+
     auto for_each(void (*fn)(std::uint32_t id, void* ctx), void* ctx) const -> void;
 
 private:

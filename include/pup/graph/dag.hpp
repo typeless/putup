@@ -16,7 +16,6 @@
 #include <deque>
 #include <functional>
 #include <optional>
-#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -72,7 +71,7 @@ struct CommandNode {
     std::vector<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion
     std::vector<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion
 
-    std::set<StringId> exported_vars = {}; ///< Env vars to export to command (interned)
+    SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
 
     // For generated rules (auto-generated from pattern matching)
     std::optional<GeneratedOutput> generated_output = {}; ///< Output specification

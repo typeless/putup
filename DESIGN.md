@@ -458,7 +458,7 @@ struct CommandNode {
     StringId instruction_id = StringId::Empty; // Instruction pattern (e.g., "gcc -c %f -o %o")
     std::vector<NodeId> inputs = {};           // Operand file NodeIds for %f expansion
     std::vector<NodeId> outputs = {};          // Operand file NodeIds for %o expansion
-    std::set<StringId> exported_vars = {};     // Env vars to export (interned)
+    SortedIdVec exported_vars = {};            // Env vars to export (interned StringIds)
     std::optional<GeneratedOutput> generated_output = {};  // Output specification
     OutputAction output_action = {};           // What to do with output
     NodeId parent_command = INVALID_NODE_ID;   // Parent command for InjectImplicitDeps
