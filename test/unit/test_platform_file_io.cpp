@@ -11,7 +11,7 @@
 using namespace pup::platform;
 using namespace pup::test;
 
-SCENARIO("MappedFile provides read-only access to file contents", "[platform][file_io]")
+SCENARIO("MappedFile provides read-only access to file contents", "[e2e][platform][file_io]")
 {
     GIVEN("a file with known contents")
     {
@@ -65,7 +65,7 @@ SCENARIO("MappedFile handles missing files", "[platform][file_io]")
     }
 }
 
-SCENARIO("MappedFile is move-only", "[platform][file_io]")
+SCENARIO("MappedFile is move-only", "[e2e][platform][file_io]")
 {
     GIVEN("a memory-mapped file")
     {
@@ -96,7 +96,7 @@ SCENARIO("MappedFile is move-only", "[platform][file_io]")
     }
 }
 
-TEST_CASE("stat_file returns file metadata", "[platform][file_io]")
+TEST_CASE("stat_file returns file metadata", "[e2e][platform][file_io]")
 {
     auto f = E2EFixture { "simple_c" };
     auto content = std::string { "test content with known size" };
@@ -117,7 +117,7 @@ TEST_CASE("stat_file returns file metadata", "[platform][file_io]")
     }
 }
 
-TEST_CASE("atomic_write creates file atomically", "[platform][file_io]")
+TEST_CASE("atomic_write creates file atomically", "[e2e][platform][file_io]")
 {
     auto f = E2EFixture { "simple_c" };
     auto content = std::string { "atomic write test content" };
