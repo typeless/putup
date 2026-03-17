@@ -120,7 +120,7 @@ private:
 // These test the exact behavior that the refactoring regression broke
 // =============================================================================
 
-TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[builder][group][critical]")
+TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][builder][group][critical]")
 {
     // Case 1: is_order_only_group with empty pattern.path
     // Should use current_dir directly, NOT normalize_group_dir("")
@@ -178,7 +178,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[builde
     REQUIRE(r2.has_value());
 }
 
-TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with variable", "[builder][group][critical]")
+TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with variable", "[e2e][builder][group][critical]")
 {
     // Case 2: is_order_only_group with non-empty pattern.path
     // Should use normalize_group_dir(expanded_path, current_dir, source_root)
@@ -237,7 +237,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     REQUIRE(r2.has_value());
 }
 
-TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[builder][group][critical]")
+TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e][builder][group][critical]")
 {
     // Case 3: After expand_path, path contains literal <groupname> suffix
     // Should ALWAYS use normalize_group_dir(dir_part, current_dir, source_root)
@@ -301,7 +301,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[buil
 // Bin {group} tests
 // =============================================================================
 
-TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
+TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
 {
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
@@ -386,7 +386,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[builder][group]")
 // Glob expansion tests
 // =============================================================================
 
-TEST_CASE("GraphBuilder glob expansion - filesystem", "[builder][glob]")
+TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/foo.c");
@@ -428,7 +428,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[builder][glob]")
     REQUIRE(commands.size() == 2);
 }
 
-TEST_CASE("GraphBuilder glob expansion - generated files", "[builder][glob]")
+TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]")
 {
     auto fixture = BuilderTestFixture {};
 
@@ -477,7 +477,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[builder][glob]")
 // tup.config special case
 // =============================================================================
 
-TEST_CASE("GraphBuilder tup.config in variant directory", "[builder][config]")
+TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("build-variant/tup.config");
@@ -518,7 +518,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[builder][config]")
 // Exclusion pattern tests
 // =============================================================================
 
-TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[builder][exclusion]")
+TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exclusion]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/foo.c");
@@ -582,7 +582,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[builder][exclusio
     CHECK_FALSE(has_baz);
 }
 
-TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion]")
+TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][exclusion]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/main.c");
@@ -647,7 +647,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[builder][exclusion
     CHECK_FALSE(has_test);
 }
 
-TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[builder][exclusion][foreach]")
+TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][exclusion][foreach]")
 {
     // Tests that ^ prefix works as exclusion in input patterns (tup uses ^ for foreach exclusions)
     auto fixture = BuilderTestFixture {};
@@ -720,7 +720,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[builder][exclus
 // Cross-directory group reference tests
 // =============================================================================
 
-TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[builder][group][cross-dir]")
+TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[e2e][builder][group][cross-dir]")
 {
     auto fixture = BuilderTestFixture {};
 
@@ -801,7 +801,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 // normalize_group_dir edge cases
 // =============================================================================
 
-TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder][normalize]")
+TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][builder][normalize]")
 {
     // This test documents the critical behavior:
     // normalize_group_dir("", current_dir, source_root) should return "."
@@ -890,7 +890,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[builder
 // Variant build path resolution
 // =============================================================================
 
-TEST_CASE("GraphBuilder variant output mapping", "[builder][variant]")
+TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/main.c");
@@ -938,7 +938,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[builder][variant]")
 // Deep current_dir tests (regression prevention)
 // =============================================================================
 
-TEST_CASE("GraphBuilder deep directory with parent references", "[builder][deep-dir]")
+TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][deep-dir]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("include/common.h");
@@ -992,7 +992,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[builder][deep-
     REQUIRE(found_header);
 }
 
-TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
+TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
 {
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/util/helpers.c");
@@ -1058,7 +1058,7 @@ TEST_CASE("GraphBuilder directory node creation", "[builder][dir-nodes]")
 // Out-of-tree build tests (-B flag)
 // =============================================================================
 
-TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[builder][variant]")
+TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][builder][variant]")
 {
     // When using -B for out-of-tree builds, output paths in the graph are stored
     // source-root-relative (e.g., "src/main.o"). Variant mapping is applied at I/O time.
@@ -1122,7 +1122,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[builder
     CHECK(full_path[0] != '/');
 }
 
-TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "[builder][variant][critical]")
+TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "[e2e][builder][variant][critical]")
 {
     // Test case: Tupfile in output/hex references generated file from boot/
     // With source-root-relative storage, output/hex/Tupfile references
@@ -1226,7 +1226,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     CHECK(found_boot_hex);
 }
 
-TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][variant][critical]")
+TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][builder][variant][critical]")
 {
     // Based on tup test t8108-variant-outputdir.sh
     // Outputs are stored at source-relative paths (same as inputs).
@@ -1295,7 +1295,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[builder][
 // Path simplification tests
 // =============================================================================
 
-TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
+TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
 {
     // Test that paths at project root stay as-is (no transformation needed)
 
@@ -1345,7 +1345,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[builder][paths]")
     CHECK(cmd_str.find("-o main.o") != std::string_view::npos);
 }
 
-TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder][paths]")
+TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][builder][paths]")
 {
     // Test that local files in subdirectory builds use simplified paths
     // e.g., "add.c" not "../../src/lib/add.c" when Tupfile is in src/lib/
@@ -1397,7 +1397,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[builder
     CHECK(cmd_str.find("-o add.o") != std::string_view::npos);
 }
 
-TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[builder][paths]")
+TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e][builder][paths]")
 {
     // Test that cross-directory references resolve correctly
     // When Tupfile is in src/lib/ and references ../util/helper.c
@@ -1454,7 +1454,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[buil
     CHECK(cmd_str.find("src/util/helper.c") != std::string_view::npos);
 }
 
-TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths][variant]")
+TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][paths][variant]")
 {
     // Test that in variant builds:
     // - Input paths (source files) are still simplified
@@ -1520,7 +1520,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[builder][paths]
 // Dotdot filename edge cases (Issue #1: fragile ".." detection)
 // =============================================================================
 
-TEST_CASE("GraphBuilder output filename starting with dotdot is not parent reference", "[builder][paths][dotdot]")
+TEST_CASE("GraphBuilder output filename starting with dotdot is not parent reference", "[e2e][builder][paths][dotdot]")
 {
     // Regression test: filenames like "..hidden" must be treated as literal filenames,
     // not as parent directory references. Node traversal handles this correctly because

@@ -48,7 +48,7 @@ private:
 
 } // namespace
 
-SCENARIO("Target parsing - variant detection", "[target]")
+SCENARIO("Target parsing - variant detection", "[e2e][target]")
 {
     GIVEN("a project with build-debug/tup.config")
     {
@@ -130,7 +130,7 @@ SCENARIO("Target parsing - variant detection", "[target]")
     }
 }
 
-SCENARIO("Target parsing - glob expansion", "[target]")
+SCENARIO("Target parsing - glob expansion", "[e2e][target]")
 {
     GIVEN("variants build-debug and build-release")
     {
@@ -193,7 +193,7 @@ SCENARIO("Target parsing - glob expansion", "[target]")
     }
 }
 
-SCENARIO("Target parsing - error cases", "[target]")
+SCENARIO("Target parsing - error cases", "[e2e][target]")
 {
     GIVEN("a project with source file src/lib/foo.c")
     {
@@ -248,7 +248,7 @@ SCENARIO("Target parsing - error cases", "[target]")
     }
 }
 
-SCENARIO("Target parsing - consistency rule", "[target]")
+SCENARIO("Target parsing - consistency rule", "[e2e][target]")
 {
     GIVEN("variants build-debug and build-release")
     {

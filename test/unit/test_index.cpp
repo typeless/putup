@@ -289,7 +289,7 @@ TEST_CASE("Index in-memory operations", "[index]")
     }
 }
 
-TEST_CASE("Index serialization roundtrip", "[index]")
+TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 {
     // IDs must be consecutive and match array position (id = array_index + 1)
     // Files: 1, 2, 3, 4, 5 in insertion order
@@ -445,7 +445,7 @@ TEST_CASE("Index serialization roundtrip", "[index]")
     std::filesystem::remove(temp_path);
 }
 
-TEST_CASE("Index ID contiguity requirement", "[index]")
+TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
 {
     // This test documents a design constraint: IDs must be contiguous when
     // stored in the index. The index format assigns IDs from array position
@@ -524,7 +524,7 @@ TEST_CASE("Index ID contiguity requirement", "[index]")
     std::filesystem::remove(temp_path);
 }
 
-TEST_CASE("Index reader validation", "[index]")
+TEST_CASE("Index reader validation", "[e2e][index]")
 {
     SECTION("non-existent file")
     {
@@ -549,7 +549,7 @@ TEST_CASE("Index reader validation", "[index]")
     }
 }
 
-TEST_CASE("Index reader malicious data handling", "[index]")
+TEST_CASE("Index reader malicious data handling", "[e2e][index]")
 {
     // Create a minimal valid index to use as base
     auto const cmd_id = node_id::make_command(1);
@@ -1065,7 +1065,7 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
     }
 }
 
-TEST_CASE("v8 roundtrip with operand sections", "[index][v8]")
+TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 {
     auto index = Index {};
 
