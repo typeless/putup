@@ -6,6 +6,7 @@
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_hash.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
@@ -24,8 +25,11 @@
 
 namespace pup::graph {
 
-/// Path cache - maps NodeId to full path string for efficiency
-using PathCache = std::unordered_map<NodeId, std::string>;
+/// Path cache - maps NodeId to interned full path string
+struct PathCache {
+    NodeIdMap32 ids;   ///< NodeId → StringId (path interned in pool)
+    StringPool pool;   ///< Owns the full path strings
+};
 
 /// Edge between nodes in the build graph
 struct Edge {
@@ -101,71 +105,6 @@ struct PhiNode {
     NodeId else_output = INVALID_NODE_ID; ///< Output when condition is false
 };
 
-/// Key for directory + name lookup (interned)
-struct DirNameKey {
-    NodeId parent_dir = 0;
-    StringId name = StringId::Empty;
-
-    auto operator==(DirNameKey const& other) const -> bool = default;
-};
-
-/// View for zero-allocation DirNameKey lookup
-struct DirNameKeyView {
-    NodeId parent_dir = 0;
-    std::string_view name = {};
-};
-
-/// Hash function for DirNameKey with transparent lookup support
-struct DirNameKeyHash {
-    using is_transparent = void;
-
-    StringPool const* pool = nullptr;
-
-    auto operator()(DirNameKey const& key) const noexcept -> std::size_t
-    {
-        auto h1 = std::hash<NodeId> {}(key.parent_dir);
-        // Hash the actual string content to match DirNameKeyView hashing
-        auto name_sv = pool ? pool->get(key.name) : std::string_view {};
-        auto h2 = std::hash<std::string_view> {}(name_sv);
-        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-
-    auto operator()(DirNameKeyView const& view) const noexcept -> std::size_t
-    {
-        auto h1 = std::hash<NodeId> {}(view.parent_dir);
-        auto h2 = std::hash<std::string_view> {}(view.name);
-        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
-    }
-};
-
-/// Equality for DirNameKey with transparent lookup support
-struct DirNameKeyEqual {
-    using is_transparent = void;
-
-    StringPool const* pool = nullptr;
-
-    auto operator()(DirNameKey const& a, DirNameKey const& b) const -> bool
-    {
-        return a == b;
-    }
-
-    auto operator()(DirNameKey const& a, DirNameKeyView const& b) const -> bool
-    {
-        if (a.parent_dir != b.parent_dir) {
-            return false;
-        }
-        if (!pool) {
-            return false;
-        }
-        return pool->get(a.name) == b.name;
-    }
-
-    auto operator()(DirNameKeyView const& a, DirNameKey const& b) const -> bool
-    {
-        return (*this)(b, a);
-    }
-};
-
 using pup::StringHash;
 
 /// Build graph - DAG of nodes and edges (plain data struct)
@@ -184,8 +123,8 @@ struct Graph {
     NodeIdArenaIndex order_only_to_index;
     NodeIdArenaIndex order_only_dependents;
 
-    // Node lookup indices (with transparent lookup support)
-    std::unordered_map<DirNameKey, NodeId, DirNameKeyHash, DirNameKeyEqual> dir_name_index;
+    // Node lookup indices
+    std::vector<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
     std::unordered_map<std::string, NodeId, StringHash, std::equal_to<>> command_str_index;
     bool command_index_built = false;
 
@@ -674,7 +613,7 @@ public:
     auto set_build_root_name(std::string name) -> void
     {
         graph::set_build_root_name(graph_, std::move(name));
-        path_cache_.clear();
+        graph::clear_path_cache(path_cache_);
     }
 
     [[nodiscard]]

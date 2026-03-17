@@ -205,13 +205,7 @@ Features in putup that extend beyond tup:
 
 **Affected**: MSVC 19.38+ (Visual Studio 2022 17.8) with `/Zc:nrvo /std:c++20 /O2`
 
-`Graph::make_graph()` returns a `Graph` by value. The `Graph` owns a `StringPool` and an `unordered_map` whose hash/equal functors hold a `StringPool*` pointing into the same object. Under NRVO the returned object is constructed directly in the caller's storage, so the pointers remain valid.
-
-MSVC does not apply NRVO here. It constructs the `Graph` locally, then move-constructs into the caller. After the move, `StringPool` lives at a new address but `DirNameKeyHash`/`DirNameKeyEqual` still hold the old pointer — any subsequent map lookup dereferences freed memory.
-
-The MS docs list only two NRVO exclusions (multiple return variables, `throw` in scope), neither of which applies. This appears to be an undocumented limitation triggered when a function re-assigns an `unordered_map` member whose hash/equal functors contain pointers to the local object's own fields.
-
-**Status**: MSVC CI jobs are disabled. MinGW (GCC on Windows) is unaffected and remains in CI.
+**Status**: Fixed. The root cause was `DirNameKeyHash`/`DirNameKeyEqual` functors holding raw `StringPool*` pointers into the same `Graph` object. When MSVC failed to apply NRVO on `make_graph()`, the move left dangling pointers. The `DirNameKey` hash map has been replaced with `std::vector<SortedPairVec> dir_children` (per-directory sorted arrays), eliminating the pointer coupling entirely. MSVC CI jobs remain disabled for other reasons (MinGW/GCC is the Windows CI target).
 
 ## Reporting Issues
 
