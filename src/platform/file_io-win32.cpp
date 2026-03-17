@@ -604,7 +604,7 @@ auto walk_directory(std::string const& path, WalkVisitor const& visitor) -> Resu
         auto full = rel.empty() ? base : base + "/" + rel;
         auto entries = read_directory(full);
         if (!entries) {
-            return entries.error();
+            return pup::unexpected<Error>(entries.error());
         }
         for (auto const& e : *entries) {
             auto child_rel = rel.empty() ? e.name : rel + "/" + e.name;
