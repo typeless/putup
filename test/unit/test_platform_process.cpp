@@ -91,7 +91,7 @@ SCENARIO("run_process respects working directory", "[platform][process]")
         f.mkdir("subdir");
 
         auto opts = make_opts(PWD_CMD);
-        opts.working_dir = f.workdir() / "subdir";
+        opts.working_dir = (f.workdir() / "subdir").string();
         opts.capture_stdout = true;
 
         WHEN("the process is executed")
