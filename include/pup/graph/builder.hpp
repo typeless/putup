@@ -11,7 +11,6 @@
 #include "pup/parser/eval.hpp"
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace pup::parser {
@@ -70,7 +69,8 @@ struct BuilderContext {
     BuilderOptions options = {};
 
     std::vector<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
-    std::unordered_map<std::string, std::vector<NodeId>> groups = {};
+    SortedPairVec group_name_to_idx = {};                  ///< Interned group name → pool index
+    std::vector<std::vector<NodeId>> group_member_pool = {}; ///< Pool of member lists
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 

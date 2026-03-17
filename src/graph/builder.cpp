@@ -1689,7 +1689,15 @@ auto expand_rule(
             output_group = macro_ptr->output_group;
         }
         if (output_group && is_context_active(ctx)) {
-            ctx.groups[*output_group].push_back(*output_id);
+            auto gkey = to_underlying(ctx.graph->intern(*output_group));
+            auto const* gidx = ctx.group_name_to_idx.find(gkey);
+            if (gidx) {
+                ctx.group_member_pool[*gidx].push_back(*output_id);
+            } else {
+                auto new_idx = static_cast<std::uint32_t>(ctx.group_member_pool.size());
+                ctx.group_member_pool.emplace_back(std::vector<NodeId> { *output_id });
+                ctx.group_name_to_idx.insert(gkey, new_idx);
+            }
         }
 
         // Add to order-only group <name> if specified
@@ -1777,9 +1785,10 @@ auto expand_inputs(
 
         if (pattern.is_group) {
             // Bin reference {name} - local to Tupfile
-            auto it = decltype(ctx.groups)::iterator { ctx.groups.find(pattern.group_name) };
-            if (it != ctx.groups.end()) {
-                for (auto id : it->second) {
+            auto gkey = to_underlying(ctx.graph->intern(pattern.group_name));
+            auto const* gidx = ctx.group_name_to_idx.find(gkey);
+            if (gidx) {
+                for (auto id : ctx.group_member_pool[*gidx]) {
                     auto path = ctx.graph->get_full_path(id);
                     if (!path.empty()) {
                         result.push_back(std::move(path));
@@ -2428,12 +2437,13 @@ auto add_tupfile(
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
                          ) -> std::vector<std::string> {
-        auto it = ctx.groups.find(std::string { name });
-        if (it == ctx.groups.end()) {
+        auto gkey = to_underlying(ctx.graph->intern(name));
+        auto const* gidx = ctx.group_name_to_idx.find(gkey);
+        if (!gidx) {
             return {};
         }
         auto paths = std::vector<std::string> {};
-        for (auto id : it->second) {
+        for (auto id : ctx.group_member_pool[*gidx]) {
             auto path = ctx.graph->get_full_path(id);
             if (!path.empty()) {
                 paths.push_back(std::move(path));
