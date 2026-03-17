@@ -49,7 +49,7 @@ private:
 
 } // namespace
 
-TEST_CASE("find_project_root", "[layout]")
+TEST_CASE("find_project_root", "[e2e][layout]")
 {
     SECTION("finds Tupfile.ini in current directory")
     {
@@ -100,7 +100,7 @@ TEST_CASE("find_project_root", "[layout]")
     }
 }
 
-TEST_CASE("discover_layout from build directory", "[layout]")
+TEST_CASE("discover_layout from build directory", "[e2e][layout]")
 {
     SECTION("discovers source root when cwd is build directory")
     {
