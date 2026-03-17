@@ -178,7 +178,7 @@ TEST_CASE("IgnoreList file loading", "[ignore]")
             out << "!keep.tmp\n";
         }
 
-        auto result = IgnoreList::load(ignore_file);
+        auto result = IgnoreList::load(ignore_file.string());
         REQUIRE(result);
 
         auto& ignore = *result;
@@ -191,7 +191,7 @@ TEST_CASE("IgnoreList file loading", "[ignore]")
 
     SECTION("handles missing file")
     {
-        auto result = IgnoreList::load(test_dir / "nonexistent");
+        auto result = IgnoreList::load((test_dir / "nonexistent").string());
         REQUIRE_FALSE(result);
     }
 
