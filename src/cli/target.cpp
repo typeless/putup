@@ -6,7 +6,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
-#include <set>
+#include <string_view>
 
 namespace pup {
 
@@ -14,11 +14,24 @@ namespace {
 
 auto is_source_file(std::string const& p) -> bool
 {
-    auto ext = std::string { pup::path::extension(p) };
-    static auto const source_exts = std::set<std::string> {
-        ".c", ".cc", ".cpp", ".cxx", ".C", ".h", ".hh", ".hpp", ".hxx", ".H", ".s", ".S", ".asm"
+    auto ext = pup::path::extension(p);
+    // Sorted at compile time for binary_search
+    static constexpr std::string_view source_exts[] = {
+        ".C",
+        ".H",
+        ".S",
+        ".asm",
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cxx",
+        ".h",
+        ".hh",
+        ".hpp",
+        ".hxx",
+        ".s",
     };
-    return source_exts.contains(ext);
+    return std::binary_search(std::begin(source_exts), std::end(source_exts), ext);
 }
 
 auto is_variant_dir(std::string const& dir) -> bool

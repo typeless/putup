@@ -6,7 +6,6 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
-#include <unordered_set>
 
 namespace pup::parser {
 
@@ -284,11 +283,12 @@ auto glob_expand_all(
 
     // Remove excluded files from matches in a single pass
     if (!result.exclusions.empty()) {
-        auto excl_set = std::unordered_set<std::string> {
+        auto excl_sorted = std::vector<std::string> {
             result.exclusions.begin(), result.exclusions.end()
         };
-        std::erase_if(result.matches, [&excl_set](auto const& m) {
-            return excl_set.contains(m);
+        std::sort(excl_sorted.begin(), excl_sorted.end());
+        std::erase_if(result.matches, [&excl_sorted](auto const& m) {
+            return std::binary_search(excl_sorted.begin(), excl_sorted.end(), m);
         });
     }
 

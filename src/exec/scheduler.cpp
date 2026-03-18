@@ -17,27 +17,39 @@
 #include <cstdlib>
 #include <queue>
 #include <thread>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace pup::exec {
 
 namespace {
 
-using EnvCache = std::unordered_map<std::string, std::string>;
+using EnvCache = std::vector<std::pair<std::string, std::string>>;
 
-/// Build immutable cache of environment variables for exported vars.
+auto env_cache_find(EnvCache const& cache, std::string const& key) -> EnvCache::const_iterator
+{
+    auto pos = std::lower_bound(cache.begin(), cache.end(), key, [](auto const& p, auto const& k) { return p.first < k; });
+    return (pos != cache.end() && pos->first == key) ? pos : cache.end();
+}
+
+/// Build immutable sorted cache of environment variables for exported vars.
 /// Must be called before spawning worker threads (getenv is not thread-safe).
 auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 {
-    auto cache = EnvCache {};
+    // Collect unique var names
+    auto names = std::vector<std::string> {};
     for (auto const& job : jobs) {
         for (auto const& var_name : job.exported_vars) {
-            if (!cache.contains(var_name)) {
-                if (auto const* env_val = std::getenv(var_name.c_str())) {
-                    cache.emplace(var_name, env_val);
-                }
-            }
+            names.push_back(var_name);
+        }
+    }
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+
+    // Look up each name once
+    auto cache = EnvCache {};
+    cache.reserve(names.size());
+    for (auto const& name : names) {
+        if (auto const* env_val = std::getenv(name.c_str())) {
+            cache.emplace_back(name, env_val);
         }
     }
     return cache;
@@ -63,13 +75,21 @@ auto resolve_variant_path(
 
 /// Add job dependencies for any command that produces the given node.
 /// For phi-nodes (multiple producers), only add active producers when consumer is active.
+auto sorted_insert_unique(std::vector<std::size_t>& v, std::size_t val) -> void
+{
+    auto pos = std::lower_bound(v.begin(), v.end(), val);
+    if (pos == v.end() || *pos != val) {
+        v.insert(pos, val);
+    }
+}
+
 auto add_producer_dependencies(
     graph::BuildGraph const& graph,
     NodeIdMap32 const& cmd_to_job,
     std::vector<BuildJob> const& jobs,
     NodeId node_id,
     std::size_t current_job,
-    std::unordered_set<std::size_t>& dependencies
+    std::vector<std::size_t>& dependencies
 ) -> void
 {
     auto current_active = jobs[current_job].guard_active;
@@ -79,7 +99,7 @@ auto add_producer_dependencies(
             auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(producer_id));
             if (dep_idx != current_job) {
                 if (!current_active || jobs[dep_idx].guard_active) {
-                    dependencies.insert(dep_idx);
+                    sorted_insert_unique(dependencies, dep_idx);
                 }
             }
         }
@@ -107,7 +127,7 @@ auto build_dependency_map(
 
     // For each job, find dependencies via input edges
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
-        auto dependencies = std::unordered_set<std::size_t> {};
+        auto dependencies = std::vector<std::size_t> {};
         auto cmd_id = jobs[j].id;
 
         auto current_active = jobs[j].guard_active;
@@ -120,7 +140,7 @@ auto build_dependency_map(
                     auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(input_id));
                     if (dep_idx != j) {
                         if (!current_active || jobs[dep_idx].guard_active) {
-                            dependencies.insert(dep_idx);
+                            sorted_insert_unique(dependencies, dep_idx);
                         }
                     }
                 }
@@ -334,21 +354,22 @@ auto Scheduler::build_incremental(
 {
     // Build temporary path-to-NodeId map for changed file lookup
     // This is O(n) scan but only done once per incremental build
-    auto path_to_id = std::unordered_map<std::string, NodeId> {};
+    auto path_to_id = std::vector<std::pair<std::string, NodeId>> {};
     for (auto id : graph.all_nodes()) {
         auto path = graph.get_full_path(id);
         if (!path.empty()) {
-            path_to_id[path] = id;
+            path_to_id.emplace_back(std::move(path), id);
         }
     }
+    std::sort(path_to_id.begin(), path_to_id.end());
 
     // Find all nodes affected by changes
     auto affected = NodeIdMap32 {};
     auto affected_vec = std::vector<NodeId> {};
 
     for (auto const& file_path : changed_files) {
-        auto it = path_to_id.find(file_path);
-        if (it != path_to_id.end()) {
+        auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
+        if (it != path_to_id.end() && it->first == file_path) {
             auto id = it->second;
             if (!affected.contains(id)) {
                 affected.set(id, 1);
@@ -702,7 +723,7 @@ auto Scheduler::Impl::execute_job(
     // Pass exported environment variables to command
     // Per tup manual: "value for the variable comes from tup's environment"
     for (auto const& var_name : job.exported_vars) {
-        if (auto it = env_cache.find(var_name); it != env_cache.end()) {
+        if (auto it = env_cache_find(env_cache, var_name); it != env_cache.end()) {
             run_opts.env.push_back(var_name + "=" + it->second);
         }
     }

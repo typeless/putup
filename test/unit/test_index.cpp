@@ -15,13 +15,23 @@
 using namespace pup;
 using namespace pup::index;
 
-namespace pup::index {
-[[nodiscard]]
-auto build_command_lookup(Index const& index)
-    -> std::unordered_map<std::string, CommandEntry const*>;
-} // namespace pup::index
-
 namespace {
+
+auto build_command_lookup(Index const& index)
+    -> std::unordered_map<std::string, CommandEntry const*>
+{
+    auto lookup = std::unordered_map<std::string, CommandEntry const*> {};
+    lookup.reserve(index.commands().size());
+
+    for (auto const& cmd : index.commands()) {
+        auto full_cmd = get_command_string(index, cmd);
+        if (!full_cmd.empty()) {
+            lookup.emplace(std::move(full_cmd), &cmd);
+        }
+    }
+
+    return lookup;
+}
 
 auto find_file_by_path(Index const& index, std::string_view path) -> FileEntry const*
 {

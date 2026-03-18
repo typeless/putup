@@ -5,11 +5,13 @@
 #include "pup/core/hash.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string_pool.hpp"
+
 #include <chrono>
 #include <cstring>
 #include <limits>
 #include <span>
-#include <unordered_map>
 
 namespace pup::index {
 
@@ -18,6 +20,9 @@ namespace {
 constexpr auto MAX_U32 = std::numeric_limits<std::uint32_t>::max();
 
 /// String table builder (internal helper)
+///
+/// Deduplicates strings using StringPool for identity and SortedPairVec
+/// to map interned StringId → byte offset in the serialized table.
 class StringTable {
 public:
     [[nodiscard]]
@@ -37,14 +42,14 @@ public:
 
 private:
     std::vector<char> data_ = {};
-    std::unordered_map<std::string, std::uint32_t> offsets_ = {};
+    StringPool pool_ = {};
+    SortedPairVec offsets_ = {};
 };
 
 auto StringTable::add(std::string_view str) -> Result<std::uint32_t>
 {
     // Empty strings get offset 0, which has a zero-length entry
     if (str.empty()) {
-        // Ensure offset 0 has a zero-length prefix if this is the first call
         if (data_.empty()) {
             data_.push_back(0);
             data_.push_back(0);
@@ -52,9 +57,11 @@ auto StringTable::add(std::string_view str) -> Result<std::uint32_t>
         return 0;
     }
 
-    // Check for duplicate
-    if (auto it = offsets_.find(std::string { str }); it != offsets_.end()) {
-        return it->second;
+    // Check for duplicate via StringPool
+    auto str_id = pool_.intern(str);
+    auto const* existing = offsets_.find(to_underlying(str_id));
+    if (existing) {
+        return *existing;
     }
 
     // Validate string length fits in u16
@@ -65,8 +72,7 @@ auto StringTable::add(std::string_view str) -> Result<std::uint32_t>
         );
     }
 
-    // Ensure we have the empty string entry at offset 0 (handles case where
-    // first add() call is a non-empty string - the empty case is handled above)
+    // Ensure we have the empty string entry at offset 0
     if (data_.empty()) {
         data_.push_back(0);
         data_.push_back(0);
@@ -90,7 +96,7 @@ auto StringTable::add(std::string_view str) -> Result<std::uint32_t>
     // Write string data
     data_.insert(data_.end(), str.begin(), str.end());
 
-    offsets_.emplace(std::string { str }, offset);
+    offsets_.insert(to_underlying(str_id), offset);
     return offset;
 }
 

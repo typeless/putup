@@ -20,8 +20,8 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <format>
-#include <map>
 #include <vector>
 
 namespace pup::cli {
@@ -124,8 +124,11 @@ struct TupfileParseState {
     std::vector<std::string> available;
     std::vector<std::string> parsed;
     std::vector<std::string> parsing;
-    std::map<std::string, parser::VarDb> parsed_configs;                              // Cache of parsed tup.config files (by path)
-    std::map<std::string, parser::VarDb> scoped_configs;                              // Cache of merged per-dir configs
+    // Append-only deques: push_back preserves references to existing elements,
+    // which is critical because recursive Tupfile parsing holds VarDb pointers
+    // across calls that may insert new entries.
+    std::deque<std::pair<std::string, parser::VarDb>> parsed_configs;
+    std::deque<std::pair<std::string, parser::VarDb>> scoped_configs;
     std::vector<std::pair<std::string, std::string>> const* config_defines = nullptr; // CLI overrides
 };
 
@@ -241,8 +244,10 @@ auto get_or_parse_config(
     TupfileParseState& state
 ) -> parser::VarDb const*
 {
-    if (auto it = state.parsed_configs.find(path); it != state.parsed_configs.end()) {
-        return &it->second;
+    for (auto const& entry : state.parsed_configs) {
+        if (entry.first == path) {
+            return &entry.second;
+        }
     }
 
     auto result = parser::parse_config(path);
@@ -251,8 +256,8 @@ auto get_or_parse_config(
         return nullptr;
     }
 
-    auto [it, _] = state.parsed_configs.emplace(path, std::move(*result));
-    return &it->second;
+    state.parsed_configs.emplace_back(path, std::move(*result));
+    return &state.parsed_configs.back().second;
 }
 
 /// Merge all tup.config files from root down to target directory.
@@ -268,8 +273,10 @@ auto find_config_for_dir(
     auto normalized = normalize_to_empty(rel_dir);
 
     // Check cache first
-    if (auto it = state.scoped_configs.find(normalized); it != state.scoped_configs.end()) {
-        return &it->second;
+    for (auto const& entry : state.scoped_configs) {
+        if (entry.first == normalized) {
+            return &entry.second;
+        }
     }
 
     // Collect all tup.config paths from root down to target directory
@@ -299,8 +306,8 @@ auto find_config_for_dir(
     }
 
     if (config_paths.empty()) {
-        auto [it, _] = state.scoped_configs.emplace(normalized, parser::VarDb {});
-        return &it->second;
+        state.scoped_configs.emplace_back(normalized, parser::VarDb {});
+        return &state.scoped_configs.back().second;
     }
 
     // Merge leaf first (defaults), then each parent on top (overrides).
@@ -316,8 +323,8 @@ auto find_config_for_dir(
     }
 
     apply_config_overrides(merged, state.config_defines);
-    auto [it, _] = state.scoped_configs.emplace(normalized, std::move(merged));
-    return &it->second;
+    state.scoped_configs.emplace_back(normalized, std::move(merged));
+    return &state.scoped_configs.back().second;
 }
 
 auto make_circular_dep_error(std::string const& dir) -> pup::Error
