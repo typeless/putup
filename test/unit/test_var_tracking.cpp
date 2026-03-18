@@ -51,6 +51,12 @@ TEST_CASE("filter_by_name filters assignments", "[var_tracking]")
     }
 }
 
+TEST_CASE("group_by_name returns empty for empty log", "[var_tracking]")
+{
+    auto histories = group_by_name(AssignmentLog {});
+    CHECK(histories.empty());
+}
+
 TEST_CASE("group_by_name groups assignments", "[var_tracking]")
 {
     auto log = AssignmentLog {
