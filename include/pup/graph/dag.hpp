@@ -650,6 +650,18 @@ public:
         return graph_.strings.get(id);
     }
 
+    [[nodiscard]]
+    auto string_pool() -> StringPool&
+    {
+        return graph_.strings;
+    }
+
+    [[nodiscard]]
+    auto string_pool() const -> StringPool const&
+    {
+        return graph_.strings;
+    }
+
 private:
     Graph graph_;
     mutable PathCache path_cache_; ///< Path cache owned by BuildGraph (not Graph)
