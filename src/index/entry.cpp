@@ -7,9 +7,6 @@
 
 #include <cassert>
 #include <charconv>
-#include <functional>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace pup::index {
 
@@ -217,63 +214,77 @@ auto Index::rebuild_command_index() -> void
 
 auto Index::compute_paths() -> void
 {
-    // Build id -> file index for parent lookup
-    auto id_to_file = std::unordered_map<NodeId, FileEntry*> {};
-    for (auto& file : files_) {
-        id_to_file[file.id] = &file;
+    auto const n = files_.size();
+    if (n == 0) {
+        return;
     }
 
-    // Compute path for each file by walking parent chain
-    auto path_cache = std::unordered_map<NodeId, std::string> {};
-    auto visiting = std::unordered_set<NodeId> {}; // Cycle detection
+    // File IDs are 1-based contiguous: files_[i].id == i + 1.
+    // Use direct indexing instead of a hash map.
+    assert(files_[0].id == 1 && "compute_paths requires 1-based contiguous IDs");
+    assert(files_[n - 1].id == static_cast<NodeId>(n) && "compute_paths requires 1-based contiguous IDs");
+    auto computed = std::vector<bool>(n, false);
+    auto chain = std::vector<std::size_t> {}; // reusable ancestor stack
 
-    std::function<std::string(NodeId)> get_path = [&](NodeId id) -> std::string {
-        if (id == 0) {
-            return "";
+    for (std::size_t i = 0; i < n; ++i) {
+        if (computed[i]) {
+            continue;
         }
 
-        if (auto it = path_cache.find(id); it != path_cache.end()) {
-            return it->second;
-        }
-
-        // Cycle detection: if we're already visiting this node, there's a cycle
-        if (visiting.contains(id)) {
-            return ""; // Break the cycle
-        }
-
-        auto file_it = id_to_file.find(id);
-        if (file_it == id_to_file.end()) {
-            return "";
-        }
-
-        auto* file = file_it->second;
-        auto path = std::string {};
-
-        visiting.insert(id);
-
-        if (file->parent_id != 0) {
-            auto parent_path = get_path(file->parent_id);
-            if (!parent_path.empty()) {
-                // Avoid double slash when parent is "/" (virtual root for external files)
-                if (parent_path.back() == '/') {
-                    path = parent_path + file->name;
-                } else {
-                    path = parent_path + "/" + file->name;
-                }
-            } else {
-                path = file->name;
+        // Walk the parent chain upward, collecting unresolved ancestors
+        chain.clear();
+        auto idx = i;
+        for (;;) {
+            if (computed[idx]) {
+                break;
             }
-        } else {
-            path = file->name;
+            chain.push_back(idx);
+
+            auto parent_id = files_[idx].parent_id;
+            if (parent_id == 0 || node_id::is_command(parent_id)) {
+                break;
+            }
+            auto parent_idx = static_cast<std::size_t>(node_id::index(parent_id)) - 1;
+            if (parent_idx >= n) {
+                break;
+            }
+
+            // Cycle detection: check if parent_idx is already in our chain
+            auto is_cycle = false;
+            for (auto a : chain) {
+                if (a == parent_idx) {
+                    is_cycle = true;
+                    break;
+                }
+            }
+            if (is_cycle) {
+                break;
+            }
+            idx = parent_idx;
         }
 
-        visiting.erase(id);
-        path_cache[id] = path;
-        return path;
-    };
-
-    for (auto& file : files_) {
-        file.path = get_path(file.id);
+        // Resolve paths top-down (chain is bottom-up, so iterate in reverse)
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+            auto& file = files_[*it];
+            if (file.parent_id == 0 || node_id::is_command(file.parent_id)) {
+                file.path = file.name;
+            } else {
+                auto parent_idx = static_cast<std::size_t>(node_id::index(file.parent_id)) - 1;
+                if (parent_idx < n && computed[parent_idx]) {
+                    auto const& pp = files_[parent_idx].path;
+                    if (pp.empty()) {
+                        file.path = file.name;
+                    } else if (pp.back() == '/') {
+                        file.path = pp + file.name;
+                    } else {
+                        file.path = pp + "/" + file.name;
+                    }
+                } else {
+                    file.path = file.name;
+                }
+            }
+            computed[*it] = true;
+        }
     }
 }
 
@@ -480,22 +491,6 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::str
     }
 
     return result;
-}
-
-auto build_command_lookup(Index const& index)
-    -> std::unordered_map<std::string, CommandEntry const*>
-{
-    auto lookup = std::unordered_map<std::string, CommandEntry const*> {};
-    lookup.reserve(index.commands().size());
-
-    for (auto const& cmd : index.commands()) {
-        auto full_cmd = get_command_string(index, cmd);
-        if (!full_cmd.empty()) {
-            lookup.emplace(std::move(full_cmd), &cmd);
-        }
-    }
-
-    return lookup;
 }
 
 } // namespace pup::index

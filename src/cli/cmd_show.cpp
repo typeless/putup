@@ -23,7 +23,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <optional>
-#include <unordered_map>
 
 namespace pup::cli {
 
@@ -560,11 +559,16 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     auto const& graph = ctx.graph().graph();
 
     // Build instruction usage map: instruction_id -> list of command IDs using it
-    auto instruction_usage = std::unordered_map<StringId, std::vector<NodeId>> {};
+    auto instruction_usage = std::vector<std::pair<StringId, std::vector<NodeId>>> {};
 
     for (auto const& cmd : graph.commands) {
         if (!is_empty(cmd.instruction_id)) {
-            instruction_usage[cmd.instruction_id].push_back(cmd.id);
+            auto pos = std::lower_bound(instruction_usage.begin(), instruction_usage.end(), cmd.instruction_id, [](auto const& p, auto const& k) { return p.first < k; });
+            if (pos != instruction_usage.end() && pos->first == cmd.instruction_id) {
+                pos->second.push_back(cmd.id);
+            } else {
+                instruction_usage.emplace(pos, cmd.instruction_id, std::vector<NodeId> { cmd.id });
+            }
         }
     }
 

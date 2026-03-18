@@ -5,11 +5,11 @@
 #include "pup/core/result.hpp"
 #include "pup/parser/lexer.hpp"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <functional>
 #include <optional>
-#include <unordered_set>
 
 namespace pup::parser {
 
@@ -29,7 +29,7 @@ struct ParserState {
     Lexer lexer;
     ParserOptions options;
     std::vector<ParseError> errors;
-    std::unordered_set<std::string> included_files;
+    std::vector<std::string> included_files;
     int include_depth = 0;
 
     Token current;

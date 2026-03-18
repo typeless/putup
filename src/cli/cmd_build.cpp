@@ -28,12 +28,52 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
-#include <set>
-#include <unordered_map>
 
 namespace pup::cli {
 
 namespace {
+
+using PathIdMap = std::vector<std::pair<std::string, pup::NodeId>>;
+using EdgePairVec = std::vector<std::pair<pup::NodeId, pup::NodeId>>;
+using DiscoveredDeps = std::vector<std::pair<pup::NodeId, std::vector<std::string>>>;
+
+auto path_id_find(PathIdMap const& m, std::string const& key) -> PathIdMap::const_iterator
+{
+    auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, auto const& k) { return p.first < k; });
+    return (pos != m.end() && pos->first == key) ? pos : m.end();
+}
+
+auto path_id_insert(PathIdMap& m, std::string key, pup::NodeId id) -> void
+{
+    auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, auto const& k) { return p.first < k; });
+    if (pos != m.end() && pos->first == key) {
+        pos->second = id;
+    } else {
+        m.emplace(pos, std::move(key), id);
+    }
+}
+
+auto edge_pair_insert(EdgePairVec& v, pup::NodeId from, pup::NodeId to) -> bool
+{
+    auto key = std::pair { from, to };
+    auto pos = std::lower_bound(v.begin(), v.end(), key);
+    if (pos != v.end() && *pos == key) {
+        return false;
+    }
+    v.insert(pos, key);
+    return true;
+}
+
+auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> std::vector<std::string>&
+{
+    for (auto& [k, v] : m) {
+        if (k == key) {
+            return v;
+        }
+    }
+    m.emplace_back(key, std::vector<std::string> {});
+    return m.back().second;
+}
 
 auto print_stats(
     pup::index::Index const& index,
@@ -201,9 +241,9 @@ auto walk_upstream_from_scope(
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
     std::vector<std::string> const& scopes
-) -> std::set<std::string>
+) -> std::vector<std::string>
 {
-    auto upstream = std::set<std::string> {};
+    auto upstream = std::vector<std::string> {};
     for (auto id : walk_upstream_from_scope(graph, scopes)) {
         if (pup::node_id::is_command(id)) {
             continue;
@@ -212,10 +252,12 @@ auto collect_upstream_files(
         if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
             auto path = graph.get_full_path(id);
             if (!path.empty()) {
-                upstream.insert(path);
+                upstream.push_back(std::move(path));
             }
         }
     }
+    std::sort(upstream.begin(), upstream.end());
+    upstream.erase(std::unique(upstream.begin(), upstream.end()), upstream.end());
     return upstream;
 }
 
@@ -238,7 +280,7 @@ auto find_changed_files_with_implicit(
     std::string const& source_root,
     pup::index::Index const& old_index,
     std::vector<std::string> const& scopes,
-    std::set<std::string> const& upstream_files,
+    std::vector<std::string> const& upstream_files,
     bool verbose = false
 ) -> std::vector<std::string>
 {
@@ -257,7 +299,7 @@ auto find_changed_files_with_implicit(
         // Skip files outside scopes (but always check Tupfiles and upstream deps)
         if (!scopes.empty() && !is_tupfile(file.path)
             && !pup::is_path_in_any_scope(file.path, scopes)
-            && !upstream_files.contains(file.path)) {
+            && !std::binary_search(upstream_files.begin(), upstream_files.end(), file.path)) {
             continue;
         }
 
@@ -329,9 +371,9 @@ auto find_changed_files_with_implicit(
 /// Holds mutable state shared between get_or_create_dir and create_implicit_file.
 struct ImplicitDepContext {
     pup::index::Index& index;
-    std::unordered_map<std::string, pup::NodeId>& path_to_id;
+    PathIdMap& path_to_id;
     pup::NodeId& next_id;
-    std::set<std::pair<pup::NodeId, pup::NodeId>>& added_edges;
+    EdgePairVec& added_edges;
     std::string const& source_root;
 };
 
@@ -349,7 +391,7 @@ auto get_or_create_dir(
         return pup::NodeId { 0 };
     }
 
-    if (auto it = ctx.path_to_id.find(path_str); it != ctx.path_to_id.end()) {
+    if (auto it = path_id_find(ctx.path_to_id, path_str); it != ctx.path_to_id.end()) {
         return it->second;
     }
 
@@ -368,7 +410,7 @@ auto get_or_create_dir(
             .content_hash = {},
         };
         ctx.index.add_file(std::move(entry));
-        ctx.path_to_id["/"] = dir_id;
+        path_id_insert(ctx.path_to_id, "/", dir_id);
         return dir_id;
     }
 
@@ -390,7 +432,7 @@ auto get_or_create_dir(
         .content_hash = {},
     };
     ctx.index.add_file(std::move(entry));
-    ctx.path_to_id[path_str] = dir_id;
+    path_id_insert(ctx.path_to_id, path_str, dir_id);
     return dir_id;
 }
 
@@ -439,7 +481,7 @@ auto create_implicit_file(
         .content_hash = content_hash,
     };
     ctx.index.add_file(std::move(entry));
-    ctx.path_to_id[rel_path] = file_id;
+    path_id_insert(ctx.path_to_id, rel_path, file_id);
     return file_id;
 }
 
@@ -449,10 +491,10 @@ auto serialize_graph_nodes(
     pup::graph::BuildGraph const& graph,
     std::string const& source_root,
     std::string const& output_root
-) -> std::pair<pup::index::Index, std::unordered_map<std::string, pup::NodeId>>
+) -> std::pair<pup::index::Index, PathIdMap>
 {
     auto index = pup::index::Index {};
-    auto path_to_id = std::unordered_map<std::string, pup::NodeId> {};
+    auto path_to_id = PathIdMap {};
 
     for (auto id : graph.all_nodes()) {
         if (pup::node_id::is_command(id)) {
@@ -512,7 +554,7 @@ auto serialize_graph_nodes(
                 .content_hash = content_hash,
             };
             index.add_file(std::move(entry));
-            path_to_id[node_path] = id;
+            path_id_insert(path_to_id, node_path, id);
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = graph.get_full_path(id);
 
@@ -533,7 +575,7 @@ auto serialize_graph_nodes(
             };
             index.add_file(std::move(entry));
             if (!node_path.empty()) {
-                path_to_id[node_path] = id;
+                path_id_insert(path_to_id, node_path, id);
             }
         } else if (node->type == pup::NodeType::Variable
                    || node->type == pup::NodeType::Group
@@ -562,7 +604,7 @@ auto serialize_graph_nodes(
 auto serialize_command_nodes(
     pup::graph::BuildGraph const& graph,
     pup::index::Index& index,
-    std::unordered_map<std::string, pup::NodeId> const& path_to_id
+    PathIdMap const& path_to_id
 ) -> void
 {
     for (auto id : graph.all_nodes()) {
@@ -583,7 +625,7 @@ auto serialize_command_nodes(
         auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
         auto dir_id = pup::NodeId { 0 };
         if (!source_dir_sv.empty()) {
-            auto it = path_to_id.find(std::string { source_dir_sv });
+            auto it = path_id_find(path_to_id, std::string { source_dir_sv });
             if (it != path_to_id.end()) {
                 dir_id = it->second;
             }
@@ -633,7 +675,7 @@ auto compute_next_id(pup::graph::BuildGraph const& graph) -> pup::NodeId
 /// Process discovered implicit dependencies from compiler output.
 /// Adds new file entries and implicit edges to the index.
 auto process_implicit_deps(
-    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
+    DiscoveredDeps const& discovered_deps,
     ImplicitDepContext& ctx
 ) -> void
 {
@@ -649,13 +691,12 @@ auto process_implicit_deps(
                 rel_path = abs_path;
             }
 
-            auto it = ctx.path_to_id.find(rel_path);
+            auto it = path_id_find(ctx.path_to_id, rel_path);
             auto dep_id = it != ctx.path_to_id.end()
                 ? it->second
                 : create_implicit_file(ctx, abs_path, rel_path);
 
-            auto edge_key = std::pair { dep_id, cmd_id };
-            if (ctx.added_edges.insert(edge_key).second) {
+            if (edge_pair_insert(ctx.added_edges, dep_id, cmd_id)) {
                 ctx.index.add_edge(pup::index::EdgeEntry {
                     .from = dep_id,
                     .to = cmd_id,
@@ -670,7 +711,7 @@ auto process_implicit_deps(
 /// Preserve implicit edges from the old index for commands that weren't rebuilt.
 auto preserve_old_implicit_edges(
     pup::index::Index const& old_index,
-    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
+    DiscoveredDeps const& discovered_deps,
     ImplicitDepContext& ctx
 ) -> void
 {
@@ -693,15 +734,14 @@ auto preserve_old_implicit_edges(
             continue;
         }
 
-        auto new_file_it = ctx.path_to_id.find(old_file->path);
+        auto new_file_it = path_id_find(ctx.path_to_id, old_file->path);
         auto old_path = std::string { old_file->path };
         auto abs_path = pup::path::is_absolute(old_path) ? old_path : pup::path::join(ctx.source_root, old_path);
         auto new_from_id = new_file_it != ctx.path_to_id.end()
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file->path);
 
-        auto edge_key = std::pair { new_from_id, edge.to };
-        if (ctx.added_edges.insert(edge_key).second) {
+        if (edge_pair_insert(ctx.added_edges, new_from_id, edge.to)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
                 .from = new_from_id,
                 .to = edge.to,
@@ -719,35 +759,40 @@ auto expand_implicit_deps(
 ) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> { changed };
-    auto added = std::set<std::string> { changed.begin(), changed.end() };
+    auto added = std::vector<std::string> { changed.begin(), changed.end() };
+    std::sort(added.begin(), added.end());
 
-    auto path_to_file = std::unordered_map<std::string, pup::index::FileEntry const*> {};
+    // Build sorted path -> file pointer map
+    auto path_to_file = std::vector<std::pair<std::string, pup::index::FileEntry const*>> {};
+    path_to_file.reserve(index.files().size());
     for (auto const& file : index.files()) {
-        path_to_file[file.path] = &file;
-    }
-
-    // Build edge index: from_id -> vector of edges (O(edges) once)
-    auto edges_by_from = std::unordered_map<pup::NodeId, std::vector<pup::index::EdgeEntry const*>> {};
-    for (auto const& edge : index.edges()) {
-        if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::Sticky) {
-            edges_by_from[edge.from].push_back(&edge);
+        if (!file.path.empty()) {
+            path_to_file.emplace_back(file.path, &file);
         }
     }
+    std::sort(path_to_file.begin(), path_to_file.end());
 
-    // O(1) lookup per changed file
+    // Build edge index using NodeIdArenaIndex pattern (from_id -> edge pointers)
+    // Use a sorted vector of (from_id, edge*) for grouped lookup
+    auto edges_by_from = std::vector<std::pair<pup::NodeId, pup::index::EdgeEntry const*>> {};
+    for (auto const& edge : index.edges()) {
+        if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::Sticky) {
+            edges_by_from.emplace_back(edge.from, &edge);
+        }
+    }
+    std::sort(edges_by_from.begin(), edges_by_from.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+
     for (auto const& path : changed) {
-        auto it = path_to_file.find(path);
-        if (it == path_to_file.end()) {
+        auto it = std::lower_bound(path_to_file.begin(), path_to_file.end(), path, [](auto const& p, auto const& k) { return p.first < k; });
+        if (it == path_to_file.end() || it->first != path) {
             continue;
         }
 
         auto file_id = pup::NodeId { it->second->id };
-        auto edge_it = edges_by_from.find(file_id);
-        if (edge_it == edges_by_from.end()) {
-            continue;
-        }
+        auto edge_lo = std::lower_bound(edges_by_from.begin(), edges_by_from.end(), file_id, [](auto const& p, auto const& k) { return p.first < k; });
 
-        for (auto const* edge : edge_it->second) {
+        for (auto edge_it = edge_lo; edge_it != edges_by_from.end() && edge_it->first == file_id; ++edge_it) {
+            auto const* edge = edge_it->second;
             auto cmd_id = pup::NodeId { edge->to };
             auto const* cmd = index.find_command_by_id(cmd_id);
             if (!cmd) {
@@ -764,7 +809,9 @@ auto expand_implicit_deps(
             for (auto output_id : graph.get_outputs(*cmd_node_id)) {
                 auto output_path = graph.get_full_path(output_id);
                 if (!output_path.empty()) {
-                    if (added.insert(output_path).second) {
+                    if (!std::binary_search(added.begin(), added.end(), output_path)) {
+                        auto pos = std::lower_bound(added.begin(), added.end(), output_path);
+                        added.insert(pos, output_path);
                         result.push_back(output_path);
                     }
                 }
@@ -779,7 +826,7 @@ auto expand_implicit_deps(
 /// Orchestrates the serialization of nodes, commands, edges, and implicit deps.
 auto build_index(
     pup::graph::BuildGraph const& graph,
-    std::unordered_map<pup::NodeId, std::vector<std::string>> const& discovered_deps,
+    DiscoveredDeps const& discovered_deps,
     std::string const& source_root,
     std::string const& output_root,
     pup::index::Index const* old_index = nullptr
@@ -796,7 +843,7 @@ auto build_index(
 
     // Setup context for implicit dependency processing
     auto next_id = compute_next_id(graph);
-    auto added_edges = std::set<std::pair<pup::NodeId, pup::NodeId>> {};
+    auto added_edges = EdgePairVec {};
     auto ctx = ImplicitDepContext {
         .index = index,
         .path_to_id = path_to_id,
@@ -1040,7 +1087,7 @@ auto build_single_variant(
         auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
-        auto upstream_files = std::set<std::string> {};
+        auto upstream_files = std::vector<std::string> {};
         if (opts.include_all_deps && !scopes.empty()) {
             upstream_files = collect_upstream_files(ctx.graph(), scopes);
         }
@@ -1135,7 +1182,7 @@ auto build_single_variant(
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
-    auto discovered_deps = std::unordered_map<pup::NodeId, std::vector<std::string>> {};
+    auto discovered_deps = DiscoveredDeps {};
     auto deps_mutex = std::mutex {};
     auto progress_mutex = std::mutex {};
 
@@ -1172,7 +1219,7 @@ auto build_single_variant(
             auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
                 ? job_result.deps_for_command
                 : job.id;
-            auto& deps = discovered_deps[target_id];
+            auto& deps = discovered_deps_get(discovered_deps, target_id);
 
             for (auto const& dep_path : job_result.discovered_deps) {
                 auto to_resolve = pup::path::is_absolute(dep_path)

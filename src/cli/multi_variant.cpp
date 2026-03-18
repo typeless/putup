@@ -10,10 +10,10 @@
 #include "pup/core/result.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <future>
-#include <set>
 #include <vector>
 
 namespace pup::cli {
@@ -43,11 +43,10 @@ auto parse_targets_for_variants(
         return pup::unexpected<pup::Error> { parsed.error() };
     }
 
-    auto variant_set = std::set<std::string> {};
     for (auto const& target : *parsed) {
         if (target.variant.has_value()) {
             result.has_variant_targets = true;
-            variant_set.insert(*target.variant);
+            result.variants.push_back(*target.variant);
             if (!target.scope_or_output.empty()) {
                 if (target.is_output) {
                     result.output_targets.push_back(target.scope_or_output);
@@ -64,9 +63,9 @@ auto parse_targets_for_variants(
         }
     }
 
-    for (auto const& v : variant_set) {
-        result.variants.emplace_back(v);
-    }
+    // Deduplicate variant names
+    std::sort(result.variants.begin(), result.variants.end());
+    result.variants.erase(std::unique(result.variants.begin(), result.variants.end()), result.variants.end());
 
     return result;
 }
