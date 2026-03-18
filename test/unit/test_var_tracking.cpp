@@ -4,7 +4,20 @@
 #include "catch_amalgamated.hpp"
 #include "pup/parser/var_tracking.hpp"
 
+#include <algorithm>
+
 using namespace pup::parser;
+
+namespace {
+
+auto find_history(std::vector<VarHistory> const& v, std::string_view name) -> VarHistory const*
+{
+    auto it = std::lower_bound(v.begin(), v.end(), name,
+        [](auto const& h, auto const& n) { return h.name < n; });
+    return (it != v.end() && it->name == name) ? &*it : nullptr;
+}
+
+} // namespace
 
 TEST_CASE("op_to_string converts operators correctly", "[var_tracking]")
 {
@@ -52,21 +65,22 @@ TEST_CASE("group_by_name groups assignments", "[var_tracking]")
     SECTION("creates history for each variable")
     {
         REQUIRE(histories.size() == 2);
-        CHECK(histories.count("CC") == 1);
-        CHECK(histories.count("CFLAGS") == 1);
+        CHECK(find_history(histories, "CC") != nullptr);
+        CHECK(find_history(histories, "CFLAGS") != nullptr);
     }
 
     SECTION("collects all assignments in order")
     {
-        auto const& cc_history = histories.at("CC");
-        REQUIRE(cc_history.assignments.size() == 2);
-        CHECK(cc_history.assignments[0]->filename == "Tuprules.tup");
-        CHECK(cc_history.assignments[1]->filename == "Tupfile");
+        auto const* cc_history = find_history(histories, "CC");
+        REQUIRE(cc_history != nullptr);
+        REQUIRE(cc_history->assignments.size() == 2);
+        CHECK(cc_history->assignments[0]->filename == "Tuprules.tup");
+        CHECK(cc_history->assignments[1]->filename == "Tupfile");
     }
 
     SECTION("tracks final value from effective assignments")
     {
-        CHECK(histories.at("CC").final_value == "gcc");
-        CHECK(histories.at("CFLAGS").final_value == "-Wall -O2");
+        CHECK(find_history(histories, "CC")->final_value == "gcc");
+        CHECK(find_history(histories, "CFLAGS")->final_value == "-Wall -O2");
     }
 }

@@ -6,7 +6,6 @@
 #include "ast.hpp"
 
 #include <cstdint>
-#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,10 +34,10 @@ struct VarHistory {
     std::string final_value;
 };
 
-/// Group assignments by variable name
+/// Group assignments by variable name (returned sorted by name)
 [[nodiscard]]
 auto group_by_name(AssignmentLog const& log)
-    -> std::map<std::string, VarHistory, std::less<>>;
+    -> std::vector<VarHistory>;
 
 /// Filter to assignments matching name (exact match)
 [[nodiscard]]
