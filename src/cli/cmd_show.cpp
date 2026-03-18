@@ -424,11 +424,11 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 }
 
 auto output_var_text(
-    std::map<std::string, parser::VarHistory, std::less<>> const& histories
+    std::vector<parser::VarHistory> const& histories
 ) -> int
 {
-    for (auto const& [name, history] : histories) {
-        printf("%s = %s\n", name.c_str(), history.final_value.c_str());
+    for (auto const& history : histories) {
+        printf("%s = %s\n", history.name.c_str(), history.final_value.c_str());
         printf("  History:\n");
         for (auto const* assign : history.assignments) {
             auto const* prefix = assign->is_effective ? "  " : "# ";
@@ -445,7 +445,7 @@ auto output_var_text(
 }
 
 auto output_var_json(
-    std::map<std::string, parser::VarHistory, std::less<>> const& histories,
+    std::vector<parser::VarHistory> const& histories,
     std::string_view variant_name
 ) -> int
 {
@@ -454,13 +454,13 @@ auto output_var_json(
     printf("  \"variables\": {\n");
 
     auto first_var = true;
-    for (auto const& [name, history] : histories) {
+    for (auto const& history : histories) {
         if (!first_var) {
             printf(",\n");
         }
         first_var = false;
 
-        printf("    \"%s\": {\n", escape_json(name).c_str());
+        printf("    \"%s\": {\n", escape_json(history.name).c_str());
         printf("      \"value\": \"%s\",\n", escape_json(history.final_value).c_str());
         printf("      \"history\": [\n");
 

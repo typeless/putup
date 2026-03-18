@@ -3,21 +3,24 @@
 
 #include "pup/parser/var_tracking.hpp"
 
+#include <algorithm>
+
 namespace pup::parser {
 
 auto group_by_name(AssignmentLog const& log)
-    -> std::map<std::string, VarHistory, std::less<>>
+    -> std::vector<VarHistory>
 {
-    auto result = std::map<std::string, VarHistory, std::less<>> {};
+    auto result = std::vector<VarHistory> {};
 
     for (auto const& assign : log) {
-        auto& history = result[assign.name];
-        if (history.name.empty()) {
-            history.name = assign.name;
+        auto it = std::lower_bound(result.begin(), result.end(), assign.name,
+            [](auto const& h, auto const& n) { return h.name < n; });
+        if (it == result.end() || it->name != assign.name) {
+            it = result.insert(it, VarHistory { .name = assign.name, .assignments = {}, .final_value = {} });
         }
-        history.assignments.push_back(&assign);
+        it->assignments.push_back(&assign);
         if (assign.is_effective) {
-            history.final_value = assign.value_after;
+            it->final_value = assign.value_after;
         }
     }
 
