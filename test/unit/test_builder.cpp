@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/parser/eval.hpp"
 
@@ -128,7 +129,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -185,7 +186,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     vars.set("ROOT", fixture.root().generic_string());
     auto ctx = EvalContext { .vars = &vars };
 
@@ -245,7 +246,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -305,7 +306,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
 {
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -394,7 +395,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     fixture.create_file("src/baz.h"); // Should not match *.c
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -433,7 +434,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
     auto fixture = BuilderTestFixture {};
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -484,7 +485,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     fixture.create_file("src/main.c");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -526,7 +527,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     fixture.create_file("src/baz.c"); // Will be excluded
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -591,7 +592,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     fixture.create_file("src/test_util.c"); // Will be excluded
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -656,7 +657,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     fixture.create_file("src/helper_impl.c"); // Will be excluded - gets #included
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -725,7 +726,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     auto fixture = BuilderTestFixture {};
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -813,7 +814,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -896,7 +897,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     fixture.create_file("src/main.c");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -946,7 +947,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     fixture.create_file("modules/app/sub/deep/impl.c");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -998,7 +999,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     fixture.create_file("src/util/helpers.c");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -1066,7 +1067,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     // Simulate -B build-variant
@@ -1130,7 +1131,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     // Create directory structure matching spos
@@ -1234,7 +1235,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
 
     auto fixture = BuilderTestFixture {};
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     // Create directory structure: sub/dir with build variant
@@ -1304,7 +1305,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     fixture.create_file("Tupfile");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -1355,7 +1356,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     fixture.create_file("src/lib/Tupfile");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -1410,7 +1411,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     fixture.create_file("src/util/helper.c");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
@@ -1466,7 +1467,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     fs::create_directories(fixture.root() / "build" / "src" / "lib");
 
     auto graph = BuildGraph {};
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     // Variant build with output_root
@@ -1533,7 +1534,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
 
     auto graph = BuildGraph {};
     graph.set_build_root_name("build");
-    auto vars = VarDb {};
+    auto vars = VarDb { &graph.string_pool() };
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {

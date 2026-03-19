@@ -4,14 +4,17 @@
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/eval.hpp"
 
 using namespace pup::parser;
+using pup::StringPool;
 using pup::test::EnvGuard;
 
 TEST_CASE("VarDb basic operations", "[eval]")
 {
-    auto db = VarDb {};
+    auto pool = StringPool {};
+    auto db = VarDb { &pool };
 
     SECTION("set and get")
     {
@@ -51,7 +54,8 @@ TEST_CASE("VarDb basic operations", "[eval]")
 
 TEST_CASE("Evaluator expression expansion", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -106,7 +110,8 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 
 TEST_CASE("Evaluator string expansion", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -144,8 +149,9 @@ TEST_CASE("Evaluator string expansion", "[eval]")
 
 TEST_CASE("Evaluator config variables", "[eval]")
 {
-    auto vars = VarDb {};
-    auto config_vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
+    auto config_vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
 
 
@@ -164,7 +170,8 @@ TEST_CASE("Evaluator config variables", "[eval]")
 
 TEST_CASE("Evaluator built-in variables", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext {
         .vars = &vars,
         .tup_cwd = "/home/user/project/src",
@@ -219,8 +226,9 @@ TEST_CASE("get_platform() respects TUP_PLATFORM env var", "[eval][platform]")
 
 TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][platform]")
 {
-    auto vars = VarDb {};
-    auto config_vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
+    auto config_vars = VarDb { &pool };
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
@@ -266,8 +274,9 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
 
 TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
 {
-    auto vars = VarDb {};
-    auto config_vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
+    auto config_vars = VarDb { &pool };
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
@@ -313,7 +322,8 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
 
 TEST_CASE("Evaluator pattern expansion", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -362,7 +372,8 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
 
 TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -397,7 +408,8 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 
 TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -455,7 +467,8 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 
 TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -510,8 +523,9 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
 
 TEST_CASE("Evaluator conditionals", "[eval]")
 {
-    auto vars = VarDb {};
-    auto config_vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
+    auto config_vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars, .config_vars = &config_vars };
 
 
@@ -583,7 +597,8 @@ TEST_CASE("Evaluator conditionals", "[eval]")
 
 TEST_CASE("Evaluator group resolution", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -640,7 +655,8 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
 TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 
@@ -681,7 +697,8 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
     // Without variant, TUP_VARIANT_OUTPUTDIR should be "."
     // This matches tup behavior where outputs go to current directory
 
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = ".";
 
@@ -698,7 +715,8 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]"
     // From sub/dir Tupfile, TUP_VARIANT_OUTPUTDIR = ../../build/sub/dir
     // This is the relative path from source sub/dir to output build/sub/dir
 
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
@@ -714,7 +732,8 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
     // Test that TUP_VARIANT_OUTPUTDIR expands correctly in commands
     // This simulates: echo -o $(TUP_VARIANT_OUTPUTDIR)/out.txt
 
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
@@ -735,7 +754,8 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
     // - TUP_VARIANTDIR = ../../build/rules (variant's rules directory)
     // - TUP_VARIANT_OUTPUTDIR = ../../build/sub/dir (variant's output for this Tupfile)
 
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_cwd = "../../rules";
     ctx.tup_variantdir = "../../build/rules";
@@ -774,7 +794,8 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
 
 TEST_CASE("Evaluator undefined variable handling", "[eval][error]")
 {
-    auto vars = VarDb {};
+    auto pool = StringPool {};
+    auto vars = VarDb { &pool };
     auto ctx = EvalContext { .vars = &vars };
 
 

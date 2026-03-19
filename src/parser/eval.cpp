@@ -19,90 +19,94 @@ namespace pup::parser {
 // VarDb
 // =============================================================================
 
-auto VarDb::find_entry(std::string_view name) -> Entry*
+VarDb::VarDb(StringPool* pool)
+    : pool_(pool)
 {
-    auto lo = std::size_t { 0 };
-    auto hi = entries_.size();
-    while (lo < hi) {
-        auto mid = lo + (hi - lo) / 2;
-        if (entries_[mid].name < name) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    if (lo < entries_.size() && entries_[lo].name == name) {
-        return &entries_[lo];
-    }
-    return nullptr;
 }
 
-auto VarDb::find_entry(std::string_view name) const -> Entry const*
+VarDb::VarDb(VarDb const& other)
+    : pool_(other.pool_)
 {
-    return const_cast<VarDb*>(this)->find_entry(name);
+    other.entries_.for_each([](std::uint32_t key, std::uint32_t value, void* raw) {
+        static_cast<SortedPairVec*>(raw)->insert(key, value);
+    }, &entries_);
+}
+
+auto VarDb::operator=(VarDb const& other) -> VarDb&
+{
+    if (this != &other) {
+        entries_.clear();
+        pool_ = other.pool_;
+        other.entries_.for_each([](std::uint32_t key, std::uint32_t value, void* raw) {
+            static_cast<SortedPairVec*>(raw)->insert(key, value);
+        }, &entries_);
+    }
+    return *this;
 }
 
 auto VarDb::set(std::string_view name, std::string value) -> void
 {
-    if (auto* e = find_entry(name)) {
-        e->value = std::move(value);
-        return;
-    }
-    auto lo = std::size_t { 0 };
-    auto hi = entries_.size();
-    while (lo < hi) {
-        auto mid = lo + (hi - lo) / 2;
-        if (entries_[mid].name < name) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo), Entry { std::string { name }, std::move(value) });
+    auto name_id = pup::to_underlying(pool_->intern(name));
+    auto value_id = pup::to_underlying(pool_->intern(value));
+    entries_.insert(name_id, value_id);
 }
 
 auto VarDb::append(std::string_view name, std::string_view value) -> void
 {
-    if (auto* e = find_entry(name)) {
-        if (!e->value.empty()) {
-            e->value += ' ';
+    auto name_id = pup::to_underlying(pool_->intern(name));
+    auto const* existing = entries_.find(name_id);
+    if (existing) {
+        auto old_value = pool_->get(pup::make_string_id(*existing));
+        auto combined = std::string {};
+        if (!old_value.empty()) {
+            combined.reserve(old_value.size() + 1 + value.size());
+            combined += old_value;
+            combined += ' ';
         }
-        e->value += value;
-        return;
+        combined += value;
+        auto value_id = pup::to_underlying(pool_->intern(combined));
+        entries_.insert(name_id, value_id);
+    } else {
+        auto value_id = pup::to_underlying(pool_->intern(value));
+        entries_.insert(name_id, value_id);
     }
-    auto lo = std::size_t { 0 };
-    auto hi = entries_.size();
-    while (lo < hi) {
-        auto mid = lo + (hi - lo) / 2;
-        if (entries_[mid].name < name) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    entries_.insert(entries_.begin() + static_cast<std::ptrdiff_t>(lo), Entry { std::string { name }, std::string { value } });
 }
 
 auto VarDb::get(std::string_view name) const -> std::string_view
 {
-    if (auto const* e = find_entry(name)) {
-        return e->value;
+    auto name_id = pool_->find(name);
+    if (pup::is_empty(name_id)) {
+        return {};
     }
-    return {};
+    auto const* value_ptr = entries_.find(pup::to_underlying(name_id));
+    if (!value_ptr) {
+        return {};
+    }
+    return pool_->get(pup::make_string_id(*value_ptr));
 }
 
 auto VarDb::contains(std::string_view name) const -> bool
 {
-    return find_entry(name) != nullptr;
+    auto name_id = pool_->find(name);
+    if (pup::is_empty(name_id)) {
+        return false;
+    }
+    return entries_.contains(pup::to_underlying(name_id));
 }
 
 auto VarDb::names() const -> std::vector<std::string_view>
 {
+    struct Ctx {
+        std::vector<std::string_view>* result;
+        StringPool const* pool;
+    };
     auto result = std::vector<std::string_view> {};
-    result.reserve(entries_.size());
-    for (auto const& e : entries_) {
-        result.push_back(e.name);
-    }
+    auto ctx = Ctx { &result, pool_ };
+    entries_.for_each([](std::uint32_t key, std::uint32_t, void* raw) {
+        auto* c = static_cast<Ctx*>(raw);
+        c->result->push_back(c->pool->get(pup::make_string_id(key)));
+    }, &ctx);
+    std::sort(result.begin(), result.end());
     return result;
 }
 
