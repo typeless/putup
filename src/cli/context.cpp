@@ -241,7 +241,8 @@ auto apply_config_overrides(
 /// Parse a tup.config file, returning a cached result on repeat calls.
 auto get_or_parse_config(
     std::string const& path,
-    TupfileParseState& state
+    TupfileParseState& state,
+    StringPool& pool
 ) -> parser::VarDb const*
 {
     for (auto const& entry : state.parsed_configs) {
@@ -250,7 +251,7 @@ auto get_or_parse_config(
         }
     }
 
-    auto result = parser::parse_config(path);
+    auto result = parser::parse_config(path, pool);
     if (!result) {
         fprintf(stderr, "Warning: Failed to parse %s: %s\n", path.c_str(), result.error().message.c_str());
         return nullptr;
@@ -267,7 +268,8 @@ auto get_or_parse_config(
 auto find_config_for_dir(
     std::string const& rel_dir,
     std::string const& output_root,
-    TupfileParseState& state
+    TupfileParseState& state,
+    StringPool& pool
 ) -> parser::VarDb const*
 {
     auto normalized = normalize_to_empty(rel_dir);
@@ -306,15 +308,15 @@ auto find_config_for_dir(
     }
 
     if (config_paths.empty()) {
-        state.scoped_configs.emplace_back(normalized, parser::VarDb {});
+        state.scoped_configs.emplace_back(normalized, parser::VarDb { &pool });
         return &state.scoped_configs.back().second;
     }
 
     // Merge leaf first (defaults), then each parent on top (overrides).
     // config_paths is root-to-leaf, so reverse iteration gives leaf→root.
-    auto merged = parser::VarDb {};
+    auto merged = parser::VarDb { &pool };
     for (auto it = config_paths.rbegin(); it != config_paths.rend(); ++it) {
-        auto const* cfg = get_or_parse_config(*it, state);
+        auto const* cfg = get_or_parse_config(*it, state, pool);
         if (cfg) {
             for (auto const& name : cfg->names()) {
                 merged.set(std::string { name }, std::string { cfg->get(name) });
@@ -422,7 +424,8 @@ auto parse_directory(std::string const& rel_dir, ParseContext& ctx) -> pup::Resu
     auto const* scoped_config = find_config_for_dir(
         ctx.root_config_only ? std::string {} : rel_dir,
         ctx.output_root,
-        ctx.state
+        ctx.state,
+        ctx.graph.string_pool()
     );
 
     auto request_directory = [&](std::string const& dir) -> pup::Result<void> {
@@ -579,12 +582,18 @@ auto make_layout_options(Options const& opts) -> LayoutOptions
 }
 
 struct BuildContext::Impl {
+    graph::BuildGraph graph;
     ProjectLayout layout;
     parser::VarDb config_vars;
     parser::VarDb vars;
-    graph::BuildGraph graph;
     TupfileParseState state;
     std::optional<index::Index> old_index;
+
+    Impl()
+        : config_vars(&graph.string_pool())
+        , vars(&graph.string_pool())
+    {
+    }
 };
 
 BuildContext::BuildContext()
@@ -687,7 +696,7 @@ auto build_context(
     // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
     auto config_path = pup::path::join(ctx.impl_->layout.output_root, "tup.config");
     if (pup::platform::exists(config_path)) {
-        auto const* root_cfg = get_or_parse_config(config_path, ctx.impl_->state);
+        auto const* root_cfg = get_or_parse_config(config_path, ctx.impl_->state, ctx.impl_->graph.string_pool());
         if (root_cfg) {
             ctx.impl_->config_vars = *root_cfg;
             if (ctx_opts.verbose) {

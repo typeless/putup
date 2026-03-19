@@ -22,7 +22,14 @@ namespace pup::parser {
 /// Variable database for storing and retrieving variable values
 class VarDb {
 public:
-    VarDb() = default;
+    explicit VarDb(StringPool* pool);
+    ~VarDb() = default;
+
+    VarDb(VarDb const& other);
+    auto operator=(VarDb const& other) -> VarDb&;
+
+    VarDb(VarDb&&) noexcept = default;
+    auto operator=(VarDb&&) noexcept -> VarDb& = default;
 
     auto set(std::string_view name, std::string value) -> void;
     auto append(std::string_view name, std::string_view value) -> void;
@@ -36,15 +43,12 @@ public:
 
     auto clear() -> void;
 
-private:
-    struct Entry {
-        std::string name;
-        std::string value;
-    };
-    std::vector<Entry> entries_;
+    [[nodiscard]]
+    auto pool() const -> StringPool* { return pool_; }
 
-    auto find_entry(std::string_view name) -> Entry*;
-    auto find_entry(std::string_view name) const -> Entry const*;
+private:
+    SortedPairVec entries_;
+    StringPool* pool_;
 };
 
 /// Identifies which variable bank a lookup resolved from
