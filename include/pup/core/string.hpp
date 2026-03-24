@@ -96,6 +96,10 @@ public:
     {
         return std::string_view { a } == b;
     }
+    friend auto operator==(String const& a, std::string const& b) -> bool
+    {
+        return std::string_view { a } == std::string_view { b };
+    }
     friend auto operator==(String const& a, char const* b) -> bool
     {
         return std::string_view { a } == b;

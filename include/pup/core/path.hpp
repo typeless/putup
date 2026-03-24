@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "pup/core/string.hpp"
+
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -11,7 +13,7 @@ namespace pup {
 
 /// A filesystem path is a UTF-8 encoded string using '/' as separator.
 /// Windows native conversion happens at the platform boundary (file_io-win32.cpp).
-using Path = std::string;
+using Path = String;
 
 /// Path string operations. All functions operate on forward-slash-separated
 /// UTF-8 paths without touching the filesystem.

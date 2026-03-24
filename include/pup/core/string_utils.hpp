@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include <string>
+#include "pup/core/string.hpp"
+
 #include <string_view>
 #include <vector>
 
@@ -13,6 +14,6 @@ namespace pup::core {
 /// - Single quotes: no escaping, everything literal until closing '
 /// - Double quotes: \\ and \" are special, other \X is literal
 /// - Outside quotes: \ escapes next character
-auto tokenize_shell_command(std::string_view cmd) -> std::vector<std::string>;
+auto tokenize_shell_command(std::string_view cmd) -> std::vector<String>;
 
 } // namespace pup::core

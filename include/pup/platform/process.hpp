@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string.hpp"
 
 #include <chrono>
 #include <optional>
@@ -15,8 +16,8 @@ namespace pup::platform {
 /// Result of process execution
 struct ProcessResult {
     int exit_code = 0;
-    std::string stdout_output;
-    std::string stderr_output;
+    String stdout_output;
+    String stderr_output;
     std::chrono::milliseconds duration = {};
     bool timed_out = false;
     bool signaled = false;
@@ -25,8 +26,8 @@ struct ProcessResult {
 
 /// Options for process execution
 struct ProcessOptions {
-    std::string command;
-    std::string working_dir;
+    String command;
+    String working_dir;
     std::vector<std::string> env;
     bool inherit_env = true;
     bool capture_stdout = true;

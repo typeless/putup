@@ -12,10 +12,9 @@ namespace pup {
 
 namespace {
 
-auto is_source_file(std::string const& p) -> bool
+auto is_source_file(std::string_view p) -> bool
 {
     auto ext = pup::path::extension(p);
-    // Sorted at compile time for binary_search
     static constexpr std::string_view source_exts[] = {
         ".C",
         ".H",
@@ -35,15 +34,15 @@ auto is_source_file(std::string const& p) -> bool
     return std::binary_search(std::begin(source_exts), std::end(source_exts), ext);
 }
 
-auto is_variant_dir(std::string const& dir) -> bool
+auto is_variant_dir(std::string_view dir) -> bool
 {
     return pup::platform::exists(pup::path::join(dir, "tup.config"));
 }
 
-auto fnmatch_simple(std::string const& pattern, std::string const& name) -> bool
+auto fnmatch_simple(std::string_view pattern, std::string_view name) -> bool
 {
     auto star_pos = pattern.find('*');
-    if (star_pos == std::string::npos) {
+    if (star_pos == std::string_view::npos) {
         return pattern == name;
     }
 
@@ -159,7 +158,7 @@ auto expand_glob_target(
         }
 
         auto target = Target {};
-        target.variant = entry.name;
+        target.variant = std::string(entry.name);
 
         if (!remainder.empty()) {
             auto full_path = pup::path::join(entry_path, remainder);

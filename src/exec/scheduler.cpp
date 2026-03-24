@@ -68,9 +68,9 @@ auto resolve_variant_path(
     auto path_str = path;
     if (!output_root_prefix.empty() && path_str.starts_with(output_root_prefix)
         && (path_str.size() == output_root_prefix.size() || path_str[output_root_prefix.size()] == '/')) {
-        return pup::path::join(source_root, path);
+        return std::string(pup::path::join(source_root, path));
     }
-    return pup::path::join(output_root, path);
+    return std::string(pup::path::join(output_root, path));
 }
 
 /// Add job dependencies for any command that produces the given node.

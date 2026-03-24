@@ -135,7 +135,7 @@ auto run_process_with_callback(
         }
         env_ptrs.push_back(nullptr);
 
-        auto cmd_str = std::string { opts.command };
+        auto cmd_str = std::string(opts.command);
         char* const argv[] = {
             const_cast<char*>("/bin/sh"), // NOLINT(cppcoreguidelines-pro-type-const-cast)
             const_cast<char*>("-c"),      // NOLINT(cppcoreguidelines-pro-type-const-cast)

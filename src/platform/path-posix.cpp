@@ -5,9 +5,9 @@
 
 namespace pup::platform {
 
-auto to_utf8(std::string const& path) -> std::string
+auto to_utf8(std::string_view path) -> String
 {
-    return path;
+    return String { path };
 }
 
 } // namespace pup::platform

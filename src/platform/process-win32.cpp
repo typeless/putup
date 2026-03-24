@@ -125,10 +125,10 @@ auto run_process_with_callback(
 
     // Build command line: cmd.exe /c "command"
     auto cmdline = std::wstring { L"cmd.exe /c \"" };
-    auto cmd_len = MultiByteToWideChar(CP_UTF8, 0, opts.command.c_str(), -1, nullptr, 0);
+    auto cmd_len = MultiByteToWideChar(CP_UTF8, 0, opts.command.data(), static_cast<int>(opts.command.size()), nullptr, 0);
     if (cmd_len > 0) {
-        auto wcmd = std::wstring(cmd_len - 1, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, opts.command.c_str(), -1, wcmd.data(), cmd_len);
+        auto wcmd = std::wstring(cmd_len, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, opts.command.data(), static_cast<int>(opts.command.size()), wcmd.data(), cmd_len);
         cmdline += wcmd;
     }
     cmdline += L'"';
@@ -150,10 +150,10 @@ auto run_process_with_callback(
     // Convert working directory
     auto working_dir = std::wstring {};
     if (!opts.working_dir.empty()) {
-        auto len = MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.c_str(), -1, nullptr, 0);
+        auto len = MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.data(), static_cast<int>(opts.working_dir.size()), nullptr, 0);
         if (len > 0) {
-            working_dir.resize(len - 1);
-            MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.c_str(), -1, working_dir.data(), len);
+            working_dir.resize(len);
+            MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.data(), static_cast<int>(opts.working_dir.size()), working_dir.data(), len);
         }
     }
 

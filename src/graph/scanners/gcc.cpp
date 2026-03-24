@@ -14,7 +14,7 @@ namespace pup::graph::scanners {
 namespace {
 
 /// Known compiler wrapper tools
-auto is_compiler_wrapper(std::string const& name) -> bool
+auto is_compiler_wrapper(std::string_view name) -> bool
 {
     return name == "ccache" || name == "distcc" || name == "sccache" || name == "icecc";
 }
@@ -56,13 +56,13 @@ auto is_compiler_name(std::string_view name) -> bool
 }
 
 /// Check if a flag contains shell special characters that would cause issues
-auto has_shell_special(std::string const& flag) -> bool
+auto has_shell_special(std::string_view flag) -> bool
 {
-    return flag.find('`') != std::string::npos || flag.find("$(") != std::string::npos;
+    return flag.find('`') != std::string_view::npos || flag.find("$(") != std::string_view::npos;
 }
 
 /// Check if a string needs shell quoting
-auto needs_shell_quoting(std::string const& s) -> bool
+auto needs_shell_quoting(std::string_view s) -> bool
 {
     return std::ranges::any_of(s, [](char c) {
         return c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
@@ -73,10 +73,10 @@ auto needs_shell_quoting(std::string const& s) -> bool
 }
 
 /// Quote a string for shell using single quotes (handles embedded single quotes)
-auto shell_quote(std::string const& s) -> std::string
+auto shell_quote(std::string_view s) -> std::string
 {
     if (!needs_shell_quoting(s)) {
-        return s;
+        return std::string { s };
     }
 
     auto result = std::string { "'" };
@@ -94,7 +94,7 @@ auto shell_quote(std::string const& s) -> std::string
 /// Normalize a path lexically by removing foo/../ segments.
 /// Unlike std::filesystem::lexically_normal(), works without filesystem access.
 /// Needed because DEP commands run before output directories exist.
-auto normalize_path_lexically(std::string const& path) -> std::string
+auto normalize_path_lexically(std::string_view path) -> std::string
 {
     auto parts = std::vector<std::string> {};
     auto start = std::size_t { 0 };
@@ -102,7 +102,7 @@ auto normalize_path_lexically(std::string const& path) -> std::string
 
     while (start < path.size()) {
         auto end = path.find('/', start);
-        if (end == std::string::npos) {
+        if (end == std::string_view::npos) {
             end = path.size();
         }
         auto part = path.substr(start, end - start);
@@ -110,7 +110,7 @@ auto normalize_path_lexically(std::string const& path) -> std::string
             if (part == ".." && !parts.empty() && parts.back() != "..") {
                 parts.pop_back();
             } else {
-                parts.push_back(std::move(part));
+                parts.push_back(std::string { part });
             }
         }
         start = end + 1;
@@ -134,7 +134,7 @@ auto normalize_path_lexically(std::string const& path) -> std::string
 }
 
 /// Normalize paths embedded in compiler flags
-auto normalize_flag_path(std::string const& flag) -> std::string
+auto normalize_flag_path(std::string_view flag) -> std::string
 {
     for (auto const* prefix : { "-I", "-isystem", "-iquote", "-include", "--sysroot=", "-isysroot" }) {
         if (flag.starts_with(prefix)) {
@@ -144,11 +144,11 @@ auto normalize_flag_path(std::string const& flag) -> std::string
             }
         }
     }
-    return flag;
+    return std::string { flag };
 }
 
 /// Check if a flag is relevant for dependency generation
-auto is_dep_relevant_flag(std::string const& flag) -> bool
+auto is_dep_relevant_flag(std::string_view flag) -> bool
 {
     if (has_shell_special(flag)) {
         return false;
@@ -173,13 +173,13 @@ auto is_dep_relevant_flag(std::string const& flag) -> bool
 }
 
 /// Check if a word looks like a source file
-auto is_source_file(std::string const& word) -> bool
+auto is_source_file(std::string_view word) -> bool
 {
     if (word.empty() || word[0] == '-') {
         return false;
     }
     auto dot_pos = word.rfind('.');
-    if (dot_pos == std::string::npos) {
+    if (dot_pos == std::string_view::npos) {
         return false;
     }
     auto ext = word.substr(dot_pos);
@@ -203,7 +203,7 @@ auto matches_gcc_compile(std::string_view command) -> bool
         first_basename = first_basename.substr(pos + 1);
     }
 
-    if (is_compiler_wrapper(std::string { first_basename }) && words.size() > 1) {
+    if (is_compiler_wrapper(first_basename) && words.size() > 1) {
         compiler_idx = 1;
     }
 
@@ -319,7 +319,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         }
 
         if (is_source_file(w)) {
-            source_files.push_back(w);
+            source_files.emplace_back(std::string_view { w });
         }
     }
 

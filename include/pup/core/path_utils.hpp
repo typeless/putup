@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "pup/core/string.hpp"
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,14 +14,14 @@ namespace pup {
 
 [[nodiscard]]
 auto is_path_under(
-    std::string const& path,
-    std::string const& root
+    std::string_view path,
+    std::string_view root
 ) -> bool;
 
 [[nodiscard]]
 auto relative_to_root(
-    std::string const& path,
-    std::string const& root
+    std::string_view path,
+    std::string_view root
 ) -> std::string;
 
 [[nodiscard]]
@@ -46,8 +48,8 @@ auto strip_path_prefix(
 [[nodiscard]]
 auto resolve_under_root(
     std::string_view path,
-    std::string const& source_root,
-    std::string const& target_root
+    std::string_view source_root,
+    std::string_view target_root
 ) -> std::optional<std::string>;
 
 [[nodiscard]]

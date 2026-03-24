@@ -10,47 +10,47 @@
 namespace pup {
 
 auto is_path_under(
-    std::string const& path_str,
-    std::string const& root
+    std::string_view path_str,
+    std::string_view root
 ) -> bool
 {
-    auto root_str = root;
+    auto root_sv = root;
 
-    while (!root_str.empty() && root_str.back() == '/') {
-        root_str.pop_back();
+    while (!root_sv.empty() && root_sv.back() == '/') {
+        root_sv.remove_suffix(1);
     }
 
-    if (path_str == root_str) {
+    if (path_str == root_sv) {
         return true;
     }
 
-    if (!path_str.starts_with(root_str)) {
+    if (!path_str.starts_with(root_sv)) {
         return false;
     }
 
-    return path_str[root_str.size()] == '/';
+    return path_str[root_sv.size()] == '/';
 }
 
 auto relative_to_root(
-    std::string const& path_str,
-    std::string const& root
+    std::string_view path_str,
+    std::string_view root
 ) -> std::string
 {
     if (!is_path_under(path_str, root)) {
-        return "";
+        return std::string {};
     }
 
-    auto root_str = root;
+    auto root_sv = root;
 
-    while (!root_str.empty() && root_str.back() == '/') {
-        root_str.pop_back();
+    while (!root_sv.empty() && root_sv.back() == '/') {
+        root_sv.remove_suffix(1);
     }
 
-    if (path_str == root_str) {
-        return "";
+    if (path_str == root_sv) {
+        return std::string {};
     }
 
-    return path_str.substr(root_str.size() + 1);
+    return std::string { path_str.substr(root_sv.size() + 1) };
 }
 
 auto is_path_in_scope(
@@ -139,7 +139,7 @@ auto make_source_relative(
         return std::string { path_sv.substr(dir_prefix.size()) };
     }
     if (path_sv == source_dir) {
-        return ".";
+        return std::string { "." };
     }
     return std::string { source_to_root } + std::string { path_sv };
 }
@@ -161,8 +161,8 @@ auto strip_path_prefix(
 
 auto resolve_under_root(
     std::string_view path_sv,
-    std::string const& source_root,
-    std::string const& target_root
+    std::string_view source_root,
+    std::string_view target_root
 ) -> std::optional<std::string>
 {
     if (!path_sv.starts_with("..")) {

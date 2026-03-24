@@ -216,13 +216,13 @@ auto glob_expand(
     auto const is_recursive = glob.is_recursive() && options.recursive;
 
     if (is_recursive) {
-        (void)pup::platform::walk_directory(search_dir, [&](pup::platform::DirEntry const& entry, std::string const& rel_path) -> bool {
-            auto name = entry.name;
+        (void)pup::platform::walk_directory(search_dir, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
+            auto name = std::string_view { entry.name };
             if (!options.include_hidden && !name.empty() && name[0] == '.') {
                 return false;
             }
             if (glob.matches(rel_path)) {
-                auto result_path = dir_part.empty() ? rel_path : std::string { dir_part } + "/" + rel_path;
+                auto result_path = dir_part.empty() ? std::string { rel_path } : std::string { dir_part } + "/" + std::string { rel_path };
                 results.push_back(result_path);
             }
             return true;
@@ -236,7 +236,7 @@ auto glob_expand(
                     continue;
                 }
                 if (glob.matches(name)) {
-                    auto result_path = dir_part.empty() ? name : std::string { dir_part } + "/" + name;
+                    auto result_path = dir_part.empty() ? std::string(name) : std::string { dir_part } + "/" + std::string(name);
                     results.push_back(result_path);
                 }
             }

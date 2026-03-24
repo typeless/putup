@@ -138,8 +138,8 @@ auto E2EFixture::run_pup(std::vector<std::string> const& args) -> PupResult
 
     return PupResult {
         .exit_code = result->exit_code,
-        .stdout_output = result->stdout_output,
-        .stderr_output = result->stderr_output,
+        .stdout_output = std::string(result->stdout_output),
+        .stderr_output = std::string(result->stderr_output),
     };
 }
 
@@ -242,8 +242,8 @@ auto E2EFixture::run(std::string_view path, std::vector<std::string> const& args
 
     return ProcessResult {
         .exit_code = result->exit_code,
-        .stdout_output = result->stdout_output,
-        .stderr_output = result->stderr_output,
+        .stdout_output = std::string(result->stdout_output),
+        .stderr_output = std::string(result->stderr_output),
     };
 }
 
@@ -307,8 +307,8 @@ auto E2EFixture::run_pup_in_dir(
 
     return PupResult {
         .exit_code = result->exit_code,
-        .stdout_output = result->stdout_output,
-        .stderr_output = result->stderr_output,
+        .stdout_output = std::string(result->stdout_output),
+        .stderr_output = std::string(result->stderr_output),
     };
 }
 
@@ -352,8 +352,8 @@ auto run_shell_fixture(std::string_view name) -> ProcessResult
 
     return ProcessResult {
         .exit_code = result->exit_code,
-        .stdout_output = result->stdout_output,
-        .stderr_output = result->stderr_output,
+        .stdout_output = std::string(result->stdout_output),
+        .stderr_output = std::string(result->stderr_output),
     };
 }
 

@@ -119,7 +119,7 @@ TEST_CASE("discover_layout from build directory", "[e2e][layout]")
         fs::current_path(original_cwd);
 
         REQUIRE(result.has_value());
-        REQUIRE(fs::canonical(result->source_root) == fs::canonical(tmp.path()).string());
-        REQUIRE(fs::canonical(result->output_root) == fs::canonical(tmp.path() / "build").string());
+        REQUIRE(fs::canonical(std::string(result->source_root)) == fs::canonical(tmp.path()).string());
+        REQUIRE(fs::canonical(std::string(result->output_root)) == fs::canonical(tmp.path() / "build").string());
     }
 }
