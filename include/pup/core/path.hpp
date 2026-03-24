@@ -6,7 +6,6 @@
 #include "pup/core/string.hpp"
 
 #include <cstddef>
-#include <string>
 #include <string_view>
 
 namespace pup {
@@ -25,7 +24,7 @@ namespace path {
 /// join("", "foo.c") → "foo.c"
 /// join("src", "/usr/include") → "/usr/include" (absolute rhs replaces)
 [[nodiscard]]
-auto join(std::string_view a, std::string_view b) -> std::string;
+auto join(std::string_view a, std::string_view b) -> String;
 
 /// Get the parent directory.
 /// parent("src/lib/foo.c") → "src/lib"
@@ -66,14 +65,14 @@ auto is_absolute(std::string_view p) -> bool;
 /// normalize("/a/b/../c") → "/a/c"
 /// Does not touch the filesystem.
 [[nodiscard]]
-auto normalize(std::string_view p) -> std::string;
+auto normalize(std::string_view p) -> String;
 
 /// Compute relative path from base to target (lexical, no filesystem access).
 /// relative("a/b/c", "a") → "b/c"
 /// relative("a/b", "a/b") → "."
 /// relative("x/y", "a/b") → "../../x/y"
 [[nodiscard]]
-auto relative(std::string_view target, std::string_view base) -> std::string;
+auto relative(std::string_view target, std::string_view base) -> String;
 
 } // namespace path
 } // namespace pup

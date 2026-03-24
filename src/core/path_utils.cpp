@@ -174,7 +174,7 @@ auto resolve_under_root(
     auto rel = path::relative(abs_path, target_prefix);
 
     if (!rel.empty() && !rel.starts_with("..")) {
-        return rel;
+        return std::string(rel);
     }
     return std::nullopt;
 }

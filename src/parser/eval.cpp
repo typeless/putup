@@ -568,7 +568,7 @@ auto expand_path(
             // Normalize path to remove // and resolve . and .. components
             auto path_str = expanded.substr(start, end - start);
             auto normalized = pup::path::normalize(path_str);
-            result.push_back(std::move(normalized));
+            result.push_back(std::string(normalized));
         }
         start = end;
     }
