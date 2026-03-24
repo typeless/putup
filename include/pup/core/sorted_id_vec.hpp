@@ -98,12 +98,24 @@ public:
 
     auto for_each(void (*fn)(std::uint32_t key, std::uint32_t value, void* ctx), void* ctx) const -> void;
 
-private:
     struct Pair {
         std::uint32_t key;
         std::uint32_t value;
     };
 
+    [[nodiscard]]
+    auto begin() const -> Pair const*
+    {
+        return data_;
+    }
+
+    [[nodiscard]]
+    auto end() const -> Pair const*
+    {
+        return data_ + size_;
+    }
+
+private:
     Pair* data_ = nullptr;
     std::size_t size_ = 0;
     std::size_t capacity_ = 0;
