@@ -31,6 +31,7 @@ auto is_source_file(std::string const& p) -> bool
         ".hxx",
         ".s",
     };
+    static_assert(std::is_sorted(std::begin(source_exts), std::end(source_exts)));
     return std::binary_search(std::begin(source_exts), std::end(source_exts), ext);
 }
 
