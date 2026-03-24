@@ -27,9 +27,9 @@ VarDb::VarDb(StringPool* pool)
 VarDb::VarDb(VarDb const& other)
     : pool_(other.pool_)
 {
-    other.entries_.for_each([](std::uint32_t key, std::uint32_t value, void* raw) {
-        static_cast<SortedPairVec*>(raw)->insert(key, value);
-    }, &entries_);
+    for (auto [key, value] : other.entries_) {
+        entries_.insert(key, value);
+    }
 }
 
 auto VarDb::operator=(VarDb const& other) -> VarDb&
@@ -37,9 +37,9 @@ auto VarDb::operator=(VarDb const& other) -> VarDb&
     if (this != &other) {
         entries_.clear();
         pool_ = other.pool_;
-        other.entries_.for_each([](std::uint32_t key, std::uint32_t value, void* raw) {
-            static_cast<SortedPairVec*>(raw)->insert(key, value);
-        }, &entries_);
+        for (auto [key, value] : other.entries_) {
+            entries_.insert(key, value);
+        }
     }
     return *this;
 }
@@ -96,16 +96,10 @@ auto VarDb::contains(std::string_view name) const -> bool
 
 auto VarDb::names() const -> std::vector<std::string_view>
 {
-    struct Ctx {
-        std::vector<std::string_view>* result;
-        StringPool const* pool;
-    };
     auto result = std::vector<std::string_view> {};
-    auto ctx = Ctx { &result, pool_ };
-    entries_.for_each([](std::uint32_t key, std::uint32_t, void* raw) {
-        auto* c = static_cast<Ctx*>(raw);
-        c->result->push_back(c->pool->get(pup::make_string_id(key)));
-    }, &ctx);
+    for (auto [key, value] : entries_) {
+        result.push_back(pool_->get(pup::make_string_id(key)));
+    }
     std::sort(result.begin(), result.end());
     return result;
 }
