@@ -298,9 +298,9 @@ The parser uses a **FileResolver** interface for I/O abstraction:
 
 ```cpp
 struct FileResolver {
-    virtual auto resolve(path, relative_to) -> Result<std::filesystem::path> = 0;
+    virtual auto resolve(path, relative_to) -> Result<std::string> = 0;
     virtual auto read_file(path) -> Result<std::string> = 0;
-    virtual auto find_tuprules(from_dir) -> Result<std::filesystem::path> = 0;
+    virtual auto find_tuprules(from_dir) -> Result<std::string> = 0;
 };
 ```
 
@@ -310,9 +310,10 @@ struct FileResolver {
 
 ```cpp
 class VarDb {
-    auto set(name, value) -> void;
-    auto append(name, value) -> void;  // Space-separated
-    auto get(name) -> std::string;
+    explicit VarDb(StringPool* pool);
+    auto set(name, value) -> void;       // Interns both name and value
+    auto append(name, value) -> void;    // Space-separated concatenation
+    auto get(name) -> std::string_view;  // O(log n) via interned StringId lookup
 };
 ```
 
@@ -335,7 +336,8 @@ struct VarContext {
     std::string_view tup_cwd, tup_platform, tup_arch;
     std::string_view tup_variantdir, tup_variant_outputdir;
     std::string_view tup_srcdir, tup_outdir;
-    std::unordered_set<std::string> const* imported_vars;
+    SortedIdVec const* imported_vars;   // Interned env var names
+    StringPool const* string_pool;
 };
 
 // Lookup with bank tracking (for dependency recording)
@@ -356,12 +358,13 @@ struct EvalContext {
     // Callbacks for cross-directory resolution
     std::function<std::vector<std::string>(std::string_view)> resolve_group;           // {groupname}
     std::function<std::vector<std::string>(std::string_view)> resolve_order_only_group; // <groupname>
-    std::function<Result<void>(std::filesystem::path const&)> request_directory;       // Demand-driven parsing
-    std::set<std::filesystem::path> const* available_tupfile_dirs;
+    std::function<Result<void>(std::string const&)> request_directory;       // Demand-driven parsing
+    std::vector<std::string> const* available_tupfile_dirs;
 
     // Callbacks for fine-grained dependency tracking
     std::function<void(std::string_view)> on_config_var_used;
-    std::unordered_set<std::string> const* imported_vars;
+    SortedIdVec const* imported_vars;         // Interned env var names
+    StringPool const* string_pool;
     std::function<void(std::string_view)> on_env_var_used;
 };
 ```
@@ -538,13 +541,14 @@ struct Graph {
     std::deque<ConditionNode> conditions;  // Conditional guards
     std::deque<PhiNode> phi_nodes;         // Output merges from conditional branches
 
-    // Edge indices: NodeId -> indices into edges vector
-    std::unordered_map<NodeId, std::vector<std::size_t>> edges_to_index;   // Edges TO node
-    std::unordered_map<NodeId, std::vector<std::size_t>> edges_from_index; // Edges FROM node
+    // Edge indices: NodeId -> ArenaSlice (indices into edges vector)
+    Arena32 edge_arena;
+    NodeIdArenaIndex edges_to_index;
+    NodeIdArenaIndex edges_from_index;
 
     // Order-only edges (separate from edges vector)
-    std::unordered_map<NodeId, std::vector<NodeId>> order_only_to_index;
-    std::unordered_map<NodeId, std::vector<NodeId>> order_only_dependents;
+    NodeIdArenaIndex order_only_to_index;
+    NodeIdArenaIndex order_only_dependents;
 
     // Node lookup indices
     std::vector<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
@@ -633,7 +637,7 @@ auto detect_cycles(graph) -> std::optional<std::vector<NodeId>>;
 Additional graph analysis:
 
 ```cpp
-auto reachable_from(graph, start) -> std::unordered_set<NodeId>;
+auto reachable_from(graph, start) -> NodeIdMap32;
 auto node_depth(graph, id) -> std::size_t;
 auto critical_path(graph) -> std::vector<NodeId>;
 ```
@@ -671,8 +675,9 @@ Transforms AST to BuildGraph:
 
 ```cpp
 struct BuilderOptions {
-    std::filesystem::path root_dir;
-    std::filesystem::path variant_dir;
+    std::string source_root;
+    std::string config_root;
+    std::string output_root;
     bool expand_globs;
     bool validate_inputs;
 };
@@ -727,8 +732,8 @@ When `!cc` is referenced, the builder substitutes the stored macro definition.
 
 ```cpp
 struct BuilderContext {
-    std::unordered_map<std::string, BangMacroDef> macros;
-    std::unordered_map<std::string, std::vector<NodeId>> groups;
+    std::vector<std::pair<std::uint32_t, BangMacroDef>> macros;  // Sorted by interned name key
+    GroupMemberTable groups;  // Interned group name → member NodeIds
 };
 ```
 
@@ -971,7 +976,7 @@ struct CommandResult {
 };
 
 struct RunOptions {
-    std::filesystem::path working_dir = {};
+    std::string working_dir = {};
     std::vector<std::string> env = {};           // Additional environment variables
     bool inherit_env = true;                     // Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {};
@@ -999,7 +1004,7 @@ struct BuildJob {
     NodeId id = 0;
     std::string command = {};
     std::string display = {};
-    std::filesystem::path working_dir = {};
+    std::string working_dir = {};
     std::vector<std::string> inputs = {};
     std::vector<std::string> outputs = {};
     std::vector<std::string> order_only_inputs = {};  // Order-only dependencies
@@ -1038,8 +1043,9 @@ struct SchedulerOptions {
     bool keep_going = false;                          // Continue after failures
     bool dry_run = false;                             // Print commands without executing
     bool verbose = false;                             // Print commands as they run
-    std::filesystem::path source_root = {};           // Source tree root (where Tupfile.ini lives)
-    std::filesystem::path output_root = {};           // Output tree root (where outputs/.pup go)
+    std::string source_root = {};                     // Source tree root (where Tupfile.ini lives)
+    std::string config_root = {};                     // Config tree root (where Tupfiles live)
+    std::string output_root = {};                     // Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; // Per-command timeout
 };
 
@@ -1236,10 +1242,10 @@ Pup supports projects with Tupfiles in multiple subdirectories, enabling modular
 On startup, pup recursively scans for all directories containing `Tupfile`:
 
 ```cpp
-auto discover_tupfile_dirs(root) -> std::set<std::filesystem::path>
+auto discover_tupfile_dirs(root) -> std::vector<std::string>
 {
     // Skip variant directories (contain tup.config)
-    // Return set of relative paths to Tupfile directories
+    // Return sorted vector of relative paths to Tupfile directories
 }
 ```
 
@@ -1265,9 +1271,9 @@ This approach:
 
 ```cpp
 struct TupfileParseState {
-    std::set<std::filesystem::path> available;  // Dirs with Tupfiles
-    std::set<std::filesystem::path> parsed;     // Already processed
-    std::set<std::filesystem::path> parsing;    // Currently processing (cycle detection)
+    std::vector<std::string> available;  // Dirs with Tupfiles (sorted)
+    std::vector<std::string> parsed;     // Already processed (sorted)
+    std::vector<std::string> parsing;    // Currently processing (cycle detection, sorted)
 };
 ```
 
@@ -1279,10 +1285,10 @@ Each Tupfile gets its own variable scope:
 
 ```cpp
 struct BuilderContext {
-    std::filesystem::path current_dir;
-    parser::Variables local_vars;       // $(VAR) - local to this Tupfile
-    std::unordered_map<std::string, BangMacroDef> macros;  // !macros
-    std::unordered_map<std::string, std::vector<NodeId>> groups;  // {bins}
+    std::string current_dir;
+    VarDb* vars;                        // $(VAR) - local to this Tupfile (StringPool-backed)
+    std::vector<std::pair<std::uint32_t, BangMacroDef>> macros;  // !macros (sorted by interned name)
+    GroupMemberTable groups;            // {bins} (interned group name → member NodeIds)
 };
 ```
 
@@ -1300,11 +1306,11 @@ Groups can be referenced across directories using path prefixes:
 : foo.c | $(ROOT)/include/generated/<gen-headers> |> $(CC) -c %f -o %o |> foo.o
 ```
 
-Group keys are `(directory, name)` tuples:
+Group keys use interned `"directory/name"` StringIds:
 
 ```cpp
-using GroupKey = std::pair<std::filesystem::path, std::string>;
-std::map<GroupKey, std::vector<NodeId>> order_only_groups_;
+// BuilderState::group_nodes — interned "dir/name" StringId → NodeId
+SortedPairVec group_nodes;
 ```
 
 ### TUP_CWD Computation
@@ -1446,9 +1452,9 @@ auto make_source_relative(path, source_to_root, current_dir) {
 The variant's `tup.config` exists only in the variant directory, not the source tree. When a Tupfile references `../../tup.config`, pup maps it to `<variant>/tup.config`:
 
 ```cpp
-if (full_path.filename() == "tup.config" && !variant_dir.empty()) {
-    auto variant_config = variant_dir / "tup.config";
-    if (std::filesystem::exists(root_dir / variant_config))
+if (pup::path::filename(full_path) == "tup.config" && !output_root.empty()) {
+    auto variant_config = pup::path::join(output_root, "tup.config");
+    if (pup::platform::exists(variant_config))
         return variant_config;
 }
 ```
