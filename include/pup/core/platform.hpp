@@ -3,8 +3,9 @@
 
 #pragma once
 
+#include "pup/core/string.hpp"
+
 #include <cstdlib>
-#include <string>
 #include <string_view>
 
 namespace pup {
@@ -43,12 +44,12 @@ inline constexpr auto ARCH = std::string_view { "unknown" };
 
 /// Get platform string at runtime (checks TUP_PLATFORM env var first)
 [[nodiscard]]
-inline auto get_platform() -> std::string
+inline auto get_platform() -> String
 {
     if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
-        return std::string { env };
+        return String { env };
     }
-    return std::string { PLATFORM };
+    return String { PLATFORM };
 }
 
 } // namespace pup

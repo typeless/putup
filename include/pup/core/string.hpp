@@ -38,6 +38,9 @@ public:
 
     operator std::string_view() const; // NOLINT(google-explicit-constructor)
 
+    /// Explicit bridge back to std::string (for APIs that still require it)
+    explicit operator std::string() const { return std::string { data(), size() }; }
+
     [[nodiscard]]
     auto operator[](std::size_t i) const -> char;
 
@@ -55,9 +58,15 @@ public:
     auto clear() -> void;
 
     [[nodiscard]]
-    auto begin() const -> char const* { return data(); }
+    auto begin() const -> char const*
+    {
+        return data();
+    }
     [[nodiscard]]
-    auto end() const -> char const* { return data() + size(); }
+    auto end() const -> char const*
+    {
+        return data() + size();
+    }
 
     [[nodiscard]]
     auto starts_with(std::string_view sv) const -> bool;
@@ -95,6 +104,14 @@ public:
     {
         return std::string_view { a } < std::string_view { b };
     }
+    friend auto operator<(String const& a, std::string_view b) -> bool
+    {
+        return std::string_view { a } < b;
+    }
+    friend auto operator<(std::string_view a, String const& b) -> bool
+    {
+        return a < std::string_view { b };
+    }
 
 private:
     static constexpr std::size_t SSO_CAP = 22;
@@ -107,7 +124,7 @@ private:
     };
 
     struct Sso {
-        char buf[SSO_CAP + 1]; // +1 for null terminator within SSO_CAP
+        char buf[SSO_CAP + 1];  // +1 for null terminator within SSO_CAP
         std::uint8_t remaining; // SSO_CAP - len; high bit = 0 for SSO
     };
 

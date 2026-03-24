@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ast.hpp"
+#include "pup/core/string.hpp"
 
 #include <cstdint>
 #include <string>
@@ -14,13 +15,13 @@ namespace pup::parser {
 
 /// Single variable assignment record
 struct VarAssignment {
-    std::string name;
-    std::string filename;
+    String name;
+    String filename;
     std::uint32_t line = 0;
     std::uint32_t column = 0;
     Assignment::Op op = Assignment::Op::Set;
-    std::string value_before;
-    std::string value_after;
+    String value_before;
+    String value_after;
     bool is_effective = true;
 };
 
@@ -29,9 +30,9 @@ using AssignmentLog = std::vector<VarAssignment>;
 
 /// Grouped history for a single variable
 struct VarHistory {
-    std::string name;
+    String name;
     std::vector<VarAssignment const*> assignments;
-    std::string final_value;
+    String final_value;
 };
 
 /// Group assignments by variable name (returned sorted by name)

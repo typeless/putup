@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string.hpp"
 
 #include <string>
 #include <string_view>
@@ -61,7 +62,7 @@ public:
     }
 
 private:
-    std::string pattern_;
+    String pattern_;
     bool has_wildcards_ = false;
     bool has_double_star_ = false;
 
@@ -120,6 +121,6 @@ auto path_directory(std::string_view path) -> std::string_view;
 /// Example: pattern="*.c", filename="hello.c" -> "hello"
 /// For path patterns, matches against basename only.
 [[nodiscard]]
-auto glob_match_extract(std::string_view pattern, std::string_view filename) -> std::string;
+auto glob_match_extract(std::string_view pattern, std::string_view filename) -> String;
 
 } // namespace pup::parser

@@ -352,7 +352,7 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<std::string>
                     kind = VarRef::Kind::Node;
                 }
 
-                auto ref = VarRef { kind, std::string { name }, {} };
+                auto ref = VarRef { kind, String { name }, {} };
                 auto expanded = expand_var(ctx, ref);
                 if (!expanded) {
                     return pup::unexpected<Error>(expanded.error());

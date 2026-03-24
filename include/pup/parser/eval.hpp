@@ -6,6 +6,7 @@
 #include "ast.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <functional>
@@ -119,13 +120,13 @@ struct EvalContext {
     VarDb const* config_vars = nullptr; ///< Config variables @(VAR) from tup.config (read-only)
     VarDb* node_vars = nullptr;         ///< Node variables &(VAR)
 
-    std::string tup_cwd = {};               ///< Current directory (TUP_CWD)
-    std::string tup_platform = {};          ///< Platform name (TUP_PLATFORM)
-    std::string tup_arch = {};              ///< Architecture (TUP_ARCH)
-    std::string tup_variantdir = {};        ///< Relative path to variant output (TUP_VARIANTDIR)
-    std::string tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
-    std::string tup_srcdir = {};            ///< Relative path to source dir (TUP_SRCDIR)
-    std::string tup_outdir = {};            ///< Relative path to output dir (TUP_OUTDIR)
+    String tup_cwd = {};               ///< Current directory (TUP_CWD)
+    String tup_platform = {};          ///< Platform name (TUP_PLATFORM)
+    String tup_arch = {};              ///< Architecture (TUP_ARCH)
+    String tup_variantdir = {};        ///< Relative path to variant output (TUP_VARIANTDIR)
+    String tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
+    String tup_srcdir = {};            ///< Relative path to source dir (TUP_SRCDIR)
+    String tup_outdir = {};            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
     std::function<std::vector<std::string>(std::string_view)> resolve_group = {};
@@ -183,14 +184,14 @@ struct EvalContext {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    std::string input = {};                    ///< %f - input filename
-    std::string input_base = {};               ///< %b - input basename (no path)
-    std::string input_noext = {};              ///< %B - input basename without extension
-    std::string input_ext = {};                ///< %e - input extension
-    std::string output = {};                   ///< %o - output filename
-    std::string output_base = {};              ///< %O - output basename (no path)
-    std::string input_dir = {};                ///< %d - input directory
-    std::string glob_match = {};               ///< %g - portion matched by * in foreach glob
+    String input = {};                         ///< %f - input filename
+    String input_base = {};                    ///< %b - input basename (no path)
+    String input_noext = {};                   ///< %B - input basename without extension
+    String input_ext = {};                     ///< %e - input extension
+    String output = {};                        ///< %o - output filename
+    String output_base = {};                   ///< %O - output basename (no path)
+    String input_dir = {};                     ///< %d - input directory
+    String glob_match = {};                    ///< %g - portion matched by * in foreach glob
     int input_index = 0;                       ///< For %Nf patterns (1-indexed)
     std::vector<std::string> all_inputs = {};  ///< All inputs for %Nf expansion
     std::vector<std::string> all_outputs = {}; ///< All outputs for %No expansion

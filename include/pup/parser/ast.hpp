@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/source_location.hpp"
+#include "pup/core/string.hpp"
 
 #include <memory>
 #include <optional>
@@ -39,10 +40,10 @@ struct VarRef final : AstNode {
                       Node };
 
     Kind kind = Kind::Regular;
-    std::string name;
+    String name;
 
     VarRef() = default;
-    VarRef(Kind k, std::string n, SourceLocation loc)
+    VarRef(Kind k, String n, SourceLocation loc)
         : AstNode(loc)
         , kind(k)
         , name(std::move(n))
@@ -53,7 +54,7 @@ struct VarRef final : AstNode {
 /// Expression that may contain literal text and variable references
 struct Expression final : AstNode {
     struct Literal {
-        std::string value;
+        String value;
     };
     struct Variable {
         VarRef ref;

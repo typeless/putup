@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string.hpp"
 
 #include <string>
 #include <string_view>
@@ -13,7 +14,7 @@ namespace pup::parser {
 
 /// Parsed dependency file (.d file from gcc -MD)
 struct Depfile {
-    std::string target;                    ///< Output file (left side of colon)
+    String target;                         ///< Output file (left side of colon)
     std::vector<std::string> dependencies; ///< Input files (right side of colon)
 };
 
