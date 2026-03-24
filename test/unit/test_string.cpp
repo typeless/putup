@@ -236,3 +236,131 @@ TEST_CASE("String move assignment", "[string]")
     REQUIRE(std::string_view { a } == "replaced");
     REQUIRE(b.empty());
 }
+
+// =============================================================================
+// Self-referential operations
+// =============================================================================
+
+TEST_CASE("String self-append", "[string]")
+{
+    SECTION("self-append within SSO")
+    {
+        auto s = String { "ab" };
+        s += s;
+        REQUIRE(s == "abab");
+    }
+
+    SECTION("self-append crossing SSO boundary")
+    {
+        auto s = String { "12345678901" }; // 11 chars, SSO
+        s += s; // 22 chars = SSO_CAP, still SSO
+        REQUIRE(s.size() == 22);
+        REQUIRE(s == "1234567890112345678901");
+    }
+
+    SECTION("self-append SSO to heap")
+    {
+        auto s = String { "123456789012" }; // 12 chars
+        s += s; // 24 chars > SSO_CAP, triggers SSO→heap
+        REQUIRE(s.size() == 24);
+        REQUIRE(s == "123456789012123456789012");
+    }
+
+    SECTION("self-append on heap with realloc")
+    {
+        auto s = String { "this is a long string that is on the heap" };
+        auto expected = std::string { s.data(), s.size() };
+        expected += expected;
+        s += s;
+        REQUIRE(std::string_view { s } == expected);
+    }
+}
+
+TEST_CASE("String self-assignment", "[string]")
+{
+    auto s = String { "test" };
+    s = s; // NOLINT(clang-diagnostic-self-assign-overloaded)
+    REQUIRE(s == "test");
+}
+
+// =============================================================================
+// Large strings
+// =============================================================================
+
+TEST_CASE("String large string", "[string]")
+{
+    auto s = String {};
+    for (int i = 0; i < 10000; ++i) {
+        s += 'x';
+    }
+    REQUIRE(s.size() == 10000);
+    REQUIRE(s[0] == 'x');
+    REQUIRE(s[9999] == 'x');
+}
+
+// =============================================================================
+// Edge cases
+// =============================================================================
+
+TEST_CASE("String from empty literal", "[string]")
+{
+    auto s = String { "" };
+    REQUIRE(s.empty());
+    REQUIRE(s.size() == 0);
+}
+
+TEST_CASE("String move heap-allocated", "[string]")
+{
+    auto a = String { "this is a long heap-allocated string that exceeds SSO" };
+    auto expected = std::string_view { a };
+    auto b = String { std::move(a) };
+    REQUIRE(std::string_view { b } == expected);
+    REQUIRE(a.empty());
+}
+
+TEST_CASE("String heap growth via append", "[string]")
+{
+    auto s = String { "start with a heap string that is long enough" };
+    auto original = std::string { s.data(), s.size() };
+    for (int i = 0; i < 100; ++i) {
+        s += " more";
+    }
+    REQUIRE(s.starts_with(original));
+    REQUIRE(s.size() == original.size() + 500);
+}
+
+TEST_CASE("String substr out of range", "[string]")
+{
+    auto s = String { "hello" };
+    auto sub = s.substr(100);
+    REQUIRE(sub.empty());
+}
+
+TEST_CASE("String resize", "[string]")
+{
+    SECTION("grow")
+    {
+        auto s = String { "abc" };
+        s.resize(10);
+        REQUIRE(s.size() == 10);
+        REQUIRE(s[0] == 'a');
+        REQUIRE(s[3] == '\0');
+    }
+
+    SECTION("shrink")
+    {
+        auto s = String { "hello world" };
+        s.resize(5);
+        REQUIRE(s == "hello");
+    }
+}
+
+TEST_CASE("String comparison operators", "[string]")
+{
+    auto a = String { "abc" };
+    auto b = String { "def" };
+    REQUIRE(a == "abc");
+    REQUIRE(a == a);
+    REQUIRE(a < b);
+    REQUIRE_FALSE(a == b);
+}
