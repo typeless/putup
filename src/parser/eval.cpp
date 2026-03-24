@@ -10,6 +10,7 @@
 #include "pup/core/path.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <charconv>
 #include <cstdlib>
 
@@ -22,6 +23,7 @@ namespace pup::parser {
 VarDb::VarDb(StringPool* pool)
     : pool_(pool)
 {
+    assert(pool != nullptr);
 }
 
 VarDb::VarDb(VarDb const& other)

@@ -43,9 +43,6 @@ public:
 
     auto clear() -> void;
 
-    [[nodiscard]]
-    auto pool() const -> StringPool* { return pool_; }
-
 private:
     SortedPairVec entries_;
     StringPool* pool_;
