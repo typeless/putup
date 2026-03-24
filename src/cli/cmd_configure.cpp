@@ -26,7 +26,7 @@ auto install_config_file(
 {
     auto config_path = std::string { config_file };
     if (!pup::path::is_absolute(config_path)) {
-        config_path = pup::path::join(*pup::platform::current_directory(), config_path);
+        config_path = std::string(pup::path::join(*pup::platform::current_directory(), config_path));
     }
 
     if (!pup::platform::exists(config_path)) {
@@ -34,7 +34,7 @@ auto install_config_file(
         return EXIT_FAILURE;
     }
 
-    auto dest = pup::path::join(layout.output_root, "tup.config");
+    auto dest = std::string(pup::path::join(layout.output_root, "tup.config"));
     (void)pup::platform::create_directories(std::string { pup::path::parent(dest) });
     (void)pup::platform::copy_file(config_path, dest);
 
@@ -90,7 +90,7 @@ auto configure_single_variant(
         }
     };
 
-    auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
+    auto configs = find_config_commands(ctx.graph(), std::string(ctx.layout().source_root));
     if (configs.empty()) {
         printf("[%.*s] No config-generating rules found.\n", static_cast<int>(variant_name.size()), variant_name.data());
         ensure_config();
@@ -130,9 +130,9 @@ auto configure_single_variant(
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
-        .source_root = ctx.layout().source_root,
-        .config_root = ctx.layout().config_root,
-        .output_root = ctx.layout().output_root,
+        .source_root = std::string(ctx.layout().source_root),
+        .config_root = std::string(ctx.layout().config_root),
+        .output_root = std::string(ctx.layout().output_root),
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };

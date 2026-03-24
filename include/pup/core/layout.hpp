@@ -8,14 +8,15 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pup {
 
 struct ProjectLayout {
-    std::string source_root;
-    std::string config_root;
-    std::string output_root;
+    String source_root;
+    String config_root;
+    String output_root;
 
     [[nodiscard]]
     auto is_in_tree() const -> bool
@@ -30,40 +31,40 @@ struct ProjectLayout {
     }
 
     [[nodiscard]]
-    auto pup_dir() const -> std::string
+    auto pup_dir() const -> String
     {
         return path::join(output_root, ".pup");
     }
 
     [[nodiscard]]
-    auto index_path() const -> std::string
+    auto index_path() const -> String
     {
         return path::join(pup_dir(), "index");
     }
 
     [[nodiscard]]
-    auto resolve_source(std::string const& rel) const -> std::string
+    auto resolve_source(std::string_view rel) const -> String
     {
         return path::join(source_root, rel);
     }
 
     [[nodiscard]]
-    auto resolve_config(std::string const& rel) const -> std::string
+    auto resolve_config(std::string_view rel) const -> String
     {
         return path::join(config_root, rel);
     }
 
     [[nodiscard]]
-    auto resolve_output(std::string const& rel) const -> std::string
+    auto resolve_output(std::string_view rel) const -> String
     {
         return path::join(output_root, rel);
     }
 };
 
 struct LayoutOptions {
-    std::optional<std::string> source_dir;
-    std::optional<std::string> config_dir;
-    std::optional<std::string> build_dir;
+    std::optional<String> source_dir;
+    std::optional<String> config_dir;
+    std::optional<String> build_dir;
 };
 
 [[nodiscard]]
@@ -71,12 +72,12 @@ auto discover_layout(LayoutOptions const& opts = {}) -> Result<ProjectLayout>;
 
 [[nodiscard]]
 auto find_project_root(
-    std::string const& start_dir
-) -> std::optional<std::string>;
+    std::string_view start_dir
+) -> std::optional<String>;
 
 [[nodiscard]]
 auto discover_variants(
-    std::string const& source_root
+    std::string_view source_root
 ) -> std::vector<std::string>;
 
 } // namespace pup

@@ -10,9 +10,14 @@
 #include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
+#include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+// All std::string_view parameters in this file originate from null-terminated
+// sources (pup::String, std::string, or string literals). Calling .data()
+// at the POSIX boundary is safe.
 
 namespace pup::platform {
 
@@ -55,13 +60,13 @@ auto MappedFile::is_open() const -> bool
     return impl_ && impl_->data != nullptr;
 }
 
-auto MappedFile::open(std::string const& path) -> Result<MappedFile>
+auto MappedFile::open(std::string_view path) -> Result<MappedFile>
 {
     auto file = MappedFile {};
     file.impl_ = std::make_unique<Impl>();
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    file.impl_->fd = ::open(path.c_str(), O_RDONLY);
+    file.impl_->fd = ::open(path.data(), O_RDONLY);
     if (file.impl_->fd < 0) {
         file.impl_.reset();
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
@@ -107,10 +112,10 @@ auto MappedFile::close() -> void
     impl_.reset();
 }
 
-auto stat_file(std::string const& path) -> Result<FileStat>
+auto stat_file(std::string_view path) -> Result<FileStat>
 {
     struct stat st { };
-    if (::stat(path.c_str(), &st) < 0) {
+    if (::stat(path.data(), &st) < 0) {
         return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
     }
 
@@ -129,7 +134,7 @@ auto stat_file(std::string const& path) -> Result<FileStat>
 }
 
 auto atomic_write(
-    std::string const& path,
+    std::string_view path,
     std::span<std::byte const> data
 ) -> Result<void>
 {
@@ -141,7 +146,7 @@ auto atomic_write(
         }
     }
 
-    auto temp_path = path + ".tmp.";
+    auto temp_path = std::string { path } + ".tmp.";
 
     struct timespec ts { };
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -172,7 +177,7 @@ auto atomic_write(
         return make_error<void>(ErrorCode::IoError, "Failed to write file");
     }
 
-    if (::rename(temp_path.c_str(), path.c_str()) < 0) {
+    if (::rename(temp_path.c_str(), path.data()) < 0) {
         ::unlink(temp_path.c_str());
         return make_error<void>(ErrorCode::IoError, "Failed to rename file");
     }
@@ -182,47 +187,47 @@ auto atomic_write(
 
 // Filesystem queries
 
-auto exists(std::string const& path) -> bool
+auto exists(std::string_view path) -> bool
 {
     struct stat st { };
-    return ::stat(path.c_str(), &st) == 0;
+    return ::stat(path.data(), &st) == 0;
 }
 
-auto is_file(std::string const& path) -> bool
+auto is_file(std::string_view path) -> bool
 {
     struct stat st { };
-    if (::stat(path.c_str(), &st) != 0) {
+    if (::stat(path.data(), &st) != 0) {
         return false;
     }
     return S_ISREG(st.st_mode);
 }
 
-auto is_directory(std::string const& path) -> bool
+auto is_directory(std::string_view path) -> bool
 {
     struct stat st { };
-    if (::stat(path.c_str(), &st) != 0) {
+    if (::stat(path.data(), &st) != 0) {
         return false;
     }
     return S_ISDIR(st.st_mode);
 }
 
-auto is_symlink(std::string const& path) -> bool
+auto is_symlink(std::string_view path) -> bool
 {
     struct stat st { };
-    if (::lstat(path.c_str(), &st) != 0) {
+    if (::lstat(path.data(), &st) != 0) {
         return false;
     }
     return S_ISLNK(st.st_mode);
 }
 
-auto is_empty(std::string const& path) -> bool
+auto is_empty(std::string_view path) -> bool
 {
     struct stat st { };
-    if (::stat(path.c_str(), &st) != 0) {
+    if (::stat(path.data(), &st) != 0) {
         return true;
     }
     if (S_ISDIR(st.st_mode)) {
-        auto* dir = ::opendir(path.c_str());
+        auto* dir = ::opendir(path.data());
         if (!dir) {
             return true;
         }
@@ -267,33 +272,33 @@ auto mkdir_recursive(std::string const& path) -> bool
 
 } // namespace
 
-auto create_directories(std::string const& path) -> Result<void>
+auto create_directories(std::string_view path) -> Result<void>
 {
     if (path.empty()) {
         return {};
     }
-    if (!mkdir_recursive(path)) {
-        return make_error<void>(ErrorCode::IoError, "Failed to create directories: " + path);
+    if (!mkdir_recursive(std::string { path })) {
+        return make_error<void>(ErrorCode::IoError, "Failed to create directories: " + std::string { path });
     }
     return {};
 }
 
-auto remove_file(std::string const& path) -> Result<void>
+auto remove_file(std::string_view path) -> Result<void>
 {
     struct stat st { };
-    if (::lstat(path.c_str(), &st) != 0) {
+    if (::lstat(path.data(), &st) != 0) {
         if (errno == ENOENT) {
             return {};
         }
-        return make_error<void>(ErrorCode::IoError, "Failed to stat: " + path);
+        return make_error<void>(ErrorCode::IoError, "Failed to stat: " + std::string { path });
     }
     if (S_ISDIR(st.st_mode)) {
-        if (::rmdir(path.c_str()) != 0) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + path);
+        if (::rmdir(path.data()) != 0) {
+            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + std::string { path });
         }
     } else {
-        if (::unlink(path.c_str()) != 0) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + path);
+        if (::unlink(path.data()) != 0) {
+            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + std::string { path });
         }
     }
     return {};
@@ -338,38 +343,38 @@ auto remove_all_recursive(std::string const& path) -> bool
 
 } // namespace
 
-auto remove_all(std::string const& path) -> Result<void>
+auto remove_all(std::string_view path) -> Result<void>
 {
-    if (!remove_all_recursive(path)) {
-        return make_error<void>(ErrorCode::IoError, "Failed to remove: " + path);
+    if (!remove_all_recursive(std::string { path })) {
+        return make_error<void>(ErrorCode::IoError, "Failed to remove: " + std::string { path });
     }
     return {};
 }
 
-auto rename_path(std::string const& from, std::string const& to) -> Result<void>
+auto rename_path(std::string_view from, std::string_view to) -> Result<void>
 {
-    if (::rename(from.c_str(), to.c_str()) != 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + from + " -> " + to);
+    if (::rename(from.data(), to.data()) != 0) {
+        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + std::string { from } + " -> " + std::string { to });
     }
     return {};
 }
 
-auto copy_file(std::string const& from, std::string const& to) -> Result<void>
+auto copy_file(std::string_view from, std::string_view to) -> Result<void>
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto src_fd = ::open(from.c_str(), O_RDONLY);
+    auto src_fd = ::open(from.data(), O_RDONLY);
     if (src_fd < 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to open source: " + from);
+        return make_error<void>(ErrorCode::IoError, "Failed to open source: " + std::string { from });
     }
 
     struct stat st { };
     ::fstat(src_fd, &st);
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto dst_fd = ::open(to.c_str(), O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+    auto dst_fd = ::open(to.data(), O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
     if (dst_fd < 0) {
         ::close(src_fd);
-        return make_error<void>(ErrorCode::IoError, "Failed to create destination: " + to);
+        return make_error<void>(ErrorCode::IoError, "Failed to create destination: " + std::string { to });
     }
 
     char buf[8192];
@@ -396,28 +401,28 @@ auto copy_file(std::string const& from, std::string const& to) -> Result<void>
     ::close(dst_fd);
 
     if (!ok) {
-        ::unlink(to.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + from + " -> " + to);
+        ::unlink(to.data());
+        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + std::string { from } + " -> " + std::string { to });
     }
     return {};
 }
 
 // Path resolution
 
-auto current_directory() -> Result<std::string>
+auto current_directory() -> Result<String>
 {
     char buf[4096];
     if (::getcwd(buf, sizeof(buf)) == nullptr) {
-        return make_error<std::string>(ErrorCode::IoError, "Failed to get current directory");
+        return make_error<String>(ErrorCode::IoError, "Failed to get current directory");
     }
-    return std::string { buf };
+    return String { buf };
 }
 
-auto canonical(std::string const& path) -> Result<std::string>
+auto canonical(std::string_view path) -> Result<String>
 {
-    char* resolved = ::realpath(path.c_str(), nullptr);
+    char* resolved = ::realpath(path.data(), nullptr);
     if (resolved) {
-        auto result = std::string { resolved };
+        auto result = String { resolved };
         ::free(resolved); // NOLINT(cppcoreguidelines-no-malloc)
         return result;
     }
@@ -428,21 +433,21 @@ auto canonical(std::string const& path) -> Result<std::string>
     }
     auto p = *abs;
     auto existing = p;
-    auto tail = std::string {};
+    auto tail = String {};
     while (!existing.empty()) {
         char* r = ::realpath(existing.c_str(), nullptr);
         if (r) {
-            auto result = std::string { r };
+            auto result = String { r };
             ::free(r); // NOLINT(cppcoreguidelines-no-malloc)
             if (!tail.empty()) {
                 result = pup::path::join(result, pup::path::normalize(tail));
             }
             return result;
         }
-        auto par = std::string { pup::path::parent(existing) };
-        auto name = std::string { pup::path::filename(existing) };
-        tail = tail.empty() ? name : pup::path::join(name, tail);
-        if (par == existing) {
+        auto par = pup::path::parent(existing);
+        auto name = pup::path::filename(existing);
+        tail = tail.empty() ? String { name } : pup::path::join(name, tail);
+        if (par == std::string_view { existing }) {
             break;
         }
         existing = par;
@@ -450,10 +455,10 @@ auto canonical(std::string const& path) -> Result<std::string>
     return pup::path::normalize(p);
 }
 
-auto absolute(std::string const& path) -> Result<std::string>
+auto absolute(std::string_view path) -> Result<String>
 {
     if (!path.empty() && path[0] == '/') {
-        return path;
+        return String { path };
     }
     auto cwd = current_directory();
     if (!cwd) {
@@ -462,25 +467,25 @@ auto absolute(std::string const& path) -> Result<std::string>
     return pup::path::join(*cwd, path);
 }
 
-auto read_symlink(std::string const& path) -> Result<std::string>
+auto read_symlink(std::string_view path) -> Result<String>
 {
     char buf[4096];
-    auto n = ::readlink(path.c_str(), buf, sizeof(buf) - 1);
+    auto n = ::readlink(path.data(), buf, sizeof(buf) - 1);
     if (n < 0) {
-        return make_error<std::string>(ErrorCode::IoError, "Failed to read symlink: " + path);
+        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + std::string { path });
     }
     buf[n] = '\0';
-    return std::string { buf };
+    return String { buf };
 }
 
 // File I/O
 
-auto read_file(std::string const& path) -> Result<std::string>
+auto read_file(std::string_view path) -> Result<String>
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto fd = ::open(path.c_str(), O_RDONLY);
+    auto fd = ::open(path.data(), O_RDONLY);
     if (fd < 0) {
-        return make_error<std::string>(ErrorCode::IoError, "Failed to open file: " + path);
+        return make_error<String>(ErrorCode::IoError, "Failed to open file: " + std::string { path });
     }
 
     struct stat st { };
@@ -505,10 +510,10 @@ auto read_file(std::string const& path) -> Result<std::string>
     ::close(fd);
 
     content.resize(total);
-    return content;
+    return String { content };
 }
 
-auto write_file(std::string const& path, std::string_view data) -> Result<void>
+auto write_file(std::string_view path, std::string_view data) -> Result<void>
 {
     auto par = std::string { pup::path::parent(path) };
     if (!par.empty()) {
@@ -519,27 +524,27 @@ auto write_file(std::string const& path, std::string_view data) -> Result<void>
     }
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    auto fd = ::open(path.data(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + path);
+        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + std::string { path });
     }
 
     auto n = ::write(fd, data.data(), data.size());
     ::close(fd);
 
     if (n != static_cast<ssize_t>(data.size())) {
-        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + path);
+        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + std::string { path });
     }
     return {};
 }
 
 // Directory traversal
 
-auto read_directory(std::string const& path) -> Result<std::vector<DirEntry>>
+auto read_directory(std::string_view path) -> Result<std::vector<DirEntry>>
 {
-    auto* dir = ::opendir(path.c_str());
+    auto* dir = ::opendir(path.data());
     if (!dir) {
-        return make_error<std::vector<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + path);
+        return make_error<std::vector<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + std::string { path });
     }
 
     auto entries = std::vector<DirEntry> {};
@@ -555,7 +560,7 @@ auto read_directory(std::string const& path) -> Result<std::vector<DirEntry>>
         } else if (entry->d_type == DT_UNKNOWN) {
 #endif
             struct stat st { };
-            auto full = path + "/" + entry->d_name;
+            auto full = std::string { path } + "/" + entry->d_name;
             if (::stat(full.c_str(), &st) == 0) {
                 is_dir = S_ISDIR(st.st_mode);
             }
@@ -571,19 +576,33 @@ auto read_directory(std::string const& path) -> Result<std::vector<DirEntry>>
 namespace {
 
 auto walk_recursive(
-    std::string const& base,
-    std::string const& rel,
+    std::string_view base,
+    String const& rel,
     WalkVisitor const& visitor
 ) -> Result<void>
 {
-    auto full = rel.empty() ? base : base + "/" + rel;
+    String full;
+    if (rel.empty()) {
+        full = base;
+    } else {
+        full = base;
+        full += '/';
+        full += rel;
+    }
     auto entries = read_directory(full);
     if (!entries) {
         return pup::unexpected<Error>(entries.error());
     }
 
     for (auto const& e : *entries) {
-        auto child_rel = rel.empty() ? e.name : rel + "/" + e.name;
+        String child_rel;
+        if (rel.empty()) {
+            child_rel = e.name;
+        } else {
+            child_rel = rel;
+            child_rel += '/';
+            child_rel += e.name;
+        }
         auto should_recurse = visitor(e, child_rel);
         if (e.is_dir && should_recurse) {
             auto r = walk_recursive(base, child_rel, visitor);
@@ -597,7 +616,7 @@ auto walk_recursive(
 
 } // namespace
 
-auto walk_directory(std::string const& path, WalkVisitor const& visitor) -> Result<void>
+auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result<void>
 {
     return walk_recursive(path, "", visitor);
 }

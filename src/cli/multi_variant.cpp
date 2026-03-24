@@ -28,7 +28,7 @@ struct ParsedTargets {
 };
 
 auto parse_targets_for_variants(
-    std::string const& source_root,
+    std::string_view source_root,
     std::vector<std::string> const& targets
 ) -> pup::Result<ParsedTargets>
 {
@@ -38,7 +38,7 @@ auto parse_targets_for_variants(
         return result;
     }
 
-    auto parsed = validate_target_consistency(source_root, targets);
+    auto parsed = validate_target_consistency(std::string { source_root }, targets);
     if (!parsed.has_value()) {
         return pup::unexpected<pup::Error> { parsed.error() };
     }
@@ -107,7 +107,11 @@ auto for_each_variant(
         scopes = parsed_targets->scopes;
         output_targets = parsed_targets->output_targets;
     } else {
-        variants = discover_variants(source_root);
+        auto discovered = discover_variants(source_root);
+        variants.reserve(discovered.size());
+        for (auto const& v : discovered) {
+            variants.emplace_back(std::string(v));
+        }
         scopes = parsed_targets->scopes;
         output_targets = parsed_targets->output_targets;
     }

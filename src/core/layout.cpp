@@ -15,19 +15,19 @@ auto const PUP_SOURCE_DIR_ENV = "PUP_SOURCE_DIR";
 auto const PUP_CONFIG_DIR_ENV = "PUP_CONFIG_DIR";
 auto const PUP_BUILD_DIR_ENV = "PUP_BUILD_DIR";
 
-auto get_env(char const* name) -> std::optional<std::string>
+auto get_env(char const* name) -> std::optional<String>
 {
     if (auto const* value = std::getenv(name)) {
         if (*value != '\0') {
-            return std::string { value };
+            return String { value };
         }
     }
     return std::nullopt;
 }
 
 auto find_build_subdir(
-    std::string const& root
-) -> std::optional<std::string>
+    std::string_view root
+) -> std::optional<String>
 {
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = path::join(root, name);
@@ -59,11 +59,11 @@ auto find_build_subdir(
 } // namespace
 
 auto find_project_root(
-    std::string const& start_dir
-) -> std::optional<std::string>
+    std::string_view start_dir
+) -> std::optional<String>
 {
-    auto current = start_dir;
-    auto last_tupfile_dir = std::optional<std::string> {};
+    auto current = String { start_dir };
+    auto last_tupfile_dir = std::optional<String> {};
 
     while (true) {
         if (platform::exists(path::join(current, "Tupfile.ini"))) {
@@ -75,14 +75,14 @@ auto find_project_root(
         }
 
         auto par = std::string { path::parent(current) };
-        if (par == current || par.empty()) {
+        if (par == std::string_view { current } || par.empty()) {
             return last_tupfile_dir;
         }
         current = par;
     }
 }
 
-auto normalize_path(std::string const& p) -> std::string
+auto normalize_path(std::string_view p) -> String
 {
     auto result = platform::canonical(p);
     if (result) {
@@ -92,7 +92,7 @@ auto normalize_path(std::string const& p) -> std::string
     if (abs) {
         return *abs;
     }
-    return p;
+    return String { p };
 }
 
 auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
@@ -104,7 +104,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!platform::exists(*opts.source_dir)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Source directory not found: " + *opts.source_dir
+                "Source directory not found: " + std::string(*opts.source_dir)
             );
         }
         layout.source_root = normalize_path(*opts.source_dir);
@@ -112,7 +112,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!platform::exists(*env_source)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "PUP_SOURCE_DIR not found: " + *env_source
+                "PUP_SOURCE_DIR not found: " + std::string(*env_source)
             );
         }
         layout.source_root = normalize_path(*env_source);
@@ -131,7 +131,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         layout.output_root = normalize_path(*opts.build_dir);
     } else if (auto env_build = get_env(PUP_BUILD_DIR_ENV)) {
         layout.output_root = normalize_path(*env_build);
-    } else if (platform::exists(path::join(cwd, "tup.config")) && cwd != layout.source_root) {
+    } else if (platform::exists(path::join(cwd, "tup.config")) && std::string_view { cwd } != std::string_view { layout.source_root }) {
         layout.output_root = normalize_path(cwd);
     } else if (auto build_subdir = find_build_subdir(layout.source_root)) {
         layout.output_root = normalize_path(*build_subdir);
@@ -143,28 +143,28 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!platform::exists(*opts.config_dir)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory not found: " + *opts.config_dir
+                "Config directory not found: " + std::string(*opts.config_dir)
             );
         }
         layout.config_root = normalize_path(*opts.config_dir);
         if (!platform::exists(path::join(layout.config_root, "Tupfile.ini"))) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory does not contain Tupfile.ini: " + layout.config_root
+                "Config directory does not contain Tupfile.ini: " + std::string(layout.config_root)
             );
         }
     } else if (auto env_config = get_env(PUP_CONFIG_DIR_ENV)) {
         if (!platform::exists(*env_config)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "PUP_CONFIG_DIR not found: " + *env_config
+                "PUP_CONFIG_DIR not found: " + std::string(*env_config)
             );
         }
         layout.config_root = normalize_path(*env_config);
         if (!platform::exists(path::join(layout.config_root, "Tupfile.ini"))) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory does not contain Tupfile.ini: " + layout.config_root
+                "Config directory does not contain Tupfile.ini: " + std::string(layout.config_root)
             );
         }
     } else if (platform::exists(path::join(layout.source_root, "Tupfile.ini"))) {
@@ -179,7 +179,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
 }
 
 auto discover_variants(
-    std::string const& source_root
+    std::string_view source_root
 ) -> std::vector<std::string>
 {
     auto result = std::vector<std::string> {};
@@ -200,7 +200,7 @@ auto discover_variants(
         auto entry_path = path::join(source_root, entry.name);
         if (platform::exists(path::join(entry_path, "tup.config"))
             || platform::is_directory(path::join(entry_path, ".pup"))) {
-            result.push_back(entry.name);
+            result.emplace_back(std::string_view { entry.name });
         }
     }
 

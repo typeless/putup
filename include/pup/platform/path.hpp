@@ -3,11 +3,13 @@
 
 #pragma once
 
-#include <string>
+#include "pup/core/string.hpp"
+
+#include <string_view>
 
 namespace pup::platform {
 
 [[nodiscard]]
-auto to_utf8(std::string const& path) -> std::string;
+auto to_utf8(std::string_view path) -> String;
 
 } // namespace pup::platform

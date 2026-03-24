@@ -5,10 +5,10 @@
 
 namespace pup::core {
 
-auto tokenize_shell_command(std::string_view cmd) -> std::vector<std::string>
+auto tokenize_shell_command(std::string_view cmd) -> std::vector<String>
 {
-    auto args = std::vector<std::string> {};
-    auto current = std::string {};
+    auto args = std::vector<String> {};
+    auto current = String {};
     auto in_single_quote = false;
     auto in_double_quote = false;
     auto escaped = false;

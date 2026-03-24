@@ -308,7 +308,7 @@ auto find_changed_files_with_implicit(
         // File resolution:
         // All paths are now source-relative (generated files include build root, e.g., "build/program").
         auto file_path = std::string { file.path };
-        auto path = pup::path::is_absolute(file_path) ? file_path : pup::path::join(source_root, file_path);
+        auto path = pup::path::is_absolute(file_path) ? file_path : std::string(pup::path::join(source_root, file_path));
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
@@ -384,8 +384,8 @@ auto get_or_create_dir(
     std::string const& dir_path
 ) -> pup::NodeId
 {
-    auto normalized = pup::path::normalize(dir_path);
-    auto path_str = normalized;
+    auto normalized = std::string(pup::path::normalize(dir_path));
+    auto const& path_str = normalized;
 
     if (path_str.empty() || path_str == ".") {
         return pup::NodeId { 0 };
@@ -518,9 +518,9 @@ auto serialize_graph_nodes(
                 strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
 
-            auto file_path = (node->type == pup::NodeType::Generated)
+            auto file_path = std::string((node->type == pup::NodeType::Generated)
                 ? pup::path::join(output_root, fs_path)
-                : pup::path::join(source_root, node_path);
+                : pup::path::join(source_root, node_path));
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
@@ -682,11 +682,11 @@ auto process_implicit_deps(
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
             auto dep_fs_path = std::string { dep_path };
-            auto abs_path = pup::path::is_absolute(dep_fs_path) ? dep_fs_path : pup::path::join(ctx.source_root, dep_fs_path);
+            auto abs_path = pup::path::is_absolute(dep_fs_path) ? dep_fs_path : std::string(pup::path::join(ctx.source_root, dep_fs_path));
 
             auto rel_path = std::string {};
             if (pup::is_path_under(abs_path, ctx.source_root)) {
-                rel_path = pup::path::relative(abs_path, ctx.source_root);
+                rel_path = std::string(pup::path::relative(abs_path, ctx.source_root));
             } else {
                 rel_path = abs_path;
             }
@@ -736,7 +736,7 @@ auto preserve_old_implicit_edges(
 
         auto new_file_it = path_id_find(ctx.path_to_id, old_file->path);
         auto old_path = std::string { old_file->path };
-        auto abs_path = pup::path::is_absolute(old_path) ? old_path : pup::path::join(ctx.source_root, old_path);
+        auto abs_path = pup::path::is_absolute(old_path) ? old_path : std::string(pup::path::join(ctx.source_root, old_path));
         auto new_from_id = new_file_it != ctx.path_to_id.end()
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file->path);
@@ -1072,7 +1072,7 @@ auto build_single_variant(
     }
     auto target_node_ids = std::move(*target_ids_result);
 
-    auto index_path = ctx.layout().index_path();
+    auto index_path = std::string(ctx.layout().index_path());
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
     auto changed_files = std::vector<std::string> {};
@@ -1108,7 +1108,7 @@ auto build_single_variant(
 
         auto change_detect_start = std::chrono::high_resolution_clock::now();
         changed_files = find_changed_files_with_implicit(
-            ctx.layout().source_root,
+            std::string(ctx.layout().source_root),
             idx,
             scopes,
             upstream_files,
@@ -1149,7 +1149,7 @@ auto build_single_variant(
         remove_stale_outputs(
             ctx.graph(),
             idx,
-            ctx.layout().source_root,
+            std::string(ctx.layout().source_root),
             variant_name,
             opts.dry_run,
             opts.verbose
@@ -1176,9 +1176,9 @@ auto build_single_variant(
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
-        .source_root = ctx.layout().source_root,
-        .config_root = ctx.layout().config_root,
-        .output_root = ctx.layout().output_root,
+        .source_root = std::string(ctx.layout().source_root),
+        .config_root = std::string(ctx.layout().config_root),
+        .output_root = std::string(ctx.layout().output_root),
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };
@@ -1223,8 +1223,8 @@ auto build_single_variant(
 
             for (auto const& dep_path : job_result.discovered_deps) {
                 auto to_resolve = pup::path::is_absolute(dep_path)
-                    ? dep_path
-                    : pup::path::join(job.working_dir, dep_path);
+                    ? std::string { dep_path }
+                    : std::string(pup::path::join(job.working_dir, dep_path));
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
                     if (opts.verbose) {
@@ -1232,10 +1232,10 @@ auto build_single_variant(
                     }
                     continue;
                 }
-                auto resolved = *resolved_result;
+                auto resolved = std::string(*resolved_result);
 
                 if (pup::is_path_under(resolved, ctx.layout().source_root)) {
-                    auto rel = pup::path::relative(resolved, ctx.layout().source_root);
+                    auto rel = std::string(pup::path::relative(resolved, ctx.layout().source_root));
                     if (rel.starts_with("..")) {
                         if (opts.verbose) {
                             fprintf(stderr, "Warning: Cannot relativize '%s'\n", resolved.c_str());
@@ -1269,7 +1269,7 @@ auto build_single_variant(
 
     // Identify config-generating commands to exclude from regular build
     // (config rules should only run during 'pup configure')
-    auto config_cmds = find_config_commands(ctx.graph(), ctx.layout().source_root);
+    auto config_cmds = find_config_commands(ctx.graph(), std::string(ctx.layout().source_root));
     auto config_cmd_ids = NodeIdMap32 {};
     for (auto const& cfg : config_cmds) {
         config_cmd_ids.set(cfg.cmd_id, 1);
@@ -1346,8 +1346,8 @@ auto build_single_variant(
         auto index = pup::index::Index { build_index(
             ctx.graph(),
             discovered_deps,
-            ctx.layout().source_root,
-            ctx.layout().output_root,
+            std::string(ctx.layout().source_root),
+            std::string(ctx.layout().output_root),
             old_idx_ptr
         ) };
 

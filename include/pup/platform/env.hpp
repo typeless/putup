@@ -3,11 +3,11 @@
 
 #pragma once
 
-#include <string>
+#include <string_view>
 
 namespace pup::platform {
 
-auto set_env(std::string const& name, std::string const& value) -> void;
-auto unset_env(std::string const& name) -> void;
+auto set_env(std::string_view name, std::string_view value) -> void;
+auto unset_env(std::string_view name) -> void;
 
 } // namespace pup::platform

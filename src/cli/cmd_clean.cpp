@@ -102,15 +102,13 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
         return EXIT_FAILURE;
     }
 
-    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
+    auto index_path = std::string(pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index"));
     if (!pup::platform::exists(index_path)) {
         vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-    // Paths are source-relative and include build root prefix for variant builds
-    // (e.g., "build/hello.o"). Use root so pup::path::join(root, path) gives correct absolute path.
     auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
@@ -134,14 +132,13 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         return EXIT_FAILURE;
     }
 
-    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
+    auto index_path = std::string(pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index"));
     auto error_count = std::size_t { 0 };
     auto output_dirs = std::vector<std::string> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
     if (pup::platform::exists(index_path)) {
-        // Paths are source-relative and include build root prefix for variant builds.
         auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
         error_count += result.error_count;
         output_dirs = std::move(result.output_dirs);

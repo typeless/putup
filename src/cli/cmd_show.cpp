@@ -37,7 +37,7 @@ auto load_index_for_all_deps(
         return std::nullopt;
     }
 
-    auto index_path = layout.index_path();
+    auto index_path = std::string(layout.index_path());
     if (!pup::platform::exists(index_path)) {
         fprintf(stderr, "Warning: No index found - run 'putup' first\n");
         return std::nullopt;
