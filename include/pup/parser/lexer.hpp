@@ -5,8 +5,9 @@
 
 #include "token.hpp"
 
+#include "pup/core/string.hpp"
+
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace pup::parser {
@@ -93,7 +94,7 @@ public:
 
 private:
     std::string_view source_;
-    std::string filename_; // Owns the filename to avoid dangling reference
+    String filename_; // Owns the filename to avoid dangling reference
     std::size_t pos_ = 0;
     std::uint32_t line_ = 1;
     std::uint32_t column_ = 1;

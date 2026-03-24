@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ast.hpp"
+#include "pup/core/string.hpp"
 
 #include <string>
 #include <string_view>
@@ -14,7 +15,7 @@ namespace pup::parser {
 /// Parse error with location and message
 struct ParseError {
     SourceLocation location;
-    std::string message;
+    String message;
 };
 
 /// Parser options

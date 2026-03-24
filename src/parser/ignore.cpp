@@ -111,7 +111,7 @@ auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePat
         p.anchored = true;
     }
 
-    p.pattern = std::string { line };
+    p.pattern = String { line };
     return p;
 }
 

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string.hpp"
 
 #include <optional>
 #include <string>
@@ -14,7 +15,7 @@ namespace pup::parser {
 
 /// Gitignore-style pattern for filtering paths
 struct IgnorePattern {
-    std::string pattern;
+    String pattern;
     bool negated = false;  ///< Pattern starts with !
     bool dir_only = false; ///< Pattern ends with /
     bool anchored = false; ///< Pattern contains / (not at end)

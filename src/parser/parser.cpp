@@ -88,7 +88,7 @@ auto expect(ParserState& s, TokenType type, std::string_view message) -> Result<
     if (check(s, type)) {
         return advance(s);
     }
-    return pup::make_error<Token>(ErrorCode::UnexpectedToken, std::string { message } + ", got " + std::string { token_type_name(s.current.type) });
+    return pup::make_error<Token>(ErrorCode::UnexpectedToken, String { message } + ", got " + token_type_name(s.current.type));
 }
 
 auto skip_to_next_statement(ParserState& s) -> void
@@ -105,7 +105,7 @@ auto report_error(ParserState& s, std::string_view message) -> void
 {
     s.errors.push_back(ParseError {
         .location = s.current.location,
-        .message = std::string { message },
+        .message = String { message },
     });
 }
 
@@ -185,7 +185,7 @@ auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
         );
     }
 
-    auto name = std::string {};
+    auto name = String {};
     while (!check(s, TokenType::CloseParen)
            && !check(s, TokenType::Newline)
            && !check(s, TokenType::Eof)) {
@@ -196,7 +196,7 @@ auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
     if (!match(s, TokenType::CloseParen)) {
         return pup::make_error<VarRef>(
             ErrorCode::ParseError,
-            std::string { spec.unterminated_msg }
+            spec.unterminated_msg
         );
     }
 
@@ -270,7 +270,7 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
         case TokenType::KwElse:
         case TokenType::KwEndif:
             // These should be handled by parse_conditional
-            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "Unexpected '" + std::string { tok.text } + "' without matching if");
+            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "Unexpected '" + String { tok.text } + "' without matching if");
 
         case TokenType::KwExport:
             advance(s);
@@ -324,7 +324,7 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
 
         // Create a simple expression with just the identifier
         auto name_expr = Expression {};
-        name_expr.parts.emplace_back(Expression::Literal { std::string { name_tok->text } });
+        name_expr.parts.emplace_back(Expression::Literal { String { name_tok->text } });
 
         auto assign = parse_assignment(s, std::move(name_expr));
         if (!assign) {
@@ -716,7 +716,7 @@ auto parse_expression_until(
 ) -> Result<Expression>
 {
     auto expr = Expression {};
-    auto current_text = std::string {};
+    auto current_text = String {};
     auto last_end_offset = s.current.location.offset; // Track where last token ended
 
     auto flush_text = [&] {
@@ -834,28 +834,31 @@ auto parse_command(ParserState& s) -> Result<Expression>
     auto tok = Token { s.current }; // Start with current token (already advanced past |>)
 
     // Collect command text until |>
-    auto cmd_text = std::string {};
+    auto cmd_text = String {};
     while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
         cmd_text += tok.text;
         tok = Token { s.lexer.next() };
     }
 
-    // Trim leading whitespace (O(n) using find_first_not_of + substr)
-    if (auto pos = cmd_text.find_first_not_of(" \t"); pos != std::string::npos) {
-        cmd_text = cmd_text.substr(pos);
-    } else if (!cmd_text.empty() && (cmd_text.front() == ' ' || cmd_text.front() == '\t')) {
-        cmd_text.clear();
+    // Trim leading whitespace
+    {
+        auto sv = std::string_view { cmd_text };
+        auto pos = sv.find_first_not_of(" \t");
+        if (pos != std::string_view::npos) {
+            cmd_text = cmd_text.substr(pos);
+        } else if (!cmd_text.empty()) {
+            cmd_text.clear();
+        }
     }
 
     // Handle display text: ^ text ^ at start of command
-    // This handles the case where the entire command is one Text token
     if (!cmd_text.empty() && cmd_text[0] == '^') {
-        // Find the second caret
-        auto second_caret = std::size_t { cmd_text.find('^', 1) };
-        if (second_caret != std::string::npos) {
-            // Skip past the display text (including the second caret) and trim whitespace
+        auto second_caret = cmd_text.find('^', 1);
+        if (second_caret != String::npos) {
             auto rest = cmd_text.substr(second_caret + 1);
-            if (auto pos = rest.find_first_not_of(" \t"); pos != std::string::npos) {
+            auto sv = std::string_view { rest };
+            auto pos = sv.find_first_not_of(" \t");
+            if (pos != std::string_view::npos) {
                 cmd_text = rest.substr(pos);
             } else {
                 cmd_text.clear();
@@ -864,8 +867,12 @@ auto parse_command(ParserState& s) -> Result<Expression>
     }
 
     // Trim trailing whitespace
-    while (!cmd_text.empty() && (cmd_text.back() == ' ' || cmd_text.back() == '\t')) {
-        cmd_text.pop_back();
+    {
+        auto len = cmd_text.size();
+        while (len > 0 && (cmd_text[len - 1] == ' ' || cmd_text[len - 1] == '\t')) {
+            --len;
+        }
+        cmd_text.resize(len);
     }
 
     if (!cmd_text.empty()) {

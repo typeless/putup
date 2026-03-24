@@ -358,7 +358,7 @@ auto path_directory(std::string_view path) -> std::string_view
     return pup::path::parent(path);
 }
 
-auto glob_match_extract(std::string_view pattern, std::string_view filename) -> std::string
+auto glob_match_extract(std::string_view pattern, std::string_view filename) -> String
 {
     // For path patterns (containing /), extract basename of both
     auto pattern_base = path_basename(pattern);
@@ -402,7 +402,7 @@ auto glob_match_extract(std::string_view pattern, std::string_view filename) -> 
         return {};
     }
 
-    return std::string { filename_base.substr(match_start, match_end - match_start) };
+    return String { filename_base.substr(match_start, match_end - match_start) };
 }
 
 } // namespace pup::parser

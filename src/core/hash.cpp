@@ -143,10 +143,10 @@ auto sha256_file(std::string const& path) -> Result<Hash256>
     return sha256_finalize(state);
 }
 
-auto hash_to_hex(Hash256 const& hash) -> std::string
+auto hash_to_hex(Hash256 const& hash) -> String
 {
     static constexpr auto hex_chars = std::string_view { "0123456789abcdef" };
-    auto result = std::string {};
+    auto result = String {};
     result.reserve(hash.size() * 2);
 
     for (auto const byte : hash) {
