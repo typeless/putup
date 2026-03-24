@@ -2476,7 +2476,7 @@ auto add_tupfile(
     for (auto const& stmt : tupfile.statements) {
         auto result = Result<void> { process_statement(ctx, state, *stmt) };
         if (!result) {
-            state.errors.push_back(result.error().message);
+            state.errors.push_back(std::string { result.error().message.data(), result.error().message.size() });
             if (!state.options.verbose) {
                 return pup::unexpected<Error>(result.error());
             }
