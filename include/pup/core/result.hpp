@@ -4,8 +4,8 @@
 #pragma once
 
 #include "expected.hpp"
+#include "pup/core/string.hpp"
 
-#include <string>
 #include <string_view>
 
 namespace pup {
@@ -57,10 +57,10 @@ enum class ErrorCode {
 /// Error with code and message
 struct Error {
     ErrorCode code = ErrorCode::None;
-    std::string message;
+    String message;
 
     Error() = default;
-    Error(ErrorCode c, std::string msg)
+    Error(ErrorCode c, String msg)
         : code(c)
         , message(std::move(msg))
     {
@@ -82,7 +82,7 @@ struct Error {
 
     /// Create an error with a message
     [[nodiscard]]
-    static auto make(ErrorCode c, std::string msg) -> Error
+    static auto make(ErrorCode c, String msg) -> Error
     {
         return Error { c, std::move(msg) };
     }
@@ -91,7 +91,7 @@ struct Error {
     [[nodiscard]]
     static auto make(ErrorCode c, std::string_view msg) -> Error
     {
-        return Error { c, std::string { msg } };
+        return Error { c, String { msg } };
     }
 };
 
@@ -105,7 +105,7 @@ requires std::is_convertible_v<Msg, std::string_view>
 [[nodiscard]]
 auto make_error(ErrorCode code, Msg&& msg) -> Result<T>
 {
-    return pup::unexpected<Error>(Error::make(code, std::string { std::forward<Msg>(msg) }));
+    return pup::unexpected<Error>(Error::make(code, String { std::string_view { std::forward<Msg>(msg) } }));
 }
 
 } // namespace pup

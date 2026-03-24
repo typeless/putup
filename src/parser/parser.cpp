@@ -60,7 +60,7 @@ auto parse_expression(ParserState& s) -> Result<Expression>;
 auto parse_expression_until(ParserState& s, std::function<bool(Token const&)> const& stop, bool stop_at_gap = false) -> Result<Expression>;
 auto parse_path_pattern(ParserState& s, bool stop_at_angle = false) -> Result<PathPattern>;
 auto parse_command(ParserState& s) -> Result<Expression>;
-auto report_error(ParserState& s, std::string const& message) -> void;
+auto report_error(ParserState& s, std::string_view message) -> void;
 
 auto advance(ParserState& s) -> Token
 {
@@ -101,11 +101,11 @@ auto skip_to_next_statement(ParserState& s) -> void
     }
 }
 
-auto report_error(ParserState& s, std::string const& message) -> void
+auto report_error(ParserState& s, std::string_view message) -> void
 {
     s.errors.push_back(ParseError {
         .location = s.current.location,
-        .message = message,
+        .message = std::string { message },
     });
 }
 

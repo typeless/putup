@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 namespace pup {
@@ -15,6 +16,7 @@ public:
     String(char const* s);
     String(char const* s, std::size_t len);
     String(std::string_view sv);
+    String(std::string const& s); // interop: allows implicit conversion from std::string
     ~String();
 
     String(String const& other);
