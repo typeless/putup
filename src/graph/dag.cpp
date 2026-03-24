@@ -79,7 +79,7 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
         graph.files.resize(idx + 1);
         graph.dir_children.resize(idx + 1);
     }
-    graph.files[idx] = std::move(node);
+    graph.files[idx] = node;
 
     if (!is_empty(graph.files[idx].name)) {
         auto const parent_idx = node_id::index(graph.files[idx].parent_dir);
