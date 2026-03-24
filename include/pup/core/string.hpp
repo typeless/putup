@@ -47,8 +47,15 @@ public:
     auto operator+=(std::string_view sv) -> String&;
     auto operator+=(char c) -> String&;
 
+    auto push_back(char c) -> void;
     auto reserve(std::size_t n) -> void;
+    auto resize(std::size_t n) -> void;
     auto clear() -> void;
+
+    [[nodiscard]]
+    auto begin() const -> char const* { return data(); }
+    [[nodiscard]]
+    auto end() const -> char const* { return data() + size(); }
 
     [[nodiscard]]
     auto starts_with(std::string_view sv) const -> bool;
@@ -69,6 +76,23 @@ public:
     auto substr(std::size_t pos, std::size_t count = npos) const -> String;
 
     static constexpr auto npos = std::size_t(-1);
+
+    friend auto operator==(String const& a, String const& b) -> bool
+    {
+        return std::string_view { a } == std::string_view { b };
+    }
+    friend auto operator==(String const& a, std::string_view b) -> bool
+    {
+        return std::string_view { a } == b;
+    }
+    friend auto operator==(String const& a, char const* b) -> bool
+    {
+        return std::string_view { a } == b;
+    }
+    friend auto operator<(String const& a, String const& b) -> bool
+    {
+        return std::string_view { a } < std::string_view { b };
+    }
 
 private:
     static constexpr std::size_t SSO_CAP = 22;

@@ -3,6 +3,7 @@
 
 #include "pup/core/string.hpp"
 
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 
@@ -169,28 +170,34 @@ auto String::back() const -> char
 
 auto String::grow(std::size_t needed) -> void
 {
+    assert(needed <= UINT32_MAX && "pup::String: capacity limited to 4GB");
+
     if (is_heap()) {
         if (needed < heap_.cap) {
             return;
         }
-        auto new_cap = heap_.cap;
+        // Use size_t for growth arithmetic to avoid uint32_t overflow
+        auto new_cap = static_cast<std::size_t>(heap_.cap);
         while (new_cap < needed) {
             new_cap = new_cap + new_cap / 2 + 16;
+        }
+        if (new_cap > UINT32_MAX) {
+            new_cap = UINT32_MAX;
         }
         heap_.ptr = static_cast<char*>(std::realloc(heap_.ptr, new_cap));
         heap_.cap = static_cast<std::uint32_t>(new_cap);
     } else {
         // SSO → heap transition
         auto old_len = size();
-        auto new_cap = static_cast<std::uint32_t>(needed + needed / 2 + 16);
-        if (new_cap < static_cast<std::uint32_t>(needed)) {
-            new_cap = static_cast<std::uint32_t>(needed);
+        auto new_cap = needed + needed / 2 + 16;
+        if (new_cap > UINT32_MAX) {
+            new_cap = UINT32_MAX;
         }
         auto* buf = static_cast<char*>(std::malloc(new_cap));
         std::memcpy(buf, sso_.buf, old_len + 1);
         heap_.ptr = buf;
         heap_.len = static_cast<std::uint32_t>(old_len);
-        heap_.cap = new_cap;
+        heap_.cap = static_cast<std::uint32_t>(new_cap);
         sso_.remaining = HEAP_FLAG;
     }
 }
@@ -202,19 +209,30 @@ auto String::append(std::string_view sv) -> void
     }
     auto old_len = size();
     auto new_len = old_len + sv.size();
+    auto sv_len = sv.size();
+
+    // Detect self-referential append (sv points into our own buffer).
+    // After grow(), our buffer may move — record offset and recompute.
+    auto const self_offset = static_cast<std::size_t>(sv.data() - data());
+    auto const is_self = self_offset < old_len;
+
     if (is_heap()) {
         if (new_len + 1 > heap_.cap) {
             grow(new_len + 1);
         }
-        std::memcpy(heap_.ptr + old_len, sv.data(), sv.size());
+        auto const* src = is_self ? (heap_.ptr + self_offset) : sv.data();
+        std::memmove(heap_.ptr + old_len, src, sv_len);
         heap_.ptr[new_len] = '\0';
         heap_.len = static_cast<std::uint32_t>(new_len);
     } else if (new_len <= SSO_CAP) {
-        std::memcpy(sso_.buf + old_len, sv.data(), sv.size());
+        // SSO stays SSO — buffer doesn't move, but memmove handles overlap
+        std::memmove(sso_.buf + old_len, sv.data(), sv_len);
         set_sso_size(new_len);
     } else {
+        // SSO → heap transition: grow() copies sso_.buf to heap, then we append
         grow(new_len + 1);
-        std::memcpy(heap_.ptr + old_len, sv.data(), sv.size());
+        auto const* src = is_self ? (heap_.ptr + self_offset) : sv.data();
+        std::memmove(heap_.ptr + old_len, src, sv_len);
         heap_.ptr[new_len] = '\0';
         heap_.len = static_cast<std::uint32_t>(new_len);
     }
@@ -223,6 +241,11 @@ auto String::append(std::string_view sv) -> void
 auto String::append(char c) -> void
 {
     append(std::string_view { &c, 1 });
+}
+
+auto String::push_back(char c) -> void
+{
+    append(c);
 }
 
 auto String::operator+=(std::string_view sv) -> String&
@@ -237,9 +260,35 @@ auto String::operator+=(char c) -> String&
     return *this;
 }
 
+auto String::resize(std::size_t n) -> void
+{
+    auto old_len = size();
+    if (n <= old_len) {
+        // Shrink: just adjust length (keep buffer)
+        if (is_heap()) {
+            heap_.ptr[n] = '\0';
+            heap_.len = static_cast<std::uint32_t>(n);
+        } else {
+            sso_.buf[n] = '\0';
+            set_sso_size(n);
+        }
+    } else {
+        // Grow: zero-fill new characters
+        reserve(n);
+        auto* p = is_heap() ? heap_.ptr : sso_.buf;
+        std::memset(p + old_len, 0, n - old_len);
+        if (is_heap()) {
+            heap_.ptr[n] = '\0';
+            heap_.len = static_cast<std::uint32_t>(n);
+        } else {
+            set_sso_size(n);
+        }
+    }
+}
+
 auto String::reserve(std::size_t n) -> void
 {
-    if (n + 1 > SSO_CAP && (!is_heap() || n + 1 > heap_.cap)) {
+    if (n > SSO_CAP && (!is_heap() || n + 1 > heap_.cap)) {
         grow(n + 1);
     }
 }
