@@ -78,6 +78,6 @@ auto find_project_root(
 [[nodiscard]]
 auto discover_variants(
     std::string_view source_root
-) -> std::vector<std::string>;
+) -> std::vector<String>;
 
 } // namespace pup

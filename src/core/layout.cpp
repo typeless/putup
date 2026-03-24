@@ -180,9 +180,9 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
 
 auto discover_variants(
     std::string_view source_root
-) -> std::vector<std::string>
+) -> std::vector<String>
 {
-    auto result = std::vector<std::string> {};
+    auto result = std::vector<String> {};
 
     if (!platform::is_directory(source_root)) {
         return result;
@@ -204,7 +204,7 @@ auto discover_variants(
         }
     }
 
-    std::ranges::sort(result);
+    std::sort(result.begin(), result.end());
     return result;
 }
 

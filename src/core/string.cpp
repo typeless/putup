@@ -55,6 +55,7 @@ String::String(std::string_view sv)
         std::memcpy(sso_.buf, sv.data(), sv.size());
         set_sso_size(sv.size());
     } else {
+        assert(sv.size() <= UINT32_MAX && "pup::String: capacity limited to 4GB");
         auto cap = sv.size() + 1;
         heap_.ptr = static_cast<char*>(std::malloc(cap));
         std::memcpy(heap_.ptr, sv.data(), sv.size());
