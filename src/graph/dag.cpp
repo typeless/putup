@@ -908,16 +908,16 @@ auto expand_instruction(
             auto joined = pup::path::join(source_root, full);
             auto abs = pup::platform::canonical(joined);
             if (abs) {
-                return pup::path::relative(*abs, canonical_cwd);
+                return std::string(pup::path::relative(*abs, canonical_cwd));
             }
-            return pup::path::relative(pup::path::normalize(joined), canonical_cwd);
+            return std::string(pup::path::relative(pup::path::normalize(joined), canonical_cwd));
         }
         if (!config_root.empty() && config_root != source_root
             && !pup::platform::exists(pup::path::join(source_root, full))
             && pup::platform::exists(pup::path::join(config_root, full))) {
             auto r = pup::platform::canonical(pup::path::join(config_root, full));
             if (r) {
-                return pup::path::relative(*r, canonical_cwd);
+                return std::string(pup::path::relative(*r, canonical_cwd));
             }
         }
         return pup::make_source_relative(full, source_to_root, source_dir);

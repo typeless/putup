@@ -7,16 +7,16 @@
 
 namespace pup::path {
 
-auto join(std::string_view a, std::string_view b) -> std::string
+auto join(std::string_view a, std::string_view b) -> String
 {
     if (b.empty()) {
-        return std::string { a };
+        return String { a };
     }
     if (a.empty() || is_absolute(b)) {
-        return std::string { b };
+        return String { b };
     }
 
-    auto result = std::string { a };
+    auto result = String { a };
     if (result.back() != '/') {
         result += '/';
     }
@@ -102,7 +102,7 @@ auto is_absolute(std::string_view p) -> bool
     return false;
 }
 
-auto normalize(std::string_view p) -> std::string
+auto normalize(std::string_view p) -> String
 {
     auto parts = std::vector<std::string_view> {};
     auto start = std::size_t { 0 };
@@ -127,12 +127,12 @@ auto normalize(std::string_view p) -> std::string
     }
 
     if (parts.empty()) {
-        return absolute ? "/" : ".";
+        return absolute ? String { "/" } : String { "." };
     }
 
-    auto result = std::string {};
+    auto result = String {};
     if (absolute) {
-        result = "/";
+        result = String { "/" };
     }
     for (std::size_t i = 0; i < parts.size(); ++i) {
         if (i > 0 || absolute) {
@@ -145,10 +145,10 @@ auto normalize(std::string_view p) -> std::string
     return result;
 }
 
-auto relative(std::string_view target, std::string_view base) -> std::string
+auto relative(std::string_view target, std::string_view base) -> String
 {
     if (target == base) {
-        return ".";
+        return String { "." };
     }
 
     // Split both paths into components
@@ -179,7 +179,7 @@ auto relative(std::string_view target, std::string_view base) -> std::string
         ++common;
     }
 
-    auto result = std::string {};
+    auto result = String {};
     // Go up from base to common ancestor
     for (auto i = common; i < base_parts.size(); ++i) {
         if (!result.empty()) {
@@ -195,7 +195,7 @@ auto relative(std::string_view target, std::string_view base) -> std::string
         result += target_parts[i];
     }
 
-    return result.empty() ? "." : result;
+    return result.empty() ? String { "." } : result;
 }
 
 } // namespace pup::path
