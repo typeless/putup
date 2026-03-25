@@ -184,15 +184,15 @@ struct EvalContext {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    String input = {};                         ///< %f - input filename
-    String input_base = {};                    ///< %b - input basename (no path)
-    String input_noext = {};                   ///< %B - input basename without extension
-    String input_ext = {};                     ///< %e - input extension
-    String output = {};                        ///< %o - output filename
-    String output_base = {};                   ///< %O - output basename (no path)
-    String input_dir = {};                     ///< %d - input directory
-    String glob_match = {};                    ///< %g - portion matched by * in foreach glob
-    int input_index = 0;                       ///< For %Nf patterns (1-indexed)
+    String input = {};                 ///< %f - input filename
+    String input_base = {};            ///< %b - input basename (no path)
+    String input_noext = {};           ///< %B - input basename without extension
+    String input_ext = {};             ///< %e - input extension
+    String output = {};                ///< %o - output filename
+    String output_base = {};           ///< %O - output basename (no path)
+    String input_dir = {};             ///< %d - input directory
+    String glob_match = {};            ///< %g - portion matched by * in foreach glob
+    int input_index = 0;               ///< For %Nf patterns (1-indexed)
     Vec<std::string> all_inputs = {};  ///< All inputs for %Nf expansion
     Vec<std::string> all_outputs = {}; ///< All outputs for %No expansion
 };

@@ -29,7 +29,7 @@ struct CommandResult {
 /// Options for running a command
 struct RunOptions {
     String working_dir = {};
-    Vec<std::string> env = {};                ///< Additional environment variables (KEY=VALUE for setenv)
+    Vec<std::string> env = {};                        ///< Additional environment variables (KEY=VALUE for setenv)
     bool inherit_env = true;                          ///< Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;

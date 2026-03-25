@@ -50,7 +50,7 @@ struct JobResult {
     int exit_code = 0;
     String output = {};
     std::chrono::milliseconds duration = {};
-    Vec<String> discovered_deps = {};  ///< Implicit deps from .d files
+    Vec<String> discovered_deps = {};          ///< Implicit deps from .d files
     NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
 };
 

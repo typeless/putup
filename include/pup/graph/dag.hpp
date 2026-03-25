@@ -109,7 +109,7 @@ struct Graph {
     std::deque<CommandNode> commands;     ///< Command nodes only
     std::deque<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
     std::deque<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
-    Vec<Edge> edges;              ///< Central edge storage (single source of truth)
+    Vec<Edge> edges;                      ///< Central edge storage (single source of truth)
 
     Arena32 edge_arena;
     NodeIdArenaIndex edges_to_index;
@@ -119,8 +119,8 @@ struct Graph {
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
-    StringPool command_strings;              ///< Interned expanded command strings
-    SortedPairVec command_index;             ///< StringId(command) → NodeId
+    StringPool command_strings;      ///< Interned expanded command strings
+    SortedPairVec command_index;     ///< StringId(command) → NodeId
     bool command_index_built = false;
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)

@@ -28,16 +28,16 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    String source_root;                                          ///< Source tree root (where source files live)
-    String config_root;                                          ///< Config tree root (where Tupfiles live)
-    String output_root;                                          ///< Output tree root (where outputs/.pup go)
-    String config_path;                                          ///< Path to tup.config (for sticky edge tracking)
-    bool expand_globs = true;                                    ///< Expand glob patterns
-    bool validate_inputs = true;                                 ///< Check that input files exist
-    bool verbose = false;                                        ///< Print verbose output
-    DepScannerRegistry const* scanner_registry = nullptr;        ///< Optional scanner registry for implicit deps
-    RulePatternRegistry const* pattern_registry = nullptr;       ///< Optional pattern registry for auto-generated rules
-    Vec<std::pair<String, String>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
+    String source_root;                                    ///< Source tree root (where source files live)
+    String config_root;                                    ///< Config tree root (where Tupfiles live)
+    String output_root;                                    ///< Output tree root (where outputs/.pup go)
+    String config_path;                                    ///< Path to tup.config (for sticky edge tracking)
+    bool expand_globs = true;                              ///< Expand glob patterns
+    bool validate_inputs = true;                           ///< Check that input files exist
+    bool verbose = false;                                  ///< Print verbose output
+    DepScannerRegistry const* scanner_registry = nullptr;  ///< Optional scanner registry for implicit deps
+    RulePatternRegistry const* pattern_registry = nullptr; ///< Optional pattern registry for auto-generated rules
+    Vec<std::pair<String, String>> cached_env_vars = {};   ///< Cached env vars from previous build (sorted by key)
 };
 
 /// Bang macro definition
@@ -67,8 +67,8 @@ struct PendingWeakAssignment {
 // ============================================================================
 
 struct GroupMemberTable {
-    SortedPairVec name_to_idx;             ///< Interned group name → index into pool
-    Vec<Vec<NodeId>> pool; ///< pool[idx] = member NodeIds
+    SortedPairVec name_to_idx; ///< Interned group name → index into pool
+    Vec<Vec<NodeId>> pool;     ///< pool[idx] = member NodeIds
 
     [[nodiscard]]
     auto find(std::uint32_t key) const -> Vec<NodeId> const*
@@ -137,8 +137,8 @@ struct BuilderContext {
 // ============================================================================
 
 struct VarDepTracker {
-    SortedPairVec name_to_idx;     ///< StringId → index into pool
-    Vec<SortedIdVec> pool; ///< pool[idx] = dep set of StringIds
+    SortedPairVec name_to_idx; ///< StringId → index into pool
+    Vec<SortedIdVec> pool;     ///< pool[idx] = dep set of StringIds
 
     [[nodiscard]]
     auto find(StringId key) const -> SortedIdVec const*
