@@ -36,7 +36,7 @@ auto FileEntry::from_raw(
         .src_id = raw.src_id,
         .type = static_cast<NodeType>(raw.type),
         .flags = get_node_flags(raw),
-        .name = std::string { name_str },
+        .name = String { name_str },
         .path = {},
         .size = raw.size,
         .mtime_ns = raw.mtime_ns,
@@ -71,9 +71,9 @@ auto CommandEntry::from_raw(
     return CommandEntry {
         .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,
-        .instruction_pattern = std::string { instruction_pattern },
-        .display = std::string { display_str },
-        .env = std::string { env_str },
+        .instruction_pattern = String { instruction_pattern },
+        .display = String { display_str },
+        .env = String { env_str },
         .inputs = std::move(inputs),
         .outputs = std::move(outputs),
     };

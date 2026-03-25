@@ -15,12 +15,12 @@ namespace pup::parser {
 /// Parsed dependency file (.d file from gcc -MD)
 struct Depfile {
     String target;                         ///< Output file (left side of colon)
-    std::vector<std::string> dependencies; ///< Input files (right side of colon)
+    std::vector<String> dependencies; ///< Input files (right side of colon)
 };
 
 /// Parse a dependency file from a filesystem path
 [[nodiscard]]
-auto parse_depfile(std::string const& path) -> Result<Depfile>;
+auto parse_depfile_path(std::string_view path) -> Result<Depfile>;
 
 /// Parse a dependency file from string content
 [[nodiscard]]
