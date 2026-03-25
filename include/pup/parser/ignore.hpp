@@ -5,11 +5,11 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::parser {
 
@@ -54,7 +54,7 @@ public:
     }
 
 private:
-    std::vector<IgnorePattern> patterns_;
+    pup::Vec<IgnorePattern> patterns_;
 
     /// Parse a single pattern line
     static auto parse_pattern(std::string_view line) -> std::optional<IgnorePattern>;
