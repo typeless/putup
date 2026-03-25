@@ -5,12 +5,12 @@
 
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/paged_vec.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
-#include "pup/core/paged_vec.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
@@ -105,11 +105,11 @@ struct PhiNode {
 struct Graph {
     StringPool strings; ///< Interned string storage
 
-    PagedVec<FileNode> files;              ///< Files, directories, groups (non-command nodes)
-    PagedVec<CommandNode> commands;        ///< Command nodes only
-    PagedVec<ConditionNode> conditions;    ///< Condition nodes (for phi-node model)
-    PagedVec<PhiNode> phi_nodes;           ///< Phi nodes (merge conditional outputs)
-    Vec<Edge> edges;                      ///< Central edge storage (single source of truth)
+    PagedVec<FileNode> files;           ///< Files, directories, groups (non-command nodes)
+    PagedVec<CommandNode> commands;     ///< Command nodes only
+    PagedVec<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
+    PagedVec<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
+    Vec<Edge> edges;                    ///< Central edge storage (single source of truth)
 
     Arena32 edge_arena;
     NodeIdArenaIndex edges_to_index;

@@ -150,7 +150,11 @@ public:
         std::size_t idx;
 
         auto operator*() -> T& { return pv->at(idx); }
-        auto operator++() -> Iterator& { ++idx; return *this; }
+        auto operator++() -> Iterator&
+        {
+            ++idx;
+            return *this;
+        }
         auto operator!=(Iterator const& o) const -> bool { return idx != o.idx; }
     };
 
@@ -159,7 +163,11 @@ public:
         std::size_t idx;
 
         auto operator*() const -> T const& { return pv->at(idx); }
-        auto operator++() -> ConstIterator& { ++idx; return *this; }
+        auto operator++() -> ConstIterator&
+        {
+            ++idx;
+            return *this;
+        }
         auto operator!=(ConstIterator const& o) const -> bool { return idx != o.idx; }
     };
 
