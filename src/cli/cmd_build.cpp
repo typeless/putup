@@ -519,9 +519,7 @@ auto serialize_graph_nodes(
                 strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
 
-            auto file_path = std::string((node->type == pup::NodeType::Generated)
-                ? pup::path::join(output_root, fs_path)
-                : pup::path::join(source_root, node_path));
+            auto file_path = std::string((node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
