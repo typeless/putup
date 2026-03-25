@@ -6,17 +6,17 @@
 #include "dag.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
-#include <vector>
 
 namespace pup::graph {
 
 /// Result of topological sort
 struct TopoSortResult {
-    std::vector<NodeId> order; ///< Nodes in topological order
+    Vec<NodeId> order; ///< Nodes in topological order
     bool has_cycle = false;    ///< True if cycle detected
-    std::vector<NodeId> cycle; ///< Cycle path if detected
+    Vec<NodeId> cycle; ///< Cycle path if detected
 };
 
 /// Perform topological sort on the graph
@@ -27,7 +27,7 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult;
 /// Detect cycles in the graph
 /// Returns the cycle path if found, or empty vector if no cycles
 [[nodiscard]]
-auto detect_cycles(BuildGraph const& graph) -> std::vector<NodeId>;
+auto detect_cycles(BuildGraph const& graph) -> Vec<NodeId>;
 
 /// Check if graph is a DAG (no cycles)
 [[nodiscard]]

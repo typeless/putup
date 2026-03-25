@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -12,7 +13,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::platform {
 
@@ -106,7 +106,7 @@ struct DirEntry {
     bool is_dir = false;
 };
 [[nodiscard]]
-auto read_directory(std::string_view path) -> Result<std::vector<DirEntry>>;
+auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>;
 
 using WalkVisitor = std::function<bool(DirEntry const&, std::string_view rel_path)>;
 [[nodiscard]]

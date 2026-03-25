@@ -5,16 +5,16 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <string_view>
-#include <vector>
 
 namespace pup::parser {
 
 /// Parsed dependency file (.d file from gcc -MD)
 struct Depfile {
     String target;                    ///< Output file (left side of colon)
-    std::vector<String> dependencies; ///< Input files (right side of colon)
+    Vec<String> dependencies; ///< Input files (right side of colon)
 };
 
 /// Parse a dependency file from a filesystem path

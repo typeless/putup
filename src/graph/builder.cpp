@@ -25,7 +25,7 @@ namespace {
 
 using pup::String;
 
-auto sorted_insert(std::vector<String>& v, std::string_view key) -> void
+auto sorted_insert(Vec<String>& v, std::string_view key) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), key);
     if (pos == v.end() || *pos != key) {
@@ -270,7 +270,7 @@ auto transform_output_path(
 
 /// Get all files that are members of a group (via file → group edges)
 /// Returns file NodeIds by finding all input edges to the group node
-auto get_group_members(BuildGraph& graph, NodeId group_id) -> std::vector<NodeId>
+auto get_group_members(BuildGraph& graph, NodeId group_id) -> Vec<NodeId>
 {
     // Files point TO groups via Group edges (file → group)
     // So group.inputs contains the member files
@@ -470,8 +470,8 @@ auto is_context_active(BuilderContext const& ctx) -> bool
 /// - [(C1, false), (C2, true)] vs [(C1, false), (C2, false)]: Position 1 differs, complementary -> exclusive
 /// - [(C1, true)] vs [(C1, true), (C2, true)]: All shared guards identical -> NOT exclusive
 auto are_guards_mutually_exclusive(
-    std::vector<Guard> const& guards_a,
-    std::vector<Guard> const& guards_b
+    Vec<Guard> const& guards_a,
+    Vec<Guard> const& guards_b
 ) -> bool
 {
     if (guards_a.empty() || guards_b.empty()) {
@@ -512,25 +512,25 @@ auto expand_rule(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Rule const& rule,
-    std::vector<String> const& inputs
+    Vec<String> const& inputs
 ) -> Result<void>;
 
 auto expand_inputs(
     BuilderContext& ctx,
-    std::vector<parser::PathPattern> const& patterns
-) -> Result<std::vector<String>>;
+    Vec<parser::PathPattern> const& patterns
+) -> Result<Vec<String>>;
 
 auto expand_outputs(
     BuilderContext& ctx,
-    std::vector<parser::PathPattern> const& patterns,
+    Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags
-) -> Result<std::vector<String>>;
+) -> Result<Vec<String>>;
 
 auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    std::vector<String> const& outputs,
+    Vec<String> const& outputs,
     String* out_instruction = nullptr
 ) -> Result<String>;
 
@@ -571,9 +571,9 @@ auto create_command_node(
 auto find_tuprules_files(
     std::string_view start_dir,
     std::string_view root
-) -> std::vector<String>
+) -> Vec<String>
 {
-    auto dirs = std::vector<String> {};
+    auto dirs = Vec<String> {};
     auto search_dir = String { start_dir };
 
     while (search_dir.size() >= root.size()) {
@@ -590,7 +590,7 @@ auto find_tuprules_files(
 
     std::reverse(dirs.begin(), dirs.end());
 
-    auto results = std::vector<String> {};
+    auto results = Vec<String> {};
     for (auto const& dir : dirs) {
         auto tuprules = pup::path::join(dir, "Tuprules.tup");
         if (pup::platform::exists(tuprules)) {
@@ -626,7 +626,7 @@ auto resolve_include_path(
 auto expand_glob_pattern(
     BuilderContext& ctx,
     std::string_view path,
-    std::vector<String>& result
+    Vec<String>& result
 ) -> void
 {
     auto base = ctx.current_dir.empty() ? String { ctx.options.source_root }
@@ -676,8 +676,8 @@ auto expand_glob_pattern(
 /// Handles both glob and non-glob exclusions.
 auto apply_exclusions(
     BuilderContext& ctx,
-    std::vector<parser::PathPattern> const& patterns,
-    std::vector<String>& result
+    Vec<parser::PathPattern> const& patterns,
+    Vec<String>& result
 ) -> void
 {
     for (auto const& pattern : patterns) {
@@ -698,12 +698,24 @@ auto apply_exclusions(
                 if (expanded && !expanded->empty()) {
                     for (auto const& p : *expanded) {
                         auto normalized = ctx.current_dir.empty() ? pup::path::normalize(p) : pup::path::normalize(pup::path::join(ctx.current_dir, p));
-                        std::erase(result, normalized);
+                        for (auto it = result.begin(); it != result.end();) {
+                            if (*it == normalized) {
+                                it = result.erase(it);
+                            } else {
+                                ++it;
+                            }
+                        }
                     }
                 }
             } else {
                 auto normalized_excl = ctx.current_dir.empty() ? pup::path::normalize(excl) : pup::path::normalize(pup::path::join(ctx.current_dir, excl));
-                std::erase(result, normalized_excl);
+                for (auto it = result.begin(); it != result.end();) {
+                    if (*it == normalized_excl) {
+                        it = result.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
             }
         }
     }
@@ -714,7 +726,7 @@ auto apply_exclusions(
 auto process_generated_rules(
     BuilderContext& ctx,
     BuilderState& state,
-    std::vector<GeneratedRule> const& generated_rules,
+    Vec<GeneratedRule> const& generated_rules,
     NodeId parent_cmd_id
 ) -> void
 {
@@ -725,7 +737,7 @@ auto process_generated_rules(
         }
 
         // Create edges from inputs to generated command and collect operands
-        auto gen_input_ids = std::vector<NodeId> {};
+        auto gen_input_ids = Vec<NodeId> {};
         for (auto const& input : gen_rule.inputs) {
             auto input_id = resolve_input_node(ctx, input);
             if (input_id) {
@@ -886,7 +898,7 @@ auto process_rule(
     apply_pending_weak_assignments(ctx, state);
 
     // Expand input patterns
-    auto inputs = Result<std::vector<String>> { expand_inputs(ctx, rule.inputs) };
+    auto inputs = Result<Vec<String>> { expand_inputs(ctx, rule.inputs) };
     if (!inputs) {
         return pup::unexpected<Error>(inputs.error());
     }
@@ -902,8 +914,8 @@ auto process_rule(
     if (rule.foreach_) {
         // Separate glob patterns from files
         // expand_inputs() now returns [pattern, file1, file2, ...] for globs
-        auto patterns = std::vector<String> {};
-        auto files = std::vector<String> {};
+        auto patterns = Vec<String> {};
+        auto files = Vec<String> {};
         for (auto const& inp : *inputs) {
             if (parser::has_glob_chars(inp)) {
                 patterns.push_back(inp);
@@ -1162,7 +1174,7 @@ auto process_conditional(
 
     // Helper to process a branch with given polarity
     auto process_branch = [&](
-                              std::vector<std::unique_ptr<parser::Statement>> const& body,
+                              Vec<std::unique_ptr<parser::Statement>> const& body,
                               bool polarity,
                               bool is_active
                           ) -> Result<void> {
@@ -1374,7 +1386,7 @@ auto expand_rule(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Rule const& rule,
-    std::vector<String> const& inputs
+    Vec<String> const& inputs
 ) -> Result<void>
 {
     // Clear used vars for this rule (fine-grained dependency tracking)
@@ -1384,7 +1396,7 @@ auto expand_rule(
     // Separate glob patterns from file inputs
     // For foreach rules, inputs may contain [pattern, file] where pattern has glob chars
     auto glob_pattern = String {};
-    auto file_inputs = std::vector<String> {};
+    auto file_inputs = Vec<String> {};
     for (auto const& inp : inputs) {
         if (parser::has_glob_chars(inp)) {
             glob_pattern = inp;
@@ -1395,7 +1407,7 @@ auto expand_rule(
 
     // Transform inputs to Tupfile-relative paths (where commands execute from)
     auto tc = make_transform_context(ctx);
-    auto cmd_inputs = std::vector<String> {};
+    auto cmd_inputs = Vec<String> {};
     cmd_inputs.reserve(file_inputs.size());
     for (auto const& inp : file_inputs) {
         cmd_inputs.push_back(transform_input_path(*ctx.graph, tc, inp));
@@ -1409,7 +1421,7 @@ auto expand_rule(
     auto glob_match = glob_pattern.empty() ? String {}
                                            : parser::glob_match_extract(glob_pattern, primary_input);
 
-    auto all_inputs_std = std::vector<std::string> {};
+    auto all_inputs_std = Vec<std::string> {};
     all_inputs_std.reserve(cmd_inputs.size());
     for (auto const& s : cmd_inputs) {
         all_inputs_std.push_back(std::string(s));
@@ -1435,17 +1447,17 @@ auto expand_rule(
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     // Stores known group names (sorted); the resolver constructs %<name> on the fly.
-    auto rule_order_only_group_names = std::vector<String> {};
+    auto rule_order_only_group_names = Vec<String> {};
 
     // Track group NodeIds for deferred edge creation
     // Groups are first-class nodes; edges created after all Tupfiles are parsed
     auto deferred_group_ids = NodeIdMap32 {};
-    auto deferred_group_vec = std::vector<NodeId> {};
+    auto deferred_group_vec = Vec<NodeId> {};
 
     // Also check regular inputs for order-only group references
     // In tup, <group> references are always order-only even when in the inputs section
     // Include macro's order_only_inputs to trigger demand-driven parsing
-    auto all_inputs = std::vector<parser::PathPattern> {};
+    auto all_inputs = Vec<parser::PathPattern> {};
     all_inputs.insert(all_inputs.end(), rule.inputs.begin(), rule.inputs.end());
     all_inputs.insert(all_inputs.end(), rule.order_only_inputs.begin(), rule.order_only_inputs.end());
     if (macro_ptr) {
@@ -1515,7 +1527,7 @@ auto expand_rule(
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
-                                         ) -> std::vector<std::string> {
+                                         ) -> Vec<std::string> {
         if (std::binary_search(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name)) {
             return { std::string { "%<" } + std::string { name } + ">" };
         }
@@ -1547,7 +1559,7 @@ auto expand_rule(
     }
 
     // Expand outputs
-    auto outputs = Result<std::vector<String>> { expand_outputs(ctx, outputs_patterns, flags) };
+    auto outputs = Result<Vec<String>> { expand_outputs(ctx, outputs_patterns, flags) };
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
     }
@@ -1587,9 +1599,9 @@ auto expand_rule(
     if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
         all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
     }
-    auto order_only_paths = std::vector<String> {};
+    auto order_only_paths = Vec<String> {};
     for (auto const& pattern : all_order_only) {
-        auto order_inputs = Result<std::vector<String>> { expand_inputs(ctx, { pattern }) };
+        auto order_inputs = Result<Vec<String>> { expand_inputs(ctx, { pattern }) };
         if (order_inputs) {
             order_only_paths.insert(order_only_paths.end(), order_inputs->begin(), order_inputs->end());
         }
@@ -1614,14 +1626,14 @@ auto expand_rule(
         .node_id = *cmd_id,
         .command = cmd_text,
         .display = display,
-        .inputs = { file_inputs.begin(), file_inputs.end() },
-        .order_only_inputs = { order_only_paths.begin(), order_only_paths.end() },
-        .outputs = { outputs->begin(), outputs->end() },
+        .inputs = file_inputs,
+        .order_only_inputs = order_only_paths,
+        .outputs = *outputs,
         .working_dir = ctx.current_dir,
     };
 
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
-    auto generated_rules = std::vector<GeneratedRule> {};
+    auto generated_rules = Vec<GeneratedRule> {};
     if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
         generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info);
     } else if (ctx.options.pattern_registry && !ctx.options.pattern_registry->empty()) {
@@ -1633,7 +1645,7 @@ auto expand_rule(
     // Create edges from inputs to command and collect operand NodeIds
     // Use file_inputs (excludes glob patterns which aren't valid paths)
     // Skip group references - they are handled by deferred edge resolution (order-only)
-    auto input_ids = std::vector<NodeId> {};
+    auto input_ids = Vec<NodeId> {};
     for (auto const& input : file_inputs) {
         if (is_order_only_group_reference(input)) {
             continue;
@@ -1650,7 +1662,7 @@ auto expand_rule(
     }
 
     // Create edges from command to outputs and collect operand NodeIds
-    auto output_ids = std::vector<NodeId> {};
+    auto output_ids = Vec<NodeId> {};
     for (auto const& output : *outputs) {
         auto output_id = Result<NodeId> { get_or_create_file_node(ctx, output, NodeType::Generated) };
         if (!output_id) {
@@ -1771,10 +1783,10 @@ auto expand_rule(
 
 auto expand_inputs(
     BuilderContext& ctx,
-    std::vector<parser::PathPattern> const& patterns
-) -> Result<std::vector<String>>
+    Vec<parser::PathPattern> const& patterns
+) -> Result<Vec<String>>
 {
-    auto result = std::vector<String> {};
+    auto result = Vec<String> {};
 
     for (auto const& pattern : patterns) {
         if (pattern.is_exclusion || pattern.is_output_exclusion) {
@@ -1866,11 +1878,11 @@ auto expand_inputs(
 
 auto expand_outputs(
     BuilderContext& ctx,
-    std::vector<parser::PathPattern> const& patterns,
+    Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags
-) -> Result<std::vector<String>>
+) -> Result<Vec<String>>
 {
-    auto result = std::vector<String> {};
+    auto result = Vec<String> {};
 
     for (auto const& pattern : patterns) {
         if (pattern.is_group) {
@@ -1921,7 +1933,7 @@ auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    std::vector<String> const& outputs,
+    Vec<String> const& outputs,
     String* out_instruction
 ) -> Result<String>
 {
@@ -1943,7 +1955,7 @@ auto expand_command(
 
     // Transform outputs to Tupfile-relative paths and augment flags
     auto tc = make_transform_context(ctx);
-    auto cmd_outputs = std::vector<std::string> {};
+    auto cmd_outputs = Vec<std::string> {};
     cmd_outputs.reserve(outputs.size());
     for (auto const& out : outputs) {
         cmd_outputs.push_back(std::string(transform_output_path(tc, out)));
@@ -2436,13 +2448,13 @@ auto add_tupfile(
 
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
-                         ) -> std::vector<std::string> {
+                         ) -> Vec<std::string> {
         auto gkey = to_underlying(ctx.graph->intern(name));
         auto const* members = ctx.groups.find(gkey);
         if (!members) {
             return {};
         }
-        auto paths = std::vector<std::string> {};
+        auto paths = Vec<std::string> {};
         for (auto id : *members) {
             auto path = ctx.graph->get_full_path(id);
             if (!path.empty()) {
@@ -2456,7 +2468,7 @@ auto add_tupfile(
     // This is for local group references (no directory prefix) - uses current directory
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
-                                    ) -> std::vector<std::string> {
+                                    ) -> Vec<std::string> {
         auto dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
         auto key_str = String { dir } + "/" + name;
         auto key_id = to_underlying(ctx.graph->intern(key_str));
@@ -2464,7 +2476,7 @@ auto add_tupfile(
         if (!node_id) {
             return {};
         }
-        auto paths = std::vector<std::string> {};
+        auto paths = Vec<std::string> {};
         auto members = get_group_members(*ctx.graph, *node_id);
         for (auto id : members) {
             auto path = ctx.graph->get_full_path(id);
@@ -2511,7 +2523,7 @@ auto resolve_deferred_order_only_edges(
         return (static_cast<std::uint64_t>(cmd) << 32) | name_id;
     };
 
-    auto accumulated = std::vector<std::pair<std::uint64_t, std::vector<NodeId>>> {};
+    auto accumulated = Vec<std::pair<std::uint64_t, Vec<NodeId>>> {};
 
     for (auto const& edge : state.deferred_edges) {
         auto const* group_node = graph.get_file_node(edge.group_id);
@@ -2618,12 +2630,12 @@ GraphBuilder::GraphBuilder(BuilderOptions options)
 {
 }
 
-auto GraphBuilder::errors() const -> std::vector<String> const&
+auto GraphBuilder::errors() const -> Vec<String> const&
 {
     return state_.errors;
 }
 
-auto GraphBuilder::warnings() const -> std::vector<String> const&
+auto GraphBuilder::warnings() const -> Vec<String> const&
 {
     return state_.warnings;
 }

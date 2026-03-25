@@ -180,9 +180,9 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
 
 auto discover_variants(
     std::string_view source_root
-) -> std::vector<String>
+) -> Vec<String>
 {
-    auto result = std::vector<String> {};
+    auto result = Vec<String> {};
 
     if (!platform::is_directory(source_root)) {
         return result;

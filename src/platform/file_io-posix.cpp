@@ -541,14 +541,14 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 // Directory traversal
 
-auto read_directory(std::string_view path) -> Result<std::vector<DirEntry>>
+auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
 {
     auto* dir = ::opendir(path.data());
     if (!dir) {
-        return make_error<std::vector<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + std::string { path });
+        return make_error<Vec<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + std::string { path });
     }
 
-    auto entries = std::vector<DirEntry> {};
+    auto entries = Vec<DirEntry> {};
     struct dirent* entry = nullptr;
     while ((entry = ::readdir(dir)) != nullptr) {
         if (std::strcmp(entry->d_name, ".") == 0 || std::strcmp(entry->d_name, "..") == 0) {

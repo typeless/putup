@@ -188,7 +188,7 @@ TEST_CASE("build_env_strings constructs environment list", "[platform][process]"
 {
     SECTION("with inherit_env=false returns only extra vars")
     {
-        auto extra = std::vector<std::string> { "FOO=bar", "BAZ=qux" };
+        auto extra = pup::Vec<std::string> { "FOO=bar", "BAZ=qux" };
         auto result = build_env_strings(extra, false);
 
         REQUIRE(result.size() == 2);
@@ -198,7 +198,7 @@ TEST_CASE("build_env_strings constructs environment list", "[platform][process]"
 
     SECTION("with inherit_env=true includes current environment")
     {
-        auto extra = std::vector<std::string> { "EXTRA=value" };
+        auto extra = pup::Vec<std::string> { "EXTRA=value" };
         auto result = build_env_strings(extra, true);
 
         REQUIRE(result.size() > 1);

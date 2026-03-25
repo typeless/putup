@@ -8,7 +8,6 @@
 #include "pup/core/result.hpp"
 
 #include <string>
-#include <vector>
 
 namespace pup::index {
 
@@ -22,6 +21,6 @@ auto write_index(
 
 /// Serialize an index to a byte vector
 [[nodiscard]]
-auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>;
+auto serialize_index(Index const& index) -> Result<Vec<std::byte>>;
 
 } // namespace pup::index

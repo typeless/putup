@@ -5,9 +5,9 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
-#include <vector>
 
 namespace pup {
 
@@ -27,12 +27,12 @@ auto parse_target(
 auto expand_glob_target(
     std::string_view project_root,
     std::string_view pattern
-) -> std::vector<Target>;
+) -> Vec<Target>;
 
 [[nodiscard]]
 auto validate_target_consistency(
     std::string_view project_root,
-    std::vector<String> const& targets
-) -> Result<std::vector<Target>>;
+    Vec<String> const& targets
+) -> Result<Vec<Target>>;
 
 } // namespace pup

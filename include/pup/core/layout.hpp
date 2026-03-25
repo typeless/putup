@@ -5,10 +5,10 @@
 
 #include "pup/core/path.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
 #include <string_view>
-#include <vector>
 
 namespace pup {
 
@@ -77,6 +77,6 @@ auto find_project_root(
 [[nodiscard]]
 auto discover_variants(
     std::string_view source_root
-) -> std::vector<String>;
+) -> Vec<String>;
 
 } // namespace pup

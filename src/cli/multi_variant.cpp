@@ -21,15 +21,15 @@ namespace pup::cli {
 namespace {
 
 struct ParsedTargets {
-    std::vector<String> variants;
-    std::vector<String> scopes;
-    std::vector<String> output_targets;
+    Vec<String> variants;
+    Vec<String> scopes;
+    Vec<String> output_targets;
     bool has_variant_targets = false;
 };
 
 auto parse_targets_for_variants(
     std::string_view source_root,
-    std::vector<String> const& targets
+    Vec<String> const& targets
 ) -> pup::Result<ParsedTargets>
 {
     auto result = ParsedTargets {};
@@ -92,9 +92,9 @@ auto for_each_variant(
         return EXIT_FAILURE;
     }
 
-    auto variants = std::vector<String> {};
-    auto scopes = std::vector<String> {};
-    auto output_targets = std::vector<String> {};
+    auto variants = Vec<String> {};
+    auto scopes = Vec<String> {};
+    auto output_targets = Vec<String> {};
 
     if (parsed_targets->has_variant_targets) {
         variants = parsed_targets->variants;
@@ -138,7 +138,7 @@ auto for_each_variant(
 
     if (variants.size() == 1) {
         auto single_opts = Options { opts };
-        single_opts.build_dirs = { variants[0] };
+        single_opts.build_dirs = Vec<String> { variants[0] };
         single_opts.targets = scopes;
         single_opts.output_targets = output_targets;
         return handler(single_opts, pup::path::filename(variants[0]));
@@ -157,7 +157,7 @@ auto for_each_variant(
             std::launch::async,
             [&opts, &handler, &scopes, &output_targets, variant = variant] {
                 auto variant_opts = Options { opts };
-                variant_opts.build_dirs = { variant };
+                variant_opts.build_dirs = Vec<String> { variant };
                 variant_opts.targets = scopes;
                 variant_opts.output_targets = output_targets;
                 return handler(variant_opts, pup::path::filename(variant));

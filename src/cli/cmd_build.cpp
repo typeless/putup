@@ -179,7 +179,7 @@ auto is_tupfile(std::string_view path) -> bool
 /// reachable nodes (the transitive upstream closure).
 auto walk_upstream_from_scope(
     pup::graph::BuildGraph const& graph,
-    std::vector<pup::String> const& scopes
+    pup::Vec<pup::String> const& scopes
 ) -> std::vector<pup::NodeId>
 {
     if (scopes.empty()) {
@@ -240,7 +240,7 @@ auto walk_upstream_from_scope(
 /// Collect all upstream input file paths for commands in the given scopes.
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
-    std::vector<pup::String> const& scopes
+    pup::Vec<pup::String> const& scopes
 ) -> std::vector<std::string>
 {
     auto upstream = std::vector<std::string> {};
@@ -264,7 +264,7 @@ auto collect_upstream_files(
 /// Collect commands in scope plus all transitive upstream producer commands.
 auto collect_scope_with_upstream_commands(
     pup::graph::BuildGraph const& graph,
-    std::vector<pup::String> const& scopes
+    pup::Vec<pup::String> const& scopes
 ) -> pup::NodeIdMap32
 {
     auto commands = pup::NodeIdMap32 {};
@@ -279,12 +279,12 @@ auto collect_scope_with_upstream_commands(
 auto find_changed_files_with_implicit(
     String const& source_root,
     pup::index::Index const& old_index,
-    std::vector<pup::String> const& scopes,
+    pup::Vec<pup::String> const& scopes,
     std::vector<std::string> const& upstream_files,
     bool verbose = false
-) -> std::vector<std::string>
+) -> pup::Vec<std::string>
 {
-    auto changed = std::vector<std::string> {};
+    auto changed = pup::Vec<std::string> {};
     auto& metrics = pup::thread_metrics();
 
     // Racy-clean threshold: files modified within 1 second of index save
@@ -745,12 +745,12 @@ auto preserve_old_implicit_edges(
 }
 
 auto expand_implicit_deps(
-    std::vector<std::string> const& changed,
+    pup::Vec<std::string> const& changed,
     pup::index::Index const& index,
     pup::graph::BuildGraph const& graph
-) -> std::vector<std::string>
+) -> pup::Vec<std::string>
 {
-    auto result = std::vector<std::string> { changed };
+    auto result = pup::Vec<std::string> { changed };
     auto added = std::vector<std::string> { changed.begin(), changed.end() };
     std::sort(added.begin(), added.end());
 
@@ -858,13 +858,13 @@ auto build_index(
 /// Validate output targets exist in the build graph.
 /// Returns node IDs on success, or empty optional with error printed on failure.
 auto validate_output_targets(
-    std::vector<pup::String> const& targets,
+    pup::Vec<pup::String> const& targets,
     pup::graph::BuildGraph const& graph,
     std::string_view variant_name,
     bool verbose
-) -> std::optional<std::vector<pup::NodeId>>
+) -> std::optional<pup::Vec<pup::NodeId>>
 {
-    auto node_ids = std::vector<pup::NodeId> {};
+    auto node_ids = pup::Vec<pup::NodeId> {};
     for (auto const& target : targets) {
         auto node_id = graph.find_by_path(target, pup::BUILD_ROOT_ID);
         if (!node_id) {
@@ -890,9 +890,9 @@ auto detect_new_commands(
     pup::index::Index const& idx,
     std::string_view variant_name,
     bool verbose
-) -> std::vector<std::string>
+) -> pup::Vec<std::string>
 {
-    auto changed = std::vector<std::string> {};
+    auto changed = pup::Vec<std::string> {};
     for (auto id : graph.all_nodes()) {
         if (!pup::node_id::is_command(id)) {
             continue;
@@ -1026,7 +1026,7 @@ auto build_single_variant(
     // When -a is set, always parse all Tupfiles so that cross-directory
     // producers are discovered and ghost nodes get resolved.
     auto parse_scopes = (opts.targets.empty() || opts.include_all_deps)
-        ? std::vector<pup::String> {}
+        ? pup::Vec<pup::String> {}
         : scopes;
 
     auto ctx_opts = BuildContextOptions {
@@ -1039,7 +1039,7 @@ auto build_single_variant(
         .scanner_registry = scanner_ptr,
     };
 
-    auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
+    auto result = build_context(opts, ctx_opts);
     if (!result) {
         veprint(variant_name, "Error: %s\n", result.error().message.c_str());
         return EXIT_FAILURE;
@@ -1067,7 +1067,7 @@ auto build_single_variant(
     auto index_path = ctx.layout().index_path();
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
-    auto changed_files = std::vector<std::string> {};
+    auto changed_files = pup::Vec<std::string> {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
@@ -1135,7 +1135,9 @@ auto build_single_variant(
         auto new_cmd_outputs = detect_new_commands(ctx.graph(), idx, variant_name, opts.verbose);
         auto new_cmds_elapsed = std::chrono::high_resolution_clock::now() - new_cmds_start;
         pup::thread_metrics().new_commands_time = std::chrono::duration_cast<std::chrono::microseconds>(new_cmds_elapsed);
-        changed_files.insert(changed_files.end(), new_cmd_outputs.begin(), new_cmd_outputs.end());
+        for (auto& f : new_cmd_outputs) {
+            changed_files.push_back(std::move(f));
+        }
 
         auto stale_start = std::chrono::high_resolution_clock::now();
         remove_stale_outputs(

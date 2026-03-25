@@ -4,13 +4,13 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::graph {
 
@@ -63,7 +63,7 @@ public:
 
 /// Build display string for DEP commands (e.g., "DEP foo.c")
 [[nodiscard]]
-inline auto make_dep_display(std::vector<String> const& inputs) -> String
+inline auto make_dep_display(Vec<String> const& inputs) -> String
 {
     return inputs.empty() ? String { "DEP" } : String { "DEP " } + inputs[0];
 }
@@ -84,7 +84,7 @@ public:
     /// Generate rules for a command using matching scanners
     [[nodiscard]]
     auto match_and_generate(CommandInfo const& cmd) const
-        -> std::vector<GeneratedRule>;
+        -> Vec<GeneratedRule>;
 
     [[nodiscard]]
     auto empty() const -> bool
@@ -98,7 +98,7 @@ public:
     }
 
 private:
-    std::vector<std::unique_ptr<DepScanner>> scanners_;
+    Vec<std::unique_ptr<DepScanner>> scanners_;
 };
 
 } // namespace pup::graph

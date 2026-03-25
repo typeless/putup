@@ -192,9 +192,9 @@ auto glob_expand(
     std::string_view pattern,
     std::string const& base_dir,
     GlobOptions const& options
-) -> Result<std::vector<std::string>>
+) -> Result<Vec<std::string>>
 {
-    auto results = std::vector<std::string> {};
+    auto results = Vec<std::string> {};
 
     if (!has_glob_chars(pattern)) {
         auto path = base_dir + "/" + std::string(pattern);
@@ -248,7 +248,7 @@ auto glob_expand(
 }
 
 auto glob_expand_all(
-    std::vector<std::string> const& patterns,
+    Vec<std::string> const& patterns,
     std::string const& base_dir,
     GlobOptions const& options
 ) -> Result<GlobResult>
@@ -260,7 +260,6 @@ auto glob_expand_all(
             continue;
         }
 
-        // Check for exclusion pattern
         if (pattern[0] == '!') {
             auto exclude_pattern = pattern.substr(1);
             auto excluded = glob_expand(exclude_pattern, base_dir, options);
@@ -281,15 +280,19 @@ auto glob_expand_all(
         }
     }
 
-    // Remove excluded files from matches in a single pass
     if (!result.exclusions.empty()) {
         auto excl_sorted = std::vector<std::string> {
             result.exclusions.begin(), result.exclusions.end()
         };
         std::sort(excl_sorted.begin(), excl_sorted.end());
-        std::erase_if(result.matches, [&excl_sorted](auto const& m) {
-            return std::binary_search(excl_sorted.begin(), excl_sorted.end(), m);
-        });
+        auto& m = result.matches;
+        for (auto it = m.begin(); it != m.end();) {
+            if (std::binary_search(excl_sorted.begin(), excl_sorted.end(), *it)) {
+                it = m.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
 
     return result;

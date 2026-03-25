@@ -5,12 +5,12 @@
 
 #include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 
 #include <chrono>
 #include <cstdio>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::exec {
 
@@ -26,7 +26,7 @@ struct ProgressState {
     std::size_t total = 0;
     std::size_t completed = 0;
     std::size_t failed = 0;
-    std::vector<RunningJob> running = {};
+    Vec<RunningJob> running = {};
 };
 
 /// Rendered output ready for display

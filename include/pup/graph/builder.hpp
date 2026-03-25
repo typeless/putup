@@ -8,11 +8,11 @@
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
 
 #include <string>
-#include <vector>
 
 namespace pup::parser {
 struct EvalContext;
@@ -37,18 +37,18 @@ struct BuilderOptions {
     bool verbose = false;                                        ///< Print verbose output
     DepScannerRegistry const* scanner_registry = nullptr;        ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr;       ///< Optional pattern registry for auto-generated rules
-    std::vector<std::pair<String, String>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
+    Vec<std::pair<String, String>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
 };
 
 /// Bang macro definition
 struct BangMacroDef {
     String name;
     bool foreach_ = false;
-    std::vector<parser::PathPattern> order_only_inputs;
+    Vec<parser::PathPattern> order_only_inputs;
     parser::Expression command;
     std::optional<parser::Expression> display;
-    std::vector<parser::PathPattern> outputs;
-    std::vector<parser::PathPattern> extra_outputs;
+    Vec<parser::PathPattern> outputs;
+    Vec<parser::PathPattern> extra_outputs;
     std::optional<String> output_group;                            ///< {binname} at end
     std::optional<String> output_order_only_group;                 ///< <groupname> at end
     std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
@@ -68,10 +68,10 @@ struct PendingWeakAssignment {
 
 struct GroupMemberTable {
     SortedPairVec name_to_idx;             ///< Interned group name → index into pool
-    std::vector<std::vector<NodeId>> pool; ///< pool[idx] = member NodeIds
+    Vec<Vec<NodeId>> pool; ///< pool[idx] = member NodeIds
 
     [[nodiscard]]
-    auto find(std::uint32_t key) const -> std::vector<NodeId> const*
+    auto find(std::uint32_t key) const -> Vec<NodeId> const*
     {
         auto const* idx = name_to_idx.find(key);
         if (!idx) {
@@ -80,7 +80,7 @@ struct GroupMemberTable {
         return &pool[*idx];
     }
 
-    auto get_or_create(std::uint32_t key) -> std::vector<NodeId>&
+    auto get_or_create(std::uint32_t key) -> Vec<NodeId>&
     {
         auto const* idx = name_to_idx.find(key);
         if (idx) {
@@ -100,14 +100,14 @@ struct BuilderContext {
     parser::VarDb* vars = nullptr; ///< Variable database for import
     BuilderOptions options = {};
 
-    std::vector<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
+    Vec<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
     GroupMemberTable groups = {};
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 
     String current_dir = {};
     String current_file = {};
-    std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
+    Vec<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     /// Config variable StringIds used during current command expansion (cleared per command)
     SortedIdVec used_config_vars = {};
@@ -115,16 +115,16 @@ struct BuilderContext {
     /// Env variable StringIds used during current command expansion (cleared per command)
     SortedIdVec used_env_vars = {};
 
-    std::vector<String> errors = {};
-    std::vector<String> warnings = {};
+    Vec<String> errors = {};
+    Vec<String> warnings = {};
 
     /// Pending weak (??=) assignments - applied before rules, last wins
-    std::vector<PendingWeakAssignment> pending_weak_assignments = {};
+    Vec<PendingWeakAssignment> pending_weak_assignments = {};
 
     /// Condition stack for phi-node model - tracks nested conditional guards
     /// Each entry is (condition_id, polarity). Commands created while in a conditional
     /// will have these guards applied.
-    std::vector<Guard> condition_stack = {};
+    Vec<Guard> condition_stack = {};
 
     /// Config variable StringIds used in enclosing conditions (for phi-node model).
     /// Commands inside conditionals need to depend on these vars to rebuild when
@@ -138,7 +138,7 @@ struct BuilderContext {
 
 struct VarDepTracker {
     SortedPairVec name_to_idx;     ///< StringId → index into pool
-    std::vector<SortedIdVec> pool; ///< pool[idx] = dep set of StringIds
+    Vec<SortedIdVec> pool; ///< pool[idx] = dep set of StringIds
 
     [[nodiscard]]
     auto find(StringId key) const -> SortedIdVec const*
@@ -195,14 +195,14 @@ struct DeferredOrderOnlyEdge {
 /// Per-session state that persists across multiple Tupfiles
 struct BuilderState {
     BuilderOptions options;
-    std::vector<String> errors;
-    std::vector<String> warnings;
+    Vec<String> errors;
+    Vec<String> warnings;
 
     /// Group node lookup: interned "directory/name" StringId → NodeId
     SortedPairVec group_nodes;
 
     /// Deferred edges to resolve after all Tupfiles are parsed
-    std::vector<DeferredOrderOnlyEdge> deferred_edges;
+    Vec<DeferredOrderOnlyEdge> deferred_edges;
 
     /// Config variable nodes (interned name StringId → NodeId)
     SortedPairVec config_var_nodes;
@@ -288,11 +288,11 @@ public:
 
     /// Get build errors
     [[nodiscard]]
-    auto errors() const -> std::vector<String> const&;
+    auto errors() const -> Vec<String> const&;
 
     /// Get build warnings
     [[nodiscard]]
-    auto warnings() const -> std::vector<String> const&;
+    auto warnings() const -> Vec<String> const&;
 
     /// Resolve deferred order-only edges after all Tupfiles are parsed
     [[nodiscard]]

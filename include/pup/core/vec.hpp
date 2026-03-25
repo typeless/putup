@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
+#include <iterator>
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -16,6 +18,18 @@ template<typename T>
 class Vec {
 public:
     Vec() = default;
+
+    Vec(std::initializer_list<T> init)
+        : data_(alloc(init.size()))
+        , size_(init.size())
+        , capacity_(init.size())
+    {
+        std::size_t i = 0;
+        for (auto const& item : init) {
+            construct_at(data_ + i, item);
+            ++i;
+        }
+    }
 
     ~Vec()
     {
@@ -104,10 +118,37 @@ public:
     {
         auto idx = static_cast<std::size_t>(pos - data_);
         ensure_capacity(size_ + 1);
-        // After ensure_capacity, data_ may have moved — recompute pos
         shift_right(data_ + idx, size_ - idx);
         construct_at(data_ + idx, std::move(value));
         ++size_;
+        return data_ + idx;
+    }
+
+    template<typename InputIt>
+    auto insert(T const* pos, InputIt first, InputIt last) -> T*
+    {
+        auto idx = static_cast<std::size_t>(pos - data_);
+        auto count = static_cast<std::size_t>(0);
+        for (auto it = first; it != last; ++it) {
+            ++count;
+        }
+        if (count == 0) {
+            return data_ + idx;
+        }
+        ensure_capacity(size_ + count);
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memmove(data_ + idx + count, data_ + idx, (size_ - idx) * sizeof(T));
+        } else {
+            for (auto i = size_; i > idx; --i) {
+                new (data_ + i + count - 1) T(std::move(data_[i - 1]));
+                data_[i - 1].~T();
+            }
+        }
+        auto dst = idx;
+        for (auto it = first; it != last; ++it, ++dst) {
+            construct_at(data_ + dst, *it);
+        }
+        size_ += count;
         return data_ + idx;
     }
 
@@ -124,6 +165,26 @@ public:
             data_[size_ - 1].~T();
         }
         --size_;
+        return data_ + idx;
+    }
+
+    auto erase(T const* first, T const* last) -> T*
+    {
+        auto idx = static_cast<std::size_t>(first - data_);
+        auto count = static_cast<std::size_t>(last - first);
+        if (count == 0) {
+            return data_ + idx;
+        }
+        auto tail = size_ - idx - count;
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memmove(data_ + idx, data_ + idx + count, tail * sizeof(T));
+        } else {
+            for (std::size_t i = 0; i < tail; ++i) {
+                data_[idx + i] = std::move(data_[idx + count + i]);
+            }
+            destroy_range(data_ + idx + tail, count);
+        }
+        size_ -= count;
         return data_ + idx;
     }
 
@@ -189,6 +250,26 @@ public:
     }
 
     [[nodiscard]]
+    auto operator==(Vec const& other) const -> bool
+    {
+        if (size_ != other.size_) {
+            return false;
+        }
+        for (std::size_t i = 0; i < size_; ++i) {
+            if (!(data_[i] == other.data_[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    [[nodiscard]]
+    auto operator!=(Vec const& other) const -> bool
+    {
+        return !(*this == other);
+    }
+
+    [[nodiscard]]
     auto front() -> T&
     {
         return data_[0];
@@ -228,6 +309,27 @@ public:
     auto end() const -> T const*
     {
         return data_ + size_;
+    }
+
+    [[nodiscard]]
+    auto rbegin() -> std::reverse_iterator<T*>
+    {
+        return std::reverse_iterator<T*>(end());
+    }
+    [[nodiscard]]
+    auto rend() -> std::reverse_iterator<T*>
+    {
+        return std::reverse_iterator<T*>(begin());
+    }
+    [[nodiscard]]
+    auto rbegin() const -> std::reverse_iterator<T const*>
+    {
+        return std::reverse_iterator<T const*>(end());
+    }
+    [[nodiscard]]
+    auto rend() const -> std::reverse_iterator<T const*>
+    {
+        return std::reverse_iterator<T const*>(begin());
     }
 
 private:

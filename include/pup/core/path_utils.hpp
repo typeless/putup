@@ -4,11 +4,11 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup {
 
@@ -33,7 +33,7 @@ auto is_path_in_scope(
 [[nodiscard]]
 auto is_path_in_any_scope(
     std::string_view path,
-    std::vector<String> const& scopes
+    Vec<String> const& scopes
 ) -> bool;
 
 [[nodiscard]]

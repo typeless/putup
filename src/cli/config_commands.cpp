@@ -19,9 +19,9 @@ auto is_config_output(std::string_view path) -> bool
 auto find_config_commands(
     graph::BuildGraph const& graph,
     std::string_view source_root
-) -> std::vector<ConfigCommand>
+) -> Vec<ConfigCommand>
 {
-    auto result = std::vector<ConfigCommand> {};
+    auto result = Vec<ConfigCommand> {};
 
     for (auto id : graph.all_nodes()) {
         if (!node_id::is_command(id)) {

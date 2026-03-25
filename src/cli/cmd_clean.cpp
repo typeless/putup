@@ -133,7 +133,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
 
     auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
     auto error_count = std::size_t { 0 };
-    auto output_dirs = std::vector<std::string> {};
+    auto output_dirs = Vec<std::string> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 

@@ -5,10 +5,10 @@
 
 #include "ast.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::parser {
 
@@ -27,7 +27,7 @@ struct ParserOptions {
 /// Result of parsing a Tupfile
 struct ParseResult {
     Tupfile tupfile;
-    std::vector<ParseError> errors;
+    Vec<ParseError> errors;
 
     [[nodiscard]]
     auto success() const -> bool

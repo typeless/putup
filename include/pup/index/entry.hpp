@@ -10,11 +10,11 @@
 #include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::index {
 
@@ -58,8 +58,8 @@ struct CommandEntry {
     String display = {};             ///< Display text (from ^ ^ markers)
     String env = {};                 ///< Environment variables
 
-    std::vector<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
-    std::vector<NodeId> outputs = {}; ///< Output file operands (for %o expansion)
+    Vec<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
+    Vec<NodeId> outputs = {}; ///< Output file operands (for %o expansion)
 
     /// Convert to raw format for serialization
     [[nodiscard]]
@@ -77,8 +77,8 @@ struct CommandEntry {
         std::string_view instruction_pattern,
         std::string_view display_str,
         std::string_view env_str,
-        std::vector<NodeId> inputs,
-        std::vector<NodeId> outputs,
+        Vec<NodeId> inputs,
+        Vec<NodeId> outputs,
         std::size_t array_index
     ) -> CommandEntry;
 };
@@ -115,36 +115,36 @@ public:
 
     /// Get all file entries
     [[nodiscard]]
-    auto files() const -> std::vector<FileEntry> const&
+    auto files() const -> Vec<FileEntry> const&
     {
         return files_;
     }
     [[nodiscard]]
-    auto files() -> std::vector<FileEntry>&
+    auto files() -> Vec<FileEntry>&
     {
         return files_;
     }
 
     /// Get all command entries
     [[nodiscard]]
-    auto commands() const -> std::vector<CommandEntry> const&
+    auto commands() const -> Vec<CommandEntry> const&
     {
         return commands_;
     }
     [[nodiscard]]
-    auto commands() -> std::vector<CommandEntry>&
+    auto commands() -> Vec<CommandEntry>&
     {
         return commands_;
     }
 
     /// Get all edges
     [[nodiscard]]
-    auto edges() const -> std::vector<EdgeEntry> const&
+    auto edges() const -> Vec<EdgeEntry> const&
     {
         return edges_;
     }
     [[nodiscard]]
-    auto edges() -> std::vector<EdgeEntry>&
+    auto edges() -> Vec<EdgeEntry>&
     {
         return edges_;
     }
@@ -166,11 +166,11 @@ public:
 
     /// Get edges from a node (O(1) after build_edge_indices)
     [[nodiscard]]
-    auto edges_from(NodeId id) const -> std::vector<EdgeEntry const*>;
+    auto edges_from(NodeId id) const -> Vec<EdgeEntry const*>;
 
     /// Get edges to a node (O(1) after build_edge_indices)
     [[nodiscard]]
-    auto edges_to(NodeId id) const -> std::vector<EdgeEntry const*>;
+    auto edges_to(NodeId id) const -> Vec<EdgeEntry const*>;
 
     /// Build edge indices for O(1) lookup (call after loading all edges)
     auto build_edge_indices() -> void;
@@ -216,9 +216,9 @@ public:
     auto set_save_time_ns(std::int64_t ns) -> void { save_time_ns_ = ns; }
 
 private:
-    std::vector<FileEntry> files_ = {};
-    std::vector<CommandEntry> commands_ = {};
-    std::vector<EdgeEntry> edges_ = {};
+    Vec<FileEntry> files_ = {};
+    Vec<CommandEntry> commands_ = {};
+    Vec<EdgeEntry> edges_ = {};
 
     // Edge indices (indices into edges_ vector)
     Arena32 edge_arena_;
@@ -234,7 +234,7 @@ private:
 
     [[nodiscard]]
     auto lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
-        -> std::vector<EdgeEntry const*>;
+        -> Vec<EdgeEntry const*>;
 };
 
 /// Reconstruct full command string from instruction + operands.

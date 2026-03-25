@@ -5,9 +5,9 @@
 
 namespace pup::core {
 
-auto tokenize_shell_command(std::string_view cmd) -> std::vector<String>
+auto tokenize_shell_command(std::string_view cmd) -> Vec<String>
 {
-    auto args = std::vector<String> {};
+    auto args = Vec<String> {};
     auto current = String {};
     auto in_single_quote = false;
     auto in_double_quote = false;

@@ -352,9 +352,9 @@ auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std
     return parent_id != root ? std::optional { parent_id } : std::nullopt;
 }
 
-auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
+auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>
 {
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     if (type == NodeType::Command) {
         for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
             auto const& node = graph.commands[i];
@@ -373,14 +373,14 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>
     return result;
 }
 
-auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
+auto get_inputs(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
     auto s = graph.edges_to_index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     result.reserve(span.size());
     for (auto idx : span) {
         result.push_back(graph.edges[idx].from);
@@ -388,14 +388,14 @@ auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
     return result;
 }
 
-auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
+auto get_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
     auto s = graph.edges_from_index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     for (auto idx : span) {
         auto const& edge = graph.edges[idx];
         if (edge.type != LinkType::Sticky) {
@@ -405,14 +405,14 @@ auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
     return result;
 }
 
-auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
+auto get_sticky_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
     auto s = graph.edges_from_index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     for (auto idx : span) {
         auto const& edge = graph.edges[idx];
         if (edge.type == LinkType::Sticky) {
@@ -422,24 +422,34 @@ auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>
     return result;
 }
 
-auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>
+auto get_order_only(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
     auto s = graph.order_only_to_index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
-    return { span.begin(), span.end() };
+    auto result = Vec<NodeId> {};
+    result.reserve(span.size());
+    for (auto v : span) {
+        result.push_back(v);
+    }
+    return result;
 }
 
-auto get_order_only_dependents(Graph const& graph, NodeId id) -> std::vector<NodeId>
+auto get_order_only_dependents(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
     auto s = graph.order_only_dependents.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
-    return { span.begin(), span.end() };
+    auto result = Vec<NodeId> {};
+    result.reserve(span.size());
+    for (auto v : span) {
+        result.push_back(v);
+    }
+    return result;
 }
 
 auto node_count(Graph const& graph) -> std::size_t
@@ -501,9 +511,9 @@ auto clear(Graph& graph) -> void
     graph.next_phi_id = node_id::make_phi(1);
 }
 
-auto all_nodes(Graph const& graph) -> std::vector<NodeId>
+auto all_nodes(Graph const& graph) -> Vec<NodeId>
 {
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     auto file_count = graph.files.empty() ? std::size_t { 0 } : graph.files.size() - 1;
     auto cmd_count = graph.commands.empty() ? std::size_t { 0 } : graph.commands.size() - 1;
     result.reserve(file_count + cmd_count);
@@ -522,13 +532,13 @@ auto all_nodes(Graph const& graph) -> std::vector<NodeId>
     return result;
 }
 
-auto root_nodes(Graph const& graph) -> std::vector<NodeId>
+auto root_nodes(Graph const& graph) -> Vec<NodeId>
 {
     auto has_inputs = [&](NodeId id) {
         return graph.edges_to_index.contains(id) || graph.order_only_to_index.contains(id);
     };
 
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
         auto const& node = graph.files[i];
         if (node.id == i && !has_inputs(i)) {
@@ -545,7 +555,7 @@ auto root_nodes(Graph const& graph) -> std::vector<NodeId>
     return result;
 }
 
-auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
+auto leaf_nodes(Graph const& graph) -> Vec<NodeId>
 {
     auto has_outputs = [&](NodeId id) {
         auto s = graph.edges_from_index.get_slice(id);
@@ -561,7 +571,7 @@ auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>
         return false;
     };
 
-    auto result = std::vector<NodeId> {};
+    auto result = Vec<NodeId> {};
     for (auto i = NodeId { 1 }; i < graph.files.size(); ++i) {
         auto const& node = graph.files[i];
         if (node.id == i && !has_outputs(i)) {

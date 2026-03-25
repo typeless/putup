@@ -6,12 +6,12 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 
 #include <chrono>
 #include <functional>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace pup::exec {
 
@@ -29,7 +29,7 @@ struct CommandResult {
 /// Options for running a command
 struct RunOptions {
     String working_dir = {};
-    std::vector<std::string> env = {};                ///< Additional environment variables (KEY=VALUE for setenv)
+    Vec<std::string> env = {};                ///< Additional environment variables (KEY=VALUE for setenv)
     bool inherit_env = true;                          ///< Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;
@@ -92,7 +92,7 @@ private:
 
 /// Parse a command string into shell arguments
 [[nodiscard]]
-auto parse_command(std::string_view command) -> std::vector<std::string>;
+auto parse_command(std::string_view command) -> Vec<std::string>;
 
 /// Quote a string for shell use
 [[nodiscard]]

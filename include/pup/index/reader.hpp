@@ -61,7 +61,7 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
 /// Returns pair of {input NodeIds, output NodeIds}
 [[nodiscard]]
 auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
-    -> std::pair<std::vector<NodeId>, std::vector<NodeId>>;
+    -> std::pair<Vec<NodeId>, Vec<NodeId>>;
 
 /// Verify the checksum
 [[nodiscard]]

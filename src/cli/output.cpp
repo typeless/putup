@@ -18,7 +18,7 @@ constexpr auto ASCII_CONTROL_CHAR_MAX = static_cast<unsigned char>(0x1F);
 }
 
 auto remove_empty_directories(
-    std::vector<std::string> const& output_dirs,
+    Vec<std::string> const& output_dirs,
     std::string const& build_dir,
     std::string const& source_dir,
     OutputMode mode

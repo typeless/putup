@@ -136,7 +136,7 @@ auto write_index(
     Index const& index
 ) -> Result<void>
 {
-    auto data = Result<std::vector<std::byte>> { serialize_index(index) };
+    auto data = serialize_index(index);
     if (!data) {
         return pup::unexpected<Error>(data.error());
     }
@@ -144,7 +144,7 @@ auto write_index(
     return pup::platform::atomic_write(path, *data);
 }
 
-auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
+auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
 {
     auto strings = StringTable {};
 
@@ -235,7 +235,7 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
         + strings.size() + sizeof(RawFooter);
 
     if (total_size_64 > MAX_U32) {
-        return make_error<std::vector<std::byte>>(
+        return make_error<Vec<std::byte>>(
             ErrorCode::InvalidState, "Index exceeds 4GB limit"
         );
     }
@@ -269,7 +269,8 @@ auto serialize_index(Index const& index) -> Result<std::vector<std::byte>>
     );
 
     // Allocate result buffer
-    auto result = std::vector<std::byte>(total_size);
+    auto result = Vec<std::byte> {};
+    result.resize(total_size);
     auto output = std::span<std::byte> { result };
 
     // Write header
