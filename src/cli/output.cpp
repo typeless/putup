@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <functional>
 #include <ranges>
-#include <vector>
 
 namespace pup::cli {
 
