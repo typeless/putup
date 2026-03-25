@@ -17,6 +17,7 @@ test-srcs-y += test_depfile.cpp
 test-srcs-y += test_e2e.cpp
 test-srcs-y += test_eval.cpp
 test-srcs-y += test_exec.cpp
+test-srcs-y += test_fmt.cpp
 test-srcs-y += test_glob.cpp
 test-srcs-y += test_graph.cpp
 test-srcs-y += test_arena.cpp
