@@ -279,7 +279,14 @@ TEST_CASE("String self-append", "[string]")
 TEST_CASE("String self-assignment", "[string]")
 {
     auto s = String { "test" };
-    s = s; // NOLINT(clang-diagnostic-self-assign-overloaded)
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wself-assign-overloaded"
+#endif
+    s = s;
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
     REQUIRE(s == "test");
 }
 
