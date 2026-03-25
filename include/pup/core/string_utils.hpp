@@ -4,9 +4,9 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <string_view>
-#include <vector>
 
 namespace pup::core {
 
@@ -14,6 +14,6 @@ namespace pup::core {
 /// - Single quotes: no escaping, everything literal until closing '
 /// - Double quotes: \\ and \" are special, other \X is literal
 /// - Outside quotes: \ escapes next character
-auto tokenize_shell_command(std::string_view cmd) -> std::vector<String>;
+auto tokenize_shell_command(std::string_view cmd) -> Vec<String>;
 
 } // namespace pup::core

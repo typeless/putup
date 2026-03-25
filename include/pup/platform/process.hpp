@@ -5,11 +5,11 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <chrono>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace pup::platform {
 
@@ -28,7 +28,7 @@ struct ProcessResult {
 struct ProcessOptions {
     String command;
     String working_dir;
-    std::vector<std::string> env;
+    Vec<std::string> env;
     bool inherit_env = true;
     bool capture_stdout = true;
     bool capture_stderr = true;
@@ -54,8 +54,8 @@ auto run_process_with_callback(
 /// Build environment variable list from options
 [[nodiscard]]
 auto build_env_strings(
-    std::vector<std::string> const& extra_env,
+    Vec<std::string> const& extra_env,
     bool inherit_env
-) -> std::vector<std::string>;
+) -> Vec<std::string>;
 
 } // namespace pup::platform

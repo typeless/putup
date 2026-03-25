@@ -5,6 +5,7 @@
 
 #include "options.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/parser/ast.hpp"
 
 #include <cstdint>
@@ -12,7 +13,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace pup {
 struct ProjectLayout;
@@ -51,7 +51,7 @@ struct BuildContextOptions {
     bool auto_init = false;
     bool root_config_only = false;
     bool require_config = false;
-    std::vector<String> parse_scopes = {};
+    Vec<String> parse_scopes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};
@@ -87,7 +87,7 @@ public:
     [[nodiscard]]
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
-    auto parsed_dirs() const -> std::vector<std::string> const&;
+    auto parsed_dirs() const -> Vec<std::string> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load
@@ -118,7 +118,7 @@ auto build_context(
 auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
-) -> std::vector<String>;
+) -> Vec<String>;
 
 /// Convert CLI options to layout discovery options
 [[nodiscard]]

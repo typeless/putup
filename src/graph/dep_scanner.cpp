@@ -21,9 +21,9 @@ auto DepScannerRegistry::find_match(CommandInfo const& cmd) const -> DepScanner 
 }
 
 auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
-    -> std::vector<GeneratedRule>
+    -> Vec<GeneratedRule>
 {
-    auto result = std::vector<GeneratedRule> {};
+    auto result = Vec<GeneratedRule> {};
 
     for (auto const& scanner : scanners_) {
         if (!scanner->matches(cmd)) {
@@ -41,7 +41,7 @@ auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
 
         auto spec = scanner->dep_spec();
 
-        auto outputs = std::vector<GeneratedOutput> {};
+        auto outputs = Vec<GeneratedOutput> {};
         if (spec.output_mode == DepOutputMode::Stdout) {
             outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = {} });
         }

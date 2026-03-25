@@ -8,9 +8,9 @@
 namespace pup::parser {
 
 auto group_by_name(AssignmentLog const& log)
-    -> std::vector<VarHistory>
+    -> Vec<VarHistory>
 {
-    auto result = std::vector<VarHistory> {};
+    auto result = Vec<VarHistory> {};
 
     for (auto const& assign : log) {
         auto it = std::lower_bound(result.begin(), result.end(), assign.name, [](auto const& h, auto const& n) { return h.name < n; });

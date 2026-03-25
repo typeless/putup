@@ -96,9 +96,9 @@ auto VarDb::contains(std::string_view name) const -> bool
     return entries_.contains(pup::to_underlying(name_id));
 }
 
-auto VarDb::names() const -> std::vector<std::string_view>
+auto VarDb::names() const -> Vec<std::string_view>
 {
-    auto result = std::vector<std::string_view> {};
+    auto result = Vec<std::string_view> {};
     for (auto [key, value] : entries_) {
         result.push_back(pool_->get(pup::make_string_id(key)));
     }
@@ -520,9 +520,9 @@ auto expand_pattern(
 auto expand_path(
     EvalContext& ctx,
     PathPattern const& pattern
-) -> Result<std::vector<std::string>>
+) -> Result<Vec<std::string>>
 {
-    auto result = std::vector<std::string> {};
+    auto result = Vec<std::string> {};
 
     if (pattern.is_order_only_group) {
         // Order-only group reference <groupname> - use callback to resolve

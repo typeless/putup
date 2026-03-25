@@ -5,12 +5,12 @@
 
 #include "pup/core/source_location.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <memory>
 #include <optional>
 #include <string>
 #include <variant>
-#include <vector>
 
 namespace pup::parser {
 
@@ -60,7 +60,7 @@ struct Expression final : AstNode {
         VarRef ref;
     };
 
-    std::vector<std::variant<Literal, Variable>> parts;
+    Vec<std::variant<Literal, Variable>> parts;
 
     [[nodiscard]]
     auto is_literal() const -> bool
@@ -98,12 +98,12 @@ struct PathPattern final : AstNode {
 /// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}] [<group>]
 struct Rule final : AstNode {
     bool foreach_ = false;
-    std::vector<PathPattern> inputs;
-    std::vector<PathPattern> order_only_inputs;
+    Vec<PathPattern> inputs;
+    Vec<PathPattern> order_only_inputs;
     Expression command;
     std::optional<Expression> display; ///< Display text between ^ ^ in command
-    std::vector<PathPattern> outputs;
-    std::vector<PathPattern> extra_outputs;
+    Vec<PathPattern> outputs;
+    Vec<PathPattern> extra_outputs;
     std::optional<std::string> output_group;               ///< {binname} at end
     std::optional<std::string> output_order_only_group;    ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
@@ -113,11 +113,11 @@ struct Rule final : AstNode {
 struct BangMacro final : AstNode {
     std::string name;
     bool foreach_ = false;
-    std::vector<PathPattern> order_only_inputs;
+    Vec<PathPattern> order_only_inputs;
     Expression command;
     std::optional<Expression> display;
-    std::vector<PathPattern> outputs;
-    std::vector<PathPattern> extra_outputs;
+    Vec<PathPattern> outputs;
+    Vec<PathPattern> extra_outputs;
     std::optional<std::string> output_group;               ///< {binname} at end
     std::optional<std::string> output_order_only_group;    ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
@@ -153,8 +153,8 @@ struct Conditional final : AstNode {
     std::string var_name; ///< For ifdef/ifndef
     Expression lhs;       ///< For ifeq/ifneq
     Expression rhs;       ///< For ifeq/ifneq
-    std::vector<std::unique_ptr<Statement>> then_body;
-    std::vector<std::unique_ptr<Statement>> else_body;
+    Vec<std::unique_ptr<Statement>> then_body;
+    Vec<std::unique_ptr<Statement>> else_body;
 
     ~Conditional() override;
     Conditional();
@@ -211,8 +211,8 @@ struct Statement final : AstNode {
 /// A complete Tupfile AST
 struct Tupfile final : AstNode {
     std::string filename;
-    std::vector<std::unique_ptr<Statement>> statements;
-    std::vector<std::string> included_files;
+    Vec<std::unique_ptr<Statement>> statements;
+    Vec<std::string> included_files;
 };
 
 } // namespace pup::parser

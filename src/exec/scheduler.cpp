@@ -32,7 +32,7 @@ auto env_cache_find(EnvCache const& cache, std::string_view key) -> EnvCache::co
 
 /// Build immutable sorted cache of environment variables for exported vars.
 /// Must be called before spawning worker threads (getenv is not thread-safe).
-auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
+auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
 {
     // Collect unique var names
     auto names = std::vector<String> {};
@@ -85,7 +85,7 @@ auto sorted_insert_unique(std::vector<std::size_t>& v, std::size_t val) -> void
 auto add_producer_dependencies(
     graph::BuildGraph const& graph,
     NodeIdMap32 const& cmd_to_job,
-    std::vector<BuildJob> const& jobs,
+    Vec<BuildJob> const& jobs,
     NodeId node_id,
     std::size_t current_job,
     std::vector<std::size_t>& dependencies
@@ -111,7 +111,7 @@ auto add_producer_dependencies(
 ///
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
 auto build_dependency_map(
-    std::vector<BuildJob> const& jobs,
+    Vec<BuildJob> const& jobs,
     graph::BuildGraph const& graph
 ) -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
 {
@@ -180,7 +180,7 @@ auto build_dependency_map(
 /// Validate that no active job depends on a skipped job's output.
 /// Returns error if an active job would fail due to missing inputs from skipped jobs.
 auto validate_guard_dependencies(
-    std::vector<BuildJob> const& jobs,
+    Vec<BuildJob> const& jobs,
     std::vector<std::vector<std::size_t>> const& dependents
 ) -> Result<void>
 {
@@ -205,12 +205,12 @@ auto validate_guard_dependencies(
 /// Uses reverse traversal: starts at targets, walks backward through inputs.
 auto collect_required_commands(
     graph::BuildGraph const& graph,
-    std::vector<NodeId> const& target_ids
+    Vec<NodeId> const& target_ids
 ) -> NodeIdMap32
 {
     auto visited = NodeIdMap32 {};
     auto commands = NodeIdMap32 {};
-    auto stack = std::vector<NodeId>(target_ids.begin(), target_ids.end());
+    auto stack = std::vector<NodeId> { target_ids.begin(), target_ids.end() };
 
     while (!stack.empty()) {
         auto id = stack.back();
@@ -249,7 +249,7 @@ struct Scheduler::Impl {
     ProgressCallback on_progress;
 
     auto execute_sequential(
-        std::vector<BuildJob> const& jobs,
+        Vec<BuildJob> const& jobs,
         graph::BuildGraph const& graph,
         EnvCache const& env_cache
     ) -> Result<void>;
@@ -313,7 +313,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     impl_->stats = BuildStats {};
 
     // Build job list in topological order
-    auto jobs_result = Result<std::vector<BuildJob>> { build_job_list(graph) };
+    auto jobs_result = build_job_list(graph);
     if (!jobs_result) {
         return pup::unexpected<Error>(jobs_result.error());
     }
@@ -330,7 +330,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     }
 
     // Execute jobs
-    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
+    auto exec_result = execute_parallel(jobs, graph);
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -346,7 +346,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 
 auto Scheduler::build_incremental(
     graph::BuildGraph const& graph,
-    std::vector<std::string> const& changed_files
+    Vec<std::string> const& changed_files
 ) -> Result<BuildStats>
 {
     // Build temporary path-to-NodeId map for changed file lookup
@@ -411,12 +411,12 @@ auto Scheduler::build_incremental(
     }
 
     // Build all jobs, then filter
-    auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
+    auto all_jobs = build_job_list(graph);
     if (!all_jobs) {
         return pup::unexpected<Error>(all_jobs.error());
     }
 
-    auto jobs = std::vector<BuildJob> { filter_jobs(*all_jobs, affected) };
+    auto jobs = filter_jobs(*all_jobs, affected);
     impl_->stats.total_jobs = jobs.size();
     impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 
@@ -424,7 +424,7 @@ auto Scheduler::build_incremental(
         return impl_->stats;
     }
 
-    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
+    auto exec_result = execute_parallel(jobs, graph);
     if (!exec_result && !impl_->options.keep_going) {
         return pup::unexpected<Error>(exec_result.error());
     }
@@ -433,7 +433,7 @@ auto Scheduler::build_incremental(
 }
 
 auto Scheduler::Impl::execute_sequential(
-    std::vector<BuildJob> const& jobs,
+    Vec<BuildJob> const& jobs,
     graph::BuildGraph const& graph,
     EnvCache const& env_cache
 ) -> Result<void>
@@ -509,7 +509,7 @@ auto Scheduler::Impl::execute_sequential(
 }
 
 auto Scheduler::execute_parallel(
-    std::vector<BuildJob> const& jobs,
+    Vec<BuildJob> const& jobs,
     graph::BuildGraph const& graph
 ) -> Result<void>
 {
@@ -793,14 +793,14 @@ auto Scheduler::Impl::execute_job(
 
 auto Scheduler::build_job_list(
     graph::BuildGraph const& graph
-) -> Result<std::vector<BuildJob>>
+) -> Result<Vec<BuildJob>>
 {
     auto job_list_start = std::chrono::high_resolution_clock::now();
 
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
     if (topo_result.has_cycle) {
-        return make_error<std::vector<BuildJob>>(
+        return make_error<Vec<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected"
         );
     }
@@ -826,7 +826,7 @@ auto Scheduler::build_job_list(
             if (pup::platform::exists(file_path)) {
                 continue; // File exists, not a missing input
             }
-            return make_error<std::vector<BuildJob>>(
+            return make_error<Vec<BuildJob>>(
                 ErrorCode::ParseError,
                 "Missing input file (unresolved ghost): " + path
                     + "\n  Hint: try building with -a to include upstream dependencies"
@@ -834,7 +834,7 @@ auto Scheduler::build_job_list(
         }
     }
 
-    auto jobs = std::vector<BuildJob> {};
+    auto jobs = Vec<BuildJob> {};
     auto cache = graph::PathCache {};
 
     for (auto id : topo_result.order) {
@@ -872,7 +872,7 @@ auto Scheduler::build_job_list(
         auto cmd_str = expand_instruction(graph.graph(), id, cache, std::string(impl_->options.source_root), std::string(impl_->options.config_root));
         auto display_str = String { get_display_str(graph.graph(), id) };
 
-        auto exported_str = std::vector<String> {};
+        auto exported_str = Vec<String> {};
         exported_str.reserve(node->exported_vars.size());
         for (auto raw_id : node->exported_vars) {
             exported_str.emplace_back(graph.graph().strings.get(make_string_id(raw_id)));
@@ -955,7 +955,7 @@ auto Scheduler::build_subset(
     impl_->stats = BuildStats {};
 
     // Build all jobs, then filter to the subset
-    auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
+    auto all_jobs = build_job_list(graph);
     if (!all_jobs) {
         return pup::unexpected<Error>(all_jobs.error());
     }
@@ -972,7 +972,7 @@ auto Scheduler::build_subset(
         return impl_->stats;
     }
 
-    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
+    auto exec_result = execute_parallel(jobs, graph);
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -988,7 +988,7 @@ auto Scheduler::build_subset(
 
 auto Scheduler::build_targets(
     graph::BuildGraph const& graph,
-    std::vector<NodeId> const& target_ids
+    Vec<NodeId> const& target_ids
 ) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
@@ -999,7 +999,7 @@ auto Scheduler::build_targets(
     auto required_cmds = collect_required_commands(graph, target_ids);
 
     // Build all jobs, then filter to required commands
-    auto all_jobs = Result<std::vector<BuildJob>> { build_job_list(graph) };
+    auto all_jobs = build_job_list(graph);
     if (!all_jobs) {
         return pup::unexpected<Error>(all_jobs.error());
     }
@@ -1016,7 +1016,7 @@ auto Scheduler::build_targets(
         return impl_->stats;
     }
 
-    auto exec_result = Result<void> { execute_parallel(jobs, graph) };
+    auto exec_result = execute_parallel(jobs, graph);
 
     auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1031,11 +1031,11 @@ auto Scheduler::build_targets(
 }
 
 auto Scheduler::filter_jobs(
-    std::vector<BuildJob> const& all_jobs,
+    Vec<BuildJob> const& all_jobs,
     NodeIdMap32 const& affected_nodes
-) -> std::vector<BuildJob>
+) -> Vec<BuildJob>
 {
-    auto result = std::vector<BuildJob> {};
+    auto result = Vec<BuildJob> {};
     result.reserve(all_jobs.size());
 
     for (auto const& job : all_jobs) {

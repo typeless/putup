@@ -8,11 +8,11 @@
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
 
 #include <functional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::graph {
 struct VarDepTracker;
@@ -40,7 +40,7 @@ public:
     [[nodiscard]]
     auto contains(std::string_view name) const -> bool;
     [[nodiscard]]
-    auto names() const -> std::vector<std::string_view>;
+    auto names() const -> Vec<std::string_view>;
 
     auto clear() -> void;
 
@@ -129,10 +129,10 @@ struct EvalContext {
     String tup_outdir = {};            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
-    std::function<std::vector<std::string>(std::string_view)> resolve_group = {};
+    std::function<Vec<std::string>(std::string_view)> resolve_group = {};
 
     /// Callback for resolving order-only group references like <groupname>
-    std::function<std::vector<std::string>(std::string_view)> resolve_order_only_group = {};
+    std::function<Vec<std::string>(std::string_view)> resolve_order_only_group = {};
 
     /// Callback for requesting a directory's Tupfile to be parsed (for cross-directory deps)
     /// Called when a path references another directory that may have a Tupfile.
@@ -141,7 +141,7 @@ struct EvalContext {
 
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
-    std::vector<std::string> const* available_tupfile_dirs = nullptr;
+    Vec<std::string> const* available_tupfile_dirs = nullptr;
 
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
@@ -193,8 +193,8 @@ struct PatternFlags {
     String input_dir = {};                     ///< %d - input directory
     String glob_match = {};                    ///< %g - portion matched by * in foreach glob
     int input_index = 0;                       ///< For %Nf patterns (1-indexed)
-    std::vector<std::string> all_inputs = {};  ///< All inputs for %Nf expansion
-    std::vector<std::string> all_outputs = {}; ///< All outputs for %No expansion
+    Vec<std::string> all_inputs = {};  ///< All inputs for %Nf expansion
+    Vec<std::string> all_outputs = {}; ///< All outputs for %No expansion
 };
 
 /// Expand an expression, replacing variable references with values
@@ -218,7 +218,7 @@ auto expand_pattern(
 auto expand_path(
     EvalContext& ctx,
     PathPattern const& pattern
-) -> Result<std::vector<std::string>>;
+) -> Result<Vec<std::string>>;
 
 /// Check if a conditional is true
 [[nodiscard]]

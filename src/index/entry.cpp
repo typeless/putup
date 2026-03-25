@@ -63,8 +63,8 @@ auto CommandEntry::from_raw(
     std::string_view instruction_pattern,
     std::string_view display_str,
     std::string_view env_str,
-    std::vector<NodeId> inputs,
-    std::vector<NodeId> outputs,
+    Vec<NodeId> inputs,
+    Vec<NodeId> outputs,
     std::size_t array_index
 ) -> CommandEntry
 {
@@ -155,14 +155,14 @@ auto Index::find_command_by_command(std::string_view cmd) const -> CommandEntry 
 }
 
 auto Index::lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
-    -> std::vector<EdgeEntry const*>
+    -> Vec<EdgeEntry const*>
 {
     auto s = index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = edge_arena_.slice(s);
-    auto result = std::vector<EdgeEntry const*> {};
+    auto result = Vec<EdgeEntry const*> {};
     result.reserve(span.size());
     for (auto idx : span) {
         result.push_back(&edges_[idx]);
@@ -170,12 +170,12 @@ auto Index::lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
     return result;
 }
 
-auto Index::edges_from(NodeId id) const -> std::vector<EdgeEntry const*>
+auto Index::edges_from(NodeId id) const -> Vec<EdgeEntry const*>
 {
     return lookup_edges(edges_from_index_, id);
 }
 
-auto Index::edges_to(NodeId id) const -> std::vector<EdgeEntry const*>
+auto Index::edges_to(NodeId id) const -> Vec<EdgeEntry const*>
 {
     return lookup_edges(edges_to_index_, id);
 }

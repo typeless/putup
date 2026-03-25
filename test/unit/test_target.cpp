@@ -263,7 +263,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
         {
             tmp.create_dir("build-debug/src");
             tmp.create_dir("src/test");
-            auto targets = std::vector<pup::String> { "build-debug/src", "src/test" };
+            auto targets = pup::Vec<pup::String> { "build-debug/src", "src/test" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
@@ -275,7 +275,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
 
         WHEN("parsing ['build-debug', 'src']")
         {
-            auto targets = std::vector<pup::String> { "build-debug", "src" };
+            auto targets = pup::Vec<pup::String> { "build-debug", "src" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
@@ -289,7 +289,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
         {
             tmp.create_dir("build-debug/src");
             tmp.create_dir("build-release/test");
-            auto targets = std::vector<pup::String> { "build-debug/src", "build-release/test" };
+            auto targets = pup::Vec<pup::String> { "build-debug/src", "build-release/test" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: both have explicit variants")
@@ -300,7 +300,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
 
         WHEN("parsing ['src', 'test']")
         {
-            auto targets = std::vector<pup::String> { "src", "test" };
+            auto targets = pup::Vec<pup::String> { "src", "test" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: neither has explicit variant")

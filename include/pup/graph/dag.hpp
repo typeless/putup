@@ -10,6 +10,7 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
 #include <deque>
@@ -17,7 +18,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::graph {
 
@@ -65,8 +65,8 @@ struct CommandNode {
     StringId source_dir = StringId::Empty;     ///< Tupfile directory (relative to root, interned)
     StringId instruction_id = StringId::Empty; ///< Instruction pattern (e.g. "gcc -c %f -o %o")
 
-    std::vector<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion
-    std::vector<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion
+    Vec<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion
+    Vec<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion
 
     SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
 
@@ -77,7 +77,7 @@ struct CommandNode {
 
     // Condition guards - command executes only if ALL guards are satisfied
     // For nested conditionals, this accumulates all enclosing conditions
-    std::vector<Guard> guards = {};
+    Vec<Guard> guards = {};
 };
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
@@ -109,7 +109,7 @@ struct Graph {
     std::deque<CommandNode> commands;     ///< Command nodes only
     std::deque<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
     std::deque<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
-    std::vector<Edge> edges;              ///< Central edge storage (single source of truth)
+    Vec<Edge> edges;              ///< Central edge storage (single source of truth)
 
     Arena32 edge_arena;
     NodeIdArenaIndex edges_to_index;
@@ -118,7 +118,7 @@ struct Graph {
     NodeIdArenaIndex order_only_dependents;
 
     // Node lookup indices
-    std::vector<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
+    Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
     StringPool command_strings;              ///< Interned expanded command strings
     SortedPairVec command_index;             ///< StringId(command) → NodeId
     bool command_index_built = false;
@@ -224,29 +224,29 @@ auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std
 
 /// Get all nodes of a given type
 [[nodiscard]]
-auto nodes_of_type(Graph const& graph, NodeType type) -> std::vector<NodeId>;
+auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>;
 
 /// Get direct dependencies of a node
 [[nodiscard]]
-auto get_inputs(Graph const& graph, NodeId id) -> std::vector<NodeId>;
+auto get_inputs(Graph const& graph, NodeId id) -> Vec<NodeId>;
 
 /// Get direct dependents of a node (excludes sticky edges)
 /// For build-time dependency traversal, use this function.
 [[nodiscard]]
-auto get_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>;
+auto get_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>;
 
 /// Get sticky dependents of a node (Tupfile/config dependencies)
 /// Sticky edges are parse-time dependencies - use for reparse decisions, not rebuilds.
 [[nodiscard]]
-auto get_sticky_outputs(Graph const& graph, NodeId id) -> std::vector<NodeId>;
+auto get_sticky_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>;
 
 /// Get order-only dependencies
 [[nodiscard]]
-auto get_order_only(Graph const& graph, NodeId id) -> std::vector<NodeId>;
+auto get_order_only(Graph const& graph, NodeId id) -> Vec<NodeId>;
 
 /// Get nodes that have this node as an order-only dependency
 [[nodiscard]]
-auto get_order_only_dependents(Graph const& graph, NodeId id) -> std::vector<NodeId>;
+auto get_order_only_dependents(Graph const& graph, NodeId id) -> Vec<NodeId>;
 
 /// Get total number of nodes
 [[nodiscard]]
@@ -265,15 +265,15 @@ auto clear(Graph& graph) -> void;
 
 /// Get all node IDs
 [[nodiscard]]
-auto all_nodes(Graph const& graph) -> std::vector<NodeId>;
+auto all_nodes(Graph const& graph) -> Vec<NodeId>;
 
 /// Get root nodes (nodes with no inputs)
 [[nodiscard]]
-auto root_nodes(Graph const& graph) -> std::vector<NodeId>;
+auto root_nodes(Graph const& graph) -> Vec<NodeId>;
 
 /// Get leaf nodes (nodes with no outputs)
 [[nodiscard]]
-auto leaf_nodes(Graph const& graph) -> std::vector<NodeId>;
+auto leaf_nodes(Graph const& graph) -> Vec<NodeId>;
 
 /// Reconstruct full path from (parent_dir, name) chain
 /// Uses provided cache for efficiency.
@@ -492,43 +492,43 @@ public:
     }
 
     [[nodiscard]]
-    auto nodes_of_type(NodeType type) const -> std::vector<NodeId>
+    auto nodes_of_type(NodeType type) const -> Vec<NodeId>
     {
         return graph::nodes_of_type(graph_, type);
     }
 
     [[nodiscard]]
-    auto get_inputs(NodeId id) const -> std::vector<NodeId>
+    auto get_inputs(NodeId id) const -> Vec<NodeId>
     {
         return graph::get_inputs(graph_, id);
     }
 
     [[nodiscard]]
-    auto get_outputs(NodeId id) const -> std::vector<NodeId>
+    auto get_outputs(NodeId id) const -> Vec<NodeId>
     {
         return graph::get_outputs(graph_, id);
     }
 
     [[nodiscard]]
-    auto get_sticky_outputs(NodeId id) const -> std::vector<NodeId>
+    auto get_sticky_outputs(NodeId id) const -> Vec<NodeId>
     {
         return graph::get_sticky_outputs(graph_, id);
     }
 
     [[nodiscard]]
-    auto get_order_only(NodeId id) const -> std::vector<NodeId>
+    auto get_order_only(NodeId id) const -> Vec<NodeId>
     {
         return graph::get_order_only(graph_, id);
     }
 
     [[nodiscard]]
-    auto get_order_only_dependents(NodeId id) const -> std::vector<NodeId>
+    auto get_order_only_dependents(NodeId id) const -> Vec<NodeId>
     {
         return graph::get_order_only_dependents(graph_, id);
     }
 
     [[nodiscard]]
-    auto edges() const -> std::vector<Edge> const&
+    auto edges() const -> Vec<Edge> const&
     {
         return graph_.edges;
     }
@@ -554,19 +554,19 @@ public:
     auto clear() -> void { graph::clear(graph_); }
 
     [[nodiscard]]
-    auto all_nodes() const -> std::vector<NodeId>
+    auto all_nodes() const -> Vec<NodeId>
     {
         return graph::all_nodes(graph_);
     }
 
     [[nodiscard]]
-    auto root_nodes() const -> std::vector<NodeId>
+    auto root_nodes() const -> Vec<NodeId>
     {
         return graph::root_nodes(graph_);
     }
 
     [[nodiscard]]
-    auto leaf_nodes() const -> std::vector<NodeId>
+    auto leaf_nodes() const -> Vec<NodeId>
     {
         return graph::leaf_nodes(graph_);
     }

@@ -4,11 +4,11 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <cstddef>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace pup::cli {
 
@@ -17,7 +17,7 @@ struct Options {
     std::size_t jobs = 0;
     /// Config variable overrides from -D flags
     /// Key is stripped name (e.g., "CC" not "CONFIG_CC")
-    std::vector<std::pair<String, String>> config_defines = {};
+    Vec<std::pair<String, String>> config_defines = {};
     bool keep_going = false;
     bool verbose = false;
     bool dry_run = false;
@@ -32,9 +32,9 @@ struct Options {
     String show_var_filter = {};
     String source_dir = {};
     String config_dir = {};
-    std::vector<String> build_dirs = {};
-    std::vector<String> targets = {};
-    std::vector<String> output_targets = {};
+    Vec<String> build_dirs = {};
+    Vec<String> targets = {};
+    Vec<String> output_targets = {};
     bool show_json = false;
     String config_file = {}; // path to config file for --config
 };

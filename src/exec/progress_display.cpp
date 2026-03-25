@@ -40,7 +40,14 @@ auto job_started(ProgressState state, NodeId id, String display) -> ProgressStat
 
 auto job_completed(ProgressState state, NodeId id, bool success) -> ProgressState
 {
-    std::erase_if(state.running, [id](auto const& j) { return j.id == id; });
+    auto& r = state.running;
+    for (auto it = r.begin(); it != r.end();) {
+        if (it->id == id) {
+            it = r.erase(it);
+        } else {
+            ++it;
+        }
+    }
     if (success) {
         ++state.completed;
     } else {

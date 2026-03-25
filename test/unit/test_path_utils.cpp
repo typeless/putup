@@ -113,7 +113,7 @@ TEST_CASE("is_path_in_scope with string prefix matching", "[path_utils]")
 
 TEST_CASE("is_path_in_any_scope with multiple scopes", "[path_utils]")
 {
-    auto scopes = std::vector<pup::String> { "lib", "app" };
+    auto scopes = pup::Vec<pup::String> { "lib", "app" };
 
     SECTION("path in first scope")
     {

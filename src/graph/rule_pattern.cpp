@@ -14,9 +14,9 @@ auto RulePatternRegistry::register_pattern(RulePattern pattern) -> void
 }
 
 auto RulePatternRegistry::match_and_generate(CommandInfo const& cmd) const
-    -> std::vector<GeneratedRule>
+    -> Vec<GeneratedRule>
 {
-    auto result = std::vector<GeneratedRule> {};
+    auto result = Vec<GeneratedRule> {};
 
     for (auto const& pattern : patterns_) {
         if (!pattern.matches(cmd.command)) {

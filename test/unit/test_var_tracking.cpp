@@ -10,7 +10,7 @@ using namespace pup::parser;
 
 namespace {
 
-auto find_history(std::vector<VarHistory> const& v, std::string_view name) -> VarHistory const*
+auto find_history(pup::Vec<VarHistory> const& v, std::string_view name) -> VarHistory const*
 {
     auto it = std::lower_bound(v.begin(), v.end(), name,
         [](auto const& h, auto const& n) { return h.name < n; });

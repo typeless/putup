@@ -5,12 +5,12 @@
 
 #include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace pup::graph {
 
@@ -19,9 +19,9 @@ struct CommandInfo {
     NodeId node_id = INVALID_NODE_ID;
     String command;
     String display;
-    std::vector<String> inputs;
-    std::vector<String> order_only_inputs;
-    std::vector<String> outputs;
+    Vec<String> inputs;
+    Vec<String> order_only_inputs;
+    Vec<String> outputs;
     String working_dir;
 };
 
@@ -45,11 +45,11 @@ enum class OutputAction : std::uint8_t {
 
 /// A generated rule (same structure as user-defined rules)
 struct GeneratedRule {
-    std::vector<String> inputs;
-    std::vector<String> order_only_inputs; ///< Order-only deps (e.g., gen-headers)
+    Vec<String> inputs;
+    Vec<String> order_only_inputs; ///< Order-only deps (e.g., gen-headers)
     String command;
     String display;
-    std::vector<GeneratedOutput> outputs;
+    Vec<GeneratedOutput> outputs;
     OutputAction action = OutputAction::Normal;
     NodeId parent_command = INVALID_NODE_ID; ///< For InjectImplicitDeps
 };
@@ -74,7 +74,7 @@ public:
     /// Check if a command matches any pattern and generate rules
     [[nodiscard]]
     auto match_and_generate(CommandInfo const& cmd) const
-        -> std::vector<GeneratedRule>;
+        -> Vec<GeneratedRule>;
 
     /// Check if registry has any patterns
     [[nodiscard]]
@@ -91,7 +91,7 @@ public:
     }
 
 private:
-    std::vector<RulePattern> patterns_;
+    Vec<RulePattern> patterns_;
 };
 
 /// Create the GCC/Clang depfile pattern

@@ -421,7 +421,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 }
 
 auto output_var_text(
-    std::vector<parser::VarHistory> const& histories
+    Vec<parser::VarHistory> const& histories
 ) -> int
 {
     for (auto const& history : histories) {
@@ -442,7 +442,7 @@ auto output_var_text(
 }
 
 auto output_var_json(
-    std::vector<parser::VarHistory> const& histories,
+    Vec<parser::VarHistory> const& histories,
     std::string_view variant_name
 ) -> int
 {

@@ -202,7 +202,7 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
 }
 
 auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
-    -> std::pair<std::vector<NodeId>, std::vector<NodeId>>
+    -> std::pair<Vec<NodeId>, Vec<NodeId>>
 {
     auto const* hdr = index_header(f);
     if (!hdr || cmd_index >= hdr->command_count) {
@@ -239,8 +239,8 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
         return { {}, {} };
     }
 
-    auto inputs = std::vector<NodeId> {};
-    auto outputs = std::vector<NodeId> {};
+    auto inputs = Vec<NodeId> {};
+    auto outputs = Vec<NodeId> {};
     inputs.reserve(in_count);
     outputs.reserve(out_count);
 

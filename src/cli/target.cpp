@@ -119,9 +119,9 @@ auto parse_target(
 auto expand_glob_target(
     std::string_view project_root,
     std::string_view pattern
-) -> std::vector<Target>
+) -> Vec<Target>
 {
-    auto result = std::vector<Target> {};
+    auto result = Vec<Target> {};
 
     if (pattern.empty()) {
         return result;
@@ -190,14 +190,14 @@ auto is_glob_pattern(std::string_view s) -> bool
 
 auto validate_target_consistency(
     std::string_view project_root,
-    std::vector<String> const& targets
-) -> Result<std::vector<Target>>
+    Vec<String> const& targets
+) -> Result<Vec<Target>>
 {
-    auto result = std::vector<Target> {};
+    auto result = Vec<Target> {};
     auto has_variant = std::optional<bool> {};
 
     for (auto const& target_str : targets) {
-        auto parsed_targets = std::vector<Target> {};
+        auto parsed_targets = Vec<Target> {};
 
         if (is_glob_pattern(target_str)) {
             parsed_targets = expand_glob_target(project_root, target_str);

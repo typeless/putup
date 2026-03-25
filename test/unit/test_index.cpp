@@ -158,7 +158,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto restored = CommandEntry::from_raw(
         raw, cmd.instruction_pattern, cmd.display, cmd.env,
-        std::vector<NodeId> { 10 }, std::vector<NodeId> { 20 }, 4
+        pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 20 }, 4
     );
 
     REQUIRE(restored.id == node_id::make_command(5));
@@ -426,8 +426,8 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->instruction_pattern == "g++ -c %f -o %o");
     REQUIRE(cmd->display == "CXX main.cpp");
-    REQUIRE(cmd->inputs == std::vector<NodeId> { 3 });
-    REQUIRE(cmd->outputs == std::vector<NodeId> { 4 });
+    REQUIRE(cmd->inputs == pup::Vec<NodeId> { 3 });
+    REQUIRE(cmd->outputs == pup::Vec<NodeId> { 4 });
 
     // v8: Verify command reconstruction from template + operands
     auto reconstructed = get_command_string(restored, *cmd);
@@ -1140,20 +1140,20 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     auto* cmd1 = restored.find_command_by_id(cmd1_id);
     REQUIRE(cmd1 != nullptr);
     REQUIRE(cmd1->instruction_pattern == "g++ -c %f -o %o");
-    REQUIRE(cmd1->inputs == std::vector<NodeId> { 3 });
-    REQUIRE(cmd1->outputs == std::vector<NodeId> { 5 });
+    REQUIRE(cmd1->inputs == pup::Vec<NodeId> { 3 });
+    REQUIRE(cmd1->outputs == pup::Vec<NodeId> { 5 });
 
     auto* cmd2 = restored.find_command_by_id(cmd2_id);
     REQUIRE(cmd2 != nullptr);
     REQUIRE(cmd2->instruction_pattern == "g++ -c %f -o %o");
-    REQUIRE(cmd2->inputs == std::vector<NodeId> { 4 });
-    REQUIRE(cmd2->outputs == std::vector<NodeId> { 6 });
+    REQUIRE(cmd2->inputs == pup::Vec<NodeId> { 4 });
+    REQUIRE(cmd2->outputs == pup::Vec<NodeId> { 6 });
 
     auto* cmd3 = restored.find_command_by_id(cmd3_id);
     REQUIRE(cmd3 != nullptr);
     REQUIRE(cmd3->instruction_pattern == "g++ %f -o %o");
-    REQUIRE(cmd3->inputs == std::vector<NodeId> { 5, 6 });
-    REQUIRE(cmd3->outputs == std::vector<NodeId> { 7 });
+    REQUIRE(cmd3->inputs == pup::Vec<NodeId> { 5, 6 });
+    REQUIRE(cmd3->outputs == pup::Vec<NodeId> { 7 });
 
     // Verify command reconstruction
     auto cmd1_str = get_command_string(restored, *cmd1);

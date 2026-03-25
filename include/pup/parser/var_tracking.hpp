@@ -5,10 +5,10 @@
 
 #include "ast.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/vec.hpp"
 
 #include <cstdint>
 #include <string_view>
-#include <vector>
 
 namespace pup::parser {
 
@@ -25,19 +25,19 @@ struct VarAssignment {
 };
 
 /// Collected assignment log
-using AssignmentLog = std::vector<VarAssignment>;
+using AssignmentLog = Vec<VarAssignment>;
 
 /// Grouped history for a single variable
 struct VarHistory {
     String name;
-    std::vector<VarAssignment const*> assignments;
+    Vec<VarAssignment const*> assignments;
     String final_value;
 };
 
 /// Group assignments by variable name (returned sorted by name)
 [[nodiscard]]
 auto group_by_name(AssignmentLog const& log)
-    -> std::vector<VarHistory>;
+    -> Vec<VarHistory>;
 
 /// Filter to assignments matching name (exact match)
 [[nodiscard]]

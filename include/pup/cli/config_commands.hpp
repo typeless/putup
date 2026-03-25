@@ -6,10 +6,10 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
 
 #include <string>
-#include <vector>
 
 namespace pup::cli {
 
@@ -28,7 +28,7 @@ struct ConfigCommand {
 auto find_config_commands(
     graph::BuildGraph const& graph,
     std::string_view source_root
-) -> std::vector<ConfigCommand>;
+) -> Vec<ConfigCommand>;
 
 /// Collect all commands that the given commands depend on (transitively).
 auto collect_command_dependencies(

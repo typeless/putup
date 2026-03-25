@@ -93,7 +93,9 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
 
     // Merge environment variables
     auto env = default_options_.env;
-    env.insert(env.end(), options.env.begin(), options.env.end());
+    for (auto const& e : options.env) {
+        env.push_back(e);
+    }
     merged.env = std::move(env);
 
     if (!merged.timeout && default_options_.timeout) {
@@ -103,9 +105,9 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
     return merged;
 }
 
-auto parse_command(std::string_view command) -> std::vector<std::string>
+auto parse_command(std::string_view command) -> Vec<std::string>
 {
-    auto result = std::vector<std::string> {};
+    auto result = Vec<std::string> {};
     auto current = std::string {};
     auto in_single_quote = false;
     auto in_double_quote = false;

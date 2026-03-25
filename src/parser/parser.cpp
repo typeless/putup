@@ -17,8 +17,8 @@ namespace {
 struct RuleBody {
     Expression command;
     std::optional<Expression> display;
-    std::vector<PathPattern> outputs;
-    std::vector<PathPattern> extra_outputs;
+    Vec<PathPattern> outputs;
+    Vec<PathPattern> extra_outputs;
     std::optional<std::string> output_group;
     std::optional<std::string> output_order_only_group;
     std::optional<Expression> output_order_only_group_dir;
@@ -27,8 +27,8 @@ struct RuleBody {
 struct ParserState {
     Lexer lexer;
     ParserOptions options;
-    std::vector<ParseError> errors;
-    std::vector<std::string> included_files;
+    Vec<ParseError> errors;
+    Vec<std::string> included_files;
     int include_depth = 0;
 
     Token current;
@@ -133,9 +133,9 @@ auto skip_to_eol(ParserState& s) -> void
 
 template<typename Predicate>
 auto parse_statement_body(ParserState& s, Predicate is_terminator)
-    -> std::vector<std::unique_ptr<Statement>>
+    -> Vec<std::unique_ptr<Statement>>
 {
-    auto body = std::vector<std::unique_ptr<Statement>> {};
+    auto body = Vec<std::unique_ptr<Statement>> {};
 
     while (!check(s, TokenType::Eof) && !is_terminator(s.current.type)) {
         if (match(s, TokenType::Newline) || match(s, TokenType::Hash)) {

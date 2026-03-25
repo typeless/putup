@@ -38,7 +38,7 @@ auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
 auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
-) -> std::vector<String>
+) -> Vec<String>
 {
     // -A/--all flag forces full project build
     if (opts.all) {
@@ -74,7 +74,7 @@ auto compute_build_scopes(
         return {};
     }
 
-    return std::vector<String> { String { rel } };
+    return Vec<String> { String { rel } };
 }
 
 namespace {
@@ -98,12 +98,12 @@ auto join_path(std::string_view base, std::string_view rel)
     return (rel.empty() || rel == ".") ? String { base } : pup::path::join(base, rel);
 }
 
-auto sorted_contains(std::vector<std::string> const& v, std::string_view key) -> bool
+auto sorted_contains(Vec<std::string> const& v, std::string_view key) -> bool
 {
     return std::binary_search(v.begin(), v.end(), key);
 }
 
-auto sorted_insert(std::vector<std::string>& v, std::string_view key) -> void
+auto sorted_insert(Vec<std::string>& v, std::string_view key) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), key);
     if (pos == v.end() || *pos != key) {
@@ -111,7 +111,7 @@ auto sorted_insert(std::vector<std::string>& v, std::string_view key) -> void
     }
 }
 
-auto sorted_erase(std::vector<std::string>& v, std::string_view key) -> void
+auto sorted_erase(Vec<std::string>& v, std::string_view key) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), key);
     assert(pos != v.end() && *pos == key);
@@ -120,15 +120,15 @@ auto sorted_erase(std::vector<std::string>& v, std::string_view key) -> void
 
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
-    std::vector<std::string> available; // std::string: EvalContext::available_tupfile_dirs API
-    std::vector<std::string> parsed;    // std::string: BuildContext::parsed_dirs() API
-    std::vector<std::string> parsing;
+    Vec<std::string> available;
+    Vec<std::string> parsed;
+    Vec<std::string> parsing;
     // Append-only deques: push_back preserves references to existing elements,
     // which is critical because recursive Tupfile parsing holds VarDb pointers
     // across calls that may insert new entries.
     std::deque<std::pair<String, parser::VarDb>> parsed_configs;
     std::deque<std::pair<String, parser::VarDb>> scoped_configs;
-    std::vector<std::pair<pup::String, pup::String>> const* config_defines = nullptr; // CLI overrides
+    Vec<std::pair<pup::String, pup::String>> const* config_defines = nullptr; // CLI overrides
 };
 
 auto compute_tup_variantdir(
@@ -194,9 +194,9 @@ auto read_file(std::string_view path) -> std::optional<String>
 auto discover_tupfile_dirs(
     String const& root,
     pup::parser::IgnoreList const& ignore = {}
-) -> std::vector<std::string>
+) -> Vec<std::string>
 {
-    auto dirs = std::vector<std::string> {};
+    auto dirs = Vec<std::string> {};
 
     if (pup::platform::exists(pup::path::join(root, "Tupfile"))) {
         dirs.push_back(".");
@@ -223,7 +223,7 @@ auto discover_tupfile_dirs(
 /// Apply CLI config overrides to a VarDb
 auto apply_config_overrides(
     parser::VarDb& config,
-    std::vector<std::pair<pup::String, pup::String>> const* defines
+    Vec<std::pair<pup::String, pup::String>> const* defines
 ) -> void
 {
     if (!defines) {
@@ -279,7 +279,7 @@ auto find_config_for_dir(
     }
 
     // Collect all tup.config paths from root down to target directory
-    auto config_paths = std::vector<String> {};
+    auto config_paths = Vec<String> {};
 
     auto root_config = pup::path::join(output_root, "tup.config");
     if (pup::platform::exists(root_config)) {
@@ -471,7 +471,7 @@ auto try_auto_init(ProjectLayout const& layout) -> void
 
 struct IndexLoadResult {
     std::optional<pup::index::Index> index;
-    std::vector<std::pair<String, String>> cached_env_vars;
+    Vec<std::pair<String, String>> cached_env_vars;
 };
 
 auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
@@ -520,10 +520,10 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
     return result;
 }
 
-auto sort_dirs_by_depth(std::vector<std::string> const& available) -> std::vector<std::string>
+auto sort_dirs_by_depth(Vec<std::string> const& available) -> Vec<std::string>
 {
     auto root_rel = std::string { "." };
-    auto dirs = std::vector<std::string> { available.begin(), available.end() };
+    auto dirs = Vec<std::string> { available };
     std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
         auto is_root_a = (a == root_rel);
         auto is_root_b = (b == root_rel);
@@ -629,7 +629,7 @@ auto BuildContext::vars() const -> parser::VarDb const&
     return impl_->vars;
 }
 
-auto BuildContext::parsed_dirs() const -> std::vector<std::string> const&
+auto BuildContext::parsed_dirs() const -> Vec<std::string> const&
 {
     return impl_->state.parsed;
 }

@@ -26,11 +26,11 @@
 namespace pup::platform {
 
 auto build_env_strings(
-    std::vector<std::string> const& extra_env,
+    Vec<std::string> const& extra_env,
     bool inherit_env
-) -> std::vector<std::string>
+) -> Vec<std::string>
 {
-    auto result = std::vector<std::string> {};
+    auto result = Vec<std::string> {};
 
     if (inherit_env) {
         for (auto** e = environ; *e != nullptr; ++e) {
@@ -127,8 +127,8 @@ auto run_process_with_callback(
             }
         }
 
-        auto env_strings = std::vector<std::string> { build_env_strings(opts.env, opts.inherit_env) };
-        auto env_ptrs = std::vector<char*> {};
+        auto env_strings = build_env_strings(opts.env, opts.inherit_env);
+        auto env_ptrs = Vec<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
         for (auto& s : env_strings) {
             env_ptrs.push_back(s.data());

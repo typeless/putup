@@ -20,8 +20,8 @@ constexpr auto BLACK = std::uint32_t { 2 };
 struct DfsState {
     NodeIdMap32 color;
     NodeIdMap32 parent;
-    std::vector<NodeId> order;
-    std::vector<NodeId> cycle;
+    Vec<NodeId> order;
+    Vec<NodeId> cycle;
     bool has_cycle = false;
 };
 
@@ -98,7 +98,7 @@ auto topological_sort(BuildGraph const& graph) -> TopoSortResult
     };
 }
 
-auto detect_cycles(BuildGraph const& graph) -> std::vector<NodeId>
+auto detect_cycles(BuildGraph const& graph) -> Vec<NodeId>
 {
     auto result = TopoSortResult { topological_sort(graph) };
     return result.cycle;

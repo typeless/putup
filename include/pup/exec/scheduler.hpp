@@ -7,6 +7,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "runner.hpp"
 
 #include <atomic>
@@ -15,7 +16,6 @@
 #include <optional>
 #include <string>
 #include <thread>
-#include <vector>
 
 namespace pup::graph {
 class BuildGraph;
@@ -29,10 +29,10 @@ struct BuildJob {
     String command = {};
     String display = {};
     String working_dir = {};
-    std::vector<String> inputs = {};
-    std::vector<String> outputs = {};
-    std::vector<String> order_only_inputs = {}; ///< Order-only dependencies
-    std::vector<String> exported_vars = {};     ///< Env vars to export to command
+    Vec<String> inputs = {};
+    Vec<String> outputs = {};
+    Vec<String> order_only_inputs = {}; ///< Order-only dependencies
+    Vec<String> exported_vars = {};     ///< Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             ///< Capture stdout for depfile parsing
@@ -50,7 +50,7 @@ struct JobResult {
     int exit_code = 0;
     String output = {};
     std::chrono::milliseconds duration = {};
-    std::vector<String> discovered_deps = {};  ///< Implicit deps from .d files
+    Vec<String> discovered_deps = {};  ///< Implicit deps from .d files
     NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
 };
 
@@ -101,7 +101,7 @@ public:
     [[nodiscard]]
     auto build_incremental(
         graph::BuildGraph const& graph,
-        std::vector<std::string> const& changed_files
+        Vec<std::string> const& changed_files
     ) -> Result<BuildStats>;
 
     /// Build only a specific subset of commands
@@ -116,7 +116,7 @@ public:
     [[nodiscard]]
     auto build_targets(
         graph::BuildGraph const& graph,
-        std::vector<NodeId> const& target_ids
+        Vec<NodeId> const& target_ids
     ) -> Result<BuildStats>;
 
     /// Set callback for job start
@@ -146,7 +146,7 @@ private:
 
     /// Execute jobs in parallel (or dispatch to sequential for jobs == 1)
     auto execute_parallel(
-        std::vector<BuildJob> const& jobs,
+        Vec<BuildJob> const& jobs,
         graph::BuildGraph const& graph
     ) -> Result<void>;
 
@@ -154,14 +154,14 @@ private:
     [[nodiscard]]
     auto build_job_list(
         graph::BuildGraph const& graph
-    ) -> Result<std::vector<BuildJob>>;
+    ) -> Result<Vec<BuildJob>>;
 
     /// Determine which jobs need to run based on changes
     [[nodiscard]]
     auto filter_jobs(
-        std::vector<BuildJob> const& all_jobs,
+        Vec<BuildJob> const& all_jobs,
         NodeIdMap32 const& affected_nodes
-    ) -> std::vector<BuildJob>;
+    ) -> Vec<BuildJob>;
 };
 
 /// Detect number of available CPUs
