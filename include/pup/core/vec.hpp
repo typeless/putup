@@ -151,24 +151,84 @@ public:
         size_ = 0;
     }
 
-    [[nodiscard]] auto data() -> T* { return data_; }
-    [[nodiscard]] auto data() const -> T const* { return data_; }
-    [[nodiscard]] auto size() const -> std::size_t { return size_; }
-    [[nodiscard]] auto empty() const -> bool { return size_ == 0; }
-    [[nodiscard]] auto capacity() const -> std::size_t { return capacity_; }
+    [[nodiscard]]
+    auto data() -> T*
+    {
+        return data_;
+    }
+    [[nodiscard]]
+    auto data() const -> T const*
+    {
+        return data_;
+    }
+    [[nodiscard]]
+    auto size() const -> std::size_t
+    {
+        return size_;
+    }
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return size_ == 0;
+    }
+    [[nodiscard]]
+    auto capacity() const -> std::size_t
+    {
+        return capacity_;
+    }
 
-    [[nodiscard]] auto operator[](std::size_t i) -> T& { return data_[i]; }
-    [[nodiscard]] auto operator[](std::size_t i) const -> T const& { return data_[i]; }
+    [[nodiscard]]
+    auto operator[](std::size_t i) -> T&
+    {
+        return data_[i];
+    }
+    [[nodiscard]]
+    auto operator[](std::size_t i) const -> T const&
+    {
+        return data_[i];
+    }
 
-    [[nodiscard]] auto front() -> T& { return data_[0]; }
-    [[nodiscard]] auto front() const -> T const& { return data_[0]; }
-    [[nodiscard]] auto back() -> T& { return data_[size_ - 1]; }
-    [[nodiscard]] auto back() const -> T const& { return data_[size_ - 1]; }
+    [[nodiscard]]
+    auto front() -> T&
+    {
+        return data_[0];
+    }
+    [[nodiscard]]
+    auto front() const -> T const&
+    {
+        return data_[0];
+    }
+    [[nodiscard]]
+    auto back() -> T&
+    {
+        return data_[size_ - 1];
+    }
+    [[nodiscard]]
+    auto back() const -> T const&
+    {
+        return data_[size_ - 1];
+    }
 
-    [[nodiscard]] auto begin() -> T* { return data_; }
-    [[nodiscard]] auto end() -> T* { return data_ + size_; }
-    [[nodiscard]] auto begin() const -> T const* { return data_; }
-    [[nodiscard]] auto end() const -> T const* { return data_ + size_; }
+    [[nodiscard]]
+    auto begin() -> T*
+    {
+        return data_;
+    }
+    [[nodiscard]]
+    auto end() -> T*
+    {
+        return data_ + size_;
+    }
+    [[nodiscard]]
+    auto begin() const -> T const*
+    {
+        return data_;
+    }
+    [[nodiscard]]
+    auto end() const -> T const*
+    {
+        return data_ + size_;
+    }
 
 private:
     T* data_ = nullptr;
@@ -292,7 +352,6 @@ private:
             }
         }
     }
-
 };
 
 } // namespace pup
