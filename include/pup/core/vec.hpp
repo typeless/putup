@@ -114,8 +114,15 @@ public:
     auto erase(T const* pos) -> T*
     {
         auto idx = static_cast<std::size_t>(pos - data_);
-        destroy_at(data_ + idx);
-        shift_left(data_ + idx, size_ - idx - 1);
+        auto tail = size_ - idx - 1;
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memmove(data_ + idx, data_ + idx + 1, tail * sizeof(T));
+        } else {
+            for (std::size_t i = 0; i < tail; ++i) {
+                data_[idx + i] = std::move(data_[idx + i + 1]);
+            }
+            data_[size_ - 1].~T();
+        }
         --size_;
         return data_ + idx;
     }
@@ -173,7 +180,11 @@ private:
         if (n == 0) {
             return nullptr;
         }
-        return static_cast<T*>(std::malloc(n * sizeof(T)));
+        auto* p = static_cast<T*>(std::malloc(n * sizeof(T)));
+        if (!p) {
+            std::abort();
+        }
+        return p;
     }
 
     auto ensure_capacity(std::size_t needed) -> void
@@ -191,7 +202,11 @@ private:
     auto grow_to(std::size_t new_cap) -> void
     {
         if constexpr (std::is_trivially_copyable_v<T>) {
-            data_ = static_cast<T*>(std::realloc(data_, new_cap * sizeof(T)));
+            auto* p = static_cast<T*>(std::realloc(data_, new_cap * sizeof(T)));
+            if (!p) {
+                std::abort();
+            }
+            data_ = p;
         } else {
             auto* new_data = alloc(new_cap);
             for (std::size_t i = 0; i < size_; ++i) {
@@ -216,7 +231,7 @@ private:
     static auto construct_at(T* p, T&& value) -> void
     {
         if constexpr (std::is_trivially_copyable_v<T>) {
-            *p = value;
+            *p = std::move(value);
         } else {
             new (p) T(std::move(value));
         }
@@ -240,6 +255,9 @@ private:
 
     static auto copy_range(T* dst, T const* src, std::size_t n) -> void
     {
+        if (n == 0) {
+            return;
+        }
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(dst, src, n * sizeof(T));
         } else {
@@ -251,6 +269,9 @@ private:
 
     static auto default_construct_range(T* p, std::size_t n) -> void
     {
+        if (n == 0) {
+            return;
+        }
         if constexpr (std::is_trivially_constructible_v<T>) {
             std::memset(p, 0, n * sizeof(T));
         } else {
@@ -272,17 +293,6 @@ private:
         }
     }
 
-    static auto shift_left(T* p, std::size_t n) -> void
-    {
-        if constexpr (std::is_trivially_copyable_v<T>) {
-            std::memmove(p, p + 1, n * sizeof(T));
-        } else {
-            for (std::size_t i = 0; i < n; ++i) {
-                p[i] = std::move(p[i + 1]);
-            }
-            p[n].~T();
-        }
-    }
 };
 
 } // namespace pup

@@ -223,6 +223,74 @@ TEST_CASE("Vec erase", "[vec]")
     REQUIRE(v[1] == 3);
 }
 
+TEST_CASE("Vec<String> insert", "[vec]")
+{
+    auto v = Vec<String> {};
+    v.push_back(String { "a" });
+    v.push_back(String { "c" });
+    v.insert(v.begin() + 1, String { "b" });
+    REQUIRE(v.size() == 3);
+    REQUIRE(v[0] == "a");
+    REQUIRE(v[1] == "b");
+    REQUIRE(v[2] == "c");
+}
+
+TEST_CASE("Vec<String> erase", "[vec]")
+{
+    auto v = Vec<String> {};
+    v.push_back(String { "a" });
+    v.push_back(String { "b" });
+    v.push_back(String { "c" });
+    v.erase(v.begin() + 1);
+    REQUIRE(v.size() == 2);
+    REQUIRE(v[0] == "a");
+    REQUIRE(v[1] == "c");
+}
+
+TEST_CASE("Vec copy assignment", "[vec]")
+{
+    auto a = Vec<String> {};
+    a.push_back(String { "old" });
+
+    auto b = Vec<String> {};
+    b.push_back(String { "one" });
+    b.push_back(String { "two" });
+
+    a = b;
+    REQUIRE(a.size() == 2);
+    REQUIRE(a[0] == "one");
+    REQUIRE(b[0] == "one"); // b unchanged
+}
+
+TEST_CASE("Vec move assignment", "[vec]")
+{
+    auto a = Vec<String> {};
+    a.push_back(String { "old" });
+
+    auto b = Vec<String> {};
+    b.push_back(String { "new" });
+
+    a = std::move(b);
+    REQUIRE(a[0] == "new");
+    REQUIRE(b.empty());
+}
+
+TEST_CASE("Vec self-copy assignment", "[vec]")
+{
+    auto v = Vec<std::uint32_t> {};
+    v.push_back(42);
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wself-assign-overloaded"
+#endif
+    v = v;
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+    REQUIRE(v.size() == 1);
+    REQUIRE(v[0] == 42);
+}
+
 // =============================================================================
 // emplace_back
 // =============================================================================
