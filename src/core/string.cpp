@@ -4,10 +4,35 @@
 #include "pup/core/string.hpp"
 
 #include <cassert>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 namespace pup {
+
+namespace {
+
+auto alloc_or_die(std::size_t n) -> void*
+{
+    auto* p = std::malloc(n);
+    if (!p) {
+        std::fputs("pup::String: allocation failed\n", stderr);
+        std::abort();
+    }
+    return p;
+}
+
+auto realloc_or_die(void* ptr, std::size_t n) -> void*
+{
+    auto* p = std::realloc(ptr, n);
+    if (!p) {
+        std::fputs("pup::String: reallocation failed\n", stderr);
+        std::abort();
+    }
+    return p;
+}
+
+} // namespace
 
 // =============================================================================
 // SSO helpers
@@ -57,7 +82,7 @@ String::String(std::string_view sv)
     } else {
         assert(sv.size() <= UINT32_MAX && "pup::String: capacity limited to 4GB");
         auto cap = sv.size() + 1;
-        heap_.ptr = static_cast<char*>(std::malloc(cap));
+        heap_.ptr = static_cast<char*>(alloc_or_die(cap));
         std::memcpy(heap_.ptr, sv.data(), sv.size());
         heap_.ptr[sv.size()] = '\0';
         heap_.len = static_cast<std::uint32_t>(sv.size());
@@ -81,7 +106,7 @@ String::String(String const& other)
 {
     if (other.is_heap()) {
         auto cap = other.heap_.len + 1;
-        heap_.ptr = static_cast<char*>(std::malloc(cap));
+        heap_.ptr = static_cast<char*>(alloc_or_die(cap));
         std::memcpy(heap_.ptr, other.heap_.ptr, other.heap_.len + 1);
         heap_.len = other.heap_.len;
         heap_.cap = static_cast<std::uint32_t>(cap);
@@ -99,7 +124,7 @@ auto String::operator=(String const& other) -> String&
         }
         if (other.is_heap()) {
             auto cap = other.heap_.len + 1;
-            heap_.ptr = static_cast<char*>(std::malloc(cap));
+            heap_.ptr = static_cast<char*>(alloc_or_die(cap));
             std::memcpy(heap_.ptr, other.heap_.ptr, other.heap_.len + 1);
             heap_.len = other.heap_.len;
             heap_.cap = static_cast<std::uint32_t>(cap);
@@ -179,7 +204,7 @@ auto String::grow(std::size_t needed) -> void
     assert(needed <= UINT32_MAX && "pup::String: capacity limited to 4GB");
 
     if (is_heap()) {
-        if (needed < heap_.cap) {
+        if (needed <= heap_.cap) {
             return;
         }
         // Use size_t for growth arithmetic to avoid uint32_t overflow
@@ -190,7 +215,7 @@ auto String::grow(std::size_t needed) -> void
         if (new_cap > UINT32_MAX) {
             new_cap = UINT32_MAX;
         }
-        heap_.ptr = static_cast<char*>(std::realloc(heap_.ptr, new_cap));
+        heap_.ptr = static_cast<char*>(realloc_or_die(heap_.ptr, new_cap));
         heap_.cap = static_cast<std::uint32_t>(new_cap);
     } else {
         // SSO → heap transition
@@ -199,7 +224,7 @@ auto String::grow(std::size_t needed) -> void
         if (new_cap > UINT32_MAX) {
             new_cap = UINT32_MAX;
         }
-        auto* buf = static_cast<char*>(std::malloc(new_cap));
+        auto* buf = static_cast<char*>(alloc_or_die(new_cap));
         std::memcpy(buf, sso_.buf, old_len + 1);
         heap_.ptr = buf;
         heap_.len = static_cast<std::uint32_t>(old_len);
