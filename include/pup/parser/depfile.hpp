@@ -6,7 +6,6 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
 
-#include <string>
 #include <string_view>
 #include <vector>
 

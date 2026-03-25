@@ -7,7 +7,6 @@
 #include "pup/core/string.hpp"
 
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace pup {
