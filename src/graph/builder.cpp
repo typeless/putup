@@ -2588,14 +2588,14 @@ auto resolve_deferred_order_only_edges(
             .canonical_cwd = std::move(canonical_cwd),
         };
 
-        auto replacement = std::string {};
+        auto replacement = String {};
         for (auto id : members) {
             auto p = graph.get_full_path(id);
             if (!p.empty()) {
                 if (!replacement.empty()) {
                     replacement += ' ';
                 }
-                replacement += std::string(transform_output_path(tc, p));
+                replacement += transform_output_path(tc, p);
             }
         }
 

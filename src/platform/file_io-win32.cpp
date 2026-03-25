@@ -328,7 +328,7 @@ auto create_directories(std::string_view path) -> Result<void>
     if (!CreateDirectoryW(wpath.c_str(), nullptr)) {
         auto err = GetLastError();
         if (err != ERROR_ALREADY_EXISTS) {
-            return make_error<void>(ErrorCode::IoError, "Failed to create directory: " + std::string { path });
+            return make_error<void>(ErrorCode::IoError, "Failed to create directory: " + String { path });
         }
     }
     return {};
@@ -343,11 +343,11 @@ auto remove_file(std::string_view path) -> Result<void>
     }
     if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
         if (!RemoveDirectoryW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + std::string { path });
+            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + String { path });
         }
     } else {
         if (!DeleteFileW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + std::string { path });
+            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + String { path });
         }
     }
     return {};
@@ -362,7 +362,7 @@ auto remove_all(std::string_view path) -> Result<void>
     }
     if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
         if (!DeleteFileW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + std::string { path });
+            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + String { path });
         }
         return {};
     }
@@ -377,7 +377,7 @@ auto remove_all(std::string_view path) -> Result<void>
         }
     }
     if (!RemoveDirectoryW(wpath.c_str())) {
-        return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + String { path });
     }
     return {};
 }
@@ -387,7 +387,7 @@ auto rename_path(std::string_view from, std::string_view to) -> Result<void>
     auto wfrom = to_wide(from);
     auto wto = to_wide(to);
     if (!MoveFileExW(wfrom.c_str(), wto.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + std::string { from } + " -> " + std::string { to });
+        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + String { from } + " -> " + String { to });
     }
     return {};
 }
@@ -397,7 +397,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     auto wfrom = to_wide(from);
     auto wto = to_wide(to);
     if (!CopyFileW(wfrom.c_str(), wto.c_str(), FALSE)) {
-        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + std::string { from } + " -> " + std::string { to });
+        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + String { from } + " -> " + String { to });
     }
     return {};
 }
@@ -458,7 +458,7 @@ auto canonical(std::string_view path) -> Result<String>
     // Fallback for non-existent paths: lexical resolution only
     auto len = GetFullPathNameW(wpath.c_str(), 0, nullptr, nullptr);
     if (len == 0) {
-        return make_error<String>(ErrorCode::IoError, "Failed to resolve path: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to resolve path: " + String { path });
     }
     auto buf = std::wstring(len, L'\0');
     GetFullPathNameW(wpath.c_str(), len, buf.data(), nullptr);
@@ -490,12 +490,12 @@ auto read_symlink(std::string_view path) -> Result<String>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + String { path });
     }
     auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
     if (len == 0) {
         CloseHandle(h);
-        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + String { path });
     }
     auto buf = std::wstring(len, L'\0');
     GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
@@ -525,12 +525,12 @@ auto read_file(std::string_view path) -> Result<String>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<String>(ErrorCode::IoError, "Failed to open file: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to open file: " + String { path });
     }
     auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(h, &file_size)) {
         CloseHandle(h);
-        return make_error<String>(ErrorCode::IoError, "Failed to get file size: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to get file size: " + String { path });
     }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
     auto content = std::string(size, '\0');
@@ -568,13 +568,13 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + String { path });
     }
     auto bytes_written = DWORD {};
     auto ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
     CloseHandle(h);
     if (!ok || bytes_written != data.size()) {
-        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + String { path });
     }
     return {};
 }

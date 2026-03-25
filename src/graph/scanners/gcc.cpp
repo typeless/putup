@@ -73,13 +73,13 @@ auto needs_shell_quoting(std::string_view s) -> bool
 }
 
 /// Quote a string for shell using single quotes (handles embedded single quotes)
-auto shell_quote(std::string_view s) -> std::string
+auto shell_quote(std::string_view s) -> String
 {
     if (!needs_shell_quoting(s)) {
-        return std::string { s };
+        return String { s };
     }
 
-    auto result = std::string { "'" };
+    auto result = String { "'" };
     for (auto c : s) {
         if (c == '\'') {
             result += "'\\''";
@@ -94,9 +94,9 @@ auto shell_quote(std::string_view s) -> std::string
 /// Normalize a path lexically by removing foo/../ segments.
 /// Unlike std::filesystem::lexically_normal(), works without filesystem access.
 /// Needed because DEP commands run before output directories exist.
-auto normalize_path_lexically(std::string_view path) -> std::string
+auto normalize_path_lexically(std::string_view path) -> String
 {
-    auto parts = std::vector<std::string> {};
+    auto parts = Vec<String> {};
     auto start = std::size_t { 0 };
     auto is_absolute = !path.empty() && path[0] == '/';
 
@@ -110,19 +110,19 @@ auto normalize_path_lexically(std::string_view path) -> std::string
             if (part == ".." && !parts.empty() && parts.back() != "..") {
                 parts.pop_back();
             } else {
-                parts.push_back(std::string { part });
+                parts.push_back(String { part });
             }
         }
         start = end + 1;
     }
 
     if (parts.empty()) {
-        return is_absolute ? "/" : ".";
+        return String { is_absolute ? "/" : "." };
     }
 
-    auto result = std::string {};
+    auto result = String {};
     if (is_absolute) {
-        result = "/";
+        result = String { "/" };
     }
     for (auto const& part : parts) {
         if (!result.empty() && result.back() != '/') {
@@ -134,17 +134,17 @@ auto normalize_path_lexically(std::string_view path) -> std::string
 }
 
 /// Normalize paths embedded in compiler flags
-auto normalize_flag_path(std::string_view flag) -> std::string
+auto normalize_flag_path(std::string_view flag) -> String
 {
     for (auto const* prefix : { "-I", "-isystem", "-iquote", "-include", "--sysroot=", "-isysroot" }) {
         if (flag.starts_with(prefix)) {
             auto path = flag.substr(std::strlen(prefix));
             if (!path.empty()) {
-                return std::string { prefix } + normalize_path_lexically(path);
+                return String { prefix } + normalize_path_lexically(path);
             }
         }
     }
-    return std::string { flag };
+    return String { flag };
 }
 
 /// Check if a flag is relevant for dependency generation
@@ -276,7 +276,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         return std::nullopt;
     }
 
-    auto dep_cmd = std::string {};
+    auto dep_cmd = String {};
 
     for (auto i = std::size_t { 0 }; i <= compiler_idx; ++i) {
         if (i > 0) {
@@ -288,7 +288,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     dep_cmd += " -M";
 
     auto skip_next = false;
-    auto source_files = std::vector<String> {};
+    auto source_files = Vec<String> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
             dep_cmd += ' ';

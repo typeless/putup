@@ -35,7 +35,7 @@ auto env_cache_find(EnvCache const& cache, std::string_view key) -> EnvCache::co
 auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
 {
     // Collect unique var names
-    auto names = std::vector<String> {};
+    auto names = Vec<String> {};
     for (auto const& job : jobs) {
         for (auto const& var_name : job.exported_vars) {
             names.push_back(var_name);
@@ -63,18 +63,18 @@ auto resolve_variant_path(
     std::string_view output_root,
     std::string_view output_root_prefix,
     std::string_view path
-) -> std::string
+) -> String
 {
     if (!output_root_prefix.empty() && path.starts_with(output_root_prefix)
         && (path.size() == output_root_prefix.size() || path[output_root_prefix.size()] == '/')) {
-        return std::string(pup::path::join(source_root, path));
+        return pup::path::join(source_root, path);
     }
-    return std::string(pup::path::join(output_root, path));
+    return pup::path::join(output_root, path);
 }
 
 /// Add job dependencies for any command that produces the given node.
 /// For phi-nodes (multiple producers), only add active producers when consumer is active.
-auto sorted_insert_unique(std::vector<std::size_t>& v, std::size_t val) -> void
+auto sorted_insert_unique(Vec<std::size_t>& v, std::size_t val) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), val);
     if (pos == v.end() || *pos != val) {
@@ -88,7 +88,7 @@ auto add_producer_dependencies(
     Vec<BuildJob> const& jobs,
     NodeId node_id,
     std::size_t current_job,
-    std::vector<std::size_t>& dependencies
+    Vec<std::size_t>& dependencies
 ) -> void
 {
     auto current_active = jobs[current_job].guard_active;
@@ -113,10 +113,12 @@ auto add_producer_dependencies(
 auto build_dependency_map(
     Vec<BuildJob> const& jobs,
     graph::BuildGraph const& graph
-) -> std::pair<std::vector<std::size_t>, std::vector<std::vector<std::size_t>>>
+) -> std::pair<Vec<std::size_t>, Vec<Vec<std::size_t>>>
 {
-    auto in_degree = std::vector<std::size_t>(jobs.size(), 0);
-    auto dependents = std::vector<std::vector<std::size_t>>(jobs.size());
+    auto in_degree = Vec<std::size_t> {};
+    in_degree.resize(jobs.size());
+    auto dependents = Vec<Vec<std::size_t>> {};
+    dependents.resize(jobs.size());
 
     // Build map from command NodeId -> job index
     auto cmd_to_job = NodeIdMap32 {};
@@ -126,7 +128,7 @@ auto build_dependency_map(
 
     // For each job, find dependencies via input edges
     for (auto j = std::size_t { 0 }; j < jobs.size(); ++j) {
-        auto dependencies = std::vector<std::size_t> {};
+        auto dependencies = Vec<std::size_t> {};
         auto cmd_id = jobs[j].id;
 
         auto current_active = jobs[j].guard_active;
@@ -181,7 +183,7 @@ auto build_dependency_map(
 /// Returns error if an active job would fail due to missing inputs from skipped jobs.
 auto validate_guard_dependencies(
     Vec<BuildJob> const& jobs,
-    std::vector<std::vector<std::size_t>> const& dependents
+    Vec<Vec<std::size_t>> const& dependents
 ) -> Result<void>
 {
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
@@ -210,7 +212,10 @@ auto collect_required_commands(
 {
     auto visited = NodeIdMap32 {};
     auto commands = NodeIdMap32 {};
-    auto stack = std::vector<NodeId> { target_ids.begin(), target_ids.end() };
+    auto stack = Vec<NodeId> {};
+    for (auto id : target_ids) {
+        stack.push_back(id);
+    }
 
     while (!stack.empty()) {
         auto id = stack.back();
@@ -362,7 +367,7 @@ auto Scheduler::build_incremental(
 
     // Find all nodes affected by changes
     auto affected = NodeIdMap32 {};
-    auto affected_vec = std::vector<NodeId> {};
+    auto affected_vec = Vec<NodeId> {};
 
     for (auto const& file_path : changed_files) {
         auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
@@ -389,7 +394,7 @@ auto Scheduler::build_incremental(
     // Expand to include all dependent commands (including order-only)
     // get_outputs() excludes sticky edges by design (Tupfile/config dependencies
     // are parse-time deps, not build-time deps)
-    auto to_process = std::vector<NodeId>(affected_vec.begin(), affected_vec.end());
+    auto to_process = Vec<NodeId> { affected_vec };
 
     while (!to_process.empty()) {
         auto id = NodeId { to_process.back() };
@@ -633,7 +638,7 @@ auto Scheduler::execute_parallel(
     };
 
     // Start worker threads
-    auto threads = std::vector<std::thread> {};
+    auto threads = Vec<std::thread> {};
     auto num_workers = std::min(impl_->options.jobs, jobs.size());
     threads.reserve(num_workers);
 
@@ -704,7 +709,7 @@ auto Scheduler::Impl::execute_job(
     for (auto const& output : job.outputs) {
         auto output_path = pup::path::is_absolute(output)
             ? String { output }
-            : String { resolve_variant_path(source_root, options.output_root, output_root_prefix, output) };
+            : resolve_variant_path(source_root, options.output_root, output_root_prefix, output);
         auto parent = pup::path::parent(output_path);
         if (!parent.empty()) {
             (void)pup::platform::create_directories(parent);

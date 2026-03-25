@@ -281,9 +281,7 @@ auto glob_expand_all(
     }
 
     if (!result.exclusions.empty()) {
-        auto excl_sorted = std::vector<std::string> {
-            result.exclusions.begin(), result.exclusions.end()
-        };
+        auto excl_sorted = Vec<std::string> { result.exclusions };
         std::sort(excl_sorted.begin(), excl_sorted.end());
         auto& m = result.matches;
         for (auto it = m.begin(); it != m.end();) {

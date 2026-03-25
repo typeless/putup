@@ -54,7 +54,7 @@ auto collect_command_dependencies(
 ) -> NodeIdMap32
 {
     auto result = NodeIdMap32 {};
-    auto worklist = std::vector<NodeId> {};
+    auto worklist = Vec<NodeId> {};
 
     auto try_add = [&](NodeId id) {
         if (!result.contains(id)) {

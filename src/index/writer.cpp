@@ -29,7 +29,7 @@ public:
     auto add(std::string_view str) -> Result<std::uint32_t>;
 
     [[nodiscard]]
-    auto data() const -> std::vector<char> const&
+    auto data() const -> Vec<char> const&
     {
         return data_;
     }
@@ -41,7 +41,7 @@ public:
     }
 
 private:
-    std::vector<char> data_ = {};
+    Vec<char> data_ = {};
     StringPool pool_ = {};
     SortedPairVec offsets_ = {};
 };
@@ -149,7 +149,7 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     auto strings = StringTable {};
 
     // Build file entries and collect strings
-    auto file_entries = std::vector<RawFileEntry> {};
+    auto file_entries = Vec<RawFileEntry> {};
     file_entries.reserve(index.files().size());
 
     for (auto const& file : index.files()) {
@@ -162,7 +162,7 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
 
     // Build command entries and collect strings
     // v8: Use instruction_pattern instead of fully-expanded command
-    auto command_entries = std::vector<RawCommandEntry> {};
+    auto command_entries = Vec<RawCommandEntry> {};
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
@@ -182,8 +182,8 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     }
 
     // v8: Build operand offset table and operand data
-    auto operand_table = std::vector<std::uint32_t> {};
-    auto operand_data = std::vector<std::byte> {};
+    auto operand_table = Vec<std::uint32_t> {};
+    auto operand_data = Vec<std::byte> {};
     operand_table.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
@@ -217,7 +217,7 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     }
 
     // Build edge entries
-    auto edge_entries = std::vector<RawEdge> {};
+    auto edge_entries = Vec<RawEdge> {};
     edge_entries.reserve(index.edges().size());
 
     for (auto const& edge : index.edges()) {

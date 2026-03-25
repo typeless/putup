@@ -279,7 +279,7 @@ auto create_directories(std::string_view path) -> Result<void>
         return {};
     }
     if (!mkdir_recursive(String { path })) {
-        return make_error<void>(ErrorCode::IoError, "Failed to create directories: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to create directories: " + String { path });
     }
     return {};
 }
@@ -291,15 +291,15 @@ auto remove_file(std::string_view path) -> Result<void>
         if (errno == ENOENT) {
             return {};
         }
-        return make_error<void>(ErrorCode::IoError, "Failed to stat: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to stat: " + String { path });
     }
     if (S_ISDIR(st.st_mode)) {
         if (::rmdir(path.data()) != 0) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + std::string { path });
+            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + String { path });
         }
     } else {
         if (::unlink(path.data()) != 0) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + std::string { path });
+            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + String { path });
         }
     }
     return {};
@@ -347,7 +347,7 @@ auto remove_all_recursive(String const& path) -> bool
 auto remove_all(std::string_view path) -> Result<void>
 {
     if (!remove_all_recursive(String { path })) {
-        return make_error<void>(ErrorCode::IoError, "Failed to remove: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to remove: " + String { path });
     }
     return {};
 }
@@ -355,7 +355,7 @@ auto remove_all(std::string_view path) -> Result<void>
 auto rename_path(std::string_view from, std::string_view to) -> Result<void>
 {
     if (::rename(from.data(), to.data()) != 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + std::string { from } + " -> " + std::string { to });
+        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + String { from } + " -> " + String { to });
     }
     return {};
 }
@@ -365,7 +365,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     auto src_fd = ::open(from.data(), O_RDONLY);
     if (src_fd < 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to open source: " + std::string { from });
+        return make_error<void>(ErrorCode::IoError, "Failed to open source: " + String { from });
     }
 
     struct stat st { };
@@ -375,7 +375,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     auto dst_fd = ::open(to.data(), O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
     if (dst_fd < 0) {
         ::close(src_fd);
-        return make_error<void>(ErrorCode::IoError, "Failed to create destination: " + std::string { to });
+        return make_error<void>(ErrorCode::IoError, "Failed to create destination: " + String { to });
     }
 
     char buf[8192];
@@ -403,7 +403,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
 
     if (!ok) {
         ::unlink(to.data());
-        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + std::string { from } + " -> " + std::string { to });
+        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + String { from } + " -> " + String { to });
     }
     return {};
 }
@@ -473,7 +473,7 @@ auto read_symlink(std::string_view path) -> Result<String>
     char buf[4096];
     auto n = ::readlink(path.data(), buf, sizeof(buf) - 1);
     if (n < 0) {
-        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + String { path });
     }
     buf[n] = '\0';
     return String { buf };
@@ -486,7 +486,7 @@ auto read_file(std::string_view path) -> Result<String>
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     auto fd = ::open(path.data(), O_RDONLY);
     if (fd < 0) {
-        return make_error<String>(ErrorCode::IoError, "Failed to open file: " + std::string { path });
+        return make_error<String>(ErrorCode::IoError, "Failed to open file: " + String { path });
     }
 
     struct stat st { };
@@ -527,14 +527,14 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     auto fd = ::open(path.data(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + String { path });
     }
 
     auto n = ::write(fd, data.data(), data.size());
     ::close(fd);
 
     if (n != static_cast<ssize_t>(data.size())) {
-        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + std::string { path });
+        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + String { path });
     }
     return {};
 }
@@ -545,7 +545,7 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
 {
     auto* dir = ::opendir(path.data());
     if (!dir) {
-        return make_error<Vec<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + std::string { path });
+        return make_error<Vec<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + String { path });
     }
 
     auto entries = Vec<DirEntry> {};
