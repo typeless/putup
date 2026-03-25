@@ -581,15 +581,15 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 // Directory traversal
 
-auto read_directory(std::string_view path) -> Result<std::vector<DirEntry>>
+auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
 {
     auto wpath = to_wide(path) + L"\\*";
     auto fd = WIN32_FIND_DATAW {};
     auto h = FindFirstFileW(wpath.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<std::vector<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + std::string { path });
+        return make_error<Vec<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + String { path });
     }
-    auto entries = std::vector<DirEntry> {};
+    auto entries = Vec<DirEntry> {};
     do {
         if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) {
             continue;

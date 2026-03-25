@@ -8,11 +8,11 @@
 namespace pup::platform {
 
 auto build_env_strings(
-    std::vector<std::string> const& extra_env,
+    Vec<std::string> const& extra_env,
     bool inherit_env
-) -> std::vector<std::string>
+) -> Vec<std::string>
 {
-    auto result = std::vector<std::string> {};
+    auto result = Vec<std::string> {};
 
     if (inherit_env) {
         // Get current environment block
@@ -43,7 +43,7 @@ auto build_env_strings(
 
 namespace {
 
-auto create_env_block(std::vector<std::string> const& env) -> std::wstring
+auto create_env_block(Vec<std::string> const& env) -> std::wstring
 {
     auto block = std::wstring {};
     for (auto const& var : env) {
