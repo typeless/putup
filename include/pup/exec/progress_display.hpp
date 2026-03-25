@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
 
 #include <chrono>
@@ -16,7 +17,7 @@ namespace pup::exec {
 /// Single running job with timing
 struct RunningJob {
     NodeId id = 0;
-    std::string display = {};
+    String display = {};
     std::chrono::steady_clock::time_point start_time = {};
 };
 
@@ -40,7 +41,7 @@ struct ProgressOutput {
 
 /// Add a job to the running set
 [[nodiscard]]
-auto job_started(ProgressState state, NodeId id, std::string display) -> ProgressState;
+auto job_started(ProgressState state, NodeId id, String display) -> ProgressState;
 
 /// Remove a job and update counts
 [[nodiscard]]

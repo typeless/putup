@@ -84,7 +84,7 @@ auto is_path_in_scope(
 
 auto is_path_in_any_scope(
     std::string_view path,
-    std::vector<std::string> const& scopes
+    std::vector<String> const& scopes
 ) -> bool
 {
     if (scopes.empty()) {

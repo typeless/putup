@@ -6,6 +6,7 @@
 #include "dag.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
@@ -27,36 +28,36 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    std::string source_root;                                               ///< Source tree root (where source files live)
-    std::string config_root;                                               ///< Config tree root (where Tupfiles live)
-    std::string output_root;                                               ///< Output tree root (where outputs/.pup go)
-    std::string config_path;                                               ///< Path to tup.config (for sticky edge tracking)
+    String source_root;                                                    ///< Source tree root (where source files live)
+    String config_root;                                                    ///< Config tree root (where Tupfiles live)
+    String output_root;                                                    ///< Output tree root (where outputs/.pup go)
+    String config_path;                                                    ///< Path to tup.config (for sticky edge tracking)
     bool expand_globs = true;                                              ///< Expand glob patterns
     bool validate_inputs = true;                                           ///< Check that input files exist
     bool verbose = false;                                                  ///< Print verbose output
     DepScannerRegistry const* scanner_registry = nullptr;                  ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr;                 ///< Optional pattern registry for auto-generated rules
-    std::vector<std::pair<std::string, std::string>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
+    std::vector<std::pair<String, String>> cached_env_vars = {};           ///< Cached env vars from previous build (sorted by key)
 };
 
 /// Bang macro definition
 struct BangMacroDef {
-    std::string name;
+    String name;
     bool foreach_ = false;
     std::vector<parser::PathPattern> order_only_inputs;
     parser::Expression command;
     std::optional<parser::Expression> display;
     std::vector<parser::PathPattern> outputs;
     std::vector<parser::PathPattern> extra_outputs;
-    std::optional<std::string> output_group;                       ///< {binname} at end
-    std::optional<std::string> output_order_only_group;            ///< <groupname> at end
+    std::optional<String> output_group;                            ///< {binname} at end
+    std::optional<String> output_order_only_group;                 ///< <groupname> at end
     std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
 /// Pending weak assignment with captured dependencies
 struct PendingWeakAssignment {
-    std::string name;
-    std::string value;
+    String name;
+    String value;
     SortedIdVec config_deps; ///< Config var StringIds used in RHS
     SortedIdVec env_deps;    ///< Env var StringIds used in RHS
 };
@@ -104,8 +105,8 @@ struct BuilderContext {
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 
-    std::string current_dir = {};
-    std::string current_file = {};
+    String current_dir = {};
+    String current_file = {};
     std::vector<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     /// Config variable StringIds used during current command expansion (cleared per command)
@@ -114,8 +115,8 @@ struct BuilderContext {
     /// Env variable StringIds used during current command expansion (cleared per command)
     SortedIdVec used_env_vars = {};
 
-    std::vector<std::string> errors = {};
-    std::vector<std::string> warnings = {};
+    std::vector<String> errors = {};
+    std::vector<String> warnings = {};
 
     /// Pending weak (??=) assignments - applied before rules, last wins
     std::vector<PendingWeakAssignment> pending_weak_assignments = {};
@@ -194,8 +195,8 @@ struct DeferredOrderOnlyEdge {
 /// Per-session state that persists across multiple Tupfiles
 struct BuilderState {
     BuilderOptions options;
-    std::vector<std::string> errors;
-    std::vector<std::string> warnings;
+    std::vector<String> errors;
+    std::vector<String> warnings;
 
     /// Group node lookup: interned "directory/name" StringId → NodeId
     SortedPairVec group_nodes;
@@ -287,11 +288,11 @@ public:
 
     /// Get build errors
     [[nodiscard]]
-    auto errors() const -> std::vector<std::string> const&;
+    auto errors() const -> std::vector<String> const&;
 
     /// Get build warnings
     [[nodiscard]]
-    auto warnings() const -> std::vector<std::string> const&;
+    auto warnings() const -> std::vector<String> const&;
 
     /// Resolve deferred order-only edges after all Tupfiles are parsed
     [[nodiscard]]

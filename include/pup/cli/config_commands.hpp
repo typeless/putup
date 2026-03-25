@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 
@@ -17,8 +18,8 @@ namespace pup::cli {
 /// (errors if outputs don't exist).
 struct ConfigCommand {
     NodeId cmd_id;
-    std::string output_path; ///< Project-root-relative path
-    bool exists;             ///< Whether output exists on disk (used by build, ignored by configure)
+    String output_path; ///< Project-root-relative path
+    bool exists;        ///< Whether output exists on disk (used by build, ignored by configure)
 };
 
 /// Find all commands that output tup.config files.
@@ -26,7 +27,7 @@ struct ConfigCommand {
 /// to resolve the full filesystem path for existence checks.
 auto find_config_commands(
     graph::BuildGraph const& graph,
-    std::string const& source_root
+    std::string_view source_root
 ) -> std::vector<ConfigCommand>;
 
 /// Collect all commands that the given commands depend on (transitively).

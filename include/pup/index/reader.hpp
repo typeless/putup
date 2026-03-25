@@ -23,11 +23,11 @@ struct IndexFile {
 
 /// Open an index file for reading
 [[nodiscard]]
-auto open_index(std::string const& path) -> Result<IndexFile>;
+auto open_index(std::string_view path) -> Result<IndexFile>;
 
 /// Check if a file is a valid index file (checks magic and version)
 [[nodiscard]]
-auto is_valid_index(std::string const& path) -> bool;
+auto is_valid_index(std::string_view path) -> bool;
 
 /// Read the entire index into memory
 [[nodiscard]]
@@ -35,7 +35,7 @@ auto read_index(IndexFile const& f) -> Result<Index>;
 
 /// Convenience: open and read index in one call
 [[nodiscard]]
-auto read_index(std::string const& path) -> Result<Index>;
+auto read_index(std::string_view path) -> Result<Index>;
 
 /// Get the header
 [[nodiscard]]

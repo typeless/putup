@@ -147,7 +147,10 @@ private:
 
 static_assert(sizeof(String) == 24);
 
+auto operator+(String const& a, String const& b) -> String;
 auto operator+(String const& a, std::string_view b) -> String;
 auto operator+(std::string_view a, String const& b) -> String;
+auto operator+(String const& a, char const* b) -> String;
+auto operator+(char const* a, String const& b) -> String;
 
 } // namespace pup

@@ -40,8 +40,8 @@ auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> 
 }
 
 auto remove_indexed_outputs(
-    std::string const& index_path,
-    std::string const& root,
+    std::string_view index_path,
+    std::string_view root,
     OutputMode mode,
     std::string_view variant_name
 ) -> RemoveResult
@@ -112,7 +112,7 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
-        result.output_dirs, ctx->build_dir, ctx->root, mode
+        result.output_dirs, std::string(ctx->build_dir), std::string(ctx->root), mode
     );
 
     if (opts.dry_run) {
@@ -168,8 +168,8 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    output_dirs.push_back(ctx->build_dir);
-    remove_empty_directories(output_dirs, ctx->build_dir, ctx->root, mode);
+    output_dirs.push_back(std::string(ctx->build_dir));
+    remove_empty_directories(output_dirs, std::string(ctx->build_dir), std::string(ctx->root), mode);
 
     if (!opts.dry_run) {
         vprint(variant_name, "Project reset complete\n");

@@ -51,7 +51,7 @@ struct BuildContextOptions {
     bool auto_init = false;
     bool root_config_only = false;
     bool require_config = false;
-    std::vector<std::string> parse_scopes = {};
+    std::vector<String> parse_scopes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};
@@ -118,7 +118,7 @@ auto build_context(
 auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
-) -> std::vector<std::string>;
+) -> std::vector<String>;
 
 /// Convert CLI options to layout discovery options
 [[nodiscard]]
@@ -126,8 +126,8 @@ auto make_layout_options(Options const& opts) -> LayoutOptions;
 
 /// Context for clean commands
 struct CleanContext {
-    std::string root;
-    std::string build_dir;
+    String root;
+    String build_dir;
     bool is_in_tree;
 };
 

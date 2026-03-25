@@ -356,6 +356,13 @@ auto String::substr(std::size_t pos, std::size_t count) const -> String
 // Free functions
 // =============================================================================
 
+auto operator+(String const& a, String const& b) -> String
+{
+    auto result = String { a };
+    result += std::string_view { b };
+    return result;
+}
+
 auto operator+(String const& a, std::string_view b) -> String
 {
     auto result = String { a };
@@ -368,6 +375,16 @@ auto operator+(std::string_view a, String const& b) -> String
     auto result = String { a };
     result += std::string_view { b };
     return result;
+}
+
+auto operator+(String const& a, char const* b) -> String
+{
+    return a + std::string_view { b };
+}
+
+auto operator+(char const* a, String const& b) -> String
+{
+    return std::string_view { a } + b;
 }
 
 } // namespace pup

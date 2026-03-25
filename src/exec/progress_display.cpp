@@ -28,7 +28,7 @@ auto truncate_left(std::string_view str, std::size_t max_width) -> std::string
 
 } // anonymous namespace
 
-auto job_started(ProgressState state, NodeId id, std::string display) -> ProgressState
+auto job_started(ProgressState state, NodeId id, String display) -> ProgressState
 {
     state.running.push_back(RunningJob {
         .id = id,

@@ -132,7 +132,7 @@ auto build_header(
 } // namespace
 
 auto write_index(
-    std::string const& path,
+    std::string_view path,
     Index const& index
 ) -> Result<void>
 {

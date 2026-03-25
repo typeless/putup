@@ -39,7 +39,7 @@ auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
 auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
-) -> std::vector<std::string>
+) -> std::vector<String>
 {
     // -A/--all flag forces full project build
     if (opts.all) {
@@ -75,7 +75,7 @@ auto compute_build_scopes(
         return {};
     }
 
-    return std::vector<std::string> { std::string(rel) };
+    return std::vector<String> { String { rel } };
 }
 
 namespace {
@@ -129,7 +129,7 @@ struct TupfileParseState {
     // across calls that may insert new entries.
     std::deque<std::pair<std::string, parser::VarDb>> parsed_configs;
     std::deque<std::pair<std::string, parser::VarDb>> scoped_configs;
-    std::vector<std::pair<std::string, std::string>> const* config_defines = nullptr; // CLI overrides
+    std::vector<std::pair<pup::String, pup::String>> const* config_defines = nullptr; // CLI overrides
 };
 
 auto compute_tup_variantdir(
@@ -224,15 +224,15 @@ auto discover_tupfile_dirs(
 /// Apply CLI config overrides to a VarDb
 auto apply_config_overrides(
     parser::VarDb& config,
-    std::vector<std::pair<std::string, std::string>> const* defines
+    std::vector<std::pair<pup::String, pup::String>> const* defines
 ) -> void
 {
     if (!defines) {
         return;
     }
     for (auto const& [name, value] : *defines) {
-        config.set(name, value);
-        config.set("CONFIG_" + name, value);
+        config.set(name, std::string(value));
+        config.set("CONFIG_" + std::string(name), std::string(value));
     }
 }
 
@@ -705,8 +705,8 @@ auto build_context(
 
     // Apply -D config overrides (highest precedence)
     for (auto const& [name, value] : opts.config_defines) {
-        ctx.impl_->config_vars.set(name, value);
-        ctx.impl_->config_vars.set("CONFIG_" + name, value);
+        ctx.impl_->config_vars.set(name, std::string(value));
+        ctx.impl_->config_vars.set("CONFIG_" + std::string(name), std::string(value));
         if (ctx_opts.verbose) {
             printf("-D %s=%s\n", name.c_str(), value.c_str());
         }
@@ -722,18 +722,23 @@ auto build_context(
     ctx.impl_->old_index = std::move(old_index);
 
     // 6. Parse Tupfiles
+    auto string_cached_env_vars = std::vector<std::pair<pup::String, pup::String>> {};
+    string_cached_env_vars.reserve(cached_env_vars.size());
+    for (auto& [k, v] : cached_env_vars) {
+        string_cached_env_vars.emplace_back(std::move(k), std::move(v));
+    }
     auto builder_opts = graph::BuilderOptions {
-        .source_root = std::string(ctx.impl_->layout.source_root),
-        .config_root = std::string(ctx.impl_->layout.config_root),
-        .output_root = std::string(ctx.impl_->layout.output_root),
+        .source_root = ctx.impl_->layout.source_root,
+        .config_root = ctx.impl_->layout.config_root,
+        .output_root = ctx.impl_->layout.output_root,
         .config_path = config_path,
         .expand_globs = true,
         .verbose = ctx_opts.verbose,
         .scanner_registry = ctx_opts.scanner_registry,
         .pattern_registry = ctx_opts.pattern_registry,
-        .cached_env_vars = std::move(cached_env_vars),
+        .cached_env_vars = std::move(string_cached_env_vars),
     };
-    auto builder = graph::GraphBuilder { builder_opts };
+    auto builder = graph::GraphBuilder { std::move(builder_opts) };
 
     auto parse_ctx = ParseContext {
         .state = ctx.impl_->state,
@@ -807,7 +812,7 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
         return std::nullopt;
     }
 
-    return CleanContext { std::string(*root), build_dir, is_in_tree };
+    return CleanContext { *root, String { build_dir }, is_in_tree };
 }
 
 } // namespace pup::cli

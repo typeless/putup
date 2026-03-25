@@ -21,15 +21,15 @@ namespace pup::cli {
 namespace {
 
 struct ParsedTargets {
-    std::vector<std::string> variants;
-    std::vector<std::string> scopes;
-    std::vector<std::string> output_targets;
+    std::vector<String> variants;
+    std::vector<String> scopes;
+    std::vector<String> output_targets;
     bool has_variant_targets = false;
 };
 
 auto parse_targets_for_variants(
     std::string_view source_root,
-    std::vector<std::string> const& targets
+    std::vector<String> const& targets
 ) -> pup::Result<ParsedTargets>
 {
     auto result = ParsedTargets {};
@@ -38,7 +38,7 @@ auto parse_targets_for_variants(
         return result;
     }
 
-    auto parsed = validate_target_consistency(std::string { source_root }, targets);
+    auto parsed = validate_target_consistency(source_root, targets);
     if (!parsed.has_value()) {
         return pup::unexpected<pup::Error> { parsed.error() };
     }
@@ -92,9 +92,9 @@ auto for_each_variant(
         return EXIT_FAILURE;
     }
 
-    auto variants = std::vector<std::string> {};
-    auto scopes = std::vector<std::string> {};
-    auto output_targets = std::vector<std::string> {};
+    auto variants = std::vector<String> {};
+    auto scopes = std::vector<String> {};
+    auto output_targets = std::vector<String> {};
 
     if (parsed_targets->has_variant_targets) {
         variants = parsed_targets->variants;
@@ -107,11 +107,7 @@ auto for_each_variant(
         scopes = parsed_targets->scopes;
         output_targets = parsed_targets->output_targets;
     } else {
-        auto discovered = discover_variants(source_root);
-        variants.reserve(discovered.size());
-        for (auto const& v : discovered) {
-            variants.emplace_back(std::string(v));
-        }
+        variants = discover_variants(source_root);
         scopes = parsed_targets->scopes;
         output_targets = parsed_targets->output_targets;
     }
@@ -124,11 +120,11 @@ auto for_each_variant(
     }
 
     auto cwd = *pup::platform::current_directory();
-    auto cwd_variant = std::optional<std::string> {};
+    auto cwd_variant = std::optional<String> {};
     for (auto const& variant : variants) {
         auto variant_abs = pup::path::join(source_root, variant);
         if (pup::is_path_under(cwd, variant_abs)) {
-            cwd_variant = variant;
+            cwd_variant = String { variant };
             break;
         }
     }
@@ -137,7 +133,7 @@ auto for_each_variant(
         auto single_opts = Options { opts };
         single_opts.targets = scopes;
         single_opts.output_targets = output_targets;
-        return handler(single_opts, std::string { pup::path::filename(*cwd_variant) });
+        return handler(single_opts, pup::path::filename(*cwd_variant));
     }
 
     if (variants.size() == 1) {
@@ -145,7 +141,7 @@ auto for_each_variant(
         single_opts.build_dirs = { variants[0] };
         single_opts.targets = scopes;
         single_opts.output_targets = output_targets;
-        return handler(single_opts, std::string { pup::path::filename(variants[0]) });
+        return handler(single_opts, pup::path::filename(variants[0]));
     }
 
     if (opts.verbose) {
@@ -164,7 +160,7 @@ auto for_each_variant(
                 variant_opts.build_dirs = { variant };
                 variant_opts.targets = scopes;
                 variant_opts.output_targets = output_targets;
-                return handler(variant_opts, std::string { pup::path::filename(variant) });
+                return handler(variant_opts, pup::path::filename(variant));
             }
         ));
     }

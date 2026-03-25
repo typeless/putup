@@ -141,7 +141,7 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
     return commands_[vec_idx].id == id ? &commands_[vec_idx] : nullptr;
 }
 
-auto Index::find_command_by_command(std::string const& cmd) const -> CommandEntry const*
+auto Index::find_command_by_command(std::string_view cmd) const -> CommandEntry const*
 {
     auto str_id = command_strings_.find(cmd);
     if (is_empty(str_id)) {

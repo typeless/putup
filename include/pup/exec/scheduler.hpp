@@ -5,6 +5,7 @@
 
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/types.hpp"
 #include "runner.hpp"
 
@@ -25,13 +26,13 @@ namespace pup::exec {
 /// Build job representing a single command to execute
 struct BuildJob {
     NodeId id = 0;
-    std::string command = {};
-    std::string display = {};
-    std::string working_dir = {};
-    std::vector<std::string> inputs = {};
-    std::vector<std::string> outputs = {};
-    std::vector<std::string> order_only_inputs = {}; ///< Order-only dependencies
-    std::vector<std::string> exported_vars = {};     ///< Env vars to export to command
+    String command = {};
+    String display = {};
+    String working_dir = {};
+    std::vector<String> inputs = {};
+    std::vector<String> outputs = {};
+    std::vector<String> order_only_inputs = {}; ///< Order-only dependencies
+    std::vector<String> exported_vars = {};     ///< Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             ///< Capture stdout for depfile parsing
@@ -47,10 +48,10 @@ struct JobResult {
     NodeId id = 0;
     bool success = false;
     int exit_code = 0;
-    std::string output = {};
+    String output = {};
     std::chrono::milliseconds duration = {};
-    std::vector<std::string> discovered_deps = {}; ///< Implicit deps from .d files
-    NodeId deps_for_command = INVALID_NODE_ID;     ///< If set, deps belong to this command (not id)
+    std::vector<String> discovered_deps = {}; ///< Implicit deps from .d files
+    NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
 };
 
 /// Callback types for scheduler events
@@ -64,9 +65,9 @@ struct SchedulerOptions {
     bool keep_going = false; ///< Continue after failures
     bool dry_run = false;    ///< Print commands without executing
     bool verbose = false;    ///< Print commands as they run
-    std::string source_root = {};
-    std::string config_root = {};
-    std::string output_root = {};                     ///< Output tree root (where outputs/.pup go)
+    String source_root = {};
+    String config_root = {};
+    String output_root = {};                          ///< Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 
