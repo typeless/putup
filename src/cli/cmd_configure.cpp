@@ -24,9 +24,9 @@ auto install_config_file(
     std::string_view variant_name
 ) -> int
 {
-    auto config_path = std::string { config_file };
+    auto config_path = String { config_file };
     if (!pup::path::is_absolute(config_path)) {
-        config_path = std::string(pup::path::join(*pup::platform::current_directory(), config_path));
+        config_path = pup::path::join(*pup::platform::current_directory(), config_path);
     }
 
     if (!pup::platform::exists(config_path)) {
@@ -34,8 +34,8 @@ auto install_config_file(
         return EXIT_FAILURE;
     }
 
-    auto dest = std::string(pup::path::join(layout.output_root, "tup.config"));
-    (void)pup::platform::create_directories(std::string { pup::path::parent(dest) });
+    auto dest = pup::path::join(layout.output_root, "tup.config");
+    (void)pup::platform::create_directories(pup::path::parent(dest));
     (void)pup::platform::copy_file(config_path, dest);
 
     printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str(), dest.c_str());
@@ -84,7 +84,7 @@ auto configure_single_variant(
     auto ensure_config = [&]() {
         auto config_path = pup::path::join(ctx.layout().output_root, "tup.config");
         if (!pup::platform::exists(config_path)) {
-            (void)pup::platform::create_directories(std::string { pup::path::parent(config_path) });
+            (void)pup::platform::create_directories(pup::path::parent(config_path));
             (void)pup::platform::write_file(config_path, "");
             printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str());
         }

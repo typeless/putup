@@ -288,7 +288,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     dep_cmd += " -M";
 
     auto skip_next = false;
-    auto source_files = std::vector<std::string> {};
+    auto source_files = std::vector<String> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
             dep_cmd += ' ';
@@ -319,7 +319,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         }
 
         if (is_source_file(w)) {
-            source_files.emplace_back(std::string_view { w });
+            source_files.push_back(w);
         }
     }
 

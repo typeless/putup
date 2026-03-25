@@ -127,21 +127,26 @@ auto make_source_relative(
     }
     if (path_sv.size() >= 2 && path_sv[0] == '.' && path_sv[1] == '.') {
         if (!source_to_root.empty() && !source_dir.empty()) {
-            return std::string { source_to_root } + std::string { path_sv };
+            auto result = std::string { source_to_root };
+            result += path_sv;
+            return result;
         }
         return std::string { path_sv };
     }
     if (source_to_root.empty()) {
         return std::string { path_sv };
     }
-    auto dir_prefix = std::string { source_dir } + "/";
-    if (path_sv.starts_with(dir_prefix)) {
+    auto dir_prefix = String { source_dir };
+    dir_prefix += '/';
+    if (path_sv.starts_with(std::string_view { dir_prefix })) {
         return std::string { path_sv.substr(dir_prefix.size()) };
     }
     if (path_sv == source_dir) {
         return std::string { "." };
     }
-    return std::string { source_to_root } + std::string { path_sv };
+    auto result = std::string { source_to_root };
+    result += path_sv;
+    return result;
 }
 
 auto strip_path_prefix(
@@ -152,7 +157,8 @@ auto strip_path_prefix(
     if (prefix.empty()) {
         return std::string { path_sv };
     }
-    auto prefix_with_slash = std::string { prefix } + "/";
+    auto prefix_with_slash = String { prefix };
+    prefix_with_slash += '/';
     if (path_sv.starts_with(prefix_with_slash)) {
         return std::string { path_sv.substr(prefix_with_slash.size()) };
     }

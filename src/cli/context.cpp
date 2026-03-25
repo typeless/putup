@@ -122,7 +122,7 @@ auto sorted_erase(std::vector<std::string>& v, std::string_view key) -> void
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
     std::vector<std::string> available; // std::string: EvalContext::available_tupfile_dirs API
-    std::vector<std::string> parsed;   // std::string: BuildContext::parsed_dirs() API
+    std::vector<std::string> parsed;    // std::string: BuildContext::parsed_dirs() API
     std::vector<std::string> parsing;
     // Append-only deques: push_back preserves references to existing elements,
     // which is critical because recursive Tupfile parsing holds VarDb pointers

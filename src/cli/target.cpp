@@ -57,13 +57,13 @@ auto fnmatch_simple(std::string_view pattern, std::string_view name) -> bool
     return name.starts_with(prefix) && name.ends_with(suffix);
 }
 
-auto split_first_component(std::string_view p) -> std::pair<std::string, std::string>
+auto split_first_component(std::string_view p) -> std::pair<String, String>
 {
     auto slash = p.find('/');
     if (slash == std::string_view::npos) {
-        return { std::string { p }, {} };
+        return { String { p }, {} };
     }
-    return { std::string { p.substr(0, slash) }, std::string { p.substr(slash + 1) } };
+    return { String { p.substr(0, slash) }, String { p.substr(slash + 1) } };
 }
 
 } // namespace
@@ -99,7 +99,7 @@ auto parse_target(
             target.is_output = true;
         }
     } else {
-        auto par = std::string { pup::path::parent(full_path) };
+        auto par = String { pup::path::parent(full_path) };
         if (par.empty()) {
             par = project_root;
         }
@@ -129,7 +129,7 @@ auto expand_glob_target(
     }
 
     auto [first_component, remainder] = split_first_component(pattern);
-    auto has_glob = first_component.find('*') != std::string::npos;
+    auto has_glob = first_component.find('*') != String::npos;
 
     if (!has_glob) {
         auto parsed = parse_target(project_root, pattern);
@@ -167,7 +167,7 @@ auto expand_glob_target(
             if (pup::platform::is_file(full_path)) {
                 target.is_output = true;
             } else if (!pup::platform::is_directory(full_path) && !is_source_file(full_path)) {
-                auto par = std::string { pup::path::parent(full_path) };
+                auto par = String { pup::path::parent(full_path) };
                 if (!par.empty() && pup::platform::exists(par)) {
                     target.is_output = true;
                 }

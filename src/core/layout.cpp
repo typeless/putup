@@ -74,11 +74,11 @@ auto find_project_root(
             last_tupfile_dir = current;
         }
 
-        auto par = std::string { path::parent(current) };
-        if (par == std::string_view { current } || par.empty()) {
+        auto par = String { path::parent(current) };
+        if (std::string_view { par } == std::string_view { current } || par.empty()) {
             return last_tupfile_dir;
         }
-        current = par;
+        current = std::move(par);
     }
 }
 
@@ -131,7 +131,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         layout.output_root = normalize_path(*opts.build_dir);
     } else if (auto env_build = get_env(PUP_BUILD_DIR_ENV)) {
         layout.output_root = normalize_path(*env_build);
-    } else if (platform::exists(path::join(cwd, "tup.config")) && std::string_view { cwd } != std::string_view { layout.source_root }) {
+    } else if (platform::exists(path::join(cwd, "tup.config")) && cwd != layout.source_root) {
         layout.output_root = normalize_path(cwd);
     } else if (auto build_subdir = find_build_subdir(layout.source_root)) {
         layout.output_root = normalize_path(*build_subdir);

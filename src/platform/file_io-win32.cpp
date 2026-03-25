@@ -189,7 +189,7 @@ auto atomic_write(
     std::span<std::byte const> data
 ) -> Result<void>
 {
-    auto par = std::string { pup::path::parent(path) };
+    auto par = pup::path::parent(path);
     if (!par.empty()) {
         auto r = create_directories(par);
         if (!r) {
@@ -197,7 +197,8 @@ auto atomic_write(
         }
     }
 
-    auto temp_path = std::string { path } + ".tmp.";
+    auto temp_path = String { path };
+    temp_path += ".tmp.";
 
     auto seed = static_cast<unsigned>(GetCurrentProcessId()) ^ static_cast<unsigned>(GetTickCount());
     auto const* const hex = "0123456789abcdef";
@@ -316,8 +317,8 @@ auto create_directories(std::string_view path) -> Result<void>
     if (path.empty()) {
         return {};
     }
-    auto par = std::string { pup::path::parent(path) };
-    if (!par.empty() && par != std::string_view { path }) {
+    auto par = pup::path::parent(path);
+    if (!par.empty() && par != path) {
         auto r = create_directories(par);
         if (!r) {
             return r;
@@ -412,13 +413,14 @@ auto current_directory() -> Result<String>
     auto buf = std::wstring(len, L'\0');
     GetCurrentDirectoryW(len, buf.data());
     buf.resize(len - 1);
-    auto result = std::string(from_wide(buf));
-    for (auto& c : result) {
-        if (c == '\\') {
-            c = '/';
-        }
+    auto result = from_wide(buf);
+    // Replace backslashes with forward slashes
+    auto fixed = String {};
+    fixed.reserve(result.size());
+    for (auto c : result) {
+        fixed += (c == '\\') ? '/' : c;
     }
-    return String { result };
+    return fixed;
 }
 
 auto canonical(std::string_view path) -> Result<String>
@@ -437,17 +439,18 @@ auto canonical(std::string_view path) -> Result<String>
             GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
             CloseHandle(h);
             buf.resize(len - 1);
-            auto result = std::string(from_wide(buf));
+            auto raw = from_wide(buf);
+            std::string_view sv = raw;
             // Strip \\?\ prefix
-            if (result.size() > 4 && result[0] == '\\' && result[1] == '\\' && result[2] == '?' && result[3] == '\\') {
-                result = result.substr(4);
+            if (sv.size() > 4 && sv[0] == '\\' && sv[1] == '\\' && sv[2] == '?' && sv[3] == '\\') {
+                sv = sv.substr(4);
             }
-            for (auto& c : result) {
-                if (c == '\\') {
-                    c = '/';
-                }
+            auto result = String {};
+            result.reserve(sv.size());
+            for (auto c : sv) {
+                result += (c == '\\') ? '/' : c;
             }
-            return String { result };
+            return result;
         }
         CloseHandle(h);
     }
@@ -460,13 +463,13 @@ auto canonical(std::string_view path) -> Result<String>
     auto buf = std::wstring(len, L'\0');
     GetFullPathNameW(wpath.c_str(), len, buf.data(), nullptr);
     buf.resize(len - 1);
-    auto result = std::string(from_wide(buf));
-    for (auto& c : result) {
-        if (c == '\\') {
-            c = '/';
-        }
+    auto raw = from_wide(buf);
+    auto result = String {};
+    result.reserve(raw.size());
+    for (auto c : raw) {
+        result += (c == '\\') ? '/' : c;
     }
-    return String { result };
+    return result;
 }
 
 auto absolute(std::string_view path) -> Result<String>
@@ -498,13 +501,13 @@ auto read_symlink(std::string_view path) -> Result<String>
     GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
     CloseHandle(h);
     buf.resize(len - 1);
-    auto result = std::string(from_wide(buf));
-    for (auto& c : result) {
-        if (c == '\\') {
-            c = '/';
-        }
+    auto raw = from_wide(buf);
+    auto result = String {};
+    result.reserve(raw.size());
+    for (auto c : raw) {
+        result += (c == '\\') ? '/' : c;
     }
-    return String { result };
+    return result;
 }
 
 // File I/O
@@ -547,7 +550,7 @@ auto read_file(std::string_view path) -> Result<String>
 
 auto write_file(std::string_view path, std::string_view data) -> Result<void>
 {
-    auto par = std::string { pup::path::parent(path) };
+    auto par = pup::path::parent(path);
     if (!par.empty()) {
         auto r = create_directories(par);
         if (!r) {

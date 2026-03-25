@@ -449,7 +449,7 @@ auto expand_pattern(
                 result += "%<";
                 continue;
             }
-            auto group_name = std::string { text.substr(pos, end - pos) };
+            auto group_name = text.substr(pos, end - pos);
             pos = end + 1;
 
             // Resolve order-only group to paths via callback
@@ -568,7 +568,7 @@ auto expand_path(
             // Normalize path to remove // and resolve . and .. components
             auto path_str = expanded.substr(start, end - start);
             auto normalized = pup::path::normalize(path_str);
-            result.push_back(std::string(normalized));
+            result.emplace_back(std::string_view { normalized });
         }
         start = end;
     }

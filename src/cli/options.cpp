@@ -31,16 +31,15 @@ auto strip_config_prefix(std::string_view name) -> std::string_view
     return name;
 }
 
-auto parse_define(std::string_view arg) -> std::pair<std::string, std::string>
+auto parse_define(std::string_view arg) -> std::pair<String, String>
 {
     auto eq = arg.find('=');
     if (eq == std::string_view::npos) {
         auto name = strip_config_prefix(arg);
-        return { std::string { name }, "y" };
+        return { String { name }, "y" };
     }
     auto name = strip_config_prefix(arg.substr(0, eq));
-    auto value = std::string { arg.substr(eq + 1) };
-    return { std::string { name }, value };
+    return { String { name }, String { arg.substr(eq + 1) } };
 }
 
 } // namespace
@@ -86,11 +85,11 @@ auto parse_args(int argc, char** argv) -> Options
             opts.jobs = static_cast<std::size_t>(value);
         } else if (arg == "-S" || arg == "--source-dir") {
             if (i + 1 < argc) {
-                opts.source_dir = std::string { argv[++i] };
+                opts.source_dir = argv[++i];
             }
         } else if (arg == "-C" || arg == "--config-dir") {
             if (i + 1 < argc) {
-                opts.config_dir = std::string { argv[++i] };
+                opts.config_dir = argv[++i];
             }
         } else if (arg == "-B" || arg == "--build-dir") {
             if (i + 1 < argc) {
@@ -98,7 +97,7 @@ auto parse_args(int argc, char** argv) -> Options
             }
         } else if (arg == "-c" || arg == "--config") {
             if (i + 1 < argc) {
-                opts.config_file = std::string { argv[++i] };
+                opts.config_file = argv[++i];
             }
         } else if (arg == "--summary") {
             opts.summary = true;
@@ -120,11 +119,11 @@ auto parse_args(int argc, char** argv) -> Options
             opts.show_json = true;
         } else if (!arg.starts_with("-")) {
             if (opts.command.empty() && is_command(arg)) {
-                opts.command = std::string { arg };
+                opts.command = arg;
             } else if (opts.command == "show" && opts.show_format.empty()) {
-                opts.show_format = std::string { arg };
+                opts.show_format = arg;
             } else if (opts.command == "show" && opts.show_format == "var" && opts.show_var_filter.empty()) {
-                opts.show_var_filter = std::string { arg };
+                opts.show_var_filter = arg;
             } else {
                 opts.targets.emplace_back(arg);
             }
