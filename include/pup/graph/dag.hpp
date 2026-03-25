@@ -10,10 +10,10 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/paged_vec.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
-#include <deque>
 #include <optional>
 #include <span>
 #include <string>
@@ -105,10 +105,10 @@ struct PhiNode {
 struct Graph {
     StringPool strings; ///< Interned string storage
 
-    std::deque<FileNode> files;           ///< Files, directories, groups (non-command nodes)
-    std::deque<CommandNode> commands;     ///< Command nodes only
-    std::deque<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
-    std::deque<PhiNode> phi_nodes;        ///< Phi nodes (merge conditional outputs)
+    PagedVec<FileNode> files;              ///< Files, directories, groups (non-command nodes)
+    PagedVec<CommandNode> commands;        ///< Command nodes only
+    PagedVec<ConditionNode> conditions;    ///< Condition nodes (for phi-node model)
+    PagedVec<PhiNode> phi_nodes;           ///< Phi nodes (merge conditional outputs)
     Vec<Edge> edges;                      ///< Central edge storage (single source of truth)
 
     Arena32 edge_arena;

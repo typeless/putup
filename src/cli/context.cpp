@@ -20,7 +20,6 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
-#include <deque>
 
 namespace pup::cli {
 
@@ -122,11 +121,11 @@ struct TupfileParseState {
     Vec<std::string> available;
     Vec<std::string> parsed;
     Vec<std::string> parsing;
-    // Append-only deques: push_back preserves references to existing elements,
-    // which is critical because recursive Tupfile parsing holds VarDb pointers
-    // across calls that may insert new entries.
-    std::deque<std::pair<String, parser::VarDb>> parsed_configs;
-    std::deque<std::pair<String, parser::VarDb>> scoped_configs;
+    // Append-only paged vectors: push_back preserves references to existing
+    // elements, which is critical because recursive Tupfile parsing holds
+    // VarDb pointers across calls that may insert new entries.
+    PagedVec<std::pair<String, parser::VarDb>> parsed_configs;
+    PagedVec<std::pair<String, parser::VarDb>> scoped_configs;
     Vec<std::pair<pup::String, pup::String>> const* config_defines = nullptr; // CLI overrides
 };
 

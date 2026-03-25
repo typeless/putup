@@ -3,11 +3,11 @@
 
 #pragma once
 
+#include "pup/core/paged_vec.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstdint>
-#include <deque>
-#include <string>
 #include <string_view>
 
 namespace pup {
@@ -63,7 +63,7 @@ private:
     auto probe_insert(std::uint32_t h, StringId id) -> void;
     auto grow() -> void;
 
-    std::deque<std::string> storage_;
+    PagedVec<String> storage_;
     Meta* meta_ = nullptr;
     StringId* values_ = nullptr;
     std::size_t index_capacity_ = 0;
