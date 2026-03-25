@@ -778,7 +778,7 @@ auto Scheduler::Impl::execute_job(
                 continue;
             }
 
-            auto depfile_result = parser::parse_depfile(depfile_path);
+            auto depfile_result = parser::parse_depfile_path(depfile_path);
             if (depfile_result) {
                 for (auto& dep : depfile_result->dependencies) {
                     result.discovered_deps.push_back(std::move(dep));

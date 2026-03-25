@@ -30,9 +30,9 @@ auto skip_line_continuation(std::string_view& sv) -> bool
     return false;
 }
 
-auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> std::string
+auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> pup::String
 {
-    auto result = std::string {};
+    auto result = pup::String {};
 
     while (!sv.empty()) {
         auto c = sv[0];
@@ -93,7 +93,7 @@ auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> std::string
 
 } // anonymous namespace
 
-auto parse_depfile(std::string const& path) -> Result<Depfile>
+auto parse_depfile_path(std::string_view path) -> Result<Depfile>
 {
     auto content = pup::platform::read_file(path);
     if (!content) {
