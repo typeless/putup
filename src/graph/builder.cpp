@@ -696,16 +696,12 @@ auto apply_exclusions(
                 auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
                     for (auto const& p : *expanded) {
-                        auto normalized = std::string(ctx.current_dir.empty()
-                            ? pup::path::normalize(p)
-                            : pup::path::normalize(pup::path::join(ctx.current_dir, p)));
+                        auto normalized = std::string(ctx.current_dir.empty() ? pup::path::normalize(p) : pup::path::normalize(pup::path::join(ctx.current_dir, p)));
                         std::erase(result, normalized);
                     }
                 }
             } else {
-                auto normalized_excl = std::string(ctx.current_dir.empty()
-                    ? pup::path::normalize(excl)
-                    : pup::path::normalize(pup::path::join(ctx.current_dir, excl)));
+                auto normalized_excl = std::string(ctx.current_dir.empty() ? pup::path::normalize(excl) : pup::path::normalize(pup::path::join(ctx.current_dir, excl)));
                 std::erase(result, normalized_excl);
             }
         }
