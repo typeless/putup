@@ -40,7 +40,7 @@ using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<String>>>;
 auto path_id_find(PathIdMap const& m, std::string_view key) -> std::pair<String, pup::NodeId> const*
 {
     auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, std::string_view k) { return p.first < k; });
-    return (pos != m.end() && pos->first == key) ? pos : m.end();
+    return (pos != m.end() && pos->first == key) ? pos : nullptr;
 }
 
 auto path_id_insert(PathIdMap& m, String key, pup::NodeId id) -> void
@@ -391,7 +391,7 @@ auto get_or_create_dir(
         return pup::NodeId { 0 };
     }
 
-    if (auto it = path_id_find(ctx.path_to_id, path_str); it != ctx.path_to_id.end()) {
+    if (auto it = path_id_find(ctx.path_to_id, path_str); it != nullptr) {
         return it->second;
     }
 
@@ -620,7 +620,7 @@ auto serialize_command_nodes(
         auto dir_id = pup::NodeId { 0 };
         if (!source_dir_sv.empty()) {
             auto it = path_id_find(path_to_id, source_dir_sv);
-            if (it != path_to_id.end()) {
+            if (it != nullptr) {
                 dir_id = it->second;
             }
         }
@@ -685,7 +685,7 @@ auto process_implicit_deps(
             }
 
             auto it = path_id_find(ctx.path_to_id, rel_path);
-            auto dep_id = it != ctx.path_to_id.end()
+            auto dep_id = it != nullptr
                 ? it->second
                 : create_implicit_file(ctx, abs_path, rel_path);
 
@@ -729,7 +729,7 @@ auto preserve_old_implicit_edges(
 
         auto new_file_it = path_id_find(ctx.path_to_id, old_file->path);
         auto abs_path = pup::path::is_absolute(old_file->path) ? String { old_file->path } : pup::path::join(ctx.source_root, old_file->path);
-        auto new_from_id = new_file_it != ctx.path_to_id.end()
+        auto new_from_id = new_file_it != nullptr
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file->path);
 

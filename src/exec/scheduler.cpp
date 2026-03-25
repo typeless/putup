@@ -16,7 +16,9 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <queue>
+#include <string>
 #include <thread>
+#include <vector>
 
 namespace pup::exec {
 
