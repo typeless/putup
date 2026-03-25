@@ -15,7 +15,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
-#include <format>
 #include <queue>
 #include <thread>
 
@@ -194,7 +193,7 @@ auto validate_guard_dependencies(
             if (jobs[dep_idx].guard_active) {
                 return make_error<void>(
                     ErrorCode::MissingInput,
-                    std::format("Command '{}' depends on output from '{}' which is inactive due to conditional guard", std::string_view { jobs[dep_idx].command }, std::string_view { jobs[i].command })
+                    String { "Command '" } + jobs[dep_idx].command + "' depends on output from '" + jobs[i].command + "' which is inactive due to conditional guard"
                 );
             }
         }

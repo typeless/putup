@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <array>
-#include <format>
 #include <functional>
 #include <optional>
 
@@ -181,7 +180,7 @@ auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
     if (!match(s, TokenType::OpenParen)) {
         return pup::make_error<VarRef>(
             ErrorCode::ParseError,
-            std::format("Expected '(' after '{}'", spec.prefix_char)
+            String { "Expected '(' after '" } + String { std::string_view { &spec.prefix_char, 1 } } + "'"
         );
     }
 

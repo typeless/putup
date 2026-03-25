@@ -21,7 +21,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
-#include <format>
 #include <vector>
 
 namespace pup::cli {
@@ -331,7 +330,7 @@ auto make_circular_dep_error(String const& dir) -> pup::Error
 {
     return pup::Error {
         pup::ErrorCode::CyclicDependency,
-        std::format("Circular Tupfile dependency: {}", std::string_view { dir })
+        String { "Circular Tupfile dependency: " } + dir
     };
 }
 
@@ -339,7 +338,7 @@ auto make_read_error(String const& path) -> pup::Error
 {
     return pup::Error {
         pup::ErrorCode::IoError,
-        std::format("Failed to read {}", std::string_view { path })
+        String { "Failed to read " } + path
     };
 }
 

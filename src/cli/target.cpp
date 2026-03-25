@@ -6,7 +6,6 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
-#include <format>
 #include <string_view>
 
 namespace pup {
@@ -94,7 +93,7 @@ auto parse_target(
     if (pup::platform::exists(full_path)) {
         if (pup::platform::is_file(full_path)) {
             if (is_source_file(full_path)) {
-                return unexpected<Error> { Error { ErrorCode::InvalidArgument, std::format("source file, not build output: {}", target_path) } };
+                return unexpected<Error> { Error { ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path } };
             }
             target.is_output = true;
         }
@@ -104,11 +103,11 @@ auto parse_target(
             par = project_root;
         }
         if (!pup::platform::exists(par)) {
-            return unexpected<Error> { Error { ErrorCode::NotFound, std::format("path not found: {}", target_path) } };
+            return unexpected<Error> { Error { ErrorCode::NotFound, String { "path not found: " } + target_path } };
         }
 
         if (is_source_file(full_path)) {
-            return unexpected<Error> { Error { ErrorCode::InvalidArgument, std::format("source file, not build output: {}", target_path) } };
+            return unexpected<Error> { Error { ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path } };
         }
 
         target.is_output = true;

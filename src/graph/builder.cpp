@@ -15,7 +15,6 @@
 #include "pup/platform/file_io.hpp"
 
 #include <cstdio>
-#include <format>
 
 #include <algorithm>
 #include <cstdlib>
@@ -1219,7 +1218,7 @@ auto include_single_file(
 
     auto source_result = pup::platform::read_file(include_path);
     if (!source_result) {
-        return make_error<void>(ErrorCode::IoError, std::format("Cannot open include file: {}", include_path));
+        return make_error<void>(ErrorCode::IoError, String { "Cannot open include file: " } + include_path);
     }
     auto source = std::move(*source_result);
 
@@ -1229,7 +1228,7 @@ auto include_single_file(
         for (auto const& err : parse_result.errors) {
             fprintf(stderr, "%s:%d:%d: error: %s\n", include_path_z.c_str(), err.location.line, err.location.column, err.message.c_str());
         }
-        return make_error<void>(ErrorCode::ParseError, std::format("Parse error in include file: {}", include_path));
+        return make_error<void>(ErrorCode::ParseError, String { "Parse error in include file: " } + include_path);
     }
 
     auto old_tup_cwd = String {};
@@ -1518,7 +1517,7 @@ auto expand_rule(
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
                                          ) -> std::vector<std::string> {
         if (std::binary_search(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name)) {
-            return { std::format("%<{}>", name) };
+            return { std::string { "%<" } + std::string { name } + ">" };
         }
         // Local group not in this rule's inputs — also defer
         auto dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
@@ -1531,7 +1530,7 @@ auto expand_rule(
                 deferred_group_vec.push_back(*node_id);
             }
             sorted_insert(rule_order_only_group_names, name);
-            return { std::format("%<{}>", name) };
+            return { std::string { "%<" } + std::string { name } + ">" };
         }
         return {};
     };
@@ -1675,11 +1674,7 @@ auto expand_rule(
                         existing_cmd_str = "<unknown>";
                     }
                     auto output_path = ctx.graph->get_full_path(*output_id);
-                    auto err_msg = std::format(
-                        "Unable to create output '{}' because it is already owned by command:\n  {}",
-                        output_path,
-                        existing_cmd_str
-                    );
+                    auto err_msg = String { "Unable to create output '" } + std::string_view { output_path } + "' because it is already owned by command:\n  " + std::string_view { existing_cmd_str };
                     return make_error<void>(ErrorCode::DuplicateNode, std::move(err_msg));
                 }
             }
@@ -2527,7 +2522,7 @@ auto resolve_deferred_order_only_edges(
         auto members = get_group_members(graph, edge.group_id);
         if (members.empty()) {
             auto group_path = graph.get_full_path(edge.group_id);
-            state.warnings.push_back(std::format("order-only group {} has no members", group_path));
+            state.warnings.push_back(String { "order-only group " } + std::string_view { group_path } + " has no members");
             continue;
         }
 
@@ -2552,7 +2547,7 @@ auto resolve_deferred_order_only_edges(
         auto command_id = static_cast<NodeId>(key >> 32);
         auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
         auto group_name = graph.str(name_id);
-        auto pattern = std::format("%<{}>", group_name);
+        auto pattern = String { "%<" } + group_name + ">";
 
         auto* cmd_node = graph.get_command_node(command_id);
         if (!cmd_node) {
