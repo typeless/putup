@@ -43,6 +43,7 @@ test-srcs-y += test_string_utils.cpp
 test-srcs-y += test_target.cpp
 test-srcs-y += test_types.cpp
 test-srcs-y += test_var_tracking.cpp
+test-srcs-y += test_vec.cpp
 
 # Compile test sources
 : foreach $(test-srcs-y) |> !cxx |> {test_objs}
