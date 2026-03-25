@@ -20,7 +20,7 @@ namespace {
 
 auto install_config_file(
     ProjectLayout const& layout,
-    std::string const& config_file,
+    std::string_view config_file,
     std::string_view variant_name
 ) -> int
 {
@@ -90,7 +90,7 @@ auto configure_single_variant(
         }
     };
 
-    auto configs = find_config_commands(ctx.graph(), std::string(ctx.layout().source_root));
+    auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
     if (configs.empty()) {
         printf("[%.*s] No config-generating rules found.\n", static_cast<int>(variant_name.size()), variant_name.data());
         ensure_config();
@@ -102,7 +102,7 @@ auto configure_single_variant(
     for (auto const& cfg : configs) {
         auto const* node = ctx.graph().get_command_node(cfg.cmd_id);
         auto source_dir_sv = node ? pup::graph::get_source_dir(ctx.graph().graph(), cfg.cmd_id) : std::string_view {};
-        if (!scopes.empty() && node && !pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
+        if (!scopes.empty() && node && !pup::is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }
         config_commands.set(cfg.cmd_id, 1);
@@ -130,9 +130,9 @@ auto configure_single_variant(
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
-        .source_root = std::string(ctx.layout().source_root),
-        .config_root = std::string(ctx.layout().config_root),
-        .output_root = std::string(ctx.layout().output_root),
+        .source_root = ctx.layout().source_root,
+        .config_root = ctx.layout().config_root,
+        .output_root = ctx.layout().output_root,
     };
 
     auto scheduler = pup::exec::Scheduler { sched_opts };

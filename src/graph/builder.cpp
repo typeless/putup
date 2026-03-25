@@ -44,10 +44,10 @@ auto strip_trailing_slashes(std::string str) -> std::string
 /// Normalize a file path for consistent lookup
 /// - Removes double slashes
 /// - Resolves . and .. components using lexically_normal
-auto normalize_path(std::string const& path_str) -> std::string
+auto normalize_path(std::string_view path_str) -> std::string
 {
     if (path_str.empty()) {
-        return path_str;
+        return std::string { path_str };
     }
     return std::string(pup::path::normalize(path_str));
 }
@@ -57,12 +57,12 @@ auto normalize_path(std::string const& path_str) -> std::string
 /// - Converts absolute paths to project-relative
 /// - Resolves parent references (..) against current_dir
 auto normalize_group_dir(
-    std::string const& path_str,
-    std::string const& current_dir,
-    std::string const& source_root
+    std::string_view path_str,
+    std::string_view current_dir,
+    std::string_view source_root
 ) -> std::string
 {
-    auto cleaned = strip_trailing_slashes(path_str);
+    auto cleaned = strip_trailing_slashes(std::string { path_str });
     if (cleaned.empty()) {
         return ".";
     }
@@ -73,7 +73,7 @@ auto normalize_group_dir(
         normalized = pup::path::relative(normalized, source_root);
     } else if (!current_dir.empty() && normalized != ".") {
         auto first_slash = cleaned.find('/');
-        auto first_component = (first_slash == std::string::npos) ? cleaned : cleaned.substr(0, first_slash);
+        auto first_component = std::string_view { cleaned }.substr(0, first_slash);
         if (first_component != ".") {
             normalized = pup::path::normalize(pup::path::join(current_dir, normalized));
         }
@@ -100,12 +100,12 @@ auto is_order_only_group_reference(std::string_view path) -> bool
 /// This is used when referencing cross-directory groups or generated files.
 auto request_demand_driven_parse(
     parser::EvalContext const& eval,
-    std::string const& dir_path
+    std::string_view dir_path
 ) -> void
 {
     if (eval.request_directory && eval.available_tupfile_dirs) {
         if (std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_path)) {
-            (void)eval.request_directory(dir_path);
+            (void)eval.request_directory(std::string { dir_path });
         }
     }
 }
@@ -113,9 +113,9 @@ auto request_demand_driven_parse(
 /// Parse a group reference from a path expression
 /// Returns nullopt if the path doesn't contain a valid <group> suffix
 auto parse_group_reference(
-    std::string const& path,
-    std::string const& current_dir,
-    std::string const& source_root
+    std::string_view path,
+    std::string_view current_dir,
+    std::string_view source_root
 ) -> std::optional<GroupReference>
 {
     auto lt_pos = path.rfind('<');
@@ -130,7 +130,7 @@ auto parse_group_reference(
     }
     auto dir_part = path.substr(0, lt_pos);
     auto group_dir = normalize_group_dir(dir_part, current_dir, source_root);
-    return GroupReference { std::move(group_name), std::move(group_dir) };
+    return GroupReference { std::string { group_name }, std::move(group_dir) };
 }
 
 /// Normalize a path that may point to the output directory to its canonical form.
@@ -140,8 +140,8 @@ auto parse_group_reference(
 /// by checking if they point to output_root and returning the relative path within it.
 auto normalize_to_output_relative(
     std::string_view path,
-    std::string const& source_root,
-    std::string const& output_root
+    std::string_view source_root,
+    std::string_view output_root
 ) -> std::string
 {
     if (auto resolved = pup::resolve_under_root(path, source_root, output_root)) {
@@ -179,10 +179,10 @@ auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 
     return PathTransformContext {
         .source_to_root = pup::compute_source_to_root(ctx.current_dir),
-        .current_dir_str = ctx.current_dir,
-        .source_root = ctx.options.source_root,
-        .config_root = ctx.options.config_root,
-        .output_root = ctx.options.output_root,
+        .current_dir_str = std::string(ctx.current_dir),
+        .source_root = std::string(ctx.options.source_root),
+        .config_root = std::string(ctx.options.config_root),
+        .output_root = std::string(ctx.options.output_root),
         .canonical_cwd = std::move(canonical_cwd),
     };
 }
@@ -190,7 +190,7 @@ auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 /// Compute a canonical relative path from the source CWD to a build-tree file.
 /// Resolves symlinks in the source tree so that `../` components in command paths
 /// navigate correctly from the physical CWD (which the OS uses after resolving symlinks).
-auto make_canonical_relative(PathTransformContext const& tc, std::string const& path) -> std::string
+auto make_canonical_relative(PathTransformContext const& tc, std::string_view path) -> std::string
 {
     auto joined = pup::path::join(tc.source_root, path);
     auto abs = pup::platform::canonical(joined);
@@ -206,7 +206,7 @@ auto make_canonical_relative(PathTransformContext const& tc, std::string const& 
 auto transform_input_path(
     BuildGraph& graph,
     PathTransformContext const& tc,
-    std::string const& inp
+    std::string_view inp
 ) -> std::string
 {
     // Check if this input refers to a Generated/Ghost file under BUILD_ROOT_ID
@@ -258,7 +258,7 @@ auto transform_input_path(
 /// This function just converts to Tupfile-relative (e.g., "../../build/src/main.o").
 auto transform_output_path(
     PathTransformContext const& tc,
-    std::string const& out
+    std::string_view out
 ) -> std::string
 {
     if (!tc.canonical_cwd.empty() && out.starts_with("..")) {
@@ -535,45 +535,45 @@ auto expand_command(
 
 auto get_or_create_directory_node(
     BuilderContext& ctx,
-    std::string const& dir_path,
+    std::string_view dir_path,
     int depth = 0
 ) -> Result<NodeId>;
 
 auto get_or_create_file_node(
     BuilderContext& ctx,
-    std::string const& path,
+    std::string_view path,
     NodeType type = NodeType::File
 ) -> Result<NodeId>;
 
 auto resolve_input_node(
     BuilderContext& ctx,
-    std::string const& path
+    std::string_view path
 ) -> Result<NodeId>;
 
 auto get_or_create_group_node(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& directory,
-    std::string const& name
+    std::string_view directory,
+    std::string_view name
 ) -> Result<NodeId>;
 
 auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& instruction,
-    std::string const& display
+    std::string_view instruction,
+    std::string_view display
 ) -> Result<NodeId>;
 
 /// Collect all Tuprules.tup files from root to start_dir (root-first order).
 /// Per tup semantics, include_rules includes every Tuprules.tup from the
 /// project root down to the current directory. Gaps are allowed.
 auto find_tuprules_files(
-    std::string const& start_dir,
-    std::string const& root
+    std::string_view start_dir,
+    std::string_view root
 ) -> std::vector<std::string>
 {
     auto dirs = std::vector<std::string> {};
-    auto search_dir = start_dir;
+    auto search_dir = std::string { start_dir };
 
     while (search_dir.size() >= root.size()) {
         dirs.push_back(search_dir);
@@ -604,7 +604,7 @@ auto find_tuprules_files(
 /// Returns the resolved path or an error
 auto resolve_include_path(
     BuilderContext& ctx,
-    std::string const& include_root,
+    std::string_view include_root,
     parser::Expression const& path_expr
 ) -> Result<std::string>
 {
@@ -624,11 +624,11 @@ auto resolve_include_path(
 /// Adds matched paths to result vector.
 auto expand_glob_pattern(
     BuilderContext& ctx,
-    std::string const& path,
+    std::string_view path,
     std::vector<std::string>& result
 ) -> void
 {
-    auto base = ctx.current_dir.empty() ? std::string { ctx.options.source_root }
+    auto base = ctx.current_dir.empty() ? std::string(ctx.options.source_root)
                                         : std::string(pup::path::join(ctx.options.source_root, ctx.current_dir));
 
     // First try expanding against filesystem
@@ -655,7 +655,7 @@ auto expand_glob_pattern(
     // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
     // but the glob pattern is relative to current directory (e.g., *.o)
     // We need to strip the build root prefix and match against the relative path
-    auto pattern_path = ctx.current_dir.empty() ? path : pup::path::normalize(pup::path::join(ctx.current_dir, path));
+    auto pattern_path = ctx.current_dir.empty() ? pup::String { path } : pup::path::normalize(pup::path::join(ctx.current_dir, path));
     auto glob = parser::Glob { pattern_path };
     auto build_root_name = ctx.graph->get_build_root_name();
     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
@@ -865,7 +865,7 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) ->
          it != ctx.pending_weak_assignments.rend();
          ++it) {
         if (!ctx.vars->contains(it->name)) {
-            ctx.vars->set(it->name, it->value);
+            ctx.vars->set(it->name, std::string(it->value));
             auto name_id = ctx.graph->intern(it->name);
             if (!it->config_deps.empty()) {
                 state.var_config_deps.get_or_create(name_id) = std::move(it->config_deps);
@@ -1202,8 +1202,8 @@ auto process_conditional(
 auto include_single_file(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& include_root,
-    std::string const& include_path,
+    std::string_view include_root,
+    std::string_view include_path,
     bool is_rules
 ) -> Result<void>
 {
@@ -1221,16 +1221,17 @@ auto include_single_file(
 
     auto source_result = pup::platform::read_file(include_path);
     if (!source_result) {
-        return make_error<void>(ErrorCode::IoError, "Cannot open include file: " + include_path);
+        return make_error<void>(ErrorCode::IoError, std::format("Cannot open include file: {}", include_path));
     }
     auto source = std::move(*source_result);
 
-    auto parse_result = parser::parse_tupfile(source, include_path);
+    auto include_path_str = std::string { include_path };
+    auto parse_result = parser::parse_tupfile(source, include_path_str);
     if (!parse_result.success()) {
         for (auto const& err : parse_result.errors) {
-            fprintf(stderr, "%s:%d:%d: error: %s\n", include_path.c_str(), err.location.line, err.location.column, err.message.c_str());
+            fprintf(stderr, "%s:%d:%d: error: %s\n", include_path_str.c_str(), err.location.line, err.location.column, err.message.c_str());
         }
-        return make_error<void>(ErrorCode::ParseError, "Parse error in include file: " + include_path);
+        return make_error<void>(ErrorCode::ParseError, std::format("Parse error in include file: {}", include_path));
     }
 
     auto old_tup_cwd = std::string {};
@@ -1308,10 +1309,10 @@ auto process_import(
                  state.options.cached_env_vars.begin(),
                  state.options.cached_env_vars.end(),
                  imp.var_name,
-                 [](auto const& p, auto const& k) { return p.first < k; }
+                 [](auto const& p, std::string_view k) { return p.first < k; }
              );
              it != state.options.cached_env_vars.end() && it->first == imp.var_name) {
-        value = it->second;
+        value = std::string(it->second);
     }
     // 3. Fall back to default value
     else if (imp.default_value) {
@@ -1517,8 +1518,8 @@ auto expand_rule(
             return { std::format("%<{}>", name) };
         }
         // Local group not in this rule's inputs — also defer
-        auto dir = ctx.current_dir.empty() ? std::string { "." } : ctx.current_dir;
-        auto key_str = dir + "/" + name_str;
+        auto dir = ctx.current_dir.empty() ? pup::String { "." } : ctx.current_dir;
+        auto key_str = std::string(dir) + "/" + name_str;
         auto key_id = to_underlying(ctx.graph->intern(key_str));
         auto const* node_id = state.group_nodes.find(key_id);
         if (node_id) {
@@ -1611,9 +1612,9 @@ auto expand_rule(
         .node_id = *cmd_id,
         .command = cmd_text,
         .display = display,
-        .inputs = file_inputs,
-        .order_only_inputs = order_only_paths,
-        .outputs = *outputs,
+        .inputs = { file_inputs.begin(), file_inputs.end() },
+        .order_only_inputs = { order_only_paths.begin(), order_only_paths.end() },
+        .outputs = { outputs->begin(), outputs->end() },
         .working_dir = ctx.current_dir,
     };
 
@@ -1962,7 +1963,7 @@ auto expand_command(
 
 auto get_or_create_directory_node(
     BuilderContext& ctx,
-    std::string const& dir_path,
+    std::string_view dir_path,
     int depth
 ) -> Result<NodeId>
 {
@@ -2002,7 +2003,7 @@ auto get_or_create_directory_node(
 
 auto get_or_create_file_node(
     BuilderContext& ctx,
-    std::string const& path,
+    std::string_view path,
     NodeType type
 ) -> Result<NodeId>
 {
@@ -2089,7 +2090,7 @@ auto get_or_create_file_node(
 
 auto resolve_input_node(
     BuilderContext& ctx,
-    std::string const& path
+    std::string_view path
 ) -> Result<NodeId>
 {
     // Input paths are already source-relative from expand_inputs() which normalizes them
@@ -2175,12 +2176,12 @@ auto resolve_input_node(
 auto get_or_create_group_node(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& directory,
-    std::string const& name
+    std::string_view directory,
+    std::string_view name
 ) -> Result<NodeId>
 {
     // Check cache first (fast path)
-    auto key_str = directory + "/" + name;
+    auto key_str = std::string { directory } + "/" + std::string { name };
     auto key_id = to_underlying(ctx.graph->intern(key_str));
     auto const* cached = state.group_nodes.find(key_id);
     if (cached) {
@@ -2196,7 +2197,7 @@ auto get_or_create_group_node(
 
     // Check if group node already exists in graph (e.g., from previous Tupfile)
     // Group nodes are stored with angle-bracket name like "<gen-headers>"
-    auto group_basename = "<" + name + ">";
+    auto group_basename = std::string { "<" } + std::string { name } + ">";
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, group_basename)) {
         state.group_nodes.insert(key_id, *existing);
         return *existing;
@@ -2219,8 +2220,8 @@ auto get_or_create_group_node(
 auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string const& instruction,
-    std::string const& display
+    std::string_view instruction,
+    std::string_view display
 ) -> Result<NodeId>
 {
     auto exported = SortedIdVec {};
@@ -2455,8 +2456,8 @@ auto add_tupfile(
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
                                     ) -> std::vector<std::string> {
-        auto dir = ctx.current_dir.empty() ? std::string { "." } : ctx.current_dir;
-        auto key_str = dir + "/" + std::string { name };
+        auto dir = ctx.current_dir.empty() ? pup::String { "." } : ctx.current_dir;
+        auto key_str = std::string(dir) + "/" + std::string { name };
         auto key_id = to_underlying(ctx.graph->intern(key_str));
         auto const* node_id = state.group_nodes.find(key_id);
         if (!node_id) {
@@ -2568,9 +2569,9 @@ auto resolve_deferred_order_only_edges(
         auto tc = PathTransformContext {
             .source_to_root = pup::compute_source_to_root(source_dir_str),
             .current_dir_str = source_dir_str,
-            .source_root = state.options.source_root,
-            .config_root = state.options.config_root,
-            .output_root = state.options.output_root,
+            .source_root = std::string(state.options.source_root),
+            .config_root = std::string(state.options.config_root),
+            .output_root = std::string(state.options.output_root),
             .canonical_cwd = std::move(canonical_cwd),
         };
 
@@ -2616,12 +2617,12 @@ GraphBuilder::GraphBuilder(BuilderOptions options)
 {
 }
 
-auto GraphBuilder::errors() const -> std::vector<std::string> const&
+auto GraphBuilder::errors() const -> std::vector<String> const&
 {
     return state_.errors;
 }
 
-auto GraphBuilder::warnings() const -> std::vector<std::string> const&
+auto GraphBuilder::warnings() const -> std::vector<String> const&
 {
     return state_.warnings;
 }

@@ -15,6 +15,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <format>
 #include <queue>
 #include <thread>
 
@@ -24,9 +25,9 @@ namespace {
 
 using EnvCache = std::vector<std::pair<std::string, std::string>>;
 
-auto env_cache_find(EnvCache const& cache, std::string const& key) -> EnvCache::const_iterator
+auto env_cache_find(EnvCache const& cache, std::string_view key) -> EnvCache::const_iterator
 {
-    auto pos = std::lower_bound(cache.begin(), cache.end(), key, [](auto const& p, auto const& k) { return p.first < k; });
+    auto pos = std::lower_bound(cache.begin(), cache.end(), key, [](auto const& p, std::string_view k) { return p.first < k; });
     return (pos != cache.end() && pos->first == key) ? pos : cache.end();
 }
 
@@ -38,7 +39,7 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
     auto names = std::vector<std::string> {};
     for (auto const& job : jobs) {
         for (auto const& var_name : job.exported_vars) {
-            names.push_back(var_name);
+            names.push_back(std::string(var_name));
         }
     }
     std::sort(names.begin(), names.end());
@@ -59,15 +60,14 @@ auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 /// If the path is already prefixed with the variant output directory, use source_root as base.
 /// Otherwise, use output_root as base.
 auto resolve_variant_path(
-    std::string const& source_root,
-    std::string const& output_root,
+    std::string_view source_root,
+    std::string_view output_root,
     std::string_view output_root_prefix,
-    std::string const& path
+    std::string_view path
 ) -> std::string
 {
-    auto path_str = path;
-    if (!output_root_prefix.empty() && path_str.starts_with(output_root_prefix)
-        && (path_str.size() == output_root_prefix.size() || path_str[output_root_prefix.size()] == '/')) {
+    if (!output_root_prefix.empty() && path.starts_with(output_root_prefix)
+        && (path.size() == output_root_prefix.size() || path[output_root_prefix.size()] == '/')) {
         return std::string(pup::path::join(source_root, path));
     }
     return std::string(pup::path::join(output_root, path));
@@ -194,9 +194,8 @@ auto validate_guard_dependencies(
             if (jobs[dep_idx].guard_active) {
                 return make_error<void>(
                     ErrorCode::MissingInput,
-                    "Command '" + jobs[dep_idx].command
-                        + "' depends on output from '" + jobs[i].command
-                        + "' which is inactive due to conditional guard"
+                    std::format("Command '{}' depends on output from '{}' which is inactive due to conditional guard",
+                        std::string_view { jobs[dep_idx].command }, std::string_view { jobs[i].command })
                 );
             }
         }
@@ -724,7 +723,7 @@ auto Scheduler::Impl::execute_job(
     // Per tup manual: "value for the variable comes from tup's environment"
     for (auto const& var_name : job.exported_vars) {
         if (auto it = env_cache_find(env_cache, var_name); it != env_cache.end()) {
-            run_opts.env.push_back(var_name + "=" + it->second);
+            run_opts.env.push_back(std::string(var_name) + "=" + it->second);
         }
     }
 
@@ -850,9 +849,9 @@ auto Scheduler::build_job_list(
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
         auto source_dir = get_source_dir(graph.graph(), id);
-        auto working_dir = std::string { impl_->options.source_root };
+        auto working_dir = String { impl_->options.source_root };
         if (!source_dir.empty()) {
-            working_dir = pup::path::join(working_dir, std::string { source_dir });
+            working_dir = pup::path::join(working_dir, source_dir);
         }
 
         // Check if this is a generated rule that captures stdout
@@ -868,10 +867,10 @@ auto Scheduler::build_job_list(
         }
 
         // Expand command from instruction pattern + operands
-        auto cmd_str = expand_instruction(graph.graph(), id, cache, impl_->options.source_root, impl_->options.config_root);
+        auto cmd_str = expand_instruction(graph.graph(), id, cache, std::string(impl_->options.source_root), std::string(impl_->options.config_root));
         auto display_str = std::string { get_display_str(graph.graph(), id) };
 
-        auto exported_str = std::vector<std::string> {};
+        auto exported_str = std::vector<String> {};
         exported_str.reserve(node->exported_vars.size());
         for (auto raw_id : node->exported_vars) {
             exported_str.emplace_back(graph.graph().strings.get(make_string_id(raw_id)));

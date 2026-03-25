@@ -37,7 +37,7 @@ auto read_raw_entries(
 
 } // namespace
 
-auto open_index(std::string const& path) -> Result<IndexFile>
+auto open_index(std::string_view path) -> Result<IndexFile>
 {
     auto result = IndexFile {};
 
@@ -65,7 +65,7 @@ auto open_index(std::string const& path) -> Result<IndexFile>
     return result;
 }
 
-auto is_valid_index(std::string const& path) -> bool
+auto is_valid_index(std::string_view path) -> bool
 {
     auto file = pup::platform::MappedFile::open(path);
     if (!file || file->size() < sizeof(RawHeader)) {
@@ -128,7 +128,7 @@ auto read_index(IndexFile const& f) -> Result<Index>
     return index;
 }
 
-auto read_index(std::string const& path) -> Result<Index>
+auto read_index(std::string_view path) -> Result<Index>
 {
     auto file_result = open_index(path);
     if (!file_result) {

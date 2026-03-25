@@ -51,7 +51,7 @@ auto CommandRunner::run_with_output(
     auto merged = RunOptions { merge_options(options) };
 
     auto platform_opts = pup::platform::ProcessOptions {};
-    platform_opts.command = std::string { command };
+    platform_opts.command = pup::String { command };
     platform_opts.working_dir = merged.working_dir;
     platform_opts.env = merged.env;
     platform_opts.inherit_env = merged.inherit_env;

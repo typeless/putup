@@ -16,7 +16,7 @@ namespace pup::index {
 /// Uses a temporary file and rename for atomic operation
 [[nodiscard]]
 auto write_index(
-    std::string const& path,
+    std::string_view path,
     Index const& index
 ) -> Result<void>;
 

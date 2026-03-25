@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/string.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
 #include <memory>
@@ -42,14 +43,14 @@ public:
 
     /// Check if command already has dependency generation enabled
     [[nodiscard]]
-    virtual auto has_dep_flags(std::string const& cmd) const -> bool = 0;
+    virtual auto has_dep_flags(std::string_view cmd) const -> bool = 0;
 
     /// Build a command to extract dependencies from the given command.
     /// Returns nullopt if deps shouldn't be extracted (e.g., already has flags).
     [[nodiscard]]
     virtual auto build_dep_command(
         CommandInfo const& cmd
-    ) const -> std::optional<std::string> = 0;
+    ) const -> std::optional<String> = 0;
 
     /// Get the dependency extraction specification
     [[nodiscard]]
@@ -62,9 +63,9 @@ public:
 
 /// Build display string for DEP commands (e.g., "DEP foo.c")
 [[nodiscard]]
-inline auto make_dep_display(std::vector<std::string> const& inputs) -> std::string
+inline auto make_dep_display(std::vector<String> const& inputs) -> String
 {
-    return inputs.empty() ? std::string { "DEP" } : "DEP " + inputs[0];
+    return inputs.empty() ? String { "DEP" } : String { "DEP " } + inputs[0];
 }
 
 /// Registry for dependency scanners.

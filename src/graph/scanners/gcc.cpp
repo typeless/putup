@@ -229,10 +229,10 @@ auto GccScanner::matches(CommandInfo const& cmd) const -> bool
     return matches_gcc_compile(cmd.command);
 }
 
-auto GccScanner::has_dep_flags(std::string const& cmd) const -> bool
+auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
 {
-    auto pos = std::string::size_type { 0 };
-    while ((pos = cmd.find("-M", pos)) != std::string::npos) {
+    auto pos = std::string_view::size_type { 0 };
+    while ((pos = cmd.find("-M", pos)) != std::string_view::npos) {
         if (pos > 0 && std::isspace(static_cast<unsigned char>(cmd[pos - 1])) == 0) {
             ++pos;
             continue;
@@ -251,7 +251,7 @@ auto GccScanner::has_dep_flags(std::string const& cmd) const -> bool
     return false;
 }
 
-auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<std::string>
+auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<String>
 {
     auto words = core::tokenize_shell_command(cmd.command);
     if (words.empty()) {
@@ -260,7 +260,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
 
     auto compiler_idx = std::size_t { 0 };
     auto first_basename = words[0];
-    if (auto slash_pos = first_basename.rfind('/'); slash_pos != std::string::npos) {
+    if (auto slash_pos = first_basename.rfind('/'); slash_pos != String::npos) {
         first_basename = first_basename.substr(slash_pos + 1);
     }
 
@@ -269,7 +269,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     }
 
     auto compiler_basename = words[compiler_idx];
-    if (auto pos = compiler_basename.rfind('/'); pos != std::string::npos) {
+    if (auto pos = compiler_basename.rfind('/'); pos != String::npos) {
         compiler_basename = compiler_basename.substr(pos + 1);
     }
     if (!is_compiler_name(compiler_basename)) {

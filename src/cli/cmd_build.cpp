@@ -37,9 +37,9 @@ using PathIdMap = std::vector<std::pair<std::string, pup::NodeId>>;
 using EdgePairVec = std::vector<std::pair<pup::NodeId, pup::NodeId>>;
 using DiscoveredDeps = std::vector<std::pair<pup::NodeId, std::vector<std::string>>>;
 
-auto path_id_find(PathIdMap const& m, std::string const& key) -> PathIdMap::const_iterator
+auto path_id_find(PathIdMap const& m, std::string_view key) -> PathIdMap::const_iterator
 {
-    auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, auto const& k) { return p.first < k; });
+    auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, std::string_view k) { return p.first < k; });
     return (pos != m.end() && pos->first == key) ? pos : m.end();
 }
 
@@ -179,7 +179,7 @@ auto is_tupfile(std::string_view path) -> bool
 /// reachable nodes (the transitive upstream closure).
 auto walk_upstream_from_scope(
     pup::graph::BuildGraph const& graph,
-    std::vector<std::string> const& scopes
+    std::vector<pup::String> const& scopes
 ) -> std::vector<pup::NodeId>
 {
     if (scopes.empty()) {
@@ -240,7 +240,7 @@ auto walk_upstream_from_scope(
 /// Collect all upstream input file paths for commands in the given scopes.
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
-    std::vector<std::string> const& scopes
+    std::vector<pup::String> const& scopes
 ) -> std::vector<std::string>
 {
     auto upstream = std::vector<std::string> {};
@@ -264,7 +264,7 @@ auto collect_upstream_files(
 /// Collect commands in scope plus all transitive upstream producer commands.
 auto collect_scope_with_upstream_commands(
     pup::graph::BuildGraph const& graph,
-    std::vector<std::string> const& scopes
+    std::vector<pup::String> const& scopes
 ) -> pup::NodeIdMap32
 {
     auto commands = pup::NodeIdMap32 {};
@@ -279,7 +279,7 @@ auto collect_scope_with_upstream_commands(
 auto find_changed_files_with_implicit(
     std::string const& source_root,
     pup::index::Index const& old_index,
-    std::vector<std::string> const& scopes,
+    std::vector<pup::String> const& scopes,
     std::vector<std::string> const& upstream_files,
     bool verbose = false
 ) -> std::vector<std::string>
@@ -299,7 +299,7 @@ auto find_changed_files_with_implicit(
         // Skip files outside scopes (but always check Tupfiles and upstream deps)
         if (!scopes.empty() && !is_tupfile(file.path)
             && !pup::is_path_in_any_scope(file.path, scopes)
-            && !std::binary_search(upstream_files.begin(), upstream_files.end(), file.path)) {
+            && !std::binary_search(upstream_files.begin(), upstream_files.end(), std::string_view { file.path })) {
             continue;
         }
 
@@ -317,7 +317,7 @@ auto find_changed_files_with_implicit(
                 printf("  Changed (stat failed): %s\n", file.path.c_str());
             }
             ++metrics.files_changed;
-            changed.push_back(file.path);
+            changed.push_back(std::string(file.path));
             continue;
         }
 
@@ -328,7 +328,7 @@ auto find_changed_files_with_implicit(
                 printf("  Changed (size): %s\n", file.path.c_str());
             }
             ++metrics.files_changed;
-            changed.push_back(file.path);
+            changed.push_back(std::string(file.path));
             continue;
         }
 
@@ -352,7 +352,7 @@ auto find_changed_files_with_implicit(
                     printf("  Changed (hash): %s\n", file.path.c_str());
                 }
                 ++metrics.files_changed;
-                changed.push_back(file.path);
+                changed.push_back(std::string(file.path));
             }
         } else {
             // ZERO_HASH indicates hash wasn't computed - treat as changed to be safe
@@ -360,7 +360,7 @@ auto find_changed_files_with_implicit(
                 printf("  Changed (no hash): %s\n", file.path.c_str());
             }
             ++metrics.files_changed;
-            changed.push_back(file.path);
+            changed.push_back(std::string(file.path));
         }
     }
 
@@ -440,22 +440,23 @@ auto get_or_create_dir(
 /// Creates parent directories as needed and returns the file's NodeId.
 auto create_implicit_file(
     ImplicitDepContext& ctx,
-    std::string const& abs_path,
-    std::string const& rel_path
+    std::string_view abs_path,
+    std::string_view rel_path
 ) -> pup::NodeId
 {
     auto content_hash = pup::Hash256 {};
     auto file_size = std::uint64_t { 0 };
     auto mtime_ns = std::int64_t { 0 };
-    if (pup::platform::exists(abs_path)) {
-        auto hash_result = pup::sha256_file(abs_path);
+    auto abs_path_str = std::string { abs_path };
+    if (pup::platform::exists(abs_path_str)) {
+        auto hash_result = pup::sha256_file(abs_path_str);
         if (hash_result) {
             content_hash = *hash_result;
         } else {
             fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::platform::to_utf8(abs_path).c_str());
         }
 
-        auto stat_result = pup::platform::stat_file(abs_path);
+        auto stat_result = pup::platform::stat_file(abs_path_str);
         if (stat_result) {
             file_size = stat_result->size;
             mtime_ns = stat_result->mtime_ns;
@@ -481,7 +482,7 @@ auto create_implicit_file(
         .content_hash = content_hash,
     };
     ctx.index.add_file(std::move(entry));
-    path_id_insert(ctx.path_to_id, rel_path, file_id);
+    path_id_insert(ctx.path_to_id, std::string { rel_path }, file_id);
     return file_id;
 }
 
@@ -866,7 +867,7 @@ auto build_index(
 /// Validate output targets exist in the build graph.
 /// Returns node IDs on success, or empty optional with error printed on failure.
 auto validate_output_targets(
-    std::vector<std::string> const& targets,
+    std::vector<pup::String> const& targets,
     pup::graph::BuildGraph const& graph,
     std::string_view variant_name,
     bool verbose
@@ -1034,7 +1035,7 @@ auto build_single_variant(
     // When -a is set, always parse all Tupfiles so that cross-directory
     // producers are discovered and ghost nodes get resolved.
     auto parse_scopes = (opts.targets.empty() || opts.include_all_deps)
-        ? std::vector<std::string> {}
+        ? std::vector<pup::String> {}
         : scopes;
 
     auto ctx_opts = BuildContextOptions {
@@ -1132,7 +1133,7 @@ auto build_single_variant(
                 prefixed.reserve(build_root_name.size() + 1 + output_path.size());
                 prefixed.append(build_root_name).append("/").append(output_path);
             } else {
-                prefixed = output_path;
+                prefixed = std::string(output_path);
             }
             if (std::ranges::find(changed_files, prefixed) == changed_files.end()) {
                 changed_files.push_back(prefixed);
@@ -1176,12 +1177,12 @@ auto build_single_variant(
         .keep_going = opts.keep_going,
         .dry_run = opts.dry_run,
         .verbose = opts.verbose,
-        .source_root = std::string(ctx.layout().source_root),
-        .config_root = std::string(ctx.layout().config_root),
-        .output_root = std::string(ctx.layout().output_root),
+        .source_root = ctx.layout().source_root,
+        .config_root = ctx.layout().config_root,
+        .output_root = ctx.layout().output_root,
     };
 
-    auto scheduler = pup::exec::Scheduler { sched_opts };
+    auto scheduler = pup::exec::Scheduler { std::move(sched_opts) };
     auto discovered_deps = DiscoveredDeps {};
     auto deps_mutex = std::mutex {};
     auto progress_mutex = std::mutex {};

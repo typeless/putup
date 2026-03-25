@@ -6,6 +6,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
+#include <format>
 #include <string_view>
 
 namespace pup {
@@ -56,20 +57,20 @@ auto fnmatch_simple(std::string_view pattern, std::string_view name) -> bool
     return name.starts_with(prefix) && name.ends_with(suffix);
 }
 
-auto split_first_component(std::string const& p) -> std::pair<std::string, std::string>
+auto split_first_component(std::string_view p) -> std::pair<std::string, std::string>
 {
     auto slash = p.find('/');
-    if (slash == std::string::npos) {
-        return { p, {} };
+    if (slash == std::string_view::npos) {
+        return { std::string { p }, {} };
     }
-    return { p.substr(0, slash), p.substr(slash + 1) };
+    return { std::string { p.substr(0, slash) }, std::string { p.substr(slash + 1) } };
 }
 
 } // namespace
 
 auto parse_target(
-    std::string const& project_root,
-    std::string const& target_path
+    std::string_view project_root,
+    std::string_view target_path
 ) -> Result<Target>
 {
     if (target_path.empty()) {
@@ -93,7 +94,7 @@ auto parse_target(
     if (pup::platform::exists(full_path)) {
         if (pup::platform::is_file(full_path)) {
             if (is_source_file(full_path)) {
-                return unexpected<Error> { Error { ErrorCode::InvalidArgument, "source file, not build output: " + target_path } };
+                return unexpected<Error> { Error { ErrorCode::InvalidArgument, std::format("source file, not build output: {}", target_path) } };
             }
             target.is_output = true;
         }
@@ -103,11 +104,11 @@ auto parse_target(
             par = project_root;
         }
         if (!pup::platform::exists(par)) {
-            return unexpected<Error> { Error { ErrorCode::NotFound, "path not found: " + target_path } };
+            return unexpected<Error> { Error { ErrorCode::NotFound, std::format("path not found: {}", target_path) } };
         }
 
         if (is_source_file(full_path)) {
-            return unexpected<Error> { Error { ErrorCode::InvalidArgument, "source file, not build output: " + target_path } };
+            return unexpected<Error> { Error { ErrorCode::InvalidArgument, std::format("source file, not build output: {}", target_path) } };
         }
 
         target.is_output = true;
@@ -117,8 +118,8 @@ auto parse_target(
 }
 
 auto expand_glob_target(
-    std::string const& project_root,
-    std::string const& pattern
+    std::string_view project_root,
+    std::string_view pattern
 ) -> std::vector<Target>
 {
     auto result = std::vector<Target> {};
@@ -158,7 +159,7 @@ auto expand_glob_target(
         }
 
         auto target = Target {};
-        target.variant = std::string(entry.name);
+        target.variant = String(entry.name);
 
         if (!remainder.empty()) {
             auto full_path = pup::path::join(entry_path, remainder);
@@ -181,16 +182,16 @@ auto expand_glob_target(
 
 namespace {
 
-auto is_glob_pattern(std::string const& s) -> bool
+auto is_glob_pattern(std::string_view s) -> bool
 {
-    return s.find('*') != std::string::npos;
+    return s.find('*') != std::string_view::npos;
 }
 
 } // namespace
 
 auto validate_target_consistency(
-    std::string const& project_root,
-    std::vector<std::string> const& targets
+    std::string_view project_root,
+    std::vector<String> const& targets
 ) -> Result<std::vector<Target>>
 {
     auto result = std::vector<Target> {};

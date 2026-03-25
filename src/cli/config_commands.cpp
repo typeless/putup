@@ -9,7 +9,7 @@ namespace pup::cli {
 
 namespace {
 
-auto is_config_output(std::string const& path) -> bool
+auto is_config_output(std::string_view path) -> bool
 {
     return path.ends_with("tup.config");
 }
@@ -18,7 +18,7 @@ auto is_config_output(std::string const& path) -> bool
 
 auto find_config_commands(
     graph::BuildGraph const& graph,
-    std::string const& source_root
+    std::string_view source_root
 ) -> std::vector<ConfigCommand>
 {
     auto result = std::vector<ConfigCommand> {};

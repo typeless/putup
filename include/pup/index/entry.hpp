@@ -7,6 +7,7 @@
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 
@@ -26,8 +27,8 @@ struct FileEntry {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    std::string name = {}; ///< Basename only (tup-style identification)
-    std::string path = {}; ///< Full path (computed from parent_id/name chain, not serialized)
+    String name = {}; ///< Basename only (tup-style identification)
+    String path = {}; ///< Full path (computed from parent_id/name chain, not serialized)
     std::uint64_t size = 0;
     std::int64_t mtime_ns = 0; ///< Modification time (nanoseconds since epoch)
     Hash256 content_hash = {};
@@ -53,9 +54,9 @@ struct CommandEntry {
     NodeId id = 0;
     NodeId dir_id = 0; ///< Directory where command runs
 
-    std::string instruction_pattern = {}; ///< Instruction pattern with %f/%o markers
-    std::string display = {};             ///< Display text (from ^ ^ markers)
-    std::string env = {};                 ///< Environment variables
+    String instruction_pattern = {}; ///< Instruction pattern with %f/%o markers
+    String display = {};             ///< Display text (from ^ ^ markers)
+    String env = {};                 ///< Environment variables
 
     std::vector<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
     std::vector<NodeId> outputs = {}; ///< Output file operands (for %o expansion)
@@ -158,7 +159,7 @@ public:
 
     /// Find command by expanded command string (requires prior build_edge_indices() call)
     [[nodiscard]]
-    auto find_command_by_command(std::string const& cmd) const -> CommandEntry const*;
+    auto find_command_by_command(std::string_view cmd) const -> CommandEntry const*;
 
     /// Rebuild internal command lookup index (call after modifying commands or after load)
     auto rebuild_command_index() -> void;

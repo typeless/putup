@@ -150,7 +150,7 @@ SCENARIO("Target parsing - glob expansion", "[e2e][target]")
                 auto variants = std::set<std::string> {};
                 for (auto const& t : result) {
                     REQUIRE(t.variant.has_value());
-                    variants.insert(*t.variant);
+                    variants.insert(std::string(*t.variant));
                 }
                 REQUIRE(variants.count("build-debug") == 1);
                 REQUIRE(variants.count("build-release") == 1);
@@ -263,7 +263,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
         {
             tmp.create_dir("build-debug/src");
             tmp.create_dir("src/test");
-            auto targets = std::vector<std::string> { "build-debug/src", "src/test" };
+            auto targets = std::vector<pup::String> { "build-debug/src", "src/test" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
@@ -275,7 +275,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
 
         WHEN("parsing ['build-debug', 'src']")
         {
-            auto targets = std::vector<std::string> { "build-debug", "src" };
+            auto targets = std::vector<pup::String> { "build-debug", "src" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
@@ -289,7 +289,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
         {
             tmp.create_dir("build-debug/src");
             tmp.create_dir("build-release/test");
-            auto targets = std::vector<std::string> { "build-debug/src", "build-release/test" };
+            auto targets = std::vector<pup::String> { "build-debug/src", "build-release/test" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: both have explicit variants")
@@ -300,7 +300,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
 
         WHEN("parsing ['src', 'test']")
         {
-            auto targets = std::vector<std::string> { "src", "test" };
+            auto targets = std::vector<pup::String> { "src", "test" };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: neither has explicit variant")

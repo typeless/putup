@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "pup/core/string.hpp"
+
 #include <cstddef>
 #include <string>
 #include <string_view>

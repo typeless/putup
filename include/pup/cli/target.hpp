@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/result.hpp"
+#include "pup/core/string.hpp"
 
 #include <optional>
 #include <string>
@@ -12,27 +13,27 @@
 namespace pup {
 
 struct Target {
-    std::optional<std::string> variant;
-    std::string scope_or_output;
+    std::optional<String> variant;
+    String scope_or_output;
     bool is_output = false;
 };
 
 [[nodiscard]]
 auto parse_target(
-    std::string const& project_root,
-    std::string const& target_path
+    std::string_view project_root,
+    std::string_view target_path
 ) -> Result<Target>;
 
 [[nodiscard]]
 auto expand_glob_target(
-    std::string const& project_root,
-    std::string const& pattern
+    std::string_view project_root,
+    std::string_view pattern
 ) -> std::vector<Target>;
 
 [[nodiscard]]
 auto validate_target_consistency(
-    std::string const& project_root,
-    std::vector<std::string> const& targets
+    std::string_view project_root,
+    std::vector<String> const& targets
 ) -> Result<std::vector<Target>>;
 
 } // namespace pup
