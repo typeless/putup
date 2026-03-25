@@ -21,7 +21,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
-#include <vector>
 
 namespace pup::cli {
 
