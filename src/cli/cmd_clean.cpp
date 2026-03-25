@@ -61,12 +61,11 @@ auto remove_indexed_outputs(
             continue;
         }
 
-        auto rel_path = std::string { file.path };
-        auto abs_path = pup::path::join(root, rel_path);
-        for (auto parent = std::string { pup::path::parent(abs_path) };
-             !parent.empty() && parent != std::string { pup::path::parent(parent) };
-             parent = std::string { pup::path::parent(parent) }) {
-            result.output_dirs.push_back(parent);
+        auto abs_path = pup::path::join(root, file.path);
+        for (auto parent = String { pup::path::parent(abs_path) };
+             !parent.empty() && std::string_view { parent } != pup::path::parent(parent);
+             parent = pup::path::parent(parent)) {
+            result.output_dirs.emplace_back(std::string_view { parent });
         }
 
         if (!pup::platform::exists(abs_path)) {
@@ -102,7 +101,7 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
         return EXIT_FAILURE;
     }
 
-    auto index_path = std::string(pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index"));
+    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
     if (!pup::platform::exists(index_path)) {
         vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
@@ -132,7 +131,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         return EXIT_FAILURE;
     }
 
-    auto index_path = std::string(pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index"));
+    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
     auto error_count = std::size_t { 0 };
     auto output_dirs = std::vector<std::string> {};
 
@@ -168,7 +167,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    output_dirs.push_back(std::string(ctx->build_dir));
+    output_dirs.emplace_back(std::string_view { ctx->build_dir });
     remove_empty_directories(output_dirs, std::string(ctx->build_dir), std::string(ctx->root), mode);
 
     if (!opts.dry_run) {

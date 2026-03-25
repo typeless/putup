@@ -36,10 +36,10 @@ auto env_cache_find(EnvCache const& cache, std::string_view key) -> EnvCache::co
 auto build_env_cache(std::vector<BuildJob> const& jobs) -> EnvCache
 {
     // Collect unique var names
-    auto names = std::vector<std::string> {};
+    auto names = std::vector<String> {};
     for (auto const& job : jobs) {
         for (auto const& var_name : job.exported_vars) {
-            names.push_back(std::string(var_name));
+            names.push_back(var_name);
         }
     }
     std::sort(names.begin(), names.end());
@@ -703,11 +703,10 @@ auto Scheduler::Impl::execute_job(
     );
     auto output_root_prefix = relative_output_root;
     for (auto const& output : job.outputs) {
-        auto output_path = std::string { output };
-        if (!pup::path::is_absolute(output_path)) {
-            output_path = resolve_variant_path(source_root, options.output_root, output_root_prefix, output);
-        }
-        auto parent = std::string { pup::path::parent(output_path) };
+        auto output_path = pup::path::is_absolute(output)
+            ? String { output }
+            : String { resolve_variant_path(source_root, options.output_root, output_root_prefix, output) };
+        auto parent = pup::path::parent(output_path);
         if (!parent.empty()) {
             (void)pup::platform::create_directories(parent);
         }
@@ -722,7 +721,10 @@ auto Scheduler::Impl::execute_job(
     // Per tup manual: "value for the variable comes from tup's environment"
     for (auto const& var_name : job.exported_vars) {
         if (auto it = env_cache_find(env_cache, var_name); it != env_cache.end()) {
-            run_opts.env.push_back(std::string(var_name) + "=" + it->second);
+            auto entry = String { var_name };
+            entry += '=';
+            entry += it->second;
+            run_opts.env.emplace_back(std::string_view { entry });
         }
     }
 
@@ -761,8 +763,7 @@ auto Scheduler::Impl::execute_job(
 
         // Traditional .d file discovery
         for (auto const& output : job.outputs) {
-            auto output_path = std::string { output };
-            auto ext = pup::path::extension(output_path);
+            auto ext = pup::path::extension(output);
 
             // Support common object file extensions (.o on Unix, .obj on Windows)
             if (ext != ".o" && ext != ".obj") {
@@ -770,8 +771,10 @@ auto Scheduler::Impl::execute_job(
             }
 
             // Compute filesystem path for the .d file
-            auto base_path = resolve_variant_path(source_root, options.output_root, output_root_prefix, std::string { pup::path::parent(output_path) });
-            auto depfile_path = pup::path::join(base_path, std::string { pup::path::stem(output_path) } + ".d");
+            auto base_path = resolve_variant_path(source_root, options.output_root, output_root_prefix, pup::path::parent(output));
+            auto stem = String { pup::path::stem(output) };
+            stem += ".d";
+            auto depfile_path = pup::path::join(base_path, stem);
 
             if (!pup::platform::exists(depfile_path)) {
                 continue;
@@ -811,11 +814,12 @@ auto Scheduler::build_job_list(
         if (node && node->type == NodeType::Ghost && !graph.get_outputs(id).empty()) {
             auto path = graph.get_full_path(id);
             // Check if file exists - if so, it's a valid input (not missing)
-            auto build_root_name = std::string { graph.get_build_root_name() };
+            auto build_root_name = graph.get_build_root_name();
             auto file_path = pup::path::join(impl_->options.output_root, path);
             // Strip build prefix from path if present (for consistent file lookup)
             auto lookup_path = path;
-            auto build_prefix = build_root_name + "/";
+            auto build_prefix = String { build_root_name };
+            build_prefix += '/';
             if (!build_root_name.empty() && path.starts_with(build_prefix)) {
                 lookup_path = path.substr(build_prefix.size());
                 file_path = pup::path::join(impl_->options.output_root, lookup_path);
@@ -867,7 +871,7 @@ auto Scheduler::build_job_list(
 
         // Expand command from instruction pattern + operands
         auto cmd_str = expand_instruction(graph.graph(), id, cache, std::string(impl_->options.source_root), std::string(impl_->options.config_root));
-        auto display_str = std::string { get_display_str(graph.graph(), id) };
+        auto display_str = String { get_display_str(graph.graph(), id) };
 
         auto exported_str = std::vector<String> {};
         exported_str.reserve(node->exported_vars.size());

@@ -37,7 +37,7 @@ auto load_index_for_all_deps(
         return std::nullopt;
     }
 
-    auto index_path = std::string(layout.index_path());
+    auto index_path = String { layout.index_path() };
     if (!pup::platform::exists(index_path)) {
         fprintf(stderr, "Warning: No index found - run 'putup' first\n");
         return std::nullopt;
@@ -149,12 +149,9 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         auto inputs = ctx.graph().get_inputs(id);
         for (auto input_id : inputs) {
             if (node_id::is_command(input_id)) {
-                auto path = std::string { node_path };
-                if (!pup::path::parent(path).empty()) {
-                    auto parent = std::string { pup::path::parent(path) };
-                    if (!parent.empty() && parent != ".") {
-                        output_dirs.push_back(std::move(parent));
-                    }
+                auto parent = pup::path::parent(node_path);
+                if (!parent.empty() && parent != ".") {
+                    output_dirs.emplace_back(parent);
                 }
                 break;
             }
@@ -187,8 +184,8 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         }
 
         auto source_dir = graph::get_source_dir(ctx.graph().graph(), id);
-        auto dir = source_dir.empty() ? std::string { "." } : std::string { source_dir };
-        auto cmd = std::string { graph::expand_instruction(ctx.graph().graph(), id) };
+        auto dir = source_dir.empty() ? String { "." } : String { source_dir };
+        auto cmd = graph::expand_instruction(ctx.graph().graph(), id);
 
         auto line = expand_script_run(script_run, dir, cmd);
         printf("%s\n", line.c_str());
@@ -243,7 +240,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                 if (ctx.graph().get_command_node(id)) {
                     auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
                     auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-                    auto display = std::string { display_sv.empty() ? cmd_sv : display_sv };
+                    auto display = display_sv.empty() ? cmd_sv : std::string { display_sv };
                     printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
                 }
             }
@@ -266,7 +263,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                 }
                 auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
                 auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-                return std::string { display_sv.empty() ? cmd_sv : display_sv };
+                return display_sv.empty() ? cmd_sv : std::string { display_sv };
             }
             return ctx.graph().get_full_path(id);
         };
@@ -343,26 +340,28 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto source_file = std::string {};
+        auto source_file = String {};
         for (auto input_id : ctx.graph().get_inputs(id)) {
             auto input_path = ctx.graph().get_full_path(input_id);
             if (input_path.empty()) {
                 continue;
             }
-            if (input_path.ends_with(".c") || input_path.ends_with(".cc") || input_path.ends_with(".cpp") || input_path.ends_with(".cxx") || input_path.ends_with(".C") || input_path.ends_with(".S") || input_path.ends_with(".s")) {
-                source_file = std::move(input_path);
+            auto sv = std::string_view { input_path };
+            if (sv.ends_with(".c") || sv.ends_with(".cc") || sv.ends_with(".cpp") || sv.ends_with(".cxx") || sv.ends_with(".C") || sv.ends_with(".S") || sv.ends_with(".s")) {
+                source_file = input_path;
                 break;
             }
         }
 
-        auto output_file = std::string {};
+        auto output_file = String {};
         for (auto output_id : ctx.graph().get_outputs(id)) {
             auto output_path = ctx.graph().get_full_path(output_id);
             if (output_path.empty()) {
                 continue;
             }
-            if (output_path.ends_with(".o") || output_path.ends_with(".obj")) {
-                output_file = std::move(output_path);
+            auto sv = std::string_view { output_path };
+            if (sv.ends_with(".o") || sv.ends_with(".obj")) {
+                output_file = output_path;
                 break;
             }
         }
@@ -374,16 +373,15 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
         auto working_dir = ctx.layout().source_root;
         if (!source_dir_sv.empty()) {
-            working_dir = pup::path::join(working_dir, std::string { source_dir_sv });
+            working_dir = pup::path::join(working_dir, source_dir_sv);
         }
 
         // Convert project-root-relative paths to working-dir-relative
         auto source_abs = pup::path::join(ctx.layout().source_root, source_file);
         auto source_rel = pup::path::relative(source_abs, working_dir);
 
-        auto output_rel = std::string {};
+        auto output_rel = String {};
         if (!output_file.empty()) {
-            // Generated files exist at output_root
             auto output_abs = pup::path::join(ctx.layout().output_root, output_file);
             output_rel = pup::path::relative(output_abs, working_dir);
         }
@@ -504,13 +502,13 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
                                bool is_effective
                            ) {
         log.push_back(parser::VarAssignment {
-            .name = std::string { name },
-            .filename = std::string { filename },
+            .name = String { name },
+            .filename = String { filename },
             .line = line,
             .column = column,
             .op = op,
-            .value_before = std::string { value_before },
-            .value_after = std::string { value_after },
+            .value_before = String { value_before },
+            .value_after = String { value_after },
             .is_effective = is_effective,
         });
     };
@@ -601,7 +599,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
         }
         auto instruction_str = graph.strings.get(iid);
         // Truncate long instructions for display
-        auto display_str = std::string { instruction_str };
+        auto display_str = String { instruction_str };
         if (display_str.size() > 60) {
             display_str = display_str.substr(0, 57) + "...";
         }

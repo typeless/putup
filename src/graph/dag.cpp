@@ -330,7 +330,7 @@ auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std
 
     while (!remaining.empty()) {
         auto slash = remaining.find('/');
-        auto name = std::string { slash == std::string_view::npos ? remaining : remaining.substr(0, slash) };
+        auto name = slash == std::string_view::npos ? remaining : remaining.substr(0, slash);
         remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
         if (name.empty() || name == ".") {
             continue;
@@ -462,7 +462,7 @@ auto empty(Graph const& graph) -> bool
 auto clear(Graph& graph) -> void
 {
     // Preserve build root name string before clearing
-    auto build_root_name_str = std::string { graph.strings.get(graph.files[BUILD_ROOT_ID].name) };
+    auto build_root_name_str = String { graph.strings.get(graph.files[BUILD_ROOT_ID].name) };
 
     graph.files.clear();
     graph.commands.clear();
@@ -604,20 +604,23 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
 
     cache.ids.set(id, 0);
 
-    auto path = std::string {};
+    auto path = String {};
     if (node->parent_dir != 0) {
         auto parent_path = get_full_path(graph, node->parent_dir, cache);
         if (!parent_path.empty()) {
             if (parent_path.back() == '/') {
-                path = std::string { parent_path } + std::string { name };
+                path = String { parent_path };
+                path += name;
             } else {
-                path = std::string { parent_path } + "/" + std::string { name };
+                path = String { parent_path };
+                path += '/';
+                path += name;
             }
         } else {
-            path = std::string { name };
+            path = String { name };
         }
     } else {
-        path = std::string { name };
+        path = String { name };
     }
 
     auto path_id = cache.pool.intern(path);
@@ -894,9 +897,9 @@ auto expand_instruction(
     }
     auto source_dir = graph.strings.get(cmd->source_dir);
     auto source_to_root = pup::compute_source_to_root(source_dir);
-    auto canonical_cwd = std::string {};
+    auto canonical_cwd = String {};
     if (!source_root.empty()) {
-        auto r = pup::platform::canonical(pup::path::join(source_root, std::string { source_dir }));
+        auto r = pup::platform::canonical(pup::path::join(source_root, source_dir));
         if (r) {
             canonical_cwd = *r;
         }

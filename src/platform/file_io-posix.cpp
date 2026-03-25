@@ -138,7 +138,7 @@ auto atomic_write(
     std::span<std::byte const> data
 ) -> Result<void>
 {
-    auto par = std::string { pup::path::parent(path) };
+    auto par = pup::path::parent(path);
     if (!par.empty()) {
         auto r = create_directories(par);
         if (!r) {
@@ -146,7 +146,8 @@ auto atomic_write(
         }
     }
 
-    auto temp_path = std::string { path } + ".tmp.";
+    auto temp_path = String { path };
+    temp_path += ".tmp.";
 
     struct timespec ts { };
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -248,7 +249,7 @@ auto is_empty(std::string_view path) -> bool
 
 namespace {
 
-auto mkdir_recursive(std::string const& path) -> bool
+auto mkdir_recursive(String const& path) -> bool
 {
     if (path.empty()) {
         return true;
@@ -259,8 +260,8 @@ auto mkdir_recursive(std::string const& path) -> bool
         return S_ISDIR(st.st_mode);
     }
 
-    auto par = std::string { pup::path::parent(path) };
-    if (!par.empty() && par != path) {
+    auto par = String { pup::path::parent(path) };
+    if (!par.empty() && std::string_view { par } != std::string_view { path }) {
         if (!mkdir_recursive(par)) {
             return false;
         }
@@ -277,7 +278,7 @@ auto create_directories(std::string_view path) -> Result<void>
     if (path.empty()) {
         return {};
     }
-    if (!mkdir_recursive(std::string { path })) {
+    if (!mkdir_recursive(String { path })) {
         return make_error<void>(ErrorCode::IoError, "Failed to create directories: " + std::string { path });
     }
     return {};
@@ -306,7 +307,7 @@ auto remove_file(std::string_view path) -> Result<void>
 
 namespace {
 
-auto remove_all_recursive(std::string const& path) -> bool
+auto remove_all_recursive(String const& path) -> bool
 {
     struct stat st { };
     if (::lstat(path.c_str(), &st) != 0) {
@@ -345,7 +346,7 @@ auto remove_all_recursive(std::string const& path) -> bool
 
 auto remove_all(std::string_view path) -> Result<void>
 {
-    if (!remove_all_recursive(std::string { path })) {
+    if (!remove_all_recursive(String { path })) {
         return make_error<void>(ErrorCode::IoError, "Failed to remove: " + std::string { path });
     }
     return {};
@@ -515,7 +516,7 @@ auto read_file(std::string_view path) -> Result<String>
 
 auto write_file(std::string_view path, std::string_view data) -> Result<void>
 {
-    auto par = std::string { pup::path::parent(path) };
+    auto par = pup::path::parent(path);
     if (!par.empty()) {
         auto r = create_directories(par);
         if (!r) {
@@ -560,7 +561,9 @@ auto read_directory(std::string_view path) -> Result<std::vector<DirEntry>>
         } else if (entry->d_type == DT_UNKNOWN) {
 #endif
             struct stat st { };
-            auto full = std::string { path } + "/" + entry->d_name;
+            auto full = String { path };
+            full += '/';
+            full += entry->d_name;
             if (::stat(full.c_str(), &st) == 0) {
                 is_dir = S_ISDIR(st.st_mode);
             }

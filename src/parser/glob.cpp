@@ -197,7 +197,7 @@ auto glob_expand(
     auto results = std::vector<std::string> {};
 
     if (!has_glob_chars(pattern)) {
-        auto path = base_dir + "/" + std::string { pattern };
+        auto path = base_dir + "/" + std::string(pattern);
         if (pup::platform::exists(path)) {
             results.emplace_back(pattern);
         }
@@ -205,7 +205,7 @@ auto glob_expand(
     }
 
     auto [dir_part, file_pattern] = glob_split_path(pattern);
-    auto search_dir = dir_part.empty() ? base_dir : base_dir + "/" + std::string { dir_part };
+    auto search_dir = dir_part.empty() ? base_dir : base_dir + "/" + std::string(dir_part);
 
     if (!pup::platform::exists(search_dir) || !pup::platform::is_directory(search_dir)) {
         return results;
@@ -222,8 +222,8 @@ auto glob_expand(
                 return false;
             }
             if (glob.matches(rel_path)) {
-                auto result_path = dir_part.empty() ? std::string { rel_path } : std::string { dir_part } + "/" + std::string { rel_path };
-                results.push_back(result_path);
+                auto result_path = dir_part.empty() ? std::string(rel_path) : std::string(dir_part) + "/" + std::string(rel_path);
+                results.push_back(std::move(result_path));
             }
             return true;
         });
@@ -236,8 +236,8 @@ auto glob_expand(
                     continue;
                 }
                 if (glob.matches(name)) {
-                    auto result_path = dir_part.empty() ? std::string(name) : std::string { dir_part } + "/" + std::string(name);
-                    results.push_back(result_path);
+                    auto result_path = dir_part.empty() ? std::string(name) : std::string(dir_part) + "/" + std::string(name);
+                    results.push_back(std::move(result_path));
                 }
             }
         }
