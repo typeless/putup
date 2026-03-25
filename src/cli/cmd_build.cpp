@@ -201,7 +201,7 @@ auto walk_upstream_from_scope(
         }
 
         auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
-        if (!pup::is_path_in_any_scope(std::string { source_dir_sv }, scopes)) {
+        if (!pup::is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }
 
@@ -277,7 +277,7 @@ auto collect_scope_with_upstream_commands(
 }
 
 auto find_changed_files_with_implicit(
-    std::string const& source_root,
+    String const& source_root,
     pup::index::Index const& old_index,
     std::vector<pup::String> const& scopes,
     std::vector<std::string> const& upstream_files,
@@ -307,8 +307,8 @@ auto find_changed_files_with_implicit(
 
         // File resolution:
         // All paths are now source-relative (generated files include build root, e.g., "build/program").
-        auto file_path = std::string { file.path };
-        auto path = pup::path::is_absolute(file_path) ? file_path : std::string(pup::path::join(source_root, file_path));
+        auto file_path = String { file.path };
+        auto path = pup::path::is_absolute(file_path) ? file_path : pup::path::join(source_root, file_path);
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
@@ -346,7 +346,7 @@ auto find_changed_files_with_implicit(
 
         // Content hash check (authoritative)
         if (file.content_hash != pup::ZERO_HASH) {
-            auto hash_result = pup::sha256_file(path);
+            auto hash_result = pup::sha256_file(std::string(path));
             if (!hash_result || *hash_result != file.content_hash) {
                 if (verbose) {
                     printf("  Changed (hash): %s\n", file.path.c_str());
@@ -374,7 +374,7 @@ struct ImplicitDepContext {
     PathIdMap& path_to_id;
     pup::NodeId& next_id;
     EdgePairVec& added_edges;
-    std::string const& source_root;
+    String const& source_root;
 };
 
 /// Recursively get or create directory entries in the index.
@@ -384,7 +384,7 @@ auto get_or_create_dir(
     std::string const& dir_path
 ) -> pup::NodeId
 {
-    auto normalized = std::string(pup::path::normalize(dir_path));
+    auto normalized = pup::path::normalize(dir_path);
     auto const& path_str = normalized;
 
     if (path_str.empty() || path_str == ".") {
@@ -416,7 +416,6 @@ auto get_or_create_dir(
 
     auto parent_path = std::string { pup::path::parent(normalized) };
     auto parent_id = get_or_create_dir(ctx, parent_path);
-    auto basename = std::string { pup::path::filename(normalized) };
 
     auto dir_id = ctx.next_id++;
     auto entry = pup::index::FileEntry {
@@ -425,14 +424,14 @@ auto get_or_create_dir(
         .src_id = 0,
         .type = pup::NodeType::Directory,
         .flags = pup::NodeFlags::None,
-        .name = basename,
+        .name = String { pup::path::filename(normalized) },
         .path = path_str,
         .size = 0,
         .mtime_ns = 0,
         .content_hash = {},
     };
     ctx.index.add_file(std::move(entry));
-    path_id_insert(ctx.path_to_id, path_str, dir_id);
+    path_id_insert(ctx.path_to_id, std::string(path_str), dir_id);
     return dir_id;
 }
 
@@ -447,8 +446,8 @@ auto create_implicit_file(
     auto content_hash = pup::Hash256 {};
     auto file_size = std::uint64_t { 0 };
     auto mtime_ns = std::int64_t { 0 };
-    auto abs_path_str = std::string { abs_path };
-    if (pup::platform::exists(abs_path_str)) {
+    auto abs_path_str = std::string { abs_path }; // std::string: sha256_file API
+    if (pup::platform::exists(abs_path)) {
         auto hash_result = pup::sha256_file(abs_path_str);
         if (hash_result) {
             content_hash = *hash_result;
@@ -456,16 +455,15 @@ auto create_implicit_file(
             fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::platform::to_utf8(abs_path).c_str());
         }
 
-        auto stat_result = pup::platform::stat_file(abs_path_str);
+        auto stat_result = pup::platform::stat_file(abs_path);
         if (stat_result) {
             file_size = stat_result->size;
             mtime_ns = stat_result->mtime_ns;
         }
     }
 
-    auto fs_path = std::string { rel_path };
-    auto parent_id = get_or_create_dir(ctx, std::string { pup::path::parent(fs_path) });
-    auto basename = std::string { pup::path::filename(fs_path) };
+    auto parent_dir = std::string { pup::path::parent(rel_path) };
+    auto parent_id = get_or_create_dir(ctx, parent_dir);
 
     auto file_id = ctx.next_id++;
 
@@ -475,7 +473,7 @@ auto create_implicit_file(
         .src_id = 0,
         .type = pup::NodeType::File,
         .flags = pup::NodeFlags::None,
-        .name = basename,
+        .name = String { pup::path::filename(rel_path) },
         .path = rel_path,
         .size = file_size,
         .mtime_ns = mtime_ns,
@@ -490,8 +488,8 @@ auto create_implicit_file(
 /// Returns the populated index and a path-to-id mapping for later use.
 auto serialize_graph_nodes(
     pup::graph::BuildGraph const& graph,
-    std::string const& source_root,
-    std::string const& output_root
+    String const& source_root,
+    String const& output_root
 ) -> std::pair<pup::index::Index, PathIdMap>
 {
     auto index = pup::index::Index {};
@@ -519,14 +517,14 @@ auto serialize_graph_nodes(
                 strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
 
-            auto file_path = std::string((node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
+            auto file_path = (node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path);
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
             auto mtime_ns = std::int64_t { 0 };
 
             if (pup::platform::exists(file_path)) {
-                auto hash_result = pup::sha256_file(file_path);
+                auto hash_result = pup::sha256_file(std::string(file_path));
                 if (hash_result) {
                     content_hash = *hash_result;
                 } else {
@@ -546,7 +544,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = std::string { pup::graph::get_name(graph.graph(), id) },
+                .name = String { pup::graph::get_name(graph.graph(), id) },
                 .path = node_path,
                 .size = file_size,
                 .mtime_ns = mtime_ns,
@@ -557,16 +555,13 @@ auto serialize_graph_nodes(
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = graph.get_full_path(id);
 
-            auto node_name_sv = pup::graph::get_name(graph.graph(), id);
-            auto entry_name = std::string { node_name_sv };
-
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = node->parent_dir,
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = entry_name,
+                .name = String { pup::graph::get_name(graph.graph(), id) },
                 .path = node_path,
                 .size = 0,
                 .mtime_ns = 0,
@@ -586,7 +581,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = std::string { pup::graph::get_name(graph.graph(), id) },
+                .name = String { pup::graph::get_name(graph.graph(), id) },
                 .path = {},
                 .size = 0,
                 .content_hash = (node->type == pup::NodeType::Variable) ? node->content_hash : pup::Hash256 {},
@@ -616,7 +611,7 @@ auto serialize_command_nodes(
         }
 
         // v8: instruction and operands are stored directly on CommandNode
-        auto instruction_pattern = std::string { pup::graph::get_instruction_pattern(graph.graph(), id) };
+        auto instruction_pattern = String { pup::graph::get_instruction_pattern(graph.graph(), id) };
         auto inputs = cmd->inputs;
         auto outputs = cmd->outputs;
 
@@ -624,7 +619,7 @@ auto serialize_command_nodes(
         auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
         auto dir_id = pup::NodeId { 0 };
         if (!source_dir_sv.empty()) {
-            auto it = path_id_find(path_to_id, std::string { source_dir_sv });
+            auto it = path_id_find(path_to_id, source_dir_sv);
             if (it != path_to_id.end()) {
                 dir_id = it->second;
             }
@@ -634,7 +629,7 @@ auto serialize_command_nodes(
             .id = id,
             .dir_id = dir_id,
             .instruction_pattern = std::move(instruction_pattern),
-            .display = std::string { pup::graph::get_display_str(graph.graph(), id) },
+            .display = String { pup::graph::get_display_str(graph.graph(), id) },
             .env = {},
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
@@ -680,12 +675,11 @@ auto process_implicit_deps(
 {
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
-            auto dep_fs_path = std::string { dep_path };
-            auto abs_path = pup::path::is_absolute(dep_fs_path) ? dep_fs_path : std::string(pup::path::join(ctx.source_root, dep_fs_path));
+            auto abs_path = pup::path::is_absolute(dep_path) ? String { dep_path } : pup::path::join(ctx.source_root, dep_path);
 
-            auto rel_path = std::string {};
+            auto rel_path = String {};
             if (pup::is_path_under(abs_path, ctx.source_root)) {
-                rel_path = std::string(pup::path::relative(abs_path, ctx.source_root));
+                rel_path = pup::path::relative(abs_path, ctx.source_root);
             } else {
                 rel_path = abs_path;
             }
@@ -734,8 +728,7 @@ auto preserve_old_implicit_edges(
         }
 
         auto new_file_it = path_id_find(ctx.path_to_id, old_file->path);
-        auto old_path = std::string { old_file->path };
-        auto abs_path = pup::path::is_absolute(old_path) ? old_path : std::string(pup::path::join(ctx.source_root, old_path));
+        auto abs_path = pup::path::is_absolute(old_file->path) ? String { old_file->path } : pup::path::join(ctx.source_root, old_file->path);
         auto new_from_id = new_file_it != ctx.path_to_id.end()
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file->path);
@@ -826,8 +819,8 @@ auto expand_implicit_deps(
 auto build_index(
     pup::graph::BuildGraph const& graph,
     DiscoveredDeps const& discovered_deps,
-    std::string const& source_root,
-    std::string const& output_root,
+    String const& source_root,
+    String const& output_root,
     pup::index::Index const* old_index = nullptr
 ) -> pup::index::Index
 {
@@ -931,7 +924,7 @@ auto detect_new_commands(
 auto remove_stale_outputs(
     pup::graph::BuildGraph const& graph,
     pup::index::Index const& idx,
-    std::string const& source_root,
+    String const& source_root,
     std::string_view variant_name,
     bool dry_run,
     bool verbose
@@ -1071,7 +1064,7 @@ auto build_single_variant(
     }
     auto target_node_ids = std::move(*target_ids_result);
 
-    auto index_path = std::string(ctx.layout().index_path());
+    auto index_path = ctx.layout().index_path();
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
     auto changed_files = std::vector<std::string> {};
@@ -1107,7 +1100,7 @@ auto build_single_variant(
 
         auto change_detect_start = std::chrono::high_resolution_clock::now();
         changed_files = find_changed_files_with_implicit(
-            std::string(ctx.layout().source_root),
+            ctx.layout().source_root,
             idx,
             scopes,
             upstream_files,
@@ -1124,12 +1117,12 @@ auto build_single_variant(
         // Add output targets to force their rebuild
         // Output targets are source-relative (e.g., "hello"), but changed_files uses
         // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
-        auto build_root_name = std::string { ctx.graph().get_build_root_name() };
+        auto build_root_name = String { ctx.graph().get_build_root_name() };
         for (auto const& output_path : opts.output_targets) {
             auto prefixed = std::string {};
             if (!build_root_name.empty()) {
                 prefixed.reserve(build_root_name.size() + 1 + output_path.size());
-                prefixed.append(build_root_name).append("/").append(output_path);
+                prefixed.append(std::string_view(build_root_name)).append("/").append(std::string_view(output_path));
             } else {
                 prefixed = std::string(output_path);
             }
@@ -1148,7 +1141,7 @@ auto build_single_variant(
         remove_stale_outputs(
             ctx.graph(),
             idx,
-            std::string(ctx.layout().source_root),
+            ctx.layout().source_root,
             variant_name,
             opts.dry_run,
             opts.verbose
@@ -1222,8 +1215,8 @@ auto build_single_variant(
 
             for (auto const& dep_path : job_result.discovered_deps) {
                 auto to_resolve = pup::path::is_absolute(dep_path)
-                    ? std::string { dep_path }
-                    : std::string(pup::path::join(job.working_dir, dep_path));
+                    ? String { dep_path }
+                    : pup::path::join(job.working_dir, dep_path);
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
                     if (opts.verbose) {
@@ -1231,19 +1224,19 @@ auto build_single_variant(
                     }
                     continue;
                 }
-                auto resolved = std::string(*resolved_result);
+                auto& resolved = *resolved_result;
 
                 if (pup::is_path_under(resolved, ctx.layout().source_root)) {
-                    auto rel = std::string(pup::path::relative(resolved, ctx.layout().source_root));
+                    auto rel = pup::path::relative(resolved, ctx.layout().source_root);
                     if (rel.starts_with("..")) {
                         if (opts.verbose) {
                             fprintf(stderr, "Warning: Cannot relativize '%s'\n", resolved.c_str());
                         }
                         continue;
                     }
-                    deps.push_back(rel);
+                    deps.push_back(std::string(rel));
                 } else {
-                    deps.push_back(resolved);
+                    deps.push_back(std::string(resolved));
                 }
             }
         }
@@ -1268,7 +1261,7 @@ auto build_single_variant(
 
     // Identify config-generating commands to exclude from regular build
     // (config rules should only run during 'pup configure')
-    auto config_cmds = find_config_commands(ctx.graph(), std::string(ctx.layout().source_root));
+    auto config_cmds = find_config_commands(ctx.graph(), ctx.layout().source_root);
     auto config_cmd_ids = NodeIdMap32 {};
     for (auto const& cfg : config_cmds) {
         config_cmd_ids.set(cfg.cmd_id, 1);
@@ -1345,8 +1338,8 @@ auto build_single_variant(
         auto index = pup::index::Index { build_index(
             ctx.graph(),
             discovered_deps,
-            std::string(ctx.layout().source_root),
-            std::string(ctx.layout().output_root),
+            ctx.layout().source_root,
+            ctx.layout().output_root,
             old_idx_ptr
         ) };
 
