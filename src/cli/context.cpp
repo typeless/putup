@@ -207,7 +207,7 @@ auto discover_tupfile_dirs(
         }
 
         if (!entry.is_dir && entry.name == "Tupfile") {
-            auto dir_rel = std::string { pup::path::parent(rel_path) };
+            auto dir_rel = String { pup::path::parent(rel_path) };
             dirs.push_back(std::string(normalize_to_dot(dir_rel)));
         }
 
@@ -505,7 +505,7 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
         }
         auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
         auto eq_pos = key_value.find('=');
-        if (eq_pos != std::string::npos) {
+        if (eq_pos != std::string_view::npos) {
             result.cached_env_vars.emplace_back(String { key_value.substr(0, eq_pos) }, String { key_value.substr(eq_pos + 1) });
         }
     }
@@ -521,7 +521,7 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
 
 auto sort_dirs_by_depth(Vec<std::string> const& available) -> Vec<std::string>
 {
-    auto root_rel = std::string { "." };
+    auto constexpr root_rel = std::string_view { "." };
     auto dirs = Vec<std::string> { available };
     std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
         auto is_root_a = (a == root_rel);

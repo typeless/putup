@@ -104,7 +104,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!platform::exists(*opts.source_dir)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Source directory not found: " + std::string(*opts.source_dir)
+                "Source directory not found: " + *opts.source_dir
             );
         }
         layout.source_root = normalize_path(*opts.source_dir);
@@ -112,7 +112,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!platform::exists(*env_source)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "PUP_SOURCE_DIR not found: " + std::string(*env_source)
+                "PUP_SOURCE_DIR not found: " + *env_source
             );
         }
         layout.source_root = normalize_path(*env_source);
@@ -143,28 +143,28 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         if (!platform::exists(*opts.config_dir)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory not found: " + std::string(*opts.config_dir)
+                "Config directory not found: " + *opts.config_dir
             );
         }
         layout.config_root = normalize_path(*opts.config_dir);
         if (!platform::exists(path::join(layout.config_root, "Tupfile.ini"))) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory does not contain Tupfile.ini: " + std::string(layout.config_root)
+                "Config directory does not contain Tupfile.ini: " + layout.config_root
             );
         }
     } else if (auto env_config = get_env(PUP_CONFIG_DIR_ENV)) {
         if (!platform::exists(*env_config)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "PUP_CONFIG_DIR not found: " + std::string(*env_config)
+                "PUP_CONFIG_DIR not found: " + *env_config
             );
         }
         layout.config_root = normalize_path(*env_config);
         if (!platform::exists(path::join(layout.config_root, "Tupfile.ini"))) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory does not contain Tupfile.ini: " + std::string(layout.config_root)
+                "Config directory does not contain Tupfile.ini: " + layout.config_root
             );
         }
     } else if (platform::exists(path::join(layout.source_root, "Tupfile.ini"))) {

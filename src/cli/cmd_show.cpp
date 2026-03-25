@@ -52,7 +52,7 @@ auto load_index_for_all_deps(
     return std::move(*index_result);
 }
 
-auto format_node_id(pup::NodeId id) -> std::string
+auto format_node_id(pup::NodeId id) -> String
 {
     char buf[32];
     if (node_id::is_command(id)) {
@@ -60,12 +60,12 @@ auto format_node_id(pup::NodeId id) -> std::string
     } else {
         snprintf(buf, sizeof(buf), "f%zu", node_id::index(id));
     }
-    return buf;
+    return String { buf };
 }
 
-auto expand_script_run(std::string_view pattern, std::string_view dir, std::string_view cmd) -> std::string
+auto expand_script_run(std::string_view pattern, std::string_view dir, std::string_view cmd) -> String
 {
-    auto result = std::string {};
+    auto result = String {};
     result.reserve(pattern.size() + dir.size() + cmd.size());
 
     for (std::size_t i = 0; i < pattern.size(); ++i) {
@@ -131,7 +131,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     printf("%.*s\n\n", static_cast<int>(script_prologue.size()), script_prologue.data());
 
-    auto output_dirs = std::vector<std::string> {};
+    auto output_dirs = Vec<String> {};
     for (auto id : ctx.graph().all_nodes()) {
         auto const* node = ctx.graph().get_file_node(id);
         if (!node) {
@@ -158,7 +158,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         }
     }
 
-    std::ranges::sort(output_dirs);
+    std::sort(output_dirs.begin(), output_dirs.end());
     output_dirs.erase(std::unique(output_dirs.begin(), output_dirs.end()), output_dirs.end());
 
     if (!output_dirs.empty()) {
@@ -557,7 +557,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     auto const& graph = ctx.graph().graph();
 
     // Build instruction usage map: instruction_id -> list of command IDs using it
-    auto instruction_usage = std::vector<std::pair<StringId, std::vector<NodeId>>> {};
+    auto instruction_usage = Vec<std::pair<StringId, Vec<NodeId>>> {};
 
     for (auto const& cmd : graph.commands) {
         if (!is_empty(cmd.instruction_id)) {
@@ -565,7 +565,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
             if (pos != instruction_usage.end() && pos->first == cmd.instruction_id) {
                 pos->second.push_back(cmd.id);
             } else {
-                instruction_usage.emplace(pos, cmd.instruction_id, std::vector<NodeId> { cmd.id });
+                instruction_usage.insert(pos, std::pair<StringId, Vec<NodeId>> { cmd.instruction_id, { cmd.id } });
             }
         }
     }
@@ -581,7 +581,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     }
 
     // Sort instructions by usage count (descending)
-    auto sorted_instructions = std::vector<std::pair<StringId, std::size_t>> {};
+    auto sorted_instructions = Vec<std::pair<StringId, std::size_t>> {};
     sorted_instructions.reserve(instruction_usage.size());
     for (auto const& [iid, cmds] : instruction_usage) {
         sorted_instructions.emplace_back(iid, cmds.size());

@@ -33,23 +33,23 @@ namespace pup::cli {
 
 namespace {
 
-using PathIdMap = std::vector<std::pair<std::string, pup::NodeId>>;
-using EdgePairVec = std::vector<std::pair<pup::NodeId, pup::NodeId>>;
-using DiscoveredDeps = std::vector<std::pair<pup::NodeId, std::vector<std::string>>>;
+using PathIdMap = Vec<std::pair<String, pup::NodeId>>;
+using EdgePairVec = Vec<std::pair<pup::NodeId, pup::NodeId>>;
+using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<String>>>;
 
-auto path_id_find(PathIdMap const& m, std::string_view key) -> PathIdMap::const_iterator
+auto path_id_find(PathIdMap const& m, std::string_view key) -> std::pair<String, pup::NodeId> const*
 {
     auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, std::string_view k) { return p.first < k; });
     return (pos != m.end() && pos->first == key) ? pos : m.end();
 }
 
-auto path_id_insert(PathIdMap& m, std::string key, pup::NodeId id) -> void
+auto path_id_insert(PathIdMap& m, String key, pup::NodeId id) -> void
 {
     auto pos = std::lower_bound(m.begin(), m.end(), key, [](auto const& p, auto const& k) { return p.first < k; });
     if (pos != m.end() && pos->first == key) {
         pos->second = id;
     } else {
-        m.emplace(pos, std::move(key), id);
+        m.insert(pos, std::pair<String, pup::NodeId> { std::move(key), id });
     }
 }
 
@@ -64,14 +64,14 @@ auto edge_pair_insert(EdgePairVec& v, pup::NodeId from, pup::NodeId to) -> bool
     return true;
 }
 
-auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> std::vector<std::string>&
+auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> Vec<String>&
 {
     for (auto& [k, v] : m) {
         if (k == key) {
             return v;
         }
     }
-    m.emplace_back(key, std::vector<std::string> {});
+    m.emplace_back(key, Vec<String> {});
     return m.back().second;
 }
 
@@ -136,7 +136,7 @@ auto print_stats(
     }
 }
 
-auto strip_build_root_prefix(std::string& path, std::string_view build_root_name) -> void
+auto strip_build_root_prefix(String& path, std::string_view build_root_name) -> void
 {
     if (!build_root_name.empty()) {
         auto prefix_len = build_root_name.size() + 1;
@@ -180,15 +180,15 @@ auto is_tupfile(std::string_view path) -> bool
 auto walk_upstream_from_scope(
     pup::graph::BuildGraph const& graph,
     pup::Vec<pup::String> const& scopes
-) -> std::vector<pup::NodeId>
+) -> Vec<pup::NodeId>
 {
     if (scopes.empty()) {
         return {};
     }
 
     auto visited = pup::NodeIdMap32 {};
-    auto result = std::vector<pup::NodeId> {};
-    auto stack = std::vector<pup::NodeId> {};
+    auto result = Vec<pup::NodeId> {};
+    auto stack = Vec<pup::NodeId> {};
 
     // Seed with commands whose source_dir is in scope
     for (auto id : graph.all_nodes()) {
@@ -241,9 +241,9 @@ auto walk_upstream_from_scope(
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
     pup::Vec<pup::String> const& scopes
-) -> std::vector<std::string>
+) -> Vec<String>
 {
-    auto upstream = std::vector<std::string> {};
+    auto upstream = Vec<String> {};
     for (auto id : walk_upstream_from_scope(graph, scopes)) {
         if (pup::node_id::is_command(id)) {
             continue;
@@ -280,7 +280,7 @@ auto find_changed_files_with_implicit(
     String const& source_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::String> const& scopes,
-    std::vector<std::string> const& upstream_files,
+    Vec<String> const& upstream_files,
     bool verbose = false
 ) -> pup::Vec<std::string>
 {
@@ -381,7 +381,7 @@ struct ImplicitDepContext {
 /// Returns the NodeId for the directory at dir_path.
 auto get_or_create_dir(
     ImplicitDepContext& ctx,
-    std::string const& dir_path
+    String const& dir_path
 ) -> pup::NodeId
 {
     auto normalized = pup::path::normalize(dir_path);
@@ -414,7 +414,7 @@ auto get_or_create_dir(
         return dir_id;
     }
 
-    auto parent_path = std::string { pup::path::parent(normalized) };
+    auto parent_path = String { pup::path::parent(normalized) };
     auto parent_id = get_or_create_dir(ctx, parent_path);
 
     auto dir_id = ctx.next_id++;
@@ -431,7 +431,7 @@ auto get_or_create_dir(
         .content_hash = {},
     };
     ctx.index.add_file(std::move(entry));
-    path_id_insert(ctx.path_to_id, std::string(path_str), dir_id);
+    path_id_insert(ctx.path_to_id, String { path_str }, dir_id);
     return dir_id;
 }
 
@@ -462,7 +462,7 @@ auto create_implicit_file(
         }
     }
 
-    auto parent_dir = std::string { pup::path::parent(rel_path) };
+    auto parent_dir = String { pup::path::parent(rel_path) };
     auto parent_id = get_or_create_dir(ctx, parent_dir);
 
     auto file_id = ctx.next_id++;
@@ -480,7 +480,7 @@ auto create_implicit_file(
         .content_hash = content_hash,
     };
     ctx.index.add_file(std::move(entry));
-    path_id_insert(ctx.path_to_id, std::string { rel_path }, file_id);
+    path_id_insert(ctx.path_to_id, String { rel_path }, file_id);
     return file_id;
 }
 
@@ -505,14 +505,14 @@ auto serialize_graph_nodes(
         }
 
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
-            auto node_path = graph.get_full_path(id);
+            auto node_path = String { graph.get_full_path(id) };
             if (node_path.empty()) {
                 continue;
             }
 
             // For generated files, strip build root for filesystem path construction
             // (output_root already contains the build root, so we need just the relative part)
-            auto fs_path = node_path;
+            auto fs_path = String { node_path };
             if (node->type == pup::NodeType::Generated) {
                 strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
@@ -553,7 +553,7 @@ auto serialize_graph_nodes(
             index.add_file(std::move(entry));
             path_id_insert(path_to_id, node_path, id);
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
-            auto node_path = graph.get_full_path(id);
+            auto node_path = String { graph.get_full_path(id) };
 
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -751,11 +751,15 @@ auto expand_implicit_deps(
 ) -> pup::Vec<std::string>
 {
     auto result = pup::Vec<std::string> { changed };
-    auto added = std::vector<std::string> { changed.begin(), changed.end() };
+    auto added = Vec<std::string> {};
+    added.reserve(changed.size());
+    for (auto const& s : changed) {
+        added.push_back(s);
+    }
     std::sort(added.begin(), added.end());
 
     // Build sorted path -> file pointer map
-    auto path_to_file = std::vector<std::pair<std::string, pup::index::FileEntry const*>> {};
+    auto path_to_file = Vec<std::pair<std::string, pup::index::FileEntry const*>> {};
     path_to_file.reserve(index.files().size());
     for (auto const& file : index.files()) {
         if (!file.path.empty()) {
@@ -766,7 +770,8 @@ auto expand_implicit_deps(
 
     // Build edge index using NodeIdArenaIndex pattern (from_id -> edge pointers)
     // Use a sorted vector of (from_id, edge*) for grouped lookup
-    auto edges_by_from = std::vector<std::pair<pup::NodeId, pup::index::EdgeEntry const*>> {};
+    auto edges_by_from = Vec<std::pair<pup::NodeId, pup::index::EdgeEntry const*>> {};
+
     for (auto const& edge : index.edges()) {
         if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::Sticky) {
             edges_by_from.emplace_back(edge.from, &edge);
@@ -908,7 +913,7 @@ auto detect_new_commands(
             for (auto output_id : graph.get_outputs(id)) {
                 auto output_path = graph.get_full_path(output_id);
                 if (!output_path.empty()) {
-                    changed.push_back(output_path);
+                    changed.push_back(std::move(output_path));
                 }
             }
             if (verbose) {
@@ -1079,7 +1084,7 @@ auto build_single_variant(
         auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
-        auto upstream_files = std::vector<std::string> {};
+        auto upstream_files = Vec<String> {};
         if (opts.include_all_deps && !scopes.empty()) {
             upstream_files = collect_upstream_files(ctx.graph(), scopes);
         }
@@ -1127,7 +1132,7 @@ auto build_single_variant(
                 prefixed = std::string(output_path);
             }
             if (std::ranges::find(changed_files, prefixed) == changed_files.end()) {
-                changed_files.push_back(prefixed);
+                changed_files.push_back(std::move(prefixed));
             }
         }
 
@@ -1236,9 +1241,9 @@ auto build_single_variant(
                         }
                         continue;
                     }
-                    deps.push_back(std::string(rel));
+                    deps.push_back(String(rel));
                 } else {
-                    deps.push_back(std::string(resolved));
+                    deps.push_back(String(resolved));
                 }
             }
         }
