@@ -3,15 +3,16 @@
 
 #include "pup/core/fmt.hpp"
 
+#include <cassert>
 #include <charconv>
 
 namespace pup {
 
 namespace {
 
-auto append_int(String& out, int value) -> void
+auto append_long(String& out, long long value) -> void
 {
-    char buf[16];
+    char buf[24];
     auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
     out.append(std::string_view { buf, static_cast<std::size_t>(ptr - buf) });
 }
@@ -60,8 +61,8 @@ auto format_impl(std::string_view pattern, FormatArg const* args, std::size_t co
                 case FormatArg::Tag::StringView:
                     result.append(arg.sv);
                     break;
-                case FormatArg::Tag::Int:
-                    append_int(result, arg.i);
+                case FormatArg::Tag::Long:
+                    append_long(result, arg.ll);
                     break;
                 case FormatArg::Tag::Char:
                     result.append(arg.c);
@@ -76,6 +77,7 @@ auto format_impl(std::string_view pattern, FormatArg const* args, std::size_t co
         }
     }
 
+    assert(arg_idx == count && "pup::fmt: argument count mismatch");
     return result;
 }
 

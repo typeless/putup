@@ -41,12 +41,12 @@ TEST_CASE("fmt empty pattern", "[fmt]")
     REQUIRE(fmt("") == "");
 }
 
-TEST_CASE("fmt extra args ignored", "[fmt]")
+TEST_CASE("fmt adjacent placeholders", "[fmt]")
 {
-    REQUIRE(fmt("{}", "used", "unused") == "used");
+    REQUIRE(fmt("{}{}", "a", "b") == "ab");
 }
 
-TEST_CASE("fmt missing args", "[fmt]")
+TEST_CASE("fmt escaped and placeholder mixed", "[fmt]")
 {
-    REQUIRE(fmt("{} and {}!", "first") == "first and !");
+    REQUIRE(fmt("{{{}}}",  "x") == "{x}");
 }
