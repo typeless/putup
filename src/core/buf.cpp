@@ -95,4 +95,9 @@ auto Buf::intern(StringPool& pool) const -> StringId
     return pool.intern(view());
 }
 
+auto Buf::fmt(std::string_view pattern) -> void
+{
+    format_to(*this, pattern, nullptr, 0);
+}
+
 } // namespace pup

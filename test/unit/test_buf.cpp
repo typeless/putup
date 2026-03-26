@@ -54,6 +54,13 @@ TEST_CASE("Buf basic operations", "[buf]")
     }
 }
 
+TEST_CASE("Buf fmt", "[buf]")
+{
+    auto buf = Buf {};
+    buf.fmt("hello {} #{}", "world", 42);
+    REQUIRE(buf.view() == "hello world #42");
+}
+
 TEST_CASE("Buf intern", "[buf]")
 {
     auto pool = pup::StringPool {};

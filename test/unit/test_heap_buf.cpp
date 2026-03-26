@@ -65,6 +65,13 @@ TEST_CASE("HeapBuf basic operations", "[heap_buf]")
     }
 }
 
+TEST_CASE("HeapBuf fmt", "[heap_buf]")
+{
+    auto buf = HeapBuf {};
+    buf.fmt("error: {} at line {}", "syntax", 10);
+    REQUIRE(buf.view() == "error: syntax at line 10");
+}
+
 TEST_CASE("HeapBuf move", "[heap_buf]")
 {
     auto a = HeapBuf {};

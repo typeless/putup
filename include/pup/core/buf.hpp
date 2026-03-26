@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/format_to.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstddef>
@@ -39,6 +40,15 @@ public:
     [[nodiscard]] auto view() const -> std::string_view { return { data_, size_ }; }
 
     [[nodiscard]] auto intern(StringPool& pool) const -> StringId;
+
+    auto fmt(std::string_view pattern) -> void;
+
+    template<typename... Args>
+    auto fmt(std::string_view pattern, Args const&... args) -> void
+    {
+        FormatArg arg_array[] = { FormatArg(args)... };
+        format_to(*this, pattern, arg_array, sizeof...(Args));
+    }
 
 private:
     static constexpr std::uint32_t INLINE_CAP = 256;
