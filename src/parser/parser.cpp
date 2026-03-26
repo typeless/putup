@@ -19,8 +19,8 @@ struct RuleBody {
     std::optional<Expression> display;
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;
-    std::optional<std::string> output_order_only_group;
+    std::optional<String> output_group;
+    std::optional<String> output_order_only_group;
     std::optional<Expression> output_order_only_group_dir;
 };
 
@@ -28,7 +28,7 @@ struct ParserState {
     Lexer lexer;
     ParserOptions options;
     Vec<ParseError> errors;
-    Vec<std::string> included_files;
+    Vec<String> included_files;
     int include_depth = 0;
 
     Token current;
@@ -408,7 +408,7 @@ auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
         return pup::make_error<BangMacro>(ErrorCode::ParseError, "Expected macro name after '!'");
     }
 
-    macro.name = std::string { s.current.text };
+    macro.name = String { s.current.text };
     advance(s);
 
     // Expect =
@@ -502,7 +502,7 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
     // Parse output group {name} if present
     if (match(s, TokenType::OpenBrace)) {
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            body.output_group = std::string { s.current.text };
+            body.output_group = String { s.current.text };
             advance(s);
         }
         auto close = expect(s, TokenType::CloseBrace, "Expected '}' after group name");
@@ -528,7 +528,7 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         }
 
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            body.output_order_only_group = std::string { s.current.text };
+            body.output_order_only_group = String { s.current.text };
             advance(s);
         }
         auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
@@ -582,7 +582,7 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
         if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
             return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected variable name after ifdef/ifndef");
         }
-        cond.var_name = std::string { s.current.text };
+        cond.var_name = String { s.current.text };
         advance(s);
     } else {
         // ifeq/ifneq (lhs, rhs)
@@ -671,7 +671,7 @@ auto parse_export(ParserState& s) -> Result<Export>
         return pup::make_error<Export>(ErrorCode::ParseError, "Expected variable name after 'export'");
     }
 
-    exp.var_name = std::string { s.current.text };
+    exp.var_name = String { s.current.text };
     advance(s);
 
     return exp;
@@ -686,7 +686,7 @@ auto parse_import(ParserState& s) -> Result<Import>
         return pup::make_error<Import>(ErrorCode::ParseError, "Expected variable name after 'import'");
     }
 
-    imp.var_name = std::string { s.current.text };
+    imp.var_name = String { s.current.text };
     advance(s);
 
     // Optional default value (=, ?=, and ??= are all equivalent for import)
@@ -787,7 +787,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     if (match(s, TokenType::OpenBrace)) {
         pattern.is_group = true;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            pattern.group_name = std::string { s.current.text };
+            pattern.group_name = String { s.current.text };
             advance(s);
         }
         if (!match(s, TokenType::CloseBrace)) {
@@ -799,7 +799,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     if (match(s, TokenType::OpenAngle)) {
         pattern.is_order_only_group = true;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            pattern.group_name = std::string { s.current.text };
+            pattern.group_name = String { s.current.text };
             advance(s);
         }
         if (!match(s, TokenType::CloseAngle)) {
@@ -897,7 +897,7 @@ auto parse_tupfile(
     advance(s); // Prime the parser with first token
 
     auto tupfile = Tupfile {};
-    tupfile.filename = std::string { s.lexer.filename() };
+    tupfile.filename = String { s.lexer.filename() };
 
     while (!check(s, TokenType::Eof)) {
         // Skip empty lines and comments

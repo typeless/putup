@@ -111,7 +111,7 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
-        result.output_dirs, std::string(ctx->build_dir), std::string(ctx->root), mode
+        result.output_dirs, ctx->build_dir, ctx->root, mode
     );
 
     if (opts.dry_run) {

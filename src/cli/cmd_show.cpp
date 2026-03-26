@@ -240,7 +240,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                 if (ctx.graph().get_command_node(id)) {
                     auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
                     auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-                    auto display = display_sv.empty() ? cmd_sv : std::string { display_sv };
+                    auto display = display_sv.empty() ? cmd_sv : String { display_sv };
                     printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
                 }
             }

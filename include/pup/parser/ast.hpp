@@ -9,7 +9,6 @@
 
 #include <memory>
 #include <optional>
-#include <string>
 #include <variant>
 
 namespace pup::parser {
@@ -92,7 +91,7 @@ struct PathPattern final : AstNode {
     bool is_output_exclusion = false; ///< Starts with ^ for output exclusion (regex pattern)
     bool is_group = false;            ///< References a bin {binname} (tup calls these "bins")
     bool is_order_only_group = false; ///< References an order-only group <groupname>
-    std::string group_name;           ///< Group or bin name
+    String group_name;                ///< Group or bin name
 };
 
 /// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}] [<group>]
@@ -104,22 +103,22 @@ struct Rule final : AstNode {
     std::optional<Expression> display; ///< Display text between ^ ^ in command
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;               ///< {binname} at end
-    std::optional<std::string> output_order_only_group;    ///< <groupname> at end
+    std::optional<String> output_group;                    ///< {binname} at end
+    std::optional<String> output_order_only_group;         ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
 /// Bang-macro definition: !name = |> command |> outputs
 struct BangMacro final : AstNode {
-    std::string name;
+    String name;
     bool foreach_ = false;
     Vec<PathPattern> order_only_inputs;
     Expression command;
     std::optional<Expression> display;
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;               ///< {binname} at end
-    std::optional<std::string> output_order_only_group;    ///< <groupname> at end
+    std::optional<String> output_group;                    ///< {binname} at end
+    std::optional<String> output_order_only_group;         ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
@@ -150,9 +149,9 @@ struct Conditional final : AstNode {
                       Ifneq };
 
     Kind kind = Kind::Ifdef;
-    std::string var_name; ///< For ifdef/ifndef
-    Expression lhs;       ///< For ifeq/ifneq
-    Expression rhs;       ///< For ifeq/ifneq
+    String var_name; ///< For ifdef/ifndef
+    Expression lhs;  ///< For ifeq/ifneq
+    Expression rhs;  ///< For ifeq/ifneq
     Vec<std::unique_ptr<Statement>> then_body;
     Vec<std::unique_ptr<Statement>> else_body;
 
@@ -172,12 +171,12 @@ struct Include final : AstNode {
 
 /// Export directive: export VAR
 struct Export final : AstNode {
-    std::string var_name;
+    String var_name;
 };
 
 /// Import directive: import VAR[=default]
 struct Import final : AstNode {
-    std::string var_name;
+    String var_name;
     std::optional<Expression> default_value;
 };
 
@@ -210,9 +209,9 @@ struct Statement final : AstNode {
 
 /// A complete Tupfile AST
 struct Tupfile final : AstNode {
-    std::string filename;
+    String filename;
     Vec<std::unique_ptr<Statement>> statements;
-    Vec<std::string> included_files;
+    Vec<String> included_files;
 };
 
 } // namespace pup::parser

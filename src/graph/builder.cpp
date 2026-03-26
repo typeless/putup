@@ -633,7 +633,7 @@ auto expand_glob_pattern(
                                         : pup::path::join(ctx.options.source_root, ctx.current_dir);
 
     // First try expanding against filesystem
-    auto expanded = parser::glob_expand(path, std::string(base));
+    auto expanded = parser::glob_expand(path, base);
     if (expanded && !expanded->empty()) {
         for (auto& p : *expanded) {
             // Prefix with current_dir to make path relative to project root
@@ -694,7 +694,7 @@ auto apply_exclusions(
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
                 auto base = ctx.current_dir.empty() ? String { ctx.options.source_root }
                                                     : pup::path::join(ctx.options.source_root, ctx.current_dir);
-                auto expanded = parser::glob_expand(excl, std::string(base));
+                auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
                     for (auto const& p : *expanded) {
                         auto normalized = ctx.current_dir.empty() ? pup::path::normalize(p) : pup::path::normalize(pup::path::join(ctx.current_dir, p));
@@ -874,7 +874,7 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) ->
          it != ctx.pending_weak_assignments.rend();
          ++it) {
         if (!ctx.vars->contains(it->name)) {
-            ctx.vars->set(it->name, std::string(it->value));
+            ctx.vars->set(it->name, it->value);
             auto name_id = ctx.graph->intern(it->name);
             if (!it->config_deps.empty()) {
                 state.var_config_deps.get_or_create(name_id) = std::move(it->config_deps);
@@ -1362,7 +1362,7 @@ auto process_import(
     }
 
     if (ctx.vars) {
-        ctx.vars->set(imp.var_name, std::string(value));
+        ctx.vars->set(imp.var_name, value);
     }
 
     // Track this as an imported variable for fine-grained dependency tracking
@@ -2316,7 +2316,7 @@ auto build_graph(
     // For in-tree builds (source == output), this is empty.
     // For variant builds (-B build), this is "build".
     if (state.options.source_root != state.options.output_root) {
-        graph.set_build_root_name(std::string(pup::path::relative(state.options.output_root, state.options.source_root)));
+        graph.set_build_root_name(pup::path::relative(state.options.output_root, state.options.source_root));
     }
 
     auto result = Result<void> { add_tupfile(graph, tupfile, eval, state) };

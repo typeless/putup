@@ -16,7 +16,6 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <queue>
-#include <string>
 #include <thread>
 #include <vector>
 
@@ -24,9 +23,9 @@ namespace pup::exec {
 
 namespace {
 
-using EnvCache = std::vector<std::pair<std::string, std::string>>;
+using EnvCache = Vec<std::pair<String, String>>;
 
-auto env_cache_find(EnvCache const& cache, std::string_view key) -> EnvCache::const_iterator
+auto env_cache_find(EnvCache const& cache, std::string_view key) -> std::pair<String, String> const*
 {
     auto pos = std::lower_bound(cache.begin(), cache.end(), key, [](auto const& p, std::string_view k) { return p.first < k; });
     return (pos != cache.end() && pos->first == key) ? pos : cache.end();
@@ -876,7 +875,7 @@ auto Scheduler::build_job_list(
         }
 
         // Expand command from instruction pattern + operands
-        auto cmd_str = expand_instruction(graph.graph(), id, cache, std::string(impl_->options.source_root), std::string(impl_->options.config_root));
+        auto cmd_str = expand_instruction(graph.graph(), id, cache, impl_->options.source_root, impl_->options.config_root);
         auto display_str = String { get_display_str(graph.graph(), id) };
 
         auto exported_str = Vec<String> {};

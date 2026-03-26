@@ -33,7 +33,7 @@ struct RunOptions {
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;
     bool capture_stderr = true;
-    std::optional<std::string> stdin_data = {}; ///< Data to pipe to stdin
+    std::optional<String> stdin_data = {}; ///< Data to pipe to stdin
 };
 
 /// Callback for command output
