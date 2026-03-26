@@ -10,26 +10,24 @@
 namespace pup::platform {
 
 auto build_env_strings(
-    Vec<String> const& extra_env,
+    Vec<StringId> const& extra_env,
     bool inherit_env
-) -> Vec<String>
+) -> Vec<StringId>
 {
-    auto result = Vec<String> {};
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
 
     if (inherit_env) {
-        // Get current environment block
         auto env_block = GetEnvironmentStringsW();
         if (env_block) {
-            // Walk through the environment block
             auto current = env_block;
             while (*current) {
-                // Convert from wide to UTF-8
                 auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                 if (len > 0) {
                     auto var = String {};
                     var.resize(static_cast<std::size_t>(len - 1));
                     WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
-                    result.push_back(std::move(var));
+                    result.push_back(pool.intern(var));
                 }
                 current += wcslen(current) + 1;
             }
@@ -37,7 +35,7 @@ auto build_env_strings(
         }
     }
 
-    for (auto const& var : extra_env) {
+    for (auto var : extra_env) {
         result.push_back(var);
     }
 
@@ -46,14 +44,16 @@ auto build_env_strings(
 
 namespace {
 
-auto create_env_block(Vec<String> const& env) -> std::wstring
+auto create_env_block(Vec<StringId> const& env) -> std::wstring
 {
+    auto& pool = global_pool();
     auto block = std::wstring {};
-    for (auto const& var : env) {
-        auto len = MultiByteToWideChar(CP_UTF8, 0, var.c_str(), -1, nullptr, 0);
+    for (auto var : env) {
+        auto sv = pool.get(var);
+        auto len = MultiByteToWideChar(CP_UTF8, 0, sv.data(), -1, nullptr, 0);
         if (len > 0) {
             auto wvar = std::wstring(len - 1, L'\0');
-            MultiByteToWideChar(CP_UTF8, 0, var.c_str(), -1, wvar.data(), len);
+            MultiByteToWideChar(CP_UTF8, 0, sv.data(), -1, wvar.data(), len);
             block += wvar;
             block += L'\0';
         }

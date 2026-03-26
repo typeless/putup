@@ -289,14 +289,6 @@ auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
 /// Clear the entire path cache
 auto clear_path_cache(PathCache& cache) -> void;
 
-/// Intern a string in the graph's string pool
-[[nodiscard]]
-auto intern_string(Graph& graph, std::string_view str) -> StringId;
-
-/// Get string from the graph's string pool
-[[nodiscard]]
-auto get_string(Graph const& graph, StringId id) -> std::string_view;
-
 /// Get file node name as string_view
 [[nodiscard]]
 auto get_name(Graph const& graph, NodeId id) -> std::string_view;

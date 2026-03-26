@@ -690,18 +690,6 @@ auto is_under_build_root(Graph const& graph, NodeId id) -> bool
     return false;
 }
 
-auto intern_string(Graph& graph, std::string_view str) -> StringId
-{
-    (void)graph;
-    return global_pool().intern(str);
-}
-
-auto get_string(Graph const& graph, StringId id) -> std::string_view
-{
-    (void)graph;
-    return global_pool().get(id);
-}
-
 auto get_name(Graph const& graph, NodeId id) -> std::string_view
 {
     auto const* node = get_file_node(graph, id);

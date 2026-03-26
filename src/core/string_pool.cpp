@@ -201,11 +201,13 @@ auto StringPool::find(std::string_view str) const -> StringId
 
 auto StringPool::size() const -> std::size_t
 {
+    auto lock = std::lock_guard { mutex_ };
     return storage_.size();
 }
 
 auto StringPool::clear() -> void
 {
+    auto lock = std::lock_guard { mutex_ };
     storage_.clear();
     std::free(meta_);
     std::free(values_);
@@ -217,6 +219,7 @@ auto StringPool::clear() -> void
 
 auto StringPool::reserve(std::size_t count) -> void
 {
+    auto lock = std::lock_guard { mutex_ };
     auto needed = count * 5 / 4 + 1;
     auto cap = next_power_of_two(needed < 16 ? 16 : needed);
 
