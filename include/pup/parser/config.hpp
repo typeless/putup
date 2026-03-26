@@ -6,7 +6,6 @@
 #include "eval.hpp"
 #include "pup/core/result.hpp"
 
-#include <string>
 #include <string_view>
 
 namespace pup::parser {

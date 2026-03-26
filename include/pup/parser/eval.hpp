@@ -11,7 +11,6 @@
 #include "pup/core/vec.hpp"
 
 #include <functional>
-#include <string>
 #include <string_view>
 
 namespace pup::graph {
@@ -111,7 +110,7 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
 ///
 /// Note: The variable-related fields (vars, config_vars, node_vars, tup_* strings)
 /// parallel VarContext but differ in ownership semantics:
-/// - EvalContext owns strings (std::string) for stable lifetime
+/// - EvalContext owns strings (String) for stable lifetime
 /// - VarContext uses views (std::string_view) for efficient lookup
 ///
 /// Use make_var_context() (internal) to create a VarContext from EvalContext.

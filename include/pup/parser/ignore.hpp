@@ -8,7 +8,6 @@
 #include "pup/core/vec.hpp"
 
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace pup::parser {

@@ -9,8 +9,6 @@
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
 
-#include <string>
-
 namespace pup::cli {
 
 /// A command that outputs a tup.config file.

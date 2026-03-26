@@ -7,8 +7,6 @@
 #include "format.hpp"
 #include "pup/core/result.hpp"
 
-#include <string>
-
 namespace pup::index {
 
 /// Write an index to a file atomically

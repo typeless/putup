@@ -10,7 +10,6 @@
 
 #include <cstddef>
 #include <span>
-#include <string>
 #include <string_view>
 
 namespace pup::index {

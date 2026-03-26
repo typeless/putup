@@ -12,8 +12,6 @@
 #include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
 
-#include <string>
-
 namespace pup::parser {
 struct EvalContext;
 }

@@ -4,7 +4,6 @@
 #include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
 
-#include <string>
 #include <windows.h>
 
 namespace pup::platform {
@@ -34,9 +33,10 @@ auto from_wide(std::wstring const& w) -> String
     if (len == 0) {
         return {};
     }
-    auto result = std::string(static_cast<std::size_t>(len), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), result.data(), len, nullptr, nullptr);
-    return String { result };
+    auto result = String {};
+    result.resize(static_cast<std::size_t>(len));
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), const_cast<char*>(result.data()), len, nullptr, nullptr);
+    return result;
 }
 
 } // namespace
@@ -533,19 +533,21 @@ auto read_file(std::string_view path) -> Result<String>
         return make_error<String>(ErrorCode::IoError, "Failed to get file size: " + String { path });
     }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
-    auto content = std::string(size, '\0');
+    auto content = String {};
+    content.resize(size);
+    auto* buf = const_cast<char*>(content.data()); // safe: String owns buffer
     auto total = std::size_t { 0 };
     while (total < size) {
         auto chunk = static_cast<DWORD>(std::min(size - total, std::size_t { 0x7FFF'FFFFu }));
         auto bytes_read = DWORD {};
-        if (!ReadFile(h, content.data() + total, chunk, &bytes_read, nullptr) || bytes_read == 0) {
+        if (!ReadFile(h, buf + total, chunk, &bytes_read, nullptr) || bytes_read == 0) {
             break;
         }
         total += bytes_read;
     }
     CloseHandle(h);
     content.resize(total);
-    return String { content };
+    return content;
 }
 
 auto write_file(std::string_view path, std::string_view data) -> Result<void>

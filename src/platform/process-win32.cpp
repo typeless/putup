@@ -24,10 +24,10 @@ auto build_env_strings(
                 // Convert from wide to UTF-8
                 auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                 if (len > 0) {
-                    // std::string for mutable .data() buffer needed by WideCharToMultiByte
-                    auto var = std::string(len - 1, '\0');
-                    WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
-                    result.push_back(String { var });
+                    auto var = String {};
+                    var.resize(static_cast<std::size_t>(len - 1));
+                    WideCharToMultiByte(CP_UTF8, 0, current, -1, const_cast<char*>(var.data()), len, nullptr, nullptr);
+                    result.push_back(std::move(var));
                 }
                 current += wcslen(current) + 1;
             }

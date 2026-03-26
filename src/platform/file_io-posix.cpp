@@ -10,7 +10,6 @@
 #include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
-#include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -493,10 +492,12 @@ auto read_file(std::string_view path) -> Result<String>
     ::fstat(fd, &st);
     auto size = static_cast<std::size_t>(st.st_size);
 
-    auto content = std::string(size, '\0');
+    auto content = String {};
+    content.resize(size);
+    auto* buf = const_cast<char*>(content.data()); // safe: String owns buffer
     auto total = std::size_t { 0 };
     while (total < size) {
-        auto n = ::read(fd, content.data() + total, size - total);
+        auto n = ::read(fd, buf + total, size - total);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
@@ -511,7 +512,7 @@ auto read_file(std::string_view path) -> Result<String>
     ::close(fd);
 
     content.resize(total);
-    return String { content };
+    return content;
 }
 
 auto write_file(std::string_view path, std::string_view data) -> Result<void>

@@ -7,7 +7,6 @@
 #include "pup/core/vec.hpp"
 
 #include <cstddef>
-#include <string>
 #include <utility>
 
 namespace pup::cli {
