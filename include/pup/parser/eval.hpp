@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ast.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string.hpp"
@@ -19,10 +20,11 @@ struct VarDepTracker;
 
 namespace pup::parser {
 
-/// Variable database for storing and retrieving variable values
+/// Variable database for storing and retrieving variable values.
+/// All interning goes through global_pool().
 class VarDb {
 public:
-    explicit VarDb(StringPool* pool);
+    VarDb() = default;
     ~VarDb() = default;
 
     VarDb(VarDb const& other);
@@ -45,7 +47,6 @@ public:
 
 private:
     SortedPairVec entries_;
-    StringPool* pool_;
 };
 
 /// Identifies which variable bank a lookup resolved from

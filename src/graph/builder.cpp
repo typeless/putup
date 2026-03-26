@@ -2429,7 +2429,7 @@ auto add_tupfile(
     }
 
     // Thread string pool into EvalContext for StringId lookups
-    eval.string_pool = &graph.graph().strings;
+    eval.string_pool = &global_pool();
 
     // Set up callback to track which config variables are used during expansion
     eval.on_config_var_used = [&ctx](std::string_view name) {

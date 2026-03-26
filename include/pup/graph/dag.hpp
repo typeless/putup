@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/arena.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/paged_vec.hpp"
 #include "pup/core/result.hpp"
@@ -102,8 +103,6 @@ struct PhiNode {
 
 /// Build graph - DAG of nodes and edges (plain data struct)
 struct Graph {
-    StringPool strings; ///< Interned string storage
-
     PagedVec<FileNode> files;           ///< Files, directories, groups (non-command nodes)
     PagedVec<CommandNode> commands;     ///< Command nodes only
     PagedVec<ConditionNode> conditions; ///< Condition nodes (for phi-node model)
@@ -118,7 +117,7 @@ struct Graph {
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
-    StringPool command_strings;      ///< Interned expanded command strings
+    StringPool command_strings;      ///< Interned expanded command strings (separate pool for find_by_command)
     SortedPairVec command_index;     ///< StringId(command) → NodeId
     bool command_index_built = false;
 
@@ -635,30 +634,30 @@ public:
         return graph_;
     }
 
-    /// Intern a string in the graph's string pool
+    /// Intern a string in the global string pool
     [[nodiscard]]
     auto intern(std::string_view str) -> StringId
     {
-        return graph_.strings.intern(str);
+        return global_pool().intern(str);
     }
 
-    /// Get string from the graph's string pool
+    /// Get string from the global string pool
     [[nodiscard]]
     auto str(StringId id) const -> std::string_view
     {
-        return graph_.strings.get(id);
+        return global_pool().get(id);
     }
 
     [[nodiscard]]
     auto string_pool() -> StringPool&
     {
-        return graph_.strings;
+        return global_pool();
     }
 
     [[nodiscard]]
     auto string_pool() const -> StringPool const&
     {
-        return graph_.strings;
+        return global_pool();
     }
 
 private:

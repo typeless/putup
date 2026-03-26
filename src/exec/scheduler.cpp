@@ -881,7 +881,7 @@ auto Scheduler::build_job_list(
         auto exported_str = Vec<String> {};
         exported_str.reserve(node->exported_vars.size());
         for (auto raw_id : node->exported_vars) {
-            exported_str.emplace_back(graph.graph().strings.get(make_string_id(raw_id)));
+            exported_str.emplace_back(global_pool().get(make_string_id(raw_id)));
         }
 
         // Evaluate guards - command only executes if ALL guards are satisfied

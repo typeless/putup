@@ -3,6 +3,7 @@
 
 #include "pup/graph/dag.hpp"
 
+#include "pup/core/global_pool.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 
@@ -285,7 +286,7 @@ auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool
 auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view name)
     -> std::optional<NodeId>
 {
-    auto name_id = graph.strings.find(name);
+    auto name_id = global_pool().find(name);
     if (is_empty(name_id)) {
         return std::nullopt;
     }
@@ -472,7 +473,7 @@ auto empty(Graph const& graph) -> bool
 auto clear(Graph& graph) -> void
 {
     // Preserve build root name string before clearing
-    auto build_root_name_str = String { graph.strings.get(graph.files[BUILD_ROOT_ID].name) };
+    auto build_root_name_str = String { global_pool().get(graph.files[BUILD_ROOT_ID].name) };
 
     graph.files.clear();
     graph.commands.clear();
@@ -488,10 +489,8 @@ auto clear(Graph& graph) -> void
     graph.command_strings.clear();
     graph.command_index.clear();
     graph.command_index_built = false;
-    graph.strings.clear();
-
-    // Re-intern build root name
-    auto build_root_name = graph.strings.intern(build_root_name_str);
+    // Re-intern build root name (global_pool is not cleared — it's process-wide)
+    auto build_root_name = global_pool().intern(build_root_name_str);
 
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
@@ -599,7 +598,7 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
         return "";
     }
 
-    auto const name = graph.strings.get(node->name);
+    auto const name = global_pool().get(node->name);
     if (name.empty()) {
         return "";
     }
@@ -662,7 +661,7 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
         graph.dir_children[0].remove(to_underlying(old_name));
     }
 
-    auto name_id = graph.strings.intern(name);
+    auto name_id = global_pool().intern(name);
     graph.files[BUILD_ROOT_ID].name = name_id;
 
     if (!is_empty(name_id)) {
@@ -672,7 +671,7 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
 {
-    return graph.strings.get(graph.files[BUILD_ROOT_ID].name);
+    return global_pool().get(graph.files[BUILD_ROOT_ID].name);
 }
 
 auto is_under_build_root(Graph const& graph, NodeId id) -> bool
@@ -693,12 +692,14 @@ auto is_under_build_root(Graph const& graph, NodeId id) -> bool
 
 auto intern_string(Graph& graph, std::string_view str) -> StringId
 {
-    return graph.strings.intern(str);
+    (void)graph;
+    return global_pool().intern(str);
 }
 
 auto get_string(Graph const& graph, StringId id) -> std::string_view
 {
-    return graph.strings.get(id);
+    (void)graph;
+    return global_pool().get(id);
 }
 
 auto get_name(Graph const& graph, NodeId id) -> std::string_view
@@ -707,7 +708,7 @@ auto get_name(Graph const& graph, NodeId id) -> std::string_view
     if (!node) {
         return {};
     }
-    return graph.strings.get(node->name);
+    return global_pool().get(node->name);
 }
 
 namespace {
@@ -747,12 +748,12 @@ auto expand_instruction_impl(
         return {};
     }
 
-    auto pattern = graph.strings.get(cmd->instruction_id);
+    auto pattern = global_pool().get(cmd->instruction_id);
     if (pattern.empty()) {
         return {};
     }
 
-    auto source_dir = graph.strings.get(cmd->source_dir);
+    auto source_dir = global_pool().get(cmd->source_dir);
 
     auto get_operand_name = [&](NodeId id) -> std::string_view {
         return get_name(graph, id);
@@ -884,7 +885,7 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
     if (!cmd) {
         return {};
     }
-    auto source_dir = graph.strings.get(cmd->source_dir);
+    auto source_dir = global_pool().get(cmd->source_dir);
     auto source_to_root = pup::compute_source_to_root(source_dir);
 
     return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
@@ -905,7 +906,7 @@ auto expand_instruction(
     if (!cmd) {
         return {};
     }
-    auto source_dir = graph.strings.get(cmd->source_dir);
+    auto source_dir = global_pool().get(cmd->source_dir);
     auto source_to_root = pup::compute_source_to_root(source_dir);
     auto canonical_cwd = String {};
     if (!source_root.empty()) {
@@ -970,7 +971,7 @@ auto get_display_str(Graph const& graph, NodeId id) -> std::string_view
     if (!node) {
         return {};
     }
-    return graph.strings.get(node->display);
+    return global_pool().get(node->display);
 }
 
 auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view
@@ -979,7 +980,7 @@ auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view
     if (!node) {
         return {};
     }
-    return graph.strings.get(node->source_dir);
+    return global_pool().get(node->source_dir);
 }
 
 auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view
@@ -988,7 +989,7 @@ auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view
     if (!node) {
         return {};
     }
-    return graph.strings.get(node->instruction_id);
+    return global_pool().get(node->instruction_id);
 }
 
 // =============================================================================

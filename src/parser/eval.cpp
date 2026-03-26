@@ -3,6 +3,7 @@
 
 #include "pup/parser/eval.hpp"
 
+#include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/graph/builder.hpp"
@@ -20,14 +21,7 @@ namespace pup::parser {
 // VarDb
 // =============================================================================
 
-VarDb::VarDb(StringPool* pool)
-    : pool_(pool)
-{
-    assert(pool != nullptr);
-}
-
 VarDb::VarDb(VarDb const& other)
-    : pool_(other.pool_)
 {
     for (auto [key, value] : other.entries_) {
         entries_.insert(key, value);
@@ -38,7 +32,6 @@ auto VarDb::operator=(VarDb const& other) -> VarDb&
 {
     if (this != &other) {
         entries_.clear();
-        pool_ = other.pool_;
         for (auto [key, value] : other.entries_) {
             entries_.insert(key, value);
         }
@@ -48,17 +41,17 @@ auto VarDb::operator=(VarDb const& other) -> VarDb&
 
 auto VarDb::set(std::string_view name, std::string_view value) -> void
 {
-    auto name_id = pup::to_underlying(pool_->intern(name));
-    auto value_id = pup::to_underlying(pool_->intern(value));
+    auto name_id = pup::to_underlying(global_pool().intern(name));
+    auto value_id = pup::to_underlying(global_pool().intern(value));
     entries_.insert(name_id, value_id);
 }
 
 auto VarDb::append(std::string_view name, std::string_view value) -> void
 {
-    auto name_id = pup::to_underlying(pool_->intern(name));
+    auto name_id = pup::to_underlying(global_pool().intern(name));
     auto const* existing = entries_.find(name_id);
     if (existing) {
-        auto old_value = pool_->get(pup::make_string_id(*existing));
+        auto old_value = global_pool().get(pup::make_string_id(*existing));
         auto combined = String {};
         if (!old_value.empty()) {
             combined.reserve(old_value.size() + 1 + value.size());
@@ -66,17 +59,17 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
             combined += ' ';
         }
         combined += value;
-        auto value_id = pup::to_underlying(pool_->intern(combined));
+        auto value_id = pup::to_underlying(global_pool().intern(combined));
         entries_.insert(name_id, value_id);
     } else {
-        auto value_id = pup::to_underlying(pool_->intern(value));
+        auto value_id = pup::to_underlying(global_pool().intern(value));
         entries_.insert(name_id, value_id);
     }
 }
 
 auto VarDb::get(std::string_view name) const -> std::string_view
 {
-    auto name_id = pool_->find(name);
+    auto name_id = global_pool().find(name);
     if (pup::is_empty(name_id)) {
         return {};
     }
@@ -84,12 +77,12 @@ auto VarDb::get(std::string_view name) const -> std::string_view
     if (!value_ptr) {
         return {};
     }
-    return pool_->get(pup::make_string_id(*value_ptr));
+    return global_pool().get(pup::make_string_id(*value_ptr));
 }
 
 auto VarDb::contains(std::string_view name) const -> bool
 {
-    auto name_id = pool_->find(name);
+    auto name_id = global_pool().find(name);
     if (pup::is_empty(name_id)) {
         return false;
     }
@@ -100,7 +93,7 @@ auto VarDb::names() const -> Vec<std::string_view>
 {
     auto result = Vec<std::string_view> {};
     for (auto [key, value] : entries_) {
-        result.push_back(pool_->get(pup::make_string_id(key)));
+        result.push_back(global_pool().get(pup::make_string_id(key)));
     }
     std::sort(result.begin(), result.end());
     return result;

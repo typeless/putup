@@ -8,7 +8,7 @@ namespace pup {
 
 auto global_pool() -> StringPool&
 {
-    static StringPool pool;
+    thread_local StringPool pool;
     return pool;
 }
 

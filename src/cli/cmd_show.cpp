@@ -5,6 +5,7 @@
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
@@ -597,7 +598,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
         if (shown >= 10) {
             break;
         }
-        auto instruction_str = graph.strings.get(iid);
+        auto instruction_str = pup::global_pool().get(iid);
         // Truncate long instructions for display
         auto display_str = String { instruction_str };
         if (display_str.size() > 60) {
@@ -609,7 +610,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
 
     auto unique_instruction_bytes = std::size_t { 0 };
     for (auto const& [iid, _] : instruction_usage) {
-        unique_instruction_bytes += graph.strings.get(iid).size();
+        unique_instruction_bytes += pup::global_pool().get(iid).size();
     }
 
     auto per_command_overhead = total_commands * 8; // instruction_id + operand offset

@@ -54,9 +54,9 @@ constexpr auto CONFIG_PREFIX = std::string_view { "CONFIG_" };
 
 } // namespace
 
-auto parse_config_string(std::string_view content, StringPool& pool) -> Result<VarDb>
+auto parse_config_string(std::string_view content) -> Result<VarDb>
 {
-    auto db = VarDb { &pool };
+    auto db = VarDb {};
 
     auto pos = std::size_t { 0 };
     while (pos < content.size()) {
@@ -102,13 +102,13 @@ auto parse_config_string(std::string_view content, StringPool& pool) -> Result<V
     return db;
 }
 
-auto parse_config(std::string_view path, StringPool& pool) -> Result<VarDb>
+auto parse_config(std::string_view path) -> Result<VarDb>
 {
     auto content = pup::platform::read_file(path);
     if (!content) {
         return make_error<VarDb>(ErrorCode::NotFound, String { "Cannot open config file: " } + path);
     }
-    return parse_config_string(*content, pool);
+    return parse_config_string(*content);
 }
 
 } // namespace pup::parser
