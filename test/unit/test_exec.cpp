@@ -17,8 +17,8 @@ using namespace pup;
 using namespace pup::exec;
 
 namespace {
-auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
-auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+[[maybe_unused]] auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+[[maybe_unused]] auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 } // namespace
 
 #ifndef _WIN32
