@@ -5,6 +5,7 @@
 #include "e2e_fixture.hpp"
 
 using namespace pup::test;
+using pup::String;
 
 // =============================================================================
 // Build Verification Tests
@@ -607,10 +608,12 @@ SCENARIO("Tupfile changes trigger rebuild", "[e2e][incremental]")
 
             WHEN("the Tupfile is modified to change VERSION")
             {
-                auto modified = f.read_file("Tupfile");
-                auto pos = modified.find("VERSION=1");
-                REQUIRE(pos != std::string::npos);
-                modified.replace(pos, 9, "VERSION=2");
+                auto original = f.read_file("Tupfile");
+                auto pos = original.find("VERSION=1");
+                REQUIRE(pos != String::npos);
+                auto modified = String { std::string_view{original}.substr(0, pos) };
+                modified += "VERSION=2";
+                modified += std::string_view{original}.substr(pos + 9);
                 f.write_file("Tupfile", modified);
 
                 auto result = f.build();
@@ -1128,10 +1131,12 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
             WHEN("source file content is modified without size change")
             {
                 // Modify "42" to "99" - same size (2 chars), different content
-                auto content = f.read_file("lib/foo.c");
-                auto pos = content.find("42");
-                REQUIRE(pos != std::string::npos);
-                content.replace(pos, 2, "99");
+                auto original = f.read_file("lib/foo.c");
+                auto pos = original.find("42");
+                REQUIRE(pos != String::npos);
+                auto content = String { std::string_view{original}.substr(0, pos) };
+                content += "99";
+                content += std::string_view{original}.substr(pos + 2);
                 f.write_file("lib/foo.c", content);
 
                 auto result = f.build({ "-B", "build" });

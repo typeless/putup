@@ -6,13 +6,13 @@
 #include <cstdlib>
 #include <fstream>
 #include <random>
-#include <sstream>
 
 #include <cstdio>
 
 namespace pup::test {
 
 namespace fs = std::filesystem;
+using pup::String;
 
 namespace {
 
@@ -125,13 +125,13 @@ auto E2EFixture::operator=(E2EFixture&& other) noexcept -> E2EFixture&
 
 auto E2EFixture::run_pup(std::vector<std::string> const& args) -> PupResult
 {
-    auto cmd = std::ostringstream {};
-    cmd << m_pup_binary.string();
+    auto cmd = String { m_pup_binary.string() };
     for (auto const& arg : args) {
-        cmd << " " << exec::shell_quote(arg);
+        cmd += " ";
+        cmd += exec::shell_quote(arg);
     }
 
-    auto result = m_runner.run(cmd.str());
+    auto result = m_runner.run(cmd);
     if (!result) {
         return PupResult { .exit_code = -1, .stdout_output = {}, .stderr_output = "Failed to run pup" };
     }
@@ -214,28 +214,31 @@ auto E2EFixture::is_executable(std::string_view path) const -> bool
     return (perms & fs::perms::owner_exec) != fs::perms::none;
 }
 
-auto E2EFixture::read_file(std::string_view path) const -> std::string
+auto E2EFixture::read_file(std::string_view path) const -> pup::String
 {
     auto p = resolve_path(path);
     auto ifs = std::ifstream { p };
     if (!ifs)
         return {};
 
-    auto ss = std::ostringstream {};
-    ss << ifs.rdbuf();
-    return ss.str();
+    auto content = String {};
+    char buf[4096];
+    while (ifs.read(buf, sizeof(buf)) || ifs.gcount() > 0) {
+        content.append(std::string_view { buf, static_cast<std::size_t>(ifs.gcount()) });
+    }
+    return content;
 }
 
 auto E2EFixture::run(std::string_view path, std::vector<std::string> const& args) -> ProcessResult
 {
-    auto cmd = std::ostringstream {};
     auto p = resolve_path(path);
-    cmd << p.string();
+    auto cmd = String { p.string() };
     for (auto const& arg : args) {
-        cmd << " " << exec::shell_quote(arg);
+        cmd += " ";
+        cmd += exec::shell_quote(arg);
     }
 
-    auto result = m_runner.run(cmd.str());
+    auto result = m_runner.run(cmd);
     if (!result) {
         return ProcessResult { .exit_code = -1, .stdout_output = {}, .stderr_output = "Failed to run process" };
     }
@@ -289,10 +292,10 @@ auto E2EFixture::run_pup_in_dir(
 {
     auto working_dir = resolve_path(dir);
 
-    auto cmd = std::ostringstream {};
-    cmd << m_pup_binary.string();
+    auto cmd = String { m_pup_binary.string() };
     for (auto const& arg : args) {
-        cmd << " " << exec::shell_quote(arg);
+        cmd += " ";
+        cmd += exec::shell_quote(arg);
     }
 
     auto opts = exec::RunOptions {
@@ -300,7 +303,7 @@ auto E2EFixture::run_pup_in_dir(
         .inherit_env = true,
     };
 
-    auto result = m_runner.run(cmd.str(), opts);
+    auto result = m_runner.run(cmd, opts);
     if (!result) {
         return PupResult { .exit_code = -1, .stdout_output = {}, .stderr_output = "Failed to run pup" };
     }
