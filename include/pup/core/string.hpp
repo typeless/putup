@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
-#include <string>
 #include <string_view>
 
 namespace pup {
@@ -18,7 +17,6 @@ public:
     String(char const* s);
     String(char const* s, std::size_t len);
     String(std::string_view sv);
-    String(std::string const& s); // interop: allows implicit conversion from std::string
     ~String();
 
     String(String const& other);
@@ -39,9 +37,6 @@ public:
     auto c_str() const -> char const*;
 
     operator std::string_view() const; // NOLINT(google-explicit-constructor)
-
-    /// Explicit bridge back to std::string (for APIs that still require it)
-    explicit operator std::string() const { return std::string { data(), size() }; }
 
     [[nodiscard]]
     auto operator[](std::size_t i) const -> char;
@@ -97,10 +92,6 @@ public:
     friend auto operator==(String const& a, std::string_view b) -> bool
     {
         return std::string_view { a } == b;
-    }
-    friend auto operator==(String const& a, std::string const& b) -> bool
-    {
-        return std::string_view { a } == std::string_view { b };
     }
     friend auto operator==(String const& a, char const* b) -> bool
     {

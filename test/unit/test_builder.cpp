@@ -21,7 +21,7 @@ namespace {
 auto make_path_pattern(std::string_view path) -> PathPattern
 {
     auto pattern = PathPattern {};
-    pattern.path.parts.push_back(Expression::Literal { std::string { path } });
+    pattern.path.parts.push_back(Expression::Literal { String { path } });
     return pattern;
 }
 
@@ -30,7 +30,7 @@ auto make_group_pattern(std::string_view name) -> PathPattern
 {
     auto pattern = PathPattern {};
     pattern.is_group = true;
-    pattern.group_name = std::string { name };
+    pattern.group_name = String { name };
     return pattern;
 }
 
@@ -39,9 +39,9 @@ auto make_order_only_group_pattern(std::string_view name, std::string_view path 
 {
     auto pattern = PathPattern {};
     pattern.is_order_only_group = true;
-    pattern.group_name = std::string { name };
+    pattern.group_name = String { name };
     if (!path.empty()) {
-        pattern.path.parts.push_back(Expression::Literal { std::string { path } });
+        pattern.path.parts.push_back(Expression::Literal { String { path } });
     }
     return pattern;
 }
@@ -51,10 +51,10 @@ auto make_order_only_group_var_pattern(std::string_view name, std::string_view v
 {
     auto pattern = PathPattern {};
     pattern.is_order_only_group = true;
-    pattern.group_name = std::string { name };
-    pattern.path.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, std::string { var_name }, {} } });
+    pattern.group_name = String { name };
+    pattern.path.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, String { var_name }, {} } });
     if (!suffix.empty()) {
-        pattern.path.parts.push_back(Expression::Literal { std::string { suffix } });
+        pattern.path.parts.push_back(Expression::Literal { String { suffix } });
     }
     return pattern;
 }
@@ -91,7 +91,7 @@ public:
     }
 
     auto root() const -> fs::path const& { return test_root_; }
-    auto root_str() const -> std::string { return test_root_.string(); }
+    auto root_str() const -> String { return String { test_root_.generic_string() }; }
 
     auto create_file(fs::path const& rel_path) -> void
     {
@@ -144,7 +144,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
 
     // First Tupfile: modules/kernel defines <local-group>
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = fixture.tupfile_path("modules/kernel");
+    tupfile1.filename = String { fixture.tupfile_path("modules/kernel") };
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule1 = Rule {};
@@ -161,7 +161,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     // Second Tupfile: also in modules/kernel, references <local-group> (empty path)
     // GroupKey should be {"modules/kernel", "local-group"}
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = fixture.tupfile_path("modules/kernel");
+    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
 
     auto rule2 = Rule {};
     rule2.command.parts.push_back(Expression::Literal { "compile" });
@@ -202,7 +202,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
 
     // First Tupfile: include/generated defines <gen-headers>
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = fixture.tupfile_path("include/generated");
+    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
@@ -219,7 +219,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     // Second Tupfile: modules/kernel references $(ROOT)/include/generated/<gen-headers>
     // This should normalize to {"include/generated", "gen-headers"}
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = fixture.tupfile_path("modules/kernel");
+    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule2 = Rule {};
@@ -261,7 +261,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
 
     // First: define group in include/generated
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = fixture.tupfile_path("include/generated");
+    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
@@ -278,7 +278,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     // Second: reference with relative path ../../include/generated/<gen-headers>
     // from modules/kernel
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = fixture.tupfile_path("modules/kernel");
+    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule2 = Rule {};
@@ -325,7 +325,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
 
     // Tupfile that compiles *.c -> {objs}, then links {objs} -> app
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     // Rule 1: compile a.c -> a.o into {objs}
@@ -409,7 +409,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -440,7 +440,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
-        .output_root = (fixture.root() / "build-variant").string(),
+        .output_root = String { (fixture.root() / "build-variant").string() },
         .config_path = {},
         .expand_globs = true,
         .validate_inputs = false,
@@ -449,7 +449,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
 
     // First Tupfile: generate some .h files
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = fixture.tupfile_path("include/generated");
+    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
@@ -491,7 +491,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
-        .output_root = (fixture.root() / "build-variant").string(),
+        .output_root = String { (fixture.root() / "build-variant").string() },
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -499,7 +499,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -541,7 +541,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -606,7 +606,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -671,7 +671,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -741,7 +741,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 
     // Tupfile in include/generated: defines <gen-headers>
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = fixture.tupfile_path("include/generated");
+    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
@@ -757,7 +757,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 
     // Tupfile in modules/kernel: references ../../include/generated/<gen-headers>
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = fixture.tupfile_path("modules/kernel");
+    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
     fixture.create_file("modules/kernel/Tupfile");
     fixture.create_file("modules/kernel/kernel.c");
 
@@ -829,7 +829,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
 
     // Case 1: Group defined at root level (directory ".")
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = fixture.tupfile_path("");
+    tupfile1.filename = String { fixture.tupfile_path("") };
     fixture.create_file("Tupfile");
 
     auto rule1 = Rule {};
@@ -847,7 +847,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     // The expanded path will be "<root-group>" (no dir prefix)
     // This should look up {".", "root-group"} NOT {"modules/kernel", "root-group"}
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = fixture.tupfile_path("modules/kernel");
+    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule2 = Rule {};
@@ -903,7 +903,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
-        .output_root = (fixture.root() / "build-variant").string(),
+        .output_root = String { (fixture.root() / "build-variant").string() },
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -911,7 +911,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -962,7 +962,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
 
     // Tupfile in deeply nested directory
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("modules/app/sub/deep");
+    tupfile.filename = String { fixture.tupfile_path("modules/app/sub/deep") };
     fixture.create_file("modules/app/sub/deep/Tupfile");
 
     auto rule = Rule {};
@@ -1013,7 +1013,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
@@ -1071,8 +1071,8 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     auto ctx = EvalContext { .vars = &vars };
 
     // Simulate -B build-variant
-    auto output_root = (fixture.root() / "build-variant").string();
-    fs::create_directories(fs::path { output_root } / "src");
+    auto output_root = String { (fixture.root() / "build-variant").string() };
+    fs::create_directories(fs::path { std::string(output_root) } / "src");
 
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
@@ -1085,7 +1085,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
     fixture.create_file("src/Tupfile");
     fixture.create_file("src/main.c");
 
@@ -1140,7 +1140,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     fs::create_directories(fixture.root() / "build-variant" / "boot");
     fs::create_directories(fixture.root() / "build-variant" / "output" / "hex");
 
-    auto output_root = (fixture.root() / "build-variant").string();
+    auto output_root = String { (fixture.root() / "build-variant").string() };
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
@@ -1153,7 +1153,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     // First Tupfile: boot/Tupfile generates boot.hex
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = (fixture.root() / "boot" / "Tupfile").string();
+    tupfile1.filename = String { (fixture.root() / "boot" / "Tupfile").string() };
     fixture.create_file("boot/Tupfile");
     fixture.create_file("boot/boot.elf");
 
@@ -1186,7 +1186,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     // Second Tupfile: output/hex/Tupfile references ../../boot/boot.hex (source-relative)
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = (fixture.root() / "output" / "hex" / "Tupfile").string();
+    tupfile2.filename = String { (fixture.root() / "output" / "hex" / "Tupfile").string() };
     fixture.create_file("output/hex/Tupfile");
 
     auto rule2 = Rule {};
@@ -1246,7 +1246,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
-        .output_root = (fixture.root() / "build").string(),
+        .output_root = String { (fixture.root() / "build").string() },
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -1261,7 +1261,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     ctx.tup_variant_outputdir = "../../build/sub/dir";
 
     auto tupfile = Tupfile {};
-    tupfile.filename = (fixture.root() / "sub" / "dir" / "Tupfile").string();
+    tupfile.filename = String { (fixture.root() / "sub" / "dir" / "Tupfile").string() };
     fixture.create_file("sub/dir/Tupfile");
 
     // Rule that outputs to current directory (which should be build/sub/dir)
@@ -1319,7 +1319,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("");
+    tupfile.filename = String { fixture.tupfile_path("") };
 
     // Rule: : main.c |> gcc -c %f -o %o |> main.o
     auto rule = Rule {};
@@ -1370,7 +1370,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src/lib");
+    tupfile.filename = String { fixture.tupfile_path("src/lib") };
 
     // Rule: : add.c |> gcc -c %f -o %o |> add.o
     auto rule = Rule {};
@@ -1425,7 +1425,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src/lib");
+    tupfile.filename = String { fixture.tupfile_path("src/lib") };
 
     // Rule: : main.c ../util/helper.c |> gcc -c %f -o %o |> app.o
     auto rule = Rule {};
@@ -1474,7 +1474,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
-        .output_root = (fixture.root() / "build").string(),
+        .output_root = String { (fixture.root() / "build").string() },
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -1487,7 +1487,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     ctx.tup_variant_outputdir = "../../build/src/lib";
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src/lib");
+    tupfile.filename = String { fixture.tupfile_path("src/lib") };
 
     // Rule: : add.c |> gcc -c %f -o %o |> add.o
     auto rule = Rule {};
@@ -1540,7 +1540,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     auto options = BuilderOptions {
         .source_root = fixture.root_str(),
         .config_root = fixture.root_str(),
-        .output_root = (fixture.root() / "build").string(),
+        .output_root = String { (fixture.root() / "build").string() },
         .config_path = {},
         .expand_globs = false,
         .validate_inputs = false,
@@ -1550,7 +1550,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     ctx.tup_variant_outputdir = "../../build/src";
 
     auto tupfile = Tupfile {};
-    tupfile.filename = fixture.tupfile_path("src");
+    tupfile.filename = String { fixture.tupfile_path("src") };
 
     // Rule that outputs a file named "..hidden" (valid filename starting with ..)
     auto rule = Rule {};

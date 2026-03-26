@@ -69,11 +69,6 @@ String::String(char const* s, std::size_t len)
 {
 }
 
-String::String(std::string const& s)
-    : String(std::string_view { s })
-{
-}
-
 String::String(std::string_view sv)
 {
     if (sv.size() <= SSO_CAP) {

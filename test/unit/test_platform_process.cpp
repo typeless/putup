@@ -7,6 +7,7 @@
 
 using namespace pup::platform;
 using namespace pup::test;
+using pup::String;
 
 namespace {
 
@@ -22,10 +23,10 @@ auto const CAT_CMD = std::string { "cat" };
 auto const PWD_CMD = std::string { "pwd" };
 #endif
 
-auto make_opts(std::string cmd) -> ProcessOptions
+auto make_opts(std::string_view cmd) -> ProcessOptions
 {
     auto opts = ProcessOptions {};
-    opts.command = std::move(cmd);
+    opts.command = String { cmd };
     return opts;
 }
 
@@ -91,7 +92,7 @@ SCENARIO("run_process respects working directory", "[platform][process]")
         f.mkdir("subdir");
 
         auto opts = make_opts(PWD_CMD);
-        opts.working_dir = (f.workdir() / "subdir").string();
+        opts.working_dir = String { (f.workdir() / "subdir").string() };
         opts.capture_stdout = true;
 
         WHEN("the process is executed")

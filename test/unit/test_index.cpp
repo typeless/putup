@@ -744,14 +744,16 @@ TEST_CASE("StringTable overflow handling", "[index]")
         auto index = Index {};
 
         // Create a string larger than 64KB (0xFFFF = 65535 bytes max)
-        auto huge_name = std::string(65536, 'x');
+        auto huge_name = String {};
+        huge_name.resize(65536);
+        std::memset(const_cast<char*>(huge_name.data()), 'x', 65536);
 
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = huge_name });
 
                 auto result = serialize_index(index);
 
         REQUIRE_FALSE(result.has_value());
-        REQUIRE(result.error().message.find("64KB") != std::string::npos);
+        REQUIRE(result.error().message.find("64KB") != String::npos);
     }
 
     SECTION("string at 64KB limit succeeds")
@@ -759,7 +761,9 @@ TEST_CASE("StringTable overflow handling", "[index]")
         auto index = Index {};
 
         // Create a string exactly at the 64KB limit (65535 bytes)
-        auto max_name = std::string(65535, 'y');
+        auto max_name = String {};
+        max_name.resize(65535);
+        std::memset(const_cast<char*>(max_name.data()), 'y', 65535);
 
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = max_name });
 

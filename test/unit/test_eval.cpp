@@ -232,7 +232,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
-        .tup_platform = std::string { pup::PLATFORM }, // compile-time default
+        .tup_platform = pup::PLATFORM, // compile-time default
     };
 
 
@@ -280,7 +280,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
-        .tup_arch = std::string { pup::ARCH }, // compile-time default
+        .tup_arch = pup::ARCH, // compile-time default
     };
 
 
