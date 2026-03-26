@@ -26,7 +26,7 @@ auto build_env_strings(
                 if (len > 0) {
                     auto var = String {};
                     var.resize(static_cast<std::size_t>(len - 1));
-                    WideCharToMultiByte(CP_UTF8, 0, current, -1, const_cast<char*>(var.data()), len, nullptr, nullptr);
+                    WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
                     result.push_back(std::move(var));
                 }
                 current += wcslen(current) + 1;

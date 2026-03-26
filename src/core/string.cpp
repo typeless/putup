@@ -160,6 +160,11 @@ auto String::data() const -> char const*
     return is_heap() ? heap_.ptr : sso_.buf;
 }
 
+auto String::data() -> char*
+{
+    return is_heap() ? heap_.ptr : sso_.buf;
+}
+
 auto String::size() const -> std::size_t
 {
     return is_heap() ? heap_.len : (SSO_CAP - sso_.remaining);

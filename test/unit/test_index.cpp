@@ -746,7 +746,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         // Create a string larger than 64KB (0xFFFF = 65535 bytes max)
         auto huge_name = String {};
         huge_name.resize(65536);
-        std::memset(const_cast<char*>(huge_name.data()), 'x', 65536);
+        std::memset(huge_name.data(), 'x', 65536);
 
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = huge_name });
 
@@ -763,7 +763,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         // Create a string exactly at the 64KB limit (65535 bytes)
         auto max_name = String {};
         max_name.resize(65535);
-        std::memset(const_cast<char*>(max_name.data()), 'y', 65535);
+        std::memset(max_name.data(), 'y', 65535);
 
         index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = max_name });
 

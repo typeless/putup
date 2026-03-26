@@ -494,7 +494,7 @@ auto read_file(std::string_view path) -> Result<String>
 
     auto content = String {};
     content.resize(size);
-    auto* buf = const_cast<char*>(content.data()); // safe: String owns buffer
+    auto* buf = content.data();
     auto total = std::size_t { 0 };
     while (total < size) {
         auto n = ::read(fd, buf + total, size - total);

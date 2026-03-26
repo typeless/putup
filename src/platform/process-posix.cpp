@@ -131,8 +131,7 @@ auto run_process_with_callback(
         auto env_ptrs = Vec<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
         for (auto& s : env_strings) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
-            env_ptrs.push_back(const_cast<char*>(s.data()));
+            env_ptrs.push_back(s.data());
         }
         env_ptrs.push_back(nullptr);
 

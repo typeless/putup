@@ -28,6 +28,9 @@ public:
     auto data() const -> char const*;
 
     [[nodiscard]]
+    auto data() -> char*;
+
+    [[nodiscard]]
     auto size() const -> std::size_t;
 
     [[nodiscard]]
@@ -108,10 +111,6 @@ public:
     friend auto operator<=>(std::string_view a, String const& b)
     {
         return a <=> std::string_view { b };
-    }
-    friend auto operator<(String const& a, String const& b) -> bool
-    {
-        return std::string_view { a } < std::string_view { b };
     }
     friend auto operator<(String const& a, std::string_view b) -> bool
     {

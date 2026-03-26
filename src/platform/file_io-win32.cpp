@@ -35,7 +35,7 @@ auto from_wide(std::wstring const& w) -> String
     }
     auto result = String {};
     result.resize(static_cast<std::size_t>(len));
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), const_cast<char*>(result.data()), len, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), result.data(), len, nullptr, nullptr);
     return result;
 }
 
@@ -535,7 +535,7 @@ auto read_file(std::string_view path) -> Result<String>
     auto size = static_cast<std::size_t>(file_size.QuadPart);
     auto content = String {};
     content.resize(size);
-    auto* buf = const_cast<char*>(content.data()); // safe: String owns buffer
+    auto* buf = content.data();
     auto total = std::size_t { 0 };
     while (total < size) {
         auto chunk = static_cast<DWORD>(std::min(size - total, std::size_t { 0x7FFF'FFFFu }));
