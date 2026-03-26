@@ -82,7 +82,7 @@ E2EFixture::E2EFixture(std::string_view name)
 E2EFixture::~E2EFixture()
 {
     auto const* keep = std::getenv("KEEP_WORKDIR");
-    if (keep && std::string { keep } == "1") {
+    if (keep && std::string_view { keep } == "1") {
         // Don't delete - useful for debugging
         return;
     }
@@ -344,7 +344,7 @@ auto run_shell_fixture(std::string_view name) -> ProcessResult
 
     // Cleanup unless KEEP_WORKDIR
     auto const* keep = std::getenv("KEEP_WORKDIR");
-    if (!keep || std::string { keep } != "1") {
+    if (!keep || std::string_view { keep } != "1") {
         auto ec = std::error_code {};
         fs::remove_all(workdir, ec);
     }
