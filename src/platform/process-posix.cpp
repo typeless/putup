@@ -26,11 +26,11 @@
 namespace pup::platform {
 
 auto build_env_strings(
-    Vec<std::string> const& extra_env,
+    Vec<String> const& extra_env,
     bool inherit_env
-) -> Vec<std::string>
+) -> Vec<String>
 {
-    auto result = Vec<std::string> {};
+    auto result = Vec<String> {};
 
     if (inherit_env) {
         for (auto** e = environ; *e != nullptr; ++e) {
@@ -131,15 +131,16 @@ auto run_process_with_callback(
         auto env_ptrs = Vec<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
         for (auto& s : env_strings) {
-            env_ptrs.push_back(s.data());
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
+            env_ptrs.push_back(const_cast<char*>(s.data()));
         }
         env_ptrs.push_back(nullptr);
 
-        auto cmd_str = std::string(opts.command);
         char* const argv[] = {
             const_cast<char*>("/bin/sh"), // NOLINT(cppcoreguidelines-pro-type-const-cast)
             const_cast<char*>("-c"),      // NOLINT(cppcoreguidelines-pro-type-const-cast)
-            cmd_str.data(),
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
+            const_cast<char*>(opts.command.c_str()),
             nullptr
         };
 

@@ -255,15 +255,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     for (auto id : ctx.graph().all_nodes()) {
         declared_nodes.set(id, 1);
 
-        auto get_label = [&]() -> std::string {
+        auto get_label = [&]() -> String {
             if (node_id::is_command(id)) {
                 auto const* cmd = ctx.graph().get_command_node(id);
                 if (!cmd) {
-                    return "";
+                    return {};
                 }
                 auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
                 auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-                return display_sv.empty() ? cmd_sv : std::string { display_sv };
+                return display_sv.empty() ? cmd_sv : String { display_sv };
             }
             return ctx.graph().get_full_path(id);
         };

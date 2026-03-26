@@ -353,12 +353,12 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 
 auto Scheduler::build_incremental(
     graph::BuildGraph const& graph,
-    Vec<std::string> const& changed_files
+    Vec<String> const& changed_files
 ) -> Result<BuildStats>
 {
     // Build temporary path-to-NodeId map for changed file lookup
     // This is O(n) scan but only done once per incremental build
-    auto path_to_id = std::vector<std::pair<std::string, NodeId>> {};
+    auto path_to_id = std::vector<std::pair<String, NodeId>> {};
     for (auto id : graph.all_nodes()) {
         auto path = graph.get_full_path(id);
         if (!path.empty()) {

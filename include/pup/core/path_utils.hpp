@@ -7,7 +7,6 @@
 #include "pup/core/vec.hpp"
 
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace pup {
@@ -22,7 +21,7 @@ auto is_path_under(
 auto relative_to_root(
     std::string_view path,
     std::string_view root
-) -> std::string;
+) -> String;
 
 [[nodiscard]]
 auto is_path_in_scope(
@@ -37,26 +36,26 @@ auto is_path_in_any_scope(
 ) -> bool;
 
 [[nodiscard]]
-auto compute_source_to_root(std::string_view source_dir) -> std::string;
+auto compute_source_to_root(std::string_view source_dir) -> String;
 
 [[nodiscard]]
 auto strip_path_prefix(
     std::string_view path,
     std::string_view prefix
-) -> std::string;
+) -> String;
 
 [[nodiscard]]
 auto resolve_under_root(
     std::string_view path,
     std::string_view source_root,
     std::string_view target_root
-) -> std::optional<std::string>;
+) -> std::optional<String>;
 
 [[nodiscard]]
 auto make_source_relative(
     std::string_view path,
     std::string_view source_to_root,
     std::string_view source_dir
-) -> std::string;
+) -> String;
 
 } // namespace pup

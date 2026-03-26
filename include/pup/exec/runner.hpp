@@ -11,7 +11,6 @@
 #include <chrono>
 #include <functional>
 #include <optional>
-#include <string>
 
 namespace pup::exec {
 
@@ -29,7 +28,7 @@ struct CommandResult {
 /// Options for running a command
 struct RunOptions {
     String working_dir = {};
-    Vec<std::string> env = {};                        ///< Additional environment variables (KEY=VALUE for setenv)
+    Vec<String> env = {};                              ///< Additional environment variables (KEY=VALUE for setenv)
     bool inherit_env = true;                          ///< Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;
@@ -72,7 +71,7 @@ public:
     }
 
     /// Add an environment variable to defaults
-    auto add_env(std::string var) -> void
+    auto add_env(String var) -> void
     {
         default_options_.env.push_back(std::move(var));
     }
@@ -92,10 +91,10 @@ private:
 
 /// Parse a command string into shell arguments
 [[nodiscard]]
-auto parse_command(std::string_view command) -> Vec<std::string>;
+auto parse_command(std::string_view command) -> Vec<String>;
 
 /// Quote a string for shell use
 [[nodiscard]]
-auto shell_quote(std::string_view str) -> std::string;
+auto shell_quote(std::string_view str) -> String;
 
 } // namespace pup::exec

@@ -190,22 +190,22 @@ auto Glob::match_bracket(std::string_view& pattern, char c) const -> bool
 
 auto glob_expand(
     std::string_view pattern,
-    std::string const& base_dir,
+    std::string_view base_dir,
     GlobOptions const& options
-) -> Result<Vec<std::string>>
+) -> Result<Vec<String>>
 {
-    auto results = Vec<std::string> {};
+    auto results = Vec<String> {};
 
     if (!has_glob_chars(pattern)) {
-        auto path = base_dir + "/" + std::string(pattern);
+        auto path = String { base_dir } + "/" + pattern;
         if (pup::platform::exists(path)) {
-            results.emplace_back(pattern);
+            results.push_back(String { pattern });
         }
         return results;
     }
 
     auto [dir_part, file_pattern] = glob_split_path(pattern);
-    auto search_dir = dir_part.empty() ? base_dir : base_dir + "/" + std::string(dir_part);
+    auto search_dir = dir_part.empty() ? String { base_dir } : String { base_dir } + "/" + dir_part;
 
     if (!pup::platform::exists(search_dir) || !pup::platform::is_directory(search_dir)) {
         return results;
@@ -222,7 +222,7 @@ auto glob_expand(
                 return false;
             }
             if (glob.matches(rel_path)) {
-                auto result_path = dir_part.empty() ? std::string(rel_path) : std::string(dir_part) + "/" + std::string(rel_path);
+                auto result_path = dir_part.empty() ? String { rel_path } : String { dir_part } + "/" + rel_path;
                 results.push_back(std::move(result_path));
             }
             return true;
@@ -236,7 +236,7 @@ auto glob_expand(
                     continue;
                 }
                 if (glob.matches(name)) {
-                    auto result_path = dir_part.empty() ? std::string(name) : std::string(dir_part) + "/" + std::string(name);
+                    auto result_path = dir_part.empty() ? String { name } : String { dir_part } + "/" + name;
                     results.push_back(std::move(result_path));
                 }
             }
@@ -248,8 +248,8 @@ auto glob_expand(
 }
 
 auto glob_expand_all(
-    Vec<std::string> const& patterns,
-    std::string const& base_dir,
+    Vec<String> const& patterns,
+    std::string_view base_dir,
     GlobOptions const& options
 ) -> Result<GlobResult>
 {
@@ -261,7 +261,7 @@ auto glob_expand_all(
         }
 
         if (pattern[0] == '!') {
-            auto exclude_pattern = pattern.substr(1);
+            auto exclude_pattern = std::string_view { pattern }.substr(1);
             auto excluded = glob_expand(exclude_pattern, base_dir, options);
             if (!excluded) {
                 return pup::unexpected<Error>(excluded.error());
@@ -281,7 +281,7 @@ auto glob_expand_all(
     }
 
     if (!result.exclusions.empty()) {
-        auto excl_sorted = Vec<std::string> { result.exclusions };
+        auto excl_sorted = Vec<String> { result.exclusions };
         std::sort(excl_sorted.begin(), excl_sorted.end());
         auto& m = result.matches;
         for (auto it = m.begin(); it != m.end();) {

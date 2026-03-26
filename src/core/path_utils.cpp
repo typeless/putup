@@ -34,10 +34,10 @@ auto is_path_under(
 auto relative_to_root(
     std::string_view path_str,
     std::string_view root
-) -> std::string
+) -> String
 {
     if (!is_path_under(path_str, root)) {
-        return std::string {};
+        return {};
     }
 
     auto root_sv = root;
@@ -47,10 +47,10 @@ auto relative_to_root(
     }
 
     if (path_str == root_sv) {
-        return std::string {};
+        return {};
     }
 
-    return std::string { path_str.substr(root_sv.size() + 1) };
+    return String { path_str.substr(root_sv.size() + 1) };
 }
 
 auto is_path_in_scope(
@@ -96,12 +96,12 @@ auto is_path_in_any_scope(
     });
 }
 
-auto compute_source_to_root(std::string_view source_dir) -> std::string
+auto compute_source_to_root(std::string_view source_dir) -> String
 {
     if (source_dir.empty()) {
         return {};
     }
-    auto result = std::string {};
+    auto result = String {};
     auto pos = std::size_t { 0 };
     while (pos < source_dir.size()) {
         auto slash = source_dir.find('/', pos);
@@ -120,31 +120,31 @@ auto make_source_relative(
     std::string_view path_sv,
     std::string_view source_to_root,
     std::string_view source_dir
-) -> std::string
+) -> String
 {
     if (path_sv.empty() || path_sv[0] == '/') {
-        return std::string { path_sv };
+        return String { path_sv };
     }
     if (path_sv.size() >= 2 && path_sv[0] == '.' && path_sv[1] == '.') {
         if (!source_to_root.empty() && !source_dir.empty()) {
-            auto result = std::string { source_to_root };
+            auto result = String { source_to_root };
             result += path_sv;
             return result;
         }
-        return std::string { path_sv };
+        return String { path_sv };
     }
     if (source_to_root.empty()) {
-        return std::string { path_sv };
+        return String { path_sv };
     }
     auto dir_prefix = String { source_dir };
     dir_prefix += '/';
     if (path_sv.starts_with(std::string_view { dir_prefix })) {
-        return std::string { path_sv.substr(dir_prefix.size()) };
+        return String { path_sv.substr(dir_prefix.size()) };
     }
     if (path_sv == source_dir) {
-        return std::string { "." };
+        return String { "." };
     }
-    auto result = std::string { source_to_root };
+    auto result = String { source_to_root };
     result += path_sv;
     return result;
 }
@@ -152,24 +152,24 @@ auto make_source_relative(
 auto strip_path_prefix(
     std::string_view path_sv,
     std::string_view prefix
-) -> std::string
+) -> String
 {
     if (prefix.empty()) {
-        return std::string { path_sv };
+        return String { path_sv };
     }
     auto prefix_with_slash = String { prefix };
     prefix_with_slash += '/';
     if (path_sv.starts_with(prefix_with_slash)) {
-        return std::string { path_sv.substr(prefix_with_slash.size()) };
+        return String { path_sv.substr(prefix_with_slash.size()) };
     }
-    return std::string { path_sv };
+    return String { path_sv };
 }
 
 auto resolve_under_root(
     std::string_view path_sv,
     std::string_view source_root,
     std::string_view target_root
-) -> std::optional<std::string>
+) -> std::optional<String>
 {
     if (!path_sv.starts_with("..")) {
         return std::nullopt;
@@ -180,7 +180,7 @@ auto resolve_under_root(
     auto rel = path::relative(abs_path, target_prefix);
 
     if (!rel.empty() && !rel.starts_with("..")) {
-        return std::string(rel);
+        return rel;
     }
     return std::nullopt;
 }

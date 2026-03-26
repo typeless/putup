@@ -106,7 +106,7 @@ auto request_demand_driven_parse(
 {
     if (eval.request_directory && eval.available_tupfile_dirs) {
         if (std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_path)) {
-            (void)eval.request_directory(std::string { dir_path });
+            (void)eval.request_directory(dir_path);
         }
     }
 }
@@ -1421,10 +1421,10 @@ auto expand_rule(
     auto glob_match = glob_pattern.empty() ? String {}
                                            : parser::glob_match_extract(glob_pattern, primary_input);
 
-    auto all_inputs_std = Vec<std::string> {};
-    all_inputs_std.reserve(cmd_inputs.size());
+    auto all_inputs_str = Vec<String> {};
+    all_inputs_str.reserve(cmd_inputs.size());
     for (auto const& s : cmd_inputs) {
-        all_inputs_std.push_back(std::string(s));
+        all_inputs_str.push_back(String { s });
     }
 
     auto flags = parser::PatternFlags {
@@ -1434,7 +1434,7 @@ auto expand_rule(
         .input_ext = String { parser::path_extension(primary_input) },
         .input_dir = current_dir_name,
         .glob_match = glob_match,
-        .all_inputs = std::move(all_inputs_std),
+        .all_inputs = std::move(all_inputs_str),
     };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
@@ -1527,9 +1527,9 @@ auto expand_rule(
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
-                                         ) -> Vec<std::string> {
+                                         ) -> Vec<String> {
         if (std::binary_search(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name)) {
-            return { std::string { "%<" } + std::string { name } + ">" };
+            return { String { "%<" } + name + ">" };
         }
         // Local group not in this rule's inputs — also defer
         auto dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
@@ -1542,7 +1542,7 @@ auto expand_rule(
                 deferred_group_vec.push_back(*node_id);
             }
             sorted_insert(rule_order_only_group_names, name);
-            return { std::string { "%<" } + std::string { name } + ">" };
+            return { String { "%<" } + name + ">" };
         }
         return {};
     };
@@ -1955,10 +1955,10 @@ auto expand_command(
 
     // Transform outputs to Tupfile-relative paths and augment flags
     auto tc = make_transform_context(ctx);
-    auto cmd_outputs = Vec<std::string> {};
+    auto cmd_outputs = Vec<String> {};
     cmd_outputs.reserve(outputs.size());
     for (auto const& out : outputs) {
-        cmd_outputs.push_back(std::string(transform_output_path(tc, out)));
+        cmd_outputs.push_back(transform_output_path(tc, out));
     }
 
     // Augment flags with output fields
@@ -2448,13 +2448,13 @@ auto add_tupfile(
 
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
-                         ) -> Vec<std::string> {
+                         ) -> Vec<String> {
         auto gkey = to_underlying(ctx.graph->intern(name));
         auto const* members = ctx.groups.find(gkey);
         if (!members) {
             return {};
         }
-        auto paths = Vec<std::string> {};
+        auto paths = Vec<String> {};
         for (auto id : *members) {
             auto path = ctx.graph->get_full_path(id);
             if (!path.empty()) {
@@ -2468,7 +2468,7 @@ auto add_tupfile(
     // This is for local group references (no directory prefix) - uses current directory
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
-                                    ) -> Vec<std::string> {
+                                    ) -> Vec<String> {
         auto dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
         auto key_str = String { dir } + "/" + name;
         auto key_id = to_underlying(ctx.graph->intern(key_str));
@@ -2476,7 +2476,7 @@ auto add_tupfile(
         if (!node_id) {
             return {};
         }
-        auto paths = Vec<std::string> {};
+        auto paths = Vec<String> {};
         auto members = get_group_members(*ctx.graph, *node_id);
         for (auto id : members) {
             auto path = ctx.graph->get_full_path(id);

@@ -101,7 +101,7 @@ public:
     [[nodiscard]]
     auto build_incremental(
         graph::BuildGraph const& graph,
-        Vec<std::string> const& changed_files
+        Vec<String> const& changed_files
     ) -> Result<BuildStats>;
 
     /// Build only a specific subset of commands

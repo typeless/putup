@@ -13,7 +13,6 @@
 #include "pup/core/vec.hpp"
 
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace pup::index {
@@ -243,6 +242,6 @@ private:
 /// @param cmd The command entry with instruction and operands
 /// @return The fully expanded command string
 [[nodiscard]]
-auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string;
+auto get_command_string(Index const& index, CommandEntry const& cmd) -> String;
 
 } // namespace pup::index

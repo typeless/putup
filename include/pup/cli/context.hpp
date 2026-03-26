@@ -12,7 +12,6 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <string>
 
 namespace pup {
 struct ProjectLayout;
@@ -87,7 +86,7 @@ public:
     [[nodiscard]]
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
-    auto parsed_dirs() const -> Vec<std::string> const&;
+    auto parsed_dirs() const -> Vec<String> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load

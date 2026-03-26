@@ -87,7 +87,7 @@ auto sha256(std::string_view data) -> Hash256
     return sha256_finalize(state);
 }
 
-auto sha256_file(std::string const& path) -> Result<Hash256>
+auto sha256_file(std::string_view path) -> Result<Hash256>
 {
     ++thread_metrics().hash_computations;
 
@@ -101,7 +101,7 @@ auto sha256_file(std::string const& path) -> Result<Hash256>
 
     auto file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
-        return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path);
+        return make_error<Hash256>(ErrorCode::IoError, String { "Failed to open file: " } + path);
     }
 
     auto state = sha256_init();
@@ -115,9 +115,10 @@ auto sha256_file(std::string const& path) -> Result<Hash256>
     CloseHandle(file);
 #else
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto fd = ::open(path.c_str(), O_RDONLY);
+    auto path_str = String { path };
+    auto fd = ::open(path_str.c_str(), O_RDONLY);
     if (fd < 0) {
-        return make_error<Hash256>(ErrorCode::IoError, "Failed to open file: " + path);
+        return make_error<Hash256>(ErrorCode::IoError, String { "Failed to open file: " } + path);
     }
 
     auto state = sha256_init();

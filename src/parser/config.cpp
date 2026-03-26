@@ -19,9 +19,9 @@ auto trim(std::string_view s) -> std::string_view
     return s;
 }
 
-auto expand_escapes(std::string_view s) -> std::string
+auto expand_escapes(std::string_view s) -> String
 {
-    auto result = std::string {};
+    auto result = String {};
     result.reserve(s.size());
 
     for (std::size_t i = 0; i < s.size(); ++i) {
@@ -102,11 +102,11 @@ auto parse_config_string(std::string_view content, StringPool& pool) -> Result<V
     return db;
 }
 
-auto parse_config(std::string const& path, StringPool& pool) -> Result<VarDb>
+auto parse_config(std::string_view path, StringPool& pool) -> Result<VarDb>
 {
     auto content = pup::platform::read_file(path);
     if (!content) {
-        return make_error<VarDb>(ErrorCode::NotFound, "Cannot open config file: " + path);
+        return make_error<VarDb>(ErrorCode::NotFound, String { "Cannot open config file: " } + path);
     }
     return parse_config_string(*content, pool);
 }

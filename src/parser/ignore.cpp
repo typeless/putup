@@ -10,11 +10,11 @@ namespace pup::parser {
 // IgnoreList
 // =============================================================================
 
-auto IgnoreList::load(std::string const& path) -> Result<IgnoreList>
+auto IgnoreList::load(std::string_view path) -> Result<IgnoreList>
 {
     auto content = pup::platform::read_file(path);
     if (!content) {
-        return make_error<IgnoreList>(ErrorCode::IoError, "Failed to open ignore file: " + path);
+        return make_error<IgnoreList>(ErrorCode::IoError, String { "Failed to open ignore file: " } + path);
     }
 
     auto list = IgnoreList::with_defaults();
@@ -44,12 +44,13 @@ auto IgnoreList::load(std::string const& path) -> Result<IgnoreList>
             continue;
         }
 
-        auto line = std::string { raw };
+        auto line = String { raw };
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) {
             if (line.size() >= 2 && line[line.size() - 2] == '\\') {
                 break;
             }
-            line.pop_back();
+            // Trim trailing whitespace using substr
+            line = line.substr(0, line.size() - 1);
         }
 
         if (line.empty()) {
@@ -115,7 +116,7 @@ auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePat
     return p;
 }
 
-auto IgnoreList::is_ignored(std::string const& rel_path) const -> bool
+auto IgnoreList::is_ignored(std::string_view rel_path) const -> bool
 {
     auto ignored = false;
 
@@ -129,14 +130,14 @@ auto IgnoreList::is_ignored(std::string const& rel_path) const -> bool
     return ignored;
 }
 
-auto IgnoreList::match_pattern(IgnorePattern const& p, std::string const& path_str) const -> bool
+auto IgnoreList::match_pattern(IgnorePattern const& p, std::string_view path_str) const -> bool
 {
     if (p.anchored) {
         return glob_match(p.pattern, path_str);
     }
 
     auto slash_pos = path_str.rfind('/');
-    auto basename = (slash_pos == std::string::npos) ? path_str : path_str.substr(slash_pos + 1);
+    auto basename = (slash_pos == std::string_view::npos) ? path_str : path_str.substr(slash_pos + 1);
     if (glob_match(p.pattern, basename)) {
         return true;
     }

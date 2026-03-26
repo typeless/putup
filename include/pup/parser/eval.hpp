@@ -32,7 +32,7 @@ public:
     VarDb(VarDb&&) noexcept = default;
     auto operator=(VarDb&&) noexcept -> VarDb& = default;
 
-    auto set(std::string_view name, std::string value) -> void;
+    auto set(std::string_view name, std::string_view value) -> void;
     auto append(std::string_view name, std::string_view value) -> void;
 
     [[nodiscard]]
@@ -129,19 +129,19 @@ struct EvalContext {
     String tup_outdir = {};            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
-    std::function<Vec<std::string>(std::string_view)> resolve_group = {};
+    std::function<Vec<String>(std::string_view)> resolve_group = {};
 
     /// Callback for resolving order-only group references like <groupname>
-    std::function<Vec<std::string>(std::string_view)> resolve_order_only_group = {};
+    std::function<Vec<String>(std::string_view)> resolve_order_only_group = {};
 
     /// Callback for requesting a directory's Tupfile to be parsed (for cross-directory deps)
     /// Called when a path references another directory that may have a Tupfile.
     /// Returns success if directory was parsed, error if circular/missing.
-    std::function<Result<void>(std::string const&)> request_directory = {};
+    std::function<Result<void>(std::string_view)> request_directory = {};
 
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
-    Vec<std::string> const* available_tupfile_dirs = nullptr;
+    Vec<String> const* available_tupfile_dirs = nullptr;
 
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
@@ -192,18 +192,18 @@ struct PatternFlags {
     String output_base = {};           ///< %O - output basename (no path)
     String input_dir = {};             ///< %d - input directory
     String glob_match = {};            ///< %g - portion matched by * in foreach glob
-    int input_index = 0;               ///< For %Nf patterns (1-indexed)
-    Vec<std::string> all_inputs = {};  ///< All inputs for %Nf expansion
-    Vec<std::string> all_outputs = {}; ///< All outputs for %No expansion
+    int input_index = 0;            ///< For %Nf patterns (1-indexed)
+    Vec<String> all_inputs = {};  ///< All inputs for %Nf expansion
+    Vec<String> all_outputs = {}; ///< All outputs for %No expansion
 };
 
 /// Expand an expression, replacing variable references with values
 [[nodiscard]]
-auto expand(EvalContext& ctx, Expression const& expr) -> Result<std::string>;
+auto expand(EvalContext& ctx, Expression const& expr) -> Result<String>;
 
 /// Expand a string with variable references
 [[nodiscard]]
-auto expand(EvalContext& ctx, std::string_view text) -> Result<std::string>;
+auto expand(EvalContext& ctx, std::string_view text) -> Result<String>;
 
 /// Expand pattern flags (%f, %o, %B, etc.) in a string
 [[nodiscard]]
@@ -211,14 +211,14 @@ auto expand_pattern(
     EvalContext& ctx,
     std::string_view text,
     PatternFlags const& flags
-) -> Result<std::string>;
+) -> Result<String>;
 
 /// Expand a path pattern (handles globs, groups, exclusions)
 [[nodiscard]]
 auto expand_path(
     EvalContext& ctx,
     PathPattern const& pattern
-) -> Result<Vec<std::string>>;
+) -> Result<Vec<String>>;
 
 /// Check if a conditional is true
 [[nodiscard]]

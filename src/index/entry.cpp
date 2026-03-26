@@ -322,7 +322,7 @@ auto get_extension(std::string_view name) -> std::string_view
 
 } // namespace
 
-auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::string
+auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
 {
     if (cmd.instruction_pattern.empty()) {
         return {};
@@ -343,14 +343,14 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> std::str
         return pup::make_source_relative(path, source_to_root, source_dir);
     };
 
-    auto result = std::string {};
+    auto result = String {};
     auto const& tmpl = cmd.instruction_pattern;
     auto pos = std::size_t { 0 };
 
     while (pos < tmpl.size()) {
         auto percent = tmpl.find('%', pos);
 
-        if (percent == std::string::npos) {
+        if (percent == String::npos) {
             result += tmpl.substr(pos);
             break;
         }

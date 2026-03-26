@@ -7,7 +7,6 @@
 #include "pup/core/string.hpp"
 #include "pup/core/vec.hpp"
 
-#include <string>
 #include <string_view>
 
 namespace pup::parser {
@@ -20,8 +19,8 @@ struct GlobOptions {
 
 /// Result of glob expansion
 struct GlobResult {
-    Vec<std::string> matches;
-    Vec<std::string> exclusions; ///< Files explicitly excluded with !
+    Vec<String> matches;
+    Vec<String> exclusions; ///< Files explicitly excluded with !
 };
 
 /// Glob pattern matcher
@@ -76,15 +75,15 @@ private:
 [[nodiscard]]
 auto glob_expand(
     std::string_view pattern,
-    std::string const& base_dir,
+    std::string_view base_dir,
     GlobOptions const& options = {}
-) -> Result<Vec<std::string>>;
+) -> Result<Vec<String>>;
 
 /// Expand multiple patterns, handling exclusions (patterns starting with !)
 [[nodiscard]]
 auto glob_expand_all(
-    Vec<std::string> const& patterns,
-    std::string const& base_dir,
+    Vec<String> const& patterns,
+    std::string_view base_dir,
     GlobOptions const& options = {}
 ) -> Result<GlobResult>;
 

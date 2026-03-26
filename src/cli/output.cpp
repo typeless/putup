@@ -17,9 +17,9 @@ constexpr auto ASCII_CONTROL_CHAR_MAX = static_cast<unsigned char>(0x1F);
 }
 
 auto remove_empty_directories(
-    Vec<std::string> const& output_dirs,
-    std::string const& build_dir,
-    std::string const& source_dir,
+    Vec<String> const& output_dirs,
+    std::string_view build_dir,
+    std::string_view source_dir,
     OutputMode mode
 ) -> std::size_t
 {
@@ -59,9 +59,9 @@ auto remove_empty_directories(
     return removed;
 }
 
-auto escape_dot_label(std::string_view s) -> std::string
+auto escape_dot_label(std::string_view s) -> String
 {
-    auto result = std::string {};
+    auto result = String {};
     result.reserve(s.size());
     for (auto c : s) {
         if (c == '"' || c == '\\') {
@@ -72,9 +72,9 @@ auto escape_dot_label(std::string_view s) -> std::string
     return result;
 }
 
-auto escape_json(std::string_view s) -> std::string
+auto escape_json(std::string_view s) -> String
 {
-    auto result = std::string {};
+    auto result = String {};
     result.reserve(s.size());
     for (auto c : s) {
         switch (c) {

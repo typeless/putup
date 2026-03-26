@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <ostream>
 #include <string>
 #include <string_view>
 
@@ -104,6 +106,18 @@ public:
     {
         return std::string_view { a } == b;
     }
+    friend auto operator<=>(String const& a, String const& b)
+    {
+        return std::string_view { a } <=> std::string_view { b };
+    }
+    friend auto operator<=>(String const& a, std::string_view b)
+    {
+        return std::string_view { a } <=> b;
+    }
+    friend auto operator<=>(std::string_view a, String const& b)
+    {
+        return a <=> std::string_view { b };
+    }
     friend auto operator<(String const& a, String const& b) -> bool
     {
         return std::string_view { a } < std::string_view { b };
@@ -152,5 +166,11 @@ auto operator+(String const& a, std::string_view b) -> String;
 auto operator+(std::string_view a, String const& b) -> String;
 auto operator+(String const& a, char const* b) -> String;
 auto operator+(char const* a, String const& b) -> String;
+
+inline auto operator<<(std::ostream& os, String const& s) -> std::ostream&
+{
+    os.write(s.data(), static_cast<std::streamsize>(s.size()));
+    return os;
+}
 
 } // namespace pup

@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <string>
 
 namespace pup::exec {
 
@@ -63,7 +62,7 @@ auto job_completed(ProgressState state, NodeId id, bool success) -> ProgressStat
 auto render_tty(ProgressState const& state, std::string_view variant) -> ProgressOutput
 {
     auto result = ProgressOutput {};
-    auto out = std::string {};
+    auto out = String {};
 
     auto term_width = static_cast<std::size_t>(pup::terminal_width());
 
@@ -81,7 +80,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
         current_display = sorted.back().display;
     }
 
-    auto prefix = std::string {};
+    auto prefix = String {};
     if (!variant.empty()) {
         prefix += '[';
         prefix += variant;
@@ -119,9 +118,9 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
     return result;
 }
 
-auto render_simple(ProgressState const& state, std::string_view variant) -> std::string
+auto render_simple(ProgressState const& state, std::string_view variant) -> String
 {
-    auto out = std::string {};
+    auto out = String {};
     auto done = state.completed + state.failed;
 
     if (!variant.empty()) {
@@ -136,7 +135,7 @@ auto render_simple(ProgressState const& state, std::string_view variant) -> std:
     return out;
 }
 
-auto format_duration(std::chrono::milliseconds ms) -> std::string
+auto format_duration(std::chrono::milliseconds ms) -> String
 {
     auto secs = static_cast<std::size_t>(ms.count() / 1000);
     auto mins = secs / 60;

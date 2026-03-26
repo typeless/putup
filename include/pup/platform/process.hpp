@@ -9,7 +9,6 @@
 
 #include <chrono>
 #include <optional>
-#include <string>
 
 namespace pup::platform {
 
@@ -28,11 +27,11 @@ struct ProcessResult {
 struct ProcessOptions {
     String command;
     String working_dir;
-    Vec<std::string> env;
+    Vec<String> env;
     bool inherit_env = true;
     bool capture_stdout = true;
     bool capture_stderr = true;
-    std::optional<std::string> stdin_data;
+    std::optional<String> stdin_data;
     std::optional<std::chrono::seconds> timeout;
 };
 
@@ -54,8 +53,8 @@ auto run_process_with_callback(
 /// Build environment variable list from options
 [[nodiscard]]
 auto build_env_strings(
-    Vec<std::string> const& extra_env,
+    Vec<String> const& extra_env,
     bool inherit_env
-) -> Vec<std::string>;
+) -> Vec<String>;
 
 } // namespace pup::platform

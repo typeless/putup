@@ -638,10 +638,10 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
     return cache.pool.get(path_id);
 }
 
-auto get_full_path(Graph const& graph, NodeId id) -> std::string
+auto get_full_path(Graph const& graph, NodeId id) -> String
 {
     auto cache = PathCache {};
-    return std::string { get_full_path(graph, id, cache) };
+    return String { get_full_path(graph, id, cache) };
 }
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
@@ -655,7 +655,7 @@ auto clear_path_cache(PathCache& cache) -> void
     cache.pool.clear();
 }
 
-auto set_build_root_name(Graph& graph, std::string name) -> void
+auto set_build_root_name(Graph& graph, std::string_view name) -> void
 {
     auto old_name = graph.files[BUILD_ROOT_ID].name;
     if (!is_empty(old_name)) {
@@ -740,7 +740,7 @@ auto expand_instruction_impl(
     NodeId cmd_id,
     PathCache& cache,
     PathResolver const& get_operand_path
-) -> std::string
+) -> String
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
@@ -758,12 +758,12 @@ auto expand_instruction_impl(
         return get_name(graph, id);
     };
 
-    auto result = std::string {};
+    auto result = String {};
     auto pos = std::size_t { 0 };
 
     while (pos < pattern.size()) {
         auto percent = pattern.find('%', pos);
-        if (percent == std::string::npos) {
+        if (percent == String::npos) {
             result += pattern.substr(pos);
             break;
         }
@@ -878,7 +878,7 @@ auto expand_instruction_impl(
     return result;
 }
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> String
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
@@ -887,7 +887,7 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
     auto source_dir = graph.strings.get(cmd->source_dir);
     auto source_to_root = pup::compute_source_to_root(source_dir);
 
-    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string {
+    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
         auto full = get_full_path(graph, id, cache);
         return pup::make_source_relative(full, source_to_root, source_dir);
     });
@@ -897,9 +897,9 @@ auto expand_instruction(
     Graph const& graph,
     NodeId cmd_id,
     PathCache& cache,
-    std::string const& source_root,
-    std::string const& config_root
-) -> std::string
+    std::string_view source_root,
+    std::string_view config_root
+) -> String
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
@@ -915,29 +915,29 @@ auto expand_instruction(
         }
     }
 
-    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string {
+    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
         auto full = get_full_path(graph, id, cache);
         if (!canonical_cwd.empty() && full.starts_with("..")) {
             auto joined = pup::path::join(source_root, full);
             auto abs = pup::platform::canonical(joined);
             if (abs) {
-                return std::string(pup::path::relative(*abs, canonical_cwd));
+                return pup::path::relative(*abs, canonical_cwd);
             }
-            return std::string(pup::path::relative(pup::path::normalize(joined), canonical_cwd));
+            return pup::path::relative(pup::path::normalize(joined), canonical_cwd);
         }
         if (!config_root.empty() && config_root != source_root
             && !pup::platform::exists(pup::path::join(source_root, full))
             && pup::platform::exists(pup::path::join(config_root, full))) {
             auto r = pup::platform::canonical(pup::path::join(config_root, full));
             if (r) {
-                return std::string(pup::path::relative(*r, canonical_cwd));
+                return pup::path::relative(*r, canonical_cwd);
             }
         }
         return pup::make_source_relative(full, source_to_root, source_dir);
     });
 }
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id) -> std::string
+auto expand_instruction(Graph const& graph, NodeId cmd_id) -> String
 {
     auto cache = PathCache {};
     return expand_instruction(graph, cmd_id, cache);

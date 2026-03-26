@@ -133,7 +133,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
 
     auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
     auto error_count = std::size_t { 0 };
-    auto output_dirs = Vec<std::string> {};
+    auto output_dirs = Vec<String> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
@@ -167,8 +167,8 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    output_dirs.emplace_back(std::string_view { ctx->build_dir });
-    remove_empty_directories(output_dirs, std::string(ctx->build_dir), std::string(ctx->root), mode);
+    output_dirs.push_back(String { ctx->build_dir });
+    remove_empty_directories(output_dirs, ctx->build_dir, ctx->root, mode);
 
     if (!opts.dry_run) {
         vprint(variant_name, "Project reset complete\n");

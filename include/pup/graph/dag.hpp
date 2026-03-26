@@ -16,7 +16,6 @@
 
 #include <optional>
 #include <span>
-#include <string>
 #include <string_view>
 
 namespace pup::graph {
@@ -283,7 +282,7 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
 /// Reconstruct full path without caching (convenience overload)
 /// Note: Creates temporary cache - prefer the cached version for repeated calls.
 [[nodiscard]]
-auto get_full_path(Graph const& graph, NodeId id) -> std::string;
+auto get_full_path(Graph const& graph, NodeId id) -> String;
 
 /// Invalidate path cache entry for a node (call when parent_dir or name changes)
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
@@ -306,7 +305,7 @@ auto get_name(Graph const& graph, NodeId id) -> std::string_view;
 /// Expand instruction pattern into full command string by substituting
 /// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
 [[nodiscard]]
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> std::string;
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> String;
 
 /// Expand instruction with canonical path resolution for symlinked source trees.
 /// When source_root is provided, build-tree paths are computed relative to the
@@ -318,13 +317,13 @@ auto expand_instruction(
     Graph const& graph,
     NodeId cmd_id,
     PathCache& cache,
-    std::string const& source_root,
-    std::string const& config_root = {}
-) -> std::string;
+    std::string_view source_root,
+    std::string_view config_root = {}
+) -> String;
 
 /// Expand instruction pattern (convenience overload, creates temporary cache)
 [[nodiscard]]
-auto expand_instruction(Graph const& graph, NodeId cmd_id) -> std::string;
+auto expand_instruction(Graph const& graph, NodeId cmd_id) -> String;
 
 /// Build the command string index for find_by_command() lookups.
 /// Must be called after all commands have their operands set (post-parsing).
@@ -344,7 +343,7 @@ auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".
-auto set_build_root_name(Graph& graph, std::string name) -> void;
+auto set_build_root_name(Graph& graph, std::string_view name) -> void;
 
 /// Get the build root name
 [[nodiscard]]
@@ -572,13 +571,13 @@ public:
     }
 
     [[nodiscard]]
-    auto get_full_path(NodeId id) const -> std::string
+    auto get_full_path(NodeId id) const -> String
     {
-        return std::string { graph::get_full_path(graph_, id, path_cache_) };
+        return String { graph::get_full_path(graph_, id, path_cache_) };
     }
 
     [[nodiscard]]
-    auto expand_instruction(NodeId id) const -> std::string
+    auto expand_instruction(NodeId id) const -> String
     {
         return graph::expand_instruction(graph_, id, path_cache_);
     }
@@ -605,9 +604,9 @@ public:
         return path_cache_;
     }
 
-    auto set_build_root_name(std::string name) -> void
+    auto set_build_root_name(std::string_view name) -> void
     {
-        graph::set_build_root_name(graph_, std::move(name));
+        graph::set_build_root_name(graph_, name);
         graph::clear_path_cache(path_cache_);
     }
 

@@ -105,10 +105,10 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
     return merged;
 }
 
-auto parse_command(std::string_view command) -> Vec<std::string>
+auto parse_command(std::string_view command) -> Vec<String>
 {
-    auto result = Vec<std::string> {};
-    auto current = std::string {};
+    auto result = Vec<String> {};
+    auto current = String {};
     auto in_single_quote = false;
     auto in_double_quote = false;
     auto escape_next = false;
@@ -153,7 +153,7 @@ auto parse_command(std::string_view command) -> Vec<std::string>
     return result;
 }
 
-auto shell_quote(std::string_view str) -> std::string
+auto shell_quote(std::string_view str) -> String
 {
     auto needs_quoting = false;
     for (auto c : str) {
@@ -164,10 +164,10 @@ auto shell_quote(std::string_view str) -> std::string
     }
 
     if (!needs_quoting) {
-        return std::string { str };
+        return String { str };
     }
 
-    auto result = std::string { "'" };
+    auto result = String { "'" };
     for (auto c : str) {
         if (c == '\'') {
             result += "'\"'\"'";

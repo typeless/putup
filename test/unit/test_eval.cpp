@@ -604,7 +604,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
     SECTION("resolve_group callback for {name}")
     {
-        ctx.resolve_group = [](std::string_view name) -> pup::Vec<std::string> {
+        ctx.resolve_group = [](std::string_view name) -> pup::Vec<pup::String> {
             if (name == "objs")
                 return { "a.o", "b.o", "c.o" };
             return {};
@@ -624,7 +624,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
     SECTION("resolve_order_only_group callback for <name>")
     {
-        ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<std::string> {
+        ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<pup::String> {
             if (name == "gen-headers")
                 return { "generated/config.h", "generated/version.h" };
             return {};
@@ -660,7 +660,7 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
     auto ctx = EvalContext { .vars = &vars };
 
 
-    ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<std::string> {
+    ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<pup::String> {
         if (name == "headers")
             return { "inc/a.h", "inc/b.h" };
         return {};

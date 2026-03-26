@@ -9,7 +9,6 @@
 
 #include <chrono>
 #include <cstdio>
-#include <string>
 #include <string_view>
 
 namespace pup::exec {
@@ -31,7 +30,7 @@ struct ProgressState {
 
 /// Rendered output ready for display
 struct ProgressOutput {
-    std::string text = {};
+    String text = {};
     std::size_t line_count = 0;
 };
 
@@ -57,11 +56,11 @@ auto render_tty(ProgressState const& state, std::string_view variant = {}) -> Pr
 
 /// Render progress for non-TTY (single line)
 [[nodiscard]]
-auto render_simple(ProgressState const& state, std::string_view variant = {}) -> std::string;
+auto render_simple(ProgressState const& state, std::string_view variant = {}) -> String;
 
 /// Format duration as M:SS
 [[nodiscard]]
-auto format_duration(std::chrono::milliseconds ms) -> std::string;
+auto format_duration(std::chrono::milliseconds ms) -> String;
 
 // ============================================================================
 // Terminal I/O (side effects isolated here)

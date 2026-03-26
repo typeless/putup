@@ -27,7 +27,7 @@ public:
     IgnoreList() = default;
 
     /// Load patterns from a .pupignore file
-    static auto load(std::string const& path) -> Result<IgnoreList>;
+    static auto load(std::string_view path) -> Result<IgnoreList>;
 
     /// Create an IgnoreList with default patterns (.git/, .pup/, node_modules/)
     static auto with_defaults() -> IgnoreList;
@@ -37,7 +37,7 @@ public:
 
     /// Check if a relative path should be ignored
     [[nodiscard]]
-    auto is_ignored(std::string const& rel_path) const -> bool;
+    auto is_ignored(std::string_view rel_path) const -> bool;
 
     /// Check if the list has no patterns
     [[nodiscard]]
@@ -61,7 +61,7 @@ private:
 
     /// Check if a path matches a pattern
     [[nodiscard]]
-    auto match_pattern(IgnorePattern const& p, std::string const& path) const -> bool;
+    auto match_pattern(IgnorePattern const& p, std::string_view path) const -> bool;
 
     /// Match a glob pattern against a string
     [[nodiscard]]

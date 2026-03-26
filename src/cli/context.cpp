@@ -96,20 +96,20 @@ auto join_path(std::string_view base, std::string_view rel)
     return (rel.empty() || rel == ".") ? String { base } : pup::path::join(base, rel);
 }
 
-auto sorted_contains(Vec<std::string> const& v, std::string_view key) -> bool
+auto sorted_contains(Vec<String> const& v, std::string_view key) -> bool
 {
     return std::binary_search(v.begin(), v.end(), key);
 }
 
-auto sorted_insert(Vec<std::string>& v, std::string_view key) -> void
+auto sorted_insert(Vec<String>& v, std::string_view key) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), key);
     if (pos == v.end() || *pos != key) {
-        v.insert(pos, std::string { key });
+        v.insert(pos, String { key });
     }
 }
 
-auto sorted_erase(Vec<std::string>& v, std::string_view key) -> void
+auto sorted_erase(Vec<String>& v, std::string_view key) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), key);
     assert(pos != v.end() && *pos == key);
@@ -118,9 +118,9 @@ auto sorted_erase(Vec<std::string>& v, std::string_view key) -> void
 
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
-    Vec<std::string> available;
-    Vec<std::string> parsed;
-    Vec<std::string> parsing;
+    Vec<String> available;
+    Vec<String> parsed;
+    Vec<String> parsing;
     // Append-only paged vectors: push_back preserves references to existing
     // elements, which is critical because recursive Tupfile parsing holds
     // VarDb pointers across calls that may insert new entries.
@@ -192,22 +192,22 @@ auto read_file(std::string_view path) -> std::optional<String>
 auto discover_tupfile_dirs(
     String const& root,
     pup::parser::IgnoreList const& ignore = {}
-) -> Vec<std::string>
+) -> Vec<String>
 {
-    auto dirs = Vec<std::string> {};
+    auto dirs = Vec<String> {};
 
     if (pup::platform::exists(pup::path::join(root, "Tupfile"))) {
         dirs.push_back(".");
     }
 
     (void)pup::platform::walk_directory(root, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
-        if (entry.is_dir && ignore.is_ignored(std::string { rel_path })) {
+        if (entry.is_dir && ignore.is_ignored(rel_path)) {
             return false;
         }
 
         if (!entry.is_dir && entry.name == "Tupfile") {
             auto dir_rel = String { pup::path::parent(rel_path) };
-            dirs.push_back(std::string(normalize_to_dot(dir_rel)));
+            dirs.push_back(normalize_to_dot(dir_rel));
         }
 
         return true;
@@ -228,8 +228,8 @@ auto apply_config_overrides(
         return;
     }
     for (auto const& [name, value] : *defines) {
-        config.set(name, std::string(value));
-        config.set("CONFIG_" + name, std::string(value));
+        config.set(name, value);
+        config.set(String { "CONFIG_" } + name, value);
     }
 }
 
@@ -246,7 +246,7 @@ auto get_or_parse_config(
         }
     }
 
-    auto result = parser::parse_config(std::string(path), pool);
+    auto result = parser::parse_config(path, pool);
     if (!result) {
         fprintf(stderr, "Warning: Failed to parse %s: %s\n", path.c_str(), result.error().message.c_str());
         return nullptr;
@@ -314,7 +314,7 @@ auto find_config_for_dir(
         auto const* cfg = get_or_parse_config(*it, state, pool);
         if (cfg) {
             for (auto const& name : cfg->names()) {
-                merged.set(name, std::string { cfg->get(name) });
+                merged.set(name, cfg->get(name));
             }
         }
     }
@@ -423,8 +423,8 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
         ctx.graph.string_pool()
     );
 
-    auto request_directory = [&](std::string const& dir) -> pup::Result<void> {
-        return parse_directory(dir, ctx);
+    auto request_directory = [&](std::string_view dir) -> pup::Result<void> {
+        return parse_directory(String { dir }, ctx);
     };
 
     auto eval_ctx = pup::parser::EvalContext {
@@ -518,10 +518,10 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
     return result;
 }
 
-auto sort_dirs_by_depth(Vec<std::string> const& available) -> Vec<std::string>
+auto sort_dirs_by_depth(Vec<String> const& available) -> Vec<String>
 {
     auto constexpr root_rel = std::string_view { "." };
-    auto dirs = Vec<std::string> { available };
+    auto dirs = Vec<String> { available };
     std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
         auto is_root_a = (a == root_rel);
         auto is_root_b = (b == root_rel);
@@ -546,7 +546,7 @@ auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser:
         if (!pup::platform::exists(ignore_path)) {
             continue;
         }
-        auto ignore_result = pup::parser::IgnoreList::load(std::string(ignore_path));
+        auto ignore_result = pup::parser::IgnoreList::load(ignore_path);
         if (!ignore_result) {
             continue;
         }
@@ -627,7 +627,7 @@ auto BuildContext::vars() const -> parser::VarDb const&
     return impl_->vars;
 }
 
-auto BuildContext::parsed_dirs() const -> Vec<std::string> const&
+auto BuildContext::parsed_dirs() const -> Vec<String> const&
 {
     return impl_->state.parsed;
 }
@@ -668,7 +668,7 @@ auto build_context(
             ctx.impl_->layout.output_root,
             ctx.impl_->layout.source_root
         );
-        ctx.impl_->graph.set_build_root_name(std::string(build_root_name));
+        ctx.impl_->graph.set_build_root_name(build_root_name);
     }
 
     // 2. Auto-init if needed
@@ -702,8 +702,8 @@ auto build_context(
 
     // Apply -D config overrides (highest precedence)
     for (auto const& [name, value] : opts.config_defines) {
-        ctx.impl_->config_vars.set(name, std::string(value));
-        ctx.impl_->config_vars.set("CONFIG_" + name, std::string(value));
+        ctx.impl_->config_vars.set(name, value);
+        ctx.impl_->config_vars.set(String { "CONFIG_" } + name, value);
         if (ctx_opts.verbose) {
             printf("-D %s=%s\n", name.c_str(), value.c_str());
         }

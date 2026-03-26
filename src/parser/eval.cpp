@@ -46,7 +46,7 @@ auto VarDb::operator=(VarDb const& other) -> VarDb&
     return *this;
 }
 
-auto VarDb::set(std::string_view name, std::string value) -> void
+auto VarDb::set(std::string_view name, std::string_view value) -> void
 {
     auto name_id = pup::to_underlying(pool_->intern(name));
     auto value_id = pup::to_underlying(pool_->intern(value));
@@ -59,7 +59,7 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
     auto const* existing = entries_.find(name_id);
     if (existing) {
         auto old_value = pool_->get(pup::make_string_id(*existing));
-        auto combined = std::string {};
+        auto combined = String {};
         if (!old_value.empty()) {
             combined.reserve(old_value.size() + 1 + value.size());
             combined += old_value;
@@ -231,7 +231,7 @@ auto make_var_context(EvalContext const& ctx) -> VarContext
     };
 }
 
-auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
+auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<String>
 {
     auto var_ctx = make_var_context(ctx);
     auto [value, bank] = lookup_var_with_bank(var_ctx, ref.name, ref.kind);
@@ -278,7 +278,7 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
         }
     }
 
-    return value ? std::string { *value } : std::string {};
+    return value ? String { *value } : String {};
 }
 
 } // namespace
@@ -287,9 +287,9 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<std::string>
 // Free functions
 // =============================================================================
 
-auto expand(EvalContext& ctx, Expression const& expr) -> Result<std::string>
+auto expand(EvalContext& ctx, Expression const& expr) -> Result<String>
 {
-    auto result = std::string {};
+    auto result = String {};
 
     for (auto const& part : expr.parts) {
         if (std::holds_alternative<Expression::Literal>(part)) {
@@ -309,9 +309,9 @@ auto expand(EvalContext& ctx, Expression const& expr) -> Result<std::string>
     return expand(ctx, std::string_view { result });
 }
 
-auto expand(EvalContext& ctx, std::string_view text) -> Result<std::string>
+auto expand(EvalContext& ctx, std::string_view text) -> Result<String>
 {
-    auto result = std::string {};
+    auto result = String {};
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
@@ -375,9 +375,9 @@ auto expand_pattern(
     EvalContext& ctx,
     std::string_view text,
     PatternFlags const& flags
-) -> Result<std::string>
+) -> Result<String>
 {
-    auto result = std::string {};
+    auto result = String {};
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
@@ -520,9 +520,9 @@ auto expand_pattern(
 auto expand_path(
     EvalContext& ctx,
     PathPattern const& pattern
-) -> Result<Vec<std::string>>
+) -> Result<Vec<String>>
 {
-    auto result = Vec<std::string> {};
+    auto result = Vec<String> {};
 
     if (pattern.is_order_only_group) {
         // Order-only group reference <groupname> - use callback to resolve
@@ -566,9 +566,9 @@ auto expand_path(
         }
         if (end > start) {
             // Normalize path to remove // and resolve . and .. components
-            auto path_str = expanded.substr(start, end - start);
+            auto path_str = std::string_view { expanded }.substr(start, end - start);
             auto normalized = pup::path::normalize(path_str);
-            result.emplace_back(std::string_view { normalized });
+            result.push_back(std::move(normalized));
         }
         start = end;
     }

@@ -8,11 +8,11 @@
 namespace pup::platform {
 
 auto build_env_strings(
-    Vec<std::string> const& extra_env,
+    Vec<String> const& extra_env,
     bool inherit_env
-) -> Vec<std::string>
+) -> Vec<String>
 {
-    auto result = Vec<std::string> {};
+    auto result = Vec<String> {};
 
     if (inherit_env) {
         // Get current environment block
@@ -24,9 +24,10 @@ auto build_env_strings(
                 // Convert from wide to UTF-8
                 auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                 if (len > 0) {
+                    // std::string for mutable .data() buffer needed by WideCharToMultiByte
                     auto var = std::string(len - 1, '\0');
                     WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
-                    result.push_back(std::move(var));
+                    result.push_back(String { var });
                 }
                 current += wcslen(current) + 1;
             }
@@ -43,7 +44,7 @@ auto build_env_strings(
 
 namespace {
 
-auto create_env_block(Vec<std::string> const& env) -> std::wstring
+auto create_env_block(Vec<String> const& env) -> std::wstring
 {
     auto block = std::wstring {};
     for (auto const& var : env) {

@@ -282,9 +282,9 @@ auto find_changed_files_with_implicit(
     pup::Vec<pup::String> const& scopes,
     Vec<String> const& upstream_files,
     bool verbose = false
-) -> pup::Vec<std::string>
+) -> pup::Vec<String>
 {
-    auto changed = pup::Vec<std::string> {};
+    auto changed = pup::Vec<String> {};
     auto& metrics = pup::thread_metrics();
 
     // Racy-clean threshold: files modified within 1 second of index save
@@ -317,7 +317,7 @@ auto find_changed_files_with_implicit(
                 printf("  Changed (stat failed): %s\n", file.path.c_str());
             }
             ++metrics.files_changed;
-            changed.push_back(std::string(file.path));
+            changed.push_back(file.path);
             continue;
         }
 
@@ -328,7 +328,7 @@ auto find_changed_files_with_implicit(
                 printf("  Changed (size): %s\n", file.path.c_str());
             }
             ++metrics.files_changed;
-            changed.push_back(std::string(file.path));
+            changed.push_back(file.path);
             continue;
         }
 
@@ -346,13 +346,13 @@ auto find_changed_files_with_implicit(
 
         // Content hash check (authoritative)
         if (file.content_hash != pup::ZERO_HASH) {
-            auto hash_result = pup::sha256_file(std::string(path));
+            auto hash_result = pup::sha256_file(path);
             if (!hash_result || *hash_result != file.content_hash) {
                 if (verbose) {
                     printf("  Changed (hash): %s\n", file.path.c_str());
                 }
                 ++metrics.files_changed;
-                changed.push_back(std::string(file.path));
+                changed.push_back(file.path);
             }
         } else {
             // ZERO_HASH indicates hash wasn't computed - treat as changed to be safe
@@ -360,7 +360,7 @@ auto find_changed_files_with_implicit(
                 printf("  Changed (no hash): %s\n", file.path.c_str());
             }
             ++metrics.files_changed;
-            changed.push_back(std::string(file.path));
+            changed.push_back(file.path);
         }
     }
 
@@ -446,9 +446,8 @@ auto create_implicit_file(
     auto content_hash = pup::Hash256 {};
     auto file_size = std::uint64_t { 0 };
     auto mtime_ns = std::int64_t { 0 };
-    auto abs_path_str = std::string { abs_path }; // std::string: sha256_file API
     if (pup::platform::exists(abs_path)) {
-        auto hash_result = pup::sha256_file(abs_path_str);
+        auto hash_result = pup::sha256_file(abs_path);
         if (hash_result) {
             content_hash = *hash_result;
         } else {
@@ -524,7 +523,7 @@ auto serialize_graph_nodes(
             auto mtime_ns = std::int64_t { 0 };
 
             if (pup::platform::exists(file_path)) {
-                auto hash_result = pup::sha256_file(std::string(file_path));
+                auto hash_result = pup::sha256_file(file_path);
                 if (hash_result) {
                     content_hash = *hash_result;
                 } else {
@@ -745,13 +744,13 @@ auto preserve_old_implicit_edges(
 }
 
 auto expand_implicit_deps(
-    pup::Vec<std::string> const& changed,
+    pup::Vec<String> const& changed,
     pup::index::Index const& index,
     pup::graph::BuildGraph const& graph
-) -> pup::Vec<std::string>
+) -> pup::Vec<String>
 {
-    auto result = pup::Vec<std::string> { changed };
-    auto added = Vec<std::string> {};
+    auto result = pup::Vec<String> { changed };
+    auto added = Vec<String> {};
     added.reserve(changed.size());
     for (auto const& s : changed) {
         added.push_back(s);
@@ -759,7 +758,7 @@ auto expand_implicit_deps(
     std::sort(added.begin(), added.end());
 
     // Build sorted path -> file pointer map
-    auto path_to_file = Vec<std::pair<std::string, pup::index::FileEntry const*>> {};
+    auto path_to_file = Vec<std::pair<String, pup::index::FileEntry const*>> {};
     path_to_file.reserve(index.files().size());
     for (auto const& file : index.files()) {
         if (!file.path.empty()) {
@@ -895,9 +894,9 @@ auto detect_new_commands(
     pup::index::Index const& idx,
     std::string_view variant_name,
     bool verbose
-) -> pup::Vec<std::string>
+) -> pup::Vec<String>
 {
-    auto changed = pup::Vec<std::string> {};
+    auto changed = pup::Vec<String> {};
     for (auto id : graph.all_nodes()) {
         if (!pup::node_id::is_command(id)) {
             continue;
@@ -1072,7 +1071,7 @@ auto build_single_variant(
     auto index_path = ctx.layout().index_path();
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
-    auto changed_files = pup::Vec<std::string> {};
+    auto changed_files = pup::Vec<String> {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
@@ -1124,12 +1123,11 @@ auto build_single_variant(
         // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
         auto build_root_name = String { ctx.graph().get_build_root_name() };
         for (auto const& output_path : opts.output_targets) {
-            auto prefixed = std::string {};
+            auto prefixed = String {};
             if (!build_root_name.empty()) {
-                prefixed.reserve(build_root_name.size() + 1 + output_path.size());
-                prefixed.append(std::string_view(build_root_name)).append("/").append(std::string_view(output_path));
+                prefixed = build_root_name + "/" + output_path;
             } else {
-                prefixed = std::string(output_path);
+                prefixed = output_path;
             }
             if (std::ranges::find(changed_files, prefixed) == changed_files.end()) {
                 changed_files.push_back(std::move(prefixed));
