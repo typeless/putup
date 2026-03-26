@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/var_tracking.hpp"
 
 #include <algorithm>
@@ -10,11 +12,17 @@ using namespace pup::parser;
 
 namespace {
 
+auto id(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
+auto sv(pup::StringId sid) -> std::string_view { return pup::global_pool().get(sid); }
+
 auto find_history(pup::Vec<VarHistory> const& v, std::string_view name) -> VarHistory const*
 {
-    auto it = std::lower_bound(v.begin(), v.end(), name,
-        [](auto const& h, auto const& n) { return h.name < n; });
-    return (it != v.end() && it->name == name) ? &*it : nullptr;
+    for (auto const& h : v) {
+        if (sv(h.name) == name) {
+            return &h;
+        }
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -31,17 +39,17 @@ TEST_CASE("op_to_string converts operators correctly", "[var_tracking]")
 TEST_CASE("filter_by_name filters assignments", "[var_tracking]")
 {
     auto log = AssignmentLog {
-        VarAssignment { .name = "CC", .filename = "Tuprules.tup", .line = 1, .op = Assignment::Op::Set, .value_before = "", .value_after = "gcc" },
-        VarAssignment { .name = "CFLAGS", .filename = "Tuprules.tup", .line = 2, .op = Assignment::Op::Set, .value_before = "", .value_after = "-Wall" },
-        VarAssignment { .name = "CC", .filename = "Tupfile", .line = 3, .op = Assignment::Op::Set, .value_before = "gcc", .value_after = "clang" },
+        VarAssignment { .name = id("CC"), .filename = id("Tuprules.tup"), .line = 1, .op = Assignment::Op::Set, .value_before = id(""), .value_after = id("gcc") },
+        VarAssignment { .name = id("CFLAGS"), .filename = id("Tuprules.tup"), .line = 2, .op = Assignment::Op::Set, .value_before = id(""), .value_after = id("-Wall") },
+        VarAssignment { .name = id("CC"), .filename = id("Tupfile"), .line = 3, .op = Assignment::Op::Set, .value_before = id("gcc"), .value_after = id("clang") },
     };
 
     SECTION("filters by exact name")
     {
         auto filtered = filter_by_name(log, "CC");
         REQUIRE(filtered.size() == 2);
-        CHECK(filtered[0].value_after == "gcc");
-        CHECK(filtered[1].value_after == "clang");
+        CHECK(sv(filtered[0].value_after) == "gcc");
+        CHECK(sv(filtered[1].value_after) == "clang");
     }
 
     SECTION("returns empty for non-matching name")
@@ -60,10 +68,10 @@ TEST_CASE("group_by_name returns empty for empty log", "[var_tracking]")
 TEST_CASE("group_by_name groups assignments", "[var_tracking]")
 {
     auto log = AssignmentLog {
-        VarAssignment { .name = "CC", .filename = "Tuprules.tup", .line = 1, .op = Assignment::Op::Set, .value_before = "", .value_after = "gcc", .is_effective = true },
-        VarAssignment { .name = "CFLAGS", .filename = "Tuprules.tup", .line = 2, .op = Assignment::Op::Set, .value_before = "", .value_after = "-Wall", .is_effective = true },
-        VarAssignment { .name = "CFLAGS", .filename = "Tuprules.tup", .line = 3, .op = Assignment::Op::Append, .value_before = "-Wall", .value_after = "-Wall -O2", .is_effective = true },
-        VarAssignment { .name = "CC", .filename = "Tupfile", .line = 4, .op = Assignment::Op::SoftSet, .value_before = "gcc", .value_after = "gcc", .is_effective = false },
+        VarAssignment { .name = id("CC"), .filename = id("Tuprules.tup"), .line = 1, .op = Assignment::Op::Set, .value_before = id(""), .value_after = id("gcc"), .is_effective = true },
+        VarAssignment { .name = id("CFLAGS"), .filename = id("Tuprules.tup"), .line = 2, .op = Assignment::Op::Set, .value_before = id(""), .value_after = id("-Wall"), .is_effective = true },
+        VarAssignment { .name = id("CFLAGS"), .filename = id("Tuprules.tup"), .line = 3, .op = Assignment::Op::Append, .value_before = id("-Wall"), .value_after = id("-Wall -O2"), .is_effective = true },
+        VarAssignment { .name = id("CC"), .filename = id("Tupfile"), .line = 4, .op = Assignment::Op::SoftSet, .value_before = id("gcc"), .value_after = id("gcc"), .is_effective = false },
     };
 
     auto histories = group_by_name(log);
@@ -80,13 +88,13 @@ TEST_CASE("group_by_name groups assignments", "[var_tracking]")
         auto const* cc_history = find_history(histories, "CC");
         REQUIRE(cc_history != nullptr);
         REQUIRE(cc_history->assignments.size() == 2);
-        CHECK(cc_history->assignments[0]->filename == "Tuprules.tup");
-        CHECK(cc_history->assignments[1]->filename == "Tupfile");
+        CHECK(sv(cc_history->assignments[0]->filename) == "Tuprules.tup");
+        CHECK(sv(cc_history->assignments[1]->filename) == "Tupfile");
     }
 
     SECTION("tracks final value from effective assignments")
     {
-        CHECK(find_history(histories, "CC")->final_value == "gcc");
-        CHECK(find_history(histories, "CFLAGS")->final_value == "-Wall -O2");
+        CHECK(sv(find_history(histories, "CC")->final_value) == "gcc");
+        CHECK(sv(find_history(histories, "CFLAGS")->final_value) == "-Wall -O2");
     }
 }

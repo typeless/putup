@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/parser.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/lexer.hpp"
 
 #include <algorithm>
@@ -19,8 +21,8 @@ struct RuleBody {
     std::optional<Expression> display;
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<String> output_group;
-    std::optional<String> output_order_only_group;
+    std::optional<StringId> output_group;
+    std::optional<StringId> output_order_only_group;
     std::optional<Expression> output_order_only_group_dir;
 };
 
@@ -28,7 +30,7 @@ struct ParserState {
     Lexer lexer;
     ParserOptions options;
     Vec<ParseError> errors;
-    Vec<String> included_files;
+    Vec<StringId> included_files;
     int include_depth = 0;
 
     Token current;
@@ -104,7 +106,7 @@ auto report_error(ParserState& s, std::string_view message) -> void
 {
     s.errors.push_back(ParseError {
         .location = s.current.location,
-        .message = String { message },
+        .message = global_pool().intern(message),
     });
 }
 
@@ -144,7 +146,7 @@ auto parse_statement_body(ParserState& s, Predicate is_terminator)
 
         auto stmt = parse_line(s);
         if (!stmt) {
-            report_error(s, stmt.error().message);
+            report_error(s, stmt.error().msg());
             skip_to_next_statement(s);
             continue;
         }
@@ -199,7 +201,7 @@ auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
         );
     }
 
-    return VarRef { spec.kind, std::move(name), s.previous.location };
+    return VarRef { spec.kind, global_pool().intern(name), s.previous.location };
 }
 
 auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
@@ -323,7 +325,7 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
 
         // Create a simple expression with just the identifier
         auto name_expr = Expression {};
-        name_expr.parts.emplace_back(Expression::Literal { String { name_tok->text } });
+        name_expr.parts.emplace_back(Expression::Literal { global_pool().intern(name_tok->text) });
 
         auto assign = parse_assignment(s, std::move(name_expr));
         if (!assign) {
@@ -408,7 +410,7 @@ auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
         return pup::make_error<BangMacro>(ErrorCode::ParseError, "Expected macro name after '!'");
     }
 
-    macro.name = String { s.current.text };
+    macro.name = global_pool().intern(s.current.text);
     advance(s);
 
     // Expect =
@@ -502,7 +504,7 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
     // Parse output group {name} if present
     if (match(s, TokenType::OpenBrace)) {
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            body.output_group = String { s.current.text };
+            body.output_group = global_pool().intern(s.current.text);
             advance(s);
         }
         auto close = expect(s, TokenType::CloseBrace, "Expected '}' after group name");
@@ -519,7 +521,8 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
             auto& last = body.outputs.back();
             if (!last.path.parts.empty()) {
                 if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
-                    if (!lit->value.empty() && lit->value.back() == '/') {
+                    auto lit_sv = global_pool().get(lit->value);
+                    if (!lit_sv.empty() && lit_sv.back() == '/') {
                         body.output_order_only_group_dir = std::move(last.path);
                         body.outputs.pop_back();
                     }
@@ -528,7 +531,7 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         }
 
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            body.output_order_only_group = String { s.current.text };
+            body.output_order_only_group = global_pool().intern(s.current.text);
             advance(s);
         }
         auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
@@ -582,7 +585,7 @@ auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditi
         if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
             return pup::make_error<Conditional>(ErrorCode::ParseError, "Expected variable name after ifdef/ifndef");
         }
-        cond.var_name = String { s.current.text };
+        cond.var_name = global_pool().intern(s.current.text);
         advance(s);
     } else {
         // ifeq/ifneq (lhs, rhs)
@@ -671,7 +674,7 @@ auto parse_export(ParserState& s) -> Result<Export>
         return pup::make_error<Export>(ErrorCode::ParseError, "Expected variable name after 'export'");
     }
 
-    exp.var_name = String { s.current.text };
+    exp.var_name = global_pool().intern(s.current.text);
     advance(s);
 
     return exp;
@@ -686,7 +689,7 @@ auto parse_import(ParserState& s) -> Result<Import>
         return pup::make_error<Import>(ErrorCode::ParseError, "Expected variable name after 'import'");
     }
 
-    imp.var_name = String { s.current.text };
+    imp.var_name = global_pool().intern(s.current.text);
     advance(s);
 
     // Optional default value (=, ?=, and ??= are all equivalent for import)
@@ -720,7 +723,7 @@ auto parse_expression_until(
 
     auto flush_text = [&] {
         if (!current_text.empty()) {
-            expr.parts.emplace_back(Expression::Literal { std::move(current_text) });
+            expr.parts.emplace_back(Expression::Literal { global_pool().intern(current_text) });
             current_text.clear();
         }
     };
@@ -787,7 +790,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     if (match(s, TokenType::OpenBrace)) {
         pattern.is_group = true;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            pattern.group_name = String { s.current.text };
+            pattern.group_name = global_pool().intern(s.current.text);
             advance(s);
         }
         if (!match(s, TokenType::CloseBrace)) {
@@ -799,7 +802,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     if (match(s, TokenType::OpenAngle)) {
         pattern.is_order_only_group = true;
         if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            pattern.group_name = String { s.current.text };
+            pattern.group_name = global_pool().intern(s.current.text);
             advance(s);
         }
         if (!match(s, TokenType::CloseAngle)) {
@@ -875,7 +878,7 @@ auto parse_command(ParserState& s) -> Result<Expression>
     }
 
     if (!cmd_text.empty()) {
-        expr.parts.emplace_back(Expression::Literal { std::move(cmd_text) });
+        expr.parts.emplace_back(Expression::Literal { global_pool().intern(cmd_text) });
     }
 
     // Put back the |> token
@@ -897,7 +900,7 @@ auto parse_tupfile(
     advance(s); // Prime the parser with first token
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { s.lexer.filename() };
+    tupfile.filename = global_pool().intern(s.lexer.filename());
 
     while (!check(s, TokenType::Eof)) {
         // Skip empty lines and comments
@@ -913,7 +916,7 @@ auto parse_tupfile(
 
         auto stmt = parse_line(s);
         if (!stmt) {
-            report_error(s, stmt.error().message);
+            report_error(s, stmt.error().msg());
             skip_to_next_statement(s);
             continue;
         }

@@ -2,12 +2,21 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <filesystem>
 #include <optional>
 
 namespace fs = std::filesystem;
+
+using pup::StringId;
+using pup::global_pool;
+
+namespace {
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+} // namespace
 
 TEST_CASE("is_path_under checks path containment", "[path_utils]")
 {
@@ -113,7 +122,7 @@ TEST_CASE("is_path_in_scope with string prefix matching", "[path_utils]")
 
 TEST_CASE("is_path_in_any_scope with multiple scopes", "[path_utils]")
 {
-    auto scopes = pup::Vec<pup::String> { "lib", "app" };
+    auto scopes = pup::Vec<pup::StringId> { intern("lib"), intern("app") };
 
     SECTION("path in first scope")
     {

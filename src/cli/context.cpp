@@ -38,8 +38,10 @@ auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
 auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
-) -> Vec<String>
+) -> Vec<StringId>
 {
+    auto& pool = global_pool();
+
     // -A/--all flag forces full project build
     if (opts.all) {
         return {};
@@ -52,10 +54,10 @@ auto compute_build_scopes(
 
     // Compute scope from current working directory
     auto cwd = *pup::platform::current_directory();
-    auto const& source_root = layout.source_root;
+    auto source_root_sv = pool.get(layout.source_root);
 
     // If cwd is source_root, build all
-    if (cwd == source_root) {
+    if (cwd == source_root_sv) {
         return {};
     }
 
@@ -63,18 +65,18 @@ auto compute_build_scopes(
     // build all. The user is in the build directory, not a source subdirectory.
     // Source files are under source_root, not output_root, so scoping to output_root
     // would incorrectly skip all source file change detection.
-    auto const& output_root = layout.output_root;
-    if (source_root != output_root && pup::is_path_under(cwd, output_root)) {
+    auto output_root_sv = pool.get(layout.output_root);
+    if (layout.source_root != layout.output_root && pup::is_path_under(cwd, output_root_sv)) {
         return {};
     }
 
     // Get relative path if cwd is under source_root
-    auto rel = pup::relative_to_root(cwd, source_root);
+    auto rel = pup::relative_to_root(cwd, source_root_sv);
     if (rel.empty()) {
         return {};
     }
 
-    return Vec<String> { String { rel } };
+    return Vec<StringId> { pool.intern(rel) };
 }
 
 namespace {
@@ -98,37 +100,55 @@ auto join_path(std::string_view base, std::string_view rel)
     return (rel.empty() || rel == ".") ? String { base } : pup::path::join(base, rel);
 }
 
-auto sorted_contains(Vec<String> const& v, std::string_view key) -> bool
+auto sorted_contains(Vec<StringId> const& v, std::string_view key) -> bool
 {
-    return std::binary_search(v.begin(), v.end(), key);
-}
-
-auto sorted_insert(Vec<String>& v, std::string_view key) -> void
-{
-    auto pos = std::lower_bound(v.begin(), v.end(), key);
-    if (pos == v.end() || *pos != key) {
-        v.insert(pos, String { key });
+    auto& pool = global_pool();
+    auto id = pool.find(key);
+    if (is_empty(id)) {
+        return false;
     }
+    for (auto item : v) {
+        if (item == id) {
+            return true;
+        }
+    }
+    return false;
 }
 
-auto sorted_erase(Vec<String>& v, std::string_view key) -> void
+auto sorted_insert(Vec<StringId>& v, std::string_view key) -> void
 {
-    auto pos = std::lower_bound(v.begin(), v.end(), key);
-    assert(pos != v.end() && *pos == key);
-    v.erase(pos);
+    auto id = global_pool().intern(key);
+    for (auto item : v) {
+        if (item == id) {
+            return;
+        }
+    }
+    v.push_back(id);
+}
+
+auto sorted_erase(Vec<StringId>& v, std::string_view key) -> void
+{
+    auto& pool = global_pool();
+    auto id = pool.find(key);
+    for (auto i = std::size_t { 0 }; i < v.size(); ++i) {
+        if (v[i] == id) {
+            v.erase(v.data() + i);
+            return;
+        }
+    }
 }
 
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
-    Vec<String> available;
-    Vec<String> parsed;
-    Vec<String> parsing;
+    Vec<StringId> available;
+    Vec<StringId> parsed;
+    Vec<StringId> parsing;
     // Append-only paged vectors: push_back preserves references to existing
     // elements, which is critical because recursive Tupfile parsing holds
     // VarDb pointers across calls that may insert new entries.
     PagedVec<std::pair<String, parser::VarDb>> parsed_configs;
     PagedVec<std::pair<String, parser::VarDb>> scoped_configs;
-    Vec<std::pair<pup::String, pup::String>> const* config_defines = nullptr; // CLI overrides
+    Vec<std::pair<pup::StringId, pup::StringId>> const* config_defines = nullptr; // CLI overrides
 };
 
 auto compute_tup_variantdir(
@@ -170,7 +190,7 @@ auto find_build_subdir(
                 if (!entry.is_dir) {
                     continue;
                 }
-                auto entry_path = pup::path::join(root, entry.name);
+                auto entry_path = pup::path::join(root, global_pool().get(entry.name));
                 if (pup::platform::exists(pup::path::join(entry_path, "tup.config"))
                     || pup::platform::is_directory(pup::path::join(entry_path, ".pup"))) {
                     return entry_path;
@@ -192,14 +212,15 @@ auto read_file(std::string_view path) -> std::optional<String>
 }
 
 auto discover_tupfile_dirs(
-    String const& root,
+    std::string_view root,
     pup::parser::IgnoreList const& ignore = {}
-) -> Vec<String>
+) -> Vec<StringId>
 {
-    auto dirs = Vec<String> {};
+    auto& pool = global_pool();
+    auto dirs = Vec<StringId> {};
 
     if (pup::platform::exists(pup::path::join(root, "Tupfile"))) {
-        dirs.push_back(".");
+        dirs.push_back(pool.intern("."));
     }
 
     (void)pup::platform::walk_directory(root, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
@@ -207,9 +228,9 @@ auto discover_tupfile_dirs(
             return false;
         }
 
-        if (!entry.is_dir && entry.name == "Tupfile") {
+        if (!entry.is_dir && pool.get(entry.name) == "Tupfile") {
             auto dir_rel = String { pup::path::parent(rel_path) };
-            dirs.push_back(normalize_to_dot(dir_rel));
+            dirs.push_back(pool.intern(normalize_to_dot(dir_rel)));
         }
 
         return true;
@@ -223,15 +244,18 @@ auto discover_tupfile_dirs(
 /// Apply CLI config overrides to a VarDb
 auto apply_config_overrides(
     parser::VarDb& config,
-    Vec<std::pair<pup::String, pup::String>> const* defines
+    Vec<std::pair<pup::StringId, pup::StringId>> const* defines
 ) -> void
 {
     if (!defines) {
         return;
     }
+    auto& pool = global_pool();
     for (auto const& [name, value] : *defines) {
-        config.set(name, value);
-        config.set(String { "CONFIG_" } + name, value);
+        auto name_sv = pool.get(name);
+        auto value_sv = pool.get(value);
+        config.set(name_sv, value_sv);
+        config.set(String { "CONFIG_" } + name_sv, value_sv);
     }
 }
 
@@ -249,7 +273,7 @@ auto get_or_parse_config(
 
     auto result = parser::parse_config(path);
     if (!result) {
-        fprintf(stderr, "Warning: Failed to parse %s: %s\n", path.c_str(), result.error().message.c_str());
+        fprintf(stderr, "Warning: Failed to parse %s: %s\n", path.c_str(), result.error().msg().data());
         return nullptr;
     }
 
@@ -344,9 +368,9 @@ struct ParseContext {
     TupfileParseState& state;
     pup::graph::GraphBuilder& builder;
     pup::graph::BuildGraph& graph;
-    pup::String const& source_root;
-    pup::String const& config_root;
-    pup::String const& output_root;
+    std::string_view source_root;
+    std::string_view config_root;
+    std::string_view output_root;
     pup::parser::VarDb const& base_vars;
     bool verbose;
     bool root_config_only;
@@ -385,7 +409,7 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
     if (!parse_result.success()) {
         sorted_erase(ctx.state.parsing, normalized_dir);
         for (auto const& err : parse_result.errors) {
-            fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.c_str(), err.location.line, err.location.column, err.message.c_str());
+            fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.c_str(), err.location.line, err.location.column, global_pool().get(err.message).data());
         }
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
@@ -426,16 +450,17 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
         return parse_directory(String { dir }, ctx);
     };
 
+    auto& pool = global_pool();
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
         .config_vars = scoped_config,
-        .tup_cwd = tup_cwd,
-        .tup_platform = pup::get_platform(),
-        .tup_arch = String { pup::ARCH },
-        .tup_variantdir = tup_variantdir,
-        .tup_variant_outputdir = tup_variantdir,
-        .tup_srcdir = tup_srcdir,
-        .tup_outdir = tup_outdir,
+        .tup_cwd = pool.intern(tup_cwd),
+        .tup_platform = pool.intern(pup::get_platform()),
+        .tup_arch = pool.intern(pup::ARCH),
+        .tup_variantdir = pool.intern(tup_variantdir),
+        .tup_variant_outputdir = pool.intern(tup_variantdir),
+        .tup_srcdir = pool.intern(tup_srcdir),
+        .tup_outdir = pool.intern(tup_outdir),
         .request_directory = request_directory,
         .available_tupfile_dirs = &ctx.state.available,
         .on_var_assigned = ctx.on_var_assigned,
@@ -459,7 +484,7 @@ auto try_auto_init(ProjectLayout const& layout) -> void
     if (pup::platform::exists(pup_dir)) {
         return;
     }
-    if (!pup::platform::exists(pup::path::join(layout.source_root, "Tupfile.ini"))) {
+    if (!pup::platform::exists(pup::path::join(global_pool().get(layout.source_root), "Tupfile.ini"))) {
         return;
     }
     (void)pup::platform::create_directories(pup_dir);
@@ -468,11 +493,12 @@ auto try_auto_init(ProjectLayout const& layout) -> void
 
 struct IndexLoadResult {
     std::optional<pup::index::Index> index;
-    Vec<std::pair<String, String>> cached_env_vars;
+    Vec<std::pair<StringId, StringId>> cached_env_vars;
 };
 
-auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
+auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResult
 {
+    auto& pool = pup::global_pool();
     auto result = IndexLoadResult {};
     auto index_path = pup::path::join(pup::path::join(output_root, ".pup"), "index");
 
@@ -505,7 +531,7 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
         auto key_value = file_path_sv.substr(ENV_VAR_DIR_PREFIX.size());
         auto eq_pos = key_value.find('=');
         if (eq_pos != std::string_view::npos) {
-            result.cached_env_vars.emplace_back(String { key_value.substr(0, eq_pos) }, String { key_value.substr(eq_pos + 1) });
+            result.cached_env_vars.emplace_back(pool.intern(key_value.substr(0, eq_pos)), pool.intern(key_value.substr(eq_pos + 1)));
         }
     }
 
@@ -518,22 +544,25 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
     return result;
 }
 
-auto sort_dirs_by_depth(Vec<String> const& available) -> Vec<String>
+auto sort_dirs_by_depth(Vec<StringId> const& available) -> Vec<StringId>
 {
     auto constexpr root_rel = std::string_view { "." };
-    auto dirs = Vec<String> { available };
-    std::ranges::sort(dirs, [&root_rel](auto const& a, auto const& b) {
-        auto is_root_a = (a == root_rel);
-        auto is_root_b = (b == root_rel);
+    auto& pool = global_pool();
+    auto dirs = Vec<StringId> { available };
+    std::ranges::sort(dirs, [&root_rel, &pool](auto a, auto b) {
+        auto a_sv = pool.get(a);
+        auto b_sv = pool.get(b);
+        auto is_root_a = (a_sv == root_rel);
+        auto is_root_b = (b_sv == root_rel);
         if (is_root_a != is_root_b) {
             return is_root_b;
         }
-        auto depth_a = std::distance(a.begin(), a.end());
-        auto depth_b = std::distance(b.begin(), b.end());
+        auto depth_a = static_cast<int>(a_sv.size());
+        auto depth_b = static_cast<int>(b_sv.size());
         if (depth_a != depth_b) {
             return depth_a > depth_b;
         }
-        return a < b;
+        return a_sv < b_sv;
     });
     return dirs;
 }
@@ -541,8 +570,8 @@ auto sort_dirs_by_depth(Vec<String> const& available) -> Vec<String>
 auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
 {
     auto ignore = pup::parser::IgnoreList::with_defaults();
-    for (auto const& root : { layout.config_root, layout.source_root }) {
-        auto ignore_path = pup::path::join(root, ".pupignore");
+    for (auto root_id : { layout.config_root, layout.source_root }) {
+        auto ignore_path = pup::path::join(global_pool().get(root_id), ".pupignore");
         if (!pup::platform::exists(ignore_path)) {
             continue;
         }
@@ -564,14 +593,14 @@ auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser:
 auto make_layout_options(Options const& opts) -> LayoutOptions
 {
     auto layout_opts = LayoutOptions {};
-    if (!opts.source_dir.empty()) {
-        layout_opts.source_dir = pup::String { opts.source_dir };
+    if (!is_empty(opts.source_dir)) {
+        layout_opts.source_dir = opts.source_dir;
     }
-    if (!opts.config_dir.empty()) {
-        layout_opts.config_dir = pup::String { opts.config_dir };
+    if (!is_empty(opts.config_dir)) {
+        layout_opts.config_dir = opts.config_dir;
     }
     if (!opts.build_dirs.empty()) {
-        layout_opts.build_dir = pup::String { opts.build_dirs[0] };
+        layout_opts.build_dir = opts.build_dirs[0];
     }
     return layout_opts;
 }
@@ -621,7 +650,7 @@ auto BuildContext::vars() const -> parser::VarDb const&
     return impl_->vars;
 }
 
-auto BuildContext::parsed_dirs() const -> Vec<String> const&
+auto BuildContext::parsed_dirs() const -> Vec<StringId> const&
 {
     return impl_->state.parsed;
 }
@@ -645,9 +674,11 @@ auto build_context(
     auto ctx = BuildContext {};
     ctx.impl_->layout = std::move(*layout_result);
 
+    auto& pool = global_pool();
+
     // Early tup.config check (before expensive parsing)
     if (ctx_opts.require_config) {
-        auto config_path = pup::path::join(ctx.impl_->layout.output_root, "tup.config");
+        auto config_path = pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config");
         if (!pup::platform::exists(config_path)) {
             return make_error<BuildContext>(
                 ErrorCode::NotFound,
@@ -659,8 +690,8 @@ auto build_context(
     // Set build root name for variant builds (before parsing)
     if (ctx.impl_->layout.source_root != ctx.impl_->layout.output_root) {
         auto build_root_name = pup::path::relative(
-            ctx.impl_->layout.output_root,
-            ctx.impl_->layout.source_root
+            pool.get(ctx.impl_->layout.output_root),
+            pool.get(ctx.impl_->layout.source_root)
         );
         ctx.impl_->graph.set_build_root_name(build_root_name);
     }
@@ -672,7 +703,7 @@ auto build_context(
 
     // 3. Discover Tupfiles
     auto ignore = load_ignore_list(ctx.impl_->layout, ctx_opts.verbose);
-    ctx.impl_->state.available = discover_tupfile_dirs(ctx.impl_->layout.config_root, ignore);
+    ctx.impl_->state.available = discover_tupfile_dirs(pool.get(ctx.impl_->layout.config_root), ignore);
 
     if (ctx.impl_->state.available.empty()) {
         return make_error<BuildContext>(ErrorCode::IoError, "No Tupfiles found in project");
@@ -683,7 +714,7 @@ auto build_context(
     }
 
     // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
-    auto config_path = pup::path::join(ctx.impl_->layout.output_root, "tup.config");
+    auto config_path = pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config");
     if (pup::platform::exists(config_path)) {
         auto const* root_cfg = get_or_parse_config(config_path, ctx.impl_->state);
         if (root_cfg) {
@@ -696,10 +727,12 @@ auto build_context(
 
     // Apply -D config overrides (highest precedence)
     for (auto const& [name, value] : opts.config_defines) {
-        ctx.impl_->config_vars.set(name, value);
-        ctx.impl_->config_vars.set(String { "CONFIG_" } + name, value);
+        auto name_sv = pool.get(name);
+        auto value_sv = pool.get(value);
+        ctx.impl_->config_vars.set(name_sv, value_sv);
+        ctx.impl_->config_vars.set(String { "CONFIG_" } + name_sv, value_sv);
         if (ctx_opts.verbose) {
-            printf("-D %s=%s\n", name.c_str(), value.c_str());
+            printf("-D %s=%s\n", name_sv.data(), value_sv.data());
         }
     }
 
@@ -709,15 +742,14 @@ auto build_context(
     }
 
     // 5. Load index
-    auto [old_index, cached_env_vars] = load_old_index(ctx.impl_->layout.output_root, ctx_opts.verbose);
+    auto [old_index, cached_env_vars] = load_old_index(pool.get(ctx.impl_->layout.output_root), ctx_opts.verbose);
     ctx.impl_->old_index = std::move(old_index);
 
     // 6. Parse Tupfiles
-    auto& pool = pup::global_pool();
     auto builder_opts = graph::BuilderOptions {
-        .source_root = pool.intern(ctx.impl_->layout.source_root),
-        .config_root = pool.intern(ctx.impl_->layout.config_root),
-        .output_root = pool.intern(ctx.impl_->layout.output_root),
+        .source_root = ctx.impl_->layout.source_root,
+        .config_root = ctx.impl_->layout.config_root,
+        .output_root = ctx.impl_->layout.output_root,
         .config_path = pool.intern(config_path),
         .expand_globs = true,
         .verbose = ctx_opts.verbose,
@@ -731,24 +763,25 @@ auto build_context(
         .state = ctx.impl_->state,
         .builder = builder,
         .graph = ctx.impl_->graph,
-        .source_root = ctx.impl_->layout.source_root,
-        .config_root = ctx.impl_->layout.config_root,
-        .output_root = ctx.impl_->layout.output_root,
+        .source_root = pool.get(ctx.impl_->layout.source_root),
+        .config_root = pool.get(ctx.impl_->layout.config_root),
+        .output_root = pool.get(ctx.impl_->layout.output_root),
         .base_vars = ctx.impl_->vars,
         .verbose = ctx_opts.verbose,
         .root_config_only = ctx_opts.root_config_only,
         .on_var_assigned = ctx_opts.on_var_assigned,
     };
 
-    for (auto const& dir : sort_dirs_by_depth(ctx.impl_->state.available)) {
-        if (sorted_contains(ctx.impl_->state.parsed, dir)) {
+    for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {
+        auto dir_sv = pool.get(dir_id);
+        if (sorted_contains(ctx.impl_->state.parsed, dir_sv)) {
             continue;
         }
         if (!ctx_opts.parse_scopes.empty()
-            && !pup::is_path_in_any_scope(dir, ctx_opts.parse_scopes)) {
+            && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
             continue;
         }
-        auto result = Result<void> { parse_directory(dir, parse_ctx) };
+        auto result = Result<void> { parse_directory(String { dir_sv }, parse_ctx) };
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
         }
@@ -757,8 +790,8 @@ auto build_context(
     // Resolve deferred order-only edges (side effect: modifies graph; return value is count, unused)
     (void)builder.resolve_deferred_order_only_edges(ctx.impl_->graph);
 
-    for (auto const& warning : builder.warnings()) {
-        fprintf(stderr, "warning: %s\n", warning.c_str());
+    for (auto warning_id : builder.warnings()) {
+        fprintf(stderr, "warning: %s\n", pool.get(warning_id).data());
     }
 
     if (ctx_opts.verbose) {
@@ -770,36 +803,38 @@ auto build_context(
 
 auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
 {
+    auto& pool = global_pool();
     auto cwd = *pup::platform::current_directory();
     auto root = find_project_root(cwd);
     if (!root) {
         return std::nullopt;
     }
 
+    auto root_sv = pool.get(*root);
     auto build_dir = String {};
     auto is_in_tree = false;
 
     if (!opts.build_dirs.empty()) {
-        build_dir = String { opts.build_dirs[0] };
+        build_dir = String { pool.get(opts.build_dirs[0]) };
         if (!pup::path::is_absolute(build_dir)) {
-            build_dir = pup::path::join(*root, build_dir);
+            build_dir = pup::path::join(root_sv, build_dir);
         }
-        is_in_tree = (build_dir == *root);
-    } else if (pup::platform::exists(pup::path::join(cwd, ".pup")) && cwd != *root) {
+        is_in_tree = (build_dir == root_sv);
+    } else if (pup::platform::exists(pup::path::join(cwd, ".pup")) && cwd != root_sv) {
         build_dir = cwd;
         is_in_tree = false;
-    } else if (auto detected = find_build_subdir(*root)) {
+    } else if (auto detected = find_build_subdir(root_sv)) {
         build_dir = *detected;
         is_in_tree = false;
-    } else if (pup::platform::exists(pup::path::join(*root, "tup.config"))
-               || pup::platform::exists(pup::path::join(*root, ".pup"))) {
-        build_dir = *root;
+    } else if (pup::platform::exists(pup::path::join(root_sv, "tup.config"))
+               || pup::platform::exists(pup::path::join(root_sv, ".pup"))) {
+        build_dir = String { root_sv };
         is_in_tree = true;
     } else {
         return std::nullopt;
     }
 
-    return CleanContext { *root, build_dir, is_in_tree };
+    return CleanContext { *root, pool.intern(build_dir), is_in_tree };
 }
 
 } // namespace pup::cli

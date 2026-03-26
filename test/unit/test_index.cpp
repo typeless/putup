@@ -761,7 +761,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
                 auto result = serialize_index(index);
 
         REQUIRE_FALSE(result.has_value());
-        REQUIRE(result.error().message.find("64KB") != String::npos);
+        REQUIRE(global_pool().get(result.error().message).find("64KB") != std::string_view::npos);
     }
 
     SECTION("string at 64KB limit succeeds")

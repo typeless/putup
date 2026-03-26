@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/target.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
@@ -72,8 +74,10 @@ auto parse_target(
     std::string_view target_path
 ) -> Result<Target>
 {
+    auto& pool = global_pool();
+
     if (target_path.empty()) {
-        return unexpected<Error> { Error { ErrorCode::InvalidArgument, "empty target path" } };
+        return make_error<Target>(ErrorCode::InvalidArgument, "empty target path");
     }
 
     auto full_path = pup::path::join(project_root, target_path);
@@ -83,17 +87,17 @@ auto parse_target(
 
     auto variant_path = pup::path::join(project_root, first_component);
     if (is_variant_dir(variant_path)) {
-        target.variant = first_component;
-        target.scope_or_output = remainder;
+        target.variant = pool.intern(first_component);
+        target.scope_or_output = pool.intern(remainder);
         full_path = pup::path::join(variant_path, remainder);
     } else {
-        target.scope_or_output = target_path;
+        target.scope_or_output = pool.intern(target_path);
     }
 
     if (pup::platform::exists(full_path)) {
         if (pup::platform::is_file(full_path)) {
             if (is_source_file(full_path)) {
-                return unexpected<Error> { Error { ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path } };
+                return make_error<Target>(ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path);
             }
             target.is_output = true;
         }
@@ -103,11 +107,11 @@ auto parse_target(
             par = project_root;
         }
         if (!pup::platform::exists(par)) {
-            return unexpected<Error> { Error { ErrorCode::NotFound, String { "path not found: " } + target_path } };
+            return make_error<Target>(ErrorCode::NotFound, String { "path not found: " } + target_path);
         }
 
         if (is_source_file(full_path)) {
-            return unexpected<Error> { Error { ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path } };
+            return make_error<Target>(ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path);
         }
 
         target.is_output = true;
@@ -121,6 +125,7 @@ auto expand_glob_target(
     std::string_view pattern
 ) -> Vec<Target>
 {
+    auto& pool = global_pool();
     auto result = Vec<Target> {};
 
     if (pattern.empty()) {
@@ -148,21 +153,22 @@ auto expand_glob_target(
             continue;
         }
 
-        if (!fnmatch_simple(first_component, entry.name)) {
+        auto name_sv = pool.get(entry.name);
+        if (!fnmatch_simple(first_component, name_sv)) {
             continue;
         }
 
-        auto entry_path = pup::path::join(project_root, entry.name);
+        auto entry_path = pup::path::join(project_root, name_sv);
         if (!is_variant_dir(entry_path)) {
             continue;
         }
 
         auto target = Target {};
-        target.variant = String(entry.name);
+        target.variant = entry.name;
 
         if (!remainder.empty()) {
             auto full_path = pup::path::join(entry_path, remainder);
-            target.scope_or_output = remainder;
+            target.scope_or_output = pool.intern(remainder);
             if (pup::platform::is_file(full_path)) {
                 target.is_output = true;
             } else if (!pup::platform::is_directory(full_path) && !is_source_file(full_path)) {
@@ -190,19 +196,21 @@ auto is_glob_pattern(std::string_view s) -> bool
 
 auto validate_target_consistency(
     std::string_view project_root,
-    Vec<String> const& targets
+    Vec<StringId> const& targets
 ) -> Result<Vec<Target>>
 {
+    auto& pool = global_pool();
     auto result = Vec<Target> {};
     auto has_variant = std::optional<bool> {};
 
-    for (auto const& target_str : targets) {
+    for (auto target_id : targets) {
+        auto target_str = pool.get(target_id);
         auto parsed_targets = Vec<Target> {};
 
         if (is_glob_pattern(target_str)) {
             parsed_targets = expand_glob_target(project_root, target_str);
             if (parsed_targets.empty()) {
-                return unexpected<Error> { Error { ErrorCode::NotFound, "no variants match pattern: " + target_str } };
+                return make_error<Vec<Target>>(ErrorCode::NotFound, String { "no variants match pattern: " } + target_str);
             }
         } else {
             auto parsed = parse_target(project_root, target_str);
@@ -218,7 +226,7 @@ auto validate_target_consistency(
             if (!has_variant.has_value()) {
                 has_variant = this_has_variant;
             } else if (*has_variant != this_has_variant) {
-                return unexpected<Error> { Error { ErrorCode::InvalidArgument, "cannot mix variant-specific and all-variant targets" } };
+                return make_error<Vec<Target>>(ErrorCode::InvalidArgument, "cannot mix variant-specific and all-variant targets");
             }
 
             result.push_back(target);

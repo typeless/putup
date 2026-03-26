@@ -4,8 +4,10 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
 
@@ -18,9 +20,10 @@ namespace {
 
 auto parse_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
+    auto& pool = global_pool();
     auto layout = discover_layout(make_layout_options(opts));
     if (!layout) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -31,19 +34,20 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
     auto& ctx = *result;
 
     if (opts.verbose) {
-        printf("[%.*s] Project root: \"%s\"\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.layout().source_root.c_str());
+        printf("[%.*s] Project root: \"%s\"\n", static_cast<int>(variant_name.size()), variant_name.data(), pool.get(ctx.layout().source_root).data());
         printf("[%.*s] Tupfiles:\n", static_cast<int>(variant_name.size()), variant_name.data());
-        for (auto const& dir : ctx.parsed_dirs()) {
-            auto tupfile_path = (dir == "." || dir.empty())
-                ? pup::path::join(ctx.layout().source_root, "Tupfile")
-                : pup::path::join(pup::path::join(ctx.layout().source_root, dir), "Tupfile");
+        for (auto dir_id : ctx.parsed_dirs()) {
+            auto dir_sv = pool.get(dir_id);
+            auto tupfile_path = (dir_sv == "." || dir_sv.empty())
+                ? pup::path::join(pool.get(ctx.layout().source_root), "Tupfile")
+                : pup::path::join(pup::path::join(pool.get(ctx.layout().source_root), dir_sv), "Tupfile");
             printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), tupfile_path.c_str());
         }
     }
@@ -56,7 +60,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         for (auto id : commands) {
             if (ctx.graph().get_command_node(id)) {
                 auto display_sv = pup::graph::get_display_str(ctx.graph().graph(), id);
-                auto cmd_sv = pup::graph::expand_instruction(ctx.graph().graph(), id, cache, ctx.layout().source_root, ctx.layout().config_root);
+                auto cmd_sv = pup::graph::expand_instruction(ctx.graph().graph(), id, cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root));
                 auto label = display_sv.empty() ? std::string_view { cmd_sv } : display_sv;
                 printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(label.size()), label.data());
             }

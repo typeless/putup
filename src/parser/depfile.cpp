@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/depfile.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 namespace pup::parser {
@@ -116,9 +118,11 @@ auto parse_depfile(std::string_view content) -> Result<Depfile>
     }
 
     // Parse target (output file), stopping at colon
-    result.target = parse_path(sv, true);
+    auto& pool = global_pool();
+    auto target_str = parse_path(sv, true);
+    result.target = pool.intern(target_str);
 
-    if (result.target.empty()) {
+    if (target_str.empty()) {
         return make_error<Depfile>(ErrorCode::ParseError, "Missing target in depfile");
     }
 
@@ -149,7 +153,7 @@ auto parse_depfile(std::string_view content) -> Result<Depfile>
         // Parse next dependency path
         auto dep = parse_path(sv);
         if (!dep.empty()) {
-            result.dependencies.push_back(std::move(dep));
+            result.dependencies.push_back(pool.intern(dep));
         }
     }
 

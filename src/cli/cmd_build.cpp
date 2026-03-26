@@ -181,7 +181,7 @@ auto is_tupfile(std::string_view path) -> bool
 /// reachable nodes (the transitive upstream closure).
 auto walk_upstream_from_scope(
     pup::graph::BuildGraph const& graph,
-    pup::Vec<pup::String> const& scopes
+    pup::Vec<pup::StringId> const& scopes
 ) -> Vec<pup::NodeId>
 {
     if (scopes.empty()) {
@@ -242,7 +242,7 @@ auto walk_upstream_from_scope(
 /// Collect all upstream input file paths for commands in the given scopes.
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
-    pup::Vec<pup::String> const& scopes
+    pup::Vec<pup::StringId> const& scopes
 ) -> Vec<String>
 {
     auto upstream = Vec<String> {};
@@ -266,7 +266,7 @@ auto collect_upstream_files(
 /// Collect commands in scope plus all transitive upstream producer commands.
 auto collect_scope_with_upstream_commands(
     pup::graph::BuildGraph const& graph,
-    pup::Vec<pup::String> const& scopes
+    pup::Vec<pup::StringId> const& scopes
 ) -> pup::NodeIdMap32
 {
     auto commands = pup::NodeIdMap32 {};
@@ -281,7 +281,7 @@ auto collect_scope_with_upstream_commands(
 auto find_changed_files_with_implicit(
     String const& source_root,
     pup::index::Index const& old_index,
-    pup::Vec<pup::String> const& scopes,
+    pup::Vec<pup::StringId> const& scopes,
     Vec<String> const& upstream_files,
     bool verbose = false
 ) -> pup::Vec<String>
@@ -874,27 +874,29 @@ auto build_index(
 /// Validate output targets exist in the build graph.
 /// Returns node IDs on success, or empty optional with error printed on failure.
 auto validate_output_targets(
-    pup::Vec<pup::String> const& targets,
+    pup::Vec<pup::StringId> const& targets,
     pup::graph::BuildGraph const& graph,
     std::string_view variant_name,
     bool verbose
 ) -> std::optional<pup::Vec<pup::NodeId>>
 {
+    auto& pool = pup::global_pool();
     auto node_ids = pup::Vec<pup::NodeId> {};
-    for (auto const& target : targets) {
-        auto node_id = graph.find_by_path(target, pup::BUILD_ROOT_ID);
+    for (auto target_id : targets) {
+        auto target_sv = pool.get(target_id);
+        auto node_id = graph.find_by_path(target_sv, pup::BUILD_ROOT_ID);
         if (!node_id) {
-            veprint(variant_name, "Error: %s is not in build graph\n", target.c_str());
+            veprint(variant_name, "Error: %.*s is not in build graph\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }
         auto const* node = graph.get_file_node(*node_id);
         if (!node || node->type != pup::NodeType::Generated) {
-            veprint(variant_name, "Error: %s is not a build output\n", target.c_str());
+            veprint(variant_name, "Error: %.*s is not a build output\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }
         node_ids.push_back(*node_id);
         if (verbose) {
-            vprint(variant_name, "Output target: %s\n", target.c_str());
+            vprint(variant_name, "Output target: %.*s\n", static_cast<int>(target_sv.size()), target_sv.data());
         }
     }
     return node_ids;
@@ -1032,7 +1034,7 @@ auto build_single_variant(
 
     auto layout = discover_layout(make_layout_options(opts));
     if (!layout) {
-        veprint(variant_name, "Error: %s\n", layout.error().message.c_str());
+        veprint(variant_name, "Error: %s\n", layout.error().msg().data());
         return EXIT_FAILURE;
     }
     auto scopes = compute_build_scopes(opts, *layout);
@@ -1043,7 +1045,7 @@ auto build_single_variant(
     // When -a is set, always parse all Tupfiles so that cross-directory
     // producers are discovered and ghost nodes get resolved.
     auto parse_scopes = (opts.targets.empty() || opts.include_all_deps)
-        ? pup::Vec<pup::String> {}
+        ? pup::Vec<pup::StringId> {}
         : scopes;
 
     auto ctx_opts = BuildContextOptions {
@@ -1058,7 +1060,7 @@ auto build_single_variant(
 
     auto result = build_context(opts, ctx_opts);
     if (!result) {
-        veprint(variant_name, "Error: %s\n", result.error().message.c_str());
+        veprint(variant_name, "Error: %s\n", result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -1080,6 +1082,9 @@ auto build_single_variant(
         return EXIT_FAILURE;
     }
     auto target_node_ids = std::move(*target_ids_result);
+
+    auto& pool = pup::global_pool();
+    auto source_root_str = String { pool.get(ctx.layout().source_root) };
 
     auto index_path = ctx.layout().index_path();
     auto const* old_idx_ptr = ctx.old_index();
@@ -1105,8 +1110,9 @@ auto build_single_variant(
                 vprint(variant_name, "Full project build\n");
             } else {
                 vprint(variant_name, "Scoped build:");
-                for (auto const& s : scopes) {
-                    printf(" %s", s.c_str());
+                for (auto scope_id : scopes) {
+                    auto scope_sv = pup::global_pool().get(scope_id);
+                    printf(" %.*s", static_cast<int>(scope_sv.size()), scope_sv.data());
                 }
                 if (opts.include_all_deps) {
                     printf(" (+%zu upstream deps)", upstream_files.size());
@@ -1117,7 +1123,7 @@ auto build_single_variant(
 
         auto change_detect_start = std::chrono::high_resolution_clock::now();
         changed_files = find_changed_files_with_implicit(
-            ctx.layout().source_root,
+            source_root_str,
             idx,
             scopes,
             upstream_files,
@@ -1135,12 +1141,13 @@ auto build_single_variant(
         // Output targets are source-relative (e.g., "hello"), but changed_files uses
         // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
         auto build_root_name = String { ctx.graph().get_build_root_name() };
-        for (auto const& output_path : opts.output_targets) {
+        for (auto output_id : opts.output_targets) {
+            auto output_sv = pup::global_pool().get(output_id);
             auto prefixed = String {};
             if (!build_root_name.empty()) {
-                prefixed = build_root_name + "/" + output_path;
+                prefixed = build_root_name + "/" + output_sv;
             } else {
-                prefixed = output_path;
+                prefixed = String { output_sv };
             }
             if (std::ranges::find(changed_files, prefixed) == changed_files.end()) {
                 changed_files.push_back(std::move(prefixed));
@@ -1159,7 +1166,7 @@ auto build_single_variant(
         remove_stale_outputs(
             ctx.graph(),
             idx,
-            ctx.layout().source_root,
+            source_root_str,
             variant_name,
             opts.dry_run,
             opts.verbose
@@ -1201,8 +1208,10 @@ auto build_single_variant(
     auto prev_lines = std::size_t { 0 };
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
+        auto& pool = pup::global_pool();
         if (opts.verbose || opts.dry_run) {
-            vprint(variant_name, "%s\n", job.display.c_str());
+            auto display_sv = pool.get(job.display);
+            vprint(variant_name, "%.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
         } else if (use_tty_progress) {
             auto lock = std::lock_guard { progress_mutex };
             auto target = job.outputs.empty() ? job.display : job.outputs.front();
@@ -1213,14 +1222,17 @@ auto build_single_variant(
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
+        auto& pool = pup::global_pool();
         if (!job_result.success) {
             if (use_tty_progress) {
                 auto lock = std::lock_guard { progress_mutex };
                 pup::exec::finalize_progress(prev_lines);
             }
-            veprint(variant_name, "FAILED: %s\n", job.display.c_str());
-            if (!job_result.output.empty()) {
-                fprintf(stderr, "%s\n", job_result.output.c_str());
+            auto display_sv = pool.get(job.display);
+            veprint(variant_name, "FAILED: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
+            if (!pup::is_empty(job_result.output)) {
+                auto output_sv = pool.get(job_result.output);
+                fprintf(stderr, "%.*s\n", static_cast<int>(output_sv.size()), output_sv.data());
             }
         }
 
@@ -1231,21 +1243,24 @@ auto build_single_variant(
                 : job.id;
             auto& deps = discovered_deps_get(discovered_deps, target_id);
 
-            for (auto const& dep_path : job_result.discovered_deps) {
-                auto to_resolve = pup::path::is_absolute(dep_path)
-                    ? String { dep_path }
-                    : pup::path::join(job.working_dir, dep_path);
+            auto source_root_sv = pool.get(ctx.layout().source_root);
+            for (auto dep_id : job_result.discovered_deps) {
+                auto dep_sv = pool.get(dep_id);
+                auto working_dir_sv = pool.get(job.working_dir);
+                auto to_resolve = pup::path::is_absolute(dep_sv)
+                    ? String { dep_sv }
+                    : pup::path::join(working_dir_sv, dep_sv);
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
                     if (opts.verbose) {
-                        fprintf(stderr, "Warning: Skipping dependency '%s': %s\n", dep_path.c_str(), resolved_result.error().message.c_str());
+                        fprintf(stderr, "Warning: Skipping dependency '%.*s': %s\n", static_cast<int>(dep_sv.size()), dep_sv.data(), resolved_result.error().msg().data());
                     }
                     continue;
                 }
                 auto& resolved = *resolved_result;
 
-                if (pup::is_path_under(resolved, ctx.layout().source_root)) {
-                    auto rel = pup::path::relative(resolved, ctx.layout().source_root);
+                if (pup::is_path_under(resolved, source_root_sv)) {
+                    auto rel = pup::path::relative(resolved, source_root_sv);
                     if (rel.starts_with("..")) {
                         if (opts.verbose) {
                             fprintf(stderr, "Warning: Cannot relativize '%s'\n", resolved.c_str());
@@ -1279,7 +1294,7 @@ auto build_single_variant(
 
     // Identify config-generating commands to exclude from regular build
     // (config rules should only run during 'pup configure')
-    auto config_cmds = find_config_commands(ctx.graph(), ctx.layout().source_root);
+    auto config_cmds = find_config_commands(ctx.graph(), pup::global_pool().get(ctx.layout().source_root));
     auto config_cmd_ids = NodeIdMap32 {};
     for (auto const& cfg : config_cmds) {
         config_cmd_ids.set(cfg.cmd_id, 1);
@@ -1297,9 +1312,15 @@ auto build_single_variant(
     );
 
     switch (mode) {
-    case BuildMode::Incremental:
-        build_result = scheduler.build_incremental(ctx.graph(), changed_files);
+    case BuildMode::Incremental: {
+        auto changed_ids = pup::Vec<pup::StringId> {};
+        changed_ids.reserve(changed_files.size());
+        for (auto const& f : changed_files) {
+            changed_ids.push_back(pup::global_pool().intern(f));
+        }
+        build_result = scheduler.build_incremental(ctx.graph(), changed_ids);
         break;
+    }
     case BuildMode::ScopeWithUpstream: {
         auto scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
         for (auto const& cfg : config_cmds) {
@@ -1335,7 +1356,7 @@ auto build_single_variant(
     }
 
     if (!build_result) {
-        veprint(variant_name, "Build failed: %s\n", build_result.error().message.c_str());
+        veprint(variant_name, "Build failed: %s\n", build_result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -1353,11 +1374,12 @@ auto build_single_variant(
         // Save index even after partial failures - successful outputs are recorded
         // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
         // and they'll be detected as changed on next build.
+        auto output_root_str = String { pup::global_pool().get(ctx.layout().output_root) };
         auto index = pup::index::Index { build_index(
             ctx.graph(),
             discovered_deps,
-            ctx.layout().source_root,
-            ctx.layout().output_root,
+            source_root_str,
+            output_root_str,
             old_idx_ptr
         ) };
 
@@ -1367,7 +1389,7 @@ auto build_single_variant(
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
-            veprint(variant_name, "Warning: Failed to save index: %s\n", write_result.error().message.c_str());
+            veprint(variant_name, "Warning: Failed to save index: %s\n", write_result.error().msg().data());
         } else if (opts.verbose) {
             vprint(variant_name, "Saved index: %zu files, %zu commands, %zu edges\n", index.file_count(), index.command_count(), index.edge_count());
         }

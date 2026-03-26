@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <cstddef>
@@ -21,13 +22,13 @@ struct OutputMode {
 struct RemoveResult {
     std::size_t removed_count = 0;
     std::size_t error_count = 0;
-    Vec<String> output_dirs = {};
+    Vec<StringId> output_dirs = {};
 };
 
 /// Remove empty directories from deepest to shallowest
 /// Returns count of directories removed
 auto remove_empty_directories(
-    Vec<String> const& dirs,
+    Vec<StringId> const& dirs,
     std::string_view build_dir,
     std::string_view source_dir,
     OutputMode mode

@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/commands.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
@@ -24,6 +26,7 @@ auto install_config_file(
     std::string_view variant_name
 ) -> int
 {
+    auto& pool = pup::global_pool();
     auto config_path = String { config_file };
     if (!pup::path::is_absolute(config_path)) {
         config_path = pup::path::join(*pup::platform::current_directory(), config_path);
@@ -34,7 +37,7 @@ auto install_config_file(
         return EXIT_FAILURE;
     }
 
-    auto dest = pup::path::join(layout.output_root, "tup.config");
+    auto dest = pup::path::join(pool.get(layout.output_root), "tup.config");
     (void)pup::platform::create_directories(pup::path::parent(dest));
     (void)pup::platform::copy_file(config_path, dest);
 
@@ -49,13 +52,15 @@ auto configure_single_variant(
 {
     auto layout = discover_layout(make_layout_options(opts));
     if (!layout) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().msg().data());
         return EXIT_FAILURE;
     }
 
+    auto& pool = pup::global_pool();
+
     // Step 1: Install root config if --config specified
-    if (!opts.config_file.empty()) {
-        auto rc = install_config_file(*layout, opts.config_file, variant_name);
+    if (!pup::is_empty(opts.config_file)) {
+        auto rc = install_config_file(*layout, pool.get(opts.config_file), variant_name);
         if (rc != EXIT_SUCCESS) {
             return rc;
         }
@@ -74,7 +79,7 @@ auto configure_single_variant(
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -82,7 +87,7 @@ auto configure_single_variant(
 
     // Helper to ensure tup.config exists for variant detection (only on success)
     auto ensure_config = [&]() {
-        auto config_path = pup::path::join(ctx.layout().output_root, "tup.config");
+        auto config_path = pup::path::join(pool.get(ctx.layout().output_root), "tup.config");
         if (!pup::platform::exists(config_path)) {
             (void)pup::platform::create_directories(pup::path::parent(config_path));
             (void)pup::platform::write_file(config_path, "");
@@ -90,7 +95,7 @@ auto configure_single_variant(
         }
     };
 
-    auto configs = find_config_commands(ctx.graph(), ctx.layout().source_root);
+    auto configs = find_config_commands(ctx.graph(), pool.get(ctx.layout().source_root));
     if (configs.empty()) {
         printf("[%.*s] No config-generating rules found.\n", static_cast<int>(variant_name.size()), variant_name.data());
         ensure_config();
@@ -108,7 +113,8 @@ auto configure_single_variant(
         config_commands.set(cfg.cmd_id, 1);
         if (opts.verbose) {
             auto display_sv = node ? pup::graph::get_display_str(ctx.graph().graph(), cfg.cmd_id) : std::string_view { "<unknown>" };
-            printf("[%.*s] Config rule: %.*s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data(), cfg.output_path.c_str());
+            auto output_path_sv = pool.get(cfg.output_path);
+            printf("[%.*s] Config rule: %.*s -> %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data(), static_cast<int>(output_path_sv.size()), output_path_sv.data());
         }
     }
 
@@ -139,15 +145,18 @@ auto configure_single_variant(
 
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
-            printf("[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
+            auto display_sv = pool.get(job.display);
+            printf("[%.*s] %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data());
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
-            fprintf(stderr, "[%.*s] FAILED: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job.display.c_str());
-            if (!job_result.output.empty()) {
-                fprintf(stderr, "[%.*s] %s\n", static_cast<int>(variant_name.size()), variant_name.data(), job_result.output.c_str());
+            auto display_sv = pool.get(job.display);
+            fprintf(stderr, "[%.*s] FAILED: %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data());
+            if (!pup::is_empty(job_result.output)) {
+                auto output_sv = pool.get(job_result.output);
+                fprintf(stderr, "[%.*s] %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(output_sv.size()), output_sv.data());
             }
         }
     });
@@ -166,7 +175,7 @@ auto configure_single_variant(
     }
 
     if (!build_result) {
-        fprintf(stderr, "[%.*s] Configure failed: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), build_result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Configure failed: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), build_result.error().msg().data());
         return EXIT_FAILURE;
     }
 

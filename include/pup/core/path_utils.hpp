@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <optional>
@@ -32,7 +33,7 @@ auto is_path_in_scope(
 [[nodiscard]]
 auto is_path_in_any_scope(
     std::string_view path,
-    Vec<String> const& scopes
+    Vec<StringId> const& scopes
 ) -> bool;
 
 [[nodiscard]]

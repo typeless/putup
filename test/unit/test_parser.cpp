@@ -2,9 +2,17 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/parser.hpp"
 
 using namespace pup::parser;
+using pup::StringId;
+using pup::global_pool;
+
+namespace {
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+} // namespace
 
 TEST_CASE("Parser empty file", "[parser]")
 {
@@ -101,7 +109,7 @@ TEST_CASE("Parser variable references in assignment", "[parser]")
     REQUIRE(std::holds_alternative<Expression::Variable>(assign->value.parts[0]));
     auto const& var = std::get<Expression::Variable>(assign->value.parts[0]);
     REQUIRE(var.ref.kind == VarRef::Kind::Regular);
-    REQUIRE(var.ref.name == "CFLAGS");
+    REQUIRE(sv(var.ref.name) == "CFLAGS");
 
     // Second part is literal
     REQUIRE(std::holds_alternative<Expression::Literal>(assign->value.parts[1]));
@@ -140,7 +148,7 @@ TEST_CASE("Parser export/import", "[parser]")
 
         REQUIRE(result.success());
         auto const* exp = result.tupfile.statements[0]->as<Export>();
-        REQUIRE(exp->var_name == "PATH");
+        REQUIRE(sv(exp->var_name) == "PATH");
     }
 
     SECTION("import without default")
@@ -149,7 +157,7 @@ TEST_CASE("Parser export/import", "[parser]")
 
         REQUIRE(result.success());
         auto const* imp = result.tupfile.statements[0]->as<Import>();
-        REQUIRE(imp->var_name == "CC");
+        REQUIRE(sv(imp->var_name) == "CC");
         REQUIRE_FALSE(imp->default_value.has_value());
     }
 
@@ -159,7 +167,7 @@ TEST_CASE("Parser export/import", "[parser]")
 
         REQUIRE(result.success());
         auto const* imp = result.tupfile.statements[0]->as<Import>();
-        REQUIRE(imp->var_name == "CC");
+        REQUIRE(sv(imp->var_name) == "CC");
         REQUIRE(imp->default_value.has_value());
         REQUIRE(imp->default_value->as_literal() == "gcc");
     }
@@ -177,7 +185,7 @@ TEST_CASE("Parser conditionals", "[parser]")
 
         auto const* cond = result.tupfile.statements[0]->as<Conditional>();
         REQUIRE(cond->kind == Conditional::Kind::Ifdef);
-        REQUIRE(cond->var_name == "DEBUG");
+        REQUIRE(sv(cond->var_name) == "DEBUG");
         REQUIRE(cond->then_body.size() == 1);
         REQUIRE(cond->else_body.empty());
     }
@@ -249,7 +257,7 @@ TEST_CASE("Parser rule with output group", "[parser]")
     REQUIRE(result.success());
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->output_group.has_value());
-    REQUIRE(*rule->output_group == "objs");
+    REQUIRE(sv(*rule->output_group) == "objs");
 }
 
 TEST_CASE("Parser rule with group input", "[parser]")
@@ -260,7 +268,7 @@ TEST_CASE("Parser rule with group input", "[parser]")
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->inputs.size() == 1);
     REQUIRE(rule->inputs[0].is_group);
-    REQUIRE(rule->inputs[0].group_name == "objs");
+    REQUIRE(sv(rule->inputs[0].group_name) == "objs");
 }
 
 TEST_CASE("Parser order-only group input", "[parser]")
@@ -272,7 +280,7 @@ TEST_CASE("Parser order-only group input", "[parser]")
     REQUIRE(rule->inputs.size() == 1);
     REQUIRE(rule->order_only_inputs.size() == 1);
     REQUIRE(rule->order_only_inputs[0].is_order_only_group);
-    REQUIRE(rule->order_only_inputs[0].group_name == "gen-headers");
+    REQUIRE(sv(rule->order_only_inputs[0].group_name) == "gen-headers");
 }
 
 TEST_CASE("Parser order-only output group", "[parser]")
@@ -283,7 +291,7 @@ TEST_CASE("Parser order-only output group", "[parser]")
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->outputs.size() == 1);
     REQUIRE(rule->output_order_only_group.has_value());
-    REQUIRE(*rule->output_order_only_group == "gen-headers");
+    REQUIRE(sv(*rule->output_order_only_group) == "gen-headers");
 }
 
 TEST_CASE("Parser rule with both group types", "[parser]")
@@ -293,9 +301,9 @@ TEST_CASE("Parser rule with both group types", "[parser]")
     REQUIRE(result.success());
     auto const* rule = result.tupfile.statements[0]->as<Rule>();
     REQUIRE(rule->output_group.has_value());
-    REQUIRE(*rule->output_group == "objs");
+    REQUIRE(sv(*rule->output_group) == "objs");
     REQUIRE(rule->output_order_only_group.has_value());
-    REQUIRE(*rule->output_order_only_group == "compiled");
+    REQUIRE(sv(*rule->output_order_only_group) == "compiled");
 }
 
 TEST_CASE("Parser bang macro", "[parser]")
@@ -307,7 +315,7 @@ TEST_CASE("Parser bang macro", "[parser]")
     REQUIRE(result.tupfile.statements[0]->is<BangMacro>());
 
     auto const* macro = result.tupfile.statements[0]->as<BangMacro>();
-    REQUIRE(macro->name == "cc");
+    REQUIRE(sv(macro->name) == "cc");
     REQUIRE(macro->outputs.size() == 1);
 }
 
@@ -358,7 +366,7 @@ endif
     auto const* outer_cond = result.tupfile.statements[2]->as<Conditional>();
     REQUIRE(outer_cond != nullptr);
     REQUIRE(outer_cond->kind == Conditional::Kind::Ifdef);
-    REQUIRE(outer_cond->var_name == "DEBUG");
+    REQUIRE(sv(outer_cond->var_name) == "DEBUG");
     // Then body should have: CFLAGS assignment, nested ifdef
     REQUIRE(outer_cond->then_body.size() == 2);
     REQUIRE(outer_cond->then_body[0]->is<Assignment>());
@@ -368,7 +376,7 @@ endif
     auto const* inner_cond = outer_cond->then_body[1]->as<Conditional>();
     REQUIRE(inner_cond != nullptr);
     REQUIRE(inner_cond->kind == Conditional::Kind::Ifdef);
-    REQUIRE(inner_cond->var_name == "VERBOSE");
+    REQUIRE(sv(inner_cond->var_name) == "VERBOSE");
     REQUIRE(inner_cond->then_body.size() == 1);
     REQUIRE(inner_cond->then_body[0]->is<Assignment>());
 }

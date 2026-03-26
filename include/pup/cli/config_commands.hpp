@@ -4,7 +4,7 @@
 #pragma once
 
 #include "pup/core/node_id_map.hpp"
-#include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
@@ -16,7 +16,7 @@ namespace pup::cli {
 /// (errors if outputs don't exist).
 struct ConfigCommand {
     NodeId cmd_id;
-    String output_path; ///< Project-root-relative path
+    StringId output_path = StringId::Empty; ///< Project-root-relative path
     bool exists;        ///< Whether output exists on disk (used by build, ignored by configure)
 };
 

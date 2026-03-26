@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <cstdint>
@@ -101,7 +102,7 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>;
 
 // Directory traversal
 struct DirEntry {
-    String name;
+    StringId name = StringId::Empty;
     bool is_dir = false;
 };
 [[nodiscard]]

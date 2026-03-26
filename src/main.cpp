@@ -3,6 +3,8 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/options.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,26 +13,29 @@ namespace pup::cli {
 
 auto dispatch(Options const& opts) -> int
 {
-    if (opts.command.empty()) {
+    auto const& pool = global_pool();
+    auto cmd = pool.get(opts.command);
+
+    if (cmd.empty()) {
         return cmd_build(opts);
     }
-    if (opts.command == "parse") {
+    if (cmd == "parse") {
         return cmd_parse(opts);
     }
-    if (opts.command == "show") {
+    if (cmd == "show") {
         return cmd_show(opts);
     }
-    if (opts.command == "clean") {
+    if (cmd == "clean") {
         return cmd_clean(opts);
     }
-    if (opts.command == "distclean") {
+    if (cmd == "distclean") {
         return cmd_distclean(opts);
     }
-    if (opts.command == "configure") {
+    if (cmd == "configure") {
         return cmd_configure(opts);
     }
 
-    fprintf(stderr, "Unknown command: %s\n", opts.command.c_str());
+    fprintf(stderr, "Unknown command: %s\n", cmd.data());
     print_usage();
     return EXIT_FAILURE;
 }

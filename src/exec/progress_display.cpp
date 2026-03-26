@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/progress_display.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
 
 #include <algorithm>
@@ -13,7 +15,6 @@ namespace {
 
 auto constexpr MAX_RUNNING_JOBS_DISPLAY = std::size_t { 8 };
 
-/// Truncate string from the left if longer than max_width, adding "..." prefix
 auto truncate_left(std::string_view str, std::size_t max_width) -> String
 {
     if (str.size() <= max_width) {
@@ -31,11 +32,11 @@ auto truncate_left(std::string_view str, std::size_t max_width) -> String
 
 } // anonymous namespace
 
-auto job_started(ProgressState state, NodeId id, String display) -> ProgressState
+auto job_started(ProgressState state, NodeId id, StringId display) -> ProgressState
 {
     state.running.push_back(RunningJob {
         .id = id,
-        .display = std::move(display),
+        .display = display,
         .start_time = std::chrono::steady_clock::now(),
     });
     return state;
@@ -61,6 +62,7 @@ auto job_completed(ProgressState state, NodeId id, bool success) -> ProgressStat
 
 auto render_tty(ProgressState const& state, std::string_view variant) -> ProgressOutput
 {
+    auto& pool = global_pool();
     auto result = ProgressOutput {};
     auto out = String {};
 
@@ -77,7 +79,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
 
     auto current_display = std::string_view {};
     if (!sorted.empty()) {
-        current_display = sorted.back().display;
+        current_display = pool.get(sorted.back().display);
     }
 
     auto prefix = String {};
@@ -109,12 +111,12 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
         out += "    ";
         out += format_duration(elapsed);
         out += ' ';
-        out += truncate_left(job.display, job_path_width);
+        out += truncate_left(pool.get(job.display), job_path_width);
         out += pup::ansi::clear_line;
         ++result.line_count;
     }
 
-    result.text = std::move(out);
+    result.text = pool.intern(out);
     return result;
 }
 
@@ -165,7 +167,7 @@ auto clear_lines(std::size_t count, std::FILE* out) -> void
 auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, std::FILE* out) -> void
 {
     clear_lines(prev_lines, out);
-    std::fputs(output.text.c_str(), out);
+    std::fputs(global_pool().get(output.text).data(), out);
     std::fflush(out);
     prev_lines = output.line_count;
 }

@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/runner.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
 #include <cctype>
@@ -51,7 +53,7 @@ auto CommandRunner::run_with_output(
     auto merged = RunOptions { merge_options(options) };
 
     auto platform_opts = pup::platform::ProcessOptions {};
-    platform_opts.command = pup::String { command };
+    platform_opts.command = pup::global_pool().intern(command);
     platform_opts.working_dir = merged.working_dir;
     platform_opts.env = merged.env;
     platform_opts.inherit_env = merged.inherit_env;
@@ -73,8 +75,8 @@ auto CommandRunner::run_with_output(
 
     auto result = CommandResult {};
     result.exit_code = platform_result->exit_code;
-    result.stdout_output = std::move(platform_result->stdout_output);
-    result.stderr_output = std::move(platform_result->stderr_output);
+    result.stdout_output = String { pup::global_pool().get(platform_result->stdout_output) };
+    result.stderr_output = String { pup::global_pool().get(platform_result->stderr_output) };
     result.duration = platform_result->duration;
     result.timed_out = platform_result->timed_out;
     result.signaled = platform_result->signaled;
@@ -87,7 +89,7 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
 {
     auto merged = RunOptions { options };
 
-    if (merged.working_dir.empty()) {
+    if (pup::is_empty(merged.working_dir)) {
         merged.working_dir = default_options_.working_dir;
     }
 

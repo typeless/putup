@@ -2,9 +2,17 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/glob.hpp"
 
 using namespace pup::parser;
+using pup::StringId;
+using pup::global_pool;
+
+namespace {
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+} // namespace
 
 TEST_CASE("Glob pattern matching", "[glob]")
 {
@@ -171,47 +179,47 @@ TEST_CASE("glob_match_extract", "[glob]")
 {
     SECTION("simple extension pattern")
     {
-        REQUIRE(glob_match_extract("*.c", "hello.c") == "hello");
-        REQUIRE(glob_match_extract("*.cpp", "foo.cpp") == "foo");
+        REQUIRE(sv(glob_match_extract("*.c", "hello.c")) == "hello");
+        REQUIRE(sv(glob_match_extract("*.cpp", "foo.cpp")) == "foo");
     }
 
     SECTION("suffix pattern")
     {
-        REQUIRE(glob_match_extract("*_test.c", "foo_test.c") == "foo");
-        REQUIRE(glob_match_extract("*_test.c", "bar_baz_test.c") == "bar_baz");
+        REQUIRE(sv(glob_match_extract("*_test.c", "foo_test.c")) == "foo");
+        REQUIRE(sv(glob_match_extract("*_test.c", "bar_baz_test.c")) == "bar_baz");
     }
 
     SECTION("prefix pattern")
     {
-        REQUIRE(glob_match_extract("test_*.c", "test_foo.c") == "foo");
-        REQUIRE(glob_match_extract("lib*.so", "libfoo.so") == "foo");
+        REQUIRE(sv(glob_match_extract("test_*.c", "test_foo.c")) == "foo");
+        REQUIRE(sv(glob_match_extract("lib*.so", "libfoo.so")) == "foo");
     }
 
     SECTION("prefix and suffix pattern")
     {
-        REQUIRE(glob_match_extract("test_*.out", "test_hello.out") == "hello");
+        REQUIRE(sv(glob_match_extract("test_*.out", "test_hello.out")) == "hello");
     }
 
     SECTION("path-based patterns")
     {
-        REQUIRE(glob_match_extract("src/*.c", "src/foo.c") == "foo");
-        REQUIRE(glob_match_extract("lib/*_test.c", "lib/bar_test.c") == "bar");
+        REQUIRE(sv(glob_match_extract("src/*.c", "src/foo.c")) == "foo");
+        REQUIRE(sv(glob_match_extract("lib/*_test.c", "lib/bar_test.c")) == "bar");
     }
 
     SECTION("no wildcard returns empty")
     {
-        REQUIRE(glob_match_extract("foo.c", "foo.c") == "");
-        REQUIRE(glob_match_extract("src/bar.c", "src/bar.c") == "");
+        REQUIRE(sv(glob_match_extract("foo.c", "foo.c")) == "");
+        REQUIRE(sv(glob_match_extract("src/bar.c", "src/bar.c")) == "");
     }
 
     SECTION("non-matching returns empty")
     {
-        REQUIRE(glob_match_extract("*.c", "foo.cpp") == "");
-        REQUIRE(glob_match_extract("test_*.c", "foo.c") == "");
+        REQUIRE(sv(glob_match_extract("*.c", "foo.cpp")) == "");
+        REQUIRE(sv(glob_match_extract("test_*.c", "foo.c")) == "");
     }
 
     SECTION("double star treated as single")
     {
-        REQUIRE(glob_match_extract("**.c", "foo.c") == "foo");
+        REQUIRE(sv(glob_match_extract("**.c", "foo.c")) == "foo");
     }
 }

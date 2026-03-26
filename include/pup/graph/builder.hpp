@@ -35,7 +35,7 @@ struct BuilderOptions {
     bool verbose = false;                                  ///< Print verbose output
     DepScannerRegistry const* scanner_registry = nullptr;  ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr; ///< Optional pattern registry for auto-generated rules
-    Vec<std::pair<String, String>> cached_env_vars = {};   ///< Cached env vars from previous build (sorted by key)
+    Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
 };
 
 /// Bang macro definition
@@ -113,8 +113,8 @@ struct BuilderContext {
     /// Env variable StringIds used during current command expansion (cleared per command)
     SortedIdVec used_env_vars = {};
 
-    Vec<String> errors = {};
-    Vec<String> warnings = {};
+    Vec<StringId> errors = {};
+    Vec<StringId> warnings = {};
 
     /// Pending weak (??=) assignments - applied before rules, last wins
     Vec<PendingWeakAssignment> pending_weak_assignments = {};
@@ -193,8 +193,8 @@ struct DeferredOrderOnlyEdge {
 /// Per-session state that persists across multiple Tupfiles
 struct BuilderState {
     BuilderOptions options;
-    Vec<String> errors;
-    Vec<String> warnings;
+    Vec<StringId> errors;
+    Vec<StringId> warnings;
 
     /// Group node lookup: interned "directory/name" StringId → NodeId
     SortedPairVec group_nodes;
@@ -286,11 +286,11 @@ public:
 
     /// Get build errors
     [[nodiscard]]
-    auto errors() const -> Vec<String> const&;
+    auto errors() const -> Vec<StringId> const&;
 
     /// Get build warnings
     [[nodiscard]]
-    auto warnings() const -> Vec<String> const&;
+    auto warnings() const -> Vec<StringId> const&;
 
     /// Resolve deferred order-only edges after all Tupfiles are parsed
     [[nodiscard]]

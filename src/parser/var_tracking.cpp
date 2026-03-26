@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/var_tracking.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <algorithm>
 
@@ -31,7 +33,7 @@ auto filter_by_name(AssignmentLog const& log, std::string_view name)
 {
     auto result = AssignmentLog {};
     for (auto const& assign : log) {
-        if (assign.name == name) {
+        if (global_pool().get(assign.name) == name) {
             result.push_back(assign);
         }
     }

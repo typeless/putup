@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
@@ -27,8 +28,8 @@ struct CommandResult {
 
 /// Options for running a command
 struct RunOptions {
-    String working_dir = {};
-    Vec<String> env = {};                             ///< Additional environment variables (KEY=VALUE for setenv)
+    StringId working_dir = StringId::Empty;
+    Vec<StringId> env = {};                           ///< Additional environment variables (KEY=VALUE for setenv)
     bool inherit_env = true;                          ///< Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;
@@ -65,15 +66,15 @@ public:
     ) -> Result<CommandResult>;
 
     /// Set the default working directory
-    auto set_working_dir(String dir) -> void
+    auto set_working_dir(StringId dir) -> void
     {
-        default_options_.working_dir = std::move(dir);
+        default_options_.working_dir = dir;
     }
 
     /// Add an environment variable to defaults
-    auto add_env(String var) -> void
+    auto add_env(StringId var) -> void
     {
-        default_options_.env.push_back(std::move(var));
+        default_options_.env.push_back(var);
     }
 
     /// Set default timeout

@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/options.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <charconv>
 #include <cstdio>
@@ -31,15 +33,16 @@ auto strip_config_prefix(std::string_view name) -> std::string_view
     return name;
 }
 
-auto parse_define(std::string_view arg) -> std::pair<String, String>
+auto parse_define(std::string_view arg) -> std::pair<StringId, StringId>
 {
+    auto& pool = global_pool();
     auto eq = arg.find('=');
     if (eq == std::string_view::npos) {
         auto name = strip_config_prefix(arg);
-        return { String { name }, "y" };
+        return { pool.intern(name), pool.intern("y") };
     }
     auto name = strip_config_prefix(arg.substr(0, eq));
-    return { String { name }, String { arg.substr(eq + 1) } };
+    return { pool.intern(name), pool.intern(arg.substr(eq + 1)) };
 }
 
 } // namespace
@@ -47,6 +50,7 @@ auto parse_define(std::string_view arg) -> std::pair<String, String>
 auto parse_args(int argc, char** argv) -> Options
 {
     auto opts = Options {};
+    auto& pool = global_pool();
 
     for (auto i = 1; i < argc; ++i) {
         auto arg = std::string_view { argv[i] };
@@ -85,19 +89,19 @@ auto parse_args(int argc, char** argv) -> Options
             opts.jobs = static_cast<std::size_t>(value);
         } else if (arg == "-S" || arg == "--source-dir") {
             if (i + 1 < argc) {
-                opts.source_dir = argv[++i];
+                opts.source_dir = pool.intern(argv[++i]);
             }
         } else if (arg == "-C" || arg == "--config-dir") {
             if (i + 1 < argc) {
-                opts.config_dir = argv[++i];
+                opts.config_dir = pool.intern(argv[++i]);
             }
         } else if (arg == "-B" || arg == "--build-dir") {
             if (i + 1 < argc) {
-                opts.build_dirs.emplace_back(argv[++i]);
+                opts.build_dirs.push_back(pool.intern(argv[++i]));
             }
         } else if (arg == "-c" || arg == "--config") {
             if (i + 1 < argc) {
-                opts.config_file = argv[++i];
+                opts.config_file = pool.intern(argv[++i]);
             }
         } else if (arg == "--summary") {
             opts.summary = true;
@@ -113,19 +117,19 @@ auto parse_args(int argc, char** argv) -> Options
             opts.config_defines.push_back(parse_define(arg.substr(2)));
         } else if (arg == "--") {
             for (++i; i < argc; ++i) {
-                opts.targets.emplace_back(argv[i]);
+                opts.targets.push_back(pool.intern(argv[i]));
             }
         } else if (arg == "--json") {
             opts.show_json = true;
         } else if (!arg.starts_with("-")) {
-            if (opts.command.empty() && is_command(arg)) {
-                opts.command = arg;
-            } else if (opts.command == "show" && opts.show_format.empty()) {
-                opts.show_format = arg;
-            } else if (opts.command == "show" && opts.show_format == "var" && opts.show_var_filter.empty()) {
-                opts.show_var_filter = arg;
+            if (is_empty(opts.command) && is_command(arg)) {
+                opts.command = pool.intern(arg);
+            } else if (pool.get(opts.command) == "show" && is_empty(opts.show_format)) {
+                opts.show_format = pool.intern(arg);
+            } else if (pool.get(opts.command) == "show" && pool.get(opts.show_format) == "var" && is_empty(opts.show_var_filter)) {
+                opts.show_var_filter = pool.intern(arg);
             } else {
-                opts.targets.emplace_back(arg);
+                opts.targets.push_back(pool.intern(arg));
             }
         }
     }

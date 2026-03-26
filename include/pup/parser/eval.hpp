@@ -8,6 +8,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 
@@ -120,13 +121,13 @@ struct EvalContext {
     VarDb const* config_vars = nullptr; ///< Config variables @(VAR) from tup.config (read-only)
     VarDb* node_vars = nullptr;         ///< Node variables &(VAR)
 
-    String tup_cwd = {};               ///< Current directory (TUP_CWD)
-    String tup_platform = {};          ///< Platform name (TUP_PLATFORM)
-    String tup_arch = {};              ///< Architecture (TUP_ARCH)
-    String tup_variantdir = {};        ///< Relative path to variant output (TUP_VARIANTDIR)
-    String tup_variant_outputdir = {}; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
-    String tup_srcdir = {};            ///< Relative path to source dir (TUP_SRCDIR)
-    String tup_outdir = {};            ///< Relative path to output dir (TUP_OUTDIR)
+    StringId tup_cwd = StringId::Empty;               ///< Current directory (TUP_CWD)
+    StringId tup_platform = StringId::Empty;          ///< Platform name (TUP_PLATFORM)
+    StringId tup_arch = StringId::Empty;              ///< Architecture (TUP_ARCH)
+    StringId tup_variantdir = StringId::Empty;        ///< Relative path to variant output (TUP_VARIANTDIR)
+    StringId tup_variant_outputdir = StringId::Empty; ///< Stable variant root path (TUP_VARIANT_OUTPUTDIR)
+    StringId tup_srcdir = StringId::Empty;            ///< Relative path to source dir (TUP_SRCDIR)
+    StringId tup_outdir = StringId::Empty;            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
     std::function<Vec<String>(std::string_view)> resolve_group = {};
@@ -141,7 +142,7 @@ struct EvalContext {
 
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
-    Vec<String> const* available_tupfile_dirs = nullptr;
+    Vec<StringId> const* available_tupfile_dirs = nullptr;
 
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
@@ -184,17 +185,17 @@ struct EvalContext {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    String input = {};            ///< %f - input filename
-    String input_base = {};       ///< %b - input basename (no path)
-    String input_noext = {};      ///< %B - input basename without extension
-    String input_ext = {};        ///< %e - input extension
-    String output = {};           ///< %o - output filename
-    String output_base = {};      ///< %O - output basename (no path)
-    String input_dir = {};        ///< %d - input directory
-    String glob_match = {};       ///< %g - portion matched by * in foreach glob
-    int input_index = 0;          ///< For %Nf patterns (1-indexed)
-    Vec<String> all_inputs = {};  ///< All inputs for %Nf expansion
-    Vec<String> all_outputs = {}; ///< All outputs for %No expansion
+    std::string_view input = {};            ///< %f - input filename
+    std::string_view input_base = {};       ///< %b - input basename (no path)
+    std::string_view input_noext = {};      ///< %B - input basename without extension
+    std::string_view input_ext = {};        ///< %e - input extension
+    std::string_view output = {};           ///< %o - output filename
+    std::string_view output_base = {};      ///< %O - output basename (no path)
+    std::string_view input_dir = {};        ///< %d - input directory
+    std::string_view glob_match = {};       ///< %g - portion matched by * in foreach glob
+    int input_index = 0;                    ///< For %Nf patterns (1-indexed)
+    Vec<std::string_view> all_inputs = {};  ///< All inputs for %Nf expansion
+    Vec<std::string_view> all_outputs = {}; ///< All outputs for %No expansion
 };
 
 /// Expand an expression, replacing variable references with values

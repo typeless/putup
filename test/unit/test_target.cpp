@@ -3,6 +3,8 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/cli/target.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -10,6 +12,8 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+auto sv(pup::StringId sid) -> std::string_view { return pup::global_pool().get(sid); }
 
 /// RAII helper to create a temporary directory tree for testing
 class TempDir {
@@ -65,8 +69,8 @@ SCENARIO("Target parsing - variant detection", "[e2e][target]")
             {
                 REQUIRE(result.has_value());
                 REQUIRE(result->variant.has_value());
-                REQUIRE(*result->variant == "build-debug");
-                REQUIRE(result->scope_or_output.empty());
+                REQUIRE(sv(*result->variant) == "build-debug");
+                REQUIRE(pup::is_empty(result->scope_or_output));
                 REQUIRE_FALSE(result->is_output);
             }
         }
@@ -80,8 +84,8 @@ SCENARIO("Target parsing - variant detection", "[e2e][target]")
             {
                 REQUIRE(result.has_value());
                 REQUIRE(result->variant.has_value());
-                REQUIRE(*result->variant == "build-debug");
-                REQUIRE(result->scope_or_output == "src/lib");
+                REQUIRE(sv(*result->variant) == "build-debug");
+                REQUIRE(sv(result->scope_or_output) == "src/lib");
                 REQUIRE_FALSE(result->is_output);
             }
         }
@@ -95,8 +99,8 @@ SCENARIO("Target parsing - variant detection", "[e2e][target]")
             {
                 REQUIRE(result.has_value());
                 REQUIRE(result->variant.has_value());
-                REQUIRE(*result->variant == "build-debug");
-                REQUIRE(result->scope_or_output == "src/lib/foo.o");
+                REQUIRE(sv(*result->variant) == "build-debug");
+                REQUIRE(sv(result->scope_or_output) == "src/lib/foo.o");
                 REQUIRE(result->is_output);
             }
         }
@@ -109,7 +113,7 @@ SCENARIO("Target parsing - variant detection", "[e2e][target]")
             {
                 REQUIRE(result.has_value());
                 REQUIRE_FALSE(result->variant.has_value());
-                REQUIRE(result->scope_or_output == "src/lib");
+                REQUIRE(sv(result->scope_or_output) == "src/lib");
                 REQUIRE_FALSE(result->is_output);
             }
         }
@@ -123,7 +127,7 @@ SCENARIO("Target parsing - variant detection", "[e2e][target]")
             {
                 REQUIRE(result.has_value());
                 REQUIRE_FALSE(result->variant.has_value());
-                REQUIRE(result->scope_or_output == "src/lib/foo.o");
+                REQUIRE(sv(result->scope_or_output) == "src/lib/foo.o");
                 REQUIRE(result->is_output);
             }
         }
@@ -150,7 +154,7 @@ SCENARIO("Target parsing - glob expansion", "[e2e][target]")
                 auto variants = std::set<std::string> {};
                 for (auto const& t : result) {
                     REQUIRE(t.variant.has_value());
-                    variants.insert(std::string(*t.variant));
+                    variants.insert(std::string(sv(*t.variant)));
                 }
                 REQUIRE(variants.count("build-debug") == 1);
                 REQUIRE(variants.count("build-release") == 1);
@@ -168,7 +172,7 @@ SCENARIO("Target parsing - glob expansion", "[e2e][target]")
                 REQUIRE(result.size() == 2);
                 for (auto const& t : result) {
                     REQUIRE(t.variant.has_value());
-                    REQUIRE(t.scope_or_output == "src/lib");
+                    REQUIRE(sv(t.scope_or_output) == "src/lib");
                     REQUIRE_FALSE(t.is_output);
                 }
             }
@@ -185,7 +189,7 @@ SCENARIO("Target parsing - glob expansion", "[e2e][target]")
                 REQUIRE(result.size() == 2);
                 for (auto const& t : result) {
                     REQUIRE(t.variant.has_value());
-                    REQUIRE(t.scope_or_output == "src/lib/foo.o");
+                    REQUIRE(sv(t.scope_or_output) == "src/lib/foo.o");
                     REQUIRE(t.is_output);
                 }
             }
@@ -208,7 +212,7 @@ SCENARIO("Target parsing - error cases", "[e2e][target]")
             THEN("returns error: source file not build output")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().message.find("source") != std::string::npos);
+                REQUIRE(result.error().msg().find("source") != std::string::npos);
             }
         }
     }
@@ -225,7 +229,7 @@ SCENARIO("Target parsing - error cases", "[e2e][target]")
             THEN("returns error: path not found")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().message.find("not found") != std::string::npos);
+                REQUIRE(result.error().msg().find("not found") != std::string::npos);
             }
         }
     }
@@ -263,25 +267,26 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
         {
             tmp.create_dir("build-debug/src");
             tmp.create_dir("src/test");
-            auto targets = pup::Vec<pup::String> { "build-debug/src", "src/test" };
+            auto& pool = pup::global_pool();
+            auto targets = pup::Vec<pup::StringId> { pool.intern("build-debug/src"), pool.intern("src/test") };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().message.find("mix") != std::string::npos);
+                REQUIRE(result.error().msg().find("mix") != std::string::npos);
             }
         }
 
         WHEN("parsing ['build-debug', 'src']")
         {
-            auto targets = pup::Vec<pup::String> { "build-debug", "src" };
+            auto targets = pup::Vec<pup::StringId> { pup::global_pool().intern("build-debug"), pup::global_pool().intern("src") };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("returns error: cannot mix variant-specific and all-variant targets")
             {
                 REQUIRE_FALSE(result.has_value());
-                REQUIRE(result.error().message.find("mix") != std::string::npos);
+                REQUIRE(result.error().msg().find("mix") != std::string::npos);
             }
         }
 
@@ -289,7 +294,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
         {
             tmp.create_dir("build-debug/src");
             tmp.create_dir("build-release/test");
-            auto targets = pup::Vec<pup::String> { "build-debug/src", "build-release/test" };
+            auto targets = pup::Vec<pup::StringId> { pup::global_pool().intern("build-debug/src"), pup::global_pool().intern("build-release/test") };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: both have explicit variants")
@@ -300,7 +305,7 @@ SCENARIO("Target parsing - consistency rule", "[e2e][target]")
 
         WHEN("parsing ['src', 'test']")
         {
-            auto targets = pup::Vec<pup::String> { "src", "test" };
+            auto targets = pup::Vec<pup::StringId> { pup::global_pool().intern("src"), pup::global_pool().intern("test") };
             auto result = pup::validate_target_consistency(tmp.path().string(), targets);
 
             THEN("succeeds: neither has explicit variant")

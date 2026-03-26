@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include "pup/core/global_pool.hpp"
 #include "pup/core/source_location.hpp"
-#include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 
 #include <memory>
@@ -39,13 +41,13 @@ struct VarRef final : AstNode {
                       Node };
 
     Kind kind = Kind::Regular;
-    String name;
+    StringId name = StringId::Empty;
 
     VarRef() = default;
-    VarRef(Kind k, String n, SourceLocation loc)
+    VarRef(Kind k, StringId n, SourceLocation loc)
         : AstNode(loc)
         , kind(k)
-        , name(std::move(n))
+        , name(n)
     {
     }
 };
@@ -53,7 +55,7 @@ struct VarRef final : AstNode {
 /// Expression that may contain literal text and variable references
 struct Expression final : AstNode {
     struct Literal {
-        String value;
+        StringId value = StringId::Empty;
     };
     struct Variable {
         VarRef ref;
@@ -71,7 +73,7 @@ struct Expression final : AstNode {
     auto as_literal() const -> std::string_view
     {
         if (is_literal()) {
-            return std::get<Literal>(parts[0]).value;
+            return global_pool().get(std::get<Literal>(parts[0]).value);
         }
         return {};
     }
@@ -91,7 +93,7 @@ struct PathPattern final : AstNode {
     bool is_output_exclusion = false; ///< Starts with ^ for output exclusion (regex pattern)
     bool is_group = false;            ///< References a bin {binname} (tup calls these "bins")
     bool is_order_only_group = false; ///< References an order-only group <groupname>
-    String group_name;                ///< Group or bin name
+    StringId group_name = StringId::Empty; ///< Group or bin name
 };
 
 /// Build rule: : [foreach] inputs [| order-only] |> command |> outputs [{group}] [<group>]
@@ -103,22 +105,22 @@ struct Rule final : AstNode {
     std::optional<Expression> display; ///< Display text between ^ ^ in command
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<String> output_group;                    ///< {binname} at end
-    std::optional<String> output_order_only_group;         ///< <groupname> at end
+    std::optional<StringId> output_group;                    ///< {binname} at end
+    std::optional<StringId> output_order_only_group;         ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
 /// Bang-macro definition: !name = |> command |> outputs
 struct BangMacro final : AstNode {
-    String name;
+    StringId name = StringId::Empty;
     bool foreach_ = false;
     Vec<PathPattern> order_only_inputs;
     Expression command;
     std::optional<Expression> display;
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<String> output_group;                    ///< {binname} at end
-    std::optional<String> output_order_only_group;         ///< <groupname> at end
+    std::optional<StringId> output_group;                    ///< {binname} at end
+    std::optional<StringId> output_order_only_group;         ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
@@ -149,7 +151,7 @@ struct Conditional final : AstNode {
                       Ifneq };
 
     Kind kind = Kind::Ifdef;
-    String var_name; ///< For ifdef/ifndef
+    StringId var_name = StringId::Empty; ///< For ifdef/ifndef
     Expression lhs;  ///< For ifeq/ifneq
     Expression rhs;  ///< For ifeq/ifneq
     Vec<std::unique_ptr<Statement>> then_body;
@@ -171,12 +173,12 @@ struct Include final : AstNode {
 
 /// Export directive: export VAR
 struct Export final : AstNode {
-    String var_name;
+    StringId var_name = StringId::Empty;
 };
 
 /// Import directive: import VAR[=default]
 struct Import final : AstNode {
-    String var_name;
+    StringId var_name = StringId::Empty;
     std::optional<Expression> default_value;
 };
 
@@ -209,9 +211,9 @@ struct Statement final : AstNode {
 
 /// A complete Tupfile AST
 struct Tupfile final : AstNode {
-    String filename;
+    StringId filename = StringId::Empty;
     Vec<std::unique_ptr<Statement>> statements;
-    Vec<String> included_files;
+    Vec<StringId> included_files;
 };
 
 } // namespace pup::parser

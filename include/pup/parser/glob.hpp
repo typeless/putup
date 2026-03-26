@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <string_view>
@@ -19,8 +20,8 @@ struct GlobOptions {
 
 /// Result of glob expansion
 struct GlobResult {
-    Vec<String> matches;
-    Vec<String> exclusions; ///< Files explicitly excluded with !
+    Vec<StringId> matches;
+    Vec<StringId> exclusions; ///< Files explicitly excluded with !
 };
 
 /// Glob pattern matcher
@@ -41,10 +42,7 @@ public:
 
     /// Get the literal value if no wildcards
     [[nodiscard]]
-    auto literal() const -> std::string_view
-    {
-        return pattern_;
-    }
+    auto literal() const -> std::string_view;
 
     /// Check if pattern has ** (recursive)
     [[nodiscard]]
@@ -55,13 +53,10 @@ public:
 
     /// Get the pattern string
     [[nodiscard]]
-    auto pattern() const -> std::string_view
-    {
-        return pattern_;
-    }
+    auto pattern() const -> std::string_view;
 
 private:
-    String pattern_;
+    StringId pattern_id_ = StringId::Empty;
     bool has_wildcards_ = false;
     bool has_double_star_ = false;
 
@@ -77,12 +72,12 @@ auto glob_expand(
     std::string_view pattern,
     std::string_view base_dir,
     GlobOptions const& options = {}
-) -> Result<Vec<String>>;
+) -> Result<Vec<StringId>>;
 
 /// Expand multiple patterns, handling exclusions (patterns starting with !)
 [[nodiscard]]
 auto glob_expand_all(
-    Vec<String> const& patterns,
+    Vec<StringId> const& patterns,
     std::string_view base_dir,
     GlobOptions const& options = {}
 ) -> Result<GlobResult>;
@@ -120,6 +115,6 @@ auto path_directory(std::string_view path) -> std::string_view;
 /// Example: pattern="*.c", filename="hello.c" -> "hello"
 /// For path patterns, matches against basename only.
 [[nodiscard]]
-auto glob_match_extract(std::string_view pattern, std::string_view filename) -> String;
+auto glob_match_extract(std::string_view pattern, std::string_view filename) -> StringId;
 
 } // namespace pup::parser

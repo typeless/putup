@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/config_commands.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 namespace pup::cli {
@@ -39,7 +41,7 @@ auto find_config_commands(
                 auto full_path = pup::path::join(source_root, path);
                 result.push_back({
                     .cmd_id = id,
-                    .output_path = path,
+                    .output_path = global_pool().intern(path),
                     .exists = pup::platform::exists(full_path),
                 });
             }

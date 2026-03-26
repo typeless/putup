@@ -26,7 +26,7 @@ namespace {
 auto make_path_pattern(std::string_view path) -> PathPattern
 {
     auto pattern = PathPattern {};
-    pattern.path.parts.push_back(Expression::Literal { String { path } });
+    pattern.path.parts.push_back(Expression::Literal { intern(path) });
     return pattern;
 }
 
@@ -35,7 +35,7 @@ auto make_group_pattern(std::string_view name) -> PathPattern
 {
     auto pattern = PathPattern {};
     pattern.is_group = true;
-    pattern.group_name = String { name };
+    pattern.group_name = intern(name);
     return pattern;
 }
 
@@ -44,9 +44,9 @@ auto make_order_only_group_pattern(std::string_view name, std::string_view path 
 {
     auto pattern = PathPattern {};
     pattern.is_order_only_group = true;
-    pattern.group_name = String { name };
+    pattern.group_name = intern(name);
     if (!path.empty()) {
-        pattern.path.parts.push_back(Expression::Literal { String { path } });
+        pattern.path.parts.push_back(Expression::Literal { intern(path) });
     }
     return pattern;
 }
@@ -56,10 +56,10 @@ auto make_order_only_group_var_pattern(std::string_view name, std::string_view v
 {
     auto pattern = PathPattern {};
     pattern.is_order_only_group = true;
-    pattern.group_name = String { name };
-    pattern.path.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, String { var_name }, {} } });
+    pattern.group_name = intern(name);
+    pattern.path.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern(var_name), {} } });
     if (!suffix.empty()) {
-        pattern.path.parts.push_back(Expression::Literal { String { suffix } });
+        pattern.path.parts.push_back(Expression::Literal { intern(suffix) });
     }
     return pattern;
 }
@@ -149,15 +149,15 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
 
     // First Tupfile: modules/kernel defines <local-group>
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { fixture.tupfile_path("modules/kernel") };
+    tupfile1.filename = intern(fixture.tupfile_path("modules/kernel"));
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "gen-header" });
+    rule1.command.parts.push_back(Expression::Literal { intern("gen-header") });
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "generated.h" });
+    out1.path.parts.push_back(Expression::Literal { intern("generated.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = "local-group";
+    rule1.output_order_only_group = intern("local-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
@@ -166,17 +166,17 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     // Second Tupfile: also in modules/kernel, references <local-group> (empty path)
     // GroupKey should be {"modules/kernel", "local-group"}
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
+    tupfile2.filename = intern(fixture.tupfile_path("modules/kernel"));
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "compile" });
+    rule2.command.parts.push_back(Expression::Literal { intern("compile") });
 
     // Empty path - this is the critical case
     auto input = make_order_only_group_pattern("local-group");
     rule2.order_only_inputs.push_back(input);
 
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "output.o" });
+    out2.path.parts.push_back(Expression::Literal { intern("output.o") });
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -207,15 +207,15 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
 
     // First Tupfile: include/generated defines <gen-headers>
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
+    tupfile1.filename = intern(fixture.tupfile_path("include/generated"));
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "gen-config" });
+    rule1.command.parts.push_back(Expression::Literal { intern("gen-config") });
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "config.h" });
+    out1.path.parts.push_back(Expression::Literal { intern("config.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = "gen-headers";
+    rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
@@ -224,18 +224,18 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     // Second Tupfile: modules/kernel references $(ROOT)/include/generated/<gen-headers>
     // This should normalize to {"include/generated", "gen-headers"}
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
+    tupfile2.filename = intern(fixture.tupfile_path("modules/kernel"));
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "compile" });
+    rule2.command.parts.push_back(Expression::Literal { intern("compile") });
 
     // Non-empty path with variable expansion
     auto input = make_order_only_group_var_pattern("gen-headers", "ROOT", "/include/generated/");
     rule2.order_only_inputs.push_back(input);
 
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "output.o" });
+    out2.path.parts.push_back(Expression::Literal { intern("output.o") });
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -266,15 +266,15 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
 
     // First: define group in include/generated
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
+    tupfile1.filename = intern(fixture.tupfile_path("include/generated"));
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "gen-version" });
+    rule1.command.parts.push_back(Expression::Literal { intern("gen-version") });
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "version.h" });
+    out1.path.parts.push_back(Expression::Literal { intern("version.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = "gen-headers";
+    rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
@@ -283,11 +283,11 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     // Second: reference with relative path ../../include/generated/<gen-headers>
     // from modules/kernel
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
+    tupfile2.filename = intern(fixture.tupfile_path("modules/kernel"));
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "compile" });
+    rule2.command.parts.push_back(Expression::Literal { intern("compile") });
 
     // This is a literal path pattern - the <gen-headers> is NOT parsed as is_order_only_group
     // It gets expanded and then matched by the rfind('<') logic
@@ -295,7 +295,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     rule2.order_only_inputs.push_back(input);
 
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "output.o" });
+    out2.path.parts.push_back(Expression::Literal { intern("output.o") });
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -330,35 +330,35 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
 
     // Tupfile that compiles *.c -> {objs}, then links {objs} -> app
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     // Rule 1: compile a.c -> a.o into {objs}
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "cc -c a.c -o a.o" });
+    rule1.command.parts.push_back(Expression::Literal { intern("cc -c a.c -o a.o") });
     rule1.inputs.push_back(make_path_pattern("a.c"));
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "a.o" });
+    out1.path.parts.push_back(Expression::Literal { intern("a.o") });
     rule1.outputs.push_back(out1);
-    rule1.output_group = "objs";
+    rule1.output_group = intern("objs");
     tupfile.statements.push_back(make_rule_statement(std::move(rule1)));
 
     // Rule 2: compile b.c -> b.o into {objs}
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "cc -c b.c -o b.o" });
+    rule2.command.parts.push_back(Expression::Literal { intern("cc -c b.c -o b.o") });
     rule2.inputs.push_back(make_path_pattern("b.c"));
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "b.o" });
+    out2.path.parts.push_back(Expression::Literal { intern("b.o") });
     rule2.outputs.push_back(out2);
-    rule2.output_group = "objs";
+    rule2.output_group = intern("objs");
     tupfile.statements.push_back(make_rule_statement(std::move(rule2)));
 
     // Rule 3: link {objs} -> app
     auto rule3 = Rule {};
-    rule3.command.parts.push_back(Expression::Literal { "cc -o app" });
+    rule3.command.parts.push_back(Expression::Literal { intern("cc -o app") });
     rule3.inputs.push_back(make_group_pattern("objs"));
     auto out3 = PathPattern {};
-    out3.path.parts.push_back(Expression::Literal { "app" });
+    out3.path.parts.push_back(Expression::Literal { intern("app") });
     rule3.outputs.push_back(out3);
     tupfile.statements.push_back(make_rule_statement(std::move(rule3)));
 
@@ -414,15 +414,15 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
     rule.foreach_ = true;
-    rule.command.parts.push_back(Expression::Literal { "cc -c" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c") });
     rule.inputs.push_back(make_path_pattern("*.c"));
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "%B.o" });
+    output.path.parts.push_back(Expression::Literal { intern("%B.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -454,20 +454,20 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
 
     // First Tupfile: generate some .h files
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
+    tupfile1.filename = intern(fixture.tupfile_path("include/generated"));
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "gen-config" });
+    rule1.command.parts.push_back(Expression::Literal { intern("gen-config") });
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "config.h" });
+    out1.path.parts.push_back(Expression::Literal { intern("config.h") });
     rule1.outputs.push_back(out1);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "gen-version" });
+    rule2.command.parts.push_back(Expression::Literal { intern("gen-version") });
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "version.h" });
+    out2.path.parts.push_back(Expression::Literal { intern("version.h") });
     rule2.outputs.push_back(out2);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -504,14 +504,14 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
-    rule.command.parts.push_back(Expression::Literal { "cat tup.config" });
+    rule.command.parts.push_back(Expression::Literal { intern("cat tup.config") });
     rule.inputs.push_back(make_path_pattern("../tup.config"));
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "config.txt" });
+    output.path.parts.push_back(Expression::Literal { intern("config.txt") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -546,12 +546,12 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
     rule.foreach_ = true;
-    rule.command.parts.push_back(Expression::Literal { "cc -c" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c") });
     rule.inputs.push_back(make_path_pattern("*.c"));
 
     // Exclusion pattern - explicit filename
@@ -560,7 +560,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "%B.o" });
+    output.path.parts.push_back(Expression::Literal { intern("%B.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -611,12 +611,12 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
     rule.foreach_ = true;
-    rule.command.parts.push_back(Expression::Literal { "cc -c" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c") });
     rule.inputs.push_back(make_path_pattern("*.c"));
 
     // Exclusion pattern - glob to exclude test files
@@ -625,7 +625,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "%B.o" });
+    output.path.parts.push_back(Expression::Literal { intern("%B.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -676,12 +676,12 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
     rule.foreach_ = true;
-    rule.command.parts.push_back(Expression::Literal { "cc -c %f -o %o" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c %f -o %o") });
 
     // Input pattern: *.c
     auto input = make_path_pattern("*.c");
@@ -693,7 +693,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     rule.inputs.push_back(excl);
 
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "%B.o" });
+    output.path.parts.push_back(Expression::Literal { intern("%B.o") });
     rule.outputs.push_back(output);
 
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
@@ -746,15 +746,15 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 
     // Tupfile in include/generated: defines <gen-headers>
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { fixture.tupfile_path("include/generated") };
+    tupfile1.filename = intern(fixture.tupfile_path("include/generated"));
     fixture.create_file("include/generated/Tupfile");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "gen-config" });
+    rule1.command.parts.push_back(Expression::Literal { intern("gen-config") });
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "config.h" });
+    out1.path.parts.push_back(Expression::Literal { intern("config.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = "gen-headers";
+    rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
@@ -762,12 +762,12 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 
     // Tupfile in modules/kernel: references ../../include/generated/<gen-headers>
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
+    tupfile2.filename = intern(fixture.tupfile_path("modules/kernel"));
     fixture.create_file("modules/kernel/Tupfile");
     fixture.create_file("modules/kernel/kernel.c");
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "compile kernel.c" });
+    rule2.command.parts.push_back(Expression::Literal { intern("compile kernel.c") });
     rule2.inputs.push_back(make_path_pattern("kernel.c"));
 
     // Order-only reference with relative path
@@ -776,7 +776,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     rule2.order_only_inputs.push_back(order_input);
 
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "kernel.o" });
+    out2.path.parts.push_back(Expression::Literal { intern("kernel.o") });
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -834,15 +834,15 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
 
     // Case 1: Group defined at root level (directory ".")
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { fixture.tupfile_path("") };
+    tupfile1.filename = intern(fixture.tupfile_path(""));
     fixture.create_file("Tupfile");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "gen-root" });
+    rule1.command.parts.push_back(Expression::Literal { intern("gen-root") });
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "root.h" });
+    out1.path.parts.push_back(Expression::Literal { intern("root.h") });
     rule1.outputs.push_back(out1);
-    rule1.output_order_only_group = "root-group";
+    rule1.output_order_only_group = intern("root-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
     auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
@@ -852,18 +852,18 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     // The expanded path will be "<root-group>" (no dir prefix)
     // This should look up {".", "root-group"} NOT {"modules/kernel", "root-group"}
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = String { fixture.tupfile_path("modules/kernel") };
+    tupfile2.filename = intern(fixture.tupfile_path("modules/kernel"));
     fixture.create_file("modules/kernel/Tupfile");
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "compile" });
+    rule2.command.parts.push_back(Expression::Literal { intern("compile") });
 
     // Use path pattern that after expansion is just "<root-group>"
     auto input = make_path_pattern("<root-group>");
     rule2.order_only_inputs.push_back(input);
 
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "output.o" });
+    out2.path.parts.push_back(Expression::Literal { intern("output.o") });
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -916,14 +916,14 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
-    rule.command.parts.push_back(Expression::Literal { "cc -c main.c -o main.o" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c main.c -o main.o") });
     rule.inputs.push_back(make_path_pattern("main.c"));
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "main.o" });
+    output.path.parts.push_back(Expression::Literal { intern("main.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -967,16 +967,16 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
 
     // Tupfile in deeply nested directory
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("modules/app/sub/deep") };
+    tupfile.filename = intern(fixture.tupfile_path("modules/app/sub/deep"));
     fixture.create_file("modules/app/sub/deep/Tupfile");
 
     auto rule = Rule {};
-    rule.command.parts.push_back(Expression::Literal { "cc -c impl.c" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c impl.c") });
     rule.inputs.push_back(make_path_pattern("impl.c"));
     // Reference header with multiple parent refs
     rule.inputs.push_back(make_path_pattern("../../../../include/common.h"));
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "impl.o" });
+    output.path.parts.push_back(Expression::Literal { intern("impl.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1018,14 +1018,14 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
 
     auto rule = Rule {};
-    rule.command.parts.push_back(Expression::Literal { "cc -c util/helpers.c" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c util/helpers.c") });
     rule.inputs.push_back(make_path_pattern("util/helpers.c"));
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "helpers.o" });
+    output.path.parts.push_back(Expression::Literal { intern("helpers.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1090,15 +1090,15 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
     fixture.create_file("src/Tupfile");
     fixture.create_file("src/main.c");
 
     auto rule = Rule {};
-    rule.command.parts.push_back(Expression::Literal { "cc -c main.c -o main.o" });
+    rule.command.parts.push_back(Expression::Literal { intern("cc -c main.c -o main.o") });
     rule.inputs.push_back(make_path_pattern("main.c"));
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "main.o" });
+    output.path.parts.push_back(Expression::Literal { intern("main.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1158,15 +1158,15 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     // First Tupfile: boot/Tupfile generates boot.hex
     auto tupfile1 = Tupfile {};
-    tupfile1.filename = String { (fixture.root() / "boot" / "Tupfile").string() };
+    tupfile1.filename = intern((fixture.root() / "boot" / "Tupfile").string());
     fixture.create_file("boot/Tupfile");
     fixture.create_file("boot/boot.elf");
 
     auto rule1 = Rule {};
-    rule1.command.parts.push_back(Expression::Literal { "objcopy -O ihex boot.elf boot.hex" });
+    rule1.command.parts.push_back(Expression::Literal { intern("objcopy -O ihex boot.elf boot.hex") });
     rule1.inputs.push_back(make_path_pattern("boot.elf"));
     auto out1 = PathPattern {};
-    out1.path.parts.push_back(Expression::Literal { "boot.hex" });
+    out1.path.parts.push_back(Expression::Literal { intern("boot.hex") });
     rule1.outputs.push_back(out1);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
@@ -1191,15 +1191,15 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     // Second Tupfile: output/hex/Tupfile references ../../boot/boot.hex (source-relative)
     auto tupfile2 = Tupfile {};
-    tupfile2.filename = String { (fixture.root() / "output" / "hex" / "Tupfile").string() };
+    tupfile2.filename = intern((fixture.root() / "output" / "hex" / "Tupfile").string());
     fixture.create_file("output/hex/Tupfile");
 
     auto rule2 = Rule {};
-    rule2.command.parts.push_back(Expression::Literal { "srec_cat boot.hex -o combined.hex" });
+    rule2.command.parts.push_back(Expression::Literal { intern("srec_cat boot.hex -o combined.hex") });
     // Reference the generated file from boot/ using source-relative path
     rule2.inputs.push_back(make_path_pattern("../../boot/boot.hex"));
     auto out2 = PathPattern {};
-    out2.path.parts.push_back(Expression::Literal { "combined.hex" });
+    out2.path.parts.push_back(Expression::Literal { intern("combined.hex") });
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
@@ -1263,17 +1263,17 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
 
     // Set TUP_VARIANT_OUTPUTDIR as tup would for sub/dir Tupfile with build variant
     // From sub/dir, path to build/sub/dir is ../../build/sub/dir
-    ctx.tup_variant_outputdir = "../../build/sub/dir";
+    ctx.tup_variant_outputdir = intern("../../build/sub/dir");
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { (fixture.root() / "sub" / "dir" / "Tupfile").string() };
+    tupfile.filename = intern((fixture.root() / "sub" / "dir" / "Tupfile").string());
     fixture.create_file("sub/dir/Tupfile");
 
     // Rule that outputs to current directory (which should be build/sub/dir)
     auto rule = Rule {};
-    rule.command.parts.push_back(Expression::Literal { "echo test > out.txt" });
+    rule.command.parts.push_back(Expression::Literal { intern("echo test > out.txt") });
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "out.txt" });
+    output.path.parts.push_back(Expression::Literal { intern("out.txt") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1324,14 +1324,14 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("") };
+    tupfile.filename = intern(fixture.tupfile_path(""));
 
     // Rule: : main.c |> gcc -c %f -o %o |> main.o
     auto rule = Rule {};
     rule.inputs.push_back(make_path_pattern("main.c"));
-    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    rule.command.parts.push_back(Expression::Literal { intern("gcc -c %f -o %o") });
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "main.o" });
+    output.path.parts.push_back(Expression::Literal { intern("main.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1375,14 +1375,14 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src/lib") };
+    tupfile.filename = intern(fixture.tupfile_path("src/lib"));
 
     // Rule: : add.c |> gcc -c %f -o %o |> add.o
     auto rule = Rule {};
     rule.inputs.push_back(make_path_pattern("add.c"));
-    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    rule.command.parts.push_back(Expression::Literal { intern("gcc -c %f -o %o") });
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "add.o" });
+    output.path.parts.push_back(Expression::Literal { intern("add.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1430,15 +1430,15 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     auto builder = GraphBuilder { options };
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src/lib") };
+    tupfile.filename = intern(fixture.tupfile_path("src/lib"));
 
     // Rule: : main.c ../util/helper.c |> gcc -c %f -o %o |> app.o
     auto rule = Rule {};
     rule.inputs.push_back(make_path_pattern("main.c"));
     rule.inputs.push_back(make_path_pattern("../util/helper.c"));
-    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    rule.command.parts.push_back(Expression::Literal { intern("gcc -c %f -o %o") });
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "app.o" });
+    output.path.parts.push_back(Expression::Literal { intern("app.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1489,17 +1489,17 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     // Set build root name for variant build (normally done by builder.build())
     graph.set_build_root_name("build");
 
-    ctx.tup_variant_outputdir = "../../build/src/lib";
+    ctx.tup_variant_outputdir = intern("../../build/src/lib");
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src/lib") };
+    tupfile.filename = intern(fixture.tupfile_path("src/lib"));
 
     // Rule: : add.c |> gcc -c %f -o %o |> add.o
     auto rule = Rule {};
     rule.inputs.push_back(make_path_pattern("add.c"));
-    rule.command.parts.push_back(Expression::Literal { "gcc -c %f -o %o" });
+    rule.command.parts.push_back(Expression::Literal { intern("gcc -c %f -o %o") });
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "add.o" });
+    output.path.parts.push_back(Expression::Literal { intern("add.o") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
@@ -1552,17 +1552,17 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     };
     auto builder = GraphBuilder { options };
 
-    ctx.tup_variant_outputdir = "../../build/src";
+    ctx.tup_variant_outputdir = intern("../../build/src");
 
     auto tupfile = Tupfile {};
-    tupfile.filename = String { fixture.tupfile_path("src") };
+    tupfile.filename = intern(fixture.tupfile_path("src"));
 
     // Rule that outputs a file named "..hidden" (valid filename starting with ..)
     auto rule = Rule {};
     rule.inputs.push_back(make_path_pattern("input.c"));
-    rule.command.parts.push_back(Expression::Literal { "gen-hidden %f %o" });
+    rule.command.parts.push_back(Expression::Literal { intern("gen-hidden %f %o") });
     auto output = PathPattern {};
-    output.path.parts.push_back(Expression::Literal { "..hidden" });
+    output.path.parts.push_back(Expression::Literal { intern("..hidden") });
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 

@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/glob.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
@@ -14,7 +16,7 @@ namespace pup::parser {
 // =============================================================================
 
 Glob::Glob(std::string_view pattern)
-    : pattern_(pattern)
+    : pattern_id_(global_pool().intern(pattern))
 {
     for (auto c : pattern) {
         if (c == '*' || c == '?' || c == '[') {
@@ -31,9 +33,9 @@ Glob::Glob(std::string_view pattern)
 auto Glob::matches(std::string_view filename) const -> bool
 {
     if (!has_wildcards_) {
-        return pattern_ == filename;
+        return global_pool().get(pattern_id_) == filename;
     }
-    return match_recursive(pattern_, filename);
+    return match_recursive(global_pool().get(pattern_id_), filename);
 }
 
 auto Glob::match_recursive(std::string_view pattern, std::string_view text) const -> bool
@@ -192,14 +194,15 @@ auto glob_expand(
     std::string_view pattern,
     std::string_view base_dir,
     GlobOptions const& options
-) -> Result<Vec<String>>
+) -> Result<Vec<StringId>>
 {
-    auto results = Vec<String> {};
+    auto& pool = global_pool();
+    auto results = Vec<StringId> {};
 
     if (!has_glob_chars(pattern)) {
         auto path = String { base_dir } + "/" + pattern;
         if (pup::platform::exists(path)) {
-            results.push_back(String { pattern });
+            results.push_back(pool.intern(pattern));
         }
         return results;
     }
@@ -217,13 +220,13 @@ auto glob_expand(
 
     if (is_recursive) {
         (void)pup::platform::walk_directory(search_dir, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
-            auto name = std::string_view { entry.name };
-            if (!options.include_hidden && !name.empty() && name[0] == '.') {
+            auto name_sv = pool.get(entry.name);
+            if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                 return false;
             }
             if (glob.matches(rel_path)) {
                 auto result_path = dir_part.empty() ? String { rel_path } : String { dir_part } + "/" + rel_path;
-                results.push_back(std::move(result_path));
+                results.push_back(pool.intern(result_path));
             }
             return true;
         });
@@ -231,13 +234,13 @@ auto glob_expand(
         auto entries = pup::platform::read_directory(search_dir);
         if (entries) {
             for (auto const& entry : *entries) {
-                auto const& name = entry.name;
-                if (!options.include_hidden && !name.empty() && name[0] == '.') {
+                auto name_sv = pool.get(entry.name);
+                if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                     continue;
                 }
-                if (glob.matches(name)) {
-                    auto result_path = dir_part.empty() ? String { name } : String { dir_part } + "/" + name;
-                    results.push_back(std::move(result_path));
+                if (glob.matches(name_sv)) {
+                    auto result_path = dir_part.empty() ? String { name_sv } : String { dir_part } + "/" + name_sv;
+                    results.push_back(pool.intern(result_path));
                 }
             }
         }
@@ -248,40 +251,42 @@ auto glob_expand(
 }
 
 auto glob_expand_all(
-    Vec<String> const& patterns,
+    Vec<StringId> const& patterns,
     std::string_view base_dir,
     GlobOptions const& options
 ) -> Result<GlobResult>
 {
+    auto& pool = global_pool();
     auto result = GlobResult {};
 
-    for (auto const& pattern : patterns) {
-        if (pattern.empty()) {
+    for (auto pattern_id : patterns) {
+        auto pattern_sv = pool.get(pattern_id);
+        if (pattern_sv.empty()) {
             continue;
         }
 
-        if (pattern[0] == '!') {
-            auto exclude_pattern = std::string_view { pattern }.substr(1);
+        if (pattern_sv[0] == '!') {
+            auto exclude_pattern = pattern_sv.substr(1);
             auto excluded = glob_expand(exclude_pattern, base_dir, options);
             if (!excluded) {
                 return pup::unexpected<Error>(excluded.error());
             }
-            for (auto& path : *excluded) {
-                result.exclusions.push_back(std::move(path));
+            for (auto path_id : *excluded) {
+                result.exclusions.push_back(path_id);
             }
         } else {
-            auto matches = glob_expand(pattern, base_dir, options);
+            auto matches = glob_expand(pattern_sv, base_dir, options);
             if (!matches) {
                 return pup::unexpected<Error>(matches.error());
             }
-            for (auto& path : *matches) {
-                result.matches.push_back(std::move(path));
+            for (auto path_id : *matches) {
+                result.matches.push_back(path_id);
             }
         }
     }
 
     if (!result.exclusions.empty()) {
-        auto excl_sorted = Vec<String> { result.exclusions };
+        auto excl_sorted = Vec<StringId> { result.exclusions };
         std::sort(excl_sorted.begin(), excl_sorted.end());
         auto& m = result.matches;
         for (auto it = m.begin(); it != m.end();) {
@@ -359,7 +364,7 @@ auto path_directory(std::string_view path) -> std::string_view
     return pup::path::parent(path);
 }
 
-auto glob_match_extract(std::string_view pattern, std::string_view filename) -> String
+auto glob_match_extract(std::string_view pattern, std::string_view filename) -> StringId
 {
     // For path patterns (containing /), extract basename of both
     auto pattern_base = path_basename(pattern);
@@ -403,7 +408,7 @@ auto glob_match_extract(std::string_view pattern, std::string_view filename) -> 
         return {};
     }
 
-    return String { filename_base.substr(match_start, match_end - match_start) };
+    return global_pool().intern(filename_base.substr(match_start, match_end - match_start));
 }
 
 } // namespace pup::parser

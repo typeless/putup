@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ast.hpp"
-#include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <string_view>
@@ -14,7 +14,7 @@ namespace pup::parser {
 /// Parse error with location and message
 struct ParseError {
     SourceLocation location;
-    String message;
+    StringId message = StringId::Empty;
 };
 
 /// Parser options

@@ -3,13 +3,20 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
 using namespace pup::platform;
 using namespace pup::test;
 using pup::String;
+using pup::StringId;
+using pup::global_pool;
 
 namespace {
+
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 
 #ifdef _WIN32
 auto const ECHO_CMD = std::string { "cmd /c echo" };
@@ -26,7 +33,7 @@ auto const PWD_CMD = std::string { "pwd" };
 auto make_opts(std::string_view cmd) -> ProcessOptions
 {
     auto opts = ProcessOptions {};
-    opts.command = String { cmd };
+    opts.command = intern(cmd);
     return opts;
 }
 
@@ -55,7 +62,7 @@ SCENARIO("run_process executes commands and captures output", "[platform][proces
 
             THEN("stdout contains the echoed text")
             {
-                REQUIRE(result->stdout_output.find("hello") != std::string::npos);
+                REQUIRE(sv(result->stdout_output).find("hello") != std::string::npos);
             }
         }
     }
@@ -92,7 +99,7 @@ SCENARIO("run_process respects working directory", "[platform][process]")
         f.mkdir("subdir");
 
         auto opts = make_opts(PWD_CMD);
-        opts.working_dir = String { (f.workdir() / "subdir").string() };
+        opts.working_dir = intern((f.workdir() / "subdir").string());
         opts.capture_stdout = true;
 
         WHEN("the process is executed")
@@ -102,7 +109,7 @@ SCENARIO("run_process respects working directory", "[platform][process]")
             THEN("output shows the specified directory")
             {
                 REQUIRE(result.has_value());
-                REQUIRE(result->stdout_output.find("subdir") != std::string::npos);
+                REQUIRE(sv(result->stdout_output).find("subdir") != std::string::npos);
             }
         }
     }
@@ -123,7 +130,7 @@ SCENARIO("run_process can pipe data to stdin", "[platform][process]")
             THEN("the data appears in stdout")
             {
                 REQUIRE(result.has_value());
-                REQUIRE(result->stdout_output.find("hello from stdin") != std::string::npos);
+                REQUIRE(sv(result->stdout_output).find("hello from stdin") != std::string::npos);
             }
         }
     }
@@ -148,12 +155,12 @@ SCENARIO("run_process captures stderr separately", "[platform][process]")
             THEN("stderr output is captured")
             {
                 REQUIRE(result.has_value());
-                REQUIRE(result->stderr_output.find("error message") != std::string::npos);
+                REQUIRE(sv(result->stderr_output).find("error message") != std::string::npos);
             }
 
             THEN("stdout is empty or separate from stderr")
             {
-                REQUIRE(result->stdout_output.find("error message") == std::string::npos);
+                REQUIRE(sv(result->stdout_output).find("error message") == std::string::npos);
             }
         }
     }
@@ -168,7 +175,7 @@ SCENARIO("run_process passes environment variables", "[platform][process]")
 #else
         auto opts = make_opts("echo $PUP_TEST_VAR");
 #endif
-        opts.env = { "PUP_TEST_VAR=test_value_123" };
+        opts.env = { intern("PUP_TEST_VAR=test_value_123") };
         opts.inherit_env = true;
         opts.capture_stdout = true;
 
@@ -179,7 +186,7 @@ SCENARIO("run_process passes environment variables", "[platform][process]")
             THEN("the environment variable is visible")
             {
                 REQUIRE(result.has_value());
-                REQUIRE(result->stdout_output.find("test_value_123") != std::string::npos);
+                REQUIRE(sv(result->stdout_output).find("test_value_123") != std::string::npos);
             }
         }
     }
@@ -189,24 +196,24 @@ TEST_CASE("build_env_strings constructs environment list", "[platform][process]"
 {
     SECTION("with inherit_env=false returns only extra vars")
     {
-        auto extra = pup::Vec<pup::String> { "FOO=bar", "BAZ=qux" };
+        auto extra = pup::Vec<pup::StringId> { intern("FOO=bar"), intern("BAZ=qux") };
         auto result = build_env_strings(extra, false);
 
         REQUIRE(result.size() == 2);
-        REQUIRE(result[0] == "FOO=bar");
-        REQUIRE(result[1] == "BAZ=qux");
+        REQUIRE(sv(result[0]) == "FOO=bar");
+        REQUIRE(sv(result[1]) == "BAZ=qux");
     }
 
     SECTION("with inherit_env=true includes current environment")
     {
-        auto extra = pup::Vec<pup::String> { "EXTRA=value" };
+        auto extra = pup::Vec<pup::StringId> { intern("EXTRA=value") };
         auto result = build_env_strings(extra, true);
 
         REQUIRE(result.size() > 1);
 
         auto has_extra = false;
         for (auto const& var : result) {
-            if (var == "EXTRA=value") {
+            if (sv(var) == "EXTRA=value") {
                 has_extra = true;
                 break;
             }

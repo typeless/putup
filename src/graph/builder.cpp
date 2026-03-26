@@ -108,7 +108,8 @@ auto request_demand_driven_parse(
 ) -> void
 {
     if (eval.request_directory && eval.available_tupfile_dirs) {
-        if (std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_path)) {
+        auto dir_id = global_pool().find(dir_path);
+        if (dir_id != StringId::Empty && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id)) {
             (void)eval.request_directory(dir_path);
         }
     }
@@ -638,12 +639,12 @@ auto expand_glob_pattern(
     // First try expanding against filesystem
     auto expanded = parser::glob_expand(path, base);
     if (expanded && !expanded->empty()) {
-        for (auto& p : *expanded) {
+        for (auto p : *expanded) {
             // Prefix with current_dir to make path relative to project root
             if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::join(str(ctx.current_dir), p));
+                result.push_back(pup::path::join(str(ctx.current_dir), str(p)));
             } else {
-                result.push_back(String { std::move(p) });
+                result.push_back(String { str(p) });
             }
         }
         return;
@@ -699,8 +700,9 @@ auto apply_exclusions(
                                                     : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
                 auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
-                    for (auto const& p : *expanded) {
-                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p) : pup::path::normalize(pup::path::join(str(ctx.current_dir), p));
+                    for (auto p : *expanded) {
+                        auto p_sv = str(p);
+                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(pup::path::join(str(ctx.current_dir), p_sv));
                         for (auto it = result.begin(); it != result.end();) {
                             if (*it == normalized) {
                                 it = result.erase(it);
@@ -933,14 +935,14 @@ auto process_rule(
         for (auto const& file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
-            auto result = Result<void> { expand_rule(ctx, state, rule, iter_inputs) };
+            auto result = expand_rule(ctx, state, rule, iter_inputs);
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
         }
     } else {
         // Normal rule: single command for all inputs
-        auto result = Result<void> { expand_rule(ctx, state, rule, *inputs) };
+        auto result = expand_rule(ctx, state, rule, *inputs);
         if (!result) {
             return pup::unexpected<Error>(result.error());
         }
@@ -954,22 +956,18 @@ auto process_bang_macro(
     parser::BangMacro const& macro
 ) -> Result<void>
 {
-    auto intern_opt = [](std::optional<String> const& opt) -> std::optional<StringId> {
-        return opt ? std::optional<StringId> { global_pool().intern(*opt) } : std::nullopt;
-    };
-    auto def = BangMacroDef {
-        .name = intern(macro.name),
-        .foreach_ = macro.foreach_,
-        .order_only_inputs = macro.order_only_inputs,
-        .command = macro.command,
-        .display = macro.display,
-        .outputs = macro.outputs,
-        .extra_outputs = macro.extra_outputs,
-        .output_group = intern_opt(macro.output_group),
-        .output_order_only_group = intern_opt(macro.output_order_only_group),
-        .output_order_only_group_dir = macro.output_order_only_group_dir,
-    };
-    auto key = to_underlying(ctx.graph->intern(macro.name));
+    auto def = BangMacroDef {};
+    def.name = macro.name;
+    def.foreach_ = macro.foreach_;
+    def.order_only_inputs = macro.order_only_inputs;
+    def.command = macro.command;
+    def.display = macro.display;
+    def.outputs = macro.outputs;
+    def.extra_outputs = macro.extra_outputs;
+    def.output_group = macro.output_group;
+    def.output_order_only_group = macro.output_order_only_group;
+    def.output_order_only_group_dir = macro.output_order_only_group_dir;
+    auto key = to_underlying(ctx.graph->intern(str(macro.name)));
     auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
     if (it != ctx.macros.end() && it->first == key) {
         it->second = std::move(def);
@@ -1109,9 +1107,9 @@ auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const&
 {
     switch (cond.kind) {
     case parser::Conditional::Kind::Ifdef:
-        return String { "ifdef(" } + std::string_view { cond.var_name } + ")";
+        return String { "ifdef(" } + str(cond.var_name) + ")";
     case parser::Conditional::Kind::Ifndef:
-        return String { "ifndef(" } + std::string_view { cond.var_name } + ")";
+        return String { "ifndef(" } + str(cond.var_name) + ")";
     case parser::Conditional::Kind::Ifeq: {
         auto lhs = parser::expand(eval, cond.lhs).value_or("");
         auto rhs = parser::expand(eval, cond.rhs).value_or("");
@@ -1246,24 +1244,25 @@ auto include_single_file(
     if (!parse_result.success()) {
         auto include_path_z = String { include_path };
         for (auto const& err : parse_result.errors) {
-            fprintf(stderr, "%s:%d:%d: error: %s\n", include_path_z.c_str(), err.location.line, err.location.column, err.message.c_str());
+            auto err_msg = str(err.message);
+            fprintf(stderr, "%s:%d:%d: error: %.*s\n", include_path_z.c_str(), err.location.line, err.location.column, static_cast<int>(err_msg.size()), err_msg.data());
         }
         return make_error<void>(ErrorCode::ParseError, String { "Parse error in include file: " } + include_path);
     }
 
-    auto old_tup_cwd = String {};
+    auto old_tup_cwd = StringId::Empty;
     if (is_rules && ctx.eval) {
         old_tup_cwd = ctx.eval->tup_cwd;
         auto include_dir = pup::path::parent(include_path);
         auto rel_path = pup::path::relative(include_dir, pup::path::join(include_root, str(ctx.current_dir)));
-        ctx.eval->tup_cwd = rel_path.empty() ? String { "." } : rel_path;
+        ctx.eval->tup_cwd = rel_path.empty() ? intern(".") : intern(rel_path);
     }
 
     auto old_current_file = ctx.current_file;
     ctx.current_file = intern(include_path);
 
     for (auto const& stmt : parse_result.tupfile.statements) {
-        auto result = Result<void> { process_statement(ctx, state, *stmt) };
+        auto result = process_statement(ctx, state, *stmt);
         if (!result) {
             ctx.current_file = old_current_file;
             if (is_rules && ctx.eval) {
@@ -1315,21 +1314,22 @@ auto process_import(
 {
     // Per tup manual: "sets a variable inside the Tupfile that has the value
     // of the environment variable"
+    auto var_name_sv = str(imp.var_name);
     auto value = String {};
 
     // 1. Try environment first
-    if (auto const* env_val = std::getenv(imp.var_name.c_str())) {
+    if (auto const* env_val = std::getenv(String { var_name_sv }.c_str())) {
         value = env_val;
     }
     // 2. Fall back to cached value from previous build (passed via options)
     else if (auto it = std::lower_bound(
                  state.options.cached_env_vars.begin(),
                  state.options.cached_env_vars.end(),
-                 imp.var_name,
-                 [](auto const& p, std::string_view k) { return p.first < k; }
+                 var_name_sv,
+                 [](auto const& p, std::string_view k) { return str(p.first) < k; }
              );
-             it != state.options.cached_env_vars.end() && it->first == imp.var_name) {
-        value = it->second;
+             it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
+        value = String { str(it->second) };
     }
     // 3. Fall back to default value
     else if (imp.default_value) {
@@ -1342,9 +1342,9 @@ auto process_import(
     // If no env, no cache, and no default, variable remains empty (tup behavior)
 
     // Create/update Variable node under $ directory for persistence
-    auto var_name_id = to_underlying(ctx.graph->intern(imp.var_name));
+    auto var_name_id = to_underlying(ctx.graph->intern(var_name_sv));
     if (state.env_var_dir_id != INVALID_NODE_ID) {
-        auto node_name = String { imp.var_name } + "=" + value;
+        auto node_name = String { var_name_sv } + "=" + value;
         auto content_hash = sha256(value);
 
         auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
@@ -1370,7 +1370,7 @@ auto process_import(
     }
 
     if (ctx.vars) {
-        ctx.vars->set(imp.var_name, value);
+        ctx.vars->set(var_name_sv, value);
     }
 
     // Track this as an imported variable for fine-grained dependency tracking
@@ -1386,7 +1386,7 @@ auto process_export(
 {
     // Per tup manual: "adds the environment variable VARIABLE to the export
     // list for future :-rules"
-    ctx.exported_vars.insert(to_underlying(ctx.graph->intern(exp.var_name)));
+    ctx.exported_vars.insert(to_underlying(ctx.graph->intern(str(exp.var_name))));
     return {};
 }
 
@@ -1426,23 +1426,23 @@ auto expand_rule(
     auto current_dir_name = is_empty(ctx.current_dir)
         ? String { "." }
         : String { pup::path::filename(str(ctx.current_dir)) };
-    auto glob_match = glob_pattern.empty() ? String {}
-                                           : parser::glob_match_extract(glob_pattern, primary_input);
+    auto glob_match_id = glob_pattern.empty() ? StringId::Empty
+                                              : parser::glob_match_extract(glob_pattern, primary_input);
 
-    auto all_inputs_str = Vec<String> {};
-    all_inputs_str.reserve(cmd_inputs.size());
+    auto all_inputs_sv = Vec<std::string_view> {};
+    all_inputs_sv.reserve(cmd_inputs.size());
     for (auto const& s : cmd_inputs) {
-        all_inputs_str.push_back(String { s });
+        all_inputs_sv.push_back(std::string_view { s });
     }
 
     auto flags = parser::PatternFlags {
         .input = primary_input,
-        .input_base = String { parser::path_basename(primary_input) },
-        .input_noext = String { parser::path_stem(primary_input) },
-        .input_ext = String { parser::path_extension(primary_input) },
+        .input_base = parser::path_basename(primary_input),
+        .input_noext = parser::path_stem(primary_input),
+        .input_ext = parser::path_extension(primary_input),
         .input_dir = current_dir_name,
-        .glob_match = glob_match,
-        .all_inputs = std::move(all_inputs_str),
+        .glob_match = str(glob_match_id),
+        .all_inputs = std::move(all_inputs_sv),
     };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
@@ -1489,14 +1489,15 @@ auto expand_rule(
             request_demand_driven_parse(*ctx.eval, group_dir);
 
             // Get or create the Group node (groups are first-class nodes)
-            auto group_id_result = get_or_create_group_node(ctx, state, group_dir, pattern.group_name);
+            auto group_name_sv = str(pattern.group_name);
+            auto group_id_result = get_or_create_group_node(ctx, state, group_dir, group_name_sv);
             if (!group_id_result) {
                 continue;
             }
             auto group_id = *group_id_result;
 
             // Preserve %<group> literally — resolved after all Tupfiles are parsed
-            sorted_insert(rule_order_only_group_names, pattern.group_name);
+            sorted_insert(rule_order_only_group_names, group_name_sv);
             if (!deferred_group_ids.contains(group_id)) {
                 deferred_group_ids.set(group_id, 1);
                 deferred_group_vec.push_back(group_id);
@@ -1567,7 +1568,7 @@ auto expand_rule(
     }
 
     // Expand outputs
-    auto outputs = Result<Vec<String>> { expand_outputs(ctx, outputs_patterns, flags) };
+    auto outputs = expand_outputs(ctx, outputs_patterns, flags);
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
     }
@@ -1575,27 +1576,27 @@ auto expand_rule(
     // Now expand command with actual outputs for %o substitution
     // Also capture instruction (after variable expansion, before pattern substitution)
     if (macro_ptr) {
-        auto macro_cmd = Result<String> { expand_command(ctx, macro_ptr->command, flags, *outputs, &instruction_pattern) };
+        auto macro_cmd = expand_command(ctx, macro_ptr->command, flags, *outputs, &instruction_pattern);
         if (!macro_cmd) {
             return pup::unexpected<Error>(macro_cmd.error());
         }
         cmd_text = *macro_cmd;
 
         if (macro_ptr->display) {
-            auto disp_result = Result<String> { expand_command(ctx, *macro_ptr->display, flags, *outputs) };
+            auto disp_result = expand_command(ctx, *macro_ptr->display, flags, *outputs);
             if (disp_result) {
                 display = *disp_result;
             }
         }
     } else {
-        auto full_cmd = Result<String> { expand_command(ctx, rule.command, flags, *outputs, &instruction_pattern) };
+        auto full_cmd = expand_command(ctx, rule.command, flags, *outputs, &instruction_pattern);
         if (!full_cmd) {
             return pup::unexpected<Error>(full_cmd.error());
         }
         cmd_text = *full_cmd;
 
         if (rule.display) {
-            auto disp_result = Result<String> { expand_command(ctx, *rule.display, flags, *outputs) };
+            auto disp_result = expand_command(ctx, *rule.display, flags, *outputs);
             if (disp_result) {
                 display = *disp_result;
             }
@@ -1623,7 +1624,7 @@ auto expand_rule(
         ? cmd_text
         : instruction_pattern;
 
-    auto cmd_id = Result<NodeId> { create_command_node(ctx, state, final_instruction, display) };
+    auto cmd_id = create_command_node(ctx, state, final_instruction, display);
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
@@ -1666,11 +1667,11 @@ auto expand_rule(
         if (is_order_only_group_reference(input)) {
             continue;
         }
-        auto input_id = Result<NodeId> { resolve_input_node(ctx, input) };
+        auto input_id = resolve_input_node(ctx, input);
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }
-        auto edge_result = Result<void> { ctx.graph->add_edge(*input_id, *cmd_id) };
+        auto edge_result = ctx.graph->add_edge(*input_id, *cmd_id);
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
@@ -1680,7 +1681,7 @@ auto expand_rule(
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
     for (auto const& output : *outputs) {
-        auto output_id = Result<NodeId> { get_or_create_file_node(ctx, output, NodeType::Generated) };
+        auto output_id = get_or_create_file_node(ctx, output, NodeType::Generated);
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
         }
@@ -1702,13 +1703,13 @@ auto expand_rule(
                         existing_cmd_str = "<unknown>";
                     }
                     auto output_path = ctx.graph->get_full_path(*output_id);
-                    auto err_msg = String { "Unable to create output '" } + std::string_view { output_path } + "' because it is already owned by command:\n  " + std::string_view { existing_cmd_str };
+                    auto err_msg = String { "Unable to create output '" } + output_path + "' because it is already owned by command:\n  " + existing_cmd_str;
                     return make_error<void>(ErrorCode::DuplicateNode, std::move(err_msg));
                 }
             }
         }
 
-        auto edge_result = Result<void> { ctx.graph->add_edge(*cmd_id, *output_id) };
+        auto edge_result = ctx.graph->add_edge(*cmd_id, *output_id);
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
@@ -1717,7 +1718,7 @@ auto expand_rule(
         // Add to output group {name} if specified
         // Only add if the current context is active (guards satisfied)
         // This prevents inactive branches from contributing to groups
-        auto output_group = rule.output_group ? std::optional<StringId> { intern(*rule.output_group) } : std::nullopt;
+        auto output_group = rule.output_group;
         if (!output_group && macro_ptr && macro_ptr->output_group) {
             output_group = macro_ptr->output_group;
         }
@@ -1729,7 +1730,7 @@ auto expand_rule(
         // Add to order-only group <name> if specified
         // Supports path/<group> syntax where path specifies the group's directory
         // Only add if context is active (prevents inactive branches from contributing)
-        auto output_oo_group = rule.output_order_only_group ? std::optional<StringId> { intern(*rule.output_order_only_group) } : std::nullopt;
+        auto output_oo_group = rule.output_order_only_group;
         if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group) {
             output_oo_group = macro_ptr->output_order_only_group;
         }
@@ -1778,7 +1779,7 @@ auto expand_rule(
         if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
             continue;
         }
-        auto oi_id = Result<NodeId> { resolve_input_node(ctx, oi) };
+        auto oi_id = resolve_input_node(ctx, oi);
         if (oi_id) {
             (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
         }
@@ -1811,7 +1812,7 @@ auto expand_inputs(
 
         if (pattern.is_group) {
             // Bin reference {name} - local to Tupfile
-            auto gkey = to_underlying(ctx.graph->intern(pattern.group_name));
+            auto gkey = to_underlying(ctx.graph->intern(str(pattern.group_name)));
             if (auto const* members = ctx.groups.find(gkey)) {
                 for (auto id : *members) {
                     auto path = ctx.graph->get_full_path(id);
@@ -1840,8 +1841,9 @@ auto expand_inputs(
 
             // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
             // Edges are created by resolve_deferred_order_only_edges() after all Tupfiles are parsed.
-            auto group_ref_str = group_dir.empty() ? String { "<" } + std::string_view { pattern.group_name } + ">"
-                                                   : group_dir + "/<" + std::string_view { pattern.group_name } + ">";
+            auto group_name_sv = str(pattern.group_name);
+            auto group_ref_str = group_dir.empty() ? String { "<" } + group_name_sv + ">"
+                                                   : group_dir + "/<" + group_name_sv + ">";
             result.push_back(group_ref_str);
             continue;
         }
@@ -1980,8 +1982,13 @@ auto expand_command(
     // Augment flags with output fields
     auto primary_output = cmd_outputs.empty() ? String {} : String { cmd_outputs[0] };
     flags.output = primary_output;
-    flags.output_base = String { parser::path_basename(primary_output) };
-    flags.all_outputs = std::move(cmd_outputs);
+    flags.output_base = parser::path_basename(primary_output);
+    auto outputs_sv = Vec<std::string_view> {};
+    outputs_sv.reserve(cmd_outputs.size());
+    for (auto const& o : cmd_outputs) {
+        outputs_sv.push_back(std::string_view { o });
+    }
+    flags.all_outputs = std::move(outputs_sv);
 
     // Expand pattern flags and return
     auto pattern_result = parser::expand_pattern(*ctx.eval, *expanded, flags);
@@ -2335,7 +2342,7 @@ auto build_graph(
         graph.set_build_root_name(pup::path::relative(str(state.options.output_root), str(state.options.source_root)));
     }
 
-    auto result = Result<void> { add_tupfile(graph, tupfile, eval, state) };
+    auto result = add_tupfile(graph, tupfile, eval, state);
     if (!result) {
         return pup::unexpected<Error>(result.error());
     }
@@ -2356,7 +2363,8 @@ auto add_tupfile(
     auto const& tupfile_root = is_empty(state.options.config_root)
         ? str(state.options.source_root)
         : str(state.options.config_root);
-    auto tupfile_parent = pup::path::parent(tupfile.filename);
+    auto tupfile_filename_sv = str(tupfile.filename);
+    auto tupfile_parent = pup::path::parent(tupfile_filename_sv);
     auto relative_dir_str = pup::path::relative(tupfile_parent, tupfile_root);
     if (relative_dir_str == ".") {
         relative_dir_str = "";
@@ -2368,12 +2376,12 @@ auto add_tupfile(
         .vars = eval.vars,
         .options = state.options,
         .current_dir = intern(relative_dir_str),
-        .current_file = intern(tupfile.filename),
+        .current_file = tupfile.filename,
     };
 
     // Create Tupfile node and add to sticky_sources for dependency tracking
     // For 3-tree builds, store relative to config_root (Tupfile's actual location)
-    auto tupfile_rel = pup::path::relative(tupfile.filename, tupfile_root);
+    auto tupfile_rel = pup::path::relative(tupfile_filename_sv, tupfile_root);
     auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
     if (tupfile_node_result) {
         ctx.sticky_sources.push_back(*tupfile_node_result);
@@ -2504,7 +2512,7 @@ auto add_tupfile(
     };
 
     for (auto const& stmt : tupfile.statements) {
-        auto result = Result<void> { process_statement(ctx, state, *stmt) };
+        auto result = process_statement(ctx, state, *stmt);
         if (!result) {
             state.errors.push_back(result.error().message);
             if (!state.options.verbose) {
@@ -2550,7 +2558,7 @@ auto resolve_deferred_order_only_edges(
         auto members = get_group_members(graph, edge.group_id);
         if (members.empty()) {
             auto group_path = graph.get_full_path(edge.group_id);
-            state.warnings.push_back(String { "order-only group " } + std::string_view { group_path } + " has no members");
+            state.warnings.push_back(intern(String { "order-only group " } + group_path + " has no members"));
             continue;
         }
 
@@ -2662,12 +2670,12 @@ GraphBuilder::GraphBuilder(BuilderOptions options)
 {
 }
 
-auto GraphBuilder::errors() const -> Vec<String> const&
+auto GraphBuilder::errors() const -> Vec<StringId> const&
 {
     return state_.errors;
 }
 
-auto GraphBuilder::warnings() const -> Vec<String> const&
+auto GraphBuilder::warnings() const -> Vec<StringId> const&
 {
     return state_.warnings;
 }

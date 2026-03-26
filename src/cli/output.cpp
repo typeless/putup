@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/output.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
@@ -17,7 +19,7 @@ constexpr auto ASCII_CONTROL_CHAR_MAX = static_cast<unsigned char>(0x1F);
 }
 
 auto remove_empty_directories(
-    Vec<String> const& output_dirs,
+    Vec<StringId> const& output_dir_ids,
     std::string_view build_dir,
     std::string_view source_dir,
     OutputMode mode
@@ -25,7 +27,11 @@ auto remove_empty_directories(
 {
     auto removed = std::size_t { 0 };
 
-    auto dirs = output_dirs;
+    auto dirs = Vec<String> {};
+    dirs.reserve(output_dir_ids.size());
+    for (auto id : output_dir_ids) {
+        dirs.push_back(String { global_pool().get(id) });
+    }
     std::ranges::sort(dirs);
     dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
     std::ranges::sort(dirs, std::greater {}, [](auto const& p) {

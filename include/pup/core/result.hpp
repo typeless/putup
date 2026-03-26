@@ -4,7 +4,10 @@
 #pragma once
 
 #include "expected.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <string_view>
 
@@ -57,12 +60,22 @@ enum class ErrorCode {
 /// Error with code and message
 struct Error {
     ErrorCode code = ErrorCode::None;
-    String message;
+    StringId message = StringId::Empty;
 
     Error() = default;
-    Error(ErrorCode c, String msg)
+    Error(ErrorCode c, StringId msg)
         : code(c)
-        , message(std::move(msg))
+        , message(msg)
+    {
+    }
+    Error(ErrorCode c, std::string_view msg)
+        : code(c)
+        , message(global_pool().intern(msg))
+    {
+    }
+    Error(ErrorCode c, String const& msg)
+        : code(c)
+        , message(global_pool().intern(msg))
     {
     }
 
@@ -80,18 +93,18 @@ struct Error {
         return code != ErrorCode::None;
     }
 
-    /// Create an error with a message
+    /// Get message as string_view (resolves StringId through global pool)
     [[nodiscard]]
-    static auto make(ErrorCode c, String msg) -> Error
+    auto msg() const -> std::string_view
     {
-        return Error { c, std::move(msg) };
+        return global_pool().get(message);
     }
 
-    /// Create an error with a string_view message
+    /// Create an error with a message
     [[nodiscard]]
-    static auto make(ErrorCode c, std::string_view msg) -> Error
+    static auto make(ErrorCode c, StringId msg) -> Error
     {
-        return Error { c, String { msg } };
+        return Error { c, msg };
     }
 };
 
@@ -99,13 +112,21 @@ struct Error {
 template<typename T>
 using Result = pup::expected<T, Error>;
 
-/// Helper to create an error result
+/// Helper to create an error result from StringId
+template<typename T>
+[[nodiscard]]
+auto make_error(ErrorCode code, StringId msg) -> Result<T>
+{
+    return pup::unexpected<Error>(Error::make(code, msg));
+}
+
+/// Helper to create an error result from string_view (interns the message)
 template<typename T, typename Msg>
 requires std::is_convertible_v<Msg, std::string_view>
 [[nodiscard]]
 auto make_error(ErrorCode code, Msg&& msg) -> Result<T>
 {
-    return pup::unexpected<Error>(Error::make(code, String { std::string_view { std::forward<Msg>(msg) } }));
+    return pup::unexpected<Error>(Error::make(code, global_pool().intern(std::string_view { std::forward<Msg>(msg) })));
 }
 
 } // namespace pup

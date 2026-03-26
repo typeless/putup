@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/ignore.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 namespace pup::parser {
@@ -112,7 +114,7 @@ auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePat
         p.anchored = true;
     }
 
-    p.pattern = String { line };
+    p.pattern = global_pool().intern(line);
     return p;
 }
 
@@ -132,18 +134,19 @@ auto IgnoreList::is_ignored(std::string_view rel_path) const -> bool
 
 auto IgnoreList::match_pattern(IgnorePattern const& p, std::string_view path_str) const -> bool
 {
+    auto pattern_sv = global_pool().get(p.pattern);
     if (p.anchored) {
-        return glob_match(p.pattern, path_str);
+        return glob_match(pattern_sv, path_str);
     }
 
     auto slash_pos = path_str.rfind('/');
     auto basename = (slash_pos == std::string_view::npos) ? path_str : path_str.substr(slash_pos + 1);
-    if (glob_match(p.pattern, basename)) {
+    if (glob_match(pattern_sv, basename)) {
         return true;
     }
 
-    if (p.pattern.starts_with("**")) {
-        return glob_match(p.pattern, path_str);
+    if (pattern_sv.starts_with("**")) {
+        return glob_match(pattern_sv, path_str);
     }
 
     return false;

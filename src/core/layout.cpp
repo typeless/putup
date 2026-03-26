@@ -44,7 +44,7 @@ auto find_build_subdir(
                 if (!entry.is_dir) {
                     continue;
                 }
-                auto entry_path = path::join(root, entry.name);
+                auto entry_path = path::join(root, global_pool().get(entry.name));
                 if (platform::exists(path::join(entry_path, "tup.config"))
                     || platform::is_directory(path::join(entry_path, ".pup"))) {
                     return entry_path;
@@ -60,18 +60,19 @@ auto find_build_subdir(
 
 auto find_project_root(
     std::string_view start_dir
-) -> std::optional<String>
+) -> std::optional<StringId>
 {
+    auto& pool = global_pool();
     auto current = String { start_dir };
-    auto last_tupfile_dir = std::optional<String> {};
+    auto last_tupfile_dir = std::optional<StringId> {};
 
     while (true) {
         if (platform::exists(path::join(current, "Tupfile.ini"))) {
-            return current;
+            return pool.intern(current);
         }
 
         if (platform::exists(path::join(current, "Tupfile"))) {
-            last_tupfile_dir = current;
+            last_tupfile_dir = pool.intern(current);
         }
 
         auto par = String { path::parent(current) };
@@ -95,19 +96,27 @@ auto normalize_path(std::string_view p) -> String
     return String { p };
 }
 
+auto intern_path(std::string_view p) -> StringId
+{
+    return global_pool().intern(normalize_path(p));
+}
+
 auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
 {
     auto layout = ProjectLayout {};
     auto cwd = *platform::current_directory();
 
+    auto& pool = global_pool();
+
     if (opts.source_dir) {
-        if (!platform::exists(*opts.source_dir)) {
+        auto src_sv = pool.get(*opts.source_dir);
+        if (!platform::exists(src_sv)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Source directory not found: " + *opts.source_dir
+                String { "Source directory not found: " } + src_sv
             );
         }
-        layout.source_root = normalize_path(*opts.source_dir);
+        layout.source_root = intern_path(src_sv);
     } else if (auto env_source = get_env(PUP_SOURCE_DIR_ENV)) {
         if (!platform::exists(*env_source)) {
             return make_error<ProjectLayout>(
@@ -115,7 +124,7 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
                 "PUP_SOURCE_DIR not found: " + *env_source
             );
         }
-        layout.source_root = normalize_path(*env_source);
+        layout.source_root = intern_path(*env_source);
     } else {
         auto root = find_project_root(cwd);
         if (!root) {
@@ -124,33 +133,34 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
                 "Not in a pup/tup project (no Tupfile.ini found)"
             );
         }
-        layout.source_root = normalize_path(*root);
+        layout.source_root = intern_path(pool.get(*root));
     }
 
     if (opts.build_dir) {
-        layout.output_root = normalize_path(*opts.build_dir);
+        layout.output_root = intern_path(pool.get(*opts.build_dir));
     } else if (auto env_build = get_env(PUP_BUILD_DIR_ENV)) {
-        layout.output_root = normalize_path(*env_build);
-    } else if (platform::exists(path::join(cwd, "tup.config")) && cwd != layout.source_root) {
-        layout.output_root = normalize_path(cwd);
-    } else if (auto build_subdir = find_build_subdir(layout.source_root)) {
-        layout.output_root = normalize_path(*build_subdir);
+        layout.output_root = intern_path(*env_build);
+    } else if (platform::exists(path::join(cwd, "tup.config")) && pool.intern(cwd) != layout.source_root) {
+        layout.output_root = intern_path(cwd);
+    } else if (auto build_subdir = find_build_subdir(pool.get(layout.source_root))) {
+        layout.output_root = intern_path(*build_subdir);
     } else {
         layout.output_root = layout.source_root;
     }
 
     if (opts.config_dir) {
-        if (!platform::exists(*opts.config_dir)) {
+        auto cfg_sv = pool.get(*opts.config_dir);
+        if (!platform::exists(cfg_sv)) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory not found: " + *opts.config_dir
+                String { "Config directory not found: " } + cfg_sv
             );
         }
-        layout.config_root = normalize_path(*opts.config_dir);
-        if (!platform::exists(path::join(layout.config_root, "Tupfile.ini"))) {
+        layout.config_root = intern_path(cfg_sv);
+        if (!platform::exists(path::join(pool.get(layout.config_root), "Tupfile.ini"))) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory does not contain Tupfile.ini: " + layout.config_root
+                String { "Config directory does not contain Tupfile.ini: " } + pool.get(layout.config_root)
             );
         }
     } else if (auto env_config = get_env(PUP_CONFIG_DIR_ENV)) {
@@ -160,16 +170,16 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
                 "PUP_CONFIG_DIR not found: " + *env_config
             );
         }
-        layout.config_root = normalize_path(*env_config);
-        if (!platform::exists(path::join(layout.config_root, "Tupfile.ini"))) {
+        layout.config_root = intern_path(*env_config);
+        if (!platform::exists(path::join(pool.get(layout.config_root), "Tupfile.ini"))) {
             return make_error<ProjectLayout>(
                 ErrorCode::NotFound,
-                "Config directory does not contain Tupfile.ini: " + layout.config_root
+                String { "Config directory does not contain Tupfile.ini: " } + pool.get(layout.config_root)
             );
         }
-    } else if (platform::exists(path::join(layout.source_root, "Tupfile.ini"))) {
+    } else if (platform::exists(path::join(pool.get(layout.source_root), "Tupfile.ini"))) {
         layout.config_root = layout.source_root;
-    } else if (platform::exists(path::join(layout.output_root, "Tupfile.ini"))) {
+    } else if (platform::exists(path::join(pool.get(layout.output_root), "Tupfile.ini"))) {
         layout.config_root = layout.output_root;
     } else {
         layout.config_root = layout.source_root;
@@ -180,9 +190,10 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
 
 auto discover_variants(
     std::string_view source_root
-) -> Vec<String>
+) -> Vec<StringId>
 {
-    auto result = Vec<String> {};
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
 
     if (!platform::is_directory(source_root)) {
         return result;
@@ -197,10 +208,11 @@ auto discover_variants(
         if (!entry.is_dir) {
             continue;
         }
-        auto entry_path = path::join(source_root, entry.name);
+        auto name_sv = pool.get(entry.name);
+        auto entry_path = path::join(source_root, name_sv);
         if (platform::exists(path::join(entry_path, "tup.config"))
             || platform::is_directory(path::join(entry_path, ".pup"))) {
-            result.emplace_back(std::string_view { entry.name });
+            result.push_back(entry.name);
         }
     }
 

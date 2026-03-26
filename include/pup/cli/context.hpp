@@ -50,7 +50,7 @@ struct BuildContextOptions {
     bool auto_init = false;
     bool root_config_only = false;
     bool require_config = false;
-    Vec<String> parse_scopes = {};
+    Vec<StringId> parse_scopes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};
@@ -86,7 +86,7 @@ public:
     [[nodiscard]]
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
-    auto parsed_dirs() const -> Vec<String> const&;
+    auto parsed_dirs() const -> Vec<StringId> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load
@@ -117,7 +117,7 @@ auto build_context(
 auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
-) -> Vec<String>;
+) -> Vec<StringId>;
 
 /// Convert CLI options to layout discovery options
 [[nodiscard]]
@@ -125,8 +125,8 @@ auto make_layout_options(Options const& opts) -> LayoutOptions;
 
 /// Context for clean commands
 struct CleanContext {
-    String root;
-    String build_dir;
+    StringId root = StringId::Empty;
+    StringId build_dir = StringId::Empty;
     bool is_in_tree;
 };
 

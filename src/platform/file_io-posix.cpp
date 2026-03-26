@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <cerrno>
@@ -571,7 +573,7 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
 #ifdef _DIRENT_HAVE_D_TYPE
         }
 #endif
-        entries.push_back(DirEntry { entry->d_name, is_dir });
+        entries.push_back(DirEntry { global_pool().intern(entry->d_name), is_dir });
     }
     ::closedir(dir);
     return entries;
@@ -599,13 +601,14 @@ auto walk_recursive(
     }
 
     for (auto const& e : *entries) {
+        auto name_sv = global_pool().get(e.name);
         String child_rel;
         if (rel.empty()) {
-            child_rel = e.name;
+            child_rel = name_sv;
         } else {
             child_rel = rel;
             child_rel += '/';
-            child_rel += e.name;
+            child_rel += name_sv;
         }
         auto should_recurse = visitor(e, child_rel);
         if (e.is_dir && should_recurse) {

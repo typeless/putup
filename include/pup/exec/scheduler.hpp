@@ -6,6 +6,7 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "runner.hpp"
@@ -25,13 +26,13 @@ namespace pup::exec {
 /// Build job representing a single command to execute
 struct BuildJob {
     NodeId id = 0;
-    String command = {};
-    String display = {};
-    String working_dir = {};
-    Vec<String> inputs = {};
-    Vec<String> outputs = {};
-    Vec<String> order_only_inputs = {}; ///< Order-only dependencies
-    Vec<String> exported_vars = {};     ///< Env vars to export to command
+    StringId command = StringId::Empty;
+    StringId display = StringId::Empty;
+    StringId working_dir = StringId::Empty;
+    Vec<StringId> inputs = {};
+    Vec<StringId> outputs = {};
+    Vec<StringId> order_only_inputs = {}; ///< Order-only dependencies
+    Vec<StringId> exported_vars = {};     ///< Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             ///< Capture stdout for depfile parsing
@@ -47,9 +48,9 @@ struct JobResult {
     NodeId id = 0;
     bool success = false;
     int exit_code = 0;
-    String output = {};
+    StringId output = StringId::Empty;
     std::chrono::milliseconds duration = {};
-    Vec<String> discovered_deps = {};          ///< Implicit deps from .d files
+    Vec<StringId> discovered_deps = {};        ///< Implicit deps from .d files
     NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
 };
 
@@ -64,9 +65,9 @@ struct SchedulerOptions {
     bool keep_going = false; ///< Continue after failures
     bool dry_run = false;    ///< Print commands without executing
     bool verbose = false;    ///< Print commands as they run
-    String source_root = {};
-    String config_root = {};
-    String output_root = {};                          ///< Output tree root (where outputs/.pup go)
+    StringId source_root = StringId::Empty;
+    StringId config_root = StringId::Empty;
+    StringId output_root = StringId::Empty;           ///< Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; ///< Per-command timeout
 };
 
@@ -100,7 +101,7 @@ public:
     [[nodiscard]]
     auto build_incremental(
         graph::BuildGraph const& graph,
-        Vec<String> const& changed_files
+        Vec<StringId> const& changed_files
     ) -> Result<BuildStats>;
 
     /// Build only a specific subset of commands

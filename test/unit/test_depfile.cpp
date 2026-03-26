@@ -3,9 +3,17 @@
 
 #include "catch_amalgamated.hpp"
 
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/depfile.hpp"
 
 using namespace pup::parser;
+using pup::StringId;
+using pup::global_pool;
+
+namespace {
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+} // namespace
 
 TEST_CASE("Depfile: parse simple single-line", "[depfile]")
 {
@@ -13,10 +21,10 @@ TEST_CASE("Depfile: parse simple single-line", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 2);
-    CHECK(result->dependencies[0] == "foo.c");
-    CHECK(result->dependencies[1] == "header.h");
+    CHECK(sv(result->dependencies[0]) == "foo.c");
+    CHECK(sv(result->dependencies[1]) == "header.h");
 }
 
 TEST_CASE("Depfile: parse multiline with backslash continuation", "[depfile]")
@@ -29,11 +37,11 @@ TEST_CASE("Depfile: parse multiline with backslash continuation", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 3);
-    CHECK(result->dependencies[0] == "foo.c");
-    CHECK(result->dependencies[1] == "header1.h");
-    CHECK(result->dependencies[2] == "header2.h");
+    CHECK(sv(result->dependencies[0]) == "foo.c");
+    CHECK(sv(result->dependencies[1]) == "header1.h");
+    CHECK(sv(result->dependencies[2]) == "header2.h");
 }
 
 TEST_CASE("Depfile: handle escaped spaces in paths", "[depfile]")
@@ -42,9 +50,9 @@ TEST_CASE("Depfile: handle escaped spaces in paths", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 1);
-    CHECK(result->dependencies[0] == "path with spaces/file.c");
+    CHECK(sv(result->dependencies[0]) == "path with spaces/file.c");
 }
 
 TEST_CASE("Depfile: parse real gcc output", "[depfile]")
@@ -57,14 +65,14 @@ TEST_CASE("Depfile: parse real gcc output", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "build/main.o");
+    CHECK(sv(result->target) == "build/main.o");
     REQUIRE(result->dependencies.size() == 6);
-    CHECK(result->dependencies[0] == "src/main.cpp");
-    CHECK(result->dependencies[1] == "include/pup/core/result.hpp");
-    CHECK(result->dependencies[2] == "include/pup/parser/parser.hpp");
-    CHECK(result->dependencies[3] == "include/pup/graph/dag.hpp");
-    CHECK(result->dependencies[4] == "/usr/include/c++/13/iostream");
-    CHECK(result->dependencies[5] == "/usr/include/c++/13/string");
+    CHECK(sv(result->dependencies[0]) == "src/main.cpp");
+    CHECK(sv(result->dependencies[1]) == "include/pup/core/result.hpp");
+    CHECK(sv(result->dependencies[2]) == "include/pup/parser/parser.hpp");
+    CHECK(sv(result->dependencies[3]) == "include/pup/graph/dag.hpp");
+    CHECK(sv(result->dependencies[4]) == "/usr/include/c++/13/iostream");
+    CHECK(sv(result->dependencies[5]) == "/usr/include/c++/13/string");
 }
 
 TEST_CASE("Depfile: handle no dependencies", "[depfile]")
@@ -73,7 +81,7 @@ TEST_CASE("Depfile: handle no dependencies", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     CHECK(result->dependencies.empty());
 }
 
@@ -83,9 +91,9 @@ TEST_CASE("Depfile: handle colon attached to target", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 1);
-    CHECK(result->dependencies[0] == "foo.c");
+    CHECK(sv(result->dependencies[0]) == "foo.c");
 }
 
 TEST_CASE("Depfile: reject empty content", "[depfile]")
@@ -102,10 +110,10 @@ TEST_CASE("Depfile: handle Windows line endings", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 2);
-    CHECK(result->dependencies[0] == "foo.c");
-    CHECK(result->dependencies[1] == "header.h");
+    CHECK(sv(result->dependencies[0]) == "foo.c");
+    CHECK(sv(result->dependencies[1]) == "header.h");
 }
 
 TEST_CASE("Depfile: handle multiple spaces between deps", "[depfile]")
@@ -114,7 +122,7 @@ TEST_CASE("Depfile: handle multiple spaces between deps", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 3);
 }
 
@@ -124,6 +132,6 @@ TEST_CASE("Depfile: handle tabs", "[depfile]")
     auto result = parse_depfile(content);
 
     REQUIRE(result.has_value());
-    CHECK(result->target == "foo.o");
+    CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 2);
 }

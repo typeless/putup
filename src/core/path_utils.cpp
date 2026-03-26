@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/path_utils.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -84,7 +86,7 @@ auto is_path_in_scope(
 
 auto is_path_in_any_scope(
     std::string_view path,
-    Vec<String> const& scopes
+    Vec<StringId> const& scopes
 ) -> bool
 {
     if (scopes.empty()) {
@@ -92,7 +94,7 @@ auto is_path_in_any_scope(
     }
 
     return std::ranges::any_of(scopes, [path](auto const& scope) {
-        return is_path_in_scope(path, scope);
+        return is_path_in_scope(path, global_pool().get(scope));
     });
 }
 

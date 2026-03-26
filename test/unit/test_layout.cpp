@@ -2,12 +2,17 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <filesystem>
 #include <fstream>
 
 namespace fs = std::filesystem;
+
+using pup::StringId;
+using pup::global_pool;
 
 namespace {
 
@@ -58,7 +63,7 @@ TEST_CASE("find_project_root", "[e2e][layout]")
 
         auto result = pup::find_project_root(tmp.path().string());
         REQUIRE(result.has_value());
-        REQUIRE(*result == tmp.path().string());
+        REQUIRE(global_pool().get(*result) == tmp.path().string());
     }
 
     SECTION("finds Tupfile.ini in parent directory")
@@ -69,7 +74,7 @@ TEST_CASE("find_project_root", "[e2e][layout]")
 
         auto result = pup::find_project_root((tmp.path() / "src" / "lib").string());
         REQUIRE(result.has_value());
-        REQUIRE(*result == tmp.path().string());
+        REQUIRE(global_pool().get(*result) == tmp.path().string());
     }
 
     SECTION("build directory with .pup should find source root in parent")
@@ -85,7 +90,7 @@ TEST_CASE("find_project_root", "[e2e][layout]")
         // NOT stop at build-release/ just because it has .pup
         auto result = pup::find_project_root((tmp.path() / "build-release").string());
         REQUIRE(result.has_value());
-        REQUIRE(*result == tmp.path().string());
+        REQUIRE(global_pool().get(*result) == tmp.path().string());
     }
 
     SECTION("returns nullopt when no project root found")
@@ -94,6 +99,7 @@ TEST_CASE("find_project_root", "[e2e][layout]")
         tmp.create_dir("empty");
 
         auto result = pup::find_project_root((tmp.path() / "empty").string());
+        (void)result;
         // Should walk up to tmp.path() but not find anything, then continue up
         // Eventually returns nullopt when reaching filesystem root
         // (This test may find a project root in parent dirs in dev environment)
@@ -119,7 +125,7 @@ TEST_CASE("discover_layout from build directory", "[e2e][layout]")
         fs::current_path(original_cwd);
 
         REQUIRE(result.has_value());
-        REQUIRE(fs::canonical(std::string(result->source_root)) == fs::canonical(tmp.path()).string());
-        REQUIRE(fs::canonical(std::string(result->output_root)) == fs::canonical(tmp.path() / "build").string());
+        REQUIRE(fs::canonical(std::string(global_pool().get(result->source_root))) == fs::canonical(tmp.path()).string());
+        REQUIRE(fs::canonical(std::string(global_pool().get(result->output_root))) == fs::canonical(tmp.path() / "build").string());
     }
 }

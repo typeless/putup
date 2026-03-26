@@ -7,6 +7,8 @@
 // POSIX APIs (pipe, execv, environ) require C-style arrays and pointer arithmetic
 
 #include "pup/platform/process.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <array>
 #include <cerrno>
@@ -26,19 +28,20 @@
 namespace pup::platform {
 
 auto build_env_strings(
-    Vec<String> const& extra_env,
+    Vec<StringId> const& extra_env,
     bool inherit_env
-) -> Vec<String>
+) -> Vec<StringId>
 {
-    auto result = Vec<String> {};
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
 
     if (inherit_env) {
         for (auto** e = environ; *e != nullptr; ++e) {
-            result.emplace_back(*e);
+            result.push_back(pool.intern(*e));
         }
     }
 
-    for (auto const& var : extra_env) {
+    for (auto var : extra_env) {
         result.push_back(var);
     }
 
@@ -72,6 +75,7 @@ auto run_process_with_callback(
     void* user_data
 ) -> Result<ProcessResult>
 {
+    auto& pool = global_pool();
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
 
     int stdout_pipe[2] = { -1, -1 };
@@ -121,8 +125,9 @@ auto run_process_with_callback(
             ::close(stdin_pipe[1]);
         }
 
-        if (!opts.working_dir.empty()) {
-            if (::chdir(opts.working_dir.c_str()) < 0) {
+        auto working_dir = pool.get(opts.working_dir);
+        if (!working_dir.empty()) {
+            if (::chdir(working_dir.data()) < 0) {
                 ::_exit(127);
             }
         }
@@ -130,8 +135,9 @@ auto run_process_with_callback(
         auto env_strings = build_env_strings(opts.env, opts.inherit_env);
         auto env_ptrs = Vec<char*> {};
         env_ptrs.reserve(env_strings.size() + 1);
-        for (auto& s : env_strings) {
-            env_ptrs.push_back(s.data());
+        for (auto s : env_strings) {
+            // pool.get() returns null-terminated data
+            env_ptrs.push_back(const_cast<char*>(pool.get(s).data())); // NOLINT(cppcoreguidelines-pro-type-const-cast)
         }
         env_ptrs.push_back(nullptr);
 
@@ -139,7 +145,7 @@ auto run_process_with_callback(
             const_cast<char*>("/bin/sh"), // NOLINT(cppcoreguidelines-pro-type-const-cast)
             const_cast<char*>("-c"),      // NOLINT(cppcoreguidelines-pro-type-const-cast)
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
-            const_cast<char*>(opts.command.c_str()),
+            const_cast<char*>(pool.get(opts.command).data()),
             nullptr
         };
 
@@ -188,6 +194,8 @@ auto run_process_with_callback(
 
     auto result = ProcessResult {};
     auto timed_out = false;
+    auto stdout_buf = String {};
+    auto stderr_buf = String {};
 
     auto deadline = opts.timeout
         ? std::optional { std::chrono::steady_clock::now() + *opts.timeout }
@@ -249,9 +257,9 @@ auto run_process_with_callback(
                     }
 
                     if (is_stderr) {
-                        result.stderr_output.append(data);
+                        stderr_buf.append(data);
                     } else {
-                        result.stdout_output.append(data);
+                        stdout_buf.append(data);
                     }
                 } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
                     if (fds[i].fd == stdout_pipe[0]) {
@@ -298,6 +306,9 @@ auto run_process_with_callback(
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time
     );
+
+    result.stdout_output = pool.intern(stdout_buf);
+    result.stderr_output = pool.intern(stderr_buf);
 
     return result;
 }

@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <chrono>
@@ -15,8 +16,8 @@ namespace pup::platform {
 /// Result of process execution
 struct ProcessResult {
     int exit_code = 0;
-    String stdout_output;
-    String stderr_output;
+    StringId stdout_output = StringId::Empty;
+    StringId stderr_output = StringId::Empty;
     std::chrono::milliseconds duration = {};
     bool timed_out = false;
     bool signaled = false;
@@ -25,9 +26,9 @@ struct ProcessResult {
 
 /// Options for process execution
 struct ProcessOptions {
-    String command;
-    String working_dir;
-    Vec<String> env;
+    StringId command = StringId::Empty;
+    StringId working_dir = StringId::Empty;
+    Vec<StringId> env;
     bool inherit_env = true;
     bool capture_stdout = true;
     bool capture_stderr = true;
@@ -53,8 +54,8 @@ auto run_process_with_callback(
 /// Build environment variable list from options
 [[nodiscard]]
 auto build_env_strings(
-    Vec<String> const& extra_env,
+    Vec<StringId> const& extra_env,
     bool inherit_env
-) -> Vec<String>;
+) -> Vec<StringId>;
 
 } // namespace pup::platform

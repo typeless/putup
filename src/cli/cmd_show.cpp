@@ -98,7 +98,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -211,7 +211,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -325,7 +325,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -371,19 +371,22 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
+        auto& pool = global_pool();
+        auto source_root_sv = pool.get(ctx.layout().source_root);
+        auto output_root_sv = pool.get(ctx.layout().output_root);
         auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
-        auto working_dir = ctx.layout().source_root;
+        auto working_dir = String { source_root_sv };
         if (!source_dir_sv.empty()) {
             working_dir = pup::path::join(working_dir, source_dir_sv);
         }
 
         // Convert project-root-relative paths to working-dir-relative
-        auto source_abs = pup::path::join(ctx.layout().source_root, source_file);
+        auto source_abs = pup::path::join(source_root_sv, source_file);
         auto source_rel = pup::path::relative(source_abs, working_dir);
 
         auto output_rel = String {};
         if (!output_file.empty()) {
-            auto output_abs = pup::path::join(ctx.layout().output_root, output_file);
+            auto output_abs = pup::path::join(output_root_sv, output_file);
             output_rel = pup::path::relative(output_abs, working_dir);
         }
 
@@ -426,12 +429,12 @@ auto output_var_text(
 ) -> int
 {
     for (auto const& history : histories) {
-        printf("%s = %s\n", history.name.c_str(), history.final_value.c_str());
+        printf("%s = %s\n", global_pool().get(history.name).data(), global_pool().get(history.final_value).data());
         printf("  History:\n");
         for (auto const* assign : history.assignments) {
             auto const* prefix = assign->is_effective ? "  " : "# ";
             auto op_str = parser::op_to_string(assign->op);
-            printf("  %s%s:%u\t%s %.*s %s", prefix, assign->filename.c_str(), assign->line, assign->name.c_str(), static_cast<int>(op_str.size()), op_str.data(), assign->value_after.c_str());
+            printf("  %s%s:%u\t%s %.*s %s", prefix, global_pool().get(assign->filename).data(), assign->line, global_pool().get(assign->name).data(), static_cast<int>(op_str.size()), op_str.data(), global_pool().get(assign->value_after).data());
             if (!assign->is_effective) {
                 printf("   (ineffective)");
             }
@@ -458,8 +461,8 @@ auto output_var_json(
         }
         first_var = false;
 
-        printf("    \"%s\": {\n", escape_json(history.name).c_str());
-        printf("      \"value\": \"%s\",\n", escape_json(history.final_value).c_str());
+        printf("    \"%s\": {\n", escape_json(global_pool().get(history.name)).c_str());
+        printf("      \"value\": \"%s\",\n", escape_json(global_pool().get(history.final_value)).c_str());
         printf("      \"history\": [\n");
 
         auto first_assign = true;
@@ -471,10 +474,10 @@ auto output_var_json(
 
             auto op_str = parser::op_to_string(assign->op);
             printf("        {\n");
-            printf("          \"file\": \"%s\",\n", escape_json(assign->filename).c_str());
+            printf("          \"file\": \"%s\",\n", escape_json(global_pool().get(assign->filename)).c_str());
             printf("          \"line\": %u,\n", assign->line);
             printf("          \"op\": \"%.*s\",\n", static_cast<int>(op_str.size()), op_str.data());
-            printf("          \"value\": \"%s\",\n", escape_json(assign->value_after).c_str());
+            printf("          \"value\": \"%s\",\n", escape_json(global_pool().get(assign->value_after)).c_str());
             printf("          \"effective\": %s\n", assign->is_effective ? "true" : "false");
             printf("        }");
         }
@@ -502,14 +505,15 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
                                std::uint32_t column,
                                bool is_effective
                            ) {
+        auto& pool = global_pool();
         log.push_back(parser::VarAssignment {
-            .name = String { name },
-            .filename = String { filename },
+            .name = pool.intern(name),
+            .filename = pool.intern(filename),
             .line = line,
             .column = column,
             .op = op,
-            .value_before = String { value_before },
-            .value_after = String { value_after },
+            .value_before = pool.intern(value_before),
+            .value_after = pool.intern(value_after),
             .is_effective = is_effective,
         });
     };
@@ -524,13 +528,13 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
-    auto filtered = opts.show_var_filter.empty()
+    auto filtered = is_empty(opts.show_var_filter)
         ? log
-        : parser::filter_by_name(log, opts.show_var_filter);
+        : parser::filter_by_name(log, global_pool().get(opts.show_var_filter));
 
     auto histories = parser::group_by_name(filtered);
 
@@ -550,7 +554,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().message.c_str());
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
         return EXIT_FAILURE;
     }
 
@@ -624,23 +628,24 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
 
 auto show_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
-    if (opts.show_format == "script") {
+    auto fmt = global_pool().get(opts.show_format);
+    if (fmt == "script") {
         return cmd_export_script(opts, variant_name);
     }
-    if (opts.show_format == "compdb") {
+    if (fmt == "compdb") {
         return cmd_export_compdb(opts, variant_name);
     }
-    if (opts.show_format == "graph") {
+    if (fmt == "graph") {
         return cmd_export_graph(opts, variant_name);
     }
-    if (opts.show_format == "var") {
+    if (fmt == "var") {
         return cmd_export_var(opts, variant_name);
     }
-    if (opts.show_format == "instructions" || opts.show_format == "templates") {
+    if (fmt == "instructions" || fmt == "templates") {
         return cmd_export_instructions(opts, variant_name);
     }
 
-    fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(opts.show_format.size()), opts.show_format.data());
+    fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(fmt.size()), fmt.data());
     fprintf(stderr, "Formats: script, compdb, graph, var, instructions\n");
     return EXIT_FAILURE;
 }
@@ -649,7 +654,7 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
 
 auto cmd_show(Options const& opts) -> int
 {
-    if (opts.show_format.empty()) {
+    if (is_empty(opts.show_format)) {
         fprintf(stderr, "Usage: putup show <format>\n");
         fprintf(stderr, "Formats: script, compdb, graph, var, instructions\n");
         return EXIT_FAILURE;

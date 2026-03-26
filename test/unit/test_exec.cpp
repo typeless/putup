@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/exec/runner.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
@@ -13,6 +15,11 @@
 
 using namespace pup;
 using namespace pup::exec;
+
+namespace {
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+} // namespace
 
 #ifndef _WIN32
 
@@ -51,7 +58,7 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
 
     SECTION("working directory")
     {
-        auto opts = RunOptions { .working_dir = "/tmp" };
+        auto opts = RunOptions { .working_dir = intern("/tmp") };
         auto result = runner.run("pwd", opts);
         REQUIRE(result.has_value());
         REQUIRE(result->exit_code == 0);
@@ -62,7 +69,7 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
     SECTION("environment variable")
     {
         auto opts = RunOptions {
-            .env = { "MY_TEST_VAR=hello123" },
+            .env = { intern("MY_TEST_VAR=hello123") },
             .inherit_env = true,
         };
         auto result = runner.run("echo $MY_TEST_VAR", opts);
@@ -459,7 +466,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         auto scheduler = Scheduler { opts };
 
         scheduler.on_job_complete([&](BuildJob const&, JobResult const& result) {
-            captured_output = result.output;
+            captured_output = std::string { sv(result.output) };
         });
 
         auto result = scheduler.build(graph);
@@ -501,7 +508,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         auto scheduler = Scheduler { opts };
 
         scheduler.on_job_complete([&](BuildJob const&, JobResult const& result) {
-            captured_output = result.output;
+            captured_output = std::string { sv(result.output) };
         });
 
         auto result = scheduler.build(graph);

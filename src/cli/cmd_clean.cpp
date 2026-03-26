@@ -19,6 +19,11 @@ namespace pup::cli {
 
 namespace {
 
+auto pool_get(StringId id) -> std::string_view
+{
+    return global_pool().get(id);
+}
+
 template<typename... Args>
 auto vprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
 {
@@ -52,7 +57,7 @@ auto remove_indexed_outputs(
 
     auto index_result = pup::index::read_index(index_path);
     if (!index_result) {
-        fprintf(stderr, "Warning: Could not load index: %s\n", index_result.error().message.c_str());
+        fprintf(stderr, "Warning: Could not load index: %s\n", index_result.error().msg().data());
         return result;
     }
 
@@ -68,7 +73,7 @@ auto remove_indexed_outputs(
         for (auto parent = String { pup::path::parent(abs_path) };
              !parent.empty() && std::string_view { parent } != pup::path::parent(parent);
              parent = pup::path::parent(parent)) {
-            result.output_dirs.emplace_back(std::string_view { parent });
+            result.output_dirs.push_back(pup::global_pool().intern(parent));
         }
 
         if (!pup::platform::exists(abs_path)) {
@@ -88,7 +93,7 @@ auto remove_indexed_outputs(
                 vprint(variant_name, "Removed: %s\n", file_path_sv.data());
             }
         } else {
-            veprint(variant_name, "Error removing %s: %s\n", file_path_sv.data(), r.error().message.c_str());
+            veprint(variant_name, "Error removing %s: %s\n", file_path_sv.data(), r.error().msg().data());
             ++result.error_count;
         }
     }
@@ -104,17 +109,19 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
         return EXIT_FAILURE;
     }
 
-    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
+    auto build_dir_sv = pool_get(ctx->build_dir);
+    auto root_sv = pool_get(ctx->root);
+    auto index_path = pup::path::join(pup::path::join(build_dir_sv, ".pup"), "index");
     if (!pup::platform::exists(index_path)) {
         vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-    auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
+    auto result = remove_indexed_outputs(index_path, root_sv, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
-        result.output_dirs, ctx->build_dir, ctx->root, mode
+        result.output_dirs, build_dir_sv, root_sv, mode
     );
 
     if (opts.dry_run) {
@@ -134,19 +141,22 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         return EXIT_FAILURE;
     }
 
-    auto index_path = pup::path::join(pup::path::join(ctx->build_dir, ".pup"), "index");
+    auto& pool = pup::global_pool();
+    auto build_dir_sv = pool.get(ctx->build_dir);
+    auto root_sv = pool.get(ctx->root);
+    auto index_path = pup::path::join(pup::path::join(build_dir_sv, ".pup"), "index");
     auto error_count = std::size_t { 0 };
-    auto output_dirs = Vec<String> {};
+    auto output_dirs = Vec<StringId> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
     if (pup::platform::exists(index_path)) {
-        auto result = remove_indexed_outputs(index_path, ctx->root, mode, variant_name);
+        auto result = remove_indexed_outputs(index_path, root_sv, mode, variant_name);
         error_count += result.error_count;
         output_dirs = std::move(result.output_dirs);
     }
 
-    auto pup_dir = pup::path::join(ctx->build_dir, ".pup");
+    auto pup_dir = pup::path::join(build_dir_sv, ".pup");
     if (pup::platform::exists(pup_dir)) {
         if (opts.dry_run) {
             vprint(variant_name, "Would remove: %s\n", pup_dir.c_str());
@@ -158,7 +168,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    auto config_path = pup::path::join(ctx->build_dir, "tup.config");
+    auto config_path = pup::path::join(build_dir_sv, "tup.config");
     if (pup::platform::exists(config_path)) {
         if (opts.dry_run) {
             vprint(variant_name, "Would remove: %s\n", config_path.c_str());
@@ -170,8 +180,8 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    output_dirs.push_back(String { ctx->build_dir });
-    remove_empty_directories(output_dirs, ctx->build_dir, ctx->root, mode);
+    output_dirs.push_back(pool.intern(build_dir_sv));
+    remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode);
 
     if (!opts.dry_run) {
         vprint(variant_name, "Project reset complete\n");

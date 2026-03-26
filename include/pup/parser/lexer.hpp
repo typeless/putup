@@ -5,7 +5,7 @@
 
 #include "token.hpp"
 
-#include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 
 #include <optional>
 #include <string_view>
@@ -87,14 +87,11 @@ public:
 
     /// Get filename
     [[nodiscard]]
-    auto filename() const -> std::string_view
-    {
-        return filename_;
-    }
+    auto filename() const -> std::string_view;
 
 private:
     std::string_view source_;
-    String filename_; // Owns the filename to avoid dangling reference
+    StringId filename_id_ = StringId::Empty;
     std::size_t pos_ = 0;
     std::uint32_t line_ = 1;
     std::uint32_t column_ = 1;

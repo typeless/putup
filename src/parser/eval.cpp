@@ -208,17 +208,18 @@ namespace {
 /// Create VarContext from EvalContext for lookup functions
 auto make_var_context(EvalContext const& ctx) -> VarContext
 {
+    auto& pool = global_pool();
     return VarContext {
         .vars = ctx.vars,
         .config = ctx.config_vars,
         .node = ctx.node_vars,
-        .tup_cwd = ctx.tup_cwd,
-        .tup_platform = ctx.tup_platform,
-        .tup_arch = ctx.tup_arch,
-        .tup_variantdir = ctx.tup_variantdir,
-        .tup_variant_outputdir = ctx.tup_variant_outputdir,
-        .tup_srcdir = ctx.tup_srcdir,
-        .tup_outdir = ctx.tup_outdir,
+        .tup_cwd = pool.get(ctx.tup_cwd),
+        .tup_platform = pool.get(ctx.tup_platform),
+        .tup_arch = pool.get(ctx.tup_arch),
+        .tup_variantdir = pool.get(ctx.tup_variantdir),
+        .tup_variant_outputdir = pool.get(ctx.tup_variant_outputdir),
+        .tup_srcdir = pool.get(ctx.tup_srcdir),
+        .tup_outdir = pool.get(ctx.tup_outdir),
         .imported_vars = ctx.imported_vars,
         .string_pool = ctx.string_pool,
     };
@@ -226,22 +227,24 @@ auto make_var_context(EvalContext const& ctx) -> VarContext
 
 auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<String>
 {
+    auto& pool = global_pool();
     auto var_ctx = make_var_context(ctx);
-    auto [value, bank] = lookup_var_with_bank(var_ctx, ref.name, ref.kind);
+    auto name_sv = pool.get(ref.name);
+    auto [value, bank] = lookup_var_with_bank(var_ctx, name_sv, ref.kind);
 
     // Dependency tracking based on which bank was used
     if (bank == VarBank::Config && ctx.on_config_var_used) {
-        auto name = ref.name;
-        if (name.starts_with(builtin_vars::CONFIG_)) {
-            name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
+        auto config_name = name_sv;
+        if (config_name.starts_with(builtin_vars::CONFIG_)) {
+            config_name = config_name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
         }
-        ctx.on_config_var_used(name);
+        ctx.on_config_var_used(config_name);
     }
 
     // Propagate transitive config var dependencies for regular variables
     if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
         && ctx.var_config_deps && ctx.on_config_var_used && ctx.string_pool) {
-        auto name_id = ctx.string_pool->find(ref.name);
+        auto name_id = ctx.string_pool->find(name_sv);
         if (!pup::is_empty(name_id)) {
             if (auto const* deps = ctx.var_config_deps->find(name_id)) {
                 auto const* d = deps->data();
@@ -254,13 +257,13 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<String>
 
     // Track imported env variable usage
     if (bank == VarBank::Env && ctx.on_env_var_used) {
-        ctx.on_env_var_used(ref.name);
+        ctx.on_env_var_used(name_sv);
     }
 
     // Propagate transitive env var dependencies for regular variables
     if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
         && ctx.var_env_deps && ctx.on_env_var_used && ctx.string_pool) {
-        auto name_id = ctx.string_pool->find(ref.name);
+        auto name_id = ctx.string_pool->find(name_sv);
         if (!pup::is_empty(name_id)) {
             if (auto const* deps = ctx.var_env_deps->find(name_id)) {
                 auto const* d = deps->data();
@@ -286,7 +289,7 @@ auto expand(EvalContext& ctx, Expression const& expr) -> Result<String>
 
     for (auto const& part : expr.parts) {
         if (std::holds_alternative<Expression::Literal>(part)) {
-            result += std::get<Expression::Literal>(part).value;
+            result += global_pool().get(std::get<Expression::Literal>(part).value);
         } else if (std::holds_alternative<Expression::Variable>(part)) {
             auto const& var = std::get<Expression::Variable>(part);
             auto expanded = expand_var(ctx, var.ref);
@@ -345,7 +348,7 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<String>
                     kind = VarRef::Kind::Node;
                 }
 
-                auto ref = VarRef { kind, String { name }, {} };
+                auto ref = VarRef { kind, global_pool().intern(name), {} };
                 auto expanded = expand_var(ctx, ref);
                 if (!expanded) {
                     return pup::unexpected<Error>(expanded.error());
@@ -520,7 +523,7 @@ auto expand_path(
     if (pattern.is_order_only_group) {
         // Order-only group reference <groupname> - use callback to resolve
         if (ctx.resolve_order_only_group) {
-            auto paths = ctx.resolve_order_only_group(pattern.group_name);
+            auto paths = ctx.resolve_order_only_group(global_pool().get(pattern.group_name));
             result.insert(result.end(), paths.begin(), paths.end());
         }
         return result;
@@ -529,7 +532,7 @@ auto expand_path(
     if (pattern.is_group) {
         // Group reference {groupname} - use callback to resolve
         if (ctx.resolve_group) {
-            auto paths = ctx.resolve_group(pattern.group_name);
+            auto paths = ctx.resolve_group(global_pool().get(pattern.group_name));
             result.insert(result.end(), paths.begin(), paths.end());
         }
         return result;
@@ -573,19 +576,19 @@ auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
 {
     switch (cond.kind) {
     case Conditional::Kind::Ifdef:
-        if (ctx.vars && ctx.vars->contains(cond.var_name)) {
+        if (ctx.vars && ctx.vars->contains(global_pool().get(cond.var_name))) {
             return true;
         }
-        if (ctx.config_vars && ctx.config_vars->contains(cond.var_name)) {
+        if (ctx.config_vars && ctx.config_vars->contains(global_pool().get(cond.var_name))) {
             return true;
         }
         return false;
 
     case Conditional::Kind::Ifndef:
-        if (ctx.vars && ctx.vars->contains(cond.var_name)) {
+        if (ctx.vars && ctx.vars->contains(global_pool().get(cond.var_name))) {
             return false;
         }
-        if (ctx.config_vars && ctx.config_vars->contains(cond.var_name)) {
+        if (ctx.config_vars && ctx.config_vars->contains(global_pool().get(cond.var_name))) {
             return false;
         }
         return true;

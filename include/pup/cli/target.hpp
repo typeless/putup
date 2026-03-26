@@ -5,6 +5,7 @@
 
 #include "pup/core/result.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <optional>
@@ -12,8 +13,8 @@
 namespace pup {
 
 struct Target {
-    std::optional<String> variant;
-    String scope_or_output;
+    std::optional<StringId> variant;
+    StringId scope_or_output = StringId::Empty;
     bool is_output = false;
 };
 
@@ -32,7 +33,7 @@ auto expand_glob_target(
 [[nodiscard]]
 auto validate_target_consistency(
     std::string_view project_root,
-    Vec<String> const& targets
+    Vec<StringId> const& targets
 ) -> Result<Vec<Target>>;
 
 } // namespace pup

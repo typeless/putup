@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <cstddef>
@@ -16,7 +16,7 @@ struct Options {
     std::size_t jobs = 0;
     /// Config variable overrides from -D flags
     /// Key is stripped name (e.g., "CC" not "CONFIG_CC")
-    Vec<std::pair<String, String>> config_defines = {};
+    Vec<std::pair<StringId, StringId>> config_defines = {};
     bool keep_going = false;
     bool verbose = false;
     bool dry_run = false;
@@ -26,16 +26,16 @@ struct Options {
     bool help = false;
     bool summary = false;
     bool include_all_deps = false;
-    String command = {};
-    String show_format = {};
-    String show_var_filter = {};
-    String source_dir = {};
-    String config_dir = {};
-    Vec<String> build_dirs = {};
-    Vec<String> targets = {};
-    Vec<String> output_targets = {};
+    StringId command = StringId::Empty;
+    StringId show_format = StringId::Empty;
+    StringId show_var_filter = StringId::Empty;
+    StringId source_dir = StringId::Empty;
+    StringId config_dir = StringId::Empty;
+    Vec<StringId> build_dirs = {};
+    Vec<StringId> targets = {};
+    Vec<StringId> output_targets = {};
     bool show_json = false;
-    String config_file = {}; // path to config file for --config
+    StringId config_file = StringId::Empty;
 };
 
 /// Parse command-line arguments

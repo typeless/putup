@@ -3,6 +3,9 @@
 
 #include "e2e_fixture.hpp"
 
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
+
 #include <cstdlib>
 #include <fstream>
 #include <random>
@@ -13,6 +16,12 @@ namespace pup::test {
 
 namespace fs = std::filesystem;
 using pup::String;
+using pup::StringId;
+using pup::global_pool;
+
+namespace {
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+} // namespace
 
 namespace {
 
@@ -76,7 +85,7 @@ E2EFixture::E2EFixture(std::string_view name)
     }
 
     copy_fixture(m_fixture_dir, m_workdir);
-    m_runner.set_working_dir(String { m_workdir.string() });
+    m_runner.set_working_dir(intern(m_workdir.string()));
 }
 
 E2EFixture::~E2EFixture()
@@ -299,7 +308,7 @@ auto E2EFixture::run_pup_in_dir(
     }
 
     auto opts = exec::RunOptions {
-        .working_dir = String { working_dir.string() },
+        .working_dir = intern(working_dir.string()),
         .inherit_env = true,
     };
 
@@ -335,8 +344,8 @@ auto run_shell_fixture(std::string_view name) -> ProcessResult
 
     auto runner = exec::CommandRunner {};
     auto opts = exec::RunOptions {
-        .working_dir = String { workdir.string() },
-        .env = { String { "PUP=" + get_pup_binary().string() } },
+        .working_dir = intern(workdir.string()),
+        .env = { intern("PUP=" + get_pup_binary().string()) },
         .inherit_env = true,
     };
 

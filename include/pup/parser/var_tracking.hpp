@@ -4,7 +4,7 @@
 #pragma once
 
 #include "ast.hpp"
-#include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <cstdint>
@@ -14,13 +14,13 @@ namespace pup::parser {
 
 /// Single variable assignment record
 struct VarAssignment {
-    String name;
-    String filename;
+    StringId name = StringId::Empty;
+    StringId filename = StringId::Empty;
     std::uint32_t line = 0;
     std::uint32_t column = 0;
     Assignment::Op op = Assignment::Op::Set;
-    String value_before;
-    String value_after;
+    StringId value_before = StringId::Empty;
+    StringId value_after = StringId::Empty;
     bool is_effective = true;
 };
 
@@ -29,9 +29,9 @@ using AssignmentLog = Vec<VarAssignment>;
 
 /// Grouped history for a single variable
 struct VarHistory {
-    String name;
+    StringId name = StringId::Empty;
     Vec<VarAssignment const*> assignments;
-    String final_value;
+    StringId final_value = StringId::Empty;
 };
 
 /// Group assignments by variable name (returned sorted by name)

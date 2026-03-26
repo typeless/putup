@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/lexer.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -10,8 +12,13 @@ namespace pup::parser {
 
 Lexer::Lexer(std::string_view source, std::string_view filename)
     : source_(source)
-    , filename_(filename) // Copies into owned std::string
+    , filename_id_(global_pool().intern(filename))
 {
+}
+
+auto Lexer::filename() const -> std::string_view
+{
+    return global_pool().get(filename_id_);
 }
 
 auto Lexer::next() -> Token
@@ -40,7 +47,7 @@ auto Lexer::at_end() const -> bool
 auto Lexer::location() const -> SourceLocation
 {
     return SourceLocation {
-        .filename = filename_,
+        .filename = global_pool().get(filename_id_),
         .line = line_,
         .column = column_,
         .offset = static_cast<std::uint32_t>(pos_),
@@ -425,7 +432,7 @@ auto Lexer::make_token(TokenType type, std::size_t start) const -> Token
         .type = type,
         .text = source_.substr(start, pos_ - start),
         .location = SourceLocation {
-            .filename = filename_,
+            .filename = global_pool().get(filename_id_),
             .line = line_,
             .column = column_ - static_cast<std::uint32_t>(pos_ - start),
             .offset = static_cast<std::uint32_t>(start),

@@ -3,11 +3,19 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/parser/eval.hpp"
 
 using namespace pup::parser;
+using pup::StringId;
+using pup::global_pool;
 using pup::test::EnvGuard;
+
+namespace {
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+} // namespace
 
 TEST_CASE("VarDb basic operations", "[eval]")
 {
@@ -58,7 +66,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
     SECTION("literal expression")
     {
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Literal { "hello world" });
+        expr.parts.push_back(Expression::Literal { intern("hello world") });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -70,8 +78,8 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
         vars.set("NAME", "pup");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Literal { "hello " });
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "NAME", {} } });
+        expr.parts.push_back(Expression::Literal { intern("hello ") });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("NAME"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -84,9 +92,9 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
         vars.set("CFLAGS", "-Wall -O2");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
-        expr.parts.push_back(Expression::Literal { " " });
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CFLAGS", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("CC"), {} } });
+        expr.parts.push_back(Expression::Literal { intern(" ") });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("CFLAGS"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -96,7 +104,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
     SECTION("undefined variable expands to empty")
     {
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "UNDEFINED", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("UNDEFINED"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -154,7 +162,7 @@ TEST_CASE("Evaluator config variables", "[eval]")
         config_vars.set("DEBUG", "y");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "DEBUG", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("DEBUG"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -167,16 +175,16 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
     auto vars = VarDb {};
     auto ctx = EvalContext {
         .vars = &vars,
-        .tup_cwd = "/home/user/project/src",
-        .tup_platform = "linux",
-        .tup_arch = "x86_64",
+        .tup_cwd = intern("/home/user/project/src"),
+        .tup_platform = intern("linux"),
+        .tup_arch = intern("x86_64"),
     };
 
 
     SECTION("TUP_CWD")
     {
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "TUP_CWD", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("TUP_CWD"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -186,7 +194,7 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
     SECTION("TUP_PLATFORM")
     {
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "TUP_PLATFORM", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("TUP_PLATFORM"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -224,14 +232,14 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
-        .tup_platform = pup::PLATFORM, // compile-time default
+        .tup_platform = intern(pup::PLATFORM), // compile-time default
     };
 
 
     SECTION("returns compile-time default when config not set")
     {
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("TUP_PLATFORM"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -243,7 +251,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
         config_vars.set("TUP_PLATFORM", "win32");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("TUP_PLATFORM"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -256,7 +264,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
         config_vars.set("TUP_PLATFORM", "config-platform");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_PLATFORM", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("TUP_PLATFORM"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -271,14 +279,14 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
-        .tup_arch = pup::ARCH, // compile-time default
+        .tup_arch = intern(pup::ARCH), // compile-time default
     };
 
 
     SECTION("returns compile-time default when config not set")
     {
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("TUP_ARCH"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -290,7 +298,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
         config_vars.set("TUP_ARCH", "arm64");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("TUP_ARCH"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -303,7 +311,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
         config_vars.set("TUP_ARCH", "config-arch");
 
         auto expr = Expression {};
-        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, "TUP_ARCH", {} } });
+        expr.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Config, intern("TUP_ARCH"), {} } });
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
@@ -521,7 +529,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
 
         auto cond = Conditional {};
         cond.kind = Conditional::Kind::Ifdef;
-        cond.var_name = "DEBUG";
+        cond.var_name = intern("DEBUG");
 
         REQUIRE(evaluate_condition(ctx,cond));
     }
@@ -530,7 +538,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
     {
         auto cond = Conditional {};
         cond.kind = Conditional::Kind::Ifdef;
-        cond.var_name = "UNDEFINED";
+        cond.var_name = intern("UNDEFINED");
 
         REQUIRE_FALSE(evaluate_condition(ctx,cond));
     }
@@ -539,7 +547,7 @@ TEST_CASE("Evaluator conditionals", "[eval]")
     {
         auto cond = Conditional {};
         cond.kind = Conditional::Kind::Ifndef;
-        cond.var_name = "UNDEFINED";
+        cond.var_name = intern("UNDEFINED");
 
         REQUIRE(evaluate_condition(ctx,cond));
     }
@@ -550,8 +558,8 @@ TEST_CASE("Evaluator conditionals", "[eval]")
 
         auto cond = Conditional {};
         cond.kind = Conditional::Kind::Ifeq;
-        cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
-        cond.rhs.parts.push_back(Expression::Literal { "gcc" });
+        cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("CC"), {} } });
+        cond.rhs.parts.push_back(Expression::Literal { intern("gcc") });
 
         REQUIRE(evaluate_condition(ctx,cond));
     }
@@ -562,8 +570,8 @@ TEST_CASE("Evaluator conditionals", "[eval]")
 
         auto cond = Conditional {};
         cond.kind = Conditional::Kind::Ifeq;
-        cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
-        cond.rhs.parts.push_back(Expression::Literal { "gcc" });
+        cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("CC"), {} } });
+        cond.rhs.parts.push_back(Expression::Literal { intern("gcc") });
 
         REQUIRE_FALSE(evaluate_condition(ctx,cond));
     }
@@ -574,8 +582,8 @@ TEST_CASE("Evaluator conditionals", "[eval]")
 
         auto cond = Conditional {};
         cond.kind = Conditional::Kind::Ifneq;
-        cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, "CC", {} } });
-        cond.rhs.parts.push_back(Expression::Literal { "gcc" });
+        cond.lhs.parts.push_back(Expression::Variable { VarRef { VarRef::Kind::Regular, intern("CC"), {} } });
+        cond.rhs.parts.push_back(Expression::Literal { intern("gcc") });
 
         REQUIRE(evaluate_condition(ctx,cond));
     }
@@ -597,7 +605,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
         auto pattern = PathPattern {};
         pattern.is_group = true;
-        pattern.group_name = "objs";
+        pattern.group_name = intern("objs");
 
         auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
@@ -617,7 +625,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
         auto pattern = PathPattern {};
         pattern.is_order_only_group = true;
-        pattern.group_name = "gen-headers";
+        pattern.group_name = intern("gen-headers");
 
         auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
@@ -630,7 +638,7 @@ TEST_CASE("Evaluator group resolution", "[eval]")
     {
         auto pattern = PathPattern {};
         pattern.is_order_only_group = true;
-        pattern.group_name = "nonexistent";
+        pattern.group_name = intern("nonexistent");
 
         auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
@@ -683,7 +691,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
 
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    ctx.tup_variant_outputdir = ".";
+    ctx.tup_variant_outputdir = intern(".");
 
 
 
@@ -700,7 +708,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]"
 
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    ctx.tup_variant_outputdir = "../../build/sub/dir";
+    ctx.tup_variant_outputdir = intern("../../build/sub/dir");
 
 
 
@@ -716,7 +724,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
 
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    ctx.tup_variant_outputdir = "../../build/sub/dir";
+    ctx.tup_variant_outputdir = intern("../../build/sub/dir");
 
 
 
@@ -737,9 +745,9 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
 
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    ctx.tup_cwd = "../../rules";
-    ctx.tup_variantdir = "../../build/rules";
-    ctx.tup_variant_outputdir = "../../build/sub/dir";
+    ctx.tup_cwd = intern("../../rules");
+    ctx.tup_variantdir = intern("../../build/rules");
+    ctx.tup_variant_outputdir = intern("../../build/sub/dir");
 
 
 

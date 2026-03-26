@@ -2,9 +2,11 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/scheduler.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
@@ -35,11 +37,13 @@ auto env_cache_find(EnvCache const& cache, std::string_view key) -> std::pair<St
 /// Must be called before spawning worker threads (getenv is not thread-safe).
 auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
 {
+    auto& pool = global_pool();
+
     // Collect unique var names
     auto names = Vec<String> {};
     for (auto const& job : jobs) {
-        for (auto const& var_name : job.exported_vars) {
-            names.push_back(var_name);
+        for (auto var_id : job.exported_vars) {
+            names.push_back(String { pool.get(var_id) });
         }
     }
     std::sort(names.begin(), names.end());
@@ -194,9 +198,10 @@ auto validate_guard_dependencies(
         // This job is skipped - check if any active job depends on it
         for (auto dep_idx : dependents[i]) {
             if (jobs[dep_idx].guard_active) {
+                auto& pool = global_pool();
                 return make_error<void>(
                     ErrorCode::MissingInput,
-                    String { "Command '" } + jobs[dep_idx].command + "' depends on output from '" + jobs[i].command + "' which is inactive due to conditional guard"
+                    String { "Command '" } + pool.get(jobs[dep_idx].command) + "' depends on output from '" + pool.get(jobs[i].command) + "' which is inactive due to conditional guard"
                 );
             }
         }
@@ -352,7 +357,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 
 auto Scheduler::build_incremental(
     graph::BuildGraph const& graph,
-    Vec<String> const& changed_files
+    Vec<StringId> const& changed_files
 ) -> Result<BuildStats>
 {
     // Build temporary path-to-NodeId map for changed file lookup
@@ -370,7 +375,9 @@ auto Scheduler::build_incremental(
     auto affected = NodeIdMap32 {};
     auto affected_vec = Vec<NodeId> {};
 
-    for (auto const& file_path : changed_files) {
+    auto& pool = global_pool();
+    for (auto file_id : changed_files) {
+        auto file_path = pool.get(file_id);
         auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
         if (it != path_to_id.end() && it->first == file_path) {
             auto id = it->second;
@@ -445,7 +452,7 @@ auto Scheduler::Impl::execute_sequential(
 ) -> Result<void>
 {
     auto runner = CommandRunner {};
-    if (!options.source_root.empty()) {
+    if (!is_empty(options.source_root)) {
         runner.set_working_dir(options.source_root);
     }
     if (options.timeout) {
@@ -559,7 +566,7 @@ auto Scheduler::execute_parallel(
 
     auto worker = [&]() {
         auto runner = CommandRunner {};
-        if (!impl_->options.source_root.empty()) {
+        if (!is_empty(impl_->options.source_root)) {
             runner.set_working_dir(impl_->options.source_root);
         }
         if (impl_->options.timeout) {
@@ -682,6 +689,7 @@ auto Scheduler::Impl::execute_job(
     EnvCache const& env_cache
 ) -> JobResult
 {
+    auto& pool = global_pool();
     auto result = JobResult {
         .id = job.id,
         .success = false,
@@ -701,16 +709,15 @@ auto Scheduler::Impl::execute_job(
     // - Absolute: use as-is
     // - Already variant-mapped (starts with relative output_root prefix): use source_root as base
     // - Source-relative: prepend output_root
-    auto source_root = options.source_root;
-    auto relative_output_root = pup::path::relative(
-        options.output_root,
-        source_root
-    );
+    auto source_root_sv = pool.get(options.source_root);
+    auto output_root_sv = pool.get(options.output_root);
+    auto relative_output_root = pup::path::relative(output_root_sv, source_root_sv);
     auto output_root_prefix = relative_output_root;
-    for (auto const& output : job.outputs) {
-        auto output_path = pup::path::is_absolute(output)
-            ? String { output }
-            : resolve_variant_path(source_root, options.output_root, output_root_prefix, output);
+    for (auto output_id : job.outputs) {
+        auto output_sv = pool.get(output_id);
+        auto output_path = pup::path::is_absolute(output_sv)
+            ? String { output_sv }
+            : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
         auto parent = pup::path::parent(output_path);
         if (!parent.empty()) {
             (void)pup::platform::create_directories(parent);
@@ -718,24 +725,25 @@ auto Scheduler::Impl::execute_job(
     }
 
     auto run_opts = RunOptions {};
-    if (!job.working_dir.empty()) {
+    if (!is_empty(job.working_dir)) {
         run_opts.working_dir = job.working_dir;
     }
 
     // Pass exported environment variables to command
     // Per tup manual: "value for the variable comes from tup's environment"
-    for (auto const& var_name : job.exported_vars) {
-        if (auto it = env_cache_find(env_cache, var_name); it != env_cache.end()) {
-            auto entry = String { var_name };
+    for (auto var_id : job.exported_vars) {
+        auto var_sv = pool.get(var_id);
+        if (auto it = env_cache_find(env_cache, var_sv); it != env_cache.end()) {
+            auto entry = String { var_sv };
             entry += '=';
             entry += it->second;
-            run_opts.env.emplace_back(std::string_view { entry });
+            run_opts.env.push_back(pool.intern(entry));
         }
     }
 
-    auto cmd_result = runner.run(job.command, run_opts);
+    auto cmd_result = runner.run(pool.get(job.command), run_opts);
     if (!cmd_result) {
-        result.output = "Failed to execute command";
+        result.output = pool.intern("Failed to execute command");
         return result;
     }
 
@@ -743,14 +751,18 @@ auto Scheduler::Impl::execute_job(
     result.success = (cmd_result->exit_code == 0);
     result.duration = cmd_result->duration;
 
+    auto output_buf = String {};
     if (!cmd_result->stdout_output.empty()) {
-        result.output = cmd_result->stdout_output;
+        output_buf = cmd_result->stdout_output;
     }
     if (!cmd_result->stderr_output.empty()) {
-        if (!result.output.empty()) {
-            result.output += '\n';
+        if (!output_buf.empty()) {
+            output_buf += '\n';
         }
-        result.output += cmd_result->stderr_output;
+        output_buf += cmd_result->stderr_output;
+    }
+    if (!output_buf.empty()) {
+        result.output = pool.intern(output_buf);
     }
 
     // Discover implicit dependencies from .d files (if command succeeded)
@@ -759,16 +771,17 @@ auto Scheduler::Impl::execute_job(
         if (job.inject_implicit_deps && !cmd_result->stdout_output.empty()) {
             auto depfile_result = parser::parse_depfile(std::string_view { cmd_result->stdout_output });
             if (depfile_result) {
-                for (auto& dep : depfile_result->dependencies) {
-                    result.discovered_deps.push_back(std::move(dep));
+                for (auto dep_id : depfile_result->dependencies) {
+                    result.discovered_deps.push_back(dep_id);
                 }
                 result.deps_for_command = job.parent_command;
             }
         }
 
         // Traditional .d file discovery
-        for (auto const& output : job.outputs) {
-            auto ext = pup::path::extension(output);
+        for (auto output_id : job.outputs) {
+            auto output_sv = pool.get(output_id);
+            auto ext = pup::path::extension(output_sv);
 
             // Support common object file extensions (.o on Unix, .obj on Windows)
             if (ext != ".o" && ext != ".obj") {
@@ -776,8 +789,8 @@ auto Scheduler::Impl::execute_job(
             }
 
             // Compute filesystem path for the .d file
-            auto base_path = resolve_variant_path(source_root, options.output_root, output_root_prefix, pup::path::parent(output));
-            auto stem = String { pup::path::stem(output) };
+            auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
+            auto stem = String { pup::path::stem(output_sv) };
             stem += ".d";
             auto depfile_path = pup::path::join(base_path, stem);
 
@@ -787,8 +800,8 @@ auto Scheduler::Impl::execute_job(
 
             auto depfile_result = parser::parse_depfile_path(depfile_path);
             if (depfile_result) {
-                for (auto& dep : depfile_result->dependencies) {
-                    result.discovered_deps.push_back(std::move(dep));
+                for (auto dep_id : depfile_result->dependencies) {
+                    result.discovered_deps.push_back(dep_id);
                 }
             }
         }
@@ -811,6 +824,11 @@ auto Scheduler::build_job_list(
         );
     }
 
+    auto& pool = global_pool();
+    auto output_root_sv = pool.get(impl_->options.output_root);
+    auto source_root_sv = pool.get(impl_->options.source_root);
+    auto config_root_sv = pool.get(impl_->options.config_root);
+
     // Validate no unrealized ghost nodes remain (missing inputs)
     // Exception: Ghost nodes whose files actually exist on disk are valid
     // non-generated input files (e.g., tup.config, manually-created config files)
@@ -820,14 +838,14 @@ auto Scheduler::build_job_list(
             auto path = graph.get_full_path(id);
             // Check if file exists - if so, it's a valid input (not missing)
             auto build_root_name = graph.get_build_root_name();
-            auto file_path = pup::path::join(impl_->options.output_root, path);
+            auto file_path = pup::path::join(output_root_sv, path);
             // Strip build prefix from path if present (for consistent file lookup)
             auto lookup_path = path;
             auto build_prefix = String { build_root_name };
             build_prefix += '/';
             if (!build_root_name.empty() && path.starts_with(build_prefix)) {
                 lookup_path = path.substr(build_prefix.size());
-                file_path = pup::path::join(impl_->options.output_root, lookup_path);
+                file_path = pup::path::join(output_root_sv, lookup_path);
             }
             if (pup::platform::exists(file_path)) {
                 continue; // File exists, not a missing input
@@ -857,7 +875,7 @@ auto Scheduler::build_job_list(
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
         auto source_dir = get_source_dir(graph.graph(), id);
-        auto working_dir = String { impl_->options.source_root };
+        auto working_dir = String { source_root_sv };
         if (!source_dir.empty()) {
             working_dir = pup::path::join(working_dir, source_dir);
         }
@@ -875,27 +893,30 @@ auto Scheduler::build_job_list(
         }
 
         // Expand command from instruction pattern + operands
-        auto cmd_str = expand_instruction(graph.graph(), id, cache, impl_->options.source_root, impl_->options.config_root);
-        auto display_str = String { get_display_str(graph.graph(), id) };
+        auto cmd_str = expand_instruction(graph.graph(), id, cache, source_root_sv, config_root_sv);
+        auto display_sv = get_display_str(graph.graph(), id);
 
-        auto exported_str = Vec<String> {};
-        exported_str.reserve(node->exported_vars.size());
+        auto exported_ids = Vec<StringId> {};
+        exported_ids.reserve(node->exported_vars.size());
         for (auto raw_id : node->exported_vars) {
-            exported_str.emplace_back(global_pool().get(make_string_id(raw_id)));
+            exported_ids.push_back(make_string_id(raw_id));
         }
 
         // Evaluate guards - command only executes if ALL guards are satisfied
         auto guard_active = graph::is_guard_satisfied(graph.graph(), *node);
 
+        auto cmd_id = pool.intern(cmd_str);
+        auto display_id = pool.intern(display_sv);
+
         auto job = BuildJob {
             .id = id,
-            .command = cmd_str,
-            .display = display_str.empty() ? cmd_str : display_str,
-            .working_dir = working_dir,
+            .command = cmd_id,
+            .display = is_empty(display_id) ? cmd_id : display_id,
+            .working_dir = pool.intern(working_dir),
             .inputs = {},
             .outputs = {},
             .order_only_inputs = {},
-            .exported_vars = std::move(exported_str),
+            .exported_vars = std::move(exported_ids),
             .capture_stdout = capture_stdout,
             .inject_implicit_deps = inject_implicit,
             .parent_command = parent_cmd,
@@ -906,7 +927,7 @@ auto Scheduler::build_job_list(
         for (auto input_id : graph.get_inputs(id)) {
             auto input_path = graph.get_full_path(input_id);
             if (!input_path.empty()) {
-                job.inputs.push_back(std::move(input_path));
+                job.inputs.push_back(pool.intern(input_path));
             }
         }
 
@@ -914,7 +935,7 @@ auto Scheduler::build_job_list(
         for (auto output_id : graph.get_outputs(id)) {
             auto output_path = graph.get_full_path(output_id);
             if (!output_path.empty()) {
-                job.outputs.push_back(std::move(output_path));
+                job.outputs.push_back(pool.intern(output_path));
             }
         }
 
@@ -931,13 +952,13 @@ auto Scheduler::build_job_list(
                 for (auto member_id : graph.get_inputs(oi_id)) {
                     auto member_path = graph.get_full_path(member_id);
                     if (!member_path.empty()) {
-                        job.order_only_inputs.push_back(std::move(member_path));
+                        job.order_only_inputs.push_back(pool.intern(member_path));
                     }
                 }
             } else {
                 auto oi_path = graph.get_full_path(oi_id);
                 if (!oi_path.empty()) {
-                    job.order_only_inputs.push_back(std::move(oi_path));
+                    job.order_only_inputs.push_back(pool.intern(oi_path));
                 }
             }
         }
