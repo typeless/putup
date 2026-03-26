@@ -72,14 +72,7 @@ TEST_CASE("HeapBuf fmt", "[heap_buf]")
     REQUIRE(buf.view() == "error: syntax at line 10");
 }
 
-TEST_CASE("HeapBuf move", "[heap_buf]")
-{
-    auto a = HeapBuf {};
-    a.append("movable");
-    auto b = HeapBuf { std::move(a) };
-    REQUIRE(b.view() == "movable");
-    REQUIRE(a.empty());
-}
+// HeapBuf is non-movable (YAGNI — no function returns it yet)
 
 TEST_CASE("HeapBuf fmt escaped braces", "[heap_buf]")
 {

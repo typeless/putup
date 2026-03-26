@@ -14,30 +14,6 @@ HeapBuf::~HeapBuf()
     std::free(data_);
 }
 
-HeapBuf::HeapBuf(HeapBuf&& other) noexcept
-    : data_(other.data_)
-    , size_(other.size_)
-    , capacity_(other.capacity_)
-{
-    other.data_ = nullptr;
-    other.size_ = 0;
-    other.capacity_ = 0;
-}
-
-auto HeapBuf::operator=(HeapBuf&& other) noexcept -> HeapBuf&
-{
-    if (this != &other) {
-        std::free(data_);
-        data_ = other.data_;
-        size_ = other.size_;
-        capacity_ = other.capacity_;
-        other.data_ = nullptr;
-        other.size_ = 0;
-        other.capacity_ = 0;
-    }
-    return *this;
-}
-
 auto HeapBuf::grow(std::size_t needed) -> void
 {
     if (needed <= capacity_) {
