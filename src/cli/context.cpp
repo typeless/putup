@@ -713,11 +713,12 @@ auto build_context(
     ctx.impl_->old_index = std::move(old_index);
 
     // 6. Parse Tupfiles
+    auto& pool = pup::global_pool();
     auto builder_opts = graph::BuilderOptions {
-        .source_root = ctx.impl_->layout.source_root,
-        .config_root = ctx.impl_->layout.config_root,
-        .output_root = ctx.impl_->layout.output_root,
-        .config_path = config_path,
+        .source_root = pool.intern(ctx.impl_->layout.source_root),
+        .config_root = pool.intern(ctx.impl_->layout.config_root),
+        .output_root = pool.intern(ctx.impl_->layout.output_root),
+        .config_path = pool.intern(config_path),
         .expand_globs = true,
         .verbose = ctx_opts.verbose,
         .scanner_registry = ctx_opts.scanner_registry,

@@ -26,10 +26,10 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    String source_root;                                    ///< Source tree root (where source files live)
-    String config_root;                                    ///< Config tree root (where Tupfiles live)
-    String output_root;                                    ///< Output tree root (where outputs/.pup go)
-    String config_path;                                    ///< Path to tup.config (for sticky edge tracking)
+    StringId source_root = StringId::Empty;                ///< Source tree root (where source files live)
+    StringId config_root = StringId::Empty;                ///< Config tree root (where Tupfiles live)
+    StringId output_root = StringId::Empty;                ///< Output tree root (where outputs/.pup go)
+    StringId config_path = StringId::Empty;                ///< Path to tup.config (for sticky edge tracking)
     bool expand_globs = true;                              ///< Expand glob patterns
     bool validate_inputs = true;                           ///< Check that input files exist
     bool verbose = false;                                  ///< Print verbose output
@@ -40,22 +40,22 @@ struct BuilderOptions {
 
 /// Bang macro definition
 struct BangMacroDef {
-    String name;
+    StringId name = StringId::Empty;
     bool foreach_ = false;
     Vec<parser::PathPattern> order_only_inputs;
     parser::Expression command;
     std::optional<parser::Expression> display;
     Vec<parser::PathPattern> outputs;
     Vec<parser::PathPattern> extra_outputs;
-    std::optional<String> output_group;                            ///< {binname} at end
-    std::optional<String> output_order_only_group;                 ///< <groupname> at end
+    std::optional<StringId> output_group;                          ///< {binname} at end
+    std::optional<StringId> output_order_only_group;               ///< <groupname> at end
     std::optional<parser::Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
 /// Pending weak assignment with captured dependencies
 struct PendingWeakAssignment {
-    String name;
-    String value;
+    StringId name = StringId::Empty;
+    StringId value = StringId::Empty;
     SortedIdVec config_deps; ///< Config var StringIds used in RHS
     SortedIdVec env_deps;    ///< Env var StringIds used in RHS
 };
@@ -103,8 +103,8 @@ struct BuilderContext {
     SortedIdVec included_files = {};
     SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
 
-    String current_dir = {};
-    String current_file = {};
+    StringId current_dir = StringId::Empty;
+    StringId current_file = StringId::Empty;
     Vec<NodeId> sticky_sources = {}; ///< Tupfile + included files for sticky edges
 
     /// Config variable StringIds used during current command expansion (cleared per command)

@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/parser/eval.hpp"
 
@@ -13,6 +15,10 @@ using namespace pup::graph;
 using namespace pup::parser;
 
 namespace fs = std::filesystem;
+
+namespace {
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+} // namespace
 
 namespace {
 
@@ -132,10 +138,10 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -190,10 +196,10 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -249,10 +255,10 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -309,10 +315,10 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -398,10 +404,10 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -437,10 +443,10 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = String { (fixture.root() / "build-variant").string() },
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern((fixture.root() / "build-variant").string()),
+        .config_path = pup::StringId::Empty,
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -488,10 +494,10 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = String { (fixture.root() / "build-variant").string() },
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern((fixture.root() / "build-variant").string()),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -530,10 +536,10 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -595,10 +601,10 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -660,10 +666,10 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = true,
         .validate_inputs = false,
     };
@@ -729,10 +735,10 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -817,10 +823,10 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -900,10 +906,10 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = String { (fixture.root() / "build-variant").string() },
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern((fixture.root() / "build-variant").string()),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -950,10 +956,10 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1002,10 +1008,10 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1074,10 +1080,10 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     fs::create_directories(fs::path { std::string(output_root) } / "src");
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = output_root,
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern(output_root),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1141,10 +1147,10 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     auto output_root = String { (fixture.root() / "build-variant").string() };
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = output_root,
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern(output_root),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1243,10 +1249,10 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
 
     // In-tree variant build
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = String { (fixture.root() / "build").string() },
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern((fixture.root() / "build").string()),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1308,10 +1314,10 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1359,10 +1365,10 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1414,10 +1420,10 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = {},
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1471,10 +1477,10 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
 
     // Variant build with output_root
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = String { (fixture.root() / "build").string() },
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern((fixture.root() / "build").string()),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };
@@ -1537,10 +1543,10 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     auto ctx = EvalContext { .vars = &vars };
 
     auto options = BuilderOptions {
-        .source_root = fixture.root_str(),
-        .config_root = fixture.root_str(),
-        .output_root = String { (fixture.root() / "build").string() },
-        .config_path = {},
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = intern((fixture.root() / "build").string()),
+        .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
     };

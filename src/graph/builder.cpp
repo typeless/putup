@@ -25,6 +25,9 @@ namespace {
 
 using pup::String;
 
+auto str(StringId id) -> std::string_view { return global_pool().get(id); }
+auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+
 auto sorted_insert(Vec<String>& v, std::string_view key) -> void
 {
     auto pos = std::lower_bound(v.begin(), v.end(), key);
@@ -170,20 +173,20 @@ struct PathTransformContext {
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
     auto canonical_cwd = String {};
-    if (!ctx.options.source_root.empty() && !ctx.options.output_root.empty()
-        && ctx.options.source_root != ctx.options.output_root) {
-        auto r = pup::platform::canonical(pup::path::join(ctx.options.source_root, ctx.current_dir));
+    if (!is_empty(ctx.options.source_root) && !is_empty(ctx.options.output_root)
+        && str(ctx.options.source_root) != str(ctx.options.output_root)) {
+        auto r = pup::platform::canonical(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
         if (r) {
             canonical_cwd = *r;
         }
     }
 
     return PathTransformContext {
-        .source_to_root = String { pup::compute_source_to_root(ctx.current_dir) },
-        .current_dir_str = ctx.current_dir,
-        .source_root = ctx.options.source_root,
-        .config_root = ctx.options.config_root,
-        .output_root = ctx.options.output_root,
+        .source_to_root = String { pup::compute_source_to_root(str(ctx.current_dir)) },
+        .current_dir_str = str(ctx.current_dir),
+        .source_root = str(ctx.options.source_root),
+        .config_root = str(ctx.options.config_root),
+        .output_root = str(ctx.options.output_root),
         .canonical_cwd = std::move(canonical_cwd),
     };
 }
@@ -614,7 +617,7 @@ auto resolve_include_path(
         return pup::unexpected<Error>(path_result.error());
     }
 
-    auto resolved = pup::path::join(pup::path::join(include_root, ctx.current_dir), *path_result);
+    auto resolved = pup::path::join(pup::path::join(include_root, str(ctx.current_dir)), *path_result);
     if (!pup::platform::exists(resolved)) {
         return make_error<String>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
     }
@@ -629,16 +632,16 @@ auto expand_glob_pattern(
     Vec<String>& result
 ) -> void
 {
-    auto base = ctx.current_dir.empty() ? String { ctx.options.source_root }
-                                        : pup::path::join(ctx.options.source_root, ctx.current_dir);
+    auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
+                                        : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
 
     // First try expanding against filesystem
     auto expanded = parser::glob_expand(path, base);
     if (expanded && !expanded->empty()) {
         for (auto& p : *expanded) {
             // Prefix with current_dir to make path relative to project root
-            if (!ctx.current_dir.empty()) {
-                result.push_back(pup::path::join(ctx.current_dir, p));
+            if (!is_empty(ctx.current_dir)) {
+                result.push_back(pup::path::join(str(ctx.current_dir), p));
             } else {
                 result.push_back(String { std::move(p) });
             }
@@ -649,14 +652,14 @@ auto expand_glob_pattern(
     // No files on disk - look for matching Generated nodes in graph
     // First, try demand-driven parsing of the directory containing the glob pattern
     auto pattern_dir = pup::path::parent(path);
-    auto abs_pattern_dir = pup::path::normalize(pup::path::join(ctx.current_dir, pattern_dir));
+    auto abs_pattern_dir = pup::path::normalize(pup::path::join(str(ctx.current_dir), pattern_dir));
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir);
 
     // Match glob pattern against Generated nodes
     // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
     // but the glob pattern is relative to current directory (e.g., *.o)
     // We need to strip the build root prefix and match against the relative path
-    auto pattern_path = ctx.current_dir.empty() ? pup::String { path } : pup::path::normalize(pup::path::join(ctx.current_dir, path));
+    auto pattern_path = is_empty(ctx.current_dir) ? pup::String { path } : pup::path::normalize(pup::path::join(str(ctx.current_dir), path));
     auto glob = parser::Glob { pattern_path };
     auto build_root_name = ctx.graph->get_build_root_name();
     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
@@ -692,12 +695,12 @@ auto apply_exclusions(
 
         for (auto const& excl : *paths) {
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
-                auto base = ctx.current_dir.empty() ? String { ctx.options.source_root }
-                                                    : pup::path::join(ctx.options.source_root, ctx.current_dir);
+                auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
+                                                    : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
                 auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
                     for (auto const& p : *expanded) {
-                        auto normalized = ctx.current_dir.empty() ? pup::path::normalize(p) : pup::path::normalize(pup::path::join(ctx.current_dir, p));
+                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p) : pup::path::normalize(pup::path::join(str(ctx.current_dir), p));
                         for (auto it = result.begin(); it != result.end();) {
                             if (*it == normalized) {
                                 it = result.erase(it);
@@ -708,7 +711,7 @@ auto apply_exclusions(
                     }
                 }
             } else {
-                auto normalized_excl = ctx.current_dir.empty() ? pup::path::normalize(excl) : pup::path::normalize(pup::path::join(ctx.current_dir, excl));
+                auto normalized_excl = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pup::path::join(str(ctx.current_dir), excl));
                 for (auto it = result.begin(); it != result.end();) {
                     if (*it == normalized_excl) {
                         it = result.erase(it);
@@ -751,7 +754,7 @@ auto process_generated_rules(
         // For group references, defer to resolve_deferred_order_only_edges()
         for (auto oi_id : gen_rule.order_only_inputs) {
             auto oi = pool.get(oi_id);
-            auto group_ref = parse_group_reference(oi, ctx.current_dir, ctx.options.source_root);
+            auto group_ref = parse_group_reference(oi, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 // This is a group reference - get/create group node and defer edge
                 auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
@@ -875,9 +878,9 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) ->
     for (auto it = ctx.pending_weak_assignments.rbegin();
          it != ctx.pending_weak_assignments.rend();
          ++it) {
-        if (!ctx.vars->contains(it->name)) {
-            ctx.vars->set(it->name, it->value);
-            auto name_id = ctx.graph->intern(it->name);
+        if (!ctx.vars->contains(str(it->name))) {
+            ctx.vars->set(str(it->name), str(it->value));
+            auto name_id = it->name;
             if (!it->config_deps.empty()) {
                 state.var_config_deps.get_or_create(name_id) = std::move(it->config_deps);
             }
@@ -951,16 +954,19 @@ auto process_bang_macro(
     parser::BangMacro const& macro
 ) -> Result<void>
 {
+    auto intern_opt = [](std::optional<String> const& opt) -> std::optional<StringId> {
+        return opt ? std::optional<StringId> { global_pool().intern(*opt) } : std::nullopt;
+    };
     auto def = BangMacroDef {
-        .name = macro.name,
+        .name = intern(macro.name),
         .foreach_ = macro.foreach_,
         .order_only_inputs = macro.order_only_inputs,
         .command = macro.command,
         .display = macro.display,
         .outputs = macro.outputs,
         .extra_outputs = macro.extra_outputs,
-        .output_group = macro.output_group,
-        .output_order_only_group = macro.output_order_only_group,
+        .output_group = intern_opt(macro.output_group),
+        .output_order_only_group = intern_opt(macro.output_order_only_group),
         .output_order_only_group_dir = macro.output_order_only_group_dir,
     };
     auto key = to_underlying(ctx.graph->intern(macro.name));
@@ -1073,8 +1079,8 @@ auto process_assignment(
         // ??= - deferred assignment, applied before rules (last wins)
         // Store deps with the pending assignment; they'll be recorded when applied
         ctx.pending_weak_assignments.push_back(PendingWeakAssignment {
-            .name = *name,
-            .value = *value,
+            .name = intern(*name),
+            .value = intern(*value),
             .config_deps = std::move(captured_config_deps),
             .env_deps = std::move(captured_env_deps),
         });
@@ -1088,7 +1094,7 @@ auto process_assignment(
             assign.op,
             value_before,
             value_after,
-            ctx.current_file.c_str(),
+            str(ctx.current_file).data(),
             assign.location.line,
             assign.location.column,
             is_effective
@@ -1249,12 +1255,12 @@ auto include_single_file(
     if (is_rules && ctx.eval) {
         old_tup_cwd = ctx.eval->tup_cwd;
         auto include_dir = pup::path::parent(include_path);
-        auto rel_path = pup::path::relative(include_dir, pup::path::join(include_root, ctx.current_dir));
+        auto rel_path = pup::path::relative(include_dir, pup::path::join(include_root, str(ctx.current_dir)));
         ctx.eval->tup_cwd = rel_path.empty() ? String { "." } : rel_path;
     }
 
     auto old_current_file = ctx.current_file;
-    ctx.current_file = include_path;
+    ctx.current_file = intern(include_path);
 
     for (auto const& stmt : parse_result.tupfile.statements) {
         auto result = Result<void> { process_statement(ctx, state, *stmt) };
@@ -1281,10 +1287,10 @@ auto process_include(
     parser::Include const& inc
 ) -> Result<void>
 {
-    auto const& include_root = ctx.options.config_root.empty() ? ctx.options.source_root : ctx.options.config_root;
+    auto const& include_root = is_empty(ctx.options.config_root) ? str(ctx.options.source_root) : str(ctx.options.config_root);
 
     if (inc.is_rules) {
-        auto tuprules_files = find_tuprules_files(pup::path::join(include_root, ctx.current_dir), include_root);
+        auto tuprules_files = find_tuprules_files(pup::path::join(include_root, str(ctx.current_dir)), include_root);
         for (auto const& tuprules : tuprules_files) {
             auto result = include_single_file(ctx, state, include_root, tuprules, true);
             if (!result) {
@@ -1417,9 +1423,9 @@ auto expand_rule(
 
     // Build PatternFlags once (input fields only, output fields added later)
     auto primary_input = cmd_inputs.empty() ? String {} : cmd_inputs[0];
-    auto current_dir_name = ctx.current_dir.empty()
+    auto current_dir_name = is_empty(ctx.current_dir)
         ? String { "." }
-        : String { pup::path::filename(ctx.current_dir) };
+        : String { pup::path::filename(str(ctx.current_dir)) };
     auto glob_match = glob_pattern.empty() ? String {}
                                            : parser::glob_match_extract(glob_pattern, primary_input);
 
@@ -1473,10 +1479,10 @@ auto expand_rule(
             if (!pattern.path.empty()) {
                 auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
-                    group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
+                    group_dir = normalize_group_dir(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
                 }
             } else {
-                group_dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
+                group_dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
             }
 
             // Demand-driven parsing: request the directory's Tupfile if not yet parsed
@@ -1501,7 +1507,7 @@ auto expand_rule(
             if (!expanded) {
                 continue;
             }
-            auto group_ref = parse_group_reference(*expanded, ctx.current_dir, ctx.options.source_root);
+            auto group_ref = parse_group_reference(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 // Demand-driven parsing: request the directory's Tupfile if not yet parsed
                 request_demand_driven_parse(*ctx.eval, group_ref->group_dir);
@@ -1534,7 +1540,7 @@ auto expand_rule(
             return { String { "%<" } + name + ">" };
         }
         // Local group not in this rule's inputs — also defer
-        auto dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
+        auto dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
         auto key_str = String { dir } + "/" + name;
         auto key_id = to_underlying(ctx.graph->intern(key_str));
         auto const* node_id = state.group_nodes.find(key_id);
@@ -1639,7 +1645,7 @@ auto expand_rule(
         .inputs = intern_vec(file_inputs),
         .order_only_inputs = intern_vec(order_only_paths),
         .outputs = intern_vec(*outputs),
-        .working_dir = global_pool().intern(ctx.current_dir),
+        .working_dir = global_pool().intern(str(ctx.current_dir)),
     };
 
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
@@ -1711,19 +1717,19 @@ auto expand_rule(
         // Add to output group {name} if specified
         // Only add if the current context is active (guards satisfied)
         // This prevents inactive branches from contributing to groups
-        auto output_group = rule.output_group;
+        auto output_group = rule.output_group ? std::optional<StringId> { intern(*rule.output_group) } : std::nullopt;
         if (!output_group && macro_ptr && macro_ptr->output_group) {
             output_group = macro_ptr->output_group;
         }
         if (output_group && is_context_active(ctx)) {
-            auto gkey = to_underlying(ctx.graph->intern(*output_group));
+            auto gkey = to_underlying(*output_group);
             ctx.groups.get_or_create(gkey).push_back(*output_id);
         }
 
         // Add to order-only group <name> if specified
         // Supports path/<group> syntax where path specifies the group's directory
         // Only add if context is active (prevents inactive branches from contributing)
-        auto output_oo_group = rule.output_order_only_group;
+        auto output_oo_group = rule.output_order_only_group ? std::optional<StringId> { intern(*rule.output_order_only_group) } : std::nullopt;
         if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group) {
             output_oo_group = macro_ptr->output_order_only_group;
         }
@@ -1743,16 +1749,16 @@ auto expand_rule(
                 if (expanded) {
                     // Use normalize_group_dir for consistent handling with input groups
                     // This strips variant prefix and resolves relative paths
-                    dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
+                    dir = normalize_group_dir(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
                 }
             }
 
             if (dir.empty()) {
-                dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
+                dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
             }
 
             // Create or get the Group node
-            auto group_id_result = get_or_create_group_node(ctx, state, dir, *output_oo_group);
+            auto group_id_result = get_or_create_group_node(ctx, state, dir, str(*output_oo_group));
             if (group_id_result) {
                 // Add edge: file → group (file is member of group)
                 (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
@@ -1825,11 +1831,11 @@ auto expand_inputs(
             if (!pattern.path.empty()) {
                 auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
-                    group_dir = normalize_group_dir(*expanded, ctx.current_dir, ctx.options.source_root);
+                    group_dir = normalize_group_dir(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
                     request_demand_driven_parse(*ctx.eval, group_dir);
                 }
             } else {
-                group_dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
+                group_dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
             }
 
             // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
@@ -1848,7 +1854,7 @@ auto expand_inputs(
 
         for (auto& path : *paths) {
             // Check for path/<group> pattern (order-only group reference with directory prefix)
-            auto group_ref = parse_group_reference(path, ctx.current_dir, ctx.options.source_root);
+            auto group_ref = parse_group_reference(path, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 request_demand_driven_parse(*ctx.eval, group_ref->group_dir);
                 // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
@@ -1858,8 +1864,8 @@ auto expand_inputs(
             }
             // Include the path (pattern or literal)
             // For globs, this preserves the pattern for %g expansion in foreach rules
-            if (!ctx.current_dir.empty()) {
-                result.push_back(pup::path::normalize(pup::path::join(ctx.current_dir, path)));
+            if (!is_empty(ctx.current_dir)) {
+                result.push_back(pup::path::normalize(pup::path::join(str(ctx.current_dir), path)));
             } else {
                 result.push_back(String { path });
             }
@@ -1870,10 +1876,10 @@ auto expand_inputs(
             } else if (!parser::has_glob_chars(path)) {
                 // Non-glob path: trigger demand-driven parsing if file doesn't exist
                 // (path already added above, but we may need to request cross-directory Tupfile)
-                auto full_path = pup::path::join(pup::path::join(ctx.options.source_root, ctx.current_dir), path);
+                auto full_path = pup::path::join(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)), path);
                 if (!pup::platform::exists(full_path)) {
                     auto file_dir = pup::path::parent(path);
-                    auto abs_file_dir = pup::path::normalize(pup::path::join(ctx.current_dir, file_dir));
+                    auto abs_file_dir = pup::path::normalize(pup::path::join(str(ctx.current_dir), file_dir));
                     request_demand_driven_parse(*ctx.eval, abs_file_dir);
                 }
             }
@@ -1914,7 +1920,7 @@ auto expand_outputs(
 
             // Combine with current directory and normalize
             // Output paths are relative to Tupfile directory
-            auto full_output_path = pup::path::normalize(pup::path::join(ctx.current_dir, output_path));
+            auto full_output_path = pup::path::normalize(pup::path::join(str(ctx.current_dir), output_path));
 
             // All outputs go under BUILD_ROOT_ID.
             // This ensures Ghost nodes (created for inputs referencing not-yet-generated files)
@@ -2051,7 +2057,7 @@ auto get_or_create_file_node(
 
     // For cross-project paths, also check after normalizing through output_root
     if (type == NodeType::Generated && path.starts_with("..")) {
-        auto normalized = normalize_to_output_relative(path, ctx.options.source_root, ctx.options.output_root);
+        auto normalized = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
         if (normalized != path) {
             if (auto existing = ctx.graph->find_by_path(normalized, BUILD_ROOT_ID)) {
                 return *existing;
@@ -2061,10 +2067,10 @@ auto get_or_create_file_node(
 
     // Paths that escape source root become absolute for correct stat() resolution
     auto resolved = String { path };
-    if (!ctx.current_dir.empty() && path.starts_with("..")) {
-        auto norm = pup::path::normalize(pup::path::join(ctx.current_dir, path));
+    if (!is_empty(ctx.current_dir) && path.starts_with("..")) {
+        auto norm = pup::path::normalize(pup::path::join(str(ctx.current_dir), path));
         if (norm.starts_with("..")) {
-            resolved = pup::path::normalize(pup::path::join(ctx.options.source_root, norm));
+            resolved = pup::path::normalize(pup::path::join(str(ctx.options.source_root), norm));
         } else {
             resolved = norm;
         }
@@ -2139,7 +2145,7 @@ auto resolve_input_node(
     if (normalized_path.starts_with("..")) {
         auto before = normalized_path;
         normalized_path = normalize_to_output_relative(
-            normalized_path, ctx.options.source_root, ctx.options.output_root
+            normalized_path, str(ctx.options.source_root), str(ctx.options.output_root)
         );
         if (before != normalized_path) {
             had_build_prefix = true;
@@ -2168,7 +2174,7 @@ auto resolve_input_node(
     }
 
     // Node doesn't exist - check filesystem to determine type
-    auto source_path = pup::path::join(ctx.options.source_root, normalized_path);
+    auto source_path = pup::path::join(str(ctx.options.source_root), normalized_path);
     if (pup::platform::exists(source_path)) {
         // Source file exists - create File node under SOURCE_ROOT_ID
         return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
@@ -2176,15 +2182,15 @@ auto resolve_input_node(
 
     // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
     // source_root. Check config_root as a fallback for source file resolution.
-    if (!ctx.options.config_root.empty() && ctx.options.config_root != ctx.options.source_root) {
-        auto config_path = pup::path::join(ctx.options.config_root, normalized_path);
+    if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
+        auto config_path = pup::path::join(str(ctx.options.config_root), normalized_path);
         if (pup::platform::exists(config_path)) {
             return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
         }
     }
 
     // Check if file exists in build directory (e.g., tup.config, or already-generated files)
-    auto build_path = pup::path::join(ctx.options.output_root, normalized_path);
+    auto build_path = pup::path::join(str(ctx.options.output_root), normalized_path);
     if (pup::platform::exists(build_path)) {
         // File exists in build dir but not source - it's a Generated output from a previous build.
         // Create as Ghost so the rule that generates it can upgrade it to Generated.
@@ -2253,7 +2259,7 @@ auto create_command_node(
 
     auto node = CommandNode {
         .display = ctx.graph->intern(display),
-        .source_dir = ctx.graph->intern(ctx.current_dir),
+        .source_dir = ctx.current_dir,
         .instruction_id = ctx.graph->intern(instruction),
         .exported_vars = std::move(exported),
         .guards = ctx.condition_stack,
@@ -2325,8 +2331,8 @@ auto build_graph(
     // Set build root name: relative path from source to output root.
     // For in-tree builds (source == output), this is empty.
     // For variant builds (-B build), this is "build".
-    if (state.options.source_root != state.options.output_root) {
-        graph.set_build_root_name(pup::path::relative(state.options.output_root, state.options.source_root));
+    if (str(state.options.source_root) != str(state.options.output_root)) {
+        graph.set_build_root_name(pup::path::relative(str(state.options.output_root), str(state.options.source_root)));
     }
 
     auto result = Result<void> { add_tupfile(graph, tupfile, eval, state) };
@@ -2347,9 +2353,9 @@ auto add_tupfile(
     // In 3-tree builds, config_root differs from source_root, but the directory
     // structure mirrors the source tree, so this relative path is used for both
     // config lookup and source file glob expansion.
-    auto const& tupfile_root = state.options.config_root.empty()
-        ? state.options.source_root
-        : state.options.config_root;
+    auto const& tupfile_root = is_empty(state.options.config_root)
+        ? str(state.options.source_root)
+        : str(state.options.config_root);
     auto tupfile_parent = pup::path::parent(tupfile.filename);
     auto relative_dir_str = pup::path::relative(tupfile_parent, tupfile_root);
     if (relative_dir_str == ".") {
@@ -2361,8 +2367,8 @@ auto add_tupfile(
         .eval = &eval,
         .vars = eval.vars,
         .options = state.options,
-        .current_dir = relative_dir_str,
-        .current_file = tupfile.filename,
+        .current_dir = intern(relative_dir_str),
+        .current_file = intern(tupfile.filename),
     };
 
     // Create Tupfile node and add to sticky_sources for dependency tracking
@@ -2379,9 +2385,9 @@ auto add_tupfile(
     if (eval.config_vars && state.config_var_nodes.empty()) {
         // Get config directory for Variable node parent (typically the -B directory)
         auto config_dir_id = NodeId { 0 };
-        if (!state.options.config_path.empty()) {
-            auto config_parent = pup::path::parent(state.options.config_path);
-            auto config_dir_rel = pup::path::relative(config_parent, state.options.source_root);
+        if (!is_empty(state.options.config_path)) {
+            auto config_parent = pup::path::parent(str(state.options.config_path));
+            auto config_dir_rel = pup::path::relative(config_parent, str(state.options.source_root));
             if (config_dir_rel.empty() || config_dir_rel == ".") {
                 config_dir_rel = "";
             }
@@ -2479,7 +2485,7 @@ auto add_tupfile(
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
                                     ) -> Vec<String> {
-        auto dir = ctx.current_dir.empty() ? String { "." } : ctx.current_dir;
+        auto dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
         auto key_str = String { dir } + "/" + name;
         auto key_id = to_underlying(ctx.graph->intern(key_str));
         auto const* node_id = state.group_nodes.find(key_id);
@@ -2582,9 +2588,9 @@ auto resolve_deferred_order_only_edges(
 
         auto source_dir_str = String { graph.str(cmd_node->source_dir) };
         auto canonical_cwd = String {};
-        if (!state.options.source_root.empty() && !state.options.output_root.empty()
-            && state.options.source_root != state.options.output_root) {
-            auto r = pup::platform::canonical(pup::path::join(state.options.source_root, source_dir_str));
+        if (!is_empty(state.options.source_root) && !is_empty(state.options.output_root)
+            && str(state.options.source_root) != str(state.options.output_root)) {
+            auto r = pup::platform::canonical(pup::path::join(str(state.options.source_root), source_dir_str));
             if (r) {
                 canonical_cwd = *r;
             }
@@ -2592,9 +2598,9 @@ auto resolve_deferred_order_only_edges(
         auto tc = PathTransformContext {
             .source_to_root = String { pup::compute_source_to_root(source_dir_str) },
             .current_dir_str = source_dir_str,
-            .source_root = state.options.source_root,
-            .config_root = state.options.config_root,
-            .output_root = state.options.output_root,
+            .source_root = str(state.options.source_root),
+            .config_root = str(state.options.config_root),
+            .output_root = str(state.options.output_root),
             .canonical_cwd = std::move(canonical_cwd),
         };
 
