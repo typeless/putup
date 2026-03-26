@@ -6,7 +6,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
-#include <ostream>
+#include <iosfwd>
 #include <string_view>
 
 namespace pup {
@@ -157,10 +157,6 @@ auto operator+(std::string_view a, String const& b) -> String;
 auto operator+(String const& a, char const* b) -> String;
 auto operator+(char const* a, String const& b) -> String;
 
-inline auto operator<<(std::ostream& os, String const& s) -> std::ostream&
-{
-    os.write(s.data(), static_cast<std::streamsize>(s.size()));
-    return os;
-}
+auto operator<<(std::ostream& os, String const& s) -> std::ostream&;
 
 } // namespace pup

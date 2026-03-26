@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ostream>
 
 namespace pup {
 
@@ -410,6 +411,12 @@ auto operator+(String const& a, char const* b) -> String
 auto operator+(char const* a, String const& b) -> String
 {
     return std::string_view { a } + b;
+}
+
+auto operator<<(std::ostream& os, String const& s) -> std::ostream&
+{
+    os.write(s.data(), static_cast<std::streamsize>(s.size()));
+    return os;
 }
 
 } // namespace pup
