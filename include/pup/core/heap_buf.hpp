@@ -38,7 +38,7 @@ public:
     [[nodiscard]] auto size() const -> std::size_t { return size_; }
     [[nodiscard]] auto empty() const -> bool { return size_ == 0; }
     [[nodiscard]] auto c_str() const -> char const* { return data_ ? data_ : ""; }
-    [[nodiscard]] auto view() const -> std::string_view { return { data_, size_ }; }
+    [[nodiscard]] auto view() const -> std::string_view { return { data_ ? data_ : "", size_ }; }
 
     [[nodiscard]] auto intern(StringPool& pool) const -> StringId;
 

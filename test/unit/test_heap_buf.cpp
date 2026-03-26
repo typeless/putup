@@ -81,6 +81,22 @@ TEST_CASE("HeapBuf move", "[heap_buf]")
     REQUIRE(a.empty());
 }
 
+TEST_CASE("HeapBuf fmt escaped braces", "[heap_buf]")
+{
+    auto buf = HeapBuf {};
+    buf.fmt("{{key}}: {}", "value");
+    REQUIRE(buf.view() == "{key}: value");
+}
+
+TEST_CASE("HeapBuf clear then reuse", "[heap_buf]")
+{
+    auto buf = HeapBuf {};
+    buf.append("old data");
+    buf.clear();
+    buf.append("new");
+    REQUIRE(buf.view() == "new");
+}
+
 TEST_CASE("HeapBuf intern", "[heap_buf]")
 {
     auto pool = pup::StringPool {};

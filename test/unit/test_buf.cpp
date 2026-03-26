@@ -61,6 +61,22 @@ TEST_CASE("Buf fmt", "[buf]")
     REQUIRE(buf.view() == "hello world #42");
 }
 
+TEST_CASE("Buf fmt escaped braces", "[buf]")
+{
+    auto buf = Buf {};
+    buf.fmt("{{key}}: {}", "value");
+    REQUIRE(buf.view() == "{key}: value");
+}
+
+TEST_CASE("Buf clear then reuse", "[buf]")
+{
+    auto buf = Buf {};
+    buf.append("old data");
+    buf.clear();
+    buf.append("new");
+    REQUIRE(buf.view() == "new");
+}
+
 TEST_CASE("Buf intern", "[buf]")
 {
     auto pool = pup::StringPool {};
@@ -68,4 +84,17 @@ TEST_CASE("Buf intern", "[buf]")
     buf.append("interned");
     auto id = buf.intern(pool);
     REQUIRE(pool.get(id) == "interned");
+}
+
+TEST_CASE("Buf overflow then intern", "[buf]")
+{
+    auto pool = pup::StringPool {};
+    auto buf = Buf {};
+    for (int i = 0; i < 300; ++i) {
+        buf += 'a';
+    }
+    auto id = buf.intern(pool);
+    auto sv = pool.get(id);
+    REQUIRE(sv.size() == 300);
+    REQUIRE(sv == buf.view());
 }

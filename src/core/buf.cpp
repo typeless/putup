@@ -86,7 +86,6 @@ auto Buf::clear() -> void
 
 auto Buf::c_str() const -> char const*
 {
-    const_cast<char*>(data_)[size_] = '\0';
     return data_;
 }
 
