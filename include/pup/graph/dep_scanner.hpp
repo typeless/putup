@@ -3,7 +3,10 @@
 
 #pragma once
 
+#include "pup/core/global_pool.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
@@ -49,7 +52,7 @@ public:
     [[nodiscard]]
     virtual auto build_dep_command(
         CommandInfo const& cmd
-    ) const -> std::optional<String> = 0;
+    ) const -> std::optional<StringId> = 0;
 
     /// Get the dependency extraction specification
     [[nodiscard]]
@@ -62,9 +65,14 @@ public:
 
 /// Build display string for DEP commands (e.g., "DEP foo.c")
 [[nodiscard]]
-inline auto make_dep_display(Vec<String> const& inputs) -> String
+inline auto make_dep_display(Vec<StringId> const& inputs) -> StringId
 {
-    return inputs.empty() ? String { "DEP" } : String { "DEP " } + inputs[0];
+    if (inputs.empty()) {
+        return global_pool().intern("DEP");
+    }
+    auto s = String { "DEP " };
+    s += global_pool().get(inputs[0]);
+    return global_pool().intern(s);
 }
 
 /// Registry for dependency scanners.

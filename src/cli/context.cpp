@@ -2,11 +2,13 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/context.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
@@ -496,10 +498,11 @@ auto load_old_index(String const& output_root, bool verbose) -> IndexLoadResult
         if (file.type != pup::NodeType::Variable) {
             continue;
         }
-        if (!file.path.starts_with(ENV_VAR_DIR_PREFIX)) {
+        auto file_path_sv = pup::global_pool().get(file.path);
+        if (!file_path_sv.starts_with(ENV_VAR_DIR_PREFIX)) {
             continue;
         }
-        auto key_value = std::string_view { file.path }.substr(ENV_VAR_DIR_PREFIX.size());
+        auto key_value = file_path_sv.substr(ENV_VAR_DIR_PREFIX.size());
         auto eq_pos = key_value.find('=');
         if (eq_pos != std::string_view::npos) {
             result.cached_env_vars.emplace_back(String { key_value.substr(0, eq_pos) }, String { key_value.substr(eq_pos + 1) });

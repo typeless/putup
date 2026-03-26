@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
@@ -16,12 +17,12 @@ namespace pup::graph {
 /// Information about a matched command for rule generation
 struct CommandInfo {
     NodeId node_id = INVALID_NODE_ID;
-    String command;
-    String display;
-    Vec<String> inputs;
-    Vec<String> order_only_inputs;
-    Vec<String> outputs;
-    String working_dir;
+    StringId command = StringId::Empty;
+    StringId display = StringId::Empty;
+    Vec<StringId> inputs;
+    Vec<StringId> order_only_inputs;
+    Vec<StringId> outputs;
+    StringId working_dir = StringId::Empty;
 };
 
 /// Output specification for generated rules
@@ -33,7 +34,7 @@ struct GeneratedOutput {
     };
 
     Type type = Type::File;
-    String path; ///< For File type: output path
+    StringId path = StringId::Empty; ///< For File type: output path
 };
 
 /// What to do with the output of a generated rule
@@ -44,10 +45,10 @@ enum class OutputAction : std::uint8_t {
 
 /// A generated rule (same structure as user-defined rules)
 struct GeneratedRule {
-    Vec<String> inputs;
-    Vec<String> order_only_inputs; ///< Order-only deps (e.g., gen-headers)
-    String command;
-    String display;
+    Vec<StringId> inputs;
+    Vec<StringId> order_only_inputs; ///< Order-only deps (e.g., gen-headers)
+    StringId command = StringId::Empty;
+    StringId display = StringId::Empty;
     Vec<GeneratedOutput> outputs;
     OutputAction action = OutputAction::Normal;
     NodeId parent_command = INVALID_NODE_ID; ///< For InjectImplicitDeps

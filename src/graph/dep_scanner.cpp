@@ -3,6 +3,9 @@
 
 #include "pup/graph/dep_scanner.hpp"
 
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
+
 namespace pup::graph {
 
 auto DepScannerRegistry::register_scanner(std::unique_ptr<DepScanner> scanner) -> void
@@ -30,7 +33,7 @@ auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
             continue;
         }
 
-        if (scanner->has_dep_flags(cmd.command)) {
+        if (scanner->has_dep_flags(global_pool().get(cmd.command))) {
             continue;
         }
 
@@ -43,13 +46,13 @@ auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
 
         auto outputs = Vec<GeneratedOutput> {};
         if (spec.output_mode == DepOutputMode::Stdout) {
-            outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = {} });
+            outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty });
         }
 
         result.push_back(GeneratedRule {
             .inputs = cmd.inputs,
             .order_only_inputs = cmd.order_only_inputs,
-            .command = std::move(*dep_cmd),
+            .command = *dep_cmd,
             .display = make_dep_display(cmd.inputs),
             .outputs = std::move(outputs),
             .action = OutputAction::InjectImplicitDeps,

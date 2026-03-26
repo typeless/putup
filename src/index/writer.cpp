@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/writer.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -152,8 +153,9 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     auto file_entries = Vec<RawFileEntry> {};
     file_entries.reserve(index.files().size());
 
+    auto& pool = global_pool();
     for (auto const& file : index.files()) {
-        auto name_offset = strings.add(file.name);
+        auto name_offset = strings.add(pool.get(file.name));
         if (!name_offset) {
             return pup::unexpected<Error>(name_offset.error());
         }
@@ -166,15 +168,15 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
-        auto instruction_offset = strings.add(cmd.instruction_pattern);
+        auto instruction_offset = strings.add(pool.get(cmd.instruction_pattern));
         if (!instruction_offset) {
             return pup::unexpected<Error>(instruction_offset.error());
         }
-        auto display_offset = strings.add(cmd.display);
+        auto display_offset = strings.add(pool.get(cmd.display));
         if (!display_offset) {
             return pup::unexpected<Error>(display_offset.error());
         }
-        auto env_offset = strings.add(cmd.env);
+        auto env_offset = strings.add(pool.get(cmd.env));
         if (!env_offset) {
             return pup::unexpected<Error>(env_offset.error());
         }

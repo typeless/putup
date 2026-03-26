@@ -3,6 +3,8 @@
 
 #include "pup/graph/scanners/gcc.hpp"
 
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
 
 #include <algorithm>
@@ -226,7 +228,7 @@ auto matches_gcc_compile(std::string_view command) -> bool
 
 auto GccScanner::matches(CommandInfo const& cmd) const -> bool
 {
-    return matches_gcc_compile(cmd.command);
+    return matches_gcc_compile(global_pool().get(cmd.command));
 }
 
 auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
@@ -251,9 +253,9 @@ auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
     return false;
 }
 
-auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<String>
+auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<StringId>
 {
-    auto words = core::tokenize_shell_command(cmd.command);
+    auto words = core::tokenize_shell_command(global_pool().get(cmd.command));
     if (words.empty()) {
         return std::nullopt;
     }
@@ -328,7 +330,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         dep_cmd += shell_quote(src);
     }
 
-    return dep_cmd;
+    return global_pool().intern(dep_cmd);
 }
 
 auto GccScanner::dep_spec() const -> DepSpec

@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/format.hpp"
 #include "pup/index/reader.hpp"
@@ -16,6 +18,11 @@ using namespace pup;
 using namespace pup::index;
 
 namespace {
+
+auto intern(std::string_view s) -> StringId
+{
+    return global_pool().intern(s);
+}
 
 auto build_command_lookup(Index const& index)
     -> std::unordered_map<std::string, CommandEntry const*>
@@ -36,7 +43,7 @@ auto build_command_lookup(Index const& index)
 auto find_file_by_path(Index const& index, std::string_view path) -> FileEntry const*
 {
     for (auto const& file : index.files()) {
-        if (file.path == path)
+        if (global_pool().get(file.path) == path)
             return &file;
     }
     return nullptr;
@@ -106,7 +113,7 @@ TEST_CASE("FileEntry conversion", "[index]")
         .src_id = 0,
         .type = NodeType::File,
         .flags = NodeFlags::Modified,
-        .name = "main.cpp",
+        .name = intern("main.cpp"),
         .path = {},
         .size = 1024,
         .content_hash = {},
@@ -141,9 +148,9 @@ TEST_CASE("CommandEntry conversion", "[index]")
     auto cmd = CommandEntry {
         .id = node_id::make_command(5),
         .dir_id = 5,
-        .instruction_pattern = "gcc -c %f -o %o",
-        .display = "CC main.c",
-        .env = "CC=gcc",
+        .instruction_pattern = intern("gcc -c %f -o %o"),
+        .display = intern("CC main.c"),
+        .env = intern("CC=gcc"),
         .inputs = { 10 },
         .outputs = { 20 },
     };
@@ -156,8 +163,9 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.env_offset == 100);
 
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
+    auto& pool = global_pool();
     auto restored = CommandEntry::from_raw(
-        raw, cmd.instruction_pattern, cmd.display, cmd.env,
+        raw, pool.get(cmd.instruction_pattern), pool.get(cmd.display), pool.get(cmd.env),
         pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 20 }, 4
     );
 
@@ -232,33 +240,33 @@ TEST_CASE("Index in-memory operations", "[index]")
 
     SECTION("add and find files")
     {
-        index.add_file(FileEntry { .id = 1, .name = "foo.c", .path = "foo.c" });
-        index.add_file(FileEntry { .id = 2, .name = "bar.c", .path = "bar.c" });
+        index.add_file(FileEntry { .id = 1, .name = intern("foo.c"), .path = intern("foo.c") });
+        index.add_file(FileEntry { .id = 2, .name = intern("bar.c"), .path = intern("bar.c") });
 
         REQUIRE(index.file_count() == 2);
         REQUIRE_FALSE(index.empty());
 
         auto* by_id_1 = index.find_file_by_id(1);
         REQUIRE(by_id_1 != nullptr);
-        REQUIRE(by_id_1->name == "foo.c");
+        REQUIRE(by_id_1->name == intern("foo.c"));
 
         auto* by_id_2 = index.find_file_by_id(2);
         REQUIRE(by_id_2 != nullptr);
-        REQUIRE(by_id_2->name == "bar.c");
+        REQUIRE(by_id_2->name == intern("bar.c"));
 
         REQUIRE(index.find_file_by_id(999) == nullptr);
     }
 
     SECTION("add and find commands")
     {
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = "gcc foo.c" });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = "gcc bar.c" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = intern("gcc foo.c") });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = intern("gcc bar.c") });
 
         REQUIRE(index.command_count() == 2);
 
         auto* found = index.find_command_by_id(node_id::make_command(1));
         REQUIRE(found != nullptr);
-        REQUIRE(found->instruction_pattern == "gcc foo.c");
+        REQUIRE(found->instruction_pattern == intern("gcc foo.c"));
 
         REQUIRE(index.find_command_by_id(node_id::make_command(999)) == nullptr);
     }
@@ -284,7 +292,7 @@ TEST_CASE("Index in-memory operations", "[index]")
     SECTION("clear")
     {
         auto cmd1 = node_id::make_command(1);
-        index.add_file(FileEntry { .id = 1, .name = "test.c" });
+        index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
         index.add_command(CommandEntry { .id = cmd1 });
         index.add_edge(EdgeEntry { .from = 1, .to = cmd1 });
 
@@ -314,7 +322,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .id = 1,
         .parent_id = 0,
         .type = NodeType::Directory,
-        .name = "src",
+        .name = intern("src"),
     });
 
     // File 2: build directory
@@ -322,7 +330,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .id = 2,
         .parent_id = 0,
         .type = NodeType::Directory,
-        .name = "build",
+        .name = intern("build"),
     });
 
     // File 3: main.cpp (parent is src, id=1)
@@ -330,7 +338,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .id = 3,
         .parent_id = 1,
         .type = NodeType::File,
-        .name = "main.cpp",
+        .name = intern("main.cpp"),
         .size = 1024,
     });
 
@@ -339,7 +347,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .id = 4,
         .parent_id = 2,
         .type = NodeType::Generated,
-        .name = "main.o",
+        .name = intern("main.o"),
         .size = 4096,
     });
 
@@ -348,7 +356,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .id = 5,
         .parent_id = 0,
         .type = NodeType::File,
-        .name = "/usr/include/stdio.h",
+        .name = intern("/usr/include/stdio.h"),
         .size = 8192,
     });
 
@@ -356,8 +364,8 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     index.add_command(CommandEntry {
         .id = cmd_id,
         .dir_id = 0,
-        .instruction_pattern = "g++ -c %f -o %o",
-        .display = "CXX main.cpp",
+        .instruction_pattern = intern("g++ -c %f -o %o"),
+        .display = intern("CXX main.cpp"),
         .env = {},
         .inputs = { 3 },   // main.cpp
         .outputs = { 4 },  // main.o
@@ -424,8 +432,8 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     // Verify command (ID computed from position: node_id::make_command(0 + 1))
     auto* cmd = restored.find_command_by_id(cmd_id);
     REQUIRE(cmd != nullptr);
-    REQUIRE(cmd->instruction_pattern == "g++ -c %f -o %o");
-    REQUIRE(cmd->display == "CXX main.cpp");
+    REQUIRE(cmd->instruction_pattern == intern("g++ -c %f -o %o"));
+    REQUIRE(cmd->display == intern("CXX main.cpp"));
     REQUIRE(cmd->inputs == pup::Vec<NodeId> { 3 });
     REQUIRE(cmd->outputs == pup::Vec<NodeId> { 4 });
 
@@ -473,14 +481,14 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .id = 1,
         .parent_id = 0,
         .type = NodeType::Directory,
-        .name = "src",
+        .name = intern("src"),
     });
 
     index.add_file(FileEntry {
         .id = 2,
         .parent_id = 0,
         .type = NodeType::Directory,
-        .name = "build",
+        .name = intern("build"),
     });
 
     // ID 3: placeholder (like a Ghost node would be stored)
@@ -488,7 +496,7 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .id = 3,
         .parent_id = 0,
         .type = NodeType::Ghost,
-        .name = "placeholder",
+        .name = intern("placeholder"),
     });
 
     // ID 4: subdirectory under src (parent=1)
@@ -496,7 +504,7 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .id = 4,
         .parent_id = 1,
         .type = NodeType::Directory,
-        .name = "lib",
+        .name = intern("lib"),
     });
 
     // ID 5: file under lib (parent=4)
@@ -504,7 +512,7 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .id = 5,
         .parent_id = 4,
         .type = NodeType::File,
-        .name = "foo.c",
+        .name = intern("foo.c"),
         .size = 100,
     });
 
@@ -548,7 +556,7 @@ TEST_CASE("Index reader validation", "[e2e][index]")
 
         // Create a valid index
         auto index = Index {};
-        index.add_file(FileEntry { .id = 1, .name = "test.c" });
+        index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
 
         auto temp_path = (std::filesystem::temp_directory_path() / "pup_valid_test").string();
                 (void)write_index(temp_path, index);
@@ -564,8 +572,8 @@ TEST_CASE("Index reader malicious data handling", "[e2e][index]")
     // Create a minimal valid index to use as base
     auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
-    index.add_file(FileEntry { .id = 1, .name = "test.c" });
-    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = "gcc test.c", .inputs = { 1 } });
+    index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("gcc test.c"), .inputs = { 1 } });
     index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
         auto data = serialize_index(index);
@@ -748,7 +756,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         huge_name.resize(65536);
         std::memset(huge_name.data(), 'x', 65536);
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = huge_name });
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(huge_name) });
 
                 auto result = serialize_index(index);
 
@@ -765,7 +773,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         max_name.resize(65535);
         std::memset(max_name.data(), 'y', 65535);
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = max_name });
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(max_name) });
 
                 auto result = serialize_index(index);
 
@@ -779,9 +787,9 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = "main.cpp" });
-        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = "main.cpp" });
-        index.add_file(FileEntry { .id = 3, .parent_id = 0, .name = "main.cpp" });
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.cpp") });
+        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = intern("main.cpp") });
+        index.add_file(FileEntry { .id = 3, .parent_id = 0, .name = intern("main.cpp") });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -795,8 +803,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = "/usr/include/stdio.h" });
-        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = "/usr/include/stdio.h" });
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("/usr/include/stdio.h") });
+        index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = intern("/usr/include/stdio.h") });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -810,8 +818,8 @@ TEST_CASE("StringTable deduplication", "[index]")
     {
         auto index = Index {};
 
-        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = "gcc", .display = "", .env = "" });
-        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = "gcc", .display = "", .env = "" });
+        index.add_command(CommandEntry { .id = node_id::make_command(1), .instruction_pattern = intern("gcc"), .display = intern(""), .env = intern("") });
+        index.add_command(CommandEntry { .id = node_id::make_command(2), .instruction_pattern = intern("gcc"), .display = intern(""), .env = intern("") });
 
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
@@ -827,10 +835,10 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     auto index = Index {};
 
     // Create directory structure for path reconstruction
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = "src" });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = "build" });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = "main.cpp" });
-    index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = "main.o" });
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
+    index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
 
     // Compute paths from parent chain
     index.compute_paths();
@@ -839,7 +847,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "g++ -c %f -o %o",
+            .instruction_pattern = intern("g++ -c %f -o %o"),
             .inputs = { 3 },   // main.cpp
             .outputs = { 4 },  // main.o
         };
@@ -853,7 +861,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "echo %b",
+            .instruction_pattern = intern("echo %b"),
             .inputs = { 3 },
             .outputs = {},
         };
@@ -867,7 +875,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "echo %B",
+            .instruction_pattern = intern("echo %B"),
             .inputs = { 3 },
             .outputs = {},
         };
@@ -881,7 +889,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "echo %e",
+            .instruction_pattern = intern("echo %e"),
             .inputs = { 3 },
             .outputs = {},
         };
@@ -893,12 +901,12 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
     SECTION("get_command_string with multiple inputs")
     {
-        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = "util.cpp" });
+        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
         index.compute_paths();
 
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "g++ -c %f -o %o",
+            .instruction_pattern = intern("g++ -c %f -o %o"),
             .inputs = { 3, 5 },
             .outputs = { 4 },
         };
@@ -910,12 +918,12 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 
     SECTION("get_command_string with %Nf (N-th input)")
     {
-        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = "util.cpp" });
+        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
         index.compute_paths();
 
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "echo %1f %2f",
+            .instruction_pattern = intern("echo %1f %2f"),
             .inputs = { 3, 5 },
             .outputs = {},
         };
@@ -929,7 +937,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "echo 100%%",
+            .instruction_pattern = intern("echo 100%%"),
             .inputs = {},
             .outputs = {},
         };
@@ -943,7 +951,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
     {
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .instruction_pattern = "",
+            .instruction_pattern = intern(""),
             .inputs = {},
             .outputs = {},
         };
@@ -962,12 +970,12 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
     //   lib/foo.c, lib/foo.o
     //   app/main.c, app/app
     // Command runs from "app" directory, referencing "../lib/foo.o"
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = "lib", .path = "lib" });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = "app", .path = "app" });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = "foo.c", .path = "lib/foo.c" });
-    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::Generated, .name = "foo.o", .path = "lib/foo.o" });
-    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::File, .name = "main.c", .path = "app/main.c" });
-    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = "app", .path = "app/app" });
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("lib"), .path = intern("lib") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("app"), .path = intern("app") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("foo.c"), .path = intern("lib/foo.c") });
+    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::Generated, .name = intern("foo.o"), .path = intern("lib/foo.o") });
+    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::File, .name = intern("main.c"), .path = intern("app/main.c") });
+    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = intern("app"), .path = intern("app/app") });
 
     SECTION("command in subdirectory referencing sibling directory")
     {
@@ -975,7 +983,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .dir_id = 2,  // app directory
-            .instruction_pattern = "gcc %f -o %o",
+            .instruction_pattern = intern("gcc %f -o %o"),
             .inputs = { 5, 4 },   // main.c, foo.o (from lib)
             .outputs = { 6 },      // app
         };
@@ -992,7 +1000,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .dir_id = 0,  // root directory (no relativization)
-            .instruction_pattern = "gcc %f -o %o",
+            .instruction_pattern = intern("gcc %f -o %o"),
             .inputs = { 5, 4 },
             .outputs = { 6 },
         };
@@ -1009,7 +1017,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .dir_id = 1,  // lib directory
-            .instruction_pattern = "gcc -c %f -o %o",
+            .instruction_pattern = intern("gcc -c %f -o %o"),
             .inputs = { 3 },   // foo.c
             .outputs = { 4 },  // foo.o
         };
@@ -1026,22 +1034,22 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
     auto index = Index {};
 
     // Create file entries
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = "foo.c" });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = "foo.o" });
-    index.add_file(FileEntry { .id = 3, .parent_id = 0, .type = NodeType::File, .name = "bar.c" });
-    index.add_file(FileEntry { .id = 4, .parent_id = 0, .type = NodeType::Generated, .name = "bar.o" });
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("foo.c") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("foo.o") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 0, .type = NodeType::File, .name = intern("bar.c") });
+    index.add_file(FileEntry { .id = 4, .parent_id = 0, .type = NodeType::Generated, .name = intern("bar.o") });
     index.compute_paths();
 
     // Add commands with template + operands
     index.add_command(CommandEntry {
         .id = node_id::make_command(1),
-        .instruction_pattern = "gcc -c %f -o %o",
+        .instruction_pattern = intern("gcc -c %f -o %o"),
         .inputs = { 1 },
         .outputs = { 2 },
     });
     index.add_command(CommandEntry {
         .id = node_id::make_command(2),
-        .instruction_pattern = "gcc -c %f -o %o",
+        .instruction_pattern = intern("gcc -c %f -o %o"),
         .inputs = { 3 },
         .outputs = { 4 },
     });
@@ -1084,13 +1092,13 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     auto index = Index {};
 
     // Create file structure
-    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = "src" });
-    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = "build" });
-    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = "main.cpp" });
-    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = "util.cpp" });
-    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = "main.o" });
-    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = "util.o" });
-    index.add_file(FileEntry { .id = 7, .parent_id = 2, .type = NodeType::Generated, .name = "program" });
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
+    index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
+    index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = intern("util.o") });
+    index.add_file(FileEntry { .id = 7, .parent_id = 2, .type = NodeType::Generated, .name = intern("program") });
 
     auto cmd1_id = node_id::make_command(1);
     auto cmd2_id = node_id::make_command(2);
@@ -1099,22 +1107,22 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     // Commands with templates + operands
     index.add_command(CommandEntry {
         .id = cmd1_id,
-        .instruction_pattern = "g++ -c %f -o %o",
-        .display = "CXX main.cpp",
+        .instruction_pattern = intern("g++ -c %f -o %o"),
+        .display = intern("CXX main.cpp"),
         .inputs = { 3 },
         .outputs = { 5 },
     });
     index.add_command(CommandEntry {
         .id = cmd2_id,
-        .instruction_pattern = "g++ -c %f -o %o",
-        .display = "CXX util.cpp",
+        .instruction_pattern = intern("g++ -c %f -o %o"),
+        .display = intern("CXX util.cpp"),
         .inputs = { 4 },
         .outputs = { 6 },
     });
     index.add_command(CommandEntry {
         .id = cmd3_id,
-        .instruction_pattern = "g++ %f -o %o",
-        .display = "LD program",
+        .instruction_pattern = intern("g++ %f -o %o"),
+        .display = intern("LD program"),
         .inputs = { 5, 6 },
         .outputs = { 7 },
     });
@@ -1143,19 +1151,19 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     // Verify commands retain template + operands
     auto* cmd1 = restored.find_command_by_id(cmd1_id);
     REQUIRE(cmd1 != nullptr);
-    REQUIRE(cmd1->instruction_pattern == "g++ -c %f -o %o");
+    REQUIRE(cmd1->instruction_pattern == intern("g++ -c %f -o %o"));
     REQUIRE(cmd1->inputs == pup::Vec<NodeId> { 3 });
     REQUIRE(cmd1->outputs == pup::Vec<NodeId> { 5 });
 
     auto* cmd2 = restored.find_command_by_id(cmd2_id);
     REQUIRE(cmd2 != nullptr);
-    REQUIRE(cmd2->instruction_pattern == "g++ -c %f -o %o");
+    REQUIRE(cmd2->instruction_pattern == intern("g++ -c %f -o %o"));
     REQUIRE(cmd2->inputs == pup::Vec<NodeId> { 4 });
     REQUIRE(cmd2->outputs == pup::Vec<NodeId> { 6 });
 
     auto* cmd3 = restored.find_command_by_id(cmd3_id);
     REQUIRE(cmd3 != nullptr);
-    REQUIRE(cmd3->instruction_pattern == "g++ %f -o %o");
+    REQUIRE(cmd3->instruction_pattern == intern("g++ %f -o %o"));
     REQUIRE(cmd3->inputs == pup::Vec<NodeId> { 5, 6 });
     REQUIRE(cmd3->outputs == pup::Vec<NodeId> { 7 });
 

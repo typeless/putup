@@ -2,8 +2,10 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/entry.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <cassert>
 #include <charconv>
@@ -36,8 +38,8 @@ auto FileEntry::from_raw(
         .src_id = raw.src_id,
         .type = static_cast<NodeType>(raw.type),
         .flags = get_node_flags(raw),
-        .name = String { name_str },
-        .path = {},
+        .name = global_pool().intern(name_str),
+        .path = StringId::Empty,
         .size = raw.size,
         .mtime_ns = raw.mtime_ns,
         .content_hash = raw.content_hash,
@@ -71,9 +73,9 @@ auto CommandEntry::from_raw(
     return CommandEntry {
         .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,
-        .instruction_pattern = String { instruction_pattern },
-        .display = String { display_str },
-        .env = String { env_str },
+        .instruction_pattern = global_pool().intern(instruction_pattern),
+        .display = global_pool().intern(display_str),
+        .env = global_pool().intern(env_str),
         .inputs = std::move(inputs),
         .outputs = std::move(outputs),
     };
@@ -264,6 +266,7 @@ auto Index::compute_paths() -> void
         }
 
         // Resolve paths top-down (chain is bottom-up, so iterate in reverse)
+        auto& pool = global_pool();
         for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
             auto& file = files_[*it];
             if (file.parent_id == 0 || node_id::is_command(file.parent_id)) {
@@ -271,13 +274,19 @@ auto Index::compute_paths() -> void
             } else {
                 auto parent_idx = static_cast<std::size_t>(node_id::index(file.parent_id)) - 1;
                 if (parent_idx < n && computed[parent_idx]) {
-                    auto const& pp = files_[parent_idx].path;
+                    auto pp = pool.get(files_[parent_idx].path);
+                    auto name_sv = pool.get(file.name);
                     if (pp.empty()) {
                         file.path = file.name;
-                    } else if (pp.back() == '/') {
-                        file.path = pp + file.name;
                     } else {
-                        file.path = pp + "/" + file.name;
+                        auto combined = String {};
+                        combined.reserve(pp.size() + 1 + name_sv.size());
+                        combined += pp;
+                        if (pp.back() != '/') {
+                            combined += '/';
+                        }
+                        combined += name_sv;
+                        file.path = pool.intern(combined);
                     }
                 } else {
                     file.path = file.name;
@@ -324,7 +333,9 @@ auto get_extension(std::string_view name) -> std::string_view
 
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
 {
-    if (cmd.instruction_pattern.empty()) {
+    auto& pool = global_pool();
+    auto tmpl = pool.get(cmd.instruction_pattern);
+    if (tmpl.empty()) {
         return {};
     }
 
@@ -332,25 +343,24 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
     auto source_dir = std::string_view {};
     if (cmd.dir_id != 0) {
         auto const* dir = index.find_file_by_id(cmd.dir_id);
-        if (dir && !dir->path.empty()) {
-            source_dir = dir->path;
+        if (dir && !is_empty(dir->path)) {
+            source_dir = pool.get(dir->path);
         }
     }
 
     auto source_to_root = pup::compute_source_to_root(source_dir);
 
-    auto get_relative_path = [&source_dir, &source_to_root](std::string_view path) {
-        return pup::make_source_relative(path, source_to_root, source_dir);
+    auto get_relative_path = [&source_dir, &source_to_root, &pool](StringId path_id) {
+        return pup::make_source_relative(pool.get(path_id), source_to_root, source_dir);
     };
 
     auto result = String {};
-    auto const& tmpl = cmd.instruction_pattern;
     auto pos = std::size_t { 0 };
 
     while (pos < tmpl.size()) {
         auto percent = tmpl.find('%', pos);
 
-        if (percent == String::npos) {
+        if (percent == std::string_view::npos) {
             result += tmpl.substr(pos);
             break;
         }
@@ -429,7 +439,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.inputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.inputs[0]);
                 if (file) {
-                    result += get_basename(file->path);
+                    result += get_basename(pool.get(file->path));
                 }
             }
             break;
@@ -438,7 +448,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.inputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.inputs[0]);
                 if (file) {
-                    result += get_stem(file->name);
+                    result += get_stem(pool.get(file->name));
                 }
             }
             break;
@@ -447,7 +457,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.inputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.inputs[0]);
                 if (file) {
-                    result += get_extension(file->name);
+                    result += get_extension(pool.get(file->name));
                 }
             }
             break;
@@ -465,7 +475,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.outputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.outputs[0]);
                 if (file) {
-                    result += get_basename(file->path);
+                    result += get_basename(pool.get(file->path));
                 }
             }
             break;

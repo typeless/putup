@@ -8,6 +8,7 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -26,8 +27,8 @@ struct FileEntry {
     NodeType type = NodeType::File;
     NodeFlags flags = NodeFlags::None;
 
-    String name = {}; ///< Basename only (tup-style identification)
-    String path = {}; ///< Full path (computed from parent_id/name chain, not serialized)
+    StringId name = StringId::Empty; ///< Basename only (tup-style identification)
+    StringId path = StringId::Empty; ///< Full path (computed from parent_id/name chain, not serialized)
     std::uint64_t size = 0;
     std::int64_t mtime_ns = 0; ///< Modification time (nanoseconds since epoch)
     Hash256 content_hash = {};
@@ -53,9 +54,9 @@ struct CommandEntry {
     NodeId id = 0;
     NodeId dir_id = 0; ///< Directory where command runs
 
-    String instruction_pattern = {}; ///< Instruction pattern with %f/%o markers
-    String display = {};             ///< Display text (from ^ ^ markers)
-    String env = {};                 ///< Environment variables
+    StringId instruction_pattern = StringId::Empty; ///< Instruction pattern with %f/%o markers
+    StringId display = StringId::Empty;             ///< Display text (from ^ ^ markers)
+    StringId env = StringId::Empty;                 ///< Environment variables
 
     Vec<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
     Vec<NodeId> outputs = {}; ///< Output file operands (for %o expansion)

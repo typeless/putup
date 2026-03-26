@@ -2,10 +2,16 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
 
 using namespace pup::graph;
+
+namespace {
+auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
+} // namespace
 
 TEST_CASE("DepScannerRegistry basic operations", "[dep_scanner]")
 {
@@ -41,12 +47,12 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
     {
         auto cmd = CommandInfo {
             .node_id = 1,
-            .command = "gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto const* scanner = registry.find_match(cmd);
@@ -58,12 +64,12 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
     {
         auto cmd = CommandInfo {
             .node_id = 2,
-            .command = "ar rcs libfoo.a foo.o",
-            .display = "AR libfoo.a",
-            .inputs = { "foo.o" },
+            .command = intern("ar rcs libfoo.a foo.o"),
+            .display = intern("AR libfoo.a"),
+            .inputs = { intern("foo.o") },
             .order_only_inputs = {},
-            .outputs = { "libfoo.a" },
-            .working_dir = ".",
+            .outputs = { intern("libfoo.a") },
+            .working_dir = intern("."),
         };
 
         auto const* scanner = registry.find_match(cmd);
@@ -80,17 +86,17 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
     {
         auto cmd = CommandInfo {
             .node_id = 10,
-            .command = "gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto rules = registry.match_and_generate(cmd);
         REQUIRE(rules.size() == 1);
-        REQUIRE(rules[0].command == "gcc -M foo.c");
+        REQUIRE(rules[0].command == intern("gcc -M foo.c"));
         REQUIRE(rules[0].action == OutputAction::InjectImplicitDeps);
         REQUIRE(rules[0].parent_command == 10);
     }
@@ -99,12 +105,12 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
     {
         auto cmd = CommandInfo {
             .node_id = 11,
-            .command = "gcc -MD -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -MD -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto rules = registry.match_and_generate(cmd);
@@ -115,12 +121,12 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
     {
         auto cmd = CommandInfo {
             .node_id = 12,
-            .command = "ar rcs libfoo.a foo.o",
-            .display = "AR libfoo.a",
-            .inputs = { "foo.o" },
+            .command = intern("ar rcs libfoo.a foo.o"),
+            .display = intern("AR libfoo.a"),
+            .inputs = { intern("foo.o") },
             .order_only_inputs = {},
-            .outputs = { "libfoo.a" },
-            .working_dir = ".",
+            .outputs = { intern("libfoo.a") },
+            .working_dir = intern("."),
         };
 
         auto rules = registry.match_and_generate(cmd);
@@ -147,12 +153,12 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 1,
-            .command = "gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
         REQUIRE(scanner.matches(cmd));
     }
@@ -161,12 +167,12 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 2,
-            .command = "clang++ -c foo.cpp -o foo.o",
-            .display = "CXX foo.o",
-            .inputs = { "foo.cpp" },
+            .command = intern("clang++ -c foo.cpp -o foo.o"),
+            .display = intern("CXX foo.o"),
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
         REQUIRE(scanner.matches(cmd));
     }
@@ -175,12 +181,12 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 3,
-            .command = "gcc foo.o -o foo",
-            .display = "LINK foo",
-            .inputs = { "foo.o" },
+            .command = intern("gcc foo.o -o foo"),
+            .display = intern("LINK foo"),
+            .inputs = { intern("foo.o") },
             .order_only_inputs = {},
-            .outputs = { "foo" },
-            .working_dir = ".",
+            .outputs = { intern("foo") },
+            .working_dir = intern("."),
         };
         REQUIRE(!scanner.matches(cmd));
     }
@@ -209,29 +215,29 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 4,
-            .command = "gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "gcc -M foo.c");
+        REQUIRE(*dep_cmd == intern("gcc -M foo.c"));
     }
 
     SECTION("build_dep_command returns nullopt for empty command")
     {
         auto cmd = CommandInfo {
             .node_id = 5,
-            .command = "",
-            .display = "",
+            .command = intern(""),
+            .display = intern(""),
             .inputs = {},
             .order_only_inputs = {},
             .outputs = {},
-            .working_dir = ".",
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -247,35 +253,35 @@ TEST_CASE("GccScanner compiler wrapper handling", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 1,
-            .command = "ccache gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("ccache gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         REQUIRE(scanner.matches(cmd));
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "ccache gcc -M foo.c");
+        REQUIRE(*dep_cmd == intern("ccache gcc -M foo.c"));
     }
 
     SECTION("handles distcc wrapper")
     {
         auto cmd = CommandInfo {
             .node_id = 2,
-            .command = "distcc g++ -c foo.cpp -o foo.o",
-            .display = "CXX foo.o",
-            .inputs = { "foo.cpp" },
+            .command = intern("distcc g++ -c foo.cpp -o foo.o"),
+            .display = intern("CXX foo.o"),
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "distcc g++ -M foo.cpp");
+        REQUIRE(*dep_cmd == intern("distcc g++ -M foo.cpp"));
     }
 }
 
@@ -287,85 +293,85 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 1,
-            .command = "gcc -I../include -I/usr/local/include -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -I../include -I/usr/local/include -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "gcc -M -I../include -I/usr/local/include foo.c");
+        REQUIRE(*dep_cmd == intern("gcc -M -I../include -I/usr/local/include foo.c"));
     }
 
     SECTION("preserves include paths (separate argument form)")
     {
         auto cmd = CommandInfo {
             .node_id = 10,
-            .command = "gcc -I include -I ../lib -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -I include -I ../lib -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "gcc -M -I include -I ../lib foo.c");
+        REQUIRE(*dep_cmd == intern("gcc -M -I include -I ../lib foo.c"));
     }
 
     SECTION("preserves defines")
     {
         auto cmd = CommandInfo {
             .node_id = 2,
-            .command = "gcc -DNDEBUG -DFOO=bar -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -DNDEBUG -DFOO=bar -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "gcc -M -DNDEBUG -DFOO=bar foo.c");
+        REQUIRE(*dep_cmd == intern("gcc -M -DNDEBUG -DFOO=bar foo.c"));
     }
 
     SECTION("preserves -std flag")
     {
         auto cmd = CommandInfo {
             .node_id = 3,
-            .command = "g++ -std=c++20 -c foo.cpp -o foo.o",
-            .display = "CXX foo.o",
-            .inputs = { "foo.cpp" },
+            .command = intern("g++ -std=c++20 -c foo.cpp -o foo.o"),
+            .display = intern("CXX foo.o"),
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "g++ -M -std=c++20 foo.cpp");
+        REQUIRE(*dep_cmd == intern("g++ -M -std=c++20 foo.cpp"));
     }
 
     SECTION("strips irrelevant flags")
     {
         auto cmd = CommandInfo {
             .node_id = 4,
-            .command = "gcc -Wall -Wextra -O2 -g -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -Wall -Wextra -O2 -g -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "gcc -M foo.c");
+        REQUIRE(*dep_cmd == intern("gcc -M foo.c"));
     }
 }
 
@@ -377,34 +383,34 @@ TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 1,
-            .command = "clang -c foo.m -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.m" },
+            .command = intern("clang -c foo.m -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.m") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "clang -M foo.m");
+        REQUIRE(*dep_cmd == intern("clang -M foo.m"));
     }
 
     SECTION("build_dep_command handles Objective-C++ files")
     {
         auto cmd = CommandInfo {
             .node_id = 2,
-            .command = "clang++ -c bar.mm -o bar.o",
-            .display = "CXX bar.o",
-            .inputs = { "bar.mm" },
+            .command = intern("clang++ -c bar.mm -o bar.o"),
+            .display = intern("CXX bar.o"),
+            .inputs = { intern("bar.mm") },
             .order_only_inputs = {},
-            .outputs = { "bar.o" },
-            .working_dir = ".",
+            .outputs = { intern("bar.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == "clang++ -M bar.mm");
+        REQUIRE(*dep_cmd == intern("clang++ -M bar.mm"));
     }
 }
 
@@ -416,12 +422,12 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 20,
-            .command = "for f in archive bfd cache; do gcc -O2 -c /src/bfd/$f.c -o out/bfd-$f.o || exit 1; done",
-            .display = "CC-BFD (3 files)",
+            .command = intern("for f in archive bfd cache; do gcc -O2 -c /src/bfd/$f.c -o out/bfd-$f.o || exit 1; done"),
+            .display = intern("CC-BFD (3 files)"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { "bfd-archive.o", "bfd-bfd.o", "bfd-cache.o" },
-            .working_dir = ".",
+            .outputs = { intern("bfd-archive.o"), intern("bfd-bfd.o"), intern("bfd-cache.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -432,12 +438,12 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 21,
-            .command = "cd /build && gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
+            .command = intern("cd /build && gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -448,12 +454,12 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
     {
         auto cmd = CommandInfo {
             .node_id = 22,
-            .command = "SRCDIR=$PWD && cd /build && gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
+            .command = intern("SRCDIR=$PWD && cd /build && gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);

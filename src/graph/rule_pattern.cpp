@@ -3,6 +3,8 @@
 
 #include "pup/graph/rule_pattern.hpp"
 
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
 
@@ -17,9 +19,10 @@ auto RulePatternRegistry::match_and_generate(CommandInfo const& cmd) const
     -> Vec<GeneratedRule>
 {
     auto result = Vec<GeneratedRule> {};
+    auto cmd_sv = global_pool().get(cmd.command);
 
     for (auto const& pattern : patterns_) {
-        if (!pattern.matches(cmd.command)) {
+        if (!pattern.matches(cmd_sv)) {
             continue;
         }
 
@@ -39,7 +42,7 @@ auto make_gcc_depfile_pattern() -> RulePattern
         .generate = [](CommandInfo const& cmd) -> std::optional<GeneratedRule> {
             static auto const scanner = scanners::GccScanner {};
 
-            if (scanner.has_dep_flags(cmd.command)) {
+            if (scanner.has_dep_flags(global_pool().get(cmd.command))) {
                 return std::nullopt;
             }
 
@@ -51,9 +54,9 @@ auto make_gcc_depfile_pattern() -> RulePattern
             return GeneratedRule {
                 .inputs = cmd.inputs,
                 .order_only_inputs = cmd.order_only_inputs,
-                .command = std::move(*dep_cmd),
+                .command = *dep_cmd,
                 .display = make_dep_display(cmd.inputs),
-                .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = {} } },
+                .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty } },
                 .action = OutputAction::InjectImplicitDeps,
                 .parent_command = cmd.node_id,
             };

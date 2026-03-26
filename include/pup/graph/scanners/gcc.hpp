@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/string.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/graph/dep_scanner.hpp"
 
 #include <memory>
@@ -21,7 +22,7 @@ public:
     auto has_dep_flags(std::string_view cmd) const -> bool override;
     [[nodiscard]]
     auto build_dep_command(CommandInfo const& cmd) const
-        -> std::optional<String> override;
+        -> std::optional<StringId> override;
     [[nodiscard]]
     auto dep_spec() const -> DepSpec override;
     [[nodiscard]]

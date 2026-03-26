@@ -5,12 +5,14 @@
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
 #include "pup/core/types.hpp"
 #include "pup/exec/progress_display.hpp"
@@ -296,10 +298,13 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
+        auto& pool = pup::global_pool();
+        auto file_path_sv = pool.get(file.path);
+
         // Skip files outside scopes (but always check Tupfiles and upstream deps)
-        if (!scopes.empty() && !is_tupfile(file.path)
-            && !pup::is_path_in_any_scope(file.path, scopes)
-            && !std::binary_search(upstream_files.begin(), upstream_files.end(), std::string_view { file.path })) {
+        if (!scopes.empty() && !is_tupfile(file_path_sv)
+            && !pup::is_path_in_any_scope(file_path_sv, scopes)
+            && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)) {
             continue;
         }
 
@@ -307,17 +312,17 @@ auto find_changed_files_with_implicit(
 
         // File resolution:
         // All paths are now source-relative (generated files include build root, e.g., "build/program").
-        auto file_path = String { file.path };
+        auto file_path = String { file_path_sv };
         auto path = pup::path::is_absolute(file_path) ? file_path : pup::path::join(source_root, file_path);
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
         if (!stat_result) {
             if (verbose) {
-                printf("  Changed (stat failed): %s\n", file.path.c_str());
+                printf("  Changed (stat failed): %s\n", file_path_sv.data());
             }
             ++metrics.files_changed;
-            changed.push_back(file.path);
+            changed.push_back(String { file_path_sv });
             continue;
         }
 
@@ -325,10 +330,10 @@ auto find_changed_files_with_implicit(
         auto current_size = stat_result->size;
         if (current_size != file.size) {
             if (verbose) {
-                printf("  Changed (size): %s\n", file.path.c_str());
+                printf("  Changed (size): %s\n", file_path_sv.data());
             }
             ++metrics.files_changed;
-            changed.push_back(file.path);
+            changed.push_back(String { file_path_sv });
             continue;
         }
 
@@ -349,18 +354,18 @@ auto find_changed_files_with_implicit(
             auto hash_result = pup::sha256_file(path);
             if (!hash_result || *hash_result != file.content_hash) {
                 if (verbose) {
-                    printf("  Changed (hash): %s\n", file.path.c_str());
+                    printf("  Changed (hash): %s\n", file_path_sv.data());
                 }
                 ++metrics.files_changed;
-                changed.push_back(file.path);
+                changed.push_back(String { file_path_sv });
             }
         } else {
             // ZERO_HASH indicates hash wasn't computed - treat as changed to be safe
             if (verbose) {
-                printf("  Changed (no hash): %s\n", file.path.c_str());
+                printf("  Changed (no hash): %s\n", file_path_sv.data());
             }
             ++metrics.files_changed;
-            changed.push_back(file.path);
+            changed.push_back(String { file_path_sv });
         }
     }
 
@@ -397,14 +402,15 @@ auto get_or_create_dir(
 
     if (path_str == "/") {
         auto dir_id = ctx.next_id++;
+        auto& pool = pup::global_pool();
         auto entry = pup::index::FileEntry {
             .id = dir_id,
             .parent_id = pup::NodeId { 0 },
             .src_id = 0,
             .type = pup::NodeType::Directory,
             .flags = pup::NodeFlags::None,
-            .name = "/",
-            .path = "/",
+            .name = pool.intern("/"),
+            .path = pool.intern("/"),
             .size = 0,
             .mtime_ns = 0,
             .content_hash = {},
@@ -418,14 +424,15 @@ auto get_or_create_dir(
     auto parent_id = get_or_create_dir(ctx, parent_path);
 
     auto dir_id = ctx.next_id++;
+    auto& pool = pup::global_pool();
     auto entry = pup::index::FileEntry {
         .id = dir_id,
         .parent_id = parent_id,
         .src_id = 0,
         .type = pup::NodeType::Directory,
         .flags = pup::NodeFlags::None,
-        .name = String { pup::path::filename(normalized) },
-        .path = path_str,
+        .name = pool.intern(pup::path::filename(normalized)),
+        .path = pool.intern(path_str),
         .size = 0,
         .mtime_ns = 0,
         .content_hash = {},
@@ -466,14 +473,15 @@ auto create_implicit_file(
 
     auto file_id = ctx.next_id++;
 
+    auto& pool = pup::global_pool();
     auto entry = pup::index::FileEntry {
         .id = file_id,
         .parent_id = parent_id,
         .src_id = 0,
         .type = pup::NodeType::File,
         .flags = pup::NodeFlags::None,
-        .name = String { pup::path::filename(rel_path) },
-        .path = rel_path,
+        .name = pool.intern(pup::path::filename(rel_path)),
+        .path = pool.intern(rel_path),
         .size = file_size,
         .mtime_ns = mtime_ns,
         .content_hash = content_hash,
@@ -537,14 +545,15 @@ auto serialize_graph_nodes(
                 }
             }
 
+            auto& pool = pup::global_pool();
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = node->parent_dir,
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = String { pup::graph::get_name(graph.graph(), id) },
-                .path = node_path,
+                .name = pool.intern(pup::graph::get_name(graph.graph(), id)),
+                .path = pool.intern(node_path),
                 .size = file_size,
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
@@ -553,6 +562,7 @@ auto serialize_graph_nodes(
             path_id_insert(path_to_id, node_path, id);
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
             auto node_path = String { graph.get_full_path(id) };
+            auto& pool = pup::global_pool();
 
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -560,8 +570,8 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = String { pup::graph::get_name(graph.graph(), id) },
-                .path = node_path,
+                .name = pool.intern(pup::graph::get_name(graph.graph(), id)),
+                .path = pool.intern(node_path),
                 .size = 0,
                 .mtime_ns = 0,
                 .content_hash = {},
@@ -574,14 +584,15 @@ auto serialize_graph_nodes(
                    || node->type == pup::NodeType::Group
                    || node->type == pup::NodeType::Ghost) {
             // These node types must be in index to maintain consecutive ID sequence
+            auto& pool = pup::global_pool();
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = node->parent_dir,
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = String { pup::graph::get_name(graph.graph(), id) },
-                .path = {},
+                .name = pool.intern(pup::graph::get_name(graph.graph(), id)),
+                .path = pup::StringId::Empty,
                 .size = 0,
                 .content_hash = (node->type == pup::NodeType::Variable) ? node->content_hash : pup::Hash256 {},
             };
@@ -610,9 +621,9 @@ auto serialize_command_nodes(
         }
 
         // v8: instruction and operands are stored directly on CommandNode
-        auto instruction_pattern = String { pup::graph::get_instruction_pattern(graph.graph(), id) };
         auto inputs = cmd->inputs;
         auto outputs = cmd->outputs;
+        auto& pool = pup::global_pool();
 
         // Look up source_dir in path_to_id to get the directory NodeId
         auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
@@ -627,9 +638,9 @@ auto serialize_command_nodes(
         auto entry = pup::index::CommandEntry {
             .id = id,
             .dir_id = dir_id,
-            .instruction_pattern = std::move(instruction_pattern),
-            .display = String { pup::graph::get_display_str(graph.graph(), id) },
-            .env = {},
+            .instruction_pattern = pool.intern(pup::graph::get_instruction_pattern(graph.graph(), id)),
+            .display = pool.intern(pup::graph::get_display_str(graph.graph(), id)),
+            .env = pup::StringId::Empty,
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
         };
@@ -726,11 +737,12 @@ auto preserve_old_implicit_edges(
             continue;
         }
 
-        auto new_file_it = path_id_find(ctx.path_to_id, old_file->path);
-        auto abs_path = pup::path::is_absolute(old_file->path) ? String { old_file->path } : pup::path::join(ctx.source_root, old_file->path);
+        auto old_file_path = pup::global_pool().get(old_file->path);
+        auto new_file_it = path_id_find(ctx.path_to_id, old_file_path);
+        auto abs_path = pup::path::is_absolute(old_file_path) ? String { old_file_path } : pup::path::join(ctx.source_root, old_file_path);
         auto new_from_id = new_file_it != nullptr
             ? new_file_it->second
-            : create_implicit_file(ctx, abs_path, old_file->path);
+            : create_implicit_file(ctx, abs_path, old_file_path);
 
         if (edge_pair_insert(ctx.added_edges, new_from_id, edge.to)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
@@ -761,8 +773,8 @@ auto expand_implicit_deps(
     auto path_to_file = Vec<std::pair<String, pup::index::FileEntry const*>> {};
     path_to_file.reserve(index.files().size());
     for (auto const& file : index.files()) {
-        if (!file.path.empty()) {
-            path_to_file.emplace_back(file.path, &file);
+        if (!pup::is_empty(file.path)) {
+            path_to_file.emplace_back(String { pup::global_pool().get(file.path) }, &file);
         }
     }
     std::sort(path_to_file.begin(), path_to_file.end());
@@ -948,14 +960,15 @@ auto remove_stale_outputs(
             }
 
             // Paths now include build root (e.g., "build/program")
-            auto abs_path = pup::path::join(source_root, file->path);
+            auto file_path_sv = pup::global_pool().get(file->path);
+            auto abs_path = pup::path::join(source_root, file_path_sv);
             if (pup::platform::exists(abs_path)) {
                 if (dry_run) {
-                    vprint(variant_name, "Would remove stale: %s\n", file->path.c_str());
+                    vprint(variant_name, "Would remove stale: %s\n", file_path_sv.data());
                 } else {
                     if (pup::platform::remove_file(abs_path)) {
                         if (verbose) {
-                            vprint(variant_name, "  Removed stale: %s\n", file->path.c_str());
+                            vprint(variant_name, "  Removed stale: %s\n", file_path_sv.data());
                         }
                     }
                 }
@@ -963,7 +976,7 @@ auto remove_stale_outputs(
         }
 
         if (verbose) {
-            vprint(variant_name, "  Removed command: %s\n", cmd.display.c_str());
+            vprint(variant_name, "  Removed command: %s\n", pup::global_pool().get(cmd.display).data());
         }
     }
 }

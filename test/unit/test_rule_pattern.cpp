@@ -2,9 +2,15 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
 using namespace pup::graph;
+
+namespace {
+auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
+} // namespace
 
 TEST_CASE("RulePatternRegistry basic operations", "[rule_pattern]")
 {
@@ -33,12 +39,12 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 42,
-            .command = "gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -46,8 +52,8 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
 
         auto const& rule = generated[0];
         REQUIRE(rule.inputs.size() == 1);
-        REQUIRE(rule.inputs[0] == "foo.c");
-        REQUIRE(rule.command == "gcc -M foo.c");
+        REQUIRE(rule.inputs[0] == intern("foo.c"));
+        REQUIRE(rule.command == intern("gcc -M foo.c"));
         REQUIRE(rule.action == OutputAction::InjectImplicitDeps);
         REQUIRE(rule.parent_command == 42);
         REQUIRE(rule.outputs.size() == 1);
@@ -58,114 +64,114 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 100,
-            .command = "clang -c bar.cpp -o bar.o",
-            .display = "CXX bar.o",
-            .inputs = { "bar.cpp" },
+            .command = intern("clang -c bar.cpp -o bar.o"),
+            .display = intern("CXX bar.o"),
+            .inputs = { intern("bar.cpp") },
             .order_only_inputs = {},
-            .outputs = { "bar.o" },
-            .working_dir = "src",
+            .outputs = { intern("bar.o") },
+            .working_dir = intern("src"),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "clang -M bar.cpp");
+        REQUIRE(generated[0].command == intern("clang -M bar.cpp"));
     }
 
     SECTION("matches g++ compile command and preserves std flag")
     {
         auto cmd = CommandInfo {
             .node_id = 200,
-            .command = "g++ -std=c++20 -c main.cpp -o main.o",
-            .display = "CXX main.o",
-            .inputs = { "main.cpp" },
+            .command = intern("g++ -std=c++20 -c main.cpp -o main.o"),
+            .display = intern("CXX main.o"),
+            .inputs = { intern("main.cpp") },
             .order_only_inputs = {},
-            .outputs = { "main.o" },
-            .working_dir = ".",
+            .outputs = { intern("main.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "g++ -M -std=c++20 main.cpp");
+        REQUIRE(generated[0].command == intern("g++ -M -std=c++20 main.cpp"));
     }
 
     SECTION("handles ccache wrapper")
     {
         auto cmd = CommandInfo {
             .node_id = 250,
-            .command = "ccache gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("ccache gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "ccache gcc -M foo.c");
+        REQUIRE(generated[0].command == intern("ccache gcc -M foo.c"));
     }
 
     SECTION("handles distcc wrapper")
     {
         auto cmd = CommandInfo {
             .node_id = 251,
-            .command = "distcc g++ -c bar.cpp -o bar.o",
-            .display = "CXX bar.o",
-            .inputs = { "bar.cpp" },
+            .command = intern("distcc g++ -c bar.cpp -o bar.o"),
+            .display = intern("CXX bar.o"),
+            .inputs = { intern("bar.cpp") },
             .order_only_inputs = {},
-            .outputs = { "bar.o" },
-            .working_dir = ".",
+            .outputs = { intern("bar.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "distcc g++ -M bar.cpp");
+        REQUIRE(generated[0].command == intern("distcc g++ -M bar.cpp"));
     }
 
     SECTION("handles cross-compiler")
     {
         auto cmd = CommandInfo {
             .node_id = 260,
-            .command = "arm-linux-gnueabihf-gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("arm-linux-gnueabihf-gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "arm-linux-gnueabihf-gcc -M foo.c");
+        REQUIRE(generated[0].command == intern("arm-linux-gnueabihf-gcc -M foo.c"));
     }
 
     SECTION("handles absolute path to compiler")
     {
         auto cmd = CommandInfo {
             .node_id = 270,
-            .command = "/usr/bin/gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("/usr/bin/gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "/usr/bin/gcc -M foo.c");
+        REQUIRE(generated[0].command == intern("/usr/bin/gcc -M foo.c"));
     }
 
     SECTION("skips command with -MD flag")
     {
         auto cmd = CommandInfo {
             .node_id = 300,
-            .command = "gcc -MD -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -MD -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -176,12 +182,12 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 400,
-            .command = "gcc -MMD -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -MMD -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -192,12 +198,12 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 410,
-            .command = "gcc -MF deps.d -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -MF deps.d -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -208,12 +214,12 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 420,
-            .command = "gcc -M foo.c",
-            .display = "DEP foo.c",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -M foo.c"),
+            .display = intern("DEP foo.c"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = {},
-            .working_dir = ".",
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -224,12 +230,12 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 430,
-            .command = "gcc -c foo.c -M",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -c foo.c -M"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -240,64 +246,64 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 440,
-            .command = "gcc -DMYDEBUG -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -DMYDEBUG -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M -DMYDEBUG foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -DMYDEBUG foo.c"));
     }
 
     SECTION("preserves include paths")
     {
         auto cmd = CommandInfo {
             .node_id = 450,
-            .command = "g++ -I../../include -I../../third_party -c foo.cpp -o foo.o",
-            .display = "CXX foo.o",
-            .inputs = { "foo.cpp" },
+            .command = intern("g++ -I../../include -I../../third_party -c foo.cpp -o foo.o"),
+            .display = intern("CXX foo.o"),
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = "build/src",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("build/src"),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "g++ -M -I../../include -I../../third_party foo.cpp");
+        REQUIRE(generated[0].command == intern("g++ -M -I../../include -I../../third_party foo.cpp"));
     }
 
     SECTION("preserves all relevant flags")
     {
         auto cmd = CommandInfo {
             .node_id = 460,
-            .command = "g++ -std=c++20 -Wall -Wextra -I../include -DNDEBUG -O2 -c main.cpp -o main.o",
-            .display = "CXX main.o",
-            .inputs = { "main.cpp" },
+            .command = intern("g++ -std=c++20 -Wall -Wextra -I../include -DNDEBUG -O2 -c main.cpp -o main.o"),
+            .display = intern("CXX main.o"),
+            .inputs = { intern("main.cpp") },
             .order_only_inputs = {},
-            .outputs = { "main.o" },
-            .working_dir = ".",
+            .outputs = { intern("main.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // Should preserve -std, -I, -D but not -Wall, -Wextra, -O2
-        REQUIRE(generated[0].command == "g++ -M -std=c++20 -I../include -DNDEBUG main.cpp");
+        REQUIRE(generated[0].command == intern("g++ -M -std=c++20 -I../include -DNDEBUG main.cpp"));
     }
 
     SECTION("does not match link command")
     {
         auto cmd = CommandInfo {
             .node_id = 500,
-            .command = "gcc foo.o bar.o -o app",
-            .display = "LINK app",
-            .inputs = { "foo.o", "bar.o" },
+            .command = intern("gcc foo.o bar.o -o app"),
+            .display = intern("LINK app"),
+            .inputs = { intern("foo.o"), intern("bar.o") },
             .order_only_inputs = {},
-            .outputs = { "app" },
-            .working_dir = ".",
+            .outputs = { intern("app") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -308,12 +314,12 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 600,
-            .command = "ar rcs libfoo.a foo.o bar.o",
-            .display = "AR libfoo.a",
-            .inputs = { "foo.o", "bar.o" },
+            .command = intern("ar rcs libfoo.a foo.o bar.o"),
+            .display = intern("AR libfoo.a"),
+            .inputs = { intern("foo.o"), intern("bar.o") },
             .order_only_inputs = {},
-            .outputs = { "libfoo.a" },
-            .working_dir = ".",
+            .outputs = { intern("libfoo.a") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -330,102 +336,102 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 700,
-            .command = "gcc -c foo.c bar.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c", "bar.c" },
+            .command = intern("gcc -c foo.c bar.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c"), intern("bar.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M foo.c bar.c");
+        REQUIRE(generated[0].command == intern("gcc -M foo.c bar.c"));
     }
 
     SECTION("preserves -isystem flag")
     {
         auto cmd = CommandInfo {
             .node_id = 710,
-            .command = "gcc -isystem/usr/local/include -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -isystem/usr/local/include -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M -isystem/usr/local/include foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -isystem/usr/local/include foo.c"));
     }
 
     SECTION("preserves -iquote flag")
     {
         auto cmd = CommandInfo {
             .node_id = 720,
-            .command = "gcc -iquote../include -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -iquote../include -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M -iquote../include foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -iquote../include foo.c"));
     }
 
     SECTION("preserves -U undefine flag")
     {
         auto cmd = CommandInfo {
             .node_id = 730,
-            .command = "gcc -DFOO -UBAR -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -DFOO -UBAR -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M -DFOO -UBAR foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -DFOO -UBAR foo.c"));
     }
 
     SECTION("preserves -include flag with argument")
     {
         auto cmd = CommandInfo {
             .node_id = 740,
-            .command = "gcc -include config.h -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -include config.h -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M -include config.h foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -include config.h foo.c"));
     }
 
     SECTION("preserves --sysroot flag")
     {
         auto cmd = CommandInfo {
             .node_id = 750,
-            .command = "gcc --sysroot=/opt/sdk -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc --sysroot=/opt/sdk -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M --sysroot=/opt/sdk foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M --sysroot=/opt/sdk foo.c"));
     }
 
     SECTION("preserves -D with nested quotes (mbedtls config)")
@@ -435,18 +441,18 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         // Output must be re-quoted for shell execution
         auto cmd = CommandInfo {
             .node_id = 755,
-            .command = R"(gcc -DMBEDTLS_CONFIG_FILE='"../include/mbedtls_config.h"' -c foo.c -o foo.o)",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern(R"(gcc -DMBEDTLS_CONFIG_FILE='"../include/mbedtls_config.h"' -c foo.c -o foo.o)"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // The -D flag with inner double quotes should be preserved and re-quoted
-        REQUIRE(generated[0].command == R"(gcc -M '-DMBEDTLS_CONFIG_FILE="../include/mbedtls_config.h"' foo.c)");
+        REQUIRE(generated[0].command == intern(R"(gcc -M '-DMBEDTLS_CONFIG_FILE="../include/mbedtls_config.h"' foo.c)"));
     }
 
     SECTION("preserves -D with escaped double quotes")
@@ -456,81 +462,81 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         // Must be re-quoted for shell execution
         auto cmd = CommandInfo {
             .node_id = 756,
-            .command = R"(gcc -D__PFILENAME__=\"\" -c foo.c -o foo.o)",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern(R"(gcc -D__PFILENAME__=\"\" -c foo.c -o foo.o)"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // The escaped quotes should be preserved and re-quoted
-        REQUIRE(generated[0].command == R"(gcc -M '-D__PFILENAME__=""' foo.c)");
+        REQUIRE(generated[0].command == intern(R"(gcc -M '-D__PFILENAME__=""' foo.c)"));
     }
 
     SECTION("handles sccache wrapper")
     {
         auto cmd = CommandInfo {
             .node_id = 760,
-            .command = "sccache gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("sccache gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "sccache gcc -M foo.c");
+        REQUIRE(generated[0].command == intern("sccache gcc -M foo.c"));
     }
 
     SECTION("handles icecc wrapper")
     {
         auto cmd = CommandInfo {
             .node_id = 770,
-            .command = "icecc g++ -c foo.cpp -o foo.o",
-            .display = "CXX foo.o",
-            .inputs = { "foo.cpp" },
+            .command = intern("icecc g++ -c foo.cpp -o foo.o"),
+            .display = intern("CXX foo.o"),
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "icecc g++ -M foo.cpp");
+        REQUIRE(generated[0].command == intern("icecc g++ -M foo.cpp"));
     }
 
     SECTION("generates correct display string")
     {
         auto cmd = CommandInfo {
             .node_id = 780,
-            .command = "gcc -c main.c -o main.o",
-            .display = "CC main.o",
-            .inputs = { "main.c" },
+            .command = intern("gcc -c main.c -o main.o"),
+            .display = intern("CC main.o"),
+            .inputs = { intern("main.c") },
             .order_only_inputs = {},
-            .outputs = { "main.o" },
-            .working_dir = ".",
+            .outputs = { intern("main.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].display == "DEP main.c");
+        REQUIRE(generated[0].display == intern("DEP main.c"));
     }
 
     SECTION("does not match -M embedded in path")
     {
         auto cmd = CommandInfo {
             .node_id = 790,
-            .command = "gcc -c /path/to/MYMODULE/foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "/path/to/MYMODULE/foo.c" },
+            .command = intern("gcc -c /path/to/MYMODULE/foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("/path/to/MYMODULE/foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -541,12 +547,12 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 800,
-            .command = "gcc -MP -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -MP -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -557,12 +563,12 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 810,
-            .command = "gcc -MT foo.o -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -MT foo.o -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -575,68 +581,68 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         {
             auto cmd = CommandInfo {
                 .node_id = 820,
-                .command = "g++ -c foo.cc -o foo.o",
-                .display = "CXX foo.o",
-                .inputs = { "foo.cc" },
+                .command = intern("g++ -c foo.cc -o foo.o"),
+                .display = intern("CXX foo.o"),
+                .inputs = { intern("foo.cc") },
                 .order_only_inputs = {},
-                .outputs = { "foo.o" },
-                .working_dir = ".",
+                .outputs = { intern("foo.o") },
+                .working_dir = intern("."),
             };
 
             auto generated = registry.match_and_generate(cmd);
             REQUIRE(generated.size() == 1);
-            REQUIRE(generated[0].command == "g++ -M foo.cc");
+            REQUIRE(generated[0].command == intern("g++ -M foo.cc"));
         }
 
         SECTION(".cxx extension")
         {
             auto cmd = CommandInfo {
                 .node_id = 821,
-                .command = "g++ -c foo.cxx -o foo.o",
-                .display = "CXX foo.o",
-                .inputs = { "foo.cxx" },
+                .command = intern("g++ -c foo.cxx -o foo.o"),
+                .display = intern("CXX foo.o"),
+                .inputs = { intern("foo.cxx") },
                 .order_only_inputs = {},
-                .outputs = { "foo.o" },
-                .working_dir = ".",
+                .outputs = { intern("foo.o") },
+                .working_dir = intern("."),
             };
 
             auto generated = registry.match_and_generate(cmd);
             REQUIRE(generated.size() == 1);
-            REQUIRE(generated[0].command == "g++ -M foo.cxx");
+            REQUIRE(generated[0].command == intern("g++ -M foo.cxx"));
         }
 
         SECTION(".C extension")
         {
             auto cmd = CommandInfo {
                 .node_id = 822,
-                .command = "g++ -c foo.C -o foo.o",
-                .display = "CXX foo.o",
-                .inputs = { "foo.C" },
+                .command = intern("g++ -c foo.C -o foo.o"),
+                .display = intern("CXX foo.o"),
+                .inputs = { intern("foo.C") },
                 .order_only_inputs = {},
-                .outputs = { "foo.o" },
-                .working_dir = ".",
+                .outputs = { intern("foo.o") },
+                .working_dir = intern("."),
             };
 
             auto generated = registry.match_and_generate(cmd);
             REQUIRE(generated.size() == 1);
-            REQUIRE(generated[0].command == "g++ -M foo.C");
+            REQUIRE(generated[0].command == intern("g++ -M foo.C"));
         }
 
         SECTION(".c++ extension")
         {
             auto cmd = CommandInfo {
                 .node_id = 823,
-                .command = "g++ -c foo.c++ -o foo.o",
-                .display = "CXX foo.o",
-                .inputs = { "foo.c++" },
+                .command = intern("g++ -c foo.c++ -o foo.o"),
+                .display = intern("CXX foo.o"),
+                .inputs = { intern("foo.c++") },
                 .order_only_inputs = {},
-                .outputs = { "foo.o" },
-                .working_dir = ".",
+                .outputs = { intern("foo.o") },
+                .working_dir = intern("."),
             };
 
             auto generated = registry.match_and_generate(cmd);
             REQUIRE(generated.size() == 1);
-            REQUIRE(generated[0].command == "g++ -M foo.c++");
+            REQUIRE(generated[0].command == intern("g++ -M foo.c++"));
         }
     }
 
@@ -645,18 +651,18 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         // Simple case: build/dir/../../include -> include
         auto cmd = CommandInfo {
             .node_id = 830,
-            .command = "gcc -Ibuild/dir/../../include -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -Ibuild/dir/../../include -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // Path normalized: build/dir/../../include -> include
-        REQUIRE(generated[0].command == "gcc -M -Iinclude foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -Iinclude foo.c"));
     }
 
     SECTION("normalizes complex variant build paths")
@@ -667,30 +673,30 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         // The ../../../ goes up from driver/, and modules/MSR/driver/../../../ cancels out
         auto cmd = CommandInfo {
             .node_id = 831,
-            .command = "gcc -I../../../build-s1f3/modules/MSR/driver/../../../include/generated -c driver.c -o driver.o",
-            .display = "CC driver.o",
-            .inputs = { "driver.c" },
+            .command = intern("gcc -I../../../build-s1f3/modules/MSR/driver/../../../include/generated -c driver.c -o driver.o"),
+            .display = intern("CC driver.o"),
+            .inputs = { intern("driver.c") },
             .order_only_inputs = {},
-            .outputs = { "driver.o" },
-            .working_dir = ".",
+            .outputs = { intern("driver.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // Normalized: the driver/../../../ removes modules/MSR/driver, leaving build-s1f3/include/generated
-        REQUIRE(generated[0].command == "gcc -M -I../../../build-s1f3/include/generated driver.c");
+        REQUIRE(generated[0].command == intern("gcc -M -I../../../build-s1f3/include/generated driver.c"));
     }
 
     SECTION("skips compound shell commands with for loops")
     {
         auto cmd = CommandInfo {
             .node_id = 840,
-            .command = "for f in archive bfd cache; do gcc -O2 -c /src/bfd/$f.c -o out/bfd-$f.o || exit 1; done",
-            .display = "CC-BFD (3 files)",
+            .command = intern("for f in archive bfd cache; do gcc -O2 -c /src/bfd/$f.c -o out/bfd-$f.o || exit 1; done"),
+            .display = intern("CC-BFD (3 files)"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { "bfd-archive.o", "bfd-bfd.o", "bfd-cache.o" },
-            .working_dir = ".",
+            .outputs = { intern("bfd-archive.o"), intern("bfd-bfd.o"), intern("bfd-cache.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -701,12 +707,12 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 841,
-            .command = "cd /build && gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
+            .command = intern("cd /build && gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -717,17 +723,17 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 832,
-            .command = "gcc -I. -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
+            .command = intern("gcc -I. -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { "foo.o" },
-            .working_dir = ".",
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        REQUIRE(generated[0].command == "gcc -M -I. foo.c");
+        REQUIRE(generated[0].command == intern("gcc -M -I. foo.c"));
     }
 }
 
@@ -740,12 +746,12 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 900,
-            .command = "gcc -c foo.c -o foo.o",
-            .display = "CC foo.o",
-            .inputs = { "foo.c" },
-            .order_only_inputs = { "include/generated/autoconf.h", "include/generated/modules.def" },
-            .outputs = { "foo.o" },
-            .working_dir = "modules/test",
+            .command = intern("gcc -c foo.c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("foo.c") },
+            .order_only_inputs = { intern("include/generated/autoconf.h"), intern("include/generated/modules.def") },
+            .outputs = { intern("foo.o") },
+            .working_dir = intern("modules/test"),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -753,20 +759,20 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
 
         // The generated DEP rule should inherit the order-only inputs
         REQUIRE(generated[0].order_only_inputs.size() == 2);
-        REQUIRE(generated[0].order_only_inputs[0] == "include/generated/autoconf.h");
-        REQUIRE(generated[0].order_only_inputs[1] == "include/generated/modules.def");
+        REQUIRE(generated[0].order_only_inputs[0] == intern("include/generated/autoconf.h"));
+        REQUIRE(generated[0].order_only_inputs[1] == intern("include/generated/modules.def"));
     }
 
     SECTION("DEP rule with empty order-only inputs")
     {
         auto cmd = CommandInfo {
             .node_id = 901,
-            .command = "gcc -c bar.c -o bar.o",
-            .display = "CC bar.o",
-            .inputs = { "bar.c" },
+            .command = intern("gcc -c bar.c -o bar.o"),
+            .display = intern("CC bar.o"),
+            .inputs = { intern("bar.c") },
             .order_only_inputs = {},
-            .outputs = { "bar.o" },
-            .working_dir = ".",
+            .outputs = { intern("bar.o") },
+            .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -778,18 +784,18 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
     {
         auto cmd = CommandInfo {
             .node_id = 902,
-            .command = "g++ -std=c++20 -c main.cpp -o main.o",
-            .display = "CXX main.o",
-            .inputs = { "main.cpp" },
-            .order_only_inputs = { "gen-headers/config.h" },
-            .outputs = { "main.o" },
-            .working_dir = "src",
+            .command = intern("g++ -std=c++20 -c main.cpp -o main.o"),
+            .display = intern("CXX main.o"),
+            .inputs = { intern("main.cpp") },
+            .order_only_inputs = { intern("gen-headers/config.h") },
+            .outputs = { intern("main.o") },
+            .working_dir = intern("src"),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         REQUIRE(generated[0].order_only_inputs.size() == 1);
-        REQUIRE(generated[0].order_only_inputs[0] == "gen-headers/config.h");
+        REQUIRE(generated[0].order_only_inputs[0] == intern("gen-headers/config.h"));
     }
 }
 
@@ -808,9 +814,9 @@ TEST_CASE("GeneratedOutput types", "[rule_pattern]")
     {
         auto output = GeneratedOutput {
             .type = GeneratedOutput::Type::File,
-            .path = "output.d",
+            .path = intern("output.d"),
         };
         REQUIRE(output.type == GeneratedOutput::Type::File);
-        REQUIRE(output.path == "output.d");
+        REQUIRE(output.path == intern("output.d"));
     }
 }

@@ -730,16 +730,17 @@ auto process_generated_rules(
     NodeId parent_cmd_id
 ) -> void
 {
+    auto& pool = global_pool();
     for (auto const& gen_rule : generated_rules) {
-        auto gen_cmd_id = create_command_node(ctx, state, gen_rule.command, gen_rule.display);
+        auto gen_cmd_id = create_command_node(ctx, state, pool.get(gen_rule.command), pool.get(gen_rule.display));
         if (!gen_cmd_id) {
             continue;
         }
 
         // Create edges from inputs to generated command and collect operands
         auto gen_input_ids = Vec<NodeId> {};
-        for (auto const& input : gen_rule.inputs) {
-            auto input_id = resolve_input_node(ctx, input);
+        for (auto input_id_val : gen_rule.inputs) {
+            auto input_id = resolve_input_node(ctx, pool.get(input_id_val));
             if (input_id) {
                 (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
                 gen_input_ids.push_back(*input_id);
@@ -748,7 +749,8 @@ auto process_generated_rules(
 
         // Create order-only edges for generated command (e.g., gen-headers)
         // For group references, defer to resolve_deferred_order_only_edges()
-        for (auto const& oi : gen_rule.order_only_inputs) {
+        for (auto oi_id : gen_rule.order_only_inputs) {
+            auto oi = pool.get(oi_id);
             auto group_ref = parse_group_reference(oi, ctx.current_dir, ctx.options.source_root);
             if (group_ref) {
                 // This is a group reference - get/create group node and defer edge
@@ -1622,14 +1624,22 @@ auto expand_rule(
 
     // Check for scanner/pattern matches and generate additional rules (e.g., DEP commands)
     // Use file_inputs (excludes glob patterns) for scanner matching
+    auto intern_vec = [](Vec<String> const& v) {
+        auto result = Vec<StringId> {};
+        result.reserve(v.size());
+        for (auto const& s : v) {
+            result.push_back(global_pool().intern(s));
+        }
+        return result;
+    };
     auto cmd_info = CommandInfo {
         .node_id = *cmd_id,
-        .command = cmd_text,
-        .display = display,
-        .inputs = file_inputs,
-        .order_only_inputs = order_only_paths,
-        .outputs = *outputs,
-        .working_dir = ctx.current_dir,
+        .command = global_pool().intern(cmd_text),
+        .display = global_pool().intern(display),
+        .inputs = intern_vec(file_inputs),
+        .order_only_inputs = intern_vec(order_only_paths),
+        .outputs = intern_vec(*outputs),
+        .working_dir = global_pool().intern(ctx.current_dir),
     };
 
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry

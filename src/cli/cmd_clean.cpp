@@ -5,7 +5,9 @@
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/platform/file_io.hpp"
@@ -61,7 +63,8 @@ auto remove_indexed_outputs(
             continue;
         }
 
-        auto abs_path = pup::path::join(root, file.path);
+        auto file_path_sv = pup::global_pool().get(file.path);
+        auto abs_path = pup::path::join(root, file_path_sv);
         for (auto parent = String { pup::path::parent(abs_path) };
              !parent.empty() && std::string_view { parent } != pup::path::parent(parent);
              parent = pup::path::parent(parent)) {
@@ -73,7 +76,7 @@ auto remove_indexed_outputs(
         }
 
         if (mode.dry_run) {
-            vprint(variant_name, "Would remove: %s\n", file.path.c_str());
+            vprint(variant_name, "Would remove: %s\n", file_path_sv.data());
             ++result.removed_count;
             continue;
         }
@@ -82,10 +85,10 @@ auto remove_indexed_outputs(
         if (r) {
             ++result.removed_count;
             if (mode.verbose) {
-                vprint(variant_name, "Removed: %s\n", file.path.c_str());
+                vprint(variant_name, "Removed: %s\n", file_path_sv.data());
             }
         } else {
-            veprint(variant_name, "Error removing %s: %s\n", file.path.c_str(), r.error().message.c_str());
+            veprint(variant_name, "Error removing %s: %s\n", file_path_sv.data(), r.error().message.c_str());
             ++result.error_count;
         }
     }

@@ -301,7 +301,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                 if (!implicit_nodes.contains(from_id)) {
                     implicit_nodes.set(from_id, 1);
                     auto const* file = index->find_file_by_id(from_id);
-                    auto label = file ? escape_dot_label(file->path) : format_node_id(from_id);
+                    auto label = file ? escape_dot_label(pup::global_pool().get(file->path)) : format_node_id(from_id);
                     printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).c_str(), label.c_str());
                 }
             }
