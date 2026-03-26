@@ -13,8 +13,8 @@ namespace pup::parser {
 
 /// Parsed dependency file (.d file from gcc -MD)
 struct Depfile {
-    StringId target = StringId::Empty;  ///< Output file (left side of colon)
-    Vec<StringId> dependencies;         ///< Input files (right side of colon)
+    StringId target = StringId::Empty; ///< Output file (left side of colon)
+    Vec<StringId> dependencies;        ///< Input files (right side of colon)
 };
 
 /// Parse a dependency file from a filesystem path

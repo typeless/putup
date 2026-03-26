@@ -26,15 +26,15 @@ class RulePatternRegistry;
 
 /// Options for graph building
 struct BuilderOptions {
-    StringId source_root = StringId::Empty;                ///< Source tree root (where source files live)
-    StringId config_root = StringId::Empty;                ///< Config tree root (where Tupfiles live)
-    StringId output_root = StringId::Empty;                ///< Output tree root (where outputs/.pup go)
-    StringId config_path = StringId::Empty;                ///< Path to tup.config (for sticky edge tracking)
-    bool expand_globs = true;                              ///< Expand glob patterns
-    bool validate_inputs = true;                           ///< Check that input files exist
-    bool verbose = false;                                  ///< Print verbose output
-    DepScannerRegistry const* scanner_registry = nullptr;  ///< Optional scanner registry for implicit deps
-    RulePatternRegistry const* pattern_registry = nullptr; ///< Optional pattern registry for auto-generated rules
+    StringId source_root = StringId::Empty;                  ///< Source tree root (where source files live)
+    StringId config_root = StringId::Empty;                  ///< Config tree root (where Tupfiles live)
+    StringId output_root = StringId::Empty;                  ///< Output tree root (where outputs/.pup go)
+    StringId config_path = StringId::Empty;                  ///< Path to tup.config (for sticky edge tracking)
+    bool expand_globs = true;                                ///< Expand glob patterns
+    bool validate_inputs = true;                             ///< Check that input files exist
+    bool verbose = false;                                    ///< Print verbose output
+    DepScannerRegistry const* scanner_registry = nullptr;    ///< Optional scanner registry for implicit deps
+    RulePatternRegistry const* pattern_registry = nullptr;   ///< Optional pattern registry for auto-generated rules
     Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
 };
 

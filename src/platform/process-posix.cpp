@@ -6,9 +6,9 @@
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 // POSIX APIs (pipe, execv, environ) require C-style arrays and pointer arithmetic
 
-#include "pup/platform/process.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/platform/process.hpp"
 
 #include <array>
 #include <cerrno>

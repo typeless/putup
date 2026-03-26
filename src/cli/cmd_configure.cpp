@@ -2,13 +2,13 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/commands.hpp"
-#include "pup/core/global_pool.hpp"
-#include "pup/core/string_pool.hpp"
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/platform/file_io.hpp"

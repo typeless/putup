@@ -634,7 +634,7 @@ auto expand_glob_pattern(
 ) -> void
 {
     auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
-                                        : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
+                                          : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
 
     // First try expanding against filesystem
     auto expanded = parser::glob_expand(path, base);
@@ -697,7 +697,7 @@ auto apply_exclusions(
         for (auto const& excl : *paths) {
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
                 auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
-                                                    : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
+                                                      : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
                 auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
                     for (auto p : *expanded) {

@@ -154,6 +154,7 @@ auto StringPool::intern(std::string_view str) -> StringId
         return StringId::Empty;
     }
 
+    auto lock = std::lock_guard { mutex_ };
     auto h = fix_hash(fnv1a(str));
 
     if (auto existing = probe_find(h, str); !is_empty(existing)) {
@@ -179,6 +180,7 @@ auto StringPool::get(StringId id) const -> std::string_view
         return {};
     }
 
+    auto lock = std::lock_guard { mutex_ };
     auto const idx = to_underlying(id) - 1;
     if (idx >= storage_.size()) {
         return {};
@@ -193,6 +195,7 @@ auto StringPool::find(std::string_view str) const -> StringId
         return StringId::Empty;
     }
 
+    auto lock = std::lock_guard { mutex_ };
     return probe_find(fix_hash(fnv1a(str)), str);
 }
 

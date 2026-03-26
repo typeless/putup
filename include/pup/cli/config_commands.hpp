@@ -17,7 +17,7 @@ namespace pup::cli {
 struct ConfigCommand {
     NodeId cmd_id;
     StringId output_path = StringId::Empty; ///< Project-root-relative path
-    bool exists;        ///< Whether output exists on disk (used by build, ignored by configure)
+    bool exists;                            ///< Whether output exists on disk (used by build, ignored by configure)
 };
 
 /// Find all commands that output tup.config files.

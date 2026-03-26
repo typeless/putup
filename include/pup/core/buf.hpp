@@ -32,14 +32,36 @@ public:
     auto reserve(std::size_t n) -> void;
     auto clear() -> void;
 
-    [[nodiscard]] auto data() const -> char const* { return data_; }
-    [[nodiscard]] auto data() -> char* { return data_; }
-    [[nodiscard]] auto size() const -> std::size_t { return size_; }
-    [[nodiscard]] auto empty() const -> bool { return size_ == 0; }
-    [[nodiscard]] auto c_str() const -> char const*;
-    [[nodiscard]] auto view() const -> std::string_view { return { data_, size_ }; }
+    [[nodiscard]]
+    auto data() const -> char const*
+    {
+        return data_;
+    }
+    [[nodiscard]]
+    auto data() -> char*
+    {
+        return data_;
+    }
+    [[nodiscard]]
+    auto size() const -> std::size_t
+    {
+        return size_;
+    }
+    [[nodiscard]]
+    auto empty() const -> bool
+    {
+        return size_ == 0;
+    }
+    [[nodiscard]]
+    auto c_str() const -> char const*;
+    [[nodiscard]]
+    auto view() const -> std::string_view
+    {
+        return { data_, size_ };
+    }
 
-    [[nodiscard]] auto intern(StringPool& pool) const -> StringId;
+    [[nodiscard]]
+    auto intern(StringPool& pool) const -> StringId;
 
     auto fmt(std::string_view pattern) -> void;
 

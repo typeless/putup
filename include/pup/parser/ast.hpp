@@ -88,11 +88,11 @@ struct Expression final : AstNode {
 /// Input/output path pattern (may include globs, groups, exclusions)
 struct PathPattern final : AstNode {
     Expression path;
-    bool is_foreach = false;          ///< Part of foreach expansion
-    bool is_exclusion = false;        ///< Starts with ! for input exclusion
-    bool is_output_exclusion = false; ///< Starts with ^ for output exclusion (regex pattern)
-    bool is_group = false;            ///< References a bin {binname} (tup calls these "bins")
-    bool is_order_only_group = false; ///< References an order-only group <groupname>
+    bool is_foreach = false;               ///< Part of foreach expansion
+    bool is_exclusion = false;             ///< Starts with ! for input exclusion
+    bool is_output_exclusion = false;      ///< Starts with ^ for output exclusion (regex pattern)
+    bool is_group = false;                 ///< References a bin {binname} (tup calls these "bins")
+    bool is_order_only_group = false;      ///< References an order-only group <groupname>
     StringId group_name = StringId::Empty; ///< Group or bin name
 };
 
@@ -105,8 +105,8 @@ struct Rule final : AstNode {
     std::optional<Expression> display; ///< Display text between ^ ^ in command
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<StringId> output_group;                    ///< {binname} at end
-    std::optional<StringId> output_order_only_group;         ///< <groupname> at end
+    std::optional<StringId> output_group;                  ///< {binname} at end
+    std::optional<StringId> output_order_only_group;       ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
@@ -119,8 +119,8 @@ struct BangMacro final : AstNode {
     std::optional<Expression> display;
     Vec<PathPattern> outputs;
     Vec<PathPattern> extra_outputs;
-    std::optional<StringId> output_group;                    ///< {binname} at end
-    std::optional<StringId> output_order_only_group;         ///< <groupname> at end
+    std::optional<StringId> output_group;                  ///< {binname} at end
+    std::optional<StringId> output_order_only_group;       ///< <groupname> at end
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
@@ -152,8 +152,8 @@ struct Conditional final : AstNode {
 
     Kind kind = Kind::Ifdef;
     StringId var_name = StringId::Empty; ///< For ifdef/ifndef
-    Expression lhs;  ///< For ifeq/ifneq
-    Expression rhs;  ///< For ifeq/ifneq
+    Expression lhs;                      ///< For ifeq/ifneq
+    Expression rhs;                      ///< For ifeq/ifneq
     Vec<std::unique_ptr<Statement>> then_body;
     Vec<std::unique_ptr<Statement>> else_body;
 
