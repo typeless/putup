@@ -2565,8 +2565,8 @@ auto resolve_deferred_order_only_edges(
         if (!cmd_node) {
             continue;
         }
-        auto cmd_str = std::string { graph.str(cmd_node->instruction_id) };
-        if (cmd_str.find(pattern) == std::string::npos) {
+        auto cmd_str = String { graph.str(cmd_node->instruction_id) };
+        if (cmd_str.find(pattern) == String::npos) {
             continue;
         }
 
@@ -2599,21 +2599,37 @@ auto resolve_deferred_order_only_edges(
             }
         }
 
-        auto pos = cmd_str.find(pattern);
-        while (pos != std::string::npos) {
-            cmd_str.replace(pos, pattern.size(), replacement);
-            pos = cmd_str.find(pattern, pos + replacement.size());
+        // Replace pattern in instruction string
+        {
+            auto sv = std::string_view { cmd_str };
+            auto result = String {};
+            auto pos = sv.find(pattern);
+            std::size_t last = 0;
+            while (pos != std::string_view::npos) {
+                result += sv.substr(last, pos - last);
+                result += std::string_view { replacement };
+                last = pos + pattern.size();
+                pos = sv.find(pattern, last);
+            }
+            result += sv.substr(last);
+            cmd_str = std::move(result);
         }
         cmd_node->instruction_id = graph.intern(cmd_str);
 
-        auto display_str = std::string { graph.str(cmd_node->display) };
-        if (display_str.find(pattern) != std::string::npos) {
-            pos = display_str.find(pattern);
-            while (pos != std::string::npos) {
-                display_str.replace(pos, pattern.size(), replacement);
-                pos = display_str.find(pattern, pos + replacement.size());
+        // Replace pattern in display string
+        auto display_sv = graph.str(cmd_node->display);
+        if (display_sv.find(pattern) != std::string_view::npos) {
+            auto result = String {};
+            auto pos = display_sv.find(pattern);
+            std::size_t last = 0;
+            while (pos != std::string_view::npos) {
+                result += display_sv.substr(last, pos - last);
+                result += std::string_view { replacement };
+                last = pos + pattern.size();
+                pos = display_sv.find(pattern, last);
             }
-            cmd_node->display = graph.intern(display_str);
+            result += display_sv.substr(last);
+            cmd_node->display = graph.intern(result);
         }
     }
 

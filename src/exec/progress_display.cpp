@@ -15,15 +15,19 @@ namespace {
 auto constexpr MAX_RUNNING_JOBS_DISPLAY = std::size_t { 8 };
 
 /// Truncate string from the left if longer than max_width, adding "..." prefix
-auto truncate_left(std::string_view str, std::size_t max_width) -> std::string
+auto truncate_left(std::string_view str, std::size_t max_width) -> String
 {
     if (str.size() <= max_width) {
-        return std::string { str };
+        return String { str };
     }
     if (max_width <= 3) {
-        return std::string(max_width, '.');
+        auto dots = String {};
+        for (std::size_t i = 0; i < max_width; ++i) {
+            dots += '.';
+        }
+        return dots;
     }
-    return "..." + std::string { str.substr(str.size() - (max_width - 3)) };
+    return String { "..." } + str.substr(str.size() - (max_width - 3));
 }
 
 } // anonymous namespace
