@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/platform/process.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <windows.h>
 
@@ -125,11 +127,13 @@ auto run_process_with_callback(
     }
 
     // Build command line: cmd.exe /c "command"
+    auto& pool = global_pool();
+    auto cmd_sv = pool.get(opts.command);
     auto cmdline = std::wstring { L"cmd.exe /c \"" };
-    auto cmd_len = MultiByteToWideChar(CP_UTF8, 0, opts.command.data(), static_cast<int>(opts.command.size()), nullptr, 0);
+    auto cmd_len = MultiByteToWideChar(CP_UTF8, 0, cmd_sv.data(), static_cast<int>(cmd_sv.size()), nullptr, 0);
     if (cmd_len > 0) {
         auto wcmd = std::wstring(cmd_len, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, opts.command.data(), static_cast<int>(opts.command.size()), wcmd.data(), cmd_len);
+        MultiByteToWideChar(CP_UTF8, 0, cmd_sv.data(), static_cast<int>(cmd_sv.size()), wcmd.data(), cmd_len);
         cmdline += wcmd;
     }
     cmdline += L'"';
@@ -150,11 +154,12 @@ auto run_process_with_callback(
 
     // Convert working directory
     auto working_dir = std::wstring {};
-    if (!opts.working_dir.empty()) {
-        auto len = MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.data(), static_cast<int>(opts.working_dir.size()), nullptr, 0);
+    auto wd_sv = pool.get(opts.working_dir);
+    if (!wd_sv.empty()) {
+        auto len = MultiByteToWideChar(CP_UTF8, 0, wd_sv.data(), static_cast<int>(wd_sv.size()), nullptr, 0);
         if (len > 0) {
             working_dir.resize(len);
-            MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.data(), static_cast<int>(opts.working_dir.size()), working_dir.data(), len);
+            MultiByteToWideChar(CP_UTF8, 0, wd_sv.data(), static_cast<int>(wd_sv.size()), working_dir.data(), len);
         }
     }
 
@@ -206,6 +211,8 @@ auto run_process_with_callback(
 
     auto result = ProcessResult {};
     auto timed_out = false;
+    auto stdout_buf = String {};
+    auto stderr_buf = String {};
 
     // Read stdout/stderr
     auto deadline = opts.timeout
@@ -234,7 +241,7 @@ auto run_process_with_callback(
                     if (callback) {
                         callback(data, false, user_data);
                     }
-                    result.stdout_output.append(data);
+                    stdout_buf.append(data);
                 }
             } else {
                 // Check if process has exited
@@ -246,7 +253,7 @@ auto run_process_with_callback(
                         if (callback) {
                             callback(data, false, user_data);
                         }
-                        result.stdout_output.append(data);
+                        stdout_buf.append(data);
                     }
                     stdout_open = false;
                 }
@@ -261,7 +268,7 @@ auto run_process_with_callback(
                     if (callback) {
                         callback(data, true, user_data);
                     }
-                    result.stderr_output.append(data);
+                    stderr_buf.append(data);
                 }
             } else {
                 auto exit_code = DWORD {};
@@ -271,7 +278,7 @@ auto run_process_with_callback(
                         if (callback) {
                             callback(data, true, user_data);
                         }
-                        result.stderr_output.append(data);
+                        stderr_buf.append(data);
                     }
                     stderr_open = false;
                 }
@@ -307,6 +314,9 @@ auto run_process_with_callback(
 
     auto end_time = std::chrono::steady_clock::now();
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+    result.stdout_output = pool.intern(stdout_buf);
+    result.stderr_output = pool.intern(stderr_buf);
 
     return result;
 }

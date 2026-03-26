@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <windows.h>
@@ -369,7 +371,7 @@ auto remove_all(std::string_view path) -> Result<void>
     auto entries = read_directory(path);
     if (entries) {
         for (auto const& e : *entries) {
-            auto child = pup::path::join(path, e.name);
+            auto child = pup::path::join(path, global_pool().get(e.name));
             auto r = remove_all(child);
             if (!r) {
                 return r;
@@ -598,7 +600,7 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
         }
         auto name = from_wide(fd.cFileName);
         auto is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        entries.push_back(DirEntry { std::move(name), is_dir });
+        entries.push_back(DirEntry { global_pool().intern(name), is_dir });
     } while (FindNextFileW(h, &fd));
     FindClose(h);
     return entries;
@@ -620,13 +622,14 @@ auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result
             return pup::unexpected<Error>(entries.error());
         }
         for (auto const& e : *entries) {
+            auto name_sv = global_pool().get(e.name);
             String child_rel;
             if (rel.empty()) {
-                child_rel = e.name;
+                child_rel = name_sv;
             } else {
                 child_rel = rel;
                 child_rel += '/';
-                child_rel += e.name;
+                child_rel += name_sv;
             }
             auto should_recurse = visitor(e, child_rel);
             if (e.is_dir && should_recurse) {
