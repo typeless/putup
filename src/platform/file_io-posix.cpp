@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
@@ -16,11 +17,24 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// All std::string_view parameters in this file originate from null-terminated
-// sources (pup::String, std::string, or string literals). Calling .data()
-// at the POSIX boundary is safe.
-
 namespace pup::platform {
+
+namespace {
+
+// Null-terminate a string_view for POSIX C APIs.
+// Most paths fit in 256 bytes (Buf inline). Overflow falls back to heap.
+struct CPath {
+    Buf buf;
+
+    explicit CPath(std::string_view sv)
+    {
+        buf.append(sv);
+    }
+
+    auto c_str() const -> char const* { return buf.c_str(); }
+};
+
+} // namespace
 
 struct MappedFile::Impl {
     std::byte* data = nullptr;
@@ -66,8 +80,9 @@ auto MappedFile::open(std::string_view path) -> Result<MappedFile>
     auto file = MappedFile {};
     file.impl_ = std::make_unique<Impl>();
 
+    auto p = CPath { path };
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    file.impl_->fd = ::open(path.data(), O_RDONLY);
+    file.impl_->fd = ::open(p.c_str(), O_RDONLY);
     if (file.impl_->fd < 0) {
         file.impl_.reset();
         return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
@@ -115,8 +130,9 @@ auto MappedFile::close() -> void
 
 auto stat_file(std::string_view path) -> Result<FileStat>
 {
+    auto p = CPath { path };
     struct stat st { };
-    if (::stat(path.data(), &st) < 0) {
+    if (::stat(p.c_str(), &st) < 0) {
         return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
     }
 
@@ -179,7 +195,8 @@ auto atomic_write(
         return make_error<void>(ErrorCode::IoError, "Failed to write file");
     }
 
-    if (::rename(temp_path.c_str(), path.data()) < 0) {
+    auto p = CPath { path };
+    if (::rename(temp_path.c_str(), p.c_str()) < 0) {
         ::unlink(temp_path.c_str());
         return make_error<void>(ErrorCode::IoError, "Failed to rename file");
     }
@@ -191,14 +208,16 @@ auto atomic_write(
 
 auto exists(std::string_view path) -> bool
 {
+    auto p = CPath { path };
     struct stat st { };
-    return ::stat(path.data(), &st) == 0;
+    return ::stat(p.c_str(), &st) == 0;
 }
 
 auto is_file(std::string_view path) -> bool
 {
+    auto p = CPath { path };
     struct stat st { };
-    if (::stat(path.data(), &st) != 0) {
+    if (::stat(p.c_str(), &st) != 0) {
         return false;
     }
     return S_ISREG(st.st_mode);
@@ -206,8 +225,9 @@ auto is_file(std::string_view path) -> bool
 
 auto is_directory(std::string_view path) -> bool
 {
+    auto p = CPath { path };
     struct stat st { };
-    if (::stat(path.data(), &st) != 0) {
+    if (::stat(p.c_str(), &st) != 0) {
         return false;
     }
     return S_ISDIR(st.st_mode);
@@ -215,8 +235,9 @@ auto is_directory(std::string_view path) -> bool
 
 auto is_symlink(std::string_view path) -> bool
 {
+    auto p = CPath { path };
     struct stat st { };
-    if (::lstat(path.data(), &st) != 0) {
+    if (::lstat(p.c_str(), &st) != 0) {
         return false;
     }
     return S_ISLNK(st.st_mode);
@@ -224,12 +245,13 @@ auto is_symlink(std::string_view path) -> bool
 
 auto is_empty(std::string_view path) -> bool
 {
+    auto p = CPath { path };
     struct stat st { };
-    if (::stat(path.data(), &st) != 0) {
+    if (::stat(p.c_str(), &st) != 0) {
         return true;
     }
     if (S_ISDIR(st.st_mode)) {
-        auto* dir = ::opendir(path.data());
+        auto* dir = ::opendir(p.c_str());
         if (!dir) {
             return true;
         }
@@ -287,19 +309,20 @@ auto create_directories(std::string_view path) -> Result<void>
 
 auto remove_file(std::string_view path) -> Result<void>
 {
+    auto p = CPath { path };
     struct stat st { };
-    if (::lstat(path.data(), &st) != 0) {
+    if (::lstat(p.c_str(), &st) != 0) {
         if (errno == ENOENT) {
             return {};
         }
         return make_error<void>(ErrorCode::IoError, "Failed to stat: " + String { path });
     }
     if (S_ISDIR(st.st_mode)) {
-        if (::rmdir(path.data()) != 0) {
+        if (::rmdir(p.c_str()) != 0) {
             return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + String { path });
         }
     } else {
-        if (::unlink(path.data()) != 0) {
+        if (::unlink(p.c_str()) != 0) {
             return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + String { path });
         }
     }
@@ -355,7 +378,9 @@ auto remove_all(std::string_view path) -> Result<void>
 
 auto rename_path(std::string_view from, std::string_view to) -> Result<void>
 {
-    if (::rename(from.data(), to.data()) != 0) {
+    auto f = CPath { from };
+    auto t = CPath { to };
+    if (::rename(f.c_str(), t.c_str()) != 0) {
         return make_error<void>(ErrorCode::IoError, "Failed to rename: " + String { from } + " -> " + String { to });
     }
     return {};
@@ -363,8 +388,10 @@ auto rename_path(std::string_view from, std::string_view to) -> Result<void>
 
 auto copy_file(std::string_view from, std::string_view to) -> Result<void>
 {
+    auto f = CPath { from };
+    auto t = CPath { to };
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto src_fd = ::open(from.data(), O_RDONLY);
+    auto src_fd = ::open(f.c_str(), O_RDONLY);
     if (src_fd < 0) {
         return make_error<void>(ErrorCode::IoError, "Failed to open source: " + String { from });
     }
@@ -373,7 +400,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     ::fstat(src_fd, &st);
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto dst_fd = ::open(to.data(), O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
+    auto dst_fd = ::open(t.c_str(), O_WRONLY | O_CREAT | O_TRUNC, st.st_mode & 0777);
     if (dst_fd < 0) {
         ::close(src_fd);
         return make_error<void>(ErrorCode::IoError, "Failed to create destination: " + String { to });
@@ -403,7 +430,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     ::close(dst_fd);
 
     if (!ok) {
-        ::unlink(to.data());
+        ::unlink(t.c_str());
         return make_error<void>(ErrorCode::IoError, "Failed to copy: " + String { from } + " -> " + String { to });
     }
     return {};
@@ -422,7 +449,8 @@ auto current_directory() -> Result<String>
 
 auto canonical(std::string_view path) -> Result<String>
 {
-    char* resolved = ::realpath(path.data(), nullptr);
+    auto cp = CPath { path };
+    char* resolved = ::realpath(cp.c_str(), nullptr);
     if (resolved) {
         auto result = String { resolved };
         ::free(resolved); // NOLINT(cppcoreguidelines-no-malloc)
@@ -473,7 +501,8 @@ auto absolute(std::string_view path) -> Result<String>
 auto read_symlink(std::string_view path) -> Result<String>
 {
     char buf[4096];
-    auto n = ::readlink(path.data(), buf, sizeof(buf) - 1);
+    auto p = CPath { path };
+    auto n = ::readlink(p.c_str(), buf, sizeof(buf) - 1);
     if (n < 0) {
         return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + String { path });
     }
@@ -485,8 +514,9 @@ auto read_symlink(std::string_view path) -> Result<String>
 
 auto read_file(std::string_view path) -> Result<String>
 {
+    auto p = CPath { path };
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto fd = ::open(path.data(), O_RDONLY);
+    auto fd = ::open(p.c_str(), O_RDONLY);
     if (fd < 0) {
         return make_error<String>(ErrorCode::IoError, "Failed to open file: " + String { path });
     }
@@ -528,8 +558,9 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
         }
     }
 
+    auto p = CPath { path };
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto fd = ::open(path.data(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    auto fd = ::open(p.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
         return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + String { path });
     }
@@ -547,7 +578,8 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
 {
-    auto* dir = ::opendir(path.data());
+    auto p = CPath { path };
+    auto* dir = ::opendir(p.c_str());
     if (!dir) {
         return make_error<Vec<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + String { path });
     }

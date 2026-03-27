@@ -102,9 +102,9 @@ auto parse_target(
             target.is_output = true;
         }
     } else {
-        auto par = String { pup::path::parent(full_path_sv) };
+        auto par = pup::path::parent(full_path_sv);
         if (par.empty()) {
-            par = String { project_root };
+            par = project_root;
         }
         if (!pup::platform::exists(par)) {
             return make_error<Target>(ErrorCode::NotFound, String { "path not found: " } + target_path);
@@ -172,7 +172,7 @@ auto expand_glob_target(
             if (pup::platform::is_file(full_path_sv)) {
                 target.is_output = true;
             } else if (!pup::platform::is_directory(full_path_sv) && !is_source_file(full_path_sv)) {
-                auto par = String { pup::path::parent(full_path_sv) };
+                auto par = pup::path::parent(full_path_sv);
                 if (!par.empty() && pup::platform::exists(par)) {
                     target.is_output = true;
                 }
