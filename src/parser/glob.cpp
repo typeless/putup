@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/glob.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
@@ -200,17 +201,17 @@ auto glob_expand(
     auto results = Vec<StringId> {};
 
     if (!has_glob_chars(pattern)) {
-        auto path = String { base_dir } + "/" + pattern;
-        if (pup::platform::exists(path)) {
+        auto path_sv = pool.get(pup::path::join(base_dir, pattern));
+        if (pup::platform::exists(path_sv)) {
             results.push_back(pool.intern(pattern));
         }
         return results;
     }
 
     auto [dir_part, file_pattern] = glob_split_path(pattern);
-    auto search_dir = dir_part.empty() ? String { base_dir } : String { base_dir } + "/" + dir_part;
+    auto search_dir_sv = dir_part.empty() ? base_dir : pool.get(pup::path::join(base_dir, dir_part));
 
-    if (!pup::platform::exists(search_dir) || !pup::platform::is_directory(search_dir)) {
+    if (!pup::platform::exists(search_dir_sv) || !pup::platform::is_directory(search_dir_sv)) {
         return results;
     }
 
@@ -219,19 +220,19 @@ auto glob_expand(
     auto const is_recursive = glob.is_recursive() && options.recursive;
 
     if (is_recursive) {
-        (void)pup::platform::walk_directory(search_dir, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
+        (void)pup::platform::walk_directory(search_dir_sv, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
             auto name_sv = pool.get(entry.name);
             if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                 return false;
             }
             if (glob.matches(rel_path)) {
-                auto result_path = dir_part.empty() ? String { rel_path } : String { dir_part } + "/" + rel_path;
-                results.push_back(pool.intern(result_path));
+                auto result_id = dir_part.empty() ? pool.intern(rel_path) : pup::path::join(dir_part, rel_path);
+                results.push_back(result_id);
             }
             return true;
         });
     } else {
-        auto entries = pup::platform::read_directory(search_dir);
+        auto entries = pup::platform::read_directory(search_dir_sv);
         if (entries) {
             for (auto const& entry : *entries) {
                 auto name_sv = pool.get(entry.name);
@@ -239,8 +240,8 @@ auto glob_expand(
                     continue;
                 }
                 if (glob.matches(name_sv)) {
-                    auto result_path = dir_part.empty() ? String { name_sv } : String { dir_part } + "/" + name_sv;
-                    results.push_back(pool.intern(result_path));
+                    auto result_id = dir_part.empty() ? pool.intern(name_sv) : pup::path::join(dir_part, name_sv);
+                    results.push_back(result_id);
                 }
             }
         }

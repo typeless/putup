@@ -2,6 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/config.hpp"
+#include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 namespace pup::parser {
@@ -19,9 +22,9 @@ auto trim(std::string_view s) -> std::string_view
     return s;
 }
 
-auto expand_escapes(std::string_view s) -> String
+auto expand_escapes(std::string_view s) -> StringId
 {
-    auto result = String {};
+    auto result = Buf {};
     result.reserve(s.size());
 
     for (std::size_t i = 0; i < s.size(); ++i) {
@@ -47,7 +50,7 @@ auto expand_escapes(std::string_view s) -> String
             result += s[i];
         }
     }
-    return result;
+    return result.intern(global_pool());
 }
 
 constexpr auto CONFIG_PREFIX = std::string_view { "CONFIG_" };
@@ -94,9 +97,10 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
         // - Stripped form (FOO) for @(FOO) syntax
         // - Full form (CONFIG_FOO) for $(CONFIG_FOO) syntax
         auto stripped_name = name.substr(CONFIG_PREFIX.size());
-        auto expanded_value = expand_escapes(value);
-        db.set(stripped_name, expanded_value);
-        db.set(name, std::move(expanded_value));
+        auto expanded_value_id = expand_escapes(value);
+        auto expanded_value_sv = global_pool().get(expanded_value_id);
+        db.set(stripped_name, expanded_value_sv);
+        db.set(name, expanded_value_sv);
     }
 
     return db;
@@ -106,9 +110,11 @@ auto parse_config(std::string_view path) -> Result<VarDb>
 {
     auto content = pup::platform::read_file(path);
     if (!content) {
-        return make_error<VarDb>(ErrorCode::NotFound, String { "Cannot open config file: " } + path);
+        auto err = Buf {};
+        err.fmt("Cannot open config file: {}", path);
+        return make_error<VarDb>(ErrorCode::NotFound, err.view());
     }
-    return parse_config_string(*content);
+    return parse_config_string(content->view());
 }
 
 } // namespace pup::parser

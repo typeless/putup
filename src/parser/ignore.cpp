@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/ignore.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
@@ -16,11 +17,13 @@ auto IgnoreList::load(std::string_view path) -> Result<IgnoreList>
 {
     auto content = pup::platform::read_file(path);
     if (!content) {
-        return make_error<IgnoreList>(ErrorCode::IoError, String { "Failed to open ignore file: " } + path);
+        auto err = Buf {};
+        err.fmt("Failed to open ignore file: {}", path);
+        return make_error<IgnoreList>(ErrorCode::IoError, err.view());
     }
 
     auto list = IgnoreList::with_defaults();
-    auto sv = std::string_view { *content };
+    auto sv = content->view();
 
     while (!sv.empty()) {
         auto nl = sv.find('\n');
@@ -46,13 +49,12 @@ auto IgnoreList::load(std::string_view path) -> Result<IgnoreList>
             continue;
         }
 
-        auto line = String { raw };
+        auto line = raw;
         while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) {
             if (line.size() >= 2 && line[line.size() - 2] == '\\') {
                 break;
             }
-            // Trim trailing whitespace using substr
-            line = line.substr(0, line.size() - 1);
+            line.remove_suffix(1);
         }
 
         if (line.empty()) {

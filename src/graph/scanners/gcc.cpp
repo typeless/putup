@@ -5,7 +5,6 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
 
@@ -17,14 +16,11 @@ namespace pup::graph::scanners {
 
 namespace {
 
-/// Known compiler wrapper tools
 auto is_compiler_wrapper(std::string_view name) -> bool
 {
     return name == "ccache" || name == "distcc" || name == "sccache" || name == "icecc";
 }
 
-/// Check if a binary name is a recognized compiler (possibly cross-prefixed or version-suffixed).
-/// Examples: gcc, g++, clang, x86_64-linux-gnu-gcc, arm-none-eabi-g++, gcc-15, clang++-18
 auto is_compiler_name(std::string_view name) -> bool
 {
     static constexpr std::string_view compilers[] = {
@@ -36,7 +32,6 @@ auto is_compiler_name(std::string_view name) -> bool
         "clang++",
     };
 
-    // Strip version suffix: gcc-15 → gcc, clang++-18 → clang++
     if (auto pos = name.rfind('-'); pos != std::string_view::npos) {
         auto suffix = name.substr(pos + 1);
         if (!suffix.empty()
@@ -59,13 +54,11 @@ auto is_compiler_name(std::string_view name) -> bool
     return false;
 }
 
-/// Check if a flag contains shell special characters that would cause issues
 auto has_shell_special(std::string_view flag) -> bool
 {
     return flag.find('`') != std::string_view::npos || flag.find("$(") != std::string_view::npos;
 }
 
-/// Check if a string needs shell quoting
 auto needs_shell_quoting(std::string_view s) -> bool
 {
     return std::ranges::any_of(s, [](char c) {
@@ -76,31 +69,27 @@ auto needs_shell_quoting(std::string_view s) -> bool
     });
 }
 
-/// Quote a string for shell using single quotes (handles embedded single quotes)
-auto shell_quote(std::string_view s) -> String
+auto shell_quote_into(Buf& out, std::string_view s) -> void
 {
     if (!needs_shell_quoting(s)) {
-        return String { s };
+        out += s;
+        return;
     }
 
-    auto result = String { "'" };
+    out += '\'';
     for (auto c : s) {
         if (c == '\'') {
-            result += "'\\''";
+            out += "'\\''";
         } else {
-            result += c;
+            out += c;
         }
     }
-    result += '\'';
-    return result;
+    out += '\'';
 }
 
-/// Normalize a path lexically by removing foo/../ segments.
-/// Unlike std::filesystem::lexically_normal(), works without filesystem access.
-/// Needed because DEP commands run before output directories exist.
-auto normalize_path_lexically(std::string_view path) -> String
+auto normalize_path_lexically_into(Buf& out, std::string_view path) -> void
 {
-    auto parts = Vec<String> {};
+    auto parts = Vec<std::string_view> {};
     auto start = std::size_t { 0 };
     auto is_absolute = !path.empty() && path[0] == '/';
 
@@ -114,44 +103,45 @@ auto normalize_path_lexically(std::string_view path) -> String
             if (part == ".." && !parts.empty() && parts.back() != "..") {
                 parts.pop_back();
             } else {
-                parts.push_back(String { part });
+                parts.push_back(part);
             }
         }
         start = end + 1;
     }
 
     if (parts.empty()) {
-        return String { is_absolute ? "/" : "." };
+        out += is_absolute ? "/" : ".";
+        return;
     }
 
-    auto result = String {};
     if (is_absolute) {
-        result = String { "/" };
+        out += '/';
     }
-    for (auto const& part : parts) {
-        if (!result.empty() && result.back() != '/') {
-            result += '/';
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (i > 0 || is_absolute) {
+            if (i > 0) {
+                out += '/';
+            }
         }
-        result += part;
+        out += parts[i];
     }
-    return result;
 }
 
-/// Normalize paths embedded in compiler flags
-auto normalize_flag_path(std::string_view flag) -> String
+auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
 {
     for (auto const* prefix : { "-I", "-isystem", "-iquote", "-include", "--sysroot=", "-isysroot" }) {
         if (flag.starts_with(prefix)) {
             auto path = flag.substr(std::strlen(prefix));
             if (!path.empty()) {
-                return String { prefix } + normalize_path_lexically(path);
+                out += std::string_view { prefix };
+                normalize_path_lexically_into(out, path);
+                return;
             }
         }
     }
-    return String { flag };
+    out += flag;
 }
 
-/// Check if a flag is relevant for dependency generation
 auto is_dep_relevant_flag(std::string_view flag) -> bool
 {
     if (has_shell_special(flag)) {
@@ -176,7 +166,6 @@ auto is_dep_relevant_flag(std::string_view flag) -> bool
     return false;
 }
 
-/// Check if a word looks like a source file
 auto is_source_file(std::string_view word) -> bool
 {
     if (word.empty() || word[0] == '-') {
@@ -264,7 +253,6 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         return std::nullopt;
     }
 
-    // Resolve all words to string_views up front
     auto words = Vec<std::string_view> {};
     words.reserve(word_ids.size());
     for (auto id : word_ids) {
@@ -289,7 +277,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         return std::nullopt;
     }
 
-    auto dep_cmd = String {};
+    auto dep_cmd = Buf {};
 
     for (auto i = std::size_t { 0 }; i <= compiler_idx; ++i) {
         if (i > 0) {
@@ -305,7 +293,9 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
             dep_cmd += ' ';
-            dep_cmd += shell_quote(normalize_path_lexically(words[i]));
+            auto norm = Buf {};
+            normalize_path_lexically_into(norm, words[i]);
+            shell_quote_into(dep_cmd, norm.view());
             skip_next = false;
             continue;
         }
@@ -323,7 +313,9 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
 
         if (is_dep_relevant_flag(w)) {
             dep_cmd += ' ';
-            dep_cmd += shell_quote(normalize_flag_path(w));
+            auto norm = Buf {};
+            normalize_flag_path_into(norm, w);
+            shell_quote_into(dep_cmd, norm.view());
             if (w == "-I" || w == "-D" || w == "-U" || w == "-include"
                 || w == "-isystem" || w == "-iquote" || w == "-isysroot") {
                 skip_next = true;
@@ -338,10 +330,10 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
 
     for (auto src : source_files) {
         dep_cmd += ' ';
-        dep_cmd += shell_quote(src);
+        shell_quote_into(dep_cmd, src);
     }
 
-    return pool.intern(dep_cmd);
+    return pool.intern(dep_cmd.view());
 }
 
 auto GccScanner::dep_spec() const -> DepSpec

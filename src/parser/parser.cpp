@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/parser.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_pool.hpp"
@@ -89,7 +90,9 @@ auto expect(ParserState& s, TokenType type, std::string_view message) -> Result<
     if (check(s, type)) {
         return advance(s);
     }
-    return pup::make_error<Token>(ErrorCode::UnexpectedToken, String { message } + ", got " + token_type_name(s.current.type));
+    auto err = Buf {};
+    err.fmt("{}, got {}", message, token_type_name(s.current.type));
+    return pup::make_error<Token>(ErrorCode::UnexpectedToken, err.view());
 }
 
 auto skip_to_next_statement(ParserState& s) -> void
@@ -180,13 +183,15 @@ auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
 
     advance(s);
     if (!match(s, TokenType::OpenParen)) {
+        auto err = Buf {};
+        err.fmt("Expected '(' after '{}'", std::string_view { &spec.prefix_char, 1 });
         return pup::make_error<VarRef>(
             ErrorCode::ParseError,
-            String { "Expected '(' after '" } + String { std::string_view { &spec.prefix_char, 1 } } + "'"
+            err.view()
         );
     }
 
-    auto name = String {};
+    auto name = Buf {};
     while (!check(s, TokenType::CloseParen)
            && !check(s, TokenType::Newline)
            && !check(s, TokenType::Eof)) {
@@ -201,7 +206,7 @@ auto try_parse_variable_ref(ParserState& s, VarRefSpec const& spec)
         );
     }
 
-    return VarRef { spec.kind, global_pool().intern(name), s.previous.location };
+    return VarRef { spec.kind, name.intern(global_pool()), s.previous.location };
 }
 
 auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
@@ -269,9 +274,11 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
             return make_statement(start_loc, parse_conditional(s, Conditional::Kind::Ifneq));
 
         case TokenType::KwElse:
-        case TokenType::KwEndif:
-            // These should be handled by parse_conditional
-            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, "Unexpected '" + String { tok.text } + "' without matching if");
+        case TokenType::KwEndif: {
+            auto err = Buf {};
+            err.fmt("Unexpected '{}' without matching if", tok.text);
+            return pup::make_error<std::unique_ptr<Statement>>(ErrorCode::ParseError, err.view());
+        }
 
         case TokenType::KwExport:
             advance(s);
@@ -718,12 +725,12 @@ auto parse_expression_until(
 ) -> Result<Expression>
 {
     auto expr = Expression {};
-    auto current_text = String {};
+    auto current_text = Buf {};
     auto last_end_offset = s.current.location.offset; // Track where last token ended
 
     auto flush_text = [&] {
         if (!current_text.empty()) {
-            expr.parts.emplace_back(Expression::Literal { global_pool().intern(current_text) });
+            expr.parts.emplace_back(Expression::Literal { current_text.intern(global_pool()) });
             current_text.clear();
         }
     };
@@ -836,49 +843,46 @@ auto parse_command(ParserState& s) -> Result<Expression>
     auto tok = Token { s.current }; // Start with current token (already advanced past |>)
 
     // Collect command text until |>
-    auto cmd_text = String {};
+    auto cmd_buf = Buf {};
     while (!tok.is(TokenType::PipeArrow) && !tok.is(TokenType::Newline) && !tok.is(TokenType::Eof)) {
-        cmd_text += tok.text;
+        cmd_buf += tok.text;
         tok = Token { s.lexer.next() };
     }
 
+    // Work with string_view for trimming
+    auto cmd_sv = cmd_buf.view();
+
     // Trim leading whitespace
     {
-        auto sv = std::string_view { cmd_text };
-        auto pos = sv.find_first_not_of(" \t");
+        auto pos = cmd_sv.find_first_not_of(" \t");
         if (pos != std::string_view::npos) {
-            cmd_text = cmd_text.substr(pos);
-        } else if (!cmd_text.empty()) {
-            cmd_text.clear();
+            cmd_sv = cmd_sv.substr(pos);
+        } else {
+            cmd_sv = {};
         }
     }
 
     // Handle display text: ^ text ^ at start of command
-    if (!cmd_text.empty() && cmd_text[0] == '^') {
-        auto second_caret = cmd_text.find('^', 1);
-        if (second_caret != String::npos) {
-            auto rest = cmd_text.substr(second_caret + 1);
-            auto sv = std::string_view { rest };
-            auto pos = sv.find_first_not_of(" \t");
+    if (!cmd_sv.empty() && cmd_sv[0] == '^') {
+        auto second_caret = cmd_sv.find('^', 1);
+        if (second_caret != std::string_view::npos) {
+            auto rest = cmd_sv.substr(second_caret + 1);
+            auto pos = rest.find_first_not_of(" \t");
             if (pos != std::string_view::npos) {
-                cmd_text = rest.substr(pos);
+                cmd_sv = rest.substr(pos);
             } else {
-                cmd_text.clear();
+                cmd_sv = {};
             }
         }
     }
 
     // Trim trailing whitespace
-    {
-        auto len = cmd_text.size();
-        while (len > 0 && (cmd_text[len - 1] == ' ' || cmd_text[len - 1] == '\t')) {
-            --len;
-        }
-        cmd_text.resize(len);
+    while (!cmd_sv.empty() && (cmd_sv.back() == ' ' || cmd_sv.back() == '\t')) {
+        cmd_sv.remove_suffix(1);
     }
 
-    if (!cmd_text.empty()) {
-        expr.parts.emplace_back(Expression::Literal { global_pool().intern(cmd_text) });
+    if (!cmd_sv.empty()) {
+        expr.parts.emplace_back(Expression::Literal { global_pool().intern(cmd_sv) });
     }
 
     // Put back the |> token

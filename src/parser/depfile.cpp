@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/depfile.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
@@ -32,9 +33,9 @@ auto skip_line_continuation(std::string_view& sv) -> bool
     return false;
 }
 
-auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> pup::String
+auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> StringId
 {
-    auto result = pup::String {};
+    auto result = pup::Buf {};
 
     while (!sv.empty()) {
         auto c = sv[0];
@@ -90,7 +91,7 @@ auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> pup::String
         sv.remove_prefix(1);
     }
 
-    return result;
+    return result.intern(global_pool());
 }
 
 } // anonymous namespace
@@ -101,7 +102,7 @@ auto parse_depfile_path(std::string_view path) -> Result<Depfile>
     if (!content) {
         return make_error<Depfile>(ErrorCode::IoError, "Failed to open depfile");
     }
-    return parse_depfile(std::string_view { *content });
+    return parse_depfile(content->view());
 }
 
 auto parse_depfile(std::string_view content) -> Result<Depfile>
@@ -117,12 +118,9 @@ auto parse_depfile(std::string_view content) -> Result<Depfile>
         return make_error<Depfile>(ErrorCode::ParseError, "Empty depfile");
     }
 
-    // Parse target (output file), stopping at colon
-    auto& pool = global_pool();
-    auto target_str = parse_path(sv, true);
-    result.target = pool.intern(target_str);
+    result.target = parse_path(sv, true);
 
-    if (target_str.empty()) {
+    if (is_empty(result.target)) {
         return make_error<Depfile>(ErrorCode::ParseError, "Missing target in depfile");
     }
 
@@ -152,8 +150,8 @@ auto parse_depfile(std::string_view content) -> Result<Depfile>
 
         // Parse next dependency path
         auto dep = parse_path(sv);
-        if (!dep.empty()) {
-            result.dependencies.push_back(pool.intern(dep));
+        if (!is_empty(dep)) {
+            result.dependencies.push_back(dep);
         }
     }
 

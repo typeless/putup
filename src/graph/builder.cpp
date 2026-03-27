@@ -24,37 +24,27 @@ namespace pup::graph {
 
 namespace {
 
-using pup::String;
-
 auto str(StringId id) -> std::string_view { return global_pool().get(id); }
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 
-auto sorted_insert(Vec<String>& v, std::string_view key) -> void
-{
-    auto pos = std::lower_bound(v.begin(), v.end(), key);
-    if (pos == v.end() || *pos != key) {
-        v.insert(pos, String { key });
-    }
-}
-
 /// Strip trailing slashes from a path string
-auto strip_trailing_slashes(std::string_view str) -> String
+auto strip_trailing_slashes(std::string_view s) -> std::string_view
 {
-    while (!str.empty() && (str.back() == '/' || str.back() == '\\')) {
-        str.remove_suffix(1);
+    while (!s.empty() && (s.back() == '/' || s.back() == '\\')) {
+        s.remove_suffix(1);
     }
-    return String { str };
+    return s;
 }
 
 /// Normalize a file path for consistent lookup
 /// - Removes double slashes
 /// - Resolves . and .. components using lexically_normal
-auto normalize_path(std::string_view path_str) -> String
+auto normalize_path(std::string_view path_str) -> std::string_view
 {
     if (path_str.empty()) {
-        return String { path_str };
+        return path_str;
     }
-    return String { global_pool().get(pup::path::normalize(path_str)) };
+    return global_pool().get(pup::path::normalize(path_str));
 }
 
 /// Normalize a directory path for group key lookup.
@@ -65,33 +55,33 @@ auto normalize_group_dir(
     std::string_view path_str,
     std::string_view current_dir,
     std::string_view source_root
-) -> String
+) -> StringId
 {
     auto cleaned = strip_trailing_slashes(path_str);
     if (cleaned.empty()) {
-        return ".";
+        return intern(".");
     }
 
     auto& pool = global_pool();
-    auto normalized = String { pool.get(pup::path::normalize(cleaned)) };
+    auto normalized = pool.get(pup::path::normalize(cleaned));
 
     if (pup::path::is_absolute(normalized)) {
-        normalized = String { pool.get(pup::path::relative(normalized, source_root)) };
+        normalized = pool.get(pup::path::relative(normalized, source_root));
     } else if (!current_dir.empty() && normalized != ".") {
         auto first_slash = cleaned.find('/');
-        auto first_component = std::string_view { cleaned }.substr(0, first_slash);
+        auto first_component = cleaned.substr(0, first_slash);
         if (first_component != ".") {
-            normalized = String { pool.get(pup::path::normalize(pool.get(pup::path::join(current_dir, normalized)))) };
+            normalized = pool.get(pup::path::normalize(pool.get(pup::path::join(current_dir, normalized))));
         }
     }
 
-    return (normalized.empty() || normalized == ".") ? String { "." } : normalized;
+    return (normalized.empty() || normalized == ".") ? intern(".") : intern(normalized);
 }
 
 /// Parsed group reference from a path like "../include/<gen-headers>"
 struct GroupReference {
-    String group_name;
-    String group_dir;
+    std::string_view group_name;
+    StringId group_dir;
 };
 
 /// Check if a path is an order-only group reference (ends with <name>)
@@ -137,7 +127,7 @@ auto parse_group_reference(
     }
     auto dir_part = path.substr(0, lt_pos);
     auto group_dir = normalize_group_dir(dir_part, current_dir, source_root);
-    return GroupReference { String { group_name }, std::move(group_dir) };
+    return GroupReference { group_name, group_dir };
 }
 
 /// Normalize a path that may point to the output directory to its canonical form.
@@ -149,12 +139,12 @@ auto normalize_to_output_relative(
     std::string_view path,
     std::string_view source_root,
     std::string_view output_root
-) -> String
+) -> std::string_view
 {
     if (auto resolved = pup::resolve_under_root(path, source_root, output_root)) {
-        return String { global_pool().get(*resolved) };
+        return global_pool().get(*resolved);
     }
-    return String { path };
+    return path;
 }
 
 /// Context for transforming paths to Tupfile-relative coordinates.
@@ -165,48 +155,49 @@ auto normalize_to_output_relative(
 /// - Inputs are source-root-relative (e.g., "src/lib/bar.c")
 /// The transform functions below convert both to Tupfile-relative paths.
 struct PathTransformContext {
-    String source_to_root;
-    String current_dir_str;
-    String source_root;
-    String config_root;
-    String output_root;
-    String canonical_cwd;
+    StringId source_to_root;
+    StringId current_dir_id;
+    StringId source_root;
+    StringId config_root;
+    StringId output_root;
+    StringId canonical_cwd;
 };
 
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
     auto& pool = global_pool();
-    auto canonical_cwd = String {};
+    auto canonical_cwd = StringId::Empty;
     if (!is_empty(ctx.options.source_root) && !is_empty(ctx.options.output_root)
         && str(ctx.options.source_root) != str(ctx.options.output_root)) {
-        auto r = pup::platform::canonical(String { pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))) });
+        auto joined_sv = pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
+        auto r = pup::platform::canonical(joined_sv);
         if (r) {
             canonical_cwd = *r;
         }
     }
 
     return PathTransformContext {
-        .source_to_root = String { pool.get(pup::compute_source_to_root(str(ctx.current_dir))) },
-        .current_dir_str = str(ctx.current_dir),
-        .source_root = str(ctx.options.source_root),
-        .config_root = str(ctx.options.config_root),
-        .output_root = str(ctx.options.output_root),
-        .canonical_cwd = std::move(canonical_cwd),
+        .source_to_root = pup::compute_source_to_root(str(ctx.current_dir)),
+        .current_dir_id = ctx.current_dir,
+        .source_root = ctx.options.source_root,
+        .config_root = ctx.options.config_root,
+        .output_root = ctx.options.output_root,
+        .canonical_cwd = canonical_cwd,
     };
 }
 
 /// Compute a canonical relative path from the source CWD to a build-tree file.
 /// Resolves symlinks in the source tree so that `../` components in command paths
 /// navigate correctly from the physical CWD (which the OS uses after resolving symlinks).
-auto make_canonical_relative(PathTransformContext const& tc, std::string_view path) -> String
+auto make_canonical_relative(PathTransformContext const& tc, std::string_view path) -> StringId
 {
     auto& pool = global_pool();
-    auto joined = String { pool.get(pup::path::join(tc.source_root, path)) };
-    auto abs = pup::platform::canonical(joined);
+    auto joined_sv = pool.get(pup::path::join(str(tc.source_root), path));
+    auto abs = pup::platform::canonical(joined_sv);
     if (abs) {
-        return String { pool.get(pup::path::relative(*abs, tc.canonical_cwd)) };
+        return pup::path::relative(pool.get(*abs), pool.get(tc.canonical_cwd));
     }
-    return String { pool.get(pup::path::relative(pool.get(pup::path::normalize(joined)), tc.canonical_cwd)) };
+    return pup::path::relative(pool.get(pup::path::normalize(joined_sv)), pool.get(tc.canonical_cwd));
 }
 
 /// Transform an input path to Tupfile-relative for command expansion.
@@ -216,50 +207,48 @@ auto transform_input_path(
     BuildGraph& graph,
     PathTransformContext const& tc,
     std::string_view inp
-) -> String
+) -> StringId
 {
-    // Check if this input refers to a Generated/Ghost file under BUILD_ROOT_ID
-    // If so, its full path includes the build root prefix (e.g., "build/include/header.h")
+    auto& pool = global_pool();
+    auto source_to_root = str(tc.source_to_root);
+    auto current_dir_sv = str(tc.current_dir_id);
+
     if (auto node_id = graph.find_by_path(inp, BUILD_ROOT_ID)) {
-        auto full_path_sv = global_pool().get(graph.get_full_path(*node_id));
+        auto full_path_sv = pool.get(graph.get_full_path(*node_id));
         if (!full_path_sv.empty()) {
-            if (!tc.canonical_cwd.empty() && full_path_sv.starts_with("..")) {
+            if (!is_empty(tc.canonical_cwd) && full_path_sv.starts_with("..")) {
                 return make_canonical_relative(tc, full_path_sv);
             }
-            return String { global_pool().get(pup::make_source_relative(full_path_sv, tc.source_to_root, tc.current_dir_str)) };
+            return pup::make_source_relative(full_path_sv, source_to_root, current_dir_sv);
         }
     }
 
-    // Node may not exist yet (transform happens before resolve_input_node creates it).
-    // Check if file exists in build directory - if so, use variant-prefixed path.
     auto build_root_name = graph.get_build_root_name();
     if (!build_root_name.empty()) {
-        auto build_path = global_pool().get(pup::path::join(tc.output_root, inp));
+        auto build_path = pool.get(pup::path::join(str(tc.output_root), inp));
         if (pup::platform::exists(build_path)) {
-            auto full_path = String { build_root_name } + "/" + inp;
-            if (!tc.canonical_cwd.empty() && full_path.starts_with("..")) {
-                return make_canonical_relative(tc, full_path);
+            auto full_path_id = pup::path::join(build_root_name, inp);
+            auto full_path_sv = pool.get(full_path_id);
+            if (!is_empty(tc.canonical_cwd) && full_path_sv.starts_with("..")) {
+                return make_canonical_relative(tc, full_path_sv);
             }
-            return String { global_pool().get(pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str)) };
+            return pup::make_source_relative(full_path_sv, source_to_root, current_dir_sv);
         }
     }
 
-    // In 3-tree builds, files may live in config_root rather than source_root.
-    // Compute a path from the source cwd (where the command runs) to the config_root location.
-    if (!tc.config_root.empty() && tc.config_root != tc.source_root) {
-        auto config_path_sv = global_pool().get(pup::path::join(tc.config_root, inp));
+    if (!is_empty(tc.config_root) && tc.config_root != tc.source_root) {
+        auto config_path_sv = pool.get(pup::path::join(str(tc.config_root), inp));
         if (pup::platform::exists(config_path_sv)) {
-            auto source_cwd = String { global_pool().get(pup::path::join(tc.source_root, tc.current_dir_str)) };
-            auto canonical_source = pup::platform::canonical(source_cwd);
-            auto canonical_config = pup::platform::canonical(String { config_path_sv });
+            auto source_cwd_sv = pool.get(pup::path::join(str(tc.source_root), current_dir_sv));
+            auto canonical_source = pup::platform::canonical(source_cwd_sv);
+            auto canonical_config = pup::platform::canonical(config_path_sv);
             if (canonical_source && canonical_config) {
-                return String { global_pool().get(pup::path::relative(*canonical_config, *canonical_source)) };
+                return pup::path::relative(pool.get(*canonical_config), pool.get(*canonical_source));
             }
         }
     }
 
-    // Source file or not found - use path as-is
-    return String { global_pool().get(pup::make_source_relative(inp, tc.source_to_root, tc.current_dir_str)) };
+    return pup::make_source_relative(inp, source_to_root, current_dir_sv);
 }
 
 /// Transform an output path to Tupfile-relative for command expansion.
@@ -268,12 +257,12 @@ auto transform_input_path(
 auto transform_output_path(
     PathTransformContext const& tc,
     std::string_view out
-) -> String
+) -> StringId
 {
-    if (!tc.canonical_cwd.empty() && out.starts_with("..")) {
+    if (!is_empty(tc.canonical_cwd) && out.starts_with("..")) {
         return make_canonical_relative(tc, out);
     }
-    return String { global_pool().get(pup::make_source_relative(out, tc.source_to_root, tc.current_dir_str)) };
+    return pup::make_source_relative(out, str(tc.source_to_root), str(tc.current_dir_id));
 }
 
 /// Get all files that are members of a group (via file → group edges)
@@ -318,7 +307,7 @@ auto walk_path_to_directory(
 
     while (!remaining.empty()) {
         auto slash = remaining.find('/');
-        auto comp_str = String { slash == std::string_view::npos ? remaining : remaining.substr(0, slash) };
+        auto comp_str = slash == std::string_view::npos ? remaining : remaining.substr(0, slash);
         remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
         if (comp_str.empty() || comp_str == ".") {
             continue;
@@ -374,7 +363,7 @@ auto walk_to_file_node(
     }
 
     auto par = pup::path::parent(path);
-    auto basename = String { pup::path::filename(path) };
+    auto basename = pup::path::filename(path);
 
     auto target_dir_id = start_id;
     if (!par.empty() && par != ".") {
@@ -520,27 +509,27 @@ auto expand_rule(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Rule const& rule,
-    Vec<String> const& inputs
+    Vec<StringId> const& inputs
 ) -> Result<void>;
 
 auto expand_inputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns
-) -> Result<Vec<String>>;
+) -> Result<Vec<StringId>>;
 
 auto expand_outputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags
-) -> Result<Vec<String>>;
+) -> Result<Vec<StringId>>;
 
 auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    Vec<String> const& outputs,
-    String* out_instruction = nullptr
-) -> Result<String>;
+    Vec<StringId> const& outputs,
+    StringId* out_instruction = nullptr
+) -> Result<StringId>;
 
 auto get_or_create_directory_node(
     BuilderContext& ctx,
@@ -579,30 +568,31 @@ auto create_command_node(
 auto find_tuprules_files(
     std::string_view start_dir,
     std::string_view root
-) -> Vec<String>
+) -> Vec<StringId>
 {
-    auto dirs = Vec<String> {};
-    auto search_dir = String { start_dir };
+    auto& pool = global_pool();
+    auto dirs = Vec<StringId> {};
+    auto search_sv = start_dir;
 
-    while (search_dir.size() >= root.size()) {
-        dirs.push_back(search_dir);
-        if (search_dir == root) {
+    while (search_sv.size() >= root.size()) {
+        dirs.push_back(pool.intern(search_sv));
+        if (search_sv == root) {
             break;
         }
-        auto par = pup::path::parent(search_dir);
-        if (par == std::string_view { search_dir } || par.empty()) {
+        auto par = pup::path::parent(search_sv);
+        if (par == search_sv || par.empty()) {
             break;
         }
-        search_dir = par;
+        search_sv = par;
     }
 
     std::reverse(dirs.begin(), dirs.end());
 
-    auto results = Vec<String> {};
-    for (auto const& dir : dirs) {
-        auto tuprules = String { global_pool().get(pup::path::join(dir, "Tuprules.tup")) };
-        if (pup::platform::exists(tuprules)) {
-            results.push_back(tuprules);
+    auto results = Vec<StringId> {};
+    for (auto dir_id : dirs) {
+        auto tuprules_id = pup::path::join(pool.get(dir_id), "Tuprules.tup");
+        if (pup::platform::exists(pool.get(tuprules_id))) {
+            results.push_back(tuprules_id);
         }
     }
 
@@ -615,18 +605,23 @@ auto resolve_include_path(
     BuilderContext& ctx,
     std::string_view include_root,
     parser::Expression const& path_expr
-) -> Result<String>
+) -> Result<StringId>
 {
+    auto& pool = global_pool();
     auto path_result = parser::expand(*ctx.eval, path_expr);
     if (!path_result) {
         return pup::unexpected<Error>(path_result.error());
     }
 
-    auto resolved = String { global_pool().get(pup::path::join(global_pool().get(pup::path::join(include_root, str(ctx.current_dir))), *path_result)) };
-    if (!pup::platform::exists(resolved)) {
-        return make_error<String>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
+    auto path_sv = pool.get(*path_result);
+    auto base_sv = pool.get(pup::path::join(include_root, str(ctx.current_dir)));
+    auto resolved_id = pup::path::join(base_sv, path_sv);
+    if (!pup::platform::exists(pool.get(resolved_id))) {
+        auto err = Buf {};
+        err.fmt("Include file not found: {}", path_sv);
+        return make_error<StringId>(ErrorCode::IncludeNotFound, err.view());
     }
-    return resolved;
+    return resolved_id;
 }
 
 /// Expand a glob pattern against filesystem and graph nodes.
@@ -634,47 +629,40 @@ auto resolve_include_path(
 auto expand_glob_pattern(
     BuilderContext& ctx,
     std::string_view path,
-    Vec<String>& result
+    Vec<StringId>& result
 ) -> void
 {
-    auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
-                                          : String { global_pool().get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))) };
+    auto& pool = global_pool();
+    auto base_sv = is_empty(ctx.current_dir) ? str(ctx.options.source_root)
+                                             : pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
 
-    // First try expanding against filesystem
-    auto expanded = parser::glob_expand(path, base);
+    auto expanded = parser::glob_expand(path, base_sv);
     if (expanded && !expanded->empty()) {
         for (auto p : *expanded) {
-            // Prefix with current_dir to make path relative to project root
             if (!is_empty(ctx.current_dir)) {
-                result.push_back(String { global_pool().get(pup::path::join(str(ctx.current_dir), str(p))) });
+                result.push_back(pup::path::join(str(ctx.current_dir), str(p)));
             } else {
-                result.push_back(String { str(p) });
+                result.push_back(p);
             }
         }
         return;
     }
 
-    // No files on disk - look for matching Generated nodes in graph
-    // First, try demand-driven parsing of the directory containing the glob pattern
     auto pattern_dir = pup::path::parent(path);
-    auto abs_pattern_dir = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), pattern_dir)))) };
-    request_demand_driven_parse(*ctx.eval, abs_pattern_dir);
+    auto abs_pattern_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), pattern_dir))));
+    request_demand_driven_parse(*ctx.eval, abs_pattern_dir_sv);
 
-    // Match glob pattern against Generated nodes
-    // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
-    // but the glob pattern is relative to current directory (e.g., *.o)
-    // We need to strip the build root prefix and match against the relative path
-    auto pattern_path = is_empty(ctx.current_dir) ? pup::String { path } : String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), path)))) };
-    auto glob = parser::Glob { pattern_path };
+    auto pattern_path_sv = is_empty(ctx.current_dir) ? path : pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
+    auto glob = parser::Glob { pattern_path_sv };
     auto build_root_name = ctx.graph->get_build_root_name();
     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
-        auto node_path_sv = global_pool().get(ctx.graph->get_full_path(id));
+        auto node_path_sv = pool.get(ctx.graph->get_full_path(id));
         if (node_path_sv.empty()) {
             continue;
         }
-        auto match_path = String { global_pool().get(pup::strip_path_prefix(node_path_sv, build_root_name)) };
-        if (glob.matches(match_path)) {
-            result.push_back(String { node_path_sv });
+        auto match_path_sv = pool.get(pup::strip_path_prefix(node_path_sv, build_root_name));
+        if (glob.matches(match_path_sv)) {
+            result.push_back(pool.intern(node_path_sv));
         }
     }
 }
@@ -684,9 +672,10 @@ auto expand_glob_pattern(
 auto apply_exclusions(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
-    Vec<String>& result
+    Vec<StringId>& result
 ) -> void
 {
+    auto& pool = global_pool();
     for (auto const& pattern : patterns) {
         if (!pattern.is_exclusion && !pattern.is_output_exclusion) {
             continue;
@@ -697,17 +686,18 @@ auto apply_exclusions(
             continue;
         }
 
-        for (auto const& excl : *paths) {
+        for (auto excl_id : *paths) {
+            auto excl = pool.get(excl_id);
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
-                auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
-                                                      : String { global_pool().get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))) };
-                auto expanded = parser::glob_expand(excl, base);
+                auto base_sv = is_empty(ctx.current_dir) ? str(ctx.options.source_root)
+                                                         : pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
+                auto expanded = parser::glob_expand(excl, base_sv);
                 if (expanded && !expanded->empty()) {
                     for (auto p : *expanded) {
                         auto p_sv = str(p);
-                        auto normalized = String { global_pool().get(is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), p_sv)))) };
+                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), p_sv)));
                         for (auto it = result.begin(); it != result.end();) {
-                            if (*it == normalized) {
+                            if (pool.get(*it) == pool.get(normalized)) {
                                 it = result.erase(it);
                             } else {
                                 ++it;
@@ -716,9 +706,10 @@ auto apply_exclusions(
                     }
                 }
             } else {
-                auto normalized_excl = String { global_pool().get(is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), excl)))) };
+                auto normalized_excl = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
+                auto normalized_sv = pool.get(normalized_excl);
                 for (auto it = result.begin(); it != result.end();) {
-                    if (*it == normalized_excl) {
+                    if (pool.get(*it) == normalized_sv) {
                         it = result.erase(it);
                     } else {
                         ++it;
@@ -762,7 +753,7 @@ auto process_generated_rules(
             auto group_ref = parse_group_reference(oi, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 // This is a group reference - get/create group node and defer edge
-                auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
+                auto group_id_result = get_or_create_group_node(ctx, state, str(group_ref->group_dir), group_ref->group_name);
                 if (group_id_result) {
                     auto edge = DeferredOrderOnlyEdge { *group_id_result, *gen_cmd_id };
                     auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
@@ -772,9 +763,9 @@ auto process_generated_rules(
                 }
             } else if (!parser::has_glob_chars(oi)) {
                 // Regular file path - create edge directly (skip glob patterns)
-                auto oi_id = resolve_input_node(ctx, oi);
-                if (oi_id) {
-                    (void)ctx.graph->add_order_only_edge(*oi_id, *gen_cmd_id);
+                auto oi_node = resolve_input_node(ctx, oi);
+                if (oi_node) {
+                    (void)ctx.graph->add_order_only_edge(*oi_node, *gen_cmd_id);
                 }
             }
         }
@@ -807,8 +798,7 @@ auto lookup_bang_macro(
         return pup::unexpected<Error>(expanded_cmd.error());
     }
 
-    auto cmd_sv = std::string_view { *expanded_cmd };
-    // Trim leading whitespace
+    auto cmd_sv = str(*expanded_cmd);
     while (!cmd_sv.empty() && (cmd_sv.front() == ' ' || cmd_sv.front() == '\t')) {
         cmd_sv.remove_prefix(1);
     }
@@ -817,7 +807,6 @@ auto lookup_bang_macro(
         return nullptr;
     }
 
-    // Bang macro reference - extract just the macro name (first word after !)
     auto name_end = cmd_sv.find_first_of(" \t", 1);
     auto macro_name = (name_end == std::string_view::npos)
         ? cmd_sv.substr(1)
@@ -826,7 +815,9 @@ auto lookup_bang_macro(
     auto key = to_underlying(ctx.graph->intern(macro_name));
     auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
     if (it == ctx.macros.end() || it->first != key) {
-        return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, String { "Unknown bang macro: !" } + macro_name);
+        auto err = Buf {};
+        err.fmt("Unknown bang macro: !{}", macro_name);
+        return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, err.view());
     }
 
     return &it->second;
@@ -908,7 +899,7 @@ auto process_rule(
     apply_pending_weak_assignments(ctx, state);
 
     // Expand input patterns
-    auto inputs = Result<Vec<String>> { expand_inputs(ctx, rule.inputs) };
+    auto inputs = Result<Vec<StringId>> { expand_inputs(ctx, rule.inputs) };
     if (!inputs) {
         return pup::unexpected<Error>(inputs.error());
     }
@@ -922,12 +913,10 @@ auto process_rule(
     }
 
     if (rule.foreach_) {
-        // Separate glob patterns from files
-        // expand_inputs() now returns [pattern, file1, file2, ...] for globs
-        auto patterns = Vec<String> {};
-        auto files = Vec<String> {};
-        for (auto const& inp : *inputs) {
-            if (parser::has_glob_chars(inp)) {
+        auto patterns = Vec<StringId> {};
+        auto files = Vec<StringId> {};
+        for (auto inp : *inputs) {
+            if (parser::has_glob_chars(str(inp))) {
                 patterns.push_back(inp);
             } else {
                 files.push_back(inp);
@@ -935,7 +924,7 @@ auto process_rule(
         }
 
         // Foreach rule: create one command per file, include patterns for %g
-        for (auto const& file : files) {
+        for (auto file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
             auto result = expand_rule(ctx, state, rule, iter_inputs);
@@ -1025,11 +1014,12 @@ auto process_assignment(
         return {};
     }
 
-    auto value_before = String { db->get(*name) };
+    auto name_sv = str(*name);
+    auto value_sv = str(*value);
+    auto value_before = intern(db->get(name_sv));
     auto is_effective = true;
 
-    // Helper to record transitive dependencies for this variable
-    auto name_id = ctx.graph->intern(*name);
+    auto name_id = ctx.graph->intern(name_sv);
     auto record_deps = [&]() {
         if (!captured_config_deps.empty()) {
             auto& deps = state.var_config_deps.get_or_create(name_id);
@@ -1055,33 +1045,29 @@ auto process_assignment(
 
     switch (assign.op) {
     case parser::Assignment::Op::Set:
-        db->set(*name, *value);
+        db->set(name_sv, value_sv);
         record_deps();
         break;
     case parser::Assignment::Op::Append:
-        db->append(*name, *value);
+        db->append(name_sv, value_sv);
         record_deps();
         break;
     case parser::Assignment::Op::Define:
-        db->set(*name, *value);
+        db->set(name_sv, value_sv);
         record_deps();
         break;
     case parser::Assignment::Op::SoftSet:
-        // ?= - set only if variable is not already defined (first wins)
-        // Only record deps if assignment is effective
-        if (!db->contains(*name)) {
-            db->set(*name, *value);
+        if (!db->contains(name_sv)) {
+            db->set(name_sv, value_sv);
             record_deps();
         } else {
             is_effective = false;
         }
         break;
     case parser::Assignment::Op::WeakSet:
-        // ??= - deferred assignment, applied before rules (last wins)
-        // Store deps with the pending assignment; they'll be recorded when applied
         ctx.pending_weak_assignments.push_back(PendingWeakAssignment {
-            .name = intern(*name),
-            .value = intern(*value),
+            .name = *name,
+            .value = *value,
             .config_deps = std::move(captured_config_deps),
             .env_deps = std::move(captured_env_deps),
         });
@@ -1089,13 +1075,13 @@ auto process_assignment(
     }
 
     if (ctx.eval->on_var_assigned) {
-        auto value_after = String { db->get(*name) };
+        auto value_after_sv = db->get(name_sv);
         ctx.eval->on_var_assigned(
-            *name,
+            name_sv,
             assign.op,
-            value_before,
-            value_after,
-            str(ctx.current_file).data(),
+            str(value_before),
+            value_after_sv,
+            str(ctx.current_file),
             assign.location.line,
             assign.location.column,
             is_effective
@@ -1106,25 +1092,30 @@ auto process_assignment(
 }
 
 /// Format a conditional expression as a string for the condition node
-auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const& cond) -> String
+auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const& cond) -> StringId
 {
+    auto buf = Buf {};
     switch (cond.kind) {
     case parser::Conditional::Kind::Ifdef:
-        return String { "ifdef(" } + str(cond.var_name) + ")";
+        buf.fmt("ifdef({})", str(cond.var_name));
+        break;
     case parser::Conditional::Kind::Ifndef:
-        return String { "ifndef(" } + str(cond.var_name) + ")";
+        buf.fmt("ifndef({})", str(cond.var_name));
+        break;
     case parser::Conditional::Kind::Ifeq: {
-        auto lhs = parser::expand(eval, cond.lhs).value_or("");
-        auto rhs = parser::expand(eval, cond.rhs).value_or("");
-        return String { "ifeq(" } + std::string_view { lhs } + "," + std::string_view { rhs } + ")";
+        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
+        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
+        buf.fmt("ifeq({},{})", str(lhs), str(rhs));
+        break;
     }
     case parser::Conditional::Kind::Ifneq: {
-        auto lhs = parser::expand(eval, cond.lhs).value_or("");
-        auto rhs = parser::expand(eval, cond.rhs).value_or("");
-        return String { "ifneq(" } + std::string_view { lhs } + "," + std::string_view { rhs } + ")";
+        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
+        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
+        buf.fmt("ifneq({},{})", str(lhs), str(rhs));
+        break;
     }
     }
-    return "";
+    return buf.intern(global_pool());
 }
 
 auto process_conditional(
@@ -1158,7 +1149,7 @@ auto process_conditional(
     // Create condition node for phi-node model
     auto cond_expr = format_condition_expr(*ctx.eval, cond);
     auto cond_node = ConditionNode {
-        .expression = ctx.graph->intern(cond_expr),
+        .expression = cond_expr,
         .current_value = condition_true,
     };
 
@@ -1239,18 +1230,21 @@ auto include_single_file(
 
     auto source_result = pup::platform::read_file(include_path);
     if (!source_result) {
-        return make_error<void>(ErrorCode::IoError, String { "Cannot open include file: " } + include_path);
+        auto err = Buf {};
+        err.fmt("Cannot open include file: {}", include_path);
+        return make_error<void>(ErrorCode::IoError, err.view());
     }
     auto source = std::move(*source_result);
 
-    auto parse_result = parser::parse_tupfile(source, include_path);
+    auto parse_result = parser::parse_tupfile(source.view(), include_path);
     if (!parse_result.success()) {
-        auto include_path_z = String { include_path };
         for (auto const& err : parse_result.errors) {
             auto err_msg = str(err.message);
-            fprintf(stderr, "%s:%d:%d: error: %.*s\n", include_path_z.c_str(), err.location.line, err.location.column, static_cast<int>(err_msg.size()), err_msg.data());
+            fprintf(stderr, "%.*s:%d:%d: error: %.*s\n", static_cast<int>(include_path.size()), include_path.data(), err.location.line, err.location.column, static_cast<int>(err_msg.size()), err_msg.data());
         }
-        return make_error<void>(ErrorCode::ParseError, String { "Parse error in include file: " } + include_path);
+        auto err = Buf {};
+        err.fmt("Parse error in include file: {}", include_path);
+        return make_error<void>(ErrorCode::ParseError, err.view());
     }
 
     auto old_tup_cwd = StringId::Empty;
@@ -1293,8 +1287,8 @@ auto process_include(
 
     if (inc.is_rules) {
         auto tuprules_files = find_tuprules_files(global_pool().get(pup::path::join(include_root, str(ctx.current_dir))), include_root);
-        for (auto const& tuprules : tuprules_files) {
-            auto result = include_single_file(ctx, state, include_root, tuprules, true);
+        for (auto tuprules_id : tuprules_files) {
+            auto result = include_single_file(ctx, state, include_root, str(tuprules_id), true);
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
@@ -1306,7 +1300,7 @@ auto process_include(
     if (!resolved) {
         return pup::unexpected<Error>(resolved.error());
     }
-    return include_single_file(ctx, state, include_root, *resolved, false);
+    return include_single_file(ctx, state, include_root, str(*resolved), false);
 }
 
 auto process_import(
@@ -1318,11 +1312,15 @@ auto process_import(
     // Per tup manual: "sets a variable inside the Tupfile that has the value
     // of the environment variable"
     auto var_name_sv = str(imp.var_name);
-    auto value = String {};
+    auto value_id = StringId::Empty;
+
+    // Need null-terminated string for getenv
+    auto name_buf = Buf {};
+    name_buf += var_name_sv;
 
     // 1. Try environment first
-    if (auto const* env_val = std::getenv(String { var_name_sv }.c_str())) {
-        value = env_val;
+    if (auto const* env_val = std::getenv(name_buf.c_str())) {
+        value_id = intern(env_val);
     }
     // 2. Fall back to cached value from previous build (passed via options)
     else if (auto it = std::lower_bound(
@@ -1332,7 +1330,7 @@ auto process_import(
                  [](auto const& p, std::string_view k) { return str(p.first) < k; }
              );
              it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
-        value = String { str(it->second) };
+        value_id = it->second;
     }
     // 3. Fall back to default value
     else if (imp.default_value) {
@@ -1340,18 +1338,21 @@ auto process_import(
         if (!expanded) {
             return pup::unexpected<Error>(expanded.error());
         }
-        value = *expanded;
+        value_id = *expanded;
     }
-    // If no env, no cache, and no default, variable remains empty (tup behavior)
 
-    // Create/update Variable node under $ directory for persistence
+    auto value_sv = str(value_id);
+
     auto var_name_id = to_underlying(ctx.graph->intern(var_name_sv));
     if (state.env_var_dir_id != INVALID_NODE_ID) {
-        auto node_name = String { var_name_sv } + "=" + value;
-        auto content_hash = sha256(value);
+        auto node_name_buf = Buf {};
+        node_name_buf += var_name_sv;
+        node_name_buf += '=';
+        node_name_buf += value_sv;
+        auto content_hash = sha256(value_sv);
 
         auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
-        auto const name_id = ctx.graph->intern(node_name);
+        auto const name_id = ctx.graph->intern(node_name_buf.view());
         if (existing_node_id) {
             auto* existing = ctx.graph->get_file_node(*existing_node_id);
             if (existing && existing->name != name_id) {
@@ -1373,7 +1374,7 @@ auto process_import(
     }
 
     if (ctx.vars) {
-        ctx.vars->set(var_name_sv, value);
+        ctx.vars->set(var_name_sv, value_sv);
     }
 
     // Track this as an imported variable for fine-grained dependency tracking
@@ -1397,52 +1398,47 @@ auto expand_rule(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Rule const& rule,
-    Vec<String> const& inputs
+    Vec<StringId> const& inputs
 ) -> Result<void>
 {
-    // Clear used vars for this rule (fine-grained dependency tracking)
     ctx.used_config_vars.clear();
     ctx.used_env_vars.clear();
 
-    // Separate glob patterns from file inputs
-    // For foreach rules, inputs may contain [pattern, file] where pattern has glob chars
-    auto glob_pattern = String {};
-    auto file_inputs = Vec<String> {};
-    for (auto const& inp : inputs) {
-        if (parser::has_glob_chars(inp)) {
+    auto glob_pattern = StringId::Empty;
+    auto file_inputs = Vec<StringId> {};
+    for (auto inp : inputs) {
+        if (parser::has_glob_chars(str(inp))) {
             glob_pattern = inp;
         } else {
             file_inputs.push_back(inp);
         }
     }
 
-    // Transform inputs to Tupfile-relative paths (where commands execute from)
     auto tc = make_transform_context(ctx);
-    auto cmd_inputs = Vec<String> {};
+    auto cmd_inputs = Vec<StringId> {};
     cmd_inputs.reserve(file_inputs.size());
-    for (auto const& inp : file_inputs) {
-        cmd_inputs.push_back(transform_input_path(*ctx.graph, tc, inp));
+    for (auto inp : file_inputs) {
+        cmd_inputs.push_back(transform_input_path(*ctx.graph, tc, str(inp)));
     }
 
-    // Build PatternFlags once (input fields only, output fields added later)
-    auto primary_input = cmd_inputs.empty() ? String {} : cmd_inputs[0];
+    auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
     auto current_dir_name = is_empty(ctx.current_dir)
-        ? String { "." }
-        : String { pup::path::filename(str(ctx.current_dir)) };
-    auto glob_match_id = glob_pattern.empty() ? StringId::Empty
-                                              : parser::glob_match_extract(glob_pattern, primary_input);
+        ? std::string_view { "." }
+        : pup::path::filename(str(ctx.current_dir));
+    auto glob_match_id = is_empty(glob_pattern) ? StringId::Empty
+                                                : parser::glob_match_extract(str(glob_pattern), primary_input_sv);
 
     auto all_inputs_sv = Vec<std::string_view> {};
     all_inputs_sv.reserve(cmd_inputs.size());
-    for (auto const& s : cmd_inputs) {
-        all_inputs_sv.push_back(std::string_view { s });
+    for (auto id : cmd_inputs) {
+        all_inputs_sv.push_back(str(id));
     }
 
     auto flags = parser::PatternFlags {
-        .input = primary_input,
-        .input_base = parser::path_basename(primary_input),
-        .input_noext = parser::path_stem(primary_input),
-        .input_ext = parser::path_extension(primary_input),
+        .input = primary_input_sv,
+        .input_base = parser::path_basename(primary_input_sv),
+        .input_noext = parser::path_stem(primary_input_sv),
+        .input_ext = parser::path_extension(primary_input_sv),
         .input_dir = current_dir_name,
         .glob_match = str(glob_match_id),
         .all_inputs = std::move(all_inputs_sv),
@@ -1458,7 +1454,7 @@ auto expand_rule(
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     // Stores known group names (sorted); the resolver constructs %<name> on the fly.
-    auto rule_order_only_group_names = Vec<String> {};
+    auto rule_order_only_group_names = SortedIdVec {};
 
     // Track group NodeIds for deferred edge creation
     // Groups are first-class nodes; edges created after all Tupfiles are parsed
@@ -1477,54 +1473,46 @@ auto expand_rule(
 
     for (auto const& pattern : all_inputs) {
         if (pattern.is_order_only_group) {
-            // Direct group reference: <group> or dir/<group> (is_order_only_group=true)
-            auto group_dir = String {};
+            auto group_dir = StringId::Empty;
             if (!pattern.path.empty()) {
                 auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
-                    group_dir = normalize_group_dir(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
+                    group_dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
                 }
             } else {
-                group_dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
+                group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
             }
 
-            // Demand-driven parsing: request the directory's Tupfile if not yet parsed
-            request_demand_driven_parse(*ctx.eval, group_dir);
+            request_demand_driven_parse(*ctx.eval, str(group_dir));
 
-            // Get or create the Group node (groups are first-class nodes)
             auto group_name_sv = str(pattern.group_name);
-            auto group_id_result = get_or_create_group_node(ctx, state, group_dir, group_name_sv);
+            auto group_id_result = get_or_create_group_node(ctx, state, str(group_dir), group_name_sv);
             if (!group_id_result) {
                 continue;
             }
             auto group_id = *group_id_result;
 
-            // Preserve %<group> literally — resolved after all Tupfiles are parsed
-            sorted_insert(rule_order_only_group_names, group_name_sv);
+            rule_order_only_group_names.insert(to_underlying(intern(group_name_sv)));
             if (!deferred_group_ids.contains(group_id)) {
                 deferred_group_ids.set(group_id, 1);
                 deferred_group_vec.push_back(group_id);
             }
         } else if (!pattern.path.empty()) {
-            // Path expression that may contain <group> suffix: ../include/<gen-headers>
             auto expanded = parser::expand(*ctx.eval, pattern.path);
             if (!expanded) {
                 continue;
             }
-            auto group_ref = parse_group_reference(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
+            auto group_ref = parse_group_reference(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
-                // Demand-driven parsing: request the directory's Tupfile if not yet parsed
-                request_demand_driven_parse(*ctx.eval, group_ref->group_dir);
+                request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
 
-                // Get or create the Group node (groups are first-class nodes)
-                auto group_id_result = get_or_create_group_node(ctx, state, group_ref->group_dir, group_ref->group_name);
+                auto group_id_result = get_or_create_group_node(ctx, state, str(group_ref->group_dir), group_ref->group_name);
                 if (!group_id_result) {
                     continue;
                 }
                 auto group_id = *group_id_result;
 
-                // Preserve %<group> literally — resolved after all Tupfiles are parsed
-                sorted_insert(rule_order_only_group_names, group_ref->group_name);
+                rule_order_only_group_names.insert(to_underlying(intern(group_ref->group_name)));
                 if (!deferred_group_ids.contains(group_id)) {
                     deferred_group_ids.set(group_id, 1);
                     deferred_group_vec.push_back(group_id);
@@ -1540,7 +1528,8 @@ auto expand_rule(
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
                                          ) -> Vec<StringId> {
-        if (std::binary_search(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name)) {
+        auto name_key = to_underlying(intern(name));
+        if (rule_order_only_group_names.contains(name_key)) {
             auto marker = Buf {};
             marker += "%<";
             marker += name;
@@ -1559,7 +1548,7 @@ auto expand_rule(
                 deferred_group_ids.set(*node_id, 1);
                 deferred_group_vec.push_back(*node_id);
             }
-            sorted_insert(rule_order_only_group_names, name);
+            rule_order_only_group_names.insert(name_key);
             auto marker = Buf {};
             marker += "%<";
             marker += name;
@@ -1569,10 +1558,9 @@ auto expand_rule(
         return {};
     };
 
-    // Command expansion variables
-    auto cmd_text = String {};
-    auto display = String {};
-    auto instruction_pattern = String {};
+    auto cmd_text = StringId::Empty;
+    auto display = StringId::Empty;
+    auto instruction_pattern = StringId::Empty;
     auto outputs_patterns = rule.outputs;
 
     // Use macro's outputs if rule doesn't specify any (macro_ptr set earlier)
@@ -1621,45 +1609,34 @@ auto expand_rule(
     if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
         all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
     }
-    auto order_only_paths = Vec<String> {};
+    auto order_only_paths = Vec<StringId> {};
     for (auto const& pattern : all_order_only) {
-        auto order_inputs = Result<Vec<String>> { expand_inputs(ctx, { pattern }) };
+        auto order_inputs = Result<Vec<StringId>> { expand_inputs(ctx, { pattern }) };
         if (order_inputs) {
             order_only_paths.insert(order_only_paths.end(), order_inputs->begin(), order_inputs->end());
         }
     }
 
-    // Resolve final instruction: use instruction_pattern when valid,
-    // fall back to expanded command text (which has no % patterns)
-    auto has_group_pattern = instruction_pattern.find("%<") != String::npos
-        || instruction_pattern.find("%{") != String::npos;
-    auto const& final_instruction = instruction_pattern.empty() || has_group_pattern
+    auto instr_sv = str(instruction_pattern);
+    auto has_group_pattern = instr_sv.find("%<") != std::string_view::npos
+        || instr_sv.find("%{") != std::string_view::npos;
+    auto final_instruction = is_empty(instruction_pattern) || has_group_pattern
         ? cmd_text
         : instruction_pattern;
 
-    auto cmd_id = create_command_node(ctx, state, final_instruction, display);
+    auto cmd_id = create_command_node(ctx, state, str(final_instruction), str(display));
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
 
-    // Check for scanner/pattern matches and generate additional rules (e.g., DEP commands)
-    // Use file_inputs (excludes glob patterns) for scanner matching
-    auto intern_vec = [](Vec<String> const& v) {
-        auto result = Vec<StringId> {};
-        result.reserve(v.size());
-        for (auto const& s : v) {
-            result.push_back(global_pool().intern(s));
-        }
-        return result;
-    };
     auto cmd_info = CommandInfo {
         .node_id = *cmd_id,
-        .command = global_pool().intern(cmd_text),
-        .display = global_pool().intern(display),
-        .inputs = intern_vec(file_inputs),
-        .order_only_inputs = intern_vec(order_only_paths),
-        .outputs = intern_vec(*outputs),
-        .working_dir = global_pool().intern(str(ctx.current_dir)),
+        .command = cmd_text,
+        .display = display,
+        .inputs = file_inputs,
+        .order_only_inputs = order_only_paths,
+        .outputs = *outputs,
+        .working_dir = intern(str(ctx.current_dir)),
     };
 
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
@@ -1676,11 +1653,11 @@ auto expand_rule(
     // Use file_inputs (excludes glob patterns which aren't valid paths)
     // Skip group references - they are handled by deferred edge resolution (order-only)
     auto input_ids = Vec<NodeId> {};
-    for (auto const& input : file_inputs) {
-        if (is_order_only_group_reference(input)) {
+    for (auto input : file_inputs) {
+        if (is_order_only_group_reference(str(input))) {
             continue;
         }
-        auto input_id = resolve_input_node(ctx, input);
+        auto input_id = resolve_input_node(ctx, str(input));
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }
@@ -1693,8 +1670,8 @@ auto expand_rule(
 
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
-    for (auto const& output : *outputs) {
-        auto output_id = get_or_create_file_node(ctx, output, NodeType::Generated);
+    for (auto output : *outputs) {
+        auto output_id = get_or_create_file_node(ctx, str(output), NodeType::Generated);
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
         }
@@ -1750,9 +1727,8 @@ auto expand_rule(
             output_oo_group = macro_ptr->output_order_only_group;
         }
         if (output_oo_group && is_context_active(ctx)) {
-            auto dir = String {};
+            auto dir = StringId::Empty;
 
-            // Get directory from path prefix if specified
             parser::Expression const* group_dir_expr = nullptr;
             if (rule.output_order_only_group_dir) {
                 group_dir_expr = &*rule.output_order_only_group_dir;
@@ -1763,18 +1739,15 @@ auto expand_rule(
             if (group_dir_expr) {
                 auto expanded = parser::expand(*ctx.eval, *group_dir_expr);
                 if (expanded) {
-                    // Use normalize_group_dir for consistent handling with input groups
-                    // This strips variant prefix and resolves relative paths
-                    dir = normalize_group_dir(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
+                    dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
                 }
             }
 
-            if (dir.empty()) {
-                dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
+            if (is_empty(dir)) {
+                dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
             }
 
-            // Create or get the Group node
-            auto group_id_result = get_or_create_group_node(ctx, state, dir, str(*output_oo_group));
+            auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*output_oo_group));
             if (group_id_result) {
                 // Add edge: file → group (file is member of group)
                 (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
@@ -1790,13 +1763,14 @@ auto expand_rule(
 
     // Create order-only edges from the pre-expanded paths
     // Skip group references (deferred edge creation) and glob patterns (not valid paths)
-    for (auto const& oi : order_only_paths) {
-        if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
+    for (auto oi : order_only_paths) {
+        auto oi_sv = str(oi);
+        if (is_order_only_group_reference(oi_sv) || parser::has_glob_chars(oi_sv)) {
             continue;
         }
-        auto oi_id = resolve_input_node(ctx, oi);
-        if (oi_id) {
-            (void)ctx.graph->add_order_only_edge(*oi_id, *cmd_id);
+        auto oi_node = resolve_input_node(ctx, oi_sv);
+        if (oi_node) {
+            (void)ctx.graph->add_order_only_edge(*oi_node, *cmd_id);
         }
     }
 
@@ -1816,23 +1790,23 @@ auto expand_rule(
 auto expand_inputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns
-) -> Result<Vec<String>>
+) -> Result<Vec<StringId>>
 {
-    auto result = Vec<String> {};
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
 
     for (auto const& pattern : patterns) {
         if (pattern.is_exclusion || pattern.is_output_exclusion) {
-            continue; // Handle exclusions later (! for inputs, ^ for foreach)
+            continue;
         }
 
         if (pattern.is_group) {
-            // Bin reference {name} - local to Tupfile
             auto gkey = to_underlying(ctx.graph->intern(str(pattern.group_name)));
             if (auto const* members = ctx.groups.find(gkey)) {
                 for (auto id : *members) {
-                    auto path_sv = global_pool().get(ctx.graph->get_full_path(id));
-                    if (!path_sv.empty()) {
-                        result.push_back(String { path_sv });
+                    auto path_id = ctx.graph->get_full_path(id);
+                    if (!is_empty(path_id)) {
+                        result.push_back(path_id);
                     }
                 }
             }
@@ -1840,70 +1814,67 @@ auto expand_inputs(
         }
 
         if (pattern.is_order_only_group) {
-            // Order-only group reference <name> - cross-directory
-            // The pattern.path contains the directory prefix (e.g., $(ROOT)/include/generated/)
-            auto group_dir = String {};
+            auto group_dir = StringId::Empty;
 
             if (!pattern.path.empty()) {
                 auto expanded = parser::expand(*ctx.eval, pattern.path);
                 if (expanded) {
-                    group_dir = normalize_group_dir(*expanded, str(ctx.current_dir), str(ctx.options.source_root));
-                    request_demand_driven_parse(*ctx.eval, group_dir);
+                    group_dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
+                    request_demand_driven_parse(*ctx.eval, str(group_dir));
                 }
             } else {
-                group_dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
+                group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
             }
 
-            // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
-            // Edges are created by resolve_deferred_order_only_edges() after all Tupfiles are parsed.
             auto group_name_sv = str(pattern.group_name);
-            auto group_ref_str = group_dir.empty() ? String { "<" } + group_name_sv + ">"
-                                                   : group_dir + "/<" + group_name_sv + ">";
-            result.push_back(group_ref_str);
+            auto ref_buf = Buf {};
+            auto group_dir_sv = str(group_dir);
+            if (group_dir_sv.empty()) {
+                ref_buf += '<';
+                ref_buf += group_name_sv;
+                ref_buf += '>';
+            } else {
+                ref_buf += group_dir_sv;
+                ref_buf += "/<";
+                ref_buf += group_name_sv;
+                ref_buf += '>';
+            }
+            result.push_back(ref_buf.intern(pool));
             continue;
         }
 
-        // Expand path expression
         auto paths = parser::expand_path(*ctx.eval, pattern);
         if (!paths) {
             return pup::unexpected<Error>(paths.error());
         }
 
-        for (auto& path : *paths) {
-            // Check for path/<group> pattern (order-only group reference with directory prefix)
-            auto group_ref = parse_group_reference(path, str(ctx.current_dir), str(ctx.options.source_root));
+        for (auto path_id : *paths) {
+            auto path_sv = pool.get(path_id);
+            auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
-                request_demand_driven_parse(*ctx.eval, group_ref->group_dir);
-                // Return the group reference string so GeneratedRules (DEP commands) can inherit it.
-                // Edges are created by resolve_deferred_order_only_edges() after all Tupfiles are parsed.
-                result.push_back(path);
+                request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
+                result.push_back(path_id);
                 continue;
             }
-            // Include the path (pattern or literal)
-            // For globs, this preserves the pattern for %g expansion in foreach rules
             if (!is_empty(ctx.current_dir)) {
-                result.push_back(String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), path)))) });
+                result.push_back(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path_sv))));
             } else {
-                result.push_back(String { path });
+                result.push_back(path_id);
             }
 
-            // Expand globs if enabled - add matched files after the pattern
-            if (ctx.options.expand_globs && parser::has_glob_chars(path)) {
-                expand_glob_pattern(ctx, path, result);
-            } else if (!parser::has_glob_chars(path)) {
-                // Non-glob path: trigger demand-driven parsing if file doesn't exist
-                // (path already added above, but we may need to request cross-directory Tupfile)
-                auto full_path_sv = global_pool().get(pup::path::join(global_pool().get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))), path));
+            if (ctx.options.expand_globs && parser::has_glob_chars(path_sv)) {
+                expand_glob_pattern(ctx, path_sv, result);
+            } else if (!parser::has_glob_chars(path_sv)) {
+                auto full_path_sv = pool.get(pup::path::join(pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))), path_sv));
                 if (!pup::platform::exists(full_path_sv)) {
-                    auto file_dir = pup::path::parent(path);
-                    auto abs_file_dir = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), file_dir)))) };
-                    request_demand_driven_parse(*ctx.eval, abs_file_dir);
+                    auto file_dir = pup::path::parent(path_sv);
+                    auto abs_file_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), file_dir))));
+                    request_demand_driven_parse(*ctx.eval, abs_file_dir_sv);
                 }
             }
         }
     }
 
-    // Handle exclusions (! for regular inputs, ^ for foreach exclusions)
     apply_exclusions(ctx, patterns, result);
 
     return result;
@@ -1913,16 +1884,17 @@ auto expand_outputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags
-) -> Result<Vec<String>>
+) -> Result<Vec<StringId>>
 {
-    auto result = Vec<String> {};
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
 
     for (auto const& pattern : patterns) {
         if (pattern.is_group) {
-            continue; // Groups are not valid in outputs
+            continue;
         }
         if (pattern.is_output_exclusion) {
-            continue; // Exclusion patterns are markers, not actual outputs
+            continue;
         }
 
         auto paths = parser::expand_path(*ctx.eval, pattern);
@@ -1930,22 +1902,16 @@ auto expand_outputs(
             return pup::unexpected<Error>(paths.error());
         }
 
-        for (auto& path : *paths) {
-            // Expand pattern flags (%B, %f, etc.)
-            auto expanded = parser::expand_pattern(*ctx.eval, path, flags);
-            auto output_path = expanded ? *expanded : std::move(path);
+        for (auto path_id : *paths) {
+            auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), flags);
+            auto output_path_sv = expanded ? pool.get(*expanded) : pool.get(path_id);
 
-            // Combine with current directory and normalize
-            // Output paths are relative to Tupfile directory
-            auto full_output_path = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), output_path)))) };
+            auto full_output_path_id = pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv)));
 
-            // All outputs go under BUILD_ROOT_ID.
-            // This ensures Ghost nodes (created for inputs referencing not-yet-generated files)
-            // unify with Generated nodes when the output is created.
             auto node_id = walk_to_file_node(
                 *ctx.graph,
                 BUILD_ROOT_ID,
-                full_output_path,
+                pool.get(full_output_path_id),
                 NodeType::Generated
             );
 
@@ -1953,8 +1919,7 @@ auto expand_outputs(
                 return pup::unexpected<Error>(node_id.error());
             }
 
-            auto full_path_sv = global_pool().get(ctx.graph->get_full_path(*node_id));
-            result.push_back(String { full_path_sv });
+            result.push_back(ctx.graph->get_full_path(*node_id));
         }
     }
 
@@ -1965,51 +1930,47 @@ auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    Vec<String> const& outputs,
-    String* out_instruction
-) -> Result<String>
+    Vec<StringId> const& outputs,
+    StringId* out_instruction
+) -> Result<StringId>
 {
-    // Expand the command expression (variable expansion)
+    auto& pool = global_pool();
     auto literal = parser::expand(*ctx.eval, cmd);
     if (!literal) {
         return pup::unexpected<Error>(literal.error());
     }
 
-    auto expanded = parser::expand(*ctx.eval, std::string_view { *literal });
+    auto expanded = parser::expand(*ctx.eval, pool.get(*literal));
     if (!expanded) {
         return pup::unexpected<Error>(expanded.error());
     }
 
-    // Capture instruction if requested (after variable expansion, before pattern substitution)
     if (out_instruction) {
         *out_instruction = *expanded;
     }
 
-    // Transform outputs to Tupfile-relative paths and augment flags
     auto tc = make_transform_context(ctx);
-    auto cmd_outputs = Vec<String> {};
+    auto cmd_outputs = Vec<StringId> {};
     cmd_outputs.reserve(outputs.size());
-    for (auto const& out : outputs) {
-        cmd_outputs.push_back(transform_output_path(tc, out));
+    for (auto out : outputs) {
+        cmd_outputs.push_back(transform_output_path(tc, str(out)));
     }
 
-    // Augment flags with output fields
-    auto primary_output = cmd_outputs.empty() ? String {} : String { cmd_outputs[0] };
-    flags.output = primary_output;
-    flags.output_base = parser::path_basename(primary_output);
+    auto primary_output_sv = cmd_outputs.empty() ? std::string_view {} : str(cmd_outputs[0]);
+    flags.output = primary_output_sv;
+    flags.output_base = parser::path_basename(primary_output_sv);
     auto outputs_sv = Vec<std::string_view> {};
     outputs_sv.reserve(cmd_outputs.size());
-    for (auto const& o : cmd_outputs) {
-        outputs_sv.push_back(std::string_view { o });
+    for (auto id : cmd_outputs) {
+        outputs_sv.push_back(str(id));
     }
     flags.all_outputs = std::move(outputs_sv);
 
-    // Expand pattern flags and return
-    auto pattern_result = parser::expand_pattern(*ctx.eval, *expanded, flags);
+    auto pattern_result = parser::expand_pattern(*ctx.eval, pool.get(*expanded), flags);
     if (!pattern_result) {
         return pup::unexpected<Error>(pattern_result.error());
     }
-    return String { *pattern_result };
+    return *pattern_result;
 }
 
 auto get_or_create_directory_node(
@@ -2018,7 +1979,7 @@ auto get_or_create_directory_node(
     int depth
 ) -> Result<NodeId>
 {
-    auto normalized_path = String { global_pool().get(pup::path::normalize(dir_path)) };
+    auto normalized_path = global_pool().get(pup::path::normalize(dir_path));
 
     if (normalized_path.empty() || normalized_path == "." || normalized_path == "/") {
         return NodeId { 0 };
@@ -2028,24 +1989,22 @@ auto get_or_create_directory_node(
         return make_error<NodeId>(ErrorCode::InvalidArgument, "Directory nesting exceeds maximum depth");
     }
 
-    auto parent_path = pup::path::parent(normalized_path);
-    auto basename = String { pup::path::filename(normalized_path) };
+    auto parent_path_sv = pup::path::parent(normalized_path);
+    auto basename_sv = pup::path::filename(normalized_path);
 
-    auto parent_id_result = get_or_create_directory_node(ctx, parent_path, depth + 1);
+    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv, depth + 1);
     if (!parent_id_result) {
         return parent_id_result;
     }
     auto parent_id = *parent_id_result;
 
-    // Check if directory already exists
-    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename)) {
+    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename_sv)) {
         return *existing;
     }
 
-    // Create new directory node
     auto node = FileNode {
         .type = NodeType::Directory,
-        .name = ctx.graph->intern(basename),
+        .name = ctx.graph->intern(basename_sv),
         .parent_dir = parent_id,
     };
 
@@ -2067,10 +2026,10 @@ auto get_or_create_file_node(
     auto build_root_name = ctx.graph->get_build_root_name();
 
     if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path = String { global_pool().get(pup::strip_path_prefix(path, build_root_name)) };
+        auto lookup_path_sv = global_pool().get(pup::strip_path_prefix(path, build_root_name));
 
-        if (lookup_path != path) { // Had prefix
-            if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
+        if (lookup_path_sv != path) {
+            if (auto existing = ctx.graph->find_by_path(lookup_path_sv, BUILD_ROOT_ID)) {
                 return *existing;
             }
         }
@@ -2078,32 +2037,31 @@ auto get_or_create_file_node(
 
     // For cross-project paths, also check after normalizing through output_root
     if (type == NodeType::Generated && path.starts_with("..")) {
-        auto norm_output = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
-        if (norm_output != path) {
-            if (auto existing = ctx.graph->find_by_path(norm_output, BUILD_ROOT_ID)) {
+        auto norm_output_sv = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
+        if (norm_output_sv != path) {
+            if (auto existing = ctx.graph->find_by_path(norm_output_sv, BUILD_ROOT_ID)) {
                 return *existing;
             }
         }
     }
 
-    // Paths that escape source root become absolute for correct stat() resolution
-    auto resolved = String { path };
+    auto& pool = global_pool();
+    auto resolved = path;
     if (!is_empty(ctx.current_dir) && path.starts_with("..")) {
-        auto norm = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), path)))) };
+        auto norm = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
         if (norm.starts_with("..")) {
-            resolved = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.options.source_root), norm)))) };
+            resolved = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.options.source_root), norm))));
         } else {
             resolved = norm;
         }
     }
 
-    // Normalize path for consistent lookup (handles //, ., ..)
     auto normalized = normalize_path(resolved);
 
     // For Generated nodes, check if node was already created under BUILD_ROOT_ID
     // by expand_outputs. This handles paths without the build prefix.
     if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path2 = String { global_pool().get(pup::strip_path_prefix(normalized, build_root_name)) };
+        auto lookup_path2 = pool.get(pup::strip_path_prefix(normalized, build_root_name));
         if (auto existing = ctx.graph->find_by_path(lookup_path2, BUILD_ROOT_ID)) {
             return *existing;
         }
@@ -2115,24 +2073,22 @@ auto get_or_create_file_node(
         return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
     }
 
-    auto basename = String { pup::path::filename(normalized) };
+    auto basename_sv = pup::path::filename(normalized);
 
-    auto parent_path = pup::path::parent(normalized);
-    auto parent_id_result = get_or_create_directory_node(ctx, parent_path);
+    auto parent_path_sv = pup::path::parent(normalized);
+    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv);
     if (!parent_id_result) {
         return parent_id_result;
     }
     auto parent_id = *parent_id_result;
 
-    // Check if node already exists
-    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename)) {
+    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename_sv)) {
         return *existing;
     }
 
-    // Create new node
     auto node = FileNode {
         .type = type,
-        .name = ctx.graph->intern(basename),
+        .name = ctx.graph->intern(basename_sv),
         .parent_dir = parent_id,
     };
 
@@ -2154,15 +2110,11 @@ auto resolve_input_node(
     // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
     // already have the build root prefix. Strip it to get source-relative paths.
     auto build_root_name = ctx.graph->get_build_root_name();
-    auto normalized_path = String { global_pool().get(pup::strip_path_prefix(path, build_root_name)) };
+    auto normalized_path = global_pool().get(pup::strip_path_prefix(path, build_root_name));
     if (normalized_path != path) {
         had_build_prefix = true;
     }
 
-    // For cross-project builds, paths may start with ".." and point to output_root
-    // with a different number of "../" components than build_root_name. In that case,
-    // strip_path_prefix won't match. Resolve by checking if the absolute path
-    // is under output_root.
     if (normalized_path.starts_with("..")) {
         auto before = normalized_path;
         normalized_path = normalize_to_output_relative(
@@ -2231,9 +2183,7 @@ auto get_or_create_group_node(
     std::string_view name
 ) -> Result<NodeId>
 {
-    // Check cache first (fast path)
-    auto key_str = String { directory } + "/" + name;
-    auto key_id = to_underlying(ctx.graph->intern(key_str));
+    auto key_id = to_underlying(pup::path::join(directory, name));
     auto const* cached = state.group_nodes.find(key_id);
     if (cached) {
         return *cached;
@@ -2248,7 +2198,11 @@ auto get_or_create_group_node(
 
     // Check if group node already exists in graph (e.g., from previous Tupfile)
     // Group nodes are stored with angle-bracket name like "<gen-headers>"
-    auto group_basename = String { "<" } + name + ">";
+    auto gb = Buf {};
+    gb += '<';
+    gb += name;
+    gb += '>';
+    auto group_basename = gb.view();
     if (auto existing = ctx.graph->find_by_dir_name(parent_id, group_basename)) {
         state.group_nodes.insert(key_id, *existing);
         return *existing;
@@ -2598,77 +2552,78 @@ auto resolve_deferred_order_only_edges(
         auto command_id = static_cast<NodeId>(key >> 32);
         auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
         auto group_name = graph.str(name_id);
-        auto pattern = String { "%<" } + group_name + ">";
+        auto pat_buf = Buf {};
+        pat_buf += "%<";
+        pat_buf += group_name;
+        pat_buf += '>';
+        auto pattern_sv = pat_buf.view();
 
         auto* cmd_node = graph.get_command_node(command_id);
         if (!cmd_node) {
             continue;
         }
-        auto cmd_str = String { graph.str(cmd_node->instruction_id) };
-        if (cmd_str.find(pattern) == String::npos) {
+        auto cmd_sv = graph.str(cmd_node->instruction_id);
+        if (cmd_sv.find(pattern_sv) == std::string_view::npos) {
             continue;
         }
 
-        auto source_dir_str = String { graph.str(cmd_node->source_dir) };
-        auto canonical_cwd = String {};
+        auto source_dir_sv = graph.str(cmd_node->source_dir);
+        auto canonical_cwd = StringId::Empty;
         if (!is_empty(state.options.source_root) && !is_empty(state.options.output_root)
             && str(state.options.source_root) != str(state.options.output_root)) {
-            auto r = pup::platform::canonical(String { global_pool().get(pup::path::join(str(state.options.source_root), source_dir_str)) });
+            auto joined_sv = global_pool().get(pup::path::join(str(state.options.source_root), source_dir_sv));
+            auto r = pup::platform::canonical(joined_sv);
             if (r) {
                 canonical_cwd = *r;
             }
         }
         auto tc = PathTransformContext {
-            .source_to_root = String { global_pool().get(pup::compute_source_to_root(source_dir_str)) },
-            .current_dir_str = source_dir_str,
-            .source_root = str(state.options.source_root),
-            .config_root = str(state.options.config_root),
-            .output_root = str(state.options.output_root),
-            .canonical_cwd = std::move(canonical_cwd),
+            .source_to_root = pup::compute_source_to_root(source_dir_sv),
+            .current_dir_id = intern(source_dir_sv),
+            .source_root = state.options.source_root,
+            .config_root = state.options.config_root,
+            .output_root = state.options.output_root,
+            .canonical_cwd = canonical_cwd,
         };
 
-        auto replacement = String {};
+        auto replacement = Buf {};
         for (auto id : members) {
             auto p_sv = global_pool().get(graph.get_full_path(id));
             if (!p_sv.empty()) {
                 if (!replacement.empty()) {
                     replacement += ' ';
                 }
-                replacement += transform_output_path(tc, p_sv);
+                replacement += str(transform_output_path(tc, p_sv));
             }
         }
 
-        // Replace pattern in instruction string
         {
-            auto sv = std::string_view { cmd_str };
-            auto result = String {};
-            auto pos = sv.find(pattern);
+            auto result = Buf {};
+            auto pos = cmd_sv.find(pattern_sv);
             std::size_t last = 0;
             while (pos != std::string_view::npos) {
-                result += sv.substr(last, pos - last);
-                result += std::string_view { replacement };
-                last = pos + pattern.size();
-                pos = sv.find(pattern, last);
+                result += cmd_sv.substr(last, pos - last);
+                result += replacement.view();
+                last = pos + pattern_sv.size();
+                pos = cmd_sv.find(pattern_sv, last);
             }
-            result += sv.substr(last);
-            cmd_str = std::move(result);
+            result += cmd_sv.substr(last);
+            cmd_node->instruction_id = graph.intern(result.view());
         }
-        cmd_node->instruction_id = graph.intern(cmd_str);
 
-        // Replace pattern in display string
         auto display_sv = graph.str(cmd_node->display);
-        if (display_sv.find(pattern) != std::string_view::npos) {
-            auto result = String {};
-            auto pos = display_sv.find(pattern);
+        if (display_sv.find(pattern_sv) != std::string_view::npos) {
+            auto result = Buf {};
+            auto pos = display_sv.find(pattern_sv);
             std::size_t last = 0;
             while (pos != std::string_view::npos) {
                 result += display_sv.substr(last, pos - last);
-                result += std::string_view { replacement };
-                last = pos + pattern.size();
-                pos = display_sv.find(pattern, last);
+                result += replacement.view();
+                last = pos + pattern_sv.size();
+                pos = display_sv.find(pattern_sv, last);
             }
             result += display_sv.substr(last);
-            cmd_node->display = graph.intern(result);
+            cmd_node->display = graph.intern(result.view());
         }
     }
 

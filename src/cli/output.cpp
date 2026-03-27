@@ -5,7 +5,6 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -29,18 +28,19 @@ auto remove_empty_directories(
 {
     auto removed = std::size_t { 0 };
 
-    auto dirs = Vec<String> {};
+    auto dirs = Vec<StringId> {};
     dirs.reserve(output_dir_ids.size());
     for (auto id : output_dir_ids) {
-        dirs.push_back(String { global_pool().get(id) });
+        dirs.push_back(id);
     }
     std::ranges::sort(dirs);
     dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
-    std::ranges::sort(dirs, std::greater {}, [](auto const& p) {
-        return p.size();
+    std::ranges::sort(dirs, std::greater {}, [](auto id) {
+        return global_pool().get(id).size();
     });
 
-    for (auto const& dir : dirs) {
+    for (auto dir_id : dirs) {
+        auto dir = global_pool().get(dir_id);
         if (dir == source_dir) {
             continue;
         }
@@ -55,12 +55,12 @@ auto remove_empty_directories(
         }
 
         if (mode.dry_run) {
-            printf("Would remove empty dir: %s\n", dir.c_str());
+            printf("Would remove empty dir: %.*s\n", static_cast<int>(dir.size()), dir.data());
         } else {
             (void)pup::platform::remove_file(dir);
             ++removed;
             if (mode.verbose) {
-                printf("Removed empty dir: %s\n", dir.c_str());
+                printf("Removed empty dir: %.*s\n", static_cast<int>(dir.size()), dir.data());
             }
         }
     }
