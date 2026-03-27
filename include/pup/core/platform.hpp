@@ -3,7 +3,9 @@
 
 #pragma once
 
-#include "pup/core/string.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <cstdlib>
 #include <string_view>
@@ -44,12 +46,12 @@ inline constexpr auto ARCH = std::string_view { "unknown" };
 
 /// Get platform string at runtime (checks TUP_PLATFORM env var first)
 [[nodiscard]]
-inline auto get_platform() -> String
+inline auto get_platform() -> StringId
 {
     if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
-        return String { env };
+        return global_pool().intern(env);
     }
-    return String { PLATFORM };
+    return global_pool().intern(PLATFORM);
 }
 
 } // namespace pup

@@ -35,13 +35,13 @@ auto find_config_commands(
         }
 
         for (auto output_id : graph.get_outputs(id)) {
-            auto path = graph.get_full_path(output_id);
+            auto path_id = graph.get_full_path(output_id);
+            auto path = global_pool().get(path_id);
             if (is_config_output(path)) {
-                // Paths in graph are project-root-relative
                 auto full_path_sv = global_pool().get(pup::path::join(source_root, path));
                 result.push_back({
                     .cmd_id = id,
-                    .output_path = global_pool().intern(path),
+                    .output_path = path_id,
                     .exists = pup::platform::exists(full_path_sv),
                 });
             }

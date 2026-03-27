@@ -281,7 +281,7 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
 /// Reconstruct full path without caching (convenience overload)
 /// Note: Creates temporary cache - prefer the cached version for repeated calls.
 [[nodiscard]]
-auto get_full_path(Graph const& graph, NodeId id) -> String;
+auto get_full_path(Graph const& graph, NodeId id) -> StringId;
 
 /// Invalidate path cache entry for a node (call when parent_dir or name changes)
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
@@ -296,7 +296,7 @@ auto get_name(Graph const& graph, NodeId id) -> std::string_view;
 /// Expand instruction pattern into full command string by substituting
 /// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
 [[nodiscard]]
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> String;
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId;
 
 /// Expand instruction with canonical path resolution for symlinked source trees.
 /// When source_root is provided, build-tree paths are computed relative to the
@@ -310,11 +310,11 @@ auto expand_instruction(
     PathCache& cache,
     std::string_view source_root,
     std::string_view config_root = {}
-) -> String;
+) -> StringId;
 
 /// Expand instruction pattern (convenience overload, creates temporary cache)
 [[nodiscard]]
-auto expand_instruction(Graph const& graph, NodeId cmd_id) -> String;
+auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
 
 /// Build the command string index for find_by_command() lookups.
 /// Must be called after all commands have their operands set (post-parsing).
@@ -562,13 +562,14 @@ public:
     }
 
     [[nodiscard]]
-    auto get_full_path(NodeId id) const -> String
+    auto get_full_path(NodeId id) const -> StringId
     {
-        return String { graph::get_full_path(graph_, id, path_cache_) };
+        auto sv = graph::get_full_path(graph_, id, path_cache_);
+        return global_pool().intern(sv);
     }
 
     [[nodiscard]]
-    auto expand_instruction(NodeId id) const -> String
+    auto expand_instruction(NodeId id) const -> StringId
     {
         return graph::expand_instruction(graph_, id, path_cache_);
     }

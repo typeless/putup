@@ -2,8 +2,10 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/output.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -65,54 +67,54 @@ auto remove_empty_directories(
     return removed;
 }
 
-auto escape_dot_label(std::string_view s) -> String
+auto escape_dot_label(std::string_view s) -> StringId
 {
-    auto result = String {};
-    result.reserve(s.size());
+    auto buf = Buf {};
+    buf.reserve(s.size());
     for (auto c : s) {
         if (c == '"' || c == '\\') {
-            result += '\\';
+            buf += '\\';
         }
-        result += c;
+        buf += c;
     }
-    return result;
+    return buf.intern(global_pool());
 }
 
-auto escape_json(std::string_view s) -> String
+auto escape_json(std::string_view s) -> StringId
 {
-    auto result = String {};
-    result.reserve(s.size());
+    auto buf = Buf {};
+    buf.reserve(s.size());
     for (auto c : s) {
         switch (c) {
         case '"':
-            result += "\\\"";
+            buf += "\\\"";
             break;
         case '\\':
-            result += "\\\\";
+            buf += "\\\\";
             break;
         case '\b':
-            result += "\\b";
+            buf += "\\b";
             break;
         case '\f':
-            result += "\\f";
+            buf += "\\f";
             break;
         case '\n':
-            result += "\\n";
+            buf += "\\n";
             break;
         case '\r':
-            result += "\\r";
+            buf += "\\r";
             break;
         case '\t':
-            result += "\\t";
+            buf += "\\t";
             break;
         default:
             if (static_cast<unsigned char>(c) <= ASCII_CONTROL_CHAR_MAX) {
                 continue;
             }
-            result += c;
+            buf += c;
         }
     }
-    return result;
+    return buf.intern(global_pool());
 }
 
 } // namespace pup::cli

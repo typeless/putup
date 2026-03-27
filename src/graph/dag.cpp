@@ -3,9 +3,11 @@
 
 #include "pup/graph/dag.hpp"
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string.hpp"
 
 #include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
@@ -472,8 +474,8 @@ auto empty(Graph const& graph) -> bool
 
 auto clear(Graph& graph) -> void
 {
-    // Preserve build root name string before clearing
-    auto build_root_name_str = String { global_pool().get(graph.files[BUILD_ROOT_ID].name) };
+    // Preserve build root name StringId before clearing (global_pool is process-wide, not cleared)
+    auto build_root_name_id = graph.files[BUILD_ROOT_ID].name;
 
     graph.files.clear();
     graph.commands.clear();
@@ -489,8 +491,8 @@ auto clear(Graph& graph) -> void
     graph.command_strings.clear();
     graph.command_index.clear();
     graph.command_index_built = false;
-    // Re-intern build root name (global_pool is not cleared — it's process-wide)
-    auto build_root_name = global_pool().intern(build_root_name_str);
+    // build_root_name_id is still valid (global_pool is not cleared)
+    auto build_root_name = build_root_name_id;
 
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
@@ -613,34 +615,31 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
 
     cache.ids.set(id, 0);
 
-    auto path = String {};
+    auto buf = Buf {};
     if (node->parent_dir != 0) {
         auto parent_path = get_full_path(graph, node->parent_dir, cache);
         if (!parent_path.empty()) {
-            if (parent_path.back() == '/') {
-                path = String { parent_path };
-                path += name;
-            } else {
-                path = String { parent_path };
-                path += '/';
-                path += name;
+            buf += parent_path;
+            if (parent_path.back() != '/') {
+                buf += '/';
             }
+            buf += name;
         } else {
-            path = String { name };
+            buf += name;
         }
     } else {
-        path = String { name };
+        buf += name;
     }
 
-    auto path_id = cache.pool.intern(path);
+    auto path_id = cache.pool.intern(buf.view());
     cache.ids.set(id, to_underlying(path_id));
     return cache.pool.get(path_id);
 }
 
-auto get_full_path(Graph const& graph, NodeId id) -> String
+auto get_full_path(Graph const& graph, NodeId id) -> StringId
 {
     auto cache = PathCache {};
-    return String { get_full_path(graph, id, cache) };
+    return global_pool().intern(get_full_path(graph, id, cache));
 }
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
@@ -729,16 +728,16 @@ auto expand_instruction_impl(
     NodeId cmd_id,
     PathCache& cache,
     PathResolver const& get_operand_path
-) -> String
+) -> StringId
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
-        return {};
+        return StringId::Empty;
     }
 
     auto pattern = global_pool().get(cmd->instruction_id);
     if (pattern.empty()) {
-        return {};
+        return StringId::Empty;
     }
 
     auto source_dir = global_pool().get(cmd->source_dir);
@@ -747,20 +746,20 @@ auto expand_instruction_impl(
         return get_name(graph, id);
     };
 
-    auto result = String {};
+    auto buf = Buf {};
     auto pos = std::size_t { 0 };
 
     while (pos < pattern.size()) {
         auto percent = pattern.find('%', pos);
-        if (percent == String::npos) {
-            result += pattern.substr(pos);
+        if (percent == std::string_view::npos) {
+            buf += pattern.substr(pos);
             break;
         }
 
-        result += pattern.substr(pos, percent - pos);
+        buf += pattern.substr(pos, percent - pos);
 
         if (percent + 1 >= pattern.size()) {
-            result += '%';
+            buf += '%';
             pos = percent + 1;
             continue;
         }
@@ -769,7 +768,7 @@ auto expand_instruction_impl(
         pos = percent + 2;
 
         if (flag == '%') {
-            result += '%';
+            buf += '%';
             continue;
         }
 
@@ -786,7 +785,7 @@ auto expand_instruction_impl(
 
             if (end < pattern.size() && pattern[end] == 'f') {
                 if (num > 0 && static_cast<std::size_t>(num) <= cmd->inputs.size()) {
-                    result += get_operand_path(cmd->inputs[static_cast<std::size_t>(num - 1)]);
+                    buf += get_operand_path(cmd->inputs[static_cast<std::size_t>(num - 1)]);
                 }
                 pos = end + 1;
                 continue;
@@ -794,13 +793,13 @@ auto expand_instruction_impl(
 
             if (end < pattern.size() && pattern[end] == 'o') {
                 if (num > 0 && static_cast<std::size_t>(num) <= cmd->outputs.size()) {
-                    result += get_operand_path(cmd->outputs[static_cast<std::size_t>(num - 1)]);
+                    buf += get_operand_path(cmd->outputs[static_cast<std::size_t>(num - 1)]);
                 }
                 pos = end + 1;
                 continue;
             }
 
-            result += '%';
+            buf += '%';
             pos = percent + 1;
             continue;
         }
@@ -810,39 +809,39 @@ auto expand_instruction_impl(
         case 'i': {
             for (std::size_t i = 0; i < cmd->inputs.size(); ++i) {
                 if (i > 0) {
-                    result += ' ';
+                    buf += ' ';
                 }
-                result += get_operand_path(cmd->inputs[i]);
+                buf += get_operand_path(cmd->inputs[i]);
             }
             break;
         }
         case 'b': {
             if (!cmd->inputs.empty()) {
-                result += path_basename(get_full_path(graph, cmd->inputs[0], cache));
+                buf += path_basename(get_full_path(graph, cmd->inputs[0], cache));
             }
             break;
         }
         case 'B': {
             if (!cmd->inputs.empty()) {
-                result += path_stem(get_operand_name(cmd->inputs[0]));
+                buf += path_stem(get_operand_name(cmd->inputs[0]));
             }
             break;
         }
         case 'e': {
             if (!cmd->inputs.empty()) {
-                result += path_extension(get_operand_name(cmd->inputs[0]));
+                buf += path_extension(get_operand_name(cmd->inputs[0]));
             }
             break;
         }
         case 'o': {
             if (!cmd->outputs.empty()) {
-                result += get_operand_path(cmd->outputs[0]);
+                buf += get_operand_path(cmd->outputs[0]);
             }
             break;
         }
         case 'O': {
             if (!cmd->outputs.empty()) {
-                result += path_basename(get_full_path(graph, cmd->outputs[0], cache));
+                buf += path_basename(get_full_path(graph, cmd->outputs[0], cache));
             }
             break;
         }
@@ -850,36 +849,36 @@ auto expand_instruction_impl(
             if (!source_dir.empty()) {
                 auto slash = source_dir.rfind('/');
                 if (slash != std::string_view::npos) {
-                    result += source_dir.substr(slash + 1);
+                    buf += source_dir.substr(slash + 1);
                 } else {
-                    result += source_dir;
+                    buf += source_dir;
                 }
             }
             break;
         }
         default:
-            result += '%';
-            result += flag;
+            buf += '%';
+            buf += flag;
             break;
         }
     }
 
-    return result;
+    return buf.intern(global_pool());
 }
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> String
+auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
-        return {};
+        return StringId::Empty;
     }
     auto& pool = global_pool();
     auto source_dir = pool.get(cmd->source_dir);
     auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
 
-    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
+    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string_view {
         auto full = get_full_path(graph, id, cache);
-        return String { pool.get(pup::make_source_relative(full, source_to_root, source_dir)) };
+        return pool.get(pup::make_source_relative(full, source_to_root, source_dir));
     });
 }
 
@@ -889,11 +888,11 @@ auto expand_instruction(
     PathCache& cache,
     std::string_view source_root,
     std::string_view config_root
-) -> String
+) -> StringId
 {
     auto const* cmd = get_command_node(graph, cmd_id);
     if (!cmd) {
-        return {};
+        return StringId::Empty;
     }
     auto& pool = global_pool();
     auto source_dir = pool.get(cmd->source_dir);
@@ -906,29 +905,29 @@ auto expand_instruction(
         }
     }
 
-    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
+    return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string_view {
         auto full = get_full_path(graph, id, cache);
         if (!canonical_cwd.empty() && full.starts_with("..")) {
             auto joined_sv = pool.get(pup::path::join(source_root, full));
             auto abs = pup::platform::canonical(String { joined_sv });
             if (abs) {
-                return String { pool.get(pup::path::relative(*abs, canonical_cwd)) };
+                return pool.get(pup::path::relative(*abs, canonical_cwd));
             }
-            return String { pool.get(pup::path::relative(pool.get(pup::path::normalize(joined_sv)), canonical_cwd)) };
+            return pool.get(pup::path::relative(pool.get(pup::path::normalize(joined_sv)), canonical_cwd));
         }
         if (!config_root.empty() && config_root != source_root
             && !pup::platform::exists(pool.get(pup::path::join(source_root, full)))
             && pup::platform::exists(pool.get(pup::path::join(config_root, full)))) {
             auto r = pup::platform::canonical(String { pool.get(pup::path::join(config_root, full)) });
             if (r) {
-                return String { pool.get(pup::path::relative(*r, canonical_cwd)) };
+                return pool.get(pup::path::relative(*r, canonical_cwd));
             }
         }
-        return String { pool.get(pup::make_source_relative(full, source_to_root, source_dir)) };
+        return pool.get(pup::make_source_relative(full, source_to_root, source_dir));
     });
 }
 
-auto expand_instruction(Graph const& graph, NodeId cmd_id) -> String
+auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId
 {
     auto cache = PathCache {};
     return expand_instruction(graph, cmd_id, cache);
@@ -946,10 +945,11 @@ auto build_command_index(Graph& graph, PathCache& cache) -> void
         if (cmd.id != id) {
             continue;
         }
-        auto cmd_str = expand_instruction(graph, id, cache);
+        auto cmd_id_str = expand_instruction(graph, id, cache);
         ++metrics.command_expansions;
-        if (!cmd_str.empty()) {
-            auto str_id = graph.command_strings.intern(cmd_str);
+        if (!is_empty(cmd_id_str)) {
+            auto cmd_sv = global_pool().get(cmd_id_str);
+            auto str_id = graph.command_strings.intern(cmd_sv);
             graph.command_index.insert(to_underlying(str_id), id);
         }
     }

@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -57,11 +56,11 @@ auto render_tty(ProgressState const& state, std::string_view variant = {}) -> Pr
 
 /// Render progress for non-TTY (single line)
 [[nodiscard]]
-auto render_simple(ProgressState const& state, std::string_view variant = {}) -> String;
+auto render_simple(ProgressState const& state, std::string_view variant = {}) -> StringId;
 
 /// Format duration as M:SS
 [[nodiscard]]
-auto format_duration(std::chrono::milliseconds ms) -> String;
+auto format_duration(std::chrono::milliseconds ms) -> StringId;
 
 // ============================================================================
 // Terminal I/O (side effects isolated here)

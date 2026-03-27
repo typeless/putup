@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/progress_display.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
 
@@ -15,19 +17,19 @@ namespace {
 
 auto constexpr MAX_RUNNING_JOBS_DISPLAY = std::size_t { 8 };
 
-auto truncate_left(std::string_view str, std::size_t max_width) -> String
+auto truncate_left(std::string_view str, std::size_t max_width) -> std::string_view
 {
     if (str.size() <= max_width) {
-        return String { str };
+        return str;
     }
     if (max_width <= 3) {
-        auto dots = String {};
-        for (std::size_t i = 0; i < max_width; ++i) {
-            dots += '.';
-        }
-        return dots;
+        return "...";
     }
-    return String { "..." } + str.substr(str.size() - (max_width - 3));
+    // For left-truncation we need to build "..." + suffix - use Buf and intern
+    auto buf = Buf {};
+    buf += "...";
+    buf += str.substr(str.size() - (max_width - 3));
+    return global_pool().get(buf.intern(global_pool()));
 }
 
 } // anonymous namespace
@@ -64,7 +66,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
 {
     auto& pool = global_pool();
     auto result = ProgressOutput {};
-    auto out = String {};
+    auto out = Buf {};
 
     auto term_width = static_cast<std::size_t>(pup::terminal_width());
 
@@ -82,7 +84,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
         current_display = pool.get(sorted.back().display);
     }
 
-    auto prefix = String {};
+    auto prefix = Buf {};
     if (!variant.empty()) {
         prefix += '[';
         prefix += variant;
@@ -93,7 +95,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
     prefix += buf;
     auto path_width = term_width > prefix.size() ? term_width - prefix.size() : std::size_t { 20 };
 
-    out += prefix;
+    out += prefix.view();
     out += truncate_left(current_display, path_width);
     out += pup::ansi::clear_line;
     result.line_count = 1;
@@ -109,20 +111,20 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - job.start_time);
         out += '\n';
         out += "    ";
-        out += format_duration(elapsed);
+        out += pool.get(format_duration(elapsed));
         out += ' ';
         out += truncate_left(pool.get(job.display), job_path_width);
         out += pup::ansi::clear_line;
         ++result.line_count;
     }
 
-    result.text = pool.intern(out);
+    result.text = out.intern(pool);
     return result;
 }
 
-auto render_simple(ProgressState const& state, std::string_view variant) -> String
+auto render_simple(ProgressState const& state, std::string_view variant) -> StringId
 {
-    auto out = String {};
+    auto out = Buf {};
     auto done = state.completed + state.failed;
 
     if (!variant.empty()) {
@@ -134,10 +136,10 @@ auto render_simple(ProgressState const& state, std::string_view variant) -> Stri
     std::snprintf(buf, sizeof(buf), "[%zu/%zu]", done, state.total);
     out += buf;
 
-    return out;
+    return out.intern(global_pool());
 }
 
-auto format_duration(std::chrono::milliseconds ms) -> String
+auto format_duration(std::chrono::milliseconds ms) -> StringId
 {
     auto secs = static_cast<std::size_t>(ms.count() / 1000);
     auto mins = secs / 60;
@@ -145,7 +147,7 @@ auto format_duration(std::chrono::milliseconds ms) -> String
 
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%zu:%02zu", mins, secs);
-    return buf;
+    return global_pool().intern(buf);
 }
 
 auto clear_lines(std::size_t count, std::FILE* out) -> void

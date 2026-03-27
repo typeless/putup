@@ -18,8 +18,8 @@ namespace pup::exec {
 /// Result of running a command
 struct CommandResult {
     int exit_code = 0;
-    String stdout_output = {};
-    String stderr_output = {};
+    StringId stdout_output = StringId::Empty;
+    StringId stderr_output = StringId::Empty;
     std::chrono::milliseconds duration = {};
     bool timed_out = false;
     bool signaled = false;
@@ -92,10 +92,10 @@ private:
 
 /// Parse a command string into shell arguments
 [[nodiscard]]
-auto parse_command(std::string_view command) -> Vec<String>;
+auto parse_command(std::string_view command) -> Vec<StringId>;
 
 /// Quote a string for shell use
 [[nodiscard]]
-auto shell_quote(std::string_view str) -> String;
+auto shell_quote(std::string_view str) -> StringId;
 
 } // namespace pup::exec

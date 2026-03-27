@@ -455,7 +455,7 @@ auto expand_pattern(
                     if (i > 0) {
                         result += ' ';
                     }
-                    result += paths[i];
+                    result += global_pool().get(paths[i]);
                 }
             }
             continue;
@@ -521,19 +521,21 @@ auto expand_path(
     auto result = Vec<String> {};
 
     if (pattern.is_order_only_group) {
-        // Order-only group reference <groupname> - use callback to resolve
         if (ctx.resolve_order_only_group) {
             auto paths = ctx.resolve_order_only_group(global_pool().get(pattern.group_name));
-            result.insert(result.end(), paths.begin(), paths.end());
+            for (auto id : paths) {
+                result.push_back(String { global_pool().get(id) });
+            }
         }
         return result;
     }
 
     if (pattern.is_group) {
-        // Group reference {groupname} - use callback to resolve
         if (ctx.resolve_group) {
             auto paths = ctx.resolve_group(global_pool().get(pattern.group_name));
-            result.insert(result.end(), paths.begin(), paths.end());
+            for (auto id : paths) {
+                result.push_back(String { global_pool().get(id) });
+            }
         }
         return result;
     }

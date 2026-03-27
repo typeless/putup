@@ -14,6 +14,10 @@
 #include <fstream>
 #include <unordered_map>
 
+namespace {
+auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
+} // namespace
+
 using namespace pup;
 using namespace pup::index;
 
@@ -32,8 +36,8 @@ auto build_command_lookup(Index const& index)
 
     for (auto const& cmd : index.commands()) {
         auto full_cmd = get_command_string(index, cmd);
-        if (!full_cmd.empty()) {
-            lookup.emplace(std::move(full_cmd), &cmd);
+        if (!pup::is_empty(full_cmd)) {
+            lookup.emplace(std::string { sv(full_cmd) }, &cmd);
         }
     }
 
@@ -439,7 +443,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 
     // v8: Verify command reconstruction from template + operands
     auto reconstructed = get_command_string(restored, *cmd);
-    REQUIRE(reconstructed == "g++ -c src/main.cpp -o build/main.o");
+    REQUIRE(sv(reconstructed) =="g++ -c src/main.cpp -o build/main.o");
 
     // Verify header file (implicit dependency)
     auto* header = find_file_by_path(restored, "/usr/include/stdio.h");
@@ -854,7 +858,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "g++ -c src/main.cpp -o build/main.o");
+        REQUIRE(sv(result) =="g++ -c src/main.cpp -o build/main.o");
     }
 
     SECTION("get_command_string with %b (basename)")
@@ -868,7 +872,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "echo main.cpp");
+        REQUIRE(sv(result) =="echo main.cpp");
     }
 
     SECTION("get_command_string with %B (basename without extension)")
@@ -882,7 +886,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "echo main");
+        REQUIRE(sv(result) =="echo main");
     }
 
     SECTION("get_command_string with %e (extension)")
@@ -896,7 +900,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "echo cpp");
+        REQUIRE(sv(result) =="echo cpp");
     }
 
     SECTION("get_command_string with multiple inputs")
@@ -913,7 +917,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "g++ -c src/main.cpp src/util.cpp -o build/main.o");
+        REQUIRE(sv(result) =="g++ -c src/main.cpp src/util.cpp -o build/main.o");
     }
 
     SECTION("get_command_string with %Nf (N-th input)")
@@ -930,7 +934,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "echo src/main.cpp src/util.cpp");
+        REQUIRE(sv(result) =="echo src/main.cpp src/util.cpp");
     }
 
     SECTION("get_command_string with %% escape")
@@ -944,7 +948,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result == "echo 100%");
+        REQUIRE(sv(result) =="echo 100%");
     }
 
     SECTION("get_command_string with empty template")
@@ -958,7 +962,7 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        REQUIRE(result.empty());
+        REQUIRE(pup::is_empty(result));
     }
 }
 
@@ -991,7 +995,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
 
         auto result = get_command_string(index, cmd);
         // Paths should be relative to "app" directory
-        REQUIRE(result == "gcc main.c ../lib/foo.o -o app");
+        REQUIRE(sv(result) =="gcc main.c ../lib/foo.o -o app");
     }
 
     SECTION("command in root referencing subdirectory files")
@@ -1008,7 +1012,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
 
         auto result = get_command_string(index, cmd);
         // Paths should be full since dir_id is 0
-        REQUIRE(result == "gcc app/main.c lib/foo.o -o app/app");
+        REQUIRE(sv(result) =="gcc app/main.c lib/foo.o -o app/app");
     }
 
     SECTION("command in subdirectory with same-directory files")
@@ -1025,7 +1029,7 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
 
         auto result = get_command_string(index, cmd);
         // Paths should be relative to "lib" directory
-        REQUIRE(result == "gcc -c foo.c -o foo.o");
+        REQUIRE(sv(result) =="gcc -c foo.c -o foo.o");
     }
 }
 
@@ -1169,13 +1173,13 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 
     // Verify command reconstruction
     auto cmd1_str = get_command_string(restored, *cmd1);
-    REQUIRE(cmd1_str == "g++ -c src/main.cpp -o build/main.o");
+    REQUIRE(sv(cmd1_str) =="g++ -c src/main.cpp -o build/main.o");
 
     auto cmd2_str = get_command_string(restored, *cmd2);
-    REQUIRE(cmd2_str == "g++ -c src/util.cpp -o build/util.o");
+    REQUIRE(sv(cmd2_str) =="g++ -c src/util.cpp -o build/util.o");
 
     auto cmd3_str = get_command_string(restored, *cmd3);
-    REQUIRE(cmd3_str == "g++ build/main.o build/util.o -o build/program");
+    REQUIRE(sv(cmd3_str) =="g++ build/main.o build/util.o -o build/program");
 
     reader_result->file.close();
     std::filesystem::remove(temp_path);

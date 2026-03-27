@@ -15,6 +15,7 @@ using pup::test::EnvGuard;
 
 namespace {
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
 } // namespace
 
 TEST_CASE("VarDb basic operations", "[eval]")
@@ -207,21 +208,21 @@ TEST_CASE("get_platform() respects TUP_PLATFORM env var", "[eval][platform]")
     SECTION("returns compile-time default when env var not set")
     {
         auto platform = pup::get_platform();
-        REQUIRE(platform == pup::PLATFORM);
+        REQUIRE(sv(platform) == pup::PLATFORM);
     }
 
     SECTION("returns env var value when TUP_PLATFORM is set")
     {
         auto env = EnvGuard { "TUP_PLATFORM", "win32" };
         auto platform = pup::get_platform();
-        REQUIRE(platform == "win32");
+        REQUIRE(sv(platform) == "win32");
     }
 
     SECTION("returns env var for custom platform names")
     {
         auto env = EnvGuard { "TUP_PLATFORM", "custom-platform" };
         auto platform = pup::get_platform();
-        REQUIRE(platform == "custom-platform");
+        REQUIRE(sv(platform) == "custom-platform");
     }
 }
 
@@ -597,9 +598,9 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
     SECTION("resolve_group callback for {name}")
     {
-        ctx.resolve_group = [](std::string_view name) -> pup::Vec<pup::String> {
+        ctx.resolve_group = [](std::string_view name) -> pup::Vec<pup::StringId> {
             if (name == "objs")
-                return { "a.o", "b.o", "c.o" };
+                return { intern("a.o"), intern("b.o"), intern("c.o") };
             return {};
         };
 
@@ -617,9 +618,9 @@ TEST_CASE("Evaluator group resolution", "[eval]")
 
     SECTION("resolve_order_only_group callback for <name>")
     {
-        ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<pup::String> {
+        ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<pup::StringId> {
             if (name == "gen-headers")
-                return { "generated/config.h", "generated/version.h" };
+                return { intern("generated/config.h"), intern("generated/version.h") };
             return {};
         };
 
@@ -652,9 +653,9 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
     auto ctx = EvalContext { .vars = &vars };
 
 
-    ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<pup::String> {
+    ctx.resolve_order_only_group = [](std::string_view name) -> pup::Vec<pup::StringId> {
         if (name == "headers")
-            return { "inc/a.h", "inc/b.h" };
+            return { intern("inc/a.h"), intern("inc/b.h") };
         return {};
     };
 

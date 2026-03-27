@@ -130,10 +130,10 @@ struct EvalContext {
     StringId tup_outdir = StringId::Empty;            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
-    std::function<Vec<String>(std::string_view)> resolve_group = {};
+    std::function<Vec<StringId>(std::string_view)> resolve_group = {};
 
     /// Callback for resolving order-only group references like <groupname>
-    std::function<Vec<String>(std::string_view)> resolve_order_only_group = {};
+    std::function<Vec<StringId>(std::string_view)> resolve_order_only_group = {};
 
     /// Callback for requesting a directory's Tupfile to be parsed (for cross-directory deps)
     /// Called when a path references another directory that may have a Tupfile.

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "result.hpp"
-#include "string.hpp"
+#include "string_id.hpp"
 #include "types.hpp"
 
 #include <array>
@@ -54,7 +54,7 @@ auto sha256_file(std::string_view path) -> Result<Hash256>;
 
 /// Convert hash to hex string (lowercase)
 [[nodiscard]]
-auto hash_to_hex(Hash256 const& hash) -> String;
+auto hash_to_hex(Hash256 const& hash) -> StringId;
 
 /// Parse hex string to hash
 [[nodiscard]]

@@ -3,7 +3,9 @@
 
 #include "pup/graph/scanners/gcc.hpp"
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
 
@@ -194,22 +196,23 @@ auto is_source_file(std::string_view word) -> bool
 
 auto matches_gcc_compile(std::string_view command) -> bool
 {
-    auto words = core::tokenize_shell_command(command);
-    if (words.empty()) {
+    auto word_ids = core::tokenize_shell_command(command);
+    if (word_ids.empty()) {
         return false;
     }
 
+    auto& pool = global_pool();
     auto compiler_idx = std::size_t { 0 };
-    auto first_basename = std::string_view { words[0] };
+    auto first_basename = pool.get(word_ids[0]);
     if (auto pos = first_basename.rfind('/'); pos != std::string_view::npos) {
         first_basename = first_basename.substr(pos + 1);
     }
 
-    if (is_compiler_wrapper(first_basename) && words.size() > 1) {
+    if (is_compiler_wrapper(first_basename) && word_ids.size() > 1) {
         compiler_idx = 1;
     }
 
-    auto compiler_basename = std::string_view { words[compiler_idx] };
+    auto compiler_basename = pool.get(word_ids[compiler_idx]);
     if (auto pos = compiler_basename.rfind('/'); pos != std::string_view::npos) {
         compiler_basename = compiler_basename.substr(pos + 1);
     }
@@ -218,8 +221,8 @@ auto matches_gcc_compile(std::string_view command) -> bool
         return false;
     }
 
-    for (auto i = compiler_idx + 1; i < words.size(); ++i) {
-        if (words[i] == "-c") {
+    for (auto i = compiler_idx + 1; i < word_ids.size(); ++i) {
+        if (pool.get(word_ids[i]) == "-c") {
             return true;
         }
     }
@@ -255,14 +258,22 @@ auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
 
 auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<StringId>
 {
-    auto words = core::tokenize_shell_command(global_pool().get(cmd.command));
-    if (words.empty()) {
+    auto& pool = global_pool();
+    auto word_ids = core::tokenize_shell_command(pool.get(cmd.command));
+    if (word_ids.empty()) {
         return std::nullopt;
+    }
+
+    // Resolve all words to string_views up front
+    auto words = Vec<std::string_view> {};
+    words.reserve(word_ids.size());
+    for (auto id : word_ids) {
+        words.push_back(pool.get(id));
     }
 
     auto compiler_idx = std::size_t { 0 };
     auto first_basename = words[0];
-    if (auto slash_pos = first_basename.rfind('/'); slash_pos != String::npos) {
+    if (auto slash_pos = first_basename.rfind('/'); slash_pos != std::string_view::npos) {
         first_basename = first_basename.substr(slash_pos + 1);
     }
 
@@ -271,7 +282,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     }
 
     auto compiler_basename = words[compiler_idx];
-    if (auto pos = compiler_basename.rfind('/'); pos != String::npos) {
+    if (auto pos = compiler_basename.rfind('/'); pos != std::string_view::npos) {
         compiler_basename = compiler_basename.substr(pos + 1);
     }
     if (!is_compiler_name(compiler_basename)) {
@@ -290,7 +301,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     dep_cmd += " -M";
 
     auto skip_next = false;
-    auto source_files = Vec<String> {};
+    auto source_files = Vec<std::string_view> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
             dep_cmd += ' ';
@@ -299,7 +310,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
             continue;
         }
 
-        auto const& w = words[i];
+        auto w = words[i];
 
         if (w == "-c") {
             continue;
@@ -325,12 +336,12 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         }
     }
 
-    for (auto const& src : source_files) {
+    for (auto src : source_files) {
         dep_cmd += ' ';
         dep_cmd += shell_quote(src);
     }
 
-    return global_pool().intern(dep_cmd);
+    return pool.intern(dep_cmd);
 }
 
 auto GccScanner::dep_spec() const -> DepSpec

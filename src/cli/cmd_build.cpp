@@ -244,18 +244,19 @@ auto walk_upstream_from_scope(
 auto collect_upstream_files(
     pup::graph::BuildGraph const& graph,
     pup::Vec<pup::StringId> const& scopes
-) -> Vec<String>
+) -> Vec<std::string_view>
 {
-    auto upstream = Vec<String> {};
+    auto upstream = Vec<std::string_view> {};
+    auto& pool = pup::global_pool();
     for (auto id : walk_upstream_from_scope(graph, scopes)) {
         if (pup::node_id::is_command(id)) {
             continue;
         }
         auto const* node = graph.get_file_node(id);
         if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
-            auto path = graph.get_full_path(id);
-            if (!path.empty()) {
-                upstream.push_back(std::move(path));
+            auto path_id = graph.get_full_path(id);
+            if (!pup::is_empty(path_id)) {
+                upstream.push_back(pool.get(path_id));
             }
         }
     }
@@ -283,7 +284,7 @@ auto find_changed_files_with_implicit(
     String const& source_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& scopes,
-    Vec<String> const& upstream_files,
+    Vec<std::string_view> const& upstream_files,
     bool verbose = false
 ) -> pup::Vec<String>
 {
@@ -457,7 +458,7 @@ auto create_implicit_file(
         if (hash_result) {
             content_hash = *hash_result;
         } else {
-            fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::platform::to_utf8(abs_path).c_str());
+            fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::global_pool().get(pup::platform::to_utf8(abs_path)).data());
         }
 
         auto stat_result = pup::platform::stat_file(abs_path);
@@ -511,7 +512,8 @@ auto serialize_graph_nodes(
         }
 
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
-            auto node_path = String { graph.get_full_path(id) };
+            auto node_path_id = graph.get_full_path(id);
+            auto node_path = String { pup::global_pool().get(node_path_id) };
             if (node_path.empty()) {
                 continue;
             }
@@ -534,7 +536,7 @@ auto serialize_graph_nodes(
                 if (hash_result) {
                     content_hash = *hash_result;
                 } else {
-                    fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::platform::to_utf8(file_path).c_str());
+                    fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::global_pool().get(pup::platform::to_utf8(file_path)).data());
                 }
 
                 auto stat_result = pup::platform::stat_file(file_path);
@@ -560,7 +562,7 @@ auto serialize_graph_nodes(
             index.add_file(std::move(entry));
             path_id_insert(path_to_id, node_path, id);
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
-            auto node_path = String { graph.get_full_path(id) };
+            auto node_path = String { pup::global_pool().get(graph.get_full_path(id)) };
             auto& pool = pup::global_pool();
 
             auto entry = pup::index::FileEntry {
@@ -808,15 +810,15 @@ auto expand_implicit_deps(
                 continue;
             }
 
-            // v8: Reconstruct command string from template + operands
-            auto cmd_str = pup::index::get_command_string(index, *cmd);
-            auto cmd_node_id = graph.find_by_command(cmd_str);
+            auto cmd_str_id = pup::index::get_command_string(index, *cmd);
+            auto cmd_node_id = graph.find_by_command(pup::global_pool().get(cmd_str_id));
             if (!cmd_node_id) {
                 continue;
             }
 
             for (auto output_id : graph.get_outputs(*cmd_node_id)) {
-                auto output_path = graph.get_full_path(output_id);
+                auto output_path_id = graph.get_full_path(output_id);
+                auto output_path = String { pup::global_pool().get(output_path_id) };
                 if (!output_path.empty()) {
                     if (!std::binary_search(added.begin(), added.end(), output_path)) {
                         auto pos = std::lower_bound(added.begin(), added.end(), output_path);
@@ -921,13 +923,13 @@ auto detect_new_commands(
             continue;
         }
 
-        auto cmd_str = graph.expand_instruction(id);
-        auto found = idx.find_command_by_command(cmd_str);
+        auto cmd_str_id = graph.expand_instruction(id);
+        auto found = idx.find_command_by_command(pup::global_pool().get(cmd_str_id));
         if (!found) {
             for (auto output_id : graph.get_outputs(id)) {
-                auto output_path = graph.get_full_path(output_id);
-                if (!output_path.empty()) {
-                    changed.push_back(std::move(output_path));
+                auto output_path_id = graph.get_full_path(output_id);
+                if (!pup::is_empty(output_path_id)) {
+                    changed.push_back(String { pup::global_pool().get(output_path_id) });
                 }
             }
             if (verbose) {
@@ -950,9 +952,8 @@ auto remove_stale_outputs(
 ) -> void
 {
     for (auto const& cmd : idx.commands()) {
-        // v8: Reconstruct command string from template + operands
-        auto cmd_str = pup::index::get_command_string(idx, cmd);
-        if (graph.find_by_command(cmd_str)) {
+        auto cmd_str_id = pup::index::get_command_string(idx, cmd);
+        if (graph.find_by_command(pup::global_pool().get(cmd_str_id))) {
             continue;
         }
 
@@ -1102,7 +1103,7 @@ auto build_single_variant(
         auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
-        auto upstream_files = Vec<String> {};
+        auto upstream_files = Vec<std::string_view> {};
         if (opts.include_all_deps && !scopes.empty()) {
             upstream_files = collect_upstream_files(ctx.graph(), scopes);
         }
@@ -1283,7 +1284,7 @@ auto build_single_variant(
         } else if (!opts.verbose && !opts.dry_run) {
             auto lock = std::lock_guard { progress_mutex };
             progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
-            printf("\r%s ", pup::exec::render_simple(progress, variant_name).c_str());
+            printf("\r%s ", pup::global_pool().get(pup::exec::render_simple(progress, variant_name)).data());
             std::fflush(stdout);
         }
     });

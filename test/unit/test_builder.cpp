@@ -18,6 +18,7 @@ namespace fs = std::filesystem;
 
 namespace {
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
 } // namespace
 
 namespace {
@@ -371,13 +372,13 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
     for (auto id : commands) {
         auto const* node = graph.get_command_node(id);
         auto cmd_str = expand_instruction(graph.graph(), id);
-        if (node && cmd_str.find("-o app") != std::string_view::npos) {
+        if (node && sv(cmd_str).find("-o app") != std::string_view::npos) {
             auto inputs = graph.get_inputs(id);
             // Should have at least 2 .o inputs (may also have Tupfile as sticky)
             auto o_count = 0;
             for (auto input_id : inputs) {
                 auto const* input_node = graph.get_file_node(input_id);
-                if (input_node && graph.get_full_path(input_node->id).find(".o") != std::string::npos) {
+                if (input_node && sv(graph.get_full_path(input_node->id)).find(".o") != std::string::npos) {
                     ++o_count;
                 }
             }
@@ -575,9 +576,9 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
         auto outputs = graph.get_outputs(id);
         for (auto out_id : outputs) {
             auto const* node = graph.get_file_node(out_id);
-            if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
+            if (node && sv(graph.get_full_path(node->id)).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (graph.get_full_path(node->id).find("baz.o") != std::string::npos) {
+                if (sv(graph.get_full_path(node->id)).find("baz.o") != std::string::npos) {
                     has_baz = true;
                 }
             }
@@ -640,9 +641,9 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
         auto outputs = graph.get_outputs(id);
         for (auto out_id : outputs) {
             auto const* node = graph.get_file_node(out_id);
-            if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
+            if (node && sv(graph.get_full_path(node->id)).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (graph.get_full_path(node->id).find("test_") != std::string::npos) {
+                if (sv(graph.get_full_path(node->id)).find("test_") != std::string::npos) {
                     has_test = true;
                 }
             }
@@ -709,9 +710,9 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
         auto outputs = graph.get_outputs(id);
         for (auto out_id : outputs) {
             auto const* node = graph.get_file_node(out_id);
-            if (node && graph.get_full_path(node->id).find(".o") != std::string::npos) {
+            if (node && sv(graph.get_full_path(node->id)).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (graph.get_full_path(node->id).find("helper_impl") != std::string::npos) {
+                if (sv(graph.get_full_path(node->id)).find("helper_impl") != std::string::npos) {
                     has_helper = true;
                 }
             }
@@ -792,7 +793,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     for (auto id : graph.nodes_of_type(NodeType::Command)) {
         auto const* node = graph.get_command_node(id);
         auto cmd_str = expand_instruction(graph.graph(), id);
-        if (node && cmd_str.find("compile kernel.c") != std::string_view::npos) {
+        if (node && sv(cmd_str).find("compile kernel.c") != std::string_view::npos) {
             auto order_only = graph.get_order_only(id);
             // Should have config.h as order-only
             found = !order_only.empty();
@@ -881,7 +882,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     for (auto id : graph.nodes_of_type(NodeType::Command)) {
         auto const* node = graph.get_command_node(id);
         auto cmd_str = expand_instruction(graph.graph(), id);
-        if (node && cmd_str.find("compile") != std::string_view::npos) {
+        if (node && sv(cmd_str).find("compile") != std::string_view::npos) {
             auto order_only = graph.get_order_only(id);
             if (!order_only.empty()) {
                 found_order_only = true;
@@ -937,7 +938,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto const* node = graph.get_file_node(generated[0]);
     REQUIRE(node != nullptr);
     // Output should be under build-variant/src/main.o or absolute path
-    CHECK(graph.get_full_path(node->id).find("main.o") != std::string::npos);
+    CHECK(sv(graph.get_full_path(node->id)).find("main.o") != std::string::npos);
 }
 
 // =============================================================================
@@ -988,9 +989,9 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     auto found_header = false;
     for (auto id : files) {
         auto const* node = graph.get_file_node(id);
-        if (node && graph.get_full_path(node->id).find("common.h") != std::string::npos) {
+        if (node && sv(graph.get_full_path(node->id)).find("common.h") != std::string::npos) {
             // Path should be normalized to include/common.h
-            CHECK(graph.get_full_path(node->id) == "include/common.h");
+            CHECK(sv(graph.get_full_path(node->id)) =="include/common.h");
             found_header = true;
             break;
         }
@@ -1037,7 +1038,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     FileNode const* helpers_node = nullptr;
     for (auto id : files) {
         auto const* node = graph.get_file_node(id);
-        if (node && graph.get_full_path(node->id).find("helpers.c") != std::string::npos) {
+        if (node && sv(graph.get_full_path(node->id)).find("helpers.c") != std::string::npos) {
             helpers_node = node;
             break;
         }
@@ -1122,10 +1123,10 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     // The full path is source-root-relative: "src/main.o"
     // Variant mapping (to "build-variant/src/main.o") is applied at command expansion time
     auto full_path = graph.get_full_path(output_node->id);
-    CHECK(full_path == "src/main.o");
+    CHECK(sv(full_path) == "src/main.o");
 
     // It should NOT be an absolute path
-    CHECK(full_path[0] != '/');
+    CHECK(sv(full_path)[0] != '/');
 }
 
 TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "[e2e][builder][variant][critical]")
@@ -1187,7 +1188,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     // The output path is source-root-relative: "boot/boot.hex"
     auto boot_hex_path = graph.get_full_path(boot_hex_node->id);
-    CHECK(boot_hex_path == "boot/boot.hex");
+    CHECK(sv(boot_hex_path) == "boot/boot.hex");
 
     // Second Tupfile: output/hex/Tupfile references ../../boot/boot.hex (source-relative)
     auto tupfile2 = Tupfile {};
@@ -1212,7 +1213,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     for (auto id : commands) {
         auto const* node = graph.get_command_node(id);
         auto cmd_str = expand_instruction(graph.graph(), id);
-        if (node && cmd_str.find("srec_cat") != std::string_view::npos) {
+        if (node && sv(cmd_str).find("srec_cat") != std::string_view::npos) {
             srec_cmd = node;
             break;
         }
@@ -1294,7 +1295,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
 
     // Output is stored at variant-mapped path (via walk_to_file_node with variant_output_dir)
     auto full_path = graph.get_full_path(output_node->id);
-    CHECK(full_path == "build/sub/dir/out.txt");
+    CHECK(sv(full_path) == "build/sub/dir/out.txt");
 }
 
 // =============================================================================
@@ -1346,9 +1347,9 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
 
     // At root, paths should be direct (no ../ prefixes)
     auto cmd_str = expand_instruction(graph.graph(), commands[0]);
-    CHECK(cmd_str.find("../") == std::string_view::npos);
-    CHECK(cmd_str.find("-c main.c") != std::string_view::npos);
-    CHECK(cmd_str.find("-o main.o") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("../") == std::string_view::npos);
+    CHECK(sv(cmd_str).find("-c main.c") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("-o main.o") != std::string_view::npos);
 }
 
 TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][builder][paths]")
@@ -1398,9 +1399,9 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
 
     // Command should use "add.c" not "../../src/lib/add.c"
     auto cmd_str = expand_instruction(graph.graph(), commands[0]);
-    CHECK(cmd_str.find("../../src/lib/add.c") == std::string_view::npos);
-    CHECK(cmd_str.find("-c add.c") != std::string_view::npos);
-    CHECK(cmd_str.find("-o add.o") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("../../src/lib/add.c") == std::string_view::npos);
+    CHECK(sv(cmd_str).find("-c add.c") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("-o add.o") != std::string_view::npos);
 }
 
 TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e][builder][paths]")
@@ -1454,10 +1455,10 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
 
     // Local file should be simplified, cross-directory uses root-relative path
     auto cmd_str = expand_instruction(graph.graph(), commands[0]);
-    INFO("Command: " << std::string { cmd_str });
-    CHECK(cmd_str.find("main.c") != std::string_view::npos);
+    INFO("Command: " << std::string { sv(cmd_str) });
+    CHECK(sv(cmd_str).find("main.c") != std::string_view::npos);
     // Cross-directory reference becomes root-relative: ../../src/util/helper.c
-    CHECK(cmd_str.find("src/util/helper.c") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("src/util/helper.c") != std::string_view::npos);
 }
 
 TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][paths][variant]")
@@ -1513,13 +1514,13 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     REQUIRE(cmd_node != nullptr);
 
     auto cmd_str = expand_instruction(graph.graph(), commands[0]);
-    INFO("Command: " << std::string { cmd_str });
+    INFO("Command: " << std::string { sv(cmd_str) });
 
     // Input should be simplified (just "add.c", not round-trip path)
-    CHECK(cmd_str.find("-c add.c") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("-c add.c") != std::string_view::npos);
 
     // Output should go to variant directory
-    CHECK(cmd_str.find("build/src/lib/add.o") != std::string_view::npos);
+    CHECK(sv(cmd_str).find("build/src/lib/add.o") != std::string_view::npos);
 }
 
 // =============================================================================
@@ -1584,6 +1585,6 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     // In variant build, output goes to build/src/..hidden
     // The key check is that "..hidden" is treated as a literal filename, not "../hidden"
     auto full_path = graph.get_full_path(output_node->id);
-    INFO("Full path: " << full_path);
-    CHECK(full_path == "build/src/..hidden");
+    INFO("Full path: " << std::string { sv(full_path) });
+    CHECK(sv(full_path) == "build/src/..hidden");
 }

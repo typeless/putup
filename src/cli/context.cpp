@@ -458,7 +458,7 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
         .vars = &vars,
         .config_vars = scoped_config,
         .tup_cwd = pool.intern(tup_cwd),
-        .tup_platform = pool.intern(pup::get_platform()),
+        .tup_platform = pup::get_platform(),
         .tup_arch = pool.intern(pup::ARCH),
         .tup_variantdir = pool.intern(tup_variantdir),
         .tup_variant_outputdir = pool.intern(tup_variantdir),

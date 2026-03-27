@@ -7,7 +7,6 @@
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/sorted_id_vec.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
@@ -243,6 +242,6 @@ private:
 /// @param cmd The command entry with instruction and operands
 /// @return The fully expanded command string
 [[nodiscard]]
-auto get_command_string(Index const& index, CommandEntry const& cmd) -> String;
+auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId;
 
 } // namespace pup::index

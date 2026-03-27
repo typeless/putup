@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/scheduler.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/metrics.hpp"
@@ -554,13 +555,15 @@ auto Scheduler::build_incremental(
     Vec<StringId> const& changed_files
 ) -> Result<BuildStats>
 {
+    auto& pool = global_pool();
+
     // Build temporary path-to-NodeId map for changed file lookup
     // This is O(n) scan but only done once per incremental build
-    auto path_to_id = std::vector<std::pair<String, NodeId>> {};
+    auto path_to_id = std::vector<std::pair<std::string_view, NodeId>> {};
     for (auto id : graph.all_nodes()) {
-        auto path = graph.get_full_path(id);
-        if (!path.empty()) {
-            path_to_id.emplace_back(std::move(path), id);
+        auto path_id = graph.get_full_path(id);
+        if (!is_empty(path_id)) {
+            path_to_id.emplace_back(pool.get(path_id), id);
         }
     }
     std::sort(path_to_id.begin(), path_to_id.end());
@@ -568,8 +571,6 @@ auto Scheduler::build_incremental(
     // Find all nodes affected by changes
     auto affected = NodeIdMap32 {};
     auto affected_vec = Vec<NodeId> {};
-
-    auto& pool = global_pool();
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
         auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
@@ -1196,25 +1197,27 @@ auto Scheduler::Impl::execute_job(
     result.success = (cmd_result->exit_code == 0);
     result.duration = cmd_result->duration;
 
-    auto output_buf = String {};
-    if (!cmd_result->stdout_output.empty()) {
-        output_buf = cmd_result->stdout_output;
+    auto stdout_sv = pool.get(cmd_result->stdout_output);
+    auto stderr_sv = pool.get(cmd_result->stderr_output);
+    auto output_buf = Buf {};
+    if (!stdout_sv.empty()) {
+        output_buf += stdout_sv;
     }
-    if (!cmd_result->stderr_output.empty()) {
+    if (!stderr_sv.empty()) {
         if (!output_buf.empty()) {
             output_buf += '\n';
         }
-        output_buf += cmd_result->stderr_output;
+        output_buf += stderr_sv;
     }
     if (!output_buf.empty()) {
-        result.output = pool.intern(output_buf);
+        result.output = output_buf.intern(pool);
     }
 
     // Discover implicit dependencies from .d files (if command succeeded)
     if (result.success) {
         // For generated rules with inject_implicit_deps, parse stdout as depfile
-        if (job.inject_implicit_deps && !cmd_result->stdout_output.empty()) {
-            auto depfile_result = parser::parse_depfile(std::string_view { cmd_result->stdout_output });
+        if (job.inject_implicit_deps && !stdout_sv.empty()) {
+            auto depfile_result = parser::parse_depfile(stdout_sv);
             if (depfile_result) {
                 for (auto dep_id : depfile_result->dependencies) {
                     result.discovered_deps.push_back(dep_id);
@@ -1280,26 +1283,24 @@ auto Scheduler::build_job_list(
     for (auto id : topo_result.order) {
         auto const* node = graph.get_file_node(id);
         if (node && node->type == NodeType::Ghost && !graph.get_outputs(id).empty()) {
-            auto path = graph.get_full_path(id);
-            // Check if file exists - if so, it's a valid input (not missing)
+            auto path_id = graph.get_full_path(id);
+            auto path = pool.get(path_id);
             auto build_root_name = graph.get_build_root_name();
             auto file_path_sv = pool.get(pup::path::join(output_root_sv, path));
-            // Strip build prefix from path if present (for consistent file lookup)
             auto lookup_path = path;
-            auto build_prefix = String { build_root_name };
+            auto build_prefix = Buf {};
+            build_prefix += build_root_name;
             build_prefix += '/';
-            if (!build_root_name.empty() && path.starts_with(build_prefix)) {
+            if (!build_root_name.empty() && path.starts_with(build_prefix.view())) {
                 lookup_path = path.substr(build_prefix.size());
                 file_path_sv = pool.get(pup::path::join(output_root_sv, lookup_path));
             }
             if (pup::platform::exists(file_path_sv)) {
-                continue; // File exists, not a missing input
+                continue;
             }
-            return make_error<Vec<BuildJob>>(
-                ErrorCode::ParseError,
-                "Missing input file (unresolved ghost): " + path
-                    + "\n  Hint: try building with -a to include upstream dependencies"
-            );
+            auto err = Buf {};
+            err.fmt("Missing input file (unresolved ghost): {}\n  Hint: try building with -a to include upstream dependencies", path);
+            return make_error<Vec<BuildJob>>(ErrorCode::ParseError, err.view());
         }
     }
 
@@ -1320,9 +1321,11 @@ auto Scheduler::build_job_list(
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
         auto source_dir = get_source_dir(graph.graph(), id);
-        auto working_dir = String { source_root_sv };
+        auto working_dir_id = StringId::Empty;
         if (!source_dir.empty()) {
-            working_dir = String { pool.get(pup::path::join(working_dir, source_dir)) };
+            working_dir_id = pup::path::join(source_root_sv, source_dir);
+        } else {
+            working_dir_id = pool.intern(source_root_sv);
         }
 
         // Check if this is a generated rule that captures stdout
@@ -1338,8 +1341,8 @@ auto Scheduler::build_job_list(
         }
 
         // Expand command from instruction pattern + operands
-        auto cmd_str = expand_instruction(graph.graph(), id, cache, source_root_sv, config_root_sv);
-        auto display_sv = get_display_str(graph.graph(), id);
+        auto cmd_id = expand_instruction(graph.graph(), id, cache, source_root_sv, config_root_sv);
+        auto display_id = node->display;
 
         auto exported_ids = Vec<StringId> {};
         exported_ids.reserve(node->exported_vars.size());
@@ -1350,14 +1353,11 @@ auto Scheduler::build_job_list(
         // Evaluate guards - command only executes if ALL guards are satisfied
         auto guard_active = graph::is_guard_satisfied(graph.graph(), *node);
 
-        auto cmd_id = pool.intern(cmd_str);
-        auto display_id = pool.intern(display_sv);
-
         auto job = BuildJob {
             .id = id,
             .command = cmd_id,
             .display = is_empty(display_id) ? cmd_id : display_id,
-            .working_dir = pool.intern(working_dir),
+            .working_dir = working_dir_id,
             .inputs = {},
             .outputs = {},
             .order_only_inputs = {},
@@ -1371,16 +1371,16 @@ auto Scheduler::build_job_list(
         // Collect input paths
         for (auto input_id : graph.get_inputs(id)) {
             auto input_path = graph.get_full_path(input_id);
-            if (!input_path.empty()) {
-                job.inputs.push_back(pool.intern(input_path));
+            if (!is_empty(input_path)) {
+                job.inputs.push_back(input_path);
             }
         }
 
         // Collect output paths
         for (auto output_id : graph.get_outputs(id)) {
             auto output_path = graph.get_full_path(output_id);
-            if (!output_path.empty()) {
-                job.outputs.push_back(pool.intern(output_path));
+            if (!is_empty(output_path)) {
+                job.outputs.push_back(output_path);
             }
         }
 
@@ -1393,17 +1393,16 @@ auto Scheduler::build_job_list(
             }
 
             if (oi_node->type == NodeType::Group) {
-                // Group nodes: collect member file paths
                 for (auto member_id : graph.get_inputs(oi_id)) {
                     auto member_path = graph.get_full_path(member_id);
-                    if (!member_path.empty()) {
-                        job.order_only_inputs.push_back(pool.intern(member_path));
+                    if (!is_empty(member_path)) {
+                        job.order_only_inputs.push_back(member_path);
                     }
                 }
             } else {
                 auto oi_path = graph.get_full_path(oi_id);
-                if (!oi_path.empty()) {
-                    job.order_only_inputs.push_back(pool.intern(oi_path));
+                if (!is_empty(oi_path)) {
+                    job.order_only_inputs.push_back(oi_path);
                 }
             }
         }

@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/exec/runner.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
@@ -75,8 +76,8 @@ auto CommandRunner::run_with_output(
 
     auto result = CommandResult {};
     result.exit_code = platform_result->exit_code;
-    result.stdout_output = String { pup::global_pool().get(platform_result->stdout_output) };
-    result.stderr_output = String { pup::global_pool().get(platform_result->stderr_output) };
+    result.stdout_output = platform_result->stdout_output;
+    result.stderr_output = platform_result->stderr_output;
     result.duration = platform_result->duration;
     result.timed_out = platform_result->timed_out;
     result.signaled = platform_result->signaled;
@@ -107,10 +108,11 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
     return merged;
 }
 
-auto parse_command(std::string_view command) -> Vec<String>
+auto parse_command(std::string_view command) -> Vec<StringId>
 {
-    auto result = Vec<String> {};
-    auto current = String {};
+    auto& pool = pup::global_pool();
+    auto result = Vec<StringId> {};
+    auto current = Buf {};
     auto in_single_quote = false;
     auto in_double_quote = false;
     auto escape_next = false;
@@ -139,7 +141,7 @@ auto parse_command(std::string_view command) -> Vec<String>
 
         if (std::isspace(static_cast<unsigned char>(c)) && !in_single_quote && !in_double_quote) {
             if (!current.empty()) {
-                result.push_back(std::move(current));
+                result.push_back(current.intern(pool));
                 current.clear();
             }
             continue;
@@ -149,14 +151,15 @@ auto parse_command(std::string_view command) -> Vec<String>
     }
 
     if (!current.empty()) {
-        result.push_back(std::move(current));
+        result.push_back(current.intern(pool));
     }
 
     return result;
 }
 
-auto shell_quote(std::string_view str) -> String
+auto shell_quote(std::string_view str) -> StringId
 {
+    auto& pool = pup::global_pool();
     auto needs_quoting = false;
     for (auto c : str) {
         if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-' && c != '.' && c != '/' && c != ':' && c != '@') {
@@ -166,20 +169,21 @@ auto shell_quote(std::string_view str) -> String
     }
 
     if (!needs_quoting) {
-        return String { str };
+        return pool.intern(str);
     }
 
-    auto result = String { "'" };
+    auto buf = Buf {};
+    buf += '\'';
     for (auto c : str) {
         if (c == '\'') {
-            result += "'\"'\"'";
+            buf += "'\"'\"'";
         } else {
-            result += c;
+            buf += c;
         }
     }
-    result += '\'';
+    buf += '\'';
 
-    return result;
+    return buf.intern(pool);
 }
 
 } // namespace pup::exec

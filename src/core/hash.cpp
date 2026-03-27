@@ -2,7 +2,10 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/hash.hpp"
+#include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/metrics.hpp"
+#include "pup/core/string_pool.hpp"
 
 extern "C" {
 #include "sha256/sha256.h"
@@ -101,7 +104,9 @@ auto sha256_file(std::string_view path) -> Result<Hash256>
 
     auto file = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
-        return make_error<Hash256>(ErrorCode::IoError, String { "Failed to open file: " } + path);
+        auto buf = Buf {};
+        buf.fmt("Failed to open file: {}", path);
+        return make_error<Hash256>(ErrorCode::IoError, buf.view());
     }
 
     auto state = sha256_init();
@@ -115,10 +120,13 @@ auto sha256_file(std::string_view path) -> Result<Hash256>
     CloseHandle(file);
 #else
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    auto path_str = String { path };
-    auto fd = ::open(path_str.c_str(), O_RDONLY);
+    auto path_buf = Buf {};
+    path_buf += path;
+    auto fd = ::open(path_buf.c_str(), O_RDONLY);
     if (fd < 0) {
-        return make_error<Hash256>(ErrorCode::IoError, String { "Failed to open file: " } + path);
+        auto err = Buf {};
+        err.fmt("Failed to open file: {}", path);
+        return make_error<Hash256>(ErrorCode::IoError, err.view());
     }
 
     auto state = sha256_init();
@@ -144,19 +152,19 @@ auto sha256_file(std::string_view path) -> Result<Hash256>
     return sha256_finalize(state);
 }
 
-auto hash_to_hex(Hash256 const& hash) -> String
+auto hash_to_hex(Hash256 const& hash) -> StringId
 {
     static constexpr auto hex_chars = std::string_view { "0123456789abcdef" };
-    auto result = String {};
-    result.reserve(hash.size() * 2);
+    auto buf = Buf {};
+    buf.reserve(hash.size() * 2);
 
     for (auto const byte : hash) {
         auto const b = static_cast<unsigned char>(byte);
-        result.push_back(hex_chars[b >> 4]);
-        result.push_back(hex_chars[b & 0x0F]);
+        buf += hex_chars[b >> 4];
+        buf += hex_chars[b & 0x0F];
     }
 
-    return result;
+    return buf.intern(global_pool());
 }
 
 auto hex_to_hash(std::string_view hex) -> Result<Hash256>

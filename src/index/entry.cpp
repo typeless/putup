@@ -2,9 +2,11 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/entry.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cassert>
@@ -206,9 +208,10 @@ auto Index::rebuild_command_index() -> void
     command_index_.clear();
 
     for (auto i = std::size_t { 0 }; i < commands_.size(); ++i) {
-        auto cmd_str = get_command_string(*this, commands_[i]);
-        if (!cmd_str.empty()) {
-            auto str_id = command_strings_.intern(cmd_str);
+        auto cmd_id = get_command_string(*this, commands_[i]);
+        if (!is_empty(cmd_id)) {
+            auto cmd_sv = global_pool().get(cmd_id);
+            auto str_id = command_strings_.intern(cmd_sv);
             command_index_.insert(to_underlying(str_id), static_cast<std::uint32_t>(i));
         }
     }
@@ -279,14 +282,14 @@ auto Index::compute_paths() -> void
                     if (pp.empty()) {
                         file.path = file.name;
                     } else {
-                        auto combined = String {};
+                        auto combined = Buf {};
                         combined.reserve(pp.size() + 1 + name_sv.size());
                         combined += pp;
                         if (pp.back() != '/') {
                             combined += '/';
                         }
                         combined += name_sv;
-                        file.path = pool.intern(combined);
+                        file.path = combined.intern(pool);
                     }
                 } else {
                     file.path = file.name;
@@ -331,15 +334,14 @@ auto get_extension(std::string_view name) -> std::string_view
 
 } // namespace
 
-auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
+auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId
 {
     auto& pool = global_pool();
     auto tmpl = pool.get(cmd.instruction_pattern);
     if (tmpl.empty()) {
-        return {};
+        return StringId::Empty;
     }
 
-    // Get directory path for relativization (if command has a source dir)
     auto source_dir = std::string_view {};
     if (cmd.dir_id != 0) {
         auto const* dir = index.find_file_by_id(cmd.dir_id);
@@ -354,21 +356,21 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
         return pool.get(pup::make_source_relative(pool.get(path_id), source_to_root, source_dir));
     };
 
-    auto result = String {};
+    auto buf = Buf {};
     auto pos = std::size_t { 0 };
 
     while (pos < tmpl.size()) {
         auto percent = tmpl.find('%', pos);
 
         if (percent == std::string_view::npos) {
-            result += tmpl.substr(pos);
+            buf += tmpl.substr(pos);
             break;
         }
 
-        result += tmpl.substr(pos, percent - pos);
+        buf += tmpl.substr(pos, percent - pos);
 
         if (percent + 1 >= tmpl.size()) {
-            result += '%';
+            buf += '%';
             pos = percent + 1;
             continue;
         }
@@ -377,11 +379,10 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
         pos = percent + 2;
 
         if (flag == '%') {
-            result += '%';
+            buf += '%';
             continue;
         }
 
-        // Check for %Nf or %No patterns (N-th input/output)
         if (flag >= '0' && flag <= '9') {
             auto end = pos;
             while (end < tmpl.size() && tmpl[end] >= '0' && tmpl[end] <= '9') {
@@ -397,7 +398,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
                 if (num > 0 && static_cast<std::size_t>(num) <= cmd.inputs.size()) {
                     auto const* file = index.find_file_by_id(cmd.inputs[static_cast<std::size_t>(num - 1)]);
                     if (file) {
-                        result += get_relative_path(file->path);
+                        buf += get_relative_path(file->path);
                     }
                 }
                 pos = end + 1;
@@ -408,29 +409,28 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
                 if (num > 0 && static_cast<std::size_t>(num) <= cmd.outputs.size()) {
                     auto const* file = index.find_file_by_id(cmd.outputs[static_cast<std::size_t>(num - 1)]);
                     if (file) {
-                        result += get_relative_path(file->path);
+                        buf += get_relative_path(file->path);
                     }
                 }
                 pos = end + 1;
                 continue;
             }
 
-            result += '%';
+            buf += '%';
             pos = percent + 1;
             continue;
         }
 
-        // Standard pattern flags
         switch (flag) {
         case 'f':
         case 'i': {
             for (std::size_t i = 0; i < cmd.inputs.size(); ++i) {
                 if (i > 0) {
-                    result += ' ';
+                    buf += ' ';
                 }
                 auto const* file = index.find_file_by_id(cmd.inputs[i]);
                 if (file) {
-                    result += get_relative_path(file->path);
+                    buf += get_relative_path(file->path);
                 }
             }
             break;
@@ -439,7 +439,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.inputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.inputs[0]);
                 if (file) {
-                    result += get_basename(pool.get(file->path));
+                    buf += get_basename(pool.get(file->path));
                 }
             }
             break;
@@ -448,7 +448,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.inputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.inputs[0]);
                 if (file) {
-                    result += get_stem(pool.get(file->name));
+                    buf += get_stem(pool.get(file->name));
                 }
             }
             break;
@@ -457,7 +457,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.inputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.inputs[0]);
                 if (file) {
-                    result += get_extension(pool.get(file->name));
+                    buf += get_extension(pool.get(file->name));
                 }
             }
             break;
@@ -466,7 +466,7 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.outputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.outputs[0]);
                 if (file) {
-                    result += get_relative_path(file->path);
+                    buf += get_relative_path(file->path);
                 }
             }
             break;
@@ -475,32 +475,30 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
             if (!cmd.outputs.empty()) {
                 auto const* file = index.find_file_by_id(cmd.outputs[0]);
                 if (file) {
-                    result += get_basename(pool.get(file->path));
+                    buf += get_basename(pool.get(file->path));
                 }
             }
             break;
         }
         case 'd': {
-            // %d expands to the basename of the source directory (where Tupfile is)
-            // Must match graph::expand_instruction() exactly
             if (!source_dir.empty()) {
                 auto slash = source_dir.rfind('/');
                 if (slash != std::string_view::npos) {
-                    result += source_dir.substr(slash + 1);
+                    buf += source_dir.substr(slash + 1);
                 } else {
-                    result += source_dir;
+                    buf += source_dir;
                 }
             }
             break;
         }
         default:
-            result += '%';
-            result += flag;
+            buf += '%';
+            buf += flag;
             break;
         }
     }
 
-    return result;
+    return buf.intern(pool);
 }
 
 } // namespace pup::index

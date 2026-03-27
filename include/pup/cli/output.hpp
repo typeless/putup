@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -36,10 +35,10 @@ auto remove_empty_directories(
 
 /// Escape string for DOT format (graphviz)
 [[nodiscard]]
-auto escape_dot_label(std::string_view s) -> String;
+auto escape_dot_label(std::string_view s) -> StringId;
 
 /// Escape string for JSON (RFC 8259)
 [[nodiscard]]
-auto escape_json(std::string_view s) -> String;
+auto escape_json(std::string_view s) -> StringId;
 
 } // namespace pup::cli

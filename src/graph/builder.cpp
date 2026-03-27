@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/graph/builder.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path_utils.hpp"
@@ -220,12 +221,12 @@ auto transform_input_path(
     // Check if this input refers to a Generated/Ghost file under BUILD_ROOT_ID
     // If so, its full path includes the build root prefix (e.g., "build/include/header.h")
     if (auto node_id = graph.find_by_path(inp, BUILD_ROOT_ID)) {
-        auto full_path = graph.get_full_path(*node_id);
-        if (!full_path.empty()) {
-            if (!tc.canonical_cwd.empty() && full_path.starts_with("..")) {
-                return make_canonical_relative(tc, full_path);
+        auto full_path_sv = global_pool().get(graph.get_full_path(*node_id));
+        if (!full_path_sv.empty()) {
+            if (!tc.canonical_cwd.empty() && full_path_sv.starts_with("..")) {
+                return make_canonical_relative(tc, full_path_sv);
             }
-            return String { global_pool().get(pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str)) };
+            return String { global_pool().get(pup::make_source_relative(full_path_sv, tc.source_to_root, tc.current_dir_str)) };
         }
     }
 
@@ -667,14 +668,13 @@ auto expand_glob_pattern(
     auto glob = parser::Glob { pattern_path };
     auto build_root_name = ctx.graph->get_build_root_name();
     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
-        auto node_path = ctx.graph->get_full_path(id);
-        if (node_path.empty()) {
+        auto node_path_sv = global_pool().get(ctx.graph->get_full_path(id));
+        if (node_path_sv.empty()) {
             continue;
         }
-        // Strip build root prefix to get source-relative path for matching
-        auto match_path = String { global_pool().get(pup::strip_path_prefix(node_path, build_root_name)) };
+        auto match_path = String { global_pool().get(pup::strip_path_prefix(node_path_sv, build_root_name)) };
         if (glob.matches(match_path)) {
-            result.push_back(std::move(node_path));
+            result.push_back(String { node_path_sv });
         }
     }
 }
@@ -1539,14 +1539,20 @@ auto expand_rule(
     auto original_resolver = ctx.eval->resolve_order_only_group;
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
-                                         ) -> Vec<String> {
+                                         ) -> Vec<StringId> {
         if (std::binary_search(rule_order_only_group_names.begin(), rule_order_only_group_names.end(), name)) {
-            return { String { "%<" } + name + ">" };
+            auto marker = Buf {};
+            marker += "%<";
+            marker += name;
+            marker += '>';
+            return { marker.intern(global_pool()) };
         }
-        // Local group not in this rule's inputs — also defer
-        auto dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
-        auto key_str = String { dir } + "/" + name;
-        auto key_id = to_underlying(ctx.graph->intern(key_str));
+        auto dir = is_empty(ctx.current_dir) ? std::string_view { "." } : str(ctx.current_dir);
+        auto key_buf = Buf {};
+        key_buf += dir;
+        key_buf += '/';
+        key_buf += name;
+        auto key_id = to_underlying(ctx.graph->intern(key_buf.view()));
         auto const* node_id = state.group_nodes.find(key_id);
         if (node_id) {
             if (!deferred_group_ids.contains(*node_id)) {
@@ -1554,7 +1560,11 @@ auto expand_rule(
                 deferred_group_vec.push_back(*node_id);
             }
             sorted_insert(rule_order_only_group_names, name);
-            return { String { "%<" } + name + ">" };
+            auto marker = Buf {};
+            marker += "%<";
+            marker += name;
+            marker += '>';
+            return { marker.intern(global_pool()) };
         }
         return {};
     };
@@ -1701,13 +1711,15 @@ auto expand_rule(
                     if (existing_cmd && are_guards_mutually_exclusive(existing_cmd->guards, ctx.condition_stack)) {
                         continue;
                     }
-                    auto existing_cmd_str = expand_instruction(ctx.graph->graph(), existing_id, ctx.graph->path_cache());
-                    if (existing_cmd_str.empty()) {
-                        existing_cmd_str = "<unknown>";
+                    auto existing_cmd_id = expand_instruction(ctx.graph->graph(), existing_id, ctx.graph->path_cache());
+                    auto existing_cmd_sv = global_pool().get(existing_cmd_id);
+                    if (existing_cmd_sv.empty()) {
+                        existing_cmd_sv = "<unknown>";
                     }
-                    auto output_path = ctx.graph->get_full_path(*output_id);
-                    auto err_msg = String { "Unable to create output '" } + output_path + "' because it is already owned by command:\n  " + existing_cmd_str;
-                    return make_error<void>(ErrorCode::DuplicateNode, std::move(err_msg));
+                    auto output_path_sv = global_pool().get(ctx.graph->get_full_path(*output_id));
+                    auto err = Buf {};
+                    err.fmt("Unable to create output '{}' because it is already owned by command:\n  {}", output_path_sv, existing_cmd_sv);
+                    return make_error<void>(ErrorCode::DuplicateNode, err.view());
                 }
             }
         }
@@ -1818,9 +1830,9 @@ auto expand_inputs(
             auto gkey = to_underlying(ctx.graph->intern(str(pattern.group_name)));
             if (auto const* members = ctx.groups.find(gkey)) {
                 for (auto id : *members) {
-                    auto path = ctx.graph->get_full_path(id);
-                    if (!path.empty()) {
-                        result.push_back(std::move(path));
+                    auto path_sv = global_pool().get(ctx.graph->get_full_path(id));
+                    if (!path_sv.empty()) {
+                        result.push_back(String { path_sv });
                     }
                 }
             }
@@ -1941,9 +1953,8 @@ auto expand_outputs(
                 return pup::unexpected<Error>(node_id.error());
             }
 
-            // Get the full path from the node
-            auto full_path = ctx.graph->get_full_path(*node_id);
-            result.push_back(std::move(full_path));
+            auto full_path_sv = global_pool().get(ctx.graph->get_full_path(*node_id));
+            result.push_back(String { full_path_sv });
         }
     }
 
@@ -2471,17 +2482,17 @@ auto add_tupfile(
 
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
-                         ) -> Vec<String> {
+                         ) -> Vec<StringId> {
         auto gkey = to_underlying(ctx.graph->intern(name));
         auto const* members = ctx.groups.find(gkey);
         if (!members) {
             return {};
         }
-        auto paths = Vec<String> {};
+        auto paths = Vec<StringId> {};
         for (auto id : *members) {
-            auto path = ctx.graph->get_full_path(id);
-            if (!path.empty()) {
-                paths.push_back(std::move(path));
+            auto path_id = ctx.graph->get_full_path(id);
+            if (!is_empty(path_id)) {
+                paths.push_back(path_id);
             }
         }
         return paths;
@@ -2491,20 +2502,23 @@ auto add_tupfile(
     // This is for local group references (no directory prefix) - uses current directory
     // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
-                                    ) -> Vec<String> {
-        auto dir = is_empty(ctx.current_dir) ? String { "." } : String { str(ctx.current_dir) };
-        auto key_str = String { dir } + "/" + name;
-        auto key_id = to_underlying(ctx.graph->intern(key_str));
+                                    ) -> Vec<StringId> {
+        auto dir = is_empty(ctx.current_dir) ? std::string_view { "." } : str(ctx.current_dir);
+        auto key_buf = Buf {};
+        key_buf += dir;
+        key_buf += '/';
+        key_buf += name;
+        auto key_id = to_underlying(ctx.graph->intern(key_buf.view()));
         auto const* node_id = state.group_nodes.find(key_id);
         if (!node_id) {
             return {};
         }
-        auto paths = Vec<String> {};
+        auto paths = Vec<StringId> {};
         auto members = get_group_members(*ctx.graph, *node_id);
         for (auto id : members) {
-            auto path = ctx.graph->get_full_path(id);
-            if (!path.empty()) {
-                paths.push_back(std::move(path));
+            auto path_id = ctx.graph->get_full_path(id);
+            if (!is_empty(path_id)) {
+                paths.push_back(path_id);
             }
         }
         return paths;
@@ -2556,8 +2570,10 @@ auto resolve_deferred_order_only_edges(
 
         auto members = get_group_members(graph, edge.group_id);
         if (members.empty()) {
-            auto group_path = graph.get_full_path(edge.group_id);
-            state.warnings.push_back(intern(String { "order-only group " } + group_path + " has no members"));
+            auto group_path_sv = global_pool().get(graph.get_full_path(edge.group_id));
+            auto warn = Buf {};
+            warn.fmt("order-only group {} has no members", group_path_sv);
+            state.warnings.push_back(warn.intern(global_pool()));
             continue;
         }
 
@@ -2613,12 +2629,12 @@ auto resolve_deferred_order_only_edges(
 
         auto replacement = String {};
         for (auto id : members) {
-            auto p = graph.get_full_path(id);
-            if (!p.empty()) {
+            auto p_sv = global_pool().get(graph.get_full_path(id));
+            if (!p_sv.empty()) {
                 if (!replacement.empty()) {
                     replacement += ' ';
                 }
-                replacement += transform_output_path(tc, p);
+                replacement += transform_output_path(tc, p_sv);
             }
         }
 

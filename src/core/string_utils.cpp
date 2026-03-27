@@ -2,13 +2,17 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/string_utils.hpp"
+#include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 namespace pup::core {
 
-auto tokenize_shell_command(std::string_view cmd) -> Vec<String>
+auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
 {
-    auto args = Vec<String> {};
-    auto current = String {};
+    auto& pool = global_pool();
+    auto args = Vec<StringId> {};
+    auto current = Buf {};
     auto in_single_quote = false;
     auto in_double_quote = false;
     auto escaped = false;
@@ -43,7 +47,7 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<String>
                 in_double_quote = true;
             } else if (c == ' ' || c == '\t') {
                 if (!current.empty()) {
-                    args.push_back(std::move(current));
+                    args.push_back(current.intern(pool));
                     current.clear();
                 }
             } else {
@@ -52,7 +56,7 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<String>
         }
     }
     if (!current.empty()) {
-        args.push_back(std::move(current));
+        args.push_back(current.intern(pool));
     }
     return args;
 }

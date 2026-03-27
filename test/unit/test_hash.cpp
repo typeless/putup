@@ -2,7 +2,13 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/string_pool.hpp"
+
+namespace {
+auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
+} // namespace
 
 TEST_CASE("SHA-256 hash computation", "[hash]")
 {
@@ -10,21 +16,21 @@ TEST_CASE("SHA-256 hash computation", "[hash]")
     {
         auto const hash = pup::sha256("");
         auto const hex = pup::hash_to_hex(hash);
-        REQUIRE(hex == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        REQUIRE(sv(hex) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     }
 
     SECTION("hello world")
     {
         auto const hash = pup::sha256("hello world");
         auto const hex = pup::hash_to_hex(hash);
-        REQUIRE(hex == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+        REQUIRE(sv(hex) == "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
     }
 
     SECTION("Hello, pup!")
     {
         auto const hash = pup::sha256("Hello, pup!");
         auto const hex = pup::hash_to_hex(hash);
-        REQUIRE(hex == "7f46e18d14d4ae15927cb3cd6a2f831196e9a1bf4c4eb8ca362581cb741b9b54");
+        REQUIRE(sv(hex) == "7f46e18d14d4ae15927cb3cd6a2f831196e9a1bf4c4eb8ca362581cb741b9b54");
     }
 }
 
@@ -34,7 +40,7 @@ TEST_CASE("Hash to hex conversion", "[hash]")
     {
         auto const original = pup::sha256("test");
         auto const hex = pup::hash_to_hex(original);
-        auto const parsed = pup::hex_to_hash(hex);
+        auto const parsed = pup::hex_to_hash(sv(hex));
 
         REQUIRE(parsed.has_value());
         REQUIRE(pup::hash_equal(original, *parsed));

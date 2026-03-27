@@ -142,7 +142,8 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto node_path = ctx.graph().get_full_path(id);
+        auto node_path_id = ctx.graph().get_full_path(id);
+        auto node_path = global_pool().get(node_path_id);
         if (node_path.empty()) {
             continue;
         }
@@ -185,10 +186,10 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         }
 
         auto source_dir = graph::get_source_dir(ctx.graph().graph(), id);
-        auto dir = source_dir.empty() ? String { "." } : String { source_dir };
-        auto cmd = graph::expand_instruction(ctx.graph().graph(), id);
+        auto dir = source_dir.empty() ? std::string_view { "." } : source_dir;
+        auto cmd_id = graph::expand_instruction(ctx.graph().graph(), id);
 
-        auto line = expand_script_run(script_run, dir, cmd);
+        auto line = expand_script_run(script_run, dir, global_pool().get(cmd_id));
         printf("%s\n", line.c_str());
     }
 
@@ -202,6 +203,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
 auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 {
+    auto& pool = global_pool();
     auto scanner_registry = make_scanner_registry();
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -240,9 +242,9 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
             for (auto id : commands) {
                 if (ctx.graph().get_command_node(id)) {
                     auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
-                    auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-                    auto display = display_sv.empty() ? cmd_sv : String { display_sv };
-                    printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), display.c_str());
+                    auto cmd_str_id = graph::expand_instruction(ctx.graph().graph(), id);
+                    auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
+                    printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display.size()), display.data());
                 }
             }
         }
@@ -256,21 +258,21 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     for (auto id : ctx.graph().all_nodes()) {
         declared_nodes.set(id, 1);
 
-        auto get_label = [&]() -> String {
+        auto get_label = [&]() -> std::string_view {
             if (node_id::is_command(id)) {
                 auto const* cmd = ctx.graph().get_command_node(id);
                 if (!cmd) {
                     return {};
                 }
                 auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
-                auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-                return display_sv.empty() ? cmd_sv : String { display_sv };
+                auto cmd_str_id = graph::expand_instruction(ctx.graph().graph(), id);
+                return display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
             }
-            return ctx.graph().get_full_path(id);
+            return pool.get(ctx.graph().get_full_path(id));
         };
         auto label = escape_dot_label(get_label());
 
-        printf("  %s [label=\"%s\"];\n", format_node_id(id).c_str(), label.c_str());
+        printf("  %s [label=\"%s\"];\n", format_node_id(id).c_str(), pool.get(label).data());
 
         for (auto input_id : ctx.graph().get_inputs(id)) {
             printf("  %s -> %s;\n", format_node_id(input_id).c_str(), format_node_id(id).c_str());
@@ -301,8 +303,9 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                 if (!implicit_nodes.contains(from_id)) {
                     implicit_nodes.set(from_id, 1);
                     auto const* file = index->find_file_by_id(from_id);
-                    auto label = file ? escape_dot_label(pup::global_pool().get(file->path)) : format_node_id(from_id);
-                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).c_str(), label.c_str());
+                    auto label_id = file ? escape_dot_label(pool.get(file->path))
+                                        : pool.intern(format_node_id(from_id));
+                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).c_str(), pool.get(label_id).data());
                 }
             }
 
@@ -316,6 +319,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
 auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> int
 {
+    auto& pool = global_pool();
     auto scanner_registry = make_scanner_registry();
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -341,28 +345,28 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto source_file = String {};
+        auto source_file = std::string_view {};
         for (auto input_id : ctx.graph().get_inputs(id)) {
-            auto input_path = ctx.graph().get_full_path(input_id);
-            if (input_path.empty()) {
+            auto input_path_id = ctx.graph().get_full_path(input_id);
+            auto sv = pool.get(input_path_id);
+            if (sv.empty()) {
                 continue;
             }
-            auto sv = std::string_view { input_path };
             if (sv.ends_with(".c") || sv.ends_with(".cc") || sv.ends_with(".cpp") || sv.ends_with(".cxx") || sv.ends_with(".C") || sv.ends_with(".S") || sv.ends_with(".s")) {
-                source_file = input_path;
+                source_file = sv;
                 break;
             }
         }
 
-        auto output_file = String {};
+        auto output_file = std::string_view {};
         for (auto output_id : ctx.graph().get_outputs(id)) {
-            auto output_path = ctx.graph().get_full_path(output_id);
-            if (output_path.empty()) {
+            auto output_path_id = ctx.graph().get_full_path(output_id);
+            auto sv = pool.get(output_path_id);
+            if (sv.empty()) {
                 continue;
             }
-            auto sv = std::string_view { output_path };
             if (sv.ends_with(".o") || sv.ends_with(".obj")) {
-                output_file = output_path;
+                output_file = sv;
                 break;
             }
         }
@@ -390,8 +394,8 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             output_rel = pool.get(pup::path::relative(output_abs, working_dir));
         }
 
-        auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);
-        auto args = pup::core::tokenize_shell_command(cmd_sv);
+        auto cmd_str_id = graph::expand_instruction(ctx.graph().graph(), id);
+        auto args = pup::core::tokenize_shell_command(pool.get(cmd_str_id));
         if (args.empty()) {
             continue;
         }
@@ -402,20 +406,20 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         first = false;
 
         printf("  {\n");
-        printf("    \"directory\": \"%s\",\n", escape_json(working_dir).c_str());
+        printf("    \"directory\": \"%s\",\n", pool.get(escape_json(working_dir)).data());
 
         printf("    \"arguments\": [");
         for (std::size_t i = 0; i < args.size(); ++i) {
             if (i > 0) {
                 printf(", ");
             }
-            printf("\"%s\"", escape_json(args[i]).c_str());
+            printf("\"%s\"", pool.get(escape_json(pool.get(args[i]))).data());
         }
         printf("],\n");
 
-        printf("    \"file\": \"%s\"", escape_json(source_rel).c_str());
+        printf("    \"file\": \"%s\"", pool.get(escape_json(source_rel)).data());
         if (!output_rel.empty()) {
-            printf(",\n    \"output\": \"%s\"", escape_json(output_rel).c_str());
+            printf(",\n    \"output\": \"%s\"", pool.get(escape_json(output_rel)).data());
         }
         printf("\n  }");
     }
@@ -450,6 +454,7 @@ auto output_var_json(
     std::string_view variant_name
 ) -> int
 {
+    auto& pool = global_pool();
     printf("{\n");
     printf("  \"variant\": \"%.*s\",\n", static_cast<int>(variant_name.size()), variant_name.data());
     printf("  \"variables\": {\n");
@@ -461,8 +466,8 @@ auto output_var_json(
         }
         first_var = false;
 
-        printf("    \"%s\": {\n", escape_json(global_pool().get(history.name)).c_str());
-        printf("      \"value\": \"%s\",\n", escape_json(global_pool().get(history.final_value)).c_str());
+        printf("    \"%s\": {\n", pool.get(escape_json(global_pool().get(history.name))).data());
+        printf("      \"value\": \"%s\",\n", pool.get(escape_json(global_pool().get(history.final_value))).data());
         printf("      \"history\": [\n");
 
         auto first_assign = true;
@@ -474,10 +479,10 @@ auto output_var_json(
 
             auto op_str = parser::op_to_string(assign->op);
             printf("        {\n");
-            printf("          \"file\": \"%s\",\n", escape_json(global_pool().get(assign->filename)).c_str());
+            printf("          \"file\": \"%s\",\n", pool.get(escape_json(global_pool().get(assign->filename))).data());
             printf("          \"line\": %u,\n", assign->line);
             printf("          \"op\": \"%.*s\",\n", static_cast<int>(op_str.size()), op_str.data());
-            printf("          \"value\": \"%s\",\n", escape_json(global_pool().get(assign->value_after)).c_str());
+            printf("          \"value\": \"%s\",\n", pool.get(escape_json(global_pool().get(assign->value_after))).data());
             printf("          \"effective\": %s\n", assign->is_effective ? "true" : "false");
             printf("        }");
         }

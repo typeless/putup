@@ -107,7 +107,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
             for (auto id : ids) {
                 auto const* node = graph.get_file_node(id);
                 if (node)
-                    sum += graph.get_full_path(node->id).size();
+                    sum += pup::global_pool().get(graph.get_full_path(node->id)).size();
             }
             return sum;
         });
@@ -122,7 +122,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
             for (auto id : ids) {
                 auto const* node = graph.get_file_node(id);
                 if (node)
-                    sum += graph.get_full_path(node->id).size();
+                    sum += pup::global_pool().get(graph.get_full_path(node->id)).size();
             }
             return sum;
         });
@@ -137,7 +137,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
             for (auto id : ids) {
                 auto const* node = graph.get_file_node(id);
                 if (node)
-                    sum += graph.get_full_path(node->id).size();
+                    sum += pup::global_pool().get(graph.get_full_path(node->id)).size();
             }
             return sum;
         });

@@ -134,10 +134,11 @@ auto E2EFixture::operator=(E2EFixture&& other) noexcept -> E2EFixture&
 
 auto E2EFixture::run_pup(std::vector<std::string> const& args) -> PupResult
 {
+    auto& pool = global_pool();
     auto cmd = String { m_pup_binary.string() };
     for (auto const& arg : args) {
         cmd += " ";
-        cmd += exec::shell_quote(arg);
+        cmd += pool.get(exec::shell_quote(arg));
     }
 
     auto result = m_runner.run(cmd);
@@ -147,8 +148,8 @@ auto E2EFixture::run_pup(std::vector<std::string> const& args) -> PupResult
 
     return PupResult {
         .exit_code = result->exit_code,
-        .stdout_output = std::string(result->stdout_output),
-        .stderr_output = std::string(result->stderr_output),
+        .stdout_output = std::string { pool.get(result->stdout_output) },
+        .stderr_output = std::string { pool.get(result->stderr_output) },
     };
 }
 
@@ -240,11 +241,12 @@ auto E2EFixture::read_file(std::string_view path) const -> pup::String
 
 auto E2EFixture::run(std::string_view path, std::vector<std::string> const& args) -> ProcessResult
 {
+    auto& pool = global_pool();
     auto p = resolve_path(path);
     auto cmd = String { p.string() };
     for (auto const& arg : args) {
         cmd += " ";
-        cmd += exec::shell_quote(arg);
+        cmd += pool.get(exec::shell_quote(arg));
     }
 
     auto result = m_runner.run(cmd);
@@ -254,8 +256,8 @@ auto E2EFixture::run(std::string_view path, std::vector<std::string> const& args
 
     return ProcessResult {
         .exit_code = result->exit_code,
-        .stdout_output = std::string(result->stdout_output),
-        .stderr_output = std::string(result->stderr_output),
+        .stdout_output = std::string { pool.get(result->stdout_output) },
+        .stderr_output = std::string { pool.get(result->stderr_output) },
     };
 }
 
@@ -299,12 +301,13 @@ auto E2EFixture::run_pup_in_dir(
     std::string_view dir, std::vector<std::string> const& args
 ) -> PupResult
 {
+    auto& pool = global_pool();
     auto working_dir = resolve_path(dir);
 
     auto cmd = String { m_pup_binary.string() };
     for (auto const& arg : args) {
         cmd += " ";
-        cmd += exec::shell_quote(arg);
+        cmd += pool.get(exec::shell_quote(arg));
     }
 
     auto opts = exec::RunOptions {
@@ -319,8 +322,8 @@ auto E2EFixture::run_pup_in_dir(
 
     return PupResult {
         .exit_code = result->exit_code,
-        .stdout_output = std::string(result->stdout_output),
-        .stderr_output = std::string(result->stderr_output),
+        .stdout_output = std::string { pool.get(result->stdout_output) },
+        .stderr_output = std::string { pool.get(result->stderr_output) },
     };
 }
 
@@ -364,8 +367,8 @@ auto run_shell_fixture(std::string_view name) -> ProcessResult
 
     return ProcessResult {
         .exit_code = result->exit_code,
-        .stdout_output = std::string(result->stdout_output),
-        .stderr_output = std::string(result->stderr_output),
+        .stdout_output = std::string { global_pool().get(result->stdout_output) },
+        .stderr_output = std::string { global_pool().get(result->stderr_output) },
     };
 }
 

@@ -3,6 +3,8 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/cli/config_commands.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/topo.hpp"
 
@@ -10,6 +12,10 @@
 
 using namespace pup::graph;
 using pup::NodeType;
+
+namespace {
+auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
+} // namespace
 
 TEST_CASE("BuildGraph basic operations", "[graph]")
 {
@@ -97,8 +103,8 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(src_dir.has_value());
         REQUIRE(foo_file.has_value());
 
-        REQUIRE(graph.get_full_path(*src_dir) == "src");
-        REQUIRE(graph.get_full_path(*foo_file) == "src/foo.c");
+        REQUIRE(sv(graph.get_full_path(*src_dir)) =="src");
+        REQUIRE(sv(graph.get_full_path(*foo_file)) =="src/foo.c");
     }
 
     SECTION("get_full_path - deep hierarchy")
@@ -110,29 +116,29 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         auto d_dir = graph.add_file_node(FileNode { .type = NodeType::Directory, .name = graph.intern("d"), .parent_dir = *c_dir });
         auto file = graph.add_file_node(FileNode { .name = graph.intern("file.txt"), .parent_dir = *d_dir });
 
-        REQUIRE(graph.get_full_path(*a_dir) == "a");
-        REQUIRE(graph.get_full_path(*b_dir) == "a/b");
-        REQUIRE(graph.get_full_path(*c_dir) == "a/b/c");
-        REQUIRE(graph.get_full_path(*d_dir) == "a/b/c/d");
-        REQUIRE(graph.get_full_path(*file) == "a/b/c/d/file.txt");
+        REQUIRE(sv(graph.get_full_path(*a_dir)) =="a");
+        REQUIRE(sv(graph.get_full_path(*b_dir)) =="a/b");
+        REQUIRE(sv(graph.get_full_path(*c_dir)) =="a/b/c");
+        REQUIRE(sv(graph.get_full_path(*d_dir)) =="a/b/c/d");
+        REQUIRE(sv(graph.get_full_path(*file)) =="a/b/c/d/file.txt");
     }
 
     SECTION("get_full_path - name with path separator (no parent_dir)")
     {
         auto node = graph.add_file_node(FileNode { .name = graph.intern("legacy/path.c") });
-        REQUIRE(graph.get_full_path(*node) == "legacy/path.c");
+        REQUIRE(sv(graph.get_full_path(*node)) =="legacy/path.c");
     }
 
     SECTION("get_full_path - root level file")
     {
         auto file = graph.add_file_node(FileNode { .name = graph.intern("Makefile") });
-        REQUIRE(graph.get_full_path(*file) == "Makefile");
+        REQUIRE(sv(graph.get_full_path(*file)) =="Makefile");
     }
 
     SECTION("get_full_path - invalid node returns empty")
     {
-        REQUIRE(graph.get_full_path(0) == "");
-        REQUIRE(graph.get_full_path(9999) == "");
+        REQUIRE(sv(graph.get_full_path(0)) =="");
+        REQUIRE(sv(graph.get_full_path(9999)) =="");
     }
 
     SECTION("get_full_path - caching works")
@@ -145,8 +151,8 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         // Second call should hit cache
         auto path2 = graph.get_full_path(*file);
 
-        REQUIRE(path1 == "cached/test.c");
-        REQUIRE(path2 == "cached/test.c");
+        REQUIRE(sv(path1) =="cached/test.c");
+        REQUIRE(sv(path2) =="cached/test.c");
     }
 
     SECTION("invalidate_path_cache and clear_path_cache")
@@ -161,13 +167,13 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         // Invalidate single entry
         graph.invalidate_path_cache(*file);
         // Should still work (recomputes)
-        REQUIRE(graph.get_full_path(*file) == "dir/file.c");
+        REQUIRE(sv(graph.get_full_path(*file)) =="dir/file.c");
 
         // Clear entire cache
         graph.clear_path_cache();
         // Should still work (recomputes)
-        REQUIRE(graph.get_full_path(*dir) == "dir");
-        REQUIRE(graph.get_full_path(*file) == "dir/file.c");
+        REQUIRE(sv(graph.get_full_path(*dir)) =="dir");
+        REQUIRE(sv(graph.get_full_path(*file)) =="dir/file.c");
     }
 
     SECTION("add edges")
@@ -682,7 +688,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         REQUIRE(cmd != nullptr);
         REQUIRE(cmd->instruction_id != pup::StringId::Empty);
         REQUIRE(get_instruction_pattern(graph.graph(), *cmd_id) == "cp foo bar");
-        REQUIRE(expand_instruction(graph.graph(), *cmd_id) == "cp foo bar");
+        REQUIRE(sv(expand_instruction(graph.graph(), *cmd_id)) =="cp foo bar");
     }
 
     SECTION("command node with empty instruction_id")
@@ -759,7 +765,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "gcc -c foo.c -o foo.o");
+        CHECK(sv(result) =="gcc -c foo.c -o foo.o");
     }
 
     SECTION("%f with multiple inputs")
@@ -774,7 +780,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "gcc -c foo.c bar.c -o foo.o");
+        CHECK(sv(result) =="gcc -c foo.c bar.c -o foo.o");
     }
 
     SECTION("%b (basename of first input)")
@@ -788,7 +794,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo foo.c");
+        CHECK(sv(result) =="echo foo.c");
     }
 
     SECTION("%B (stem of first input)")
@@ -802,7 +808,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo foo");
+        CHECK(sv(result) =="echo foo");
     }
 
     SECTION("%e (extension of first input)")
@@ -816,7 +822,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo c");
+        CHECK(sv(result) =="echo c");
     }
 
     SECTION("%d (Tupfile directory name)")
@@ -832,7 +838,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo src");
+        CHECK(sv(result) =="echo src");
     }
 
     SECTION("%d with nested source_dir")
@@ -847,7 +853,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo baz");
+        CHECK(sv(result) =="echo baz");
     }
 
     SECTION("%O (basename of first output)")
@@ -861,7 +867,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo foo.o");
+        CHECK(sv(result) =="echo foo.o");
     }
 
     SECTION("%Nf (N-th input)")
@@ -875,7 +881,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "gcc foo.c bar.c");
+        CHECK(sv(result) =="gcc foo.c bar.c");
     }
 
     SECTION("%No (N-th output)")
@@ -896,7 +902,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo bar.o");
+        CHECK(sv(result) =="echo bar.o");
     }
 
     SECTION("%% escapes to literal percent")
@@ -908,7 +914,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "echo 100%");
+        CHECK(sv(result) =="echo 100%");
     }
 
     SECTION("no patterns returns verbatim")
@@ -920,7 +926,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result == "cp /src/file /dst/file");
+        CHECK(sv(result) =="cp /src/file /dst/file");
     }
 
     SECTION("empty instruction returns empty")
@@ -930,7 +936,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(graph.graph(), *cmd_id);
-        CHECK(result.empty());
+        CHECK(pup::is_empty(result));
     }
 }
 

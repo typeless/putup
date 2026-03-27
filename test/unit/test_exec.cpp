@@ -32,7 +32,7 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
         auto result = runner.run("echo hello");
         REQUIRE(result.has_value());
         REQUIRE(result->exit_code == 0);
-        REQUIRE(result->stdout_output == "hello\n");
+        REQUIRE(sv(result->stdout_output) =="hello\n");
     }
 
     SECTION("false command returns non-zero")
@@ -53,7 +53,7 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
     {
         auto result = runner.run("echo error >&2");
         REQUIRE(result.has_value());
-        REQUIRE(result->stderr_output == "error\n");
+        REQUIRE(sv(result->stderr_output) =="error\n");
     }
 
     SECTION("working directory")
@@ -63,7 +63,7 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
         REQUIRE(result.has_value());
         REQUIRE(result->exit_code == 0);
         // May have trailing newline and/or resolve to /private/tmp on macOS
-        REQUIRE(result->stdout_output.find("tmp") != std::string::npos);
+        REQUIRE(sv(result->stdout_output).find("tmp") != std::string_view::npos);
     }
 
     SECTION("environment variable")
@@ -74,7 +74,7 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
         };
         auto result = runner.run("echo $MY_TEST_VAR", opts);
         REQUIRE(result.has_value());
-        REQUIRE(result->stdout_output == "hello123\n");
+        REQUIRE(sv(result->stdout_output) =="hello123\n");
     }
 }
 
@@ -140,33 +140,33 @@ TEST_CASE("parse_command", "[exec]")
     {
         auto args = parse_command("echo hello world");
         REQUIRE(args.size() == 3);
-        REQUIRE(args[0] == "echo");
-        REQUIRE(args[1] == "hello");
-        REQUIRE(args[2] == "world");
+        REQUIRE(sv(args[0]) =="echo");
+        REQUIRE(sv(args[1]) =="hello");
+        REQUIRE(sv(args[2]) =="world");
     }
 
     SECTION("single quotes")
     {
         auto args = parse_command("echo 'hello world'");
         REQUIRE(args.size() == 2);
-        REQUIRE(args[0] == "echo");
-        REQUIRE(args[1] == "hello world");
+        REQUIRE(sv(args[0]) =="echo");
+        REQUIRE(sv(args[1]) =="hello world");
     }
 
     SECTION("double quotes")
     {
         auto args = parse_command("echo \"hello world\"");
         REQUIRE(args.size() == 2);
-        REQUIRE(args[0] == "echo");
-        REQUIRE(args[1] == "hello world");
+        REQUIRE(sv(args[0]) =="echo");
+        REQUIRE(sv(args[1]) =="hello world");
     }
 
     SECTION("escaped spaces")
     {
         auto args = parse_command("echo hello\\ world");
         REQUIRE(args.size() == 2);
-        REQUIRE(args[0] == "echo");
-        REQUIRE(args[1] == "hello world");
+        REQUIRE(sv(args[0]) =="echo");
+        REQUIRE(sv(args[1]) =="hello world");
     }
 
     SECTION("empty input")
@@ -186,25 +186,25 @@ TEST_CASE("shell_quote", "[exec]")
 {
     SECTION("simple string needs no quoting")
     {
-        REQUIRE(shell_quote("hello") == "hello");
-        REQUIRE(shell_quote("file.txt") == "file.txt");
-        REQUIRE(shell_quote("/path/to/file") == "/path/to/file");
+        REQUIRE(sv(shell_quote("hello")) =="hello");
+        REQUIRE(sv(shell_quote("file.txt")) =="file.txt");
+        REQUIRE(sv(shell_quote("/path/to/file")) =="/path/to/file");
     }
 
     SECTION("string with spaces")
     {
-        REQUIRE(shell_quote("hello world") == "'hello world'");
+        REQUIRE(sv(shell_quote("hello world")) =="'hello world'");
     }
 
     SECTION("string with single quote")
     {
-        REQUIRE(shell_quote("it's") == "'it'\"'\"'s'");
+        REQUIRE(sv(shell_quote("it's")) =="'it'\"'\"'s'");
     }
 
     SECTION("string with special chars")
     {
-        REQUIRE(shell_quote("foo$bar") == "'foo$bar'");
-        REQUIRE(shell_quote("a;b") == "'a;b'");
+        REQUIRE(sv(shell_quote("foo$bar")) =="'foo$bar'");
+        REQUIRE(sv(shell_quote("a;b")) =="'a;b'");
     }
 }
 
@@ -473,7 +473,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         REQUIRE(result.has_value());
         REQUIRE(result->completed_jobs == 1);
-        REQUIRE(captured_output.find("exported_value_123") != std::string::npos);
+        REQUIRE(captured_output.find("exported_value_123") != std::string_view::npos);
 
         pup::platform::unset_env("PUP_TEST_EXPORT_VAR");
     }
