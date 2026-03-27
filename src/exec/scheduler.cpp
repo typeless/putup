@@ -3,6 +3,7 @@
 
 #include "pup/exec/scheduler.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
@@ -12,14 +13,28 @@
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
 #include "pup/platform/file_io.hpp"
+#include "pup/platform/process.hpp"
 
 #include <algorithm>
 #include <chrono>
-#include <condition_variable>
 #include <cstdlib>
 #include <queue>
 #include <thread>
-#include <vector>
+
+#ifndef _WIN32
+#    include <cerrno>
+#    include <csignal>
+#    include <fcntl.h>
+#    include <poll.h>
+#    include <sys/wait.h>
+#    include <unistd.h>
+#    ifdef __APPLE__
+#        include <crt_externs.h>
+#        define environ (*_NSGetEnviron())
+#    else
+extern "C" char** environ; // NOLINT
+#    endif
+#endif
 
 namespace pup::exec {
 
@@ -247,6 +262,184 @@ auto collect_required_commands(
 
     return commands;
 }
+
+#ifndef _WIN32
+
+struct JobSlot {
+    pid_t pid = -1;
+    int stdout_fd = -1;
+    int stderr_fd = -1;
+    HeapBuf stdout_buf = {};
+    HeapBuf stderr_buf = {};
+    std::size_t job_index = 0;
+    std::chrono::steady_clock::time_point start_time = {};
+
+    auto active() const -> bool { return pid > 0; }
+
+    auto reset() -> void
+    {
+        pid = -1;
+        stdout_fd = -1;
+        stderr_fd = -1;
+        stdout_buf.clear();
+        stderr_buf.clear();
+        job_index = 0;
+    }
+};
+
+auto launch_job(
+    JobSlot& slot,
+    BuildJob const& job,
+    std::size_t job_idx,
+    StringId working_dir,
+    Vec<StringId> const& env_ids,
+    bool inherit_env
+) -> bool
+{
+    auto& pool = global_pool();
+
+    // Resolve all StringIds to owned strings BEFORE fork.
+    // After fork, we must not touch the StringPool (single-thread safety).
+    auto command_str = String { pool.get(job.command) };
+    auto working_dir_str = String { pool.get(working_dir) };
+
+    auto env_strings = pup::platform::build_env_strings(env_ids, inherit_env);
+    auto env_c_strs = Vec<String> {};
+    env_c_strs.reserve(env_strings.size());
+    for (auto s : env_strings) {
+        env_c_strs.push_back(String { pool.get(s) });
+    }
+
+    int stdout_pipe[2] = { -1, -1 };
+    int stderr_pipe[2] = { -1, -1 };
+
+    if (::pipe(stdout_pipe) < 0) {
+        return false;
+    }
+    if (::pipe(stderr_pipe) < 0) {
+        ::close(stdout_pipe[0]);
+        ::close(stdout_pipe[1]);
+        return false;
+    }
+
+    auto pid = ::fork();
+    if (pid < 0) {
+        ::close(stdout_pipe[0]);
+        ::close(stdout_pipe[1]);
+        ::close(stderr_pipe[0]);
+        ::close(stderr_pipe[1]);
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child process
+        ::dup2(stdout_pipe[1], STDOUT_FILENO);
+        ::close(stdout_pipe[0]);
+        ::close(stdout_pipe[1]);
+
+        ::dup2(stderr_pipe[1], STDERR_FILENO);
+        ::close(stderr_pipe[0]);
+        ::close(stderr_pipe[1]);
+
+        if (!working_dir_str.empty()) {
+            if (::chdir(working_dir_str.data()) < 0) {
+                ::_exit(127);
+            }
+        }
+
+        auto env_ptrs = Vec<char*> {};
+        env_ptrs.reserve(env_c_strs.size() + 1);
+        for (auto& s : env_c_strs) {
+            env_ptrs.push_back(s.data());
+        }
+        env_ptrs.push_back(nullptr);
+
+        // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
+        char* const argv[] = {
+            const_cast<char*>("/bin/sh"),
+            const_cast<char*>("-c"),
+            const_cast<char*>(command_str.data()),
+            nullptr
+        };
+        // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
+
+        if (inherit_env && env_ids.empty()) {
+            ::execv("/bin/sh", argv);
+        } else {
+            ::execve("/bin/sh", argv, env_ptrs.data());
+        }
+
+        ::_exit(127);
+    }
+
+    // Parent: close write ends, keep read ends
+    ::close(stdout_pipe[1]);
+    ::close(stderr_pipe[1]);
+
+    // Set read ends to non-blocking for poll()
+    ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
+    ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
+
+    slot.pid = pid;
+    slot.stdout_fd = stdout_pipe[0];
+    slot.stderr_fd = stderr_pipe[0];
+    slot.job_index = job_idx;
+    slot.start_time = std::chrono::steady_clock::now();
+
+    return true;
+}
+
+auto reap_slot(JobSlot& slot, int status) -> JobResult
+{
+    auto& pool = global_pool();
+    auto result = JobResult {};
+    result.id = 0;
+
+    if (WIFEXITED(status)) {
+        result.exit_code = WEXITSTATUS(status);
+        result.success = (result.exit_code == 0);
+    } else if (WIFSIGNALED(status)) {
+        result.exit_code = 128 + WTERMSIG(status);
+        result.success = false;
+    }
+
+    result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - slot.start_time
+    );
+
+    auto output_buf = HeapBuf {};
+    if (!slot.stdout_buf.empty()) {
+        output_buf.append(slot.stdout_buf.view());
+    }
+    if (!slot.stderr_buf.empty()) {
+        if (!output_buf.empty()) {
+            output_buf.append('\n');
+        }
+        output_buf.append(slot.stderr_buf.view());
+    }
+    if (!output_buf.empty()) {
+        result.output = pool.intern(output_buf.view());
+    }
+
+    if (slot.stdout_fd >= 0) {
+        ::close(slot.stdout_fd);
+    }
+    if (slot.stderr_fd >= 0) {
+        ::close(slot.stderr_fd);
+    }
+
+    slot.reset();
+    return result;
+}
+
+auto kill_slot(JobSlot& slot) -> void
+{
+    if (slot.active()) {
+        ::kill(slot.pid, SIGTERM);
+    }
+}
+
+#endif // !_WIN32
 
 } // namespace
 
@@ -532,155 +725,400 @@ auto Scheduler::execute_parallel(
         return impl_->execute_sequential(jobs, graph, env_cache);
     }
 
-    // Parallel execution with dependency-aware ready queue
-    auto mutex = std::mutex {};
-    auto cv = std::condition_variable {};
-    auto ready_queue = std::queue<std::size_t> {};
-    auto completed_count = std::size_t { 0 };
-    auto failed = std::atomic<bool> { false };
-    auto all_done = std::atomic<bool> { false };
+#ifdef _WIN32
+    // Windows: fall back to sequential (no fork/poll)
+    return impl_->execute_sequential(jobs, graph, env_cache);
+#else
 
-    // Build dependency map using graph edges (no path string matching needed)
+    auto& pool = global_pool();
+
+    // Build dependency map
     auto [in_degree, dependents] = build_dependency_map(jobs, graph);
 
-    // Validate no active job depends on a skipped job
     if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
         return pup::unexpected<Error>(result.error());
     }
 
-    // Count active jobs - inactive jobs never enter the queue
-    auto active_count = static_cast<std::size_t>(std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return j.guard_active; }));
+    auto active_count = static_cast<std::size_t>(
+        std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return j.guard_active; })
+    );
     impl_->stats.skipped_jobs += jobs.size() - active_count;
 
-    // If no jobs are active, we're done
     if (active_count == 0) {
         return {};
     }
 
-    // Only queue active jobs with no dependencies
+    auto ready_queue = std::queue<std::size_t> {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         if (in_degree[i] == 0 && jobs[i].guard_active) {
             ready_queue.push(i);
         }
     }
 
-    auto worker = [&]() {
-        auto runner = CommandRunner {};
-        if (!is_empty(impl_->options.source_root)) {
-            runner.set_working_dir(impl_->options.source_root);
-        }
-        if (impl_->options.timeout) {
-            runner.set_timeout(*impl_->options.timeout);
-        }
+    // Job slots -- one per concurrent child process.
+    // JobSlot is non-copyable/non-movable (HeapBuf), so allocate via new[].
+    auto max_jobs = std::min(impl_->options.jobs, active_count);
+    auto slots_storage = std::unique_ptr<JobSlot[]>(new JobSlot[max_jobs]); // NOLINT
+    auto* slots = slots_storage.get();
 
-        while (true) {
-            auto job_idx = std::size_t { 0 };
-            {
-                auto lock = std::unique_lock { mutex };
-                cv.wait(lock, [&] {
-                    // Wake up when: queue has ready jobs, OR all done, OR cancelled, OR failed
-                    return !ready_queue.empty() || all_done.load() || impl_->cancelled.load() || (failed.load() && !impl_->options.keep_going);
-                });
+    auto running = std::size_t { 0 };
+    auto finished_count = std::size_t { 0 };
+    auto failed = false;
 
-                if (impl_->cancelled.load() || (failed.load() && !impl_->options.keep_going)) {
-                    return;
+    // Pre-compute source/output roots for execute_job_pre/post
+    auto source_root_sv = pool.get(impl_->options.source_root);
+    auto output_root_sv = pool.get(impl_->options.output_root);
+    auto relative_output_root = pup::path::relative(output_root_sv, source_root_sv);
+    auto output_root_prefix = relative_output_root;
+
+    while (finished_count < active_count) {
+        // 1. Launch: fill empty slots from ready_queue
+        if (!failed || impl_->options.keep_going) {
+            for (auto s = std::size_t { 0 }; s < max_jobs; ++s) {
+                auto& slot = slots[s];
+                if (slot.active() || ready_queue.empty()) {
+                    continue;
                 }
 
-                if (ready_queue.empty()) {
-                    if (all_done.load()) {
-                        return;
+                auto job_idx = ready_queue.front();
+                auto const& job = jobs[job_idx];
+
+                // Pre-launch: ensure output directories exist (same as execute_job)
+                for (auto output_id : job.outputs) {
+                    auto output_sv = pool.get(output_id);
+                    auto output_path = pup::path::is_absolute(output_sv)
+                        ? String { output_sv }
+                        : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
+                    auto parent = pup::path::parent(output_path);
+                    if (!parent.empty()) {
+                        (void)pup::platform::create_directories(parent);
                     }
-                    continue; // Spurious wakeup, wait again
                 }
 
-                job_idx = ready_queue.front();
+                // Build env for this job
+                auto env_ids = Vec<StringId> {};
+                for (auto var_id : job.exported_vars) {
+                    auto var_sv = pool.get(var_id);
+                    if (auto it = env_cache_find(env_cache, var_sv); it != env_cache.end()) {
+                        auto entry = String { var_sv };
+                        entry += '=';
+                        entry += it->second;
+                        env_ids.push_back(pool.intern(entry));
+                    }
+                }
+
+                auto working_dir = job.working_dir;
+                if (is_empty(working_dir)) {
+                    working_dir = impl_->options.source_root;
+                }
+
+                if (impl_->options.dry_run) {
+                    // Dry run: don't fork, just report success
+                    ready_queue.pop();
+
+                    if (impl_->on_start) {
+                        impl_->on_start(job);
+                    }
+
+                    auto result = JobResult {
+                        .id = job.id,
+                        .success = true,
+                    };
+
+                    if (impl_->on_complete) {
+                        impl_->on_complete(job, result);
+                    }
+
+                    ++impl_->stats.completed_jobs;
+                    ++finished_count;
+                    impl_->stats.build_time += result.duration;
+
+                    for (auto dep_idx : dependents[job_idx]) {
+                        if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
+                            ready_queue.push(dep_idx);
+                        }
+                    }
+
+                    if (impl_->on_progress) {
+                        impl_->on_progress(finished_count, impl_->stats.total_jobs);
+                    }
+                    continue;
+                }
+
+                if (!launch_job(slot, job, job_idx, working_dir, env_ids, true)) {
+                    // Fork failed -- treat as job failure
+                    ready_queue.pop();
+
+                    if (impl_->on_start) {
+                        impl_->on_start(job);
+                    }
+
+                    auto result = JobResult {
+                        .id = job.id,
+                        .success = false,
+                        .output = pool.intern("Failed to launch process"),
+                    };
+
+                    if (impl_->on_complete) {
+                        impl_->on_complete(job, result);
+                    }
+
+                    ++impl_->stats.failed_jobs;
+                    ++finished_count;
+                    failed = true;
+
+                    if (impl_->on_progress) {
+                        impl_->on_progress(finished_count, impl_->stats.total_jobs);
+                    }
+                    continue;
+                }
+
                 ready_queue.pop();
+                ++running;
+
+                if (impl_->on_start) {
+                    impl_->on_start(job);
+                }
+            }
+        }
+
+        // If nothing is running and queue is empty, we're done
+        // (remaining jobs are blocked by failed dependencies)
+        if (running == 0) {
+            break;
+        }
+
+        // 2. Build pollfd array from active slots
+        auto poll_fds = Vec<pollfd> {};
+        poll_fds.reserve(running * 2);
+        struct PollMap {
+            std::size_t slot_idx;
+            bool is_stderr;
+        };
+        auto poll_map = Vec<PollMap> {};
+        poll_map.reserve(running * 2);
+
+        for (auto i = std::size_t { 0 }; i < max_jobs; ++i) {
+            if (!slots[i].active()) {
+                continue;
+            }
+            if (slots[i].stdout_fd >= 0) {
+                poll_fds.push_back(pollfd { .fd = slots[i].stdout_fd, .events = POLLIN, .revents = 0 });
+                poll_map.push_back(PollMap { .slot_idx = i, .is_stderr = false });
+            }
+            if (slots[i].stderr_fd >= 0) {
+                poll_fds.push_back(pollfd { .fd = slots[i].stderr_fd, .events = POLLIN, .revents = 0 });
+                poll_map.push_back(PollMap { .slot_idx = i, .is_stderr = true });
+            }
+        }
+
+        // Compute poll timeout from per-job timeouts
+        auto poll_timeout = -1;
+        if (impl_->options.timeout) {
+            auto now = std::chrono::steady_clock::now();
+            auto min_remaining = std::chrono::milliseconds::max();
+            for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
+                if (!slots[si].active()) {
+                    continue;
+                }
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - slots[si].start_time);
+                auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(*impl_->options.timeout) - elapsed;
+                if (remaining < min_remaining) {
+                    min_remaining = remaining;
+                }
+            }
+            poll_timeout = std::max(static_cast<int>(min_remaining.count()), 0);
+        }
+
+        // 3. Wait for I/O
+        auto poll_result = ::poll(poll_fds.data(), static_cast<nfds_t>(poll_fds.size()), poll_timeout);
+        if (poll_result < 0 && errno == EINTR) {
+            // Interrupted by signal -- check cancellation at top of next iteration
+        }
+
+        // 4. Drain ready pipes
+        if (poll_result > 0) {
+            char buf[4096];
+            for (auto i = std::size_t { 0 }; i < poll_fds.size(); ++i) {
+                if (!(poll_fds[i].revents & (POLLIN | POLLHUP))) {
+                    continue;
+                }
+                auto n = ::read(poll_fds[i].fd, buf, sizeof(buf));
+                if (n > 0) {
+                    auto& slot = slots[poll_map[i].slot_idx];
+                    auto data = std::string_view { buf, static_cast<std::size_t>(n) };
+                    if (poll_map[i].is_stderr) {
+                        slot.stderr_buf.append(data);
+                    } else {
+                        slot.stdout_buf.append(data);
+                    }
+                } else if (n == 0) {
+                    // EOF on this FD -- close it so we don't poll it again
+                    auto& slot = slots[poll_map[i].slot_idx];
+                    if (poll_map[i].is_stderr) {
+                        ::close(slot.stderr_fd);
+                        slot.stderr_fd = -1;
+                    } else {
+                        ::close(slot.stdout_fd);
+                        slot.stdout_fd = -1;
+                    }
+                }
+            }
+        }
+
+        // 5. Reap finished children
+        for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
+            auto& slot = slots[si];
+            if (!slot.active()) {
+                continue;
             }
 
+            // Check for timeout
+            if (impl_->options.timeout) {
+                auto elapsed = std::chrono::steady_clock::now() - slot.start_time;
+                if (elapsed >= *impl_->options.timeout) {
+                    ::kill(slot.pid, SIGKILL);
+                }
+            }
+
+            auto status = 0;
+            auto wpid = ::waitpid(slot.pid, &status, WNOHANG);
+            if (wpid <= 0) {
+                continue; // Still running
+            }
+
+            // Drain any remaining pipe data before closing
+            char buf[4096];
+            if (slot.stdout_fd >= 0) {
+                while (true) {
+                    auto n = ::read(slot.stdout_fd, buf, sizeof(buf));
+                    if (n > 0) {
+                        slot.stdout_buf.append(std::string_view { buf, static_cast<std::size_t>(n) });
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if (slot.stderr_fd >= 0) {
+                while (true) {
+                    auto n = ::read(slot.stderr_fd, buf, sizeof(buf));
+                    if (n > 0) {
+                        slot.stderr_buf.append(std::string_view { buf, static_cast<std::size_t>(n) });
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            auto job_idx = slot.job_index;
             auto const& job = jobs[job_idx];
 
-            if (impl_->on_start) {
-                auto lock = std::lock_guard { mutex };
-                impl_->on_start(job);
+            // Save stdout before reap clears the buffer (needed for depfile parsing)
+            auto stdout_copy = String { slot.stdout_buf.view() };
+
+            auto result = reap_slot(slot, status);
+            result.id = job.id;
+            --running;
+
+            // Discover implicit deps (same logic as execute_job)
+            if (result.success && job.inject_implicit_deps) {
+                auto depfile_result = parser::parse_depfile(stdout_copy);
+                if (depfile_result) {
+                    for (auto dep_id : depfile_result->dependencies) {
+                        result.discovered_deps.push_back(dep_id);
+                    }
+                    result.deps_for_command = job.parent_command;
+                }
             }
 
-            auto result = JobResult { impl_->execute_job(job, runner, env_cache) };
+            if (result.success) {
+                // Discover implicit deps from .d files
+                auto ext_check = [&](StringId output_id) {
+                    auto output_sv = pool.get(output_id);
+                    auto ext = pup::path::extension(output_sv);
+                    if (ext != ".o" && ext != ".obj") {
+                        return;
+                    }
+                    auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
+                    auto stem = String { pup::path::stem(output_sv) };
+                    stem += ".d";
+                    auto depfile_path = pup::path::join(base_path, stem);
+                    if (!pup::platform::exists(depfile_path)) {
+                        return;
+                    }
+                    auto depfile_result = parser::parse_depfile_path(depfile_path);
+                    if (depfile_result) {
+                        for (auto dep_id : depfile_result->dependencies) {
+                            result.discovered_deps.push_back(dep_id);
+                        }
+                        if (result.deps_for_command == INVALID_NODE_ID) {
+                            result.deps_for_command = job.id;
+                        }
+                    }
+                };
 
-            {
-                auto lock = std::lock_guard { mutex };
-
-                if (impl_->on_complete) {
-                    impl_->on_complete(job, result);
+                for (auto output_id : job.outputs) {
+                    ext_check(output_id);
                 }
+            }
 
-                if (result.success) {
-                    ++impl_->stats.completed_jobs;
-                } else {
-                    ++impl_->stats.failed_jobs;
-                    failed.store(true);
-                }
+            if (impl_->on_complete) {
+                impl_->on_complete(job, result);
+            }
 
-                ++completed_count;
-                impl_->stats.build_time += result.duration;
+            impl_->stats.build_time += result.duration;
 
-                if (impl_->on_progress) {
-                    impl_->on_progress(completed_count, impl_->stats.total_jobs);
-                }
-
-                // Queue active dependents whose dependencies are now satisfied
-                for (auto dependent_idx : dependents[job_idx]) {
-                    --in_degree[dependent_idx];
-                    if (in_degree[dependent_idx] == 0 && jobs[dependent_idx].guard_active) {
-                        ready_queue.push(dependent_idx);
+            if (result.success) {
+                ++impl_->stats.completed_jobs;
+                for (auto dep_idx : dependents[job_idx]) {
+                    if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
+                        ready_queue.push(dep_idx);
                     }
                 }
-
-                // Check if all active jobs are done
-                if (completed_count >= active_count) {
-                    all_done.store(true);
-                }
+            } else {
+                ++impl_->stats.failed_jobs;
+                failed = true;
             }
 
-            cv.notify_all();
+            ++finished_count;
+
+            if (impl_->on_progress) {
+                impl_->on_progress(finished_count, impl_->stats.total_jobs);
+            }
         }
-    };
 
-    // Start worker threads
-    auto threads = Vec<std::thread> {};
-    auto num_workers = std::min(impl_->options.jobs, jobs.size());
-    threads.reserve(num_workers);
-
-    for (auto i = std::size_t { 0 }; i < num_workers; ++i) {
-        threads.emplace_back(worker);
-    }
-
-    // Notify workers to start
-    cv.notify_all();
-
-    // Wait for completion
-    {
-        auto lock = std::unique_lock { mutex };
-        cv.wait(lock, [&] {
-            return all_done.load() || impl_->cancelled.load() || (failed.load() && !impl_->options.keep_going);
-        });
-    }
-
-    // Signal workers to exit
-    all_done.store(true);
-    cv.notify_all();
-
-    // Join threads
-    for (auto& t : threads) {
-        if (t.joinable()) {
-            t.join();
+        // 6. Check termination
+        if (impl_->cancelled.load() || (failed && !impl_->options.keep_going)) {
+            // Kill remaining children
+            for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
+                kill_slot(slots[si]);
+            }
+            // Reap all
+            for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
+                if (slots[si].active()) {
+                    auto status = 0;
+                    ::waitpid(slots[si].pid, &status, 0); // blocking
+                    if (slots[si].stdout_fd >= 0) {
+                        ::close(slots[si].stdout_fd);
+                    }
+                    if (slots[si].stderr_fd >= 0) {
+                        ::close(slots[si].stderr_fd);
+                    }
+                    slots[si].reset();
+                    --running;
+                }
+            }
+            break;
         }
     }
 
-    if (failed.load() && !impl_->options.keep_going) {
+    if (failed && !impl_->options.keep_going) {
         return make_error<void>(ErrorCode::CommandFailed, "Build failed");
     }
 
     return {};
+
+#endif // !_WIN32
 }
 
 auto Scheduler::Impl::execute_job(
