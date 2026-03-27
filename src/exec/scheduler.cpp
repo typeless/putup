@@ -307,8 +307,9 @@ auto launch_job(
 {
     auto& pool = global_pool();
 
-    // Resolve all StringIds to owned strings BEFORE fork.
-    // After fork, we must not touch the StringPool (single-thread safety).
+    // Resolve all StringIds to string_view BEFORE fork.
+    // After fork, pool storage is immutable (COW). Pool entries are
+    // null-terminated (HeapBuf guarantee), safe for POSIX C APIs.
     auto command_str = pool.get(job.command);
     auto working_dir_str = pool.get(working_dir);
 
@@ -1026,22 +1027,29 @@ auto Scheduler::execute_parallel(
             auto job_idx = slot.job_index;
             auto const& job = jobs[job_idx];
 
-            // Save stdout before reap clears the buffer (needed for depfile parsing)
-            auto stdout_copy = slot.stdout_buf.view();
+            // Parse depfile from stdout BEFORE reap clears the buffer
+            auto stdout_deps = Vec<StringId> {};
+            auto stdout_deps_cmd = INVALID_NODE_ID;
+            if (job.inject_implicit_deps && !slot.stdout_buf.empty()) {
+                auto depfile_result = parser::parse_depfile(slot.stdout_buf.view());
+                if (depfile_result) {
+                    for (auto dep_id : depfile_result->dependencies) {
+                        stdout_deps.push_back(dep_id);
+                    }
+                    stdout_deps_cmd = job.parent_command;
+                }
+            }
 
             auto result = reap_slot(slot, status);
             result.id = job.id;
             --running;
 
-            // Discover implicit deps (same logic as execute_job)
-            if (result.success && job.inject_implicit_deps) {
-                auto depfile_result = parser::parse_depfile(stdout_copy);
-                if (depfile_result) {
-                    for (auto dep_id : depfile_result->dependencies) {
-                        result.discovered_deps.push_back(dep_id);
-                    }
-                    result.deps_for_command = job.parent_command;
+            // Apply stdout-based deps collected before reap
+            if (!stdout_deps.empty()) {
+                for (auto dep_id : stdout_deps) {
+                    result.discovered_deps.push_back(dep_id);
                 }
+                result.deps_for_command = stdout_deps_cmd;
             }
 
             if (result.success) {
