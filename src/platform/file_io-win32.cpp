@@ -371,8 +371,8 @@ auto remove_all(std::string_view path) -> Result<void>
     auto entries = read_directory(path);
     if (entries) {
         for (auto const& e : *entries) {
-            auto child = pup::path::join(path, global_pool().get(e.name));
-            auto r = remove_all(child);
+            auto child_sv = global_pool().get(pup::path::join(path, global_pool().get(e.name)));
+            auto r = remove_all(child_sv);
             if (!r) {
                 return r;
             }
