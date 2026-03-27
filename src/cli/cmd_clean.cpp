@@ -3,9 +3,9 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
-#include "pup/core/buf.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
