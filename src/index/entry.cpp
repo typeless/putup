@@ -6,7 +6,6 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/path_utils.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cassert>

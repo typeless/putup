@@ -4,7 +4,6 @@
 #include "pup/exec/progress_display.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
 
