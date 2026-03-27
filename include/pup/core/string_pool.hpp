@@ -47,6 +47,10 @@ public:
     [[nodiscard]]
     auto size() const -> std::size_t;
 
+    /// Get total bytes of interned string content
+    [[nodiscard]]
+    auto bytes() const -> std::size_t;
+
     /// Clear all interned strings
     auto clear() -> void;
 

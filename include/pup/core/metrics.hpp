@@ -29,6 +29,10 @@ struct Metrics {
     // Command expansion stats
     std::size_t command_expansions = 0;
 
+    // String pool stats (populated at collection time, not accumulated)
+    std::size_t pool_strings = 0;
+    std::size_t pool_bytes = 0;
+
     auto operator+=(Metrics const& other) -> Metrics&;
 };
 

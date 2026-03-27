@@ -102,6 +102,7 @@ auto print_stats(
     printf("  Hash computations:  %6zu\n", metrics.hash_computations);
     printf("  Hashes skipped:     %6zu (stat cache)\n", metrics.hashes_skipped);
     printf("  Stat calls:         %6zu\n", metrics.stat_calls);
+    printf("  String pool:        %6zu strings, %zu bytes\n", metrics.pool_strings, metrics.pool_bytes);
     if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
         printf("  Index I/O:          %6ldms load, %ldms save\n", static_cast<long>(metrics.index_load_time.count()), static_cast<long>(metrics.index_save_time.count()));
     }

@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/metrics.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <mutex>
 #include <vector>
@@ -72,6 +74,11 @@ auto collect_metrics() -> Metrics
         result += *m;
         *m = Metrics {};
     }
+
+    // Pool stats are a snapshot, not accumulated per-thread
+    auto& pool = global_pool();
+    result.pool_strings = pool.size();
+    result.pool_bytes = pool.bytes();
 
     return result;
 }

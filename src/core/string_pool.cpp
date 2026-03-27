@@ -205,6 +205,16 @@ auto StringPool::size() const -> std::size_t
     return storage_.size();
 }
 
+auto StringPool::bytes() const -> std::size_t
+{
+    auto lock = std::lock_guard { mutex_ };
+    auto total = std::size_t { 0 };
+    for (auto i = std::size_t { 0 }; i < storage_.size(); ++i) {
+        total += storage_[i].size();
+    }
+    return total;
+}
+
 auto StringPool::clear() -> void
 {
     auto lock = std::lock_guard { mutex_ };
