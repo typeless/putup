@@ -7,6 +7,7 @@
 // POSIX APIs (pipe, execv, environ) require C-style arrays and pointer arithmetic
 
 #include "pup/core/global_pool.hpp"
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
@@ -173,7 +174,7 @@ auto run_process_with_callback(
     }
 
     if (opts.stdin_data && stdin_pipe[1] >= 0) {
-        auto const& data = *opts.stdin_data;
+        auto data = global_pool().get(*opts.stdin_data);
         auto written = ::write(stdin_pipe[1], data.data(), data.size());
         (void)written;
         ::close(stdin_pipe[1]);
@@ -194,8 +195,8 @@ auto run_process_with_callback(
 
     auto result = ProcessResult {};
     auto timed_out = false;
-    auto stdout_buf = String {};
-    auto stderr_buf = String {};
+    auto stdout_buf = HeapBuf {};
+    auto stderr_buf = HeapBuf {};
 
     auto deadline = opts.timeout
         ? std::optional { std::chrono::steady_clock::now() + *opts.timeout }
@@ -307,8 +308,8 @@ auto run_process_with_callback(
         end_time - start_time
     );
 
-    result.stdout_output = pool.intern(stdout_buf);
-    result.stderr_output = pool.intern(stderr_buf);
+    result.stdout_output = pool.intern(stdout_buf.view());
+    result.stderr_output = pool.intern(stderr_buf.view());
 
     return result;
 }

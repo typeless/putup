@@ -5,7 +5,7 @@
 #include "e2e_fixture.hpp"
 
 using namespace pup::test;
-using pup::String;
+using pup::HeapBuf;
 
 // =============================================================================
 // Build Verification Tests
@@ -610,10 +610,8 @@ SCENARIO("Tupfile changes trigger rebuild", "[e2e][incremental]")
             {
                 auto original = f.read_file("Tupfile");
                 auto pos = original.find("VERSION=1");
-                REQUIRE(pos != String::npos);
-                auto modified = String { std::string_view{original}.substr(0, pos) };
-                modified += "VERSION=2";
-                modified += std::string_view{original}.substr(pos + 9);
+                REQUIRE(pos != std::string::npos);
+                auto modified = original.substr(0, pos) + "VERSION=2" + original.substr(pos + 9);
                 f.write_file("Tupfile", modified);
 
                 auto result = f.build();
@@ -1133,10 +1131,8 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
                 // Modify "42" to "99" - same size (2 chars), different content
                 auto original = f.read_file("lib/foo.c");
                 auto pos = original.find("42");
-                REQUIRE(pos != String::npos);
-                auto content = String { std::string_view{original}.substr(0, pos) };
-                content += "99";
-                content += std::string_view{original}.substr(pos + 2);
+                REQUIRE(pos != std::string::npos);
+                auto content = original.substr(0, pos) + "99" + original.substr(pos + 2);
                 f.write_file("lib/foo.c", content);
 
                 auto result = f.build({ "-B", "build" });

@@ -115,7 +115,7 @@ public:
     [[nodiscard]] auto is_file(std::string_view path) const -> bool;
     [[nodiscard]] auto is_directory(std::string_view path) const -> bool;
     [[nodiscard]] auto is_executable(std::string_view path) const -> bool;
-    [[nodiscard]] auto read_file(std::string_view path) const -> pup::String;
+    [[nodiscard]] auto read_file(std::string_view path) const -> std::string;
 
     // Execute programs
     [[nodiscard]] auto run(

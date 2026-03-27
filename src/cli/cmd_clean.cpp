@@ -3,6 +3,7 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
 #include "pup/core/global_pool.hpp"
@@ -69,14 +70,14 @@ auto remove_indexed_outputs(
         }
 
         auto file_path_sv = pup::global_pool().get(file.path);
-        auto abs_path = String { pup::global_pool().get(pup::path::join(root, file_path_sv)) };
-        for (auto parent = String { pup::path::parent(abs_path) };
-             !parent.empty() && std::string_view { parent } != pup::path::parent(parent);
+        auto abs_path_sv = pup::global_pool().get(pup::path::join(root, file_path_sv));
+        for (auto parent = pup::path::parent(abs_path_sv);
+             !parent.empty() && parent != pup::path::parent(parent);
              parent = pup::path::parent(parent)) {
             result.output_dirs.push_back(pup::global_pool().intern(parent));
         }
 
-        if (!pup::platform::exists(abs_path)) {
+        if (!pup::platform::exists(abs_path_sv)) {
             continue;
         }
 
@@ -86,7 +87,7 @@ auto remove_indexed_outputs(
             continue;
         }
 
-        auto r = pup::platform::remove_file(abs_path);
+        auto r = pup::platform::remove_file(abs_path_sv);
         if (r) {
             ++result.removed_count;
             if (mode.verbose) {
@@ -111,14 +112,14 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto build_dir_sv = pool_get(ctx->build_dir);
     auto root_sv = pool_get(ctx->root);
-    auto index_path = String { pup::global_pool().get(pup::path::join(pup::global_pool().get(pup::path::join(build_dir_sv, ".pup")), "index")) };
-    if (!pup::platform::exists(index_path)) {
+    auto index_path_sv = pup::global_pool().get(pup::path::join(pup::global_pool().get(pup::path::join(build_dir_sv, ".pup")), "index"));
+    if (!pup::platform::exists(index_path_sv)) {
         vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-    auto result = remove_indexed_outputs(index_path, root_sv, mode, variant_name);
+    auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name);
 
     auto dirs_removed = remove_empty_directories(
         result.output_dirs, build_dir_sv, root_sv, mode
@@ -144,39 +145,39 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto& pool = pup::global_pool();
     auto build_dir_sv = pool.get(ctx->build_dir);
     auto root_sv = pool.get(ctx->root);
-    auto index_path = String { pool.get(pup::path::join(pool.get(pup::path::join(build_dir_sv, ".pup")), "index")) };
+    auto index_path_sv = pool.get(pup::path::join(pool.get(pup::path::join(build_dir_sv, ".pup")), "index"));
     auto error_count = std::size_t { 0 };
     auto output_dirs = Vec<StringId> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
-    if (pup::platform::exists(index_path)) {
-        auto result = remove_indexed_outputs(index_path, root_sv, mode, variant_name);
+    if (pup::platform::exists(index_path_sv)) {
+        auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name);
         error_count += result.error_count;
         output_dirs = std::move(result.output_dirs);
     }
 
-    auto pup_dir = String { pool.get(pup::path::join(build_dir_sv, ".pup")) };
-    if (pup::platform::exists(pup_dir)) {
+    auto pup_dir_sv = pool.get(pup::path::join(build_dir_sv, ".pup"));
+    if (pup::platform::exists(pup_dir_sv)) {
         if (opts.dry_run) {
-            vprint(variant_name, "Would remove: %s\n", pup_dir.c_str());
+            vprint(variant_name, "Would remove: %.*s\n", static_cast<int>(pup_dir_sv.size()), pup_dir_sv.data());
         } else {
             if (opts.verbose) {
-                vprint(variant_name, "Removing: %s\n", pup_dir.c_str());
+                vprint(variant_name, "Removing: %.*s\n", static_cast<int>(pup_dir_sv.size()), pup_dir_sv.data());
             }
-            (void)pup::platform::remove_all(pup_dir);
+            (void)pup::platform::remove_all(pup_dir_sv);
         }
     }
 
-    auto config_path = String { pool.get(pup::path::join(build_dir_sv, "tup.config")) };
-    if (pup::platform::exists(config_path)) {
+    auto config_path_sv = pool.get(pup::path::join(build_dir_sv, "tup.config"));
+    if (pup::platform::exists(config_path_sv)) {
         if (opts.dry_run) {
-            vprint(variant_name, "Would remove: %s\n", config_path.c_str());
+            vprint(variant_name, "Would remove: %.*s\n", static_cast<int>(config_path_sv.size()), config_path_sv.data());
         } else {
             if (opts.verbose) {
-                vprint(variant_name, "Removing: %s\n", config_path.c_str());
+                vprint(variant_name, "Removing: %.*s\n", static_cast<int>(config_path_sv.size()), config_path_sv.data());
             }
-            (void)pup::platform::remove_file(config_path);
+            (void)pup::platform::remove_file(config_path_sv);
         }
     }
 

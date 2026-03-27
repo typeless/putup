@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/paged_vec.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstdint>
@@ -68,7 +68,7 @@ private:
     auto probe_insert(std::uint32_t h, StringId id) -> void;
     auto grow() -> void;
 
-    PagedVec<String> storage_;
+    PagedVec<HeapBuf> storage_;
     Meta* meta_ = nullptr;
     StringId* values_ = nullptr;
     std::size_t index_capacity_ = 0;

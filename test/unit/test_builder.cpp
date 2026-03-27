@@ -97,7 +97,7 @@ public:
     }
 
     auto root() const -> fs::path const& { return test_root_; }
-    auto root_str() const -> String { return String { test_root_.generic_string() }; }
+    auto root_str() const -> std::string { return test_root_.generic_string(); }
 
     auto create_file(fs::path const& rel_path) -> void
     {
@@ -1077,7 +1077,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     auto ctx = EvalContext { .vars = &vars };
 
     // Simulate -B build-variant
-    auto output_root = String { (fixture.root() / "build-variant").string() };
+    auto output_root = (fixture.root() / "build-variant").string();
     fs::create_directories(fs::path { std::string(output_root) } / "src");
 
     auto options = BuilderOptions {
@@ -1146,7 +1146,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     fs::create_directories(fixture.root() / "build-variant" / "boot");
     fs::create_directories(fixture.root() / "build-variant" / "output" / "hex");
 
-    auto output_root = String { (fixture.root() / "build-variant").string() };
+    auto output_root = (fixture.root() / "build-variant").string();
     auto options = BuilderOptions {
         .source_root = intern(fixture.root_str()),
         .config_root = intern(fixture.root_str()),

@@ -7,7 +7,6 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
@@ -200,11 +199,11 @@ struct PatternFlags {
 
 /// Expand an expression, replacing variable references with values
 [[nodiscard]]
-auto expand(EvalContext& ctx, Expression const& expr) -> Result<String>;
+auto expand(EvalContext& ctx, Expression const& expr) -> Result<StringId>;
 
 /// Expand a string with variable references
 [[nodiscard]]
-auto expand(EvalContext& ctx, std::string_view text) -> Result<String>;
+auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>;
 
 /// Expand pattern flags (%f, %o, %B, etc.) in a string
 [[nodiscard]]
@@ -212,14 +211,14 @@ auto expand_pattern(
     EvalContext& ctx,
     std::string_view text,
     PatternFlags const& flags
-) -> Result<String>;
+) -> Result<StringId>;
 
 /// Expand a path pattern (handles globs, groups, exclusions)
 [[nodiscard]]
 auto expand_path(
     EvalContext& ctx,
     PathPattern const& pattern
-) -> Result<Vec<String>>;
+) -> Result<Vec<StringId>>;
 
 /// Check if a conditional is true
 [[nodiscard]]

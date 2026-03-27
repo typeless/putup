@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/target.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
@@ -58,13 +59,21 @@ auto fnmatch_simple(std::string_view pattern, std::string_view name) -> bool
     return name.starts_with(prefix) && name.ends_with(suffix);
 }
 
-auto split_first_component(std::string_view p) -> std::pair<String, String>
+auto split_first_component(std::string_view p) -> std::pair<std::string_view, std::string_view>
 {
     auto slash = p.find('/');
     if (slash == std::string_view::npos) {
-        return { String { p }, {} };
+        return { p, {} };
     }
-    return { String { p.substr(0, slash) }, String { p.substr(slash + 1) } };
+    return { p.substr(0, slash), p.substr(slash + 1) };
+}
+
+auto make_err(std::string_view prefix, std::string_view path) -> StringId
+{
+    auto buf = Buf {};
+    buf.append(prefix);
+    buf.append(path);
+    return buf.intern(global_pool());
 }
 
 } // namespace
@@ -97,7 +106,7 @@ auto parse_target(
     if (pup::platform::exists(full_path_sv)) {
         if (pup::platform::is_file(full_path_sv)) {
             if (is_source_file(full_path_sv)) {
-                return make_error<Target>(ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path);
+                return make_error<Target>(ErrorCode::InvalidArgument, make_err("source file, not build output: ", target_path));
             }
             target.is_output = true;
         }
@@ -107,11 +116,11 @@ auto parse_target(
             par = project_root;
         }
         if (!pup::platform::exists(par)) {
-            return make_error<Target>(ErrorCode::NotFound, String { "path not found: " } + target_path);
+            return make_error<Target>(ErrorCode::NotFound, make_err("path not found: ", target_path));
         }
 
         if (is_source_file(full_path_sv)) {
-            return make_error<Target>(ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path);
+            return make_error<Target>(ErrorCode::InvalidArgument, make_err("source file, not build output: ", target_path));
         }
 
         target.is_output = true;
@@ -133,7 +142,7 @@ auto expand_glob_target(
     }
 
     auto [first_component, remainder] = split_first_component(pattern);
-    auto has_glob = first_component.find('*') != String::npos;
+    auto has_glob = first_component.find('*') != std::string_view::npos;
 
     if (!has_glob) {
         auto parsed = parse_target(project_root, pattern);
@@ -210,7 +219,7 @@ auto validate_target_consistency(
         if (is_glob_pattern(target_str)) {
             parsed_targets = expand_glob_target(project_root, target_str);
             if (parsed_targets.empty()) {
-                return make_error<Vec<Target>>(ErrorCode::NotFound, String { "no variants match pattern: " } + target_str);
+                return make_error<Vec<Target>>(ErrorCode::NotFound, make_err("no variants match pattern: ", target_str));
             }
         } else {
             auto parsed = parse_target(project_root, target_str);

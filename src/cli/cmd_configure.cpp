@@ -5,6 +5,7 @@
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path_utils.hpp"
@@ -27,21 +28,26 @@ auto install_config_file(
 ) -> int
 {
     auto& pool = pup::global_pool();
-    auto config_path = String { config_file };
-    if (!pup::path::is_absolute(config_path)) {
-        config_path = String { pool.get(pup::path::join(*pup::platform::current_directory(), config_path)) };
-    }
+    auto config_path_sv = pup::path::is_absolute(config_file)
+        ? config_file
+        : pool.get(pup::path::join(pool.get(*pup::platform::current_directory()), config_file));
 
-    if (!pup::platform::exists(config_path)) {
-        fprintf(stderr, "[%.*s] Error: Config file not found: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str());
+    if (!pup::platform::exists(config_path_sv)) {
+        auto cp = Buf {};
+        cp.append(config_path_sv);
+        fprintf(stderr, "[%.*s] Error: Config file not found: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cp.c_str());
         return EXIT_FAILURE;
     }
 
-    auto dest = String { pool.get(pup::path::join(pool.get(layout.output_root), "tup.config")) };
-    (void)pup::platform::create_directories(pup::path::parent(dest));
-    (void)pup::platform::copy_file(config_path, dest);
+    auto dest_sv = pool.get(pup::path::join(pool.get(layout.output_root), "tup.config"));
+    (void)pup::platform::create_directories(pup::path::parent(dest_sv));
+    (void)pup::platform::copy_file(config_path_sv, dest_sv);
 
-    printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str(), dest.c_str());
+    auto cp = Buf {};
+    cp.append(config_path_sv);
+    auto dp = Buf {};
+    dp.append(dest_sv);
+    printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cp.c_str(), dp.c_str());
     return EXIT_SUCCESS;
 }
 
@@ -87,11 +93,13 @@ auto configure_single_variant(
 
     // Helper to ensure tup.config exists for variant detection (only on success)
     auto ensure_config = [&]() {
-        auto config_path = String { pool.get(pup::path::join(pool.get(ctx.layout().output_root), "tup.config")) };
-        if (!pup::platform::exists(config_path)) {
-            (void)pup::platform::create_directories(pup::path::parent(config_path));
-            (void)pup::platform::write_file(config_path, "");
-            printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), config_path.c_str());
+        auto config_path_sv = pool.get(pup::path::join(pool.get(ctx.layout().output_root), "tup.config"));
+        if (!pup::platform::exists(config_path_sv)) {
+            (void)pup::platform::create_directories(pup::path::parent(config_path_sv));
+            (void)pup::platform::write_file(config_path_sv, "");
+            auto cp = Buf {};
+            cp.append(config_path_sv);
+            printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cp.c_str());
         }
     };
 

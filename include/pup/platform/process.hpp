@@ -4,7 +4,6 @@
 #pragma once
 
 #include "pup/core/result.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -32,7 +31,7 @@ struct ProcessOptions {
     bool inherit_env = true;
     bool capture_stdout = true;
     bool capture_stderr = true;
-    std::optional<String> stdin_data;
+    std::optional<StringId> stdin_data;
     std::optional<std::chrono::seconds> timeout;
 };
 

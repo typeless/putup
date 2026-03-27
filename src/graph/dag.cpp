@@ -897,30 +897,31 @@ auto expand_instruction(
     auto& pool = global_pool();
     auto source_dir = pool.get(cmd->source_dir);
     auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
-    auto canonical_cwd = String {};
+    auto canonical_cwd_id = StringId::Empty;
     if (!source_root.empty()) {
-        auto r = pup::platform::canonical(String { pool.get(pup::path::join(source_root, source_dir)) });
+        auto r = pup::platform::canonical(pool.get(pup::path::join(source_root, source_dir)));
         if (r) {
-            canonical_cwd = *r;
+            canonical_cwd_id = *r;
         }
     }
+    auto canonical_cwd = pool.get(canonical_cwd_id);
 
     return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> std::string_view {
         auto full = get_full_path(graph, id, cache);
         if (!canonical_cwd.empty() && full.starts_with("..")) {
             auto joined_sv = pool.get(pup::path::join(source_root, full));
-            auto abs = pup::platform::canonical(String { joined_sv });
+            auto abs = pup::platform::canonical(joined_sv);
             if (abs) {
-                return pool.get(pup::path::relative(*abs, canonical_cwd));
+                return pool.get(pup::path::relative(pool.get(*abs), canonical_cwd));
             }
             return pool.get(pup::path::relative(pool.get(pup::path::normalize(joined_sv)), canonical_cwd));
         }
         if (!config_root.empty() && config_root != source_root
             && !pup::platform::exists(pool.get(pup::path::join(source_root, full)))
             && pup::platform::exists(pool.get(pup::path::join(config_root, full)))) {
-            auto r = pup::platform::canonical(String { pool.get(pup::path::join(config_root, full)) });
+            auto r = pup::platform::canonical(pool.get(pup::path::join(config_root, full)));
             if (r) {
-                return pool.get(pup::path::relative(*r, canonical_cwd));
+                return pool.get(pup::path::relative(pool.get(*r), canonical_cwd));
             }
         }
         return pool.get(pup::make_source_relative(full, source_to_root, source_dir));

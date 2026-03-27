@@ -5,7 +5,6 @@
 
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"

@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/context.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
@@ -53,7 +54,7 @@ auto compute_build_scopes(
     }
 
     // Compute scope from current working directory
-    auto cwd = *pup::platform::current_directory();
+    auto cwd = pool.get(*pup::platform::current_directory());
     auto source_root_sv = pool.get(layout.source_root);
 
     // If cwd is source_root, build all
@@ -81,23 +82,19 @@ auto compute_build_scopes(
 
 namespace {
 
-// Returns empty path for root-equivalent paths ("" or "."), otherwise unchanged
-auto normalize_to_empty(String const& p) -> String
+auto normalize_to_empty(std::string_view p) -> std::string_view
 {
-    return (p.empty() || p == ".") ? String {} : p;
+    return (p.empty() || p == ".") ? std::string_view {} : p;
 }
 
-// Returns "." for root-equivalent paths ("" or "."), otherwise unchanged
-auto normalize_to_dot(String const& p) -> String
+auto normalize_to_dot(std::string_view p) -> std::string_view
 {
-    return (p.empty() || p == ".") ? String { "." } : p;
+    return (p.empty() || p == ".") ? std::string_view { "." } : p;
 }
 
-// Joins base/rel, but if rel is root-equivalent returns just base
-auto join_path(std::string_view base, std::string_view rel)
-    -> String
+auto join_path(std::string_view base, std::string_view rel) -> std::string_view
 {
-    return (rel.empty() || rel == ".") ? String { base } : String { pup::global_pool().get(pup::path::join(base, rel)) };
+    return (rel.empty() || rel == ".") ? base : pup::global_pool().get(pup::path::join(base, rel));
 }
 
 auto sorted_contains(Vec<StringId> const& v, std::string_view key) -> bool
@@ -146,8 +143,8 @@ struct TupfileParseState {
     // Append-only paged vectors: push_back preserves references to existing
     // elements, which is critical because recursive Tupfile parsing holds
     // VarDb pointers across calls that may insert new entries.
-    PagedVec<std::pair<String, parser::VarDb>> parsed_configs;
-    PagedVec<std::pair<String, parser::VarDb>> scoped_configs;
+    PagedVec<std::pair<StringId, parser::VarDb>> parsed_configs;
+    PagedVec<std::pair<StringId, parser::VarDb>> scoped_configs;
     Vec<std::pair<pup::StringId, pup::StringId>> const* config_defines = nullptr; // CLI overrides
 };
 
@@ -155,7 +152,7 @@ auto compute_tup_variantdir(
     std::string_view source_dir,
     std::string_view source_root,
     std::string_view output_root
-) -> String
+) -> std::string_view
 {
     auto& pool = pup::global_pool();
     if (!output_root.empty() && source_root != output_root) {
@@ -164,7 +161,7 @@ auto compute_tup_variantdir(
         auto src_canonical = pup::platform::canonical(src_dir);
         auto out_canonical = pup::platform::canonical(output_dir);
         if (src_canonical && out_canonical) {
-            return String { pool.get(pup::path::relative(*out_canonical, *src_canonical)) };
+            return pool.get(pup::path::relative(pool.get(*out_canonical), pool.get(*src_canonical)));
         }
         return ".";
     }
@@ -174,14 +171,14 @@ auto compute_tup_variantdir(
 
 auto find_build_subdir(
     std::string_view root
-) -> std::optional<String>
+) -> std::optional<StringId>
 {
     auto& pool = global_pool();
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = pool.get(pup::path::join(root, name));
         if (pup::platform::exists(pool.get(pup::path::join(dir, "tup.config")))
             || pup::platform::is_directory(pool.get(pup::path::join(dir, ".pup")))) {
-            return String { dir };
+            return pool.intern(dir);
         }
     }
 
@@ -195,7 +192,7 @@ auto find_build_subdir(
                 auto entry_path = pool.get(pup::path::join(root, pool.get(entry.name)));
                 if (pup::platform::exists(pool.get(pup::path::join(entry_path, "tup.config")))
                     || pup::platform::is_directory(pool.get(pup::path::join(entry_path, ".pup")))) {
-                    return String { entry_path };
+                    return pool.intern(entry_path);
                 }
             }
         }
@@ -204,13 +201,13 @@ auto find_build_subdir(
     return std::nullopt;
 }
 
-auto read_file(std::string_view path) -> std::optional<String>
+auto read_file(std::string_view path) -> std::optional<StringId>
 {
     auto result = pup::platform::read_file(path);
     if (!result) {
         return std::nullopt;
     }
-    return std::move(*result);
+    return result->intern(global_pool());
 }
 
 auto discover_tupfile_dirs(
@@ -231,7 +228,7 @@ auto discover_tupfile_dirs(
         }
 
         if (!entry.is_dir && pool.get(entry.name) == "Tupfile") {
-            auto dir_rel = String { pup::path::parent(rel_path) };
+            auto dir_rel = pup::path::parent(rel_path);
             dirs.push_back(pool.intern(normalize_to_dot(dir_rel)));
         }
 
@@ -257,29 +254,35 @@ auto apply_config_overrides(
         auto name_sv = pool.get(name);
         auto value_sv = pool.get(value);
         config.set(name_sv, value_sv);
-        config.set(String { "CONFIG_" } + name_sv, value_sv);
+        auto cbuf = Buf {};
+        cbuf.append("CONFIG_");
+        cbuf.append(name_sv);
+        config.set(cbuf.view(), value_sv);
     }
 }
 
 /// Parse a tup.config file, returning a cached result on repeat calls.
 auto get_or_parse_config(
-    String const& path,
+    std::string_view path,
     TupfileParseState& state
 ) -> parser::VarDb const*
 {
+    auto path_id = global_pool().intern(path);
     for (auto const& entry : state.parsed_configs) {
-        if (entry.first == path) {
+        if (entry.first == path_id) {
             return &entry.second;
         }
     }
 
     auto result = parser::parse_config(path);
     if (!result) {
-        fprintf(stderr, "Warning: Failed to parse %s: %s\n", path.c_str(), result.error().msg().data());
+        auto cp = Buf {};
+        cp.append(path);
+        fprintf(stderr, "Warning: Failed to parse %s: %s\n", cp.c_str(), result.error().msg().data());
         return nullptr;
     }
 
-    state.parsed_configs.emplace_back(path, std::move(*result));
+    state.parsed_configs.emplace_back(path_id, std::move(*result));
     return &state.parsed_configs.back().second;
 }
 
@@ -288,32 +291,33 @@ auto get_or_parse_config(
 /// model as Tuprules.tup ?= defaults).
 /// Returns pointer to the cached VarDb for that directory.
 auto find_config_for_dir(
-    String const& rel_dir,
-    String const& output_root,
+    std::string_view rel_dir,
+    std::string_view output_root,
     TupfileParseState& state
 ) -> parser::VarDb const*
 {
     auto normalized = normalize_to_empty(rel_dir);
+    auto norm_id = global_pool().intern(normalized);
 
     // Check cache first
     for (auto const& entry : state.scoped_configs) {
-        if (entry.first == normalized) {
+        if (entry.first == norm_id) {
             return &entry.second;
         }
     }
 
     // Collect all tup.config paths from root down to target directory
-    auto config_paths = Vec<String> {};
+    auto config_paths = Vec<StringId> {};
 
     auto& pool = pup::global_pool();
     auto root_config_sv = pool.get(pup::path::join(output_root, "tup.config"));
     if (pup::platform::exists(root_config_sv)) {
-        config_paths.push_back(String { root_config_sv });
+        config_paths.push_back(pool.intern(root_config_sv));
     }
 
     if (!normalized.empty()) {
-        auto accumulated = String { output_root };
-        auto remaining = std::string_view { normalized };
+        auto accumulated_id = pool.intern(output_root);
+        auto remaining = normalized;
         while (!remaining.empty()) {
             auto slash = remaining.find('/');
             auto component = (slash == std::string_view::npos) ? remaining : remaining.substr(0, slash);
@@ -321,24 +325,24 @@ auto find_config_for_dir(
             if (component.empty()) {
                 continue;
             }
-            accumulated = String { pool.get(pup::path::join(accumulated, component)) };
-            auto config_path_sv = pool.get(pup::path::join(accumulated, "tup.config"));
+            accumulated_id = pup::path::join(pool.get(accumulated_id), component);
+            auto config_path_sv = pool.get(pup::path::join(pool.get(accumulated_id), "tup.config"));
             if (pup::platform::exists(config_path_sv)) {
-                config_paths.push_back(String { config_path_sv });
+                config_paths.push_back(pool.intern(config_path_sv));
             }
         }
     }
 
     if (config_paths.empty()) {
-        state.scoped_configs.emplace_back(normalized, parser::VarDb {});
+        state.scoped_configs.emplace_back(norm_id, parser::VarDb {});
         return &state.scoped_configs.back().second;
     }
 
     // Merge leaf first (defaults), then each parent on top (overrides).
-    // config_paths is root-to-leaf, so reverse iteration gives leaf→root.
+    // config_paths is root-to-leaf, so reverse iteration gives leaf->root.
     auto merged = parser::VarDb {};
     for (auto it = config_paths.rbegin(); it != config_paths.rend(); ++it) {
-        auto const* cfg = get_or_parse_config(*it, state);
+        auto const* cfg = get_or_parse_config(pool.get(*it), state);
         if (cfg) {
             for (auto const& name : cfg->names()) {
                 merged.set(name, cfg->get(name));
@@ -347,23 +351,31 @@ auto find_config_for_dir(
     }
 
     apply_config_overrides(merged, state.config_defines);
-    state.scoped_configs.emplace_back(normalized, std::move(merged));
+    state.scoped_configs.emplace_back(norm_id, std::move(merged));
     return &state.scoped_configs.back().second;
 }
 
-auto make_circular_dep_error(String const& dir) -> pup::Error
+auto make_err(std::string_view prefix, std::string_view suffix) -> StringId
+{
+    auto buf = Buf {};
+    buf.append(prefix);
+    buf.append(suffix);
+    return buf.intern(global_pool());
+}
+
+auto make_circular_dep_error(std::string_view dir) -> pup::Error
 {
     return pup::Error {
         pup::ErrorCode::CyclicDependency,
-        String { "Circular Tupfile dependency: " } + dir
+        make_err("Circular Tupfile dependency: ", dir)
     };
 }
 
-auto make_read_error(String const& path) -> pup::Error
+auto make_read_error(std::string_view path) -> pup::Error
 {
     return pup::Error {
         pup::ErrorCode::IoError,
-        String { "Failed to read " } + path
+        make_err("Failed to read ", path)
     };
 }
 
@@ -380,7 +392,7 @@ struct ParseContext {
     VarAssignedCallback on_var_assigned;
 };
 
-auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<void>
+auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result<void>
 {
     auto vars = pup::parser::VarDb { ctx.base_vars };
     auto normalized_dir = normalize_to_dot(rel_dir);
@@ -396,23 +408,28 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
     sorted_insert(ctx.state.parsing, normalized_dir);
 
     // Tupfiles are found in config_root (may differ from source_root in 3-tree builds)
-    auto tupfile_path = String { pup::global_pool().get(pup::path::join(join_path(ctx.config_root, normalize_to_empty(rel_dir)), "Tupfile")) };
+    auto tupfile_path_sv = pup::global_pool().get(pup::path::join(join_path(ctx.config_root, normalize_to_empty(rel_dir)), "Tupfile"));
 
     if (ctx.verbose) {
-        printf("Parsing: %s\n", tupfile_path.c_str());
+        auto tp = Buf {};
+        tp.append(tupfile_path_sv);
+        printf("Parsing: %s\n", tp.c_str());
     }
 
-    auto source = read_file(tupfile_path);
+    auto source = read_file(tupfile_path_sv);
     if (!source) {
         sorted_erase(ctx.state.parsing, normalized_dir);
-        return pup::unexpected<pup::Error>(make_read_error(tupfile_path));
+        return pup::unexpected<pup::Error>(make_read_error(tupfile_path_sv));
     }
 
-    auto parse_result = pup::parser::parse_tupfile(*source, tupfile_path);
+    auto source_sv = global_pool().get(*source);
+    auto parse_result = pup::parser::parse_tupfile(source_sv, tupfile_path_sv);
     if (!parse_result.success()) {
         sorted_erase(ctx.state.parsing, normalized_dir);
+        auto tp = Buf {};
+        tp.append(tupfile_path_sv);
         for (auto const& err : parse_result.errors) {
-            fprintf(stderr, "%s:%u:%u: error: %s\n", tupfile_path.c_str(), err.location.line, err.location.column, global_pool().get(err.message).data());
+            fprintf(stderr, "%s:%u:%u: error: %s\n", tp.c_str(), err.location.line, err.location.column, global_pool().get(err.message).data());
         }
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
@@ -427,30 +444,30 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
 
     // TUP_SRCDIR: relative path to source files from where commands run.
     // In overlay model, commands run from source_root, so TUP_SRCDIR is always "."
-    auto tup_srcdir = String { "." };
+    auto tup_srcdir = std::string_view { "." };
 
     // TUP_OUTDIR: relative path from source dir (where commands run) to output dir.
     // For in-tree builds (source == output): "."
     // For variant builds: e.g., "../../build/coreutils" from source/coreutils/
-    auto tup_outdir = String { "." };
+    auto tup_outdir = std::string_view { "." };
     if (ctx.source_root != ctx.output_root) {
         auto source_dir = pup::platform::canonical(join_path(ctx.source_root, rel_dir_normalized));
         auto output_dir = pup::platform::canonical(join_path(ctx.output_root, rel_dir_normalized));
         if (source_dir && output_dir) {
-            tup_outdir = String { pup::global_pool().get(pup::path::relative(*output_dir, *source_dir)) };
+            tup_outdir = pup::global_pool().get(pup::path::relative(pup::global_pool().get(*output_dir), pup::global_pool().get(*source_dir)));
         }
     }
 
     // Get the scoped config for this directory (walks up tree to find nearest tup.config)
     // When root_config_only is set (for configure pass), always use root config
     auto const* scoped_config = find_config_for_dir(
-        ctx.root_config_only ? String {} : rel_dir,
+        ctx.root_config_only ? std::string_view {} : rel_dir,
         ctx.output_root,
         ctx.state
     );
 
     auto request_directory = [&](std::string_view dir) -> pup::Result<void> {
-        return parse_directory(String { dir }, ctx);
+        return parse_directory(dir, ctx);
     };
 
     auto& pool = global_pool();
@@ -504,14 +521,14 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
 {
     auto& pool = pup::global_pool();
     auto result = IndexLoadResult {};
-    auto index_path = String { pool.get(pup::path::join(pool.get(pup::path::join(output_root, ".pup")), "index")) };
+    auto index_path_sv = pool.get(pup::path::join(pool.get(pup::path::join(output_root, ".pup")), "index"));
 
-    if (!pup::platform::exists(index_path)) {
+    if (!pup::platform::exists(index_path_sv)) {
         return result;
     }
 
     auto index_load_start = std::chrono::steady_clock::now();
-    auto index_result = pup::index::read_index(index_path);
+    auto index_result = pup::index::read_index(index_path_sv);
     if (!index_result) {
         return result;
     }
@@ -576,17 +593,19 @@ auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser:
     auto ignore = pup::parser::IgnoreList::with_defaults();
     auto& ipool = global_pool();
     for (auto root_id : { layout.config_root, layout.source_root }) {
-        auto ignore_path = String { ipool.get(pup::path::join(ipool.get(root_id), ".pupignore")) };
-        if (!pup::platform::exists(ignore_path)) {
+        auto ignore_path_sv = ipool.get(pup::path::join(ipool.get(root_id), ".pupignore"));
+        if (!pup::platform::exists(ignore_path_sv)) {
             continue;
         }
-        auto ignore_result = pup::parser::IgnoreList::load(ignore_path);
+        auto ignore_result = pup::parser::IgnoreList::load(ignore_path_sv);
         if (!ignore_result) {
             continue;
         }
         ignore = std::move(*ignore_result);
         if (verbose) {
-            printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ignore_path.c_str());
+            auto ip = Buf {};
+            ip.append(ignore_path_sv);
+            printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ip.c_str());
         }
         break;
     }
@@ -719,13 +738,15 @@ auto build_context(
     }
 
     // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
-    auto config_path = String { pool.get(pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config")) };
-    if (pup::platform::exists(config_path)) {
-        auto const* root_cfg = get_or_parse_config(config_path, ctx.impl_->state);
+    auto config_path_sv = pool.get(pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config"));
+    if (pup::platform::exists(config_path_sv)) {
+        auto const* root_cfg = get_or_parse_config(config_path_sv, ctx.impl_->state);
         if (root_cfg) {
             ctx.impl_->config_vars = *root_cfg;
             if (ctx_opts.verbose) {
-                printf("Loaded %zu config variables from %s\n", ctx.impl_->config_vars.names().size(), config_path.c_str());
+                auto cpbuf = Buf {};
+                cpbuf.append(config_path_sv);
+                printf("Loaded %zu config variables from %s\n", ctx.impl_->config_vars.names().size(), cpbuf.c_str());
             }
         }
     }
@@ -735,7 +756,10 @@ auto build_context(
         auto name_sv = pool.get(name);
         auto value_sv = pool.get(value);
         ctx.impl_->config_vars.set(name_sv, value_sv);
-        ctx.impl_->config_vars.set(String { "CONFIG_" } + name_sv, value_sv);
+        auto cbuf = Buf {};
+        cbuf.append("CONFIG_");
+        cbuf.append(name_sv);
+        ctx.impl_->config_vars.set(cbuf.view(), value_sv);
         if (ctx_opts.verbose) {
             printf("-D %s=%s\n", name_sv.data(), value_sv.data());
         }
@@ -755,14 +779,14 @@ auto build_context(
         .source_root = ctx.impl_->layout.source_root,
         .config_root = ctx.impl_->layout.config_root,
         .output_root = ctx.impl_->layout.output_root,
-        .config_path = pool.intern(config_path),
+        .config_path = pool.intern(config_path_sv),
         .expand_globs = true,
         .verbose = ctx_opts.verbose,
         .scanner_registry = ctx_opts.scanner_registry,
         .pattern_registry = ctx_opts.pattern_registry,
         .cached_env_vars = std::move(cached_env_vars),
     };
-    auto builder = graph::GraphBuilder { std::move(builder_opts) };
+    auto builder = graph::GraphBuilder(std::move(builder_opts));
 
     auto parse_ctx = ParseContext {
         .state = ctx.impl_->state,
@@ -786,7 +810,7 @@ auto build_context(
             && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
             continue;
         }
-        auto result = Result<void> { parse_directory(String { dir_sv }, parse_ctx) };
+        auto result = parse_directory(dir_sv, parse_ctx);
         if (!result && !ctx_opts.keep_going) {
             return unexpected<Error>(result.error());
         }
@@ -809,37 +833,36 @@ auto build_context(
 auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
 {
     auto& pool = global_pool();
-    auto cwd = *pup::platform::current_directory();
+    auto cwd_id = *pup::platform::current_directory();
+    auto cwd = pool.get(cwd_id);
     auto root = find_project_root(cwd);
     if (!root) {
         return std::nullopt;
     }
 
     auto root_sv = pool.get(*root);
-    auto build_dir = String {};
+    auto build_dir_id = StringId::Empty;
     auto is_in_tree = false;
 
     if (!opts.build_dirs.empty()) {
-        build_dir = String { pool.get(opts.build_dirs[0]) };
-        if (!pup::path::is_absolute(build_dir)) {
-            build_dir = String { pool.get(pup::path::join(root_sv, build_dir)) };
-        }
-        is_in_tree = (build_dir == root_sv);
+        auto bd_sv = pool.get(opts.build_dirs[0]);
+        build_dir_id = pup::path::is_absolute(bd_sv) ? opts.build_dirs[0] : pup::path::join(root_sv, bd_sv);
+        is_in_tree = (pool.get(build_dir_id) == root_sv);
     } else if (pup::platform::exists(pool.get(pup::path::join(cwd, ".pup"))) && cwd != root_sv) {
-        build_dir = cwd;
+        build_dir_id = cwd_id;
         is_in_tree = false;
     } else if (auto detected = find_build_subdir(root_sv)) {
-        build_dir = *detected;
+        build_dir_id = *detected;
         is_in_tree = false;
     } else if (pup::platform::exists(pool.get(pup::path::join(root_sv, "tup.config")))
                || pup::platform::exists(pool.get(pup::path::join(root_sv, ".pup")))) {
-        build_dir = String { root_sv };
+        build_dir_id = pool.intern(root_sv);
         is_in_tree = true;
     } else {
         return std::nullopt;
     }
 
-    return CleanContext { *root, pool.intern(build_dir), is_in_tree };
+    return CleanContext { *root, build_dir_id, is_in_tree };
 }
 
 } // namespace pup::cli

@@ -4,7 +4,6 @@
 #pragma once
 
 #include "pup/core/result.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -34,7 +33,7 @@ struct RunOptions {
     std::optional<std::chrono::seconds> timeout = {}; ///< Command timeout
     bool capture_stdout = true;
     bool capture_stderr = true;
-    std::optional<String> stdin_data = {}; ///< Data to pipe to stdin
+    std::optional<StringId> stdin_data = {}; ///< Data to pipe to stdin
 };
 
 /// Callback for command output

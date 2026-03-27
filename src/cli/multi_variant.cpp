@@ -126,7 +126,8 @@ auto for_each_variant(
         return handler(modified_opts, ".");
     }
 
-    auto cwd = *pup::platform::current_directory();
+    auto cwd_id = *pup::platform::current_directory();
+    auto cwd = pool.get(cwd_id);
     auto cwd_variant = std::optional<StringId> {};
     for (auto variant : variants) {
         auto variant_abs = pool.get(pup::path::join(source_root_sv, pool.get(variant)));

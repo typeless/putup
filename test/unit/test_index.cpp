@@ -3,6 +3,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/format.hpp"
@@ -756,11 +757,11 @@ TEST_CASE("StringTable overflow handling", "[index]")
         auto index = Index {};
 
         // Create a string larger than 64KB (0xFFFF = 65535 bytes max)
-        auto huge_name = String {};
+        auto huge_name = HeapBuf {};
         huge_name.resize(65536);
         std::memset(huge_name.data(), 'x', 65536);
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(huge_name) });
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(huge_name.view()) });
 
                 auto result = serialize_index(index);
 
@@ -773,11 +774,11 @@ TEST_CASE("StringTable overflow handling", "[index]")
         auto index = Index {};
 
         // Create a string exactly at the 64KB limit (65535 bytes)
-        auto max_name = String {};
+        auto max_name = HeapBuf {};
         max_name.resize(65535);
         std::memset(max_name.data(), 'y', 65535);
 
-        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(max_name) });
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = global_pool().intern(max_name.view()) });
 
                 auto result = serialize_index(index);
 

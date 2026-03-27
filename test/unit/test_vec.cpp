@@ -3,10 +3,9 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/vec.hpp"
-#include "pup/core/string.hpp"
+#include <string>
 
 using pup::Vec;
-using pup::String;
 
 // =============================================================================
 // Trivially-copyable element (uint32_t)
@@ -129,17 +128,17 @@ TEST_CASE("Vec<uint32_t> move", "[vec]")
 }
 
 // =============================================================================
-// Non-trivial element (pup::String)
+// Non-trivial element (std::string)
 // =============================================================================
 
-TEST_CASE("Vec<String> basic operations", "[vec]")
+TEST_CASE("Vec<std::string> basic operations", "[vec]")
 {
-    auto v = Vec<String> {};
+    auto v = Vec<std::string> {};
 
     SECTION("push_back and access")
     {
-        v.push_back(String { "hello" });
-        v.push_back(String { "world" });
+        v.push_back(std::string { "hello" });
+        v.push_back(std::string { "world" });
         REQUIRE(v.size() == 2);
         REQUIRE(v[0] == "hello");
         REQUIRE(v[1] == "world");
@@ -147,49 +146,49 @@ TEST_CASE("Vec<String> basic operations", "[vec]")
 
     SECTION("clear destroys elements")
     {
-        v.push_back(String { "a long string that goes on the heap for sure" });
+        v.push_back(std::string { "a long string that goes on the heap for sure" });
         v.clear();
         REQUIRE(v.empty());
     }
 
     SECTION("move element in")
     {
-        auto s = String { "movable" };
+        auto s = std::string { "movable" };
         v.push_back(std::move(s));
         REQUIRE(v[0] == "movable");
         REQUIRE(s.empty());
     }
 }
 
-TEST_CASE("Vec<String> copy", "[vec]")
+TEST_CASE("Vec<std::string> copy", "[vec]")
 {
-    auto a = Vec<String> {};
-    a.push_back(String { "one" });
-    a.push_back(String { "two" });
+    auto a = Vec<std::string> {};
+    a.push_back(std::string { "one" });
+    a.push_back(std::string { "two" });
 
-    auto b = Vec<String> { a };
+    auto b = Vec<std::string> { a };
     REQUIRE(b.size() == 2);
     REQUIRE(b[0] == "one");
 
-    b[0] = String { "modified" };
+    b[0] = std::string { "modified" };
     REQUIRE(a[0] == "one"); // independent
 }
 
-TEST_CASE("Vec<String> move", "[vec]")
+TEST_CASE("Vec<std::string> move", "[vec]")
 {
-    auto a = Vec<String> {};
-    a.push_back(String { "hello" });
+    auto a = Vec<std::string> {};
+    a.push_back(std::string { "hello" });
 
-    auto b = Vec<String> { std::move(a) };
+    auto b = Vec<std::string> { std::move(a) };
     REQUIRE(b[0] == "hello");
     REQUIRE(a.empty());
 }
 
-TEST_CASE("Vec<String> growth moves elements", "[vec]")
+TEST_CASE("Vec<std::string> growth moves elements", "[vec]")
 {
-    auto v = Vec<String> {};
+    auto v = Vec<std::string> {};
     for (int i = 0; i < 100; ++i) {
-        v.push_back(String { "item" });
+        v.push_back(std::string { "item" });
     }
     REQUIRE(v.size() == 100);
     REQUIRE(v[99] == "item");
@@ -223,24 +222,24 @@ TEST_CASE("Vec erase", "[vec]")
     REQUIRE(v[1] == 3);
 }
 
-TEST_CASE("Vec<String> insert", "[vec]")
+TEST_CASE("Vec<std::string> insert", "[vec]")
 {
-    auto v = Vec<String> {};
-    v.push_back(String { "a" });
-    v.push_back(String { "c" });
-    v.insert(v.begin() + 1, String { "b" });
+    auto v = Vec<std::string> {};
+    v.push_back(std::string { "a" });
+    v.push_back(std::string { "c" });
+    v.insert(v.begin() + 1, std::string { "b" });
     REQUIRE(v.size() == 3);
     REQUIRE(v[0] == "a");
     REQUIRE(v[1] == "b");
     REQUIRE(v[2] == "c");
 }
 
-TEST_CASE("Vec<String> erase", "[vec]")
+TEST_CASE("Vec<std::string> erase", "[vec]")
 {
-    auto v = Vec<String> {};
-    v.push_back(String { "a" });
-    v.push_back(String { "b" });
-    v.push_back(String { "c" });
+    auto v = Vec<std::string> {};
+    v.push_back(std::string { "a" });
+    v.push_back(std::string { "b" });
+    v.push_back(std::string { "c" });
     v.erase(v.begin() + 1);
     REQUIRE(v.size() == 2);
     REQUIRE(v[0] == "a");
@@ -249,12 +248,12 @@ TEST_CASE("Vec<String> erase", "[vec]")
 
 TEST_CASE("Vec copy assignment", "[vec]")
 {
-    auto a = Vec<String> {};
-    a.push_back(String { "old" });
+    auto a = Vec<std::string> {};
+    a.push_back(std::string { "old" });
 
-    auto b = Vec<String> {};
-    b.push_back(String { "one" });
-    b.push_back(String { "two" });
+    auto b = Vec<std::string> {};
+    b.push_back(std::string { "one" });
+    b.push_back(std::string { "two" });
 
     a = b;
     REQUIRE(a.size() == 2);
@@ -264,11 +263,11 @@ TEST_CASE("Vec copy assignment", "[vec]")
 
 TEST_CASE("Vec move assignment", "[vec]")
 {
-    auto a = Vec<String> {};
-    a.push_back(String { "old" });
+    auto a = Vec<std::string> {};
+    a.push_back(std::string { "old" });
 
-    auto b = Vec<String> {};
-    b.push_back(String { "new" });
+    auto b = Vec<std::string> {};
+    b.push_back(std::string { "new" });
 
     a = std::move(b);
     REQUIRE(a[0] == "new");
@@ -297,7 +296,7 @@ TEST_CASE("Vec self-copy assignment", "[vec]")
 
 TEST_CASE("Vec emplace_back", "[vec]")
 {
-    auto v = Vec<String> {};
+    auto v = Vec<std::string> {};
     v.emplace_back("constructed in place");
     REQUIRE(v[0] == "constructed in place");
 }

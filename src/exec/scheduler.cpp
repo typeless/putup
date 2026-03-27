@@ -41,12 +41,13 @@ namespace pup::exec {
 
 namespace {
 
-using EnvCache = Vec<std::pair<String, String>>;
+using EnvCache = Vec<std::pair<StringId, StringId>>;
 
-auto env_cache_find(EnvCache const& cache, std::string_view key) -> std::pair<String, String> const*
+auto env_cache_find(EnvCache const& cache, std::string_view key) -> std::pair<StringId, StringId> const*
 {
-    auto pos = std::lower_bound(cache.begin(), cache.end(), key, [](auto const& p, std::string_view k) { return p.first < k; });
-    return (pos != cache.end() && pos->first == key) ? pos : cache.end();
+    auto& pool = global_pool();
+    auto pos = std::lower_bound(cache.begin(), cache.end(), key, [&pool](auto const& p, std::string_view k) { return pool.get(p.first) < k; });
+    return (pos != cache.end() && pool.get(pos->first) == key) ? pos : nullptr;
 }
 
 /// Build immutable sorted cache of environment variables for exported vars.
@@ -56,10 +57,10 @@ auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
     auto& pool = global_pool();
 
     // Collect unique var names
-    auto names = Vec<String> {};
+    auto names = Vec<StringId> {};
     for (auto const& job : jobs) {
         for (auto var_id : job.exported_vars) {
-            names.push_back(String { pool.get(var_id) });
+            names.push_back(var_id);
         }
     }
     std::sort(names.begin(), names.end());
@@ -68,9 +69,12 @@ auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
     // Look up each name once
     auto cache = EnvCache {};
     cache.reserve(names.size());
-    for (auto const& name : names) {
-        if (auto const* env_val = std::getenv(name.c_str())) {
-            cache.emplace_back(name, env_val);
+    auto namebuf = Buf {};
+    for (auto name_id : names) {
+        namebuf.clear();
+        namebuf.append(pool.get(name_id));
+        if (auto const* env_val = std::getenv(namebuf.c_str())) {
+            cache.emplace_back(name_id, pool.intern(env_val));
         }
     }
     return cache;
@@ -84,14 +88,14 @@ auto resolve_variant_path(
     std::string_view output_root,
     std::string_view output_root_prefix,
     std::string_view path
-) -> String
+) -> std::string_view
 {
     auto& pool = pup::global_pool();
     if (!output_root_prefix.empty() && path.starts_with(output_root_prefix)
         && (path.size() == output_root_prefix.size() || path[output_root_prefix.size()] == '/')) {
-        return String { pool.get(pup::path::join(source_root, path)) };
+        return pool.get(pup::path::join(source_root, path));
     }
-    return String { pool.get(pup::path::join(output_root, path)) };
+    return pool.get(pup::path::join(output_root, path));
 }
 
 /// Add job dependencies for any command that produces the given node.
@@ -216,10 +220,13 @@ auto validate_guard_dependencies(
         for (auto dep_idx : dependents[i]) {
             if (jobs[dep_idx].guard_active) {
                 auto& pool = global_pool();
-                return make_error<void>(
-                    ErrorCode::MissingInput,
-                    String { "Command '" } + pool.get(jobs[dep_idx].command) + "' depends on output from '" + pool.get(jobs[i].command) + "' which is inactive due to conditional guard"
-                );
+                auto eb = Buf {};
+                eb.append("Command '");
+                eb.append(pool.get(jobs[dep_idx].command));
+                eb.append("' depends on output from '");
+                eb.append(pool.get(jobs[i].command));
+                eb.append("' which is inactive due to conditional guard");
+                return make_error<void>(ErrorCode::MissingInput, eb.view());
             }
         }
     }
@@ -302,14 +309,14 @@ auto launch_job(
 
     // Resolve all StringIds to owned strings BEFORE fork.
     // After fork, we must not touch the StringPool (single-thread safety).
-    auto command_str = String { pool.get(job.command) };
-    auto working_dir_str = String { pool.get(working_dir) };
+    auto command_str = pool.get(job.command);
+    auto working_dir_str = pool.get(working_dir);
 
     auto env_strings = pup::platform::build_env_strings(env_ids, inherit_env);
-    auto env_c_strs = Vec<String> {};
+    auto env_c_strs = Vec<std::string_view> {};
     env_c_strs.reserve(env_strings.size());
     for (auto s : env_strings) {
-        env_c_strs.push_back(String { pool.get(s) });
+        env_c_strs.push_back(pool.get(s));
     }
 
     int stdout_pipe[2] = { -1, -1 };
@@ -351,8 +358,8 @@ auto launch_job(
 
         auto env_ptrs = Vec<char*> {};
         env_ptrs.reserve(env_c_strs.size() + 1);
-        for (auto& s : env_c_strs) {
-            env_ptrs.push_back(s.data());
+        for (auto s : env_c_strs) {
+            env_ptrs.push_back(const_cast<char*>(s.data()));
         }
         env_ptrs.push_back(nullptr);
 
@@ -788,7 +795,7 @@ auto Scheduler::execute_parallel(
                 for (auto output_id : job.outputs) {
                     auto output_sv = pool.get(output_id);
                     auto output_path = pup::path::is_absolute(output_sv)
-                        ? String { output_sv }
+                        ? output_sv
                         : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
                     auto parent = pup::path::parent(output_path);
                     if (!parent.empty()) {
@@ -800,11 +807,12 @@ auto Scheduler::execute_parallel(
                 auto env_ids = Vec<StringId> {};
                 for (auto var_id : job.exported_vars) {
                     auto var_sv = pool.get(var_id);
-                    if (auto it = env_cache_find(env_cache, var_sv); it != env_cache.end()) {
-                        auto entry = String { var_sv };
-                        entry += '=';
-                        entry += it->second;
-                        env_ids.push_back(pool.intern(entry));
+                    if (auto it = env_cache_find(env_cache, var_sv)) {
+                        auto eb = Buf {};
+                        eb.append(var_sv);
+                        eb.append('=');
+                        eb.append(pool.get(it->second));
+                        env_ids.push_back(eb.intern(pool));
                     }
                 }
 
@@ -1019,7 +1027,7 @@ auto Scheduler::execute_parallel(
             auto const& job = jobs[job_idx];
 
             // Save stdout before reap clears the buffer (needed for depfile parsing)
-            auto stdout_copy = String { slot.stdout_buf.view() };
+            auto stdout_copy = slot.stdout_buf.view();
 
             auto result = reap_slot(slot, status);
             result.id = job.id;
@@ -1045,9 +1053,10 @@ auto Scheduler::execute_parallel(
                         return;
                     }
                     auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
-                    auto stem = String { pup::path::stem(output_sv) };
-                    stem += ".d";
-                    auto depfile_path = String { pool.get(pup::path::join(base_path, stem)) };
+                    auto stem_buf = Buf {};
+                    stem_buf.append(pup::path::stem(output_sv));
+                    stem_buf.append(".d");
+                    auto depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
                     if (!pup::platform::exists(depfile_path)) {
                         return;
                     }
@@ -1162,7 +1171,7 @@ auto Scheduler::Impl::execute_job(
     for (auto output_id : job.outputs) {
         auto output_sv = pool.get(output_id);
         auto output_path = pup::path::is_absolute(output_sv)
-            ? String { output_sv }
+            ? output_sv
             : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
         auto parent = pup::path::parent(output_path);
         if (!parent.empty()) {
@@ -1179,11 +1188,12 @@ auto Scheduler::Impl::execute_job(
     // Per tup manual: "value for the variable comes from tup's environment"
     for (auto var_id : job.exported_vars) {
         auto var_sv = pool.get(var_id);
-        if (auto it = env_cache_find(env_cache, var_sv); it != env_cache.end()) {
-            auto entry = String { var_sv };
-            entry += '=';
-            entry += it->second;
-            run_opts.env.push_back(pool.intern(entry));
+        if (auto it = env_cache_find(env_cache, var_sv)) {
+            auto eb = Buf {};
+            eb.append(var_sv);
+            eb.append('=');
+            eb.append(pool.get(it->second));
+            run_opts.env.push_back(eb.intern(pool));
         }
     }
 
@@ -1238,9 +1248,10 @@ auto Scheduler::Impl::execute_job(
 
             // Compute filesystem path for the .d file
             auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
-            auto stem = String { pup::path::stem(output_sv) };
-            stem += ".d";
-            auto depfile_path = String { pool.get(pup::path::join(base_path, stem)) };
+            auto stem_buf = Buf {};
+            stem_buf.append(pup::path::stem(output_sv));
+            stem_buf.append(".d");
+            auto depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
 
             if (!pup::platform::exists(depfile_path)) {
                 continue;

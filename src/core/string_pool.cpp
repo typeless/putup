@@ -73,7 +73,7 @@ auto StringPool::operator=(StringPool&& other) noexcept -> StringPool&
 
 auto StringPool::key_at(std::size_t slot) const -> std::string_view
 {
-    return storage_[to_underlying(values_[slot]) - 1];
+    return storage_[to_underlying(values_[slot]) - 1].view();
 }
 
 auto StringPool::probe_find(std::uint32_t h, std::string_view key) const -> StringId
@@ -162,7 +162,8 @@ auto StringPool::intern(std::string_view str) -> StringId
     }
 
     auto const id = make_string_id(static_cast<std::uint32_t>(storage_.size() + 1));
-    storage_.emplace_back(str);
+    auto& slot = storage_.emplace_back();
+    slot.append(str);
 
     if (index_count_ >= index_capacity_ * 4 / 5) {
         grow();
@@ -186,7 +187,7 @@ auto StringPool::get(StringId id) const -> std::string_view
         return {};
     }
 
-    return storage_[idx];
+    return storage_[idx].view();
 }
 
 auto StringPool::find(std::string_view str) const -> StringId

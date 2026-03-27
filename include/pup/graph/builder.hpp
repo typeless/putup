@@ -6,7 +6,6 @@
 #include "dag.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/parser/ast.hpp"

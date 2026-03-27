@@ -3,10 +3,9 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/paged_vec.hpp"
-#include "pup/core/string.hpp"
+#include <string>
 
 using pup::PagedVec;
-using pup::String;
 
 TEST_CASE("PagedVec basic operations", "[paged_vec]")
 {
@@ -57,16 +56,16 @@ TEST_CASE("PagedVec pointer stability", "[paged_vec]")
 
 TEST_CASE("PagedVec with non-trivial type", "[paged_vec]")
 {
-    auto v = PagedVec<String, 4> {};
+    auto v = PagedVec<std::string, 4> {};
 
-    v.push_back(String { "hello" });
-    v.push_back(String { "world" });
+    v.push_back(std::string { "hello" });
+    v.push_back(std::string { "world" });
 
     auto* ptr = &v[0];
 
     // Push more to trigger new pages
     for (int i = 0; i < 20; ++i) {
-        v.push_back(String { "item" });
+        v.push_back(std::string { "item" });
     }
 
     // Original pointer still valid
@@ -89,7 +88,7 @@ TEST_CASE("PagedVec move", "[paged_vec]")
 
 TEST_CASE("PagedVec emplace_back", "[paged_vec]")
 {
-    auto v = PagedVec<String, 4> {};
+    auto v = PagedVec<std::string, 4> {};
     auto& ref = v.emplace_back("constructed");
     REQUIRE(ref == "constructed");
     REQUIRE(v[0] == "constructed");

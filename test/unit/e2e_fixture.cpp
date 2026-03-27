@@ -15,7 +15,6 @@
 namespace pup::test {
 
 namespace fs = std::filesystem;
-using pup::String;
 using pup::StringId;
 using pup::global_pool;
 
@@ -135,7 +134,7 @@ auto E2EFixture::operator=(E2EFixture&& other) noexcept -> E2EFixture&
 auto E2EFixture::run_pup(std::vector<std::string> const& args) -> PupResult
 {
     auto& pool = global_pool();
-    auto cmd = String { m_pup_binary.string() };
+    auto cmd = m_pup_binary.string();
     for (auto const& arg : args) {
         cmd += " ";
         cmd += pool.get(exec::shell_quote(arg));
@@ -224,17 +223,17 @@ auto E2EFixture::is_executable(std::string_view path) const -> bool
     return (perms & fs::perms::owner_exec) != fs::perms::none;
 }
 
-auto E2EFixture::read_file(std::string_view path) const -> pup::String
+auto E2EFixture::read_file(std::string_view path) const -> std::string
 {
     auto p = resolve_path(path);
     auto ifs = std::ifstream { p };
     if (!ifs)
         return {};
 
-    auto content = String {};
+    auto content = std::string {};
     char buf[4096];
     while (ifs.read(buf, sizeof(buf)) || ifs.gcount() > 0) {
-        content.append(std::string_view { buf, static_cast<std::size_t>(ifs.gcount()) });
+        content.append(buf, static_cast<std::size_t>(ifs.gcount()));
     }
     return content;
 }
@@ -243,7 +242,7 @@ auto E2EFixture::run(std::string_view path, std::vector<std::string> const& args
 {
     auto& pool = global_pool();
     auto p = resolve_path(path);
-    auto cmd = String { p.string() };
+    auto cmd = p.string();
     for (auto const& arg : args) {
         cmd += " ";
         cmd += pool.get(exec::shell_quote(arg));
@@ -304,7 +303,7 @@ auto E2EFixture::run_pup_in_dir(
     auto& pool = global_pool();
     auto working_dir = resolve_path(dir);
 
-    auto cmd = String { m_pup_binary.string() };
+    auto cmd = m_pup_binary.string();
     for (auto const& arg : args) {
         cmd += " ";
         cmd += pool.get(exec::shell_quote(arg));

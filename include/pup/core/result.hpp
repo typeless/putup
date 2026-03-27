@@ -5,7 +5,6 @@
 
 #include "expected.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
@@ -69,11 +68,6 @@ struct Error {
     {
     }
     Error(ErrorCode c, std::string_view msg)
-        : code(c)
-        , message(global_pool().intern(msg))
-    {
-    }
-    Error(ErrorCode c, String const& msg)
         : code(c)
         , message(global_pool().intern(msg))
     {

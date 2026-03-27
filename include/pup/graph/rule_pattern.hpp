@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"

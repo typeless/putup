@@ -71,7 +71,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "hello world");
+        REQUIRE(sv(*result) == "hello world");
     }
 
     SECTION("variable expansion")
@@ -84,7 +84,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "hello pup");
+        REQUIRE(sv(*result) == "hello pup");
     }
 
     SECTION("multiple variables")
@@ -99,7 +99,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "gcc -Wall -O2");
+        REQUIRE(sv(*result) == "gcc -Wall -O2");
     }
 
     SECTION("undefined variable expands to empty")
@@ -109,7 +109,7 @@ TEST_CASE("Evaluator expression expansion", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(result->empty());
+        REQUIRE(is_empty(*result));
     }
 }
 
@@ -123,7 +123,7 @@ TEST_CASE("Evaluator string expansion", "[eval]")
     {
         auto result = expand(ctx,"hello world");
         REQUIRE(result.has_value());
-        REQUIRE(*result == "hello world");
+        REQUIRE(sv(*result) == "hello world");
     }
 
     SECTION("single variable")
@@ -131,7 +131,7 @@ TEST_CASE("Evaluator string expansion", "[eval]")
         vars.set("NAME", "pup");
         auto result = expand(ctx,"hello $(NAME)");
         REQUIRE(result.has_value());
-        REQUIRE(*result == "hello pup");
+        REQUIRE(sv(*result) == "hello pup");
     }
 
     SECTION("multiple variables")
@@ -140,14 +140,14 @@ TEST_CASE("Evaluator string expansion", "[eval]")
         vars.set("FLAGS", "-O2");
         auto result = expand(ctx,"$(CC) $(FLAGS)");
         REQUIRE(result.has_value());
-        REQUIRE(*result == "gcc -O2");
+        REQUIRE(sv(*result) == "gcc -O2");
     }
 
     SECTION("dollar without paren is literal")
     {
         auto result = expand(ctx,"price is $5");
         REQUIRE(result.has_value());
-        REQUIRE(*result == "price is $5");
+        REQUIRE(sv(*result) == "price is $5");
     }
 }
 
@@ -167,7 +167,7 @@ TEST_CASE("Evaluator config variables", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "y");
+        REQUIRE(sv(*result) == "y");
     }
 }
 
@@ -189,7 +189,7 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "/home/user/project/src");
+        REQUIRE(sv(*result) == "/home/user/project/src");
     }
 
     SECTION("TUP_PLATFORM")
@@ -199,7 +199,7 @@ TEST_CASE("Evaluator built-in variables", "[eval]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "linux");
+        REQUIRE(sv(*result) == "linux");
     }
 }
 
@@ -244,7 +244,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == pup::PLATFORM);
+        REQUIRE(sv(*result) == pup::PLATFORM);
     }
 
     SECTION("returns config value when CONFIG_TUP_PLATFORM is set")
@@ -256,7 +256,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "win32");
+        REQUIRE(sv(*result) == "win32");
     }
 
     SECTION("env var takes highest priority over config")
@@ -269,7 +269,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "env-platform");
+        REQUIRE(sv(*result) == "env-platform");
     }
 }
 
@@ -291,7 +291,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == pup::ARCH);
+        REQUIRE(sv(*result) == pup::ARCH);
     }
 
     SECTION("returns config value when CONFIG_TUP_ARCH is set")
@@ -303,7 +303,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "arm64");
+        REQUIRE(sv(*result) == "arm64");
     }
 
     SECTION("env var takes highest priority over config")
@@ -316,7 +316,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
 
         auto result = expand(ctx,expr);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "env-arch");
+        REQUIRE(sv(*result) == "env-arch");
     }
 }
 
@@ -342,28 +342,28 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
     {
         auto result = expand_pattern(ctx,"gcc -c %f -o %o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "gcc -c src/foo.c -o build/foo.o");
+        REQUIRE(sv(*result) == "gcc -c src/foo.c -o build/foo.o");
     }
 
     SECTION("%B - basename without extension")
     {
         auto result = expand_pattern(ctx,"%B.o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "foo.o");
+        REQUIRE(sv(*result) == "foo.o");
     }
 
     SECTION("%% escape")
     {
         auto result = expand_pattern(ctx,"100%%", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "100%");
+        REQUIRE(sv(*result) == "100%");
     }
 
     SECTION("%Nf - N-th input (single)")
     {
         auto result = expand_pattern(ctx,"%1f", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "src/foo.c");
+        REQUIRE(sv(*result) == "src/foo.c");
     }
 
     // Note: %i is for order-only inputs, not yet implemented
@@ -391,14 +391,14 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
     {
         auto result = expand_pattern(ctx,"gcc -c %f -o %o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "gcc -c a.c b.c c.c -o out.o");
+        REQUIRE(sv(*result) == "gcc -c a.c b.c c.c -o out.o");
     }
 
     SECTION("%Nf - N-th input")
     {
         auto result = expand_pattern(ctx,"%1f %2f %3f", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "a.c b.c c.c");
+        REQUIRE(sv(*result) == "a.c b.c c.c");
     }
 
     // Note: %i is for order-only inputs, not yet implemented
@@ -420,7 +420,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 
         auto result = expand_pattern(ctx,"%1o %2o %3o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "a.o b.o c.o");
+        REQUIRE(sv(*result) == "a.o b.o c.o");
     }
 
     SECTION("%No - single output")
@@ -433,7 +433,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 
         auto result = expand_pattern(ctx,"%1o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "out.o");
+        REQUIRE(sv(*result) == "out.o");
     }
 
     SECTION("%No - out of bounds produces empty")
@@ -444,7 +444,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 
         auto result = expand_pattern(ctx,"%2o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "");
+        REQUIRE(sv(*result) == "");
     }
 
     SECTION("%No - mixed with other flags")
@@ -458,7 +458,7 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 
         auto result = expand_pattern(ctx,"gen %f -o %1o %2o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "gen src.c -o a.o b.o");
+        REQUIRE(sv(*result) == "gen src.c -o a.o b.o");
     }
 }
 
@@ -476,7 +476,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         };
         auto result = expand_pattern(ctx,"%g", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "hello");
+        REQUIRE(sv(*result) == "hello");
     }
 
     SECTION("%g - suffix pattern match")
@@ -488,7 +488,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         };
         auto result = expand_pattern(ctx,"%g.o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "foo.o");
+        REQUIRE(sv(*result) == "foo.o");
     }
 
     SECTION("%g - empty when not set")
@@ -498,7 +498,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         };
         auto result = expand_pattern(ctx,"%g", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "");
+        REQUIRE(sv(*result) == "");
     }
 
     SECTION("%g - combined with other flags")
@@ -513,7 +513,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         };
         auto result = expand_pattern(ctx,"compile %f -DNAME=%g -o %o", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "compile foo_test.c -DNAME=foo -o foo.o");
+        REQUIRE(sv(*result) == "compile foo_test.c -DNAME=foo -o foo.o");
     }
 }
 
@@ -611,9 +611,9 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
         REQUIRE(result->size() == 3);
-        REQUIRE((*result)[0] == "a.o");
-        REQUIRE((*result)[1] == "b.o");
-        REQUIRE((*result)[2] == "c.o");
+        REQUIRE(sv((*result)[0]) == "a.o");
+        REQUIRE(sv((*result)[1]) == "b.o");
+        REQUIRE(sv((*result)[2]) == "c.o");
     }
 
     SECTION("resolve_order_only_group callback for <name>")
@@ -631,8 +631,8 @@ TEST_CASE("Evaluator group resolution", "[eval]")
         auto result = expand_path(ctx,pattern);
         REQUIRE(result.has_value());
         REQUIRE(result->size() == 2);
-        REQUIRE((*result)[0] == "generated/config.h");
-        REQUIRE((*result)[1] == "generated/version.h");
+        REQUIRE(sv((*result)[0]) == "generated/config.h");
+        REQUIRE(sv((*result)[1]) == "generated/version.h");
     }
 
     SECTION("unresolved group returns empty")
@@ -669,14 +669,14 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
     {
         auto result = expand_pattern(ctx,"echo %<headers>", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "echo inc/a.h inc/b.h");
+        REQUIRE(sv(*result) == "echo inc/a.h inc/b.h");
     }
 
     SECTION("%<nonexistent> expands to empty")
     {
         auto result = expand_pattern(ctx,"echo %<nonexistent>", flags);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "echo ");
+        REQUIRE(sv(*result) == "echo ");
     }
 }
 
@@ -698,7 +698,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
 
     auto result = expand(ctx,"$(TUP_VARIANT_OUTPUTDIR)");
     REQUIRE(result.has_value());
-    CHECK(*result == ".");
+    CHECK(sv(*result) == ".");
 }
 
 TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]")
@@ -715,7 +715,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]"
 
     auto result = expand(ctx,"$(TUP_VARIANT_OUTPUTDIR)");
     REQUIRE(result.has_value());
-    CHECK(*result == "../../build/sub/dir");
+    CHECK(sv(*result) == "../../build/sub/dir");
 }
 
 TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
@@ -731,7 +731,7 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
 
     auto result = expand(ctx,"echo -o $(TUP_VARIANT_OUTPUTDIR)/out.txt");
     REQUIRE(result.has_value());
-    CHECK(*result == "echo -o ../../build/sub/dir/out.txt");
+    CHECK(sv(*result) == "echo -o ../../build/sub/dir/out.txt");
 }
 
 TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
@@ -756,28 +756,28 @@ TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
     {
         auto result = expand(ctx,"$(TUP_CWD)");
         REQUIRE(result.has_value());
-        CHECK(*result == "../../rules");
+        CHECK(sv(*result) == "../../rules");
     }
 
     SECTION("TUP_VARIANTDIR expands to variant's included file directory")
     {
         auto result = expand(ctx,"$(TUP_VARIANTDIR)");
         REQUIRE(result.has_value());
-        CHECK(*result == "../../build/rules");
+        CHECK(sv(*result) == "../../build/rules");
     }
 
     SECTION("TUP_VARIANT_OUTPUTDIR expands to variant's current directory")
     {
         auto result = expand(ctx,"$(TUP_VARIANT_OUTPUTDIR)");
         REQUIRE(result.has_value());
-        CHECK(*result == "../../build/sub/dir");
+        CHECK(sv(*result) == "../../build/sub/dir");
     }
 
     SECTION("All three in same command")
     {
         auto result = expand(ctx,"CWD=$(TUP_CWD) VARIANTDIR=$(TUP_VARIANTDIR) OUTPUTDIR=$(TUP_VARIANT_OUTPUTDIR)");
         REQUIRE(result.has_value());
-        CHECK(*result == "CWD=../../rules VARIANTDIR=../../build/rules OUTPUTDIR=../../build/sub/dir");
+        CHECK(sv(*result) == "CWD=../../rules VARIANTDIR=../../build/rules OUTPUTDIR=../../build/sub/dir");
     }
 }
 
@@ -791,14 +791,14 @@ TEST_CASE("Evaluator undefined variable handling", "[eval][error]")
     {
         auto result = expand(ctx,"prefix_$(UNDEFINED)_suffix");
         REQUIRE(result.has_value());
-        CHECK(*result == "prefix__suffix");
+        CHECK(sv(*result) == "prefix__suffix");
     }
 
     SECTION("multiple undefined variables")
     {
         auto result = expand(ctx,"$(A)$(B)$(C)");
         REQUIRE(result.has_value());
-        CHECK(*result == "");
+        CHECK(sv(*result) == "");
     }
 
     SECTION("mixed defined and undefined")
@@ -806,6 +806,6 @@ TEST_CASE("Evaluator undefined variable handling", "[eval][error]")
         vars.set("DEFINED", "value");
         auto result = expand(ctx,"$(DEFINED)-$(UNDEFINED)");
         REQUIRE(result.has_value());
-        CHECK(*result == "value-");
+        CHECK(sv(*result) == "value-");
     }
 }

@@ -3,6 +3,7 @@
 
 #include "pup/parser/eval.hpp"
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/string_id.hpp"
@@ -52,14 +53,14 @@ auto VarDb::append(std::string_view name, std::string_view value) -> void
     auto const* existing = entries_.find(name_id);
     if (existing) {
         auto old_value = global_pool().get(pup::make_string_id(*existing));
-        auto combined = String {};
+        auto buf = Buf {};
         if (!old_value.empty()) {
-            combined.reserve(old_value.size() + 1 + value.size());
-            combined += old_value;
-            combined += ' ';
+            buf.reserve(old_value.size() + 1 + value.size());
+            buf.append(old_value);
+            buf.append(' ');
         }
-        combined += value;
-        auto value_id = pup::to_underlying(global_pool().intern(combined));
+        buf.append(value);
+        auto value_id = pup::to_underlying(buf.intern(global_pool()));
         entries_.insert(name_id, value_id);
     } else {
         auto value_id = pup::to_underlying(global_pool().intern(value));
@@ -225,7 +226,7 @@ auto make_var_context(EvalContext const& ctx) -> VarContext
     };
 }
 
-auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<String>
+auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<StringId>
 {
     auto& pool = global_pool();
     auto var_ctx = make_var_context(ctx);
@@ -274,7 +275,7 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<String>
         }
     }
 
-    return value ? String { *value } : String {};
+    return value ? pool.intern(*value) : StringId::Empty;
 }
 
 } // namespace
@@ -283,31 +284,33 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<String>
 // Free functions
 // =============================================================================
 
-auto expand(EvalContext& ctx, Expression const& expr) -> Result<String>
+auto expand(EvalContext& ctx, Expression const& expr) -> Result<StringId>
 {
-    auto result = String {};
+    auto& pool = global_pool();
+    auto buf = Buf {};
 
     for (auto const& part : expr.parts) {
         if (std::holds_alternative<Expression::Literal>(part)) {
-            result += global_pool().get(std::get<Expression::Literal>(part).value);
+            buf.append(pool.get(std::get<Expression::Literal>(part).value));
         } else if (std::holds_alternative<Expression::Variable>(part)) {
             auto const& var = std::get<Expression::Variable>(part);
             auto expanded = expand_var(ctx, var.ref);
             if (!expanded) {
                 return pup::unexpected<Error>(expanded.error());
             }
-            result += *expanded;
+            buf.append(pool.get(*expanded));
         }
     }
 
     // Recursively expand any variable references that were embedded in literals
     // (e.g., from escaped quotes like \"$(VAR)\")
-    return expand(ctx, std::string_view { result });
+    return expand(ctx, buf.view());
 }
 
-auto expand(EvalContext& ctx, std::string_view text) -> Result<String>
+auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>
 {
-    auto result = String {};
+    auto& pool = global_pool();
+    auto buf = Buf {};
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
@@ -321,16 +324,16 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<String>
 
         if (next == std::string_view::npos) {
             // No more variable references
-            result += text.substr(pos);
+            buf.append(text.substr(pos));
             break;
         }
 
         // Add text before the variable
-        result += text.substr(pos, next - pos);
+        buf.append(text.substr(pos, next - pos));
 
-        // Handle $$ escape → literal $ for shell commands
+        // Handle $$ escape -> literal $ for shell commands
         if (text[next] == '$' && next + 1 < text.size() && text[next + 1] == '$') {
-            result += '$';
+            buf.append('$');
             pos = next + 2;
             continue;
         }
@@ -348,46 +351,47 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<String>
                     kind = VarRef::Kind::Node;
                 }
 
-                auto ref = VarRef { kind, global_pool().intern(name), {} };
+                auto ref = VarRef { kind, pool.intern(name), {} };
                 auto expanded = expand_var(ctx, ref);
                 if (!expanded) {
                     return pup::unexpected<Error>(expanded.error());
                 }
-                result += *expanded;
+                buf.append(pool.get(*expanded));
                 pos = close + 1;
                 continue;
             }
         }
 
         // Not a variable reference, just add the character
-        result += text[next];
+        buf.append(text[next]);
         pos = next + 1;
     }
 
-    return result;
+    return buf.intern(pool);
 }
 
 auto expand_pattern(
     EvalContext& ctx,
     std::string_view text,
     PatternFlags const& flags
-) -> Result<String>
+) -> Result<StringId>
 {
-    auto result = String {};
+    auto& pool = global_pool();
+    auto buf = Buf {};
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
         auto percent = text.find('%', pos);
 
         if (percent == std::string_view::npos) {
-            result += text.substr(pos);
+            buf.append(text.substr(pos));
             break;
         }
 
-        result += text.substr(pos, percent - pos);
+        buf.append(text.substr(pos, percent - pos));
 
         if (percent + 1 >= text.size()) {
-            result += '%';
+            buf.append('%');
             pos = percent + 1;
             continue;
         }
@@ -397,7 +401,7 @@ auto expand_pattern(
 
         // Check for %% escape
         if (flag == '%') {
-            result += '%';
+            buf.append('%');
             continue;
         }
 
@@ -416,7 +420,7 @@ auto expand_pattern(
             if (end < text.size() && text[end] == 'f') {
                 // %Nf - N-th input file
                 if (num > 0 && static_cast<std::size_t>(num) <= flags.all_inputs.size()) {
-                    result += flags.all_inputs[static_cast<std::size_t>(num - 1)];
+                    buf.append(flags.all_inputs[static_cast<std::size_t>(num - 1)]);
                 }
                 pos = end + 1;
                 continue;
@@ -425,14 +429,14 @@ auto expand_pattern(
             if (end < text.size() && text[end] == 'o') {
                 // %No - N-th output file
                 if (num > 0 && static_cast<std::size_t>(num) <= flags.all_outputs.size()) {
-                    result += flags.all_outputs[static_cast<std::size_t>(num - 1)];
+                    buf.append(flags.all_outputs[static_cast<std::size_t>(num - 1)]);
                 }
                 pos = end + 1;
                 continue;
             }
 
             // Not a valid pattern, output as-is
-            result += '%';
+            buf.append('%');
             pos = percent + 1;
             continue;
         }
@@ -442,7 +446,7 @@ auto expand_pattern(
             auto end = text.find('>', pos);
             if (end == std::string_view::npos) {
                 // No closing '>', output as-is
-                result += "%<";
+                buf.append("%<");
                 continue;
             }
             auto group_name = text.substr(pos, end - pos);
@@ -453,9 +457,9 @@ auto expand_pattern(
                 auto paths = ctx.resolve_order_only_group(group_name);
                 for (std::size_t i = 0; i < paths.size(); ++i) {
                     if (i > 0) {
-                        result += ' ';
+                        buf.append(' ');
                     }
-                    result += global_pool().get(paths[i]);
+                    buf.append(pool.get(paths[i]));
                 }
             }
             continue;
@@ -467,64 +471,65 @@ auto expand_pattern(
             // %f - all inputs space-separated
             for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
                 if (i > 0) {
-                    result += ' ';
+                    buf.append(' ');
                 }
-                result += flags.all_inputs[i];
+                buf.append(flags.all_inputs[i]);
             }
             break;
         case 'b':
-            result += flags.input_base;
+            buf.append(flags.input_base);
             break;
         case 'B':
-            result += flags.input_noext;
+            buf.append(flags.input_noext);
             break;
         case 'e':
-            result += flags.input_ext;
+            buf.append(flags.input_ext);
             break;
         case 'o':
-            result += flags.output;
+            buf.append(flags.output);
             break;
         case 'O':
-            result += flags.output_base;
+            buf.append(flags.output_base);
             break;
         case 'd':
-            result += flags.input_dir;
+            buf.append(flags.input_dir);
             break;
         case 'g':
-            result += flags.glob_match;
+            buf.append(flags.glob_match);
             break;
         case 'i':
             // %i - all inputs space-separated
             for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
                 if (i > 0) {
-                    result += ' ';
+                    buf.append(' ');
                 }
-                result += flags.all_inputs[i];
+                buf.append(flags.all_inputs[i]);
             }
             break;
         default:
             // Unknown flag, keep as-is
-            result += '%';
-            result += flag;
+            buf.append('%');
+            buf.append(flag);
             break;
         }
     }
 
-    return result;
+    return buf.intern(pool);
 }
 
 auto expand_path(
     EvalContext& ctx,
     PathPattern const& pattern
-) -> Result<Vec<String>>
+) -> Result<Vec<StringId>>
 {
-    auto result = Vec<String> {};
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
 
     if (pattern.is_order_only_group) {
         if (ctx.resolve_order_only_group) {
-            auto paths = ctx.resolve_order_only_group(global_pool().get(pattern.group_name));
+            auto paths = ctx.resolve_order_only_group(pool.get(pattern.group_name));
             for (auto id : paths) {
-                result.push_back(String { global_pool().get(id) });
+                result.push_back(id);
             }
         }
         return result;
@@ -532,9 +537,9 @@ auto expand_path(
 
     if (pattern.is_group) {
         if (ctx.resolve_group) {
-            auto paths = ctx.resolve_group(global_pool().get(pattern.group_name));
+            auto paths = ctx.resolve_group(pool.get(pattern.group_name));
             for (auto id : paths) {
-                result.push_back(String { global_pool().get(id) });
+                result.push_back(id);
             }
         }
         return result;
@@ -547,7 +552,7 @@ auto expand_path(
     }
 
     // Split result by whitespace - variables may contain multiple files
-    auto const& expanded = *path_result;
+    auto expanded = pool.get(*path_result);
     auto start = std::size_t { 0 };
     while (start < expanded.size()) {
         // Skip whitespace
@@ -564,9 +569,8 @@ auto expand_path(
         }
         if (end > start) {
             // Normalize path to remove // and resolve . and .. components
-            auto path_str = std::string_view { expanded }.substr(start, end - start);
-            auto normalized = pup::global_pool().get(pup::path::normalize(path_str));
-            result.push_back(String { normalized });
+            auto path_str = expanded.substr(start, end - start);
+            result.push_back(pup::path::normalize(path_str));
         }
         start = end;
     }
@@ -576,21 +580,22 @@ auto expand_path(
 
 auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
 {
+    auto& pool = global_pool();
     switch (cond.kind) {
     case Conditional::Kind::Ifdef:
-        if (ctx.vars && ctx.vars->contains(global_pool().get(cond.var_name))) {
+        if (ctx.vars && ctx.vars->contains(pool.get(cond.var_name))) {
             return true;
         }
-        if (ctx.config_vars && ctx.config_vars->contains(global_pool().get(cond.var_name))) {
+        if (ctx.config_vars && ctx.config_vars->contains(pool.get(cond.var_name))) {
             return true;
         }
         return false;
 
     case Conditional::Kind::Ifndef:
-        if (ctx.vars && ctx.vars->contains(global_pool().get(cond.var_name))) {
+        if (ctx.vars && ctx.vars->contains(pool.get(cond.var_name))) {
             return false;
         }
-        if (ctx.config_vars && ctx.config_vars->contains(global_pool().get(cond.var_name))) {
+        if (ctx.config_vars && ctx.config_vars->contains(pool.get(cond.var_name))) {
             return false;
         }
         return true;
@@ -601,7 +606,7 @@ auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
         if (!lhs || !rhs) {
             return false;
         }
-        return *lhs == *rhs;
+        return pool.get(*lhs) == pool.get(*rhs);
     }
 
     case Conditional::Kind::Ifneq: {
@@ -610,7 +615,7 @@ auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
         if (!lhs || !rhs) {
             return false;
         }
-        return *lhs != *rhs;
+        return pool.get(*lhs) != pool.get(*rhs);
     }
     }
 

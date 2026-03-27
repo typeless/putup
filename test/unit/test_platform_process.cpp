@@ -9,7 +9,6 @@
 
 using namespace pup::platform;
 using namespace pup::test;
-using pup::String;
 using pup::StringId;
 using pup::global_pool;
 
@@ -121,7 +120,7 @@ SCENARIO("run_process can pipe data to stdin", "[platform][process]")
     {
         auto opts = make_opts(CAT_CMD);
         opts.capture_stdout = true;
-        opts.stdin_data = "hello from stdin";
+        opts.stdin_data = intern("hello from stdin");
 
         WHEN("stdin data is provided")
         {

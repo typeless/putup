@@ -21,8 +21,8 @@ public:
 
     HeapBuf(HeapBuf const&) = delete;
     auto operator=(HeapBuf const&) -> HeapBuf& = delete;
-    HeapBuf(HeapBuf&&) = delete;
-    auto operator=(HeapBuf&&) -> HeapBuf& = delete;
+    HeapBuf(HeapBuf&& other) noexcept;
+    auto operator=(HeapBuf&& other) noexcept -> HeapBuf&;
 
     auto append(std::string_view sv) -> void;
     auto append(char c) -> void;

@@ -3,6 +3,7 @@
 
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/output.hpp"
 #include "pup/core/global_pool.hpp"
@@ -38,13 +39,13 @@ auto load_index_for_all_deps(
         return std::nullopt;
     }
 
-    auto index_path = String { pup::global_pool().get(layout.index_path()) };
-    if (!pup::platform::exists(index_path)) {
+    auto index_path_sv = pup::global_pool().get(layout.index_path());
+    if (!pup::platform::exists(index_path_sv)) {
         fprintf(stderr, "Warning: No index found - run 'putup' first\n");
         return std::nullopt;
     }
 
-    auto index_result = pup::index::read_index(index_path);
+    auto index_result = pup::index::read_index(index_path_sv);
     if (!index_result) {
         return std::nullopt;
     }
@@ -53,38 +54,39 @@ auto load_index_for_all_deps(
     return std::move(*index_result);
 }
 
-auto format_node_id(pup::NodeId id) -> String
+auto format_node_id(pup::NodeId id) -> std::string_view
 {
-    char buf[32];
+    auto& pool = global_pool();
+    auto b = Buf {};
     if (node_id::is_command(id)) {
-        snprintf(buf, sizeof(buf), "c%zu", node_id::index(id));
+        b.fmt("c{}", node_id::index(id));
     } else {
-        snprintf(buf, sizeof(buf), "f%zu", node_id::index(id));
+        b.fmt("f{}", node_id::index(id));
     }
-    return String { buf };
+    return pool.get(b.intern(pool));
 }
 
-auto expand_script_run(std::string_view pattern, std::string_view dir, std::string_view cmd) -> String
+auto expand_script_run(std::string_view pattern, std::string_view dir, std::string_view cmd) -> StringId
 {
-    auto result = String {};
+    auto result = Buf {};
     result.reserve(pattern.size() + dir.size() + cmd.size());
 
     for (std::size_t i = 0; i < pattern.size(); ++i) {
         if (pattern[i] == '%' && i + 4 <= pattern.size()) {
             if (pattern.substr(i, 4) == "%DIR") {
-                result += dir;
+                result.append(dir);
                 i += 3;
                 continue;
             }
             if (pattern.substr(i, 4) == "%CMD") {
-                result += cmd;
+                result.append(cmd);
                 i += 3;
                 continue;
             }
         }
-        result += pattern[i];
+        result.append(pattern[i]);
     }
-    return result;
+    return result.intern(global_pool());
 }
 
 auto cmd_export_script(Options const& opts, std::string_view variant_name) -> int
@@ -132,7 +134,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     printf("%.*s\n\n", static_cast<int>(script_prologue.size()), script_prologue.data());
 
-    auto output_dirs = Vec<String> {};
+    auto output_dirs = Vec<StringId> {};
     for (auto id : ctx.graph().all_nodes()) {
         auto const* node = ctx.graph().get_file_node(id);
         if (!node) {
@@ -153,7 +155,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             if (node_id::is_command(input_id)) {
                 auto parent = pup::path::parent(node_path);
                 if (!parent.empty() && parent != ".") {
-                    output_dirs.emplace_back(parent);
+                    output_dirs.push_back(global_pool().intern(parent));
                 }
                 break;
             }
@@ -165,9 +167,10 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     if (!output_dirs.empty()) {
         printf("%.*s Create output directories\n", static_cast<int>(script_comment.size()), script_comment.data());
-        for (auto const& dir : output_dirs) {
-            auto line = expand_script_run(script_mkdir, dir, "");
-            printf("%s\n", line.c_str());
+        for (auto dir_id : output_dirs) {
+            auto line = expand_script_run(script_mkdir, global_pool().get(dir_id), "");
+            auto line_sv = global_pool().get(line);
+            printf("%.*s\n", static_cast<int>(line_sv.size()), line_sv.data());
         }
         printf("\n");
     }
@@ -190,7 +193,8 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         auto cmd_id = graph::expand_instruction(ctx.graph().graph(), id);
 
         auto line = expand_script_run(script_run, dir, global_pool().get(cmd_id));
-        printf("%s\n", line.c_str());
+        auto line_sv = global_pool().get(line);
+        printf("%.*s\n", static_cast<int>(line_sv.size()), line_sv.data());
     }
 
     auto script_epilogue = cfg.get("SCRIPT_EPILOGUE");
@@ -272,15 +276,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         };
         auto label = escape_dot_label(get_label());
 
-        printf("  %s [label=\"%s\"];\n", format_node_id(id).c_str(), pool.get(label).data());
+        printf("  %s [label=\"%s\"];\n", format_node_id(id).data(), pool.get(label).data());
 
         for (auto input_id : ctx.graph().get_inputs(id)) {
-            printf("  %s -> %s;\n", format_node_id(input_id).c_str(), format_node_id(id).c_str());
+            printf("  %s -> %s;\n", format_node_id(input_id).data(), format_node_id(id).data());
         }
 
         // Output order-only edges (dotted)
         for (auto oo_id : ctx.graph().get_order_only(id)) {
-            printf("  %s -> %s [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id).c_str(), format_node_id(id).c_str());
+            printf("  %s -> %s [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id).data(), format_node_id(id).data());
         }
     }
 
@@ -305,11 +309,11 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                     auto const* file = index->find_file_by_id(from_id);
                     auto label_id = file ? escape_dot_label(pool.get(file->path))
                                          : pool.intern(format_node_id(from_id));
-                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).c_str(), pool.get(label_id).data());
+                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).data(), pool.get(label_id).data());
                 }
             }
 
-            printf("  %s -> %s [style=dashed color=\"#888888\"];\n", format_node_id(from_id).c_str(), format_node_id(to_id).c_str());
+            printf("  %s -> %s [style=dashed color=\"#888888\"];\n", format_node_id(from_id).data(), format_node_id(to_id).data());
         }
     }
 
@@ -379,10 +383,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         auto source_root_sv = pool.get(ctx.layout().source_root);
         auto output_root_sv = pool.get(ctx.layout().output_root);
         auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
-        auto working_dir = String { source_root_sv };
-        if (!source_dir_sv.empty()) {
-            working_dir = String { pool.get(pup::path::join(working_dir, source_dir_sv)) };
-        }
+        auto working_dir = source_dir_sv.empty() ? source_root_sv : pool.get(pup::path::join(source_root_sv, source_dir_sv));
 
         // Convert project-root-relative paths to working-dir-relative
         auto source_abs = pool.get(pup::path::join(source_root_sv, source_file));
@@ -609,11 +610,17 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
         }
         auto instruction_str = pup::global_pool().get(iid);
         // Truncate long instructions for display
-        auto display_str = String { instruction_str };
-        if (display_str.size() > 60) {
-            display_str = display_str.substr(0, 57) + "...";
+        auto display_sv = instruction_str.size() > 60 ? instruction_str.substr(0, 57) : instruction_str;
+        if (instruction_str.size() > 60) {
+            auto tb = Buf {};
+            tb.append(display_sv);
+            tb.append("...");
+            printf("  #%zu (%zu uses): \"%s\"\n", shown + 1, count, tb.c_str());
+        } else {
+            auto tb = Buf {};
+            tb.append(display_sv);
+            printf("  #%zu (%zu uses): \"%s\"\n", shown + 1, count, tb.c_str());
         }
-        printf("  #%zu (%zu uses): \"%s\"\n", shown + 1, count, display_str.c_str());
         ++shown;
     }
 

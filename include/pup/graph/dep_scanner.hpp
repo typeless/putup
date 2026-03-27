@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
@@ -70,9 +70,10 @@ inline auto make_dep_display(Vec<StringId> const& inputs) -> StringId
     if (inputs.empty()) {
         return global_pool().intern("DEP");
     }
-    auto s = String { "DEP " };
-    s += global_pool().get(inputs[0]);
-    return global_pool().intern(s);
+    auto buf = Buf {};
+    buf.append("DEP ");
+    buf.append(global_pool().get(inputs[0]));
+    return buf.intern(global_pool());
 }
 
 /// Registry for dependency scanners.

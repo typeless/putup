@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/result.hpp"
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -86,17 +86,17 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>;
 
 // Path resolution
 [[nodiscard]]
-auto current_directory() -> Result<String>;
+auto current_directory() -> Result<StringId>;
 [[nodiscard]]
-auto canonical(std::string_view path) -> Result<String>;
+auto canonical(std::string_view path) -> Result<StringId>;
 [[nodiscard]]
-auto absolute(std::string_view path) -> Result<String>;
+auto absolute(std::string_view path) -> Result<StringId>;
 [[nodiscard]]
-auto read_symlink(std::string_view path) -> Result<String>;
+auto read_symlink(std::string_view path) -> Result<StringId>;
 
 // File I/O
 [[nodiscard]]
-auto read_file(std::string_view path) -> Result<String>;
+auto read_file(std::string_view path) -> Result<HeapBuf>;
 [[nodiscard]]
 auto write_file(std::string_view path, std::string_view data) -> Result<void>;
 
