@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
@@ -26,19 +28,45 @@ auto to_wide(std::string_view s) -> std::wstring
     return result;
 }
 
-auto from_wide(std::wstring const& w) -> String
+auto from_wide(std::wstring const& w, HeapBuf& out) -> void
 {
+    out.clear();
     if (w.empty()) {
-        return {};
+        return;
     }
     auto len = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
     if (len == 0) {
-        return {};
+        return;
     }
-    auto result = String {};
-    result.resize(static_cast<std::size_t>(len));
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), result.data(), len, nullptr, nullptr);
-    return result;
+    out.resize(static_cast<std::size_t>(len));
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), out.data(), len, nullptr, nullptr);
+}
+
+auto backslash_to_forward(std::string_view sv, HeapBuf& out) -> void
+{
+    out.clear();
+    out.reserve(sv.size());
+    for (auto c : sv) {
+        out += (c == '\\') ? '/' : c;
+    }
+}
+
+auto make_err_msg(std::string_view prefix, std::string_view path) -> StringId
+{
+    auto buf = Buf {};
+    buf.append(prefix);
+    buf.append(path);
+    return buf.intern(global_pool());
+}
+
+auto make_err_msg2(std::string_view prefix, std::string_view a, std::string_view mid, std::string_view b) -> StringId
+{
+    auto buf = Buf {};
+    buf.append(prefix);
+    buf.append(a);
+    buf.append(mid);
+    buf.append(b);
+    return buf.intern(global_pool());
 }
 
 } // namespace
@@ -199,8 +227,9 @@ auto atomic_write(
         }
     }
 
-    auto temp_path = String { path };
-    temp_path += ".tmp.";
+    auto temp_path = Buf {};
+    temp_path.append(path);
+    temp_path.append(".tmp.");
 
     auto seed = static_cast<unsigned>(GetCurrentProcessId()) ^ static_cast<unsigned>(GetTickCount());
     auto const* const hex = "0123456789abcdef";
@@ -209,7 +238,7 @@ auto atomic_write(
         temp_path += hex[(seed >> 16) & 0xF];
     }
 
-    auto wtemp = to_wide(temp_path);
+    auto wtemp = to_wide(temp_path.view());
     auto file = CreateFileW(
         wtemp.c_str(),
         GENERIC_WRITE,
@@ -330,7 +359,7 @@ auto create_directories(std::string_view path) -> Result<void>
     if (!CreateDirectoryW(wpath.c_str(), nullptr)) {
         auto err = GetLastError();
         if (err != ERROR_ALREADY_EXISTS) {
-            return make_error<void>(ErrorCode::IoError, "Failed to create directory: " + String { path });
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create directory: ", path));
         }
     }
     return {};
@@ -345,11 +374,11 @@ auto remove_file(std::string_view path) -> Result<void>
     }
     if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
         if (!RemoveDirectoryW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + String { path });
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path));
         }
     } else {
         if (!DeleteFileW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + String { path });
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path));
         }
     }
     return {};
@@ -364,7 +393,7 @@ auto remove_all(std::string_view path) -> Result<void>
     }
     if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
         if (!DeleteFileW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, "Failed to remove file: " + String { path });
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path));
         }
         return {};
     }
@@ -379,7 +408,7 @@ auto remove_all(std::string_view path) -> Result<void>
         }
     }
     if (!RemoveDirectoryW(wpath.c_str())) {
-        return make_error<void>(ErrorCode::IoError, "Failed to remove directory: " + String { path });
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path));
     }
     return {};
 }
@@ -389,7 +418,7 @@ auto rename_path(std::string_view from, std::string_view to) -> Result<void>
     auto wfrom = to_wide(from);
     auto wto = to_wide(to);
     if (!MoveFileExW(wfrom.c_str(), wto.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        return make_error<void>(ErrorCode::IoError, "Failed to rename: " + String { from } + " -> " + String { to });
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", from, " -> ", to));
     }
     return {};
 }
@@ -399,37 +428,33 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     auto wfrom = to_wide(from);
     auto wto = to_wide(to);
     if (!CopyFileW(wfrom.c_str(), wto.c_str(), FALSE)) {
-        return make_error<void>(ErrorCode::IoError, "Failed to copy: " + String { from } + " -> " + String { to });
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to copy: ", from, " -> ", to));
     }
     return {};
 }
 
 // Path resolution
 
-auto current_directory() -> Result<String>
+auto current_directory() -> Result<StringId>
 {
     auto len = GetCurrentDirectoryW(0, nullptr);
     if (len == 0) {
-        return make_error<String>(ErrorCode::IoError, "Failed to get current directory");
+        return make_error<StringId>(ErrorCode::IoError, "Failed to get current directory");
     }
-    auto buf = std::wstring(len, L'\0');
-    GetCurrentDirectoryW(len, buf.data());
-    buf.resize(len - 1);
-    auto result = from_wide(buf);
-    // Replace backslashes with forward slashes
-    auto fixed = String {};
-    fixed.reserve(result.size());
-    for (auto c : result) {
-        fixed += (c == '\\') ? '/' : c;
-    }
-    return fixed;
+    auto wbuf = std::wstring(len, L'\0');
+    GetCurrentDirectoryW(len, wbuf.data());
+    wbuf.resize(len - 1);
+    auto raw = HeapBuf {};
+    from_wide(wbuf, raw);
+    auto fixed = HeapBuf {};
+    backslash_to_forward(raw.view(), fixed);
+    return global_pool().intern(fixed.view());
 }
 
-auto canonical(std::string_view path) -> Result<String>
+auto canonical(std::string_view path) -> Result<StringId>
 {
     auto wpath = to_wide(path);
 
-    // Try to open the path to resolve symlinks via GetFinalPathNameByHandleW
     auto h = CreateFileW(
         wpath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr
     );
@@ -437,22 +462,20 @@ auto canonical(std::string_view path) -> Result<String>
     if (h != INVALID_HANDLE_VALUE) {
         auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
         if (len > 0) {
-            auto buf = std::wstring(len, L'\0');
-            GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
+            auto wbuf = std::wstring(len, L'\0');
+            GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
             CloseHandle(h);
-            buf.resize(len - 1);
-            auto raw = from_wide(buf);
-            std::string_view sv = raw;
+            wbuf.resize(len - 1);
+            auto raw = HeapBuf {};
+            from_wide(wbuf, raw);
+            auto sv = raw.view();
             // Strip \\?\ prefix
             if (sv.size() > 4 && sv[0] == '\\' && sv[1] == '\\' && sv[2] == '?' && sv[3] == '\\') {
                 sv = sv.substr(4);
             }
-            auto result = String {};
-            result.reserve(sv.size());
-            for (auto c : sv) {
-                result += (c == '\\') ? '/' : c;
-            }
-            return result;
+            auto fixed = HeapBuf {};
+            backslash_to_forward(sv, fixed);
+            return global_pool().intern(fixed.view());
         }
         CloseHandle(h);
     }
@@ -460,26 +483,24 @@ auto canonical(std::string_view path) -> Result<String>
     // Fallback for non-existent paths: lexical resolution only
     auto len = GetFullPathNameW(wpath.c_str(), 0, nullptr, nullptr);
     if (len == 0) {
-        return make_error<String>(ErrorCode::IoError, "Failed to resolve path: " + String { path });
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path));
     }
-    auto buf = std::wstring(len, L'\0');
-    GetFullPathNameW(wpath.c_str(), len, buf.data(), nullptr);
-    buf.resize(len - 1);
-    auto raw = from_wide(buf);
-    auto result = String {};
-    result.reserve(raw.size());
-    for (auto c : raw) {
-        result += (c == '\\') ? '/' : c;
-    }
-    return result;
+    auto wbuf = std::wstring(len, L'\0');
+    GetFullPathNameW(wpath.c_str(), len, wbuf.data(), nullptr);
+    wbuf.resize(len - 1);
+    auto raw = HeapBuf {};
+    from_wide(wbuf, raw);
+    auto fixed = HeapBuf {};
+    backslash_to_forward(raw.view(), fixed);
+    return global_pool().intern(fixed.view());
 }
 
-auto absolute(std::string_view path) -> Result<String>
+auto absolute(std::string_view path) -> Result<StringId>
 {
     return canonical(path);
 }
 
-auto read_symlink(std::string_view path) -> Result<String>
+auto read_symlink(std::string_view path) -> Result<StringId>
 {
     auto wpath = to_wide(path);
     auto h = CreateFileW(
@@ -492,29 +513,27 @@ auto read_symlink(std::string_view path) -> Result<String>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + String { path });
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path));
     }
     auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
     if (len == 0) {
         CloseHandle(h);
-        return make_error<String>(ErrorCode::IoError, "Failed to read symlink: " + String { path });
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path));
     }
-    auto buf = std::wstring(len, L'\0');
-    GetFinalPathNameByHandleW(h, buf.data(), len + 1, FILE_NAME_NORMALIZED);
+    auto wbuf = std::wstring(len, L'\0');
+    GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
     CloseHandle(h);
-    buf.resize(len - 1);
-    auto raw = from_wide(buf);
-    auto result = String {};
-    result.reserve(raw.size());
-    for (auto c : raw) {
-        result += (c == '\\') ? '/' : c;
-    }
-    return result;
+    wbuf.resize(len - 1);
+    auto raw = HeapBuf {};
+    from_wide(wbuf, raw);
+    auto fixed = HeapBuf {};
+    backslash_to_forward(raw.view(), fixed);
+    return global_pool().intern(fixed.view());
 }
 
 // File I/O
 
-auto read_file(std::string_view path) -> Result<String>
+auto read_file(std::string_view path) -> Result<HeapBuf>
 {
     auto wpath = to_wide(path);
     auto h = CreateFileW(
@@ -527,15 +546,15 @@ auto read_file(std::string_view path) -> Result<String>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<String>(ErrorCode::IoError, "Failed to open file: " + String { path });
+        return make_error<HeapBuf>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
     }
     auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(h, &file_size)) {
         CloseHandle(h);
-        return make_error<String>(ErrorCode::IoError, "Failed to get file size: " + String { path });
+        return make_error<HeapBuf>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path));
     }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
-    auto content = String {};
+    auto content = HeapBuf {};
     content.resize(size);
     auto* buf = content.data();
     auto total = std::size_t { 0 };
@@ -572,13 +591,13 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<void>(ErrorCode::IoError, "Failed to open file for writing: " + String { path });
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path));
     }
     auto bytes_written = DWORD {};
     auto ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
     CloseHandle(h);
     if (!ok || bytes_written != data.size()) {
-        return make_error<void>(ErrorCode::IoError, "Failed to write file: " + String { path });
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path));
     }
     return {};
 }
@@ -591,16 +610,19 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
     auto fd = WIN32_FIND_DATAW {};
     auto h = FindFirstFileW(wpath.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<Vec<DirEntry>>(ErrorCode::IoError, "Failed to open directory: " + String { path });
+        return make_error<Vec<DirEntry>>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
     }
     auto entries = Vec<DirEntry> {};
+    auto name_buf = HeapBuf {};
     do {
         if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) {
             continue;
         }
-        auto name = from_wide(fd.cFileName);
+        auto wname = std::wstring_view { fd.cFileName };
+        auto wstr = std::wstring { wname };
+        from_wide(wstr, name_buf);
         auto is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        entries.push_back(DirEntry { global_pool().intern(name), is_dir });
+        entries.push_back(DirEntry { global_pool().intern(name_buf.view()), is_dir });
     } while (FindNextFileW(h, &fd));
     FindClose(h);
     return entries;
@@ -608,32 +630,20 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
 
 auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result<void>
 {
-    auto walk_impl = [&](auto& self, std::string_view base, String const& rel) -> Result<void> {
-        String full;
-        if (rel.empty()) {
-            full = base;
-        } else {
-            full = base;
-            full += '/';
-            full += rel;
-        }
-        auto entries = read_directory(full);
+    auto walk_impl = [&](auto& self, std::string_view base, std::string_view rel) -> Result<void> {
+        auto full_sv = rel.empty() ? base : global_pool().get(pup::path::join(base, rel));
+        auto entries = read_directory(full_sv);
         if (!entries) {
             return pup::unexpected<Error>(entries.error());
         }
         for (auto const& e : *entries) {
             auto name_sv = global_pool().get(e.name);
-            String child_rel;
-            if (rel.empty()) {
-                child_rel = name_sv;
-            } else {
-                child_rel = rel;
-                child_rel += '/';
-                child_rel += name_sv;
-            }
-            auto should_recurse = visitor(e, child_rel);
+            auto child_rel_sv = rel.empty()
+                ? name_sv
+                : global_pool().get(pup::path::join(rel, name_sv));
+            auto should_recurse = visitor(e, child_rel_sv);
             if (e.is_dir && should_recurse) {
-                auto r = self(self, base, child_rel);
+                auto r = self(self, base, child_rel_sv);
                 if (!r) {
                     return r;
                 }
@@ -641,7 +651,7 @@ auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result
         }
         return {};
     };
-    return walk_impl(walk_impl, path, String {});
+    return walk_impl(walk_impl, path, std::string_view {});
 }
 
 } // namespace pup::platform

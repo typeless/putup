@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/global_pool.hpp"
+#include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
@@ -24,10 +25,10 @@ auto build_env_strings(
             while (*current) {
                 auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                 if (len > 0) {
-                    auto var = String {};
+                    auto var = HeapBuf {};
                     var.resize(static_cast<std::size_t>(len - 1));
                     WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
-                    result.push_back(pool.intern(var));
+                    result.push_back(pool.intern(var.view()));
                 }
                 current += wcslen(current) + 1;
             }
@@ -204,15 +205,16 @@ auto run_process_with_callback(
     // Write stdin data
     if (opts.stdin_data && stdin_write) {
         auto written = DWORD {};
-        WriteFile(stdin_write, opts.stdin_data->data(), static_cast<DWORD>(opts.stdin_data->size()), &written, nullptr);
+        auto stdin_sv = pool.get(*opts.stdin_data);
+        WriteFile(stdin_write, stdin_sv.data(), static_cast<DWORD>(stdin_sv.size()), &written, nullptr);
         CloseHandle(stdin_write);
         stdin_write = nullptr;
     }
 
     auto result = ProcessResult {};
     auto timed_out = false;
-    auto stdout_buf = String {};
-    auto stderr_buf = String {};
+    auto stdout_buf = HeapBuf {};
+    auto stderr_buf = HeapBuf {};
 
     // Read stdout/stderr
     auto deadline = opts.timeout
@@ -315,8 +317,8 @@ auto run_process_with_callback(
     auto end_time = std::chrono::steady_clock::now();
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    result.stdout_output = pool.intern(stdout_buf);
-    result.stderr_output = pool.intern(stderr_buf);
+    result.stdout_output = pool.intern(stdout_buf.view());
+    result.stderr_output = pool.intern(stderr_buf.view());
 
     return result;
 }
