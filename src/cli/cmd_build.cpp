@@ -314,7 +314,7 @@ auto find_changed_files_with_implicit(
         // File resolution:
         // All paths are now source-relative (generated files include build root, e.g., "build/program").
         auto file_path = String { file_path_sv };
-        auto path = pup::path::is_absolute(file_path) ? file_path : pup::path::join(source_root, file_path);
+        auto path = pup::path::is_absolute(file_path) ? file_path : String { pool.get(pup::path::join(source_root, file_path)) };
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
@@ -390,8 +390,8 @@ auto get_or_create_dir(
     String const& dir_path
 ) -> pup::NodeId
 {
-    auto normalized = pup::path::normalize(dir_path);
-    auto const& path_str = normalized;
+    auto& pool = pup::global_pool();
+    auto path_str = pool.get(pup::path::normalize(dir_path));
 
     if (path_str.empty() || path_str == ".") {
         return pup::NodeId { 0 };
@@ -403,7 +403,6 @@ auto get_or_create_dir(
 
     if (path_str == "/") {
         auto dir_id = ctx.next_id++;
-        auto& pool = pup::global_pool();
         auto entry = pup::index::FileEntry {
             .id = dir_id,
             .parent_id = pup::NodeId { 0 },
@@ -421,18 +420,17 @@ auto get_or_create_dir(
         return dir_id;
     }
 
-    auto parent_path = String { pup::path::parent(normalized) };
+    auto parent_path = String { pup::path::parent(path_str) };
     auto parent_id = get_or_create_dir(ctx, parent_path);
 
     auto dir_id = ctx.next_id++;
-    auto& pool = pup::global_pool();
     auto entry = pup::index::FileEntry {
         .id = dir_id,
         .parent_id = parent_id,
         .src_id = 0,
         .type = pup::NodeType::Directory,
         .flags = pup::NodeFlags::None,
-        .name = pool.intern(pup::path::filename(normalized)),
+        .name = pool.intern(pup::path::filename(path_str)),
         .path = pool.intern(path_str),
         .size = 0,
         .mtime_ns = 0,
@@ -525,7 +523,7 @@ auto serialize_graph_nodes(
                 strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
 
-            auto file_path = (node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path);
+            auto file_path = String { pup::global_pool().get((node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path)) };
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
@@ -684,13 +682,14 @@ auto process_implicit_deps(
     ImplicitDepContext& ctx
 ) -> void
 {
+    auto& pool = pup::global_pool();
     for (auto const& [cmd_id, deps] : discovered_deps) {
         for (auto const& dep_path : deps) {
-            auto abs_path = pup::path::is_absolute(dep_path) ? String { dep_path } : pup::path::join(ctx.source_root, dep_path);
+            auto abs_path = pup::path::is_absolute(dep_path) ? String { dep_path } : String { pool.get(pup::path::join(ctx.source_root, dep_path)) };
 
             auto rel_path = String {};
             if (pup::is_path_under(abs_path, ctx.source_root)) {
-                rel_path = pup::path::relative(abs_path, ctx.source_root);
+                rel_path = String { pool.get(pup::path::relative(abs_path, ctx.source_root)) };
             } else {
                 rel_path = abs_path;
             }
@@ -719,6 +718,7 @@ auto preserve_old_implicit_edges(
     ImplicitDepContext& ctx
 ) -> void
 {
+    auto& pool = pup::global_pool();
     auto commands_with_new_deps = pup::NodeIdMap32 {};
     for (auto const& [cmd_id, _] : discovered_deps) {
         commands_with_new_deps.set(cmd_id, 1);
@@ -740,7 +740,7 @@ auto preserve_old_implicit_edges(
 
         auto old_file_path = pup::global_pool().get(old_file->path);
         auto new_file_it = path_id_find(ctx.path_to_id, old_file_path);
-        auto abs_path = pup::path::is_absolute(old_file_path) ? String { old_file_path } : pup::path::join(ctx.source_root, old_file_path);
+        auto abs_path = pup::path::is_absolute(old_file_path) ? String { old_file_path } : String { pool.get(pup::path::join(ctx.source_root, old_file_path)) };
         auto new_from_id = new_file_it != nullptr
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file_path);
@@ -964,7 +964,7 @@ auto remove_stale_outputs(
 
             // Paths now include build root (e.g., "build/program")
             auto file_path_sv = pup::global_pool().get(file->path);
-            auto abs_path = pup::path::join(source_root, file_path_sv);
+            auto abs_path = pup::global_pool().get(pup::path::join(source_root, file_path_sv));
             if (pup::platform::exists(abs_path)) {
                 if (dry_run) {
                     vprint(variant_name, "Would remove stale: %s\n", file_path_sv.data());
@@ -1087,7 +1087,7 @@ auto build_single_variant(
     auto& pool = pup::global_pool();
     auto source_root_str = String { pool.get(ctx.layout().source_root) };
 
-    auto index_path = ctx.layout().index_path();
+    auto index_path = String { pup::global_pool().get(ctx.layout().index_path()) };
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
     auto changed_files = pup::Vec<String> {};
@@ -1250,7 +1250,7 @@ auto build_single_variant(
                 auto working_dir_sv = pool.get(job.working_dir);
                 auto to_resolve = pup::path::is_absolute(dep_sv)
                     ? String { dep_sv }
-                    : pup::path::join(working_dir_sv, dep_sv);
+                    : String { pool.get(pup::path::join(working_dir_sv, dep_sv)) };
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
                     if (opts.verbose) {
@@ -1261,14 +1261,14 @@ auto build_single_variant(
                 auto& resolved = *resolved_result;
 
                 if (pup::is_path_under(resolved, source_root_sv)) {
-                    auto rel = pup::path::relative(resolved, source_root_sv);
-                    if (rel.starts_with("..")) {
+                    auto rel_sv = pool.get(pup::path::relative(resolved, source_root_sv));
+                    if (rel_sv.starts_with("..")) {
                         if (opts.verbose) {
                             fprintf(stderr, "Warning: Cannot relativize '%s'\n", resolved.c_str());
                         }
                         continue;
                     }
-                    deps.push_back(String(rel));
+                    deps.push_back(String { rel_sv });
                 } else {
                     deps.push_back(String(resolved));
                 }

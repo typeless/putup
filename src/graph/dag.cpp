@@ -873,12 +873,13 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> 
     if (!cmd) {
         return {};
     }
-    auto source_dir = global_pool().get(cmd->source_dir);
-    auto source_to_root = pup::compute_source_to_root(source_dir);
+    auto& pool = global_pool();
+    auto source_dir = pool.get(cmd->source_dir);
+    auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
 
     return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
         auto full = get_full_path(graph, id, cache);
-        return pup::make_source_relative(full, source_to_root, source_dir);
+        return String { pool.get(pup::make_source_relative(full, source_to_root, source_dir)) };
     });
 }
 
@@ -894,11 +895,12 @@ auto expand_instruction(
     if (!cmd) {
         return {};
     }
-    auto source_dir = global_pool().get(cmd->source_dir);
-    auto source_to_root = pup::compute_source_to_root(source_dir);
+    auto& pool = global_pool();
+    auto source_dir = pool.get(cmd->source_dir);
+    auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
     auto canonical_cwd = String {};
     if (!source_root.empty()) {
-        auto r = pup::platform::canonical(pup::path::join(source_root, source_dir));
+        auto r = pup::platform::canonical(String { pool.get(pup::path::join(source_root, source_dir)) });
         if (r) {
             canonical_cwd = *r;
         }
@@ -907,22 +909,22 @@ auto expand_instruction(
     return expand_instruction_impl(graph, cmd_id, cache, [&](NodeId id) -> String {
         auto full = get_full_path(graph, id, cache);
         if (!canonical_cwd.empty() && full.starts_with("..")) {
-            auto joined = pup::path::join(source_root, full);
-            auto abs = pup::platform::canonical(joined);
+            auto joined_sv = pool.get(pup::path::join(source_root, full));
+            auto abs = pup::platform::canonical(String { joined_sv });
             if (abs) {
-                return pup::path::relative(*abs, canonical_cwd);
+                return String { pool.get(pup::path::relative(*abs, canonical_cwd)) };
             }
-            return pup::path::relative(pup::path::normalize(joined), canonical_cwd);
+            return String { pool.get(pup::path::relative(pool.get(pup::path::normalize(joined_sv)), canonical_cwd)) };
         }
         if (!config_root.empty() && config_root != source_root
-            && !pup::platform::exists(pup::path::join(source_root, full))
-            && pup::platform::exists(pup::path::join(config_root, full))) {
-            auto r = pup::platform::canonical(pup::path::join(config_root, full));
+            && !pup::platform::exists(pool.get(pup::path::join(source_root, full)))
+            && pup::platform::exists(pool.get(pup::path::join(config_root, full)))) {
+            auto r = pup::platform::canonical(String { pool.get(pup::path::join(config_root, full)) });
             if (r) {
-                return pup::path::relative(*r, canonical_cwd);
+                return String { pool.get(pup::path::relative(*r, canonical_cwd)) };
             }
         }
-        return pup::make_source_relative(full, source_to_root, source_dir);
+        return String { pool.get(pup::make_source_relative(full, source_to_root, source_dir)) };
     });
 }
 

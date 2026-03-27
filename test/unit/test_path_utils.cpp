@@ -16,6 +16,7 @@ using pup::global_pool;
 
 namespace {
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
 } // namespace
 
 TEST_CASE("is_path_under checks path containment", "[path_utils]")
@@ -60,23 +61,23 @@ TEST_CASE("relative_to_root computes relative paths", "[path_utils]")
 {
     SECTION("path under root")
     {
-        REQUIRE(pup::relative_to_root(std::string {"/root/src/file.c" }, std::string {"/root" }) == "src/file.c");
-        REQUIRE(pup::relative_to_root(std::string {"/root/file.c" }, std::string {"/root" }) == "file.c");
+        REQUIRE(sv(pup::relative_to_root(std::string {"/root/src/file.c" }, std::string {"/root" })) == "src/file.c");
+        REQUIRE(sv(pup::relative_to_root(std::string {"/root/file.c" }, std::string {"/root" })) == "file.c");
     }
 
     SECTION("path equals root returns empty")
     {
-        REQUIRE(pup::relative_to_root(std::string {"/root" }, std::string {"/root" }).empty());
+        REQUIRE(sv(pup::relative_to_root(std::string {"/root" }, std::string {"/root" })).empty());
     }
 
     SECTION("path not under root returns empty")
     {
-        REQUIRE(pup::relative_to_root(std::string {"/other/file.c" }, std::string {"/root" }).empty());
+        REQUIRE(sv(pup::relative_to_root(std::string {"/other/file.c" }, std::string {"/root" })).empty());
     }
 
     SECTION("handles trailing slashes")
     {
-        REQUIRE(pup::relative_to_root(std::string {"/root/src/file.c" }, std::string {"/root/" }) == "src/file.c");
+        REQUIRE(sv(pup::relative_to_root(std::string {"/root/src/file.c" }, std::string {"/root/" })) == "src/file.c");
     }
 }
 
@@ -154,34 +155,34 @@ TEST_CASE("strip_path_prefix removes prefix from path", "[path_utils][path]")
 {
     SECTION("strips matching prefix")
     {
-        REQUIRE(pup::strip_path_prefix("build/src/foo.o", "build") == "src/foo.o");
-        REQUIRE(pup::strip_path_prefix("build/include/bar.h", "build") == "include/bar.h");
+        REQUIRE(sv(pup::strip_path_prefix("build/src/foo.o", "build")) == "src/foo.o");
+        REQUIRE(sv(pup::strip_path_prefix("build/include/bar.h", "build")) == "include/bar.h");
     }
 
     SECTION("handles multi-component prefix")
     {
-        REQUIRE(pup::strip_path_prefix("build/busybox/src/main.c", "build/busybox") == "src/main.c");
+        REQUIRE(sv(pup::strip_path_prefix("build/busybox/src/main.c", "build/busybox")) == "src/main.c");
     }
 
     SECTION("returns original when prefix doesn't match")
     {
-        REQUIRE(pup::strip_path_prefix("src/foo.o", "build") == "src/foo.o");
-        REQUIRE(pup::strip_path_prefix("other/src/foo.o", "build") == "other/src/foo.o");
+        REQUIRE(sv(pup::strip_path_prefix("src/foo.o", "build")) == "src/foo.o");
+        REQUIRE(sv(pup::strip_path_prefix("other/src/foo.o", "build")) == "other/src/foo.o");
     }
 
     SECTION("returns original when prefix is partial match")
     {
-        REQUIRE(pup::strip_path_prefix("builder/src/foo.o", "build") == "builder/src/foo.o");
+        REQUIRE(sv(pup::strip_path_prefix("builder/src/foo.o", "build")) == "builder/src/foo.o");
     }
 
     SECTION("handles empty prefix")
     {
-        REQUIRE(pup::strip_path_prefix("src/foo.o", "") == "src/foo.o");
+        REQUIRE(sv(pup::strip_path_prefix("src/foo.o", "")) == "src/foo.o");
     }
 
     SECTION("handles path equal to prefix")
     {
-        REQUIRE(pup::strip_path_prefix("build", "build") == "build");
+        REQUIRE(sv(pup::strip_path_prefix("build", "build")) == "build");
     }
 }
 
@@ -194,7 +195,7 @@ TEST_CASE("resolve_under_root resolves paths to target root", "[path_utils][path
     {
         auto result = pup::resolve_under_root("../build/include/foo.h", source_root, target_root);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "include/foo.h");
+        REQUIRE(sv(*result) == "include/foo.h");
     }
 
     SECTION("returns nullopt for non-dotdot paths")
@@ -213,7 +214,7 @@ TEST_CASE("resolve_under_root resolves paths to target root", "[path_utils][path
     {
         auto result = pup::resolve_under_root("../build/src/lib/deep/file.o", source_root, target_root);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "src/lib/deep/file.o");
+        REQUIRE(sv(*result) == "src/lib/deep/file.o");
     }
 
     SECTION("handles complex cross-project paths")
@@ -227,6 +228,6 @@ TEST_CASE("resolve_under_root resolves paths to target root", "[path_utils][path
         auto tgt = std::string {"/home/user/src/pup/build/busybox" };
         auto result = pup::resolve_under_root("../pup/build/busybox/include/autoconf.h", src, tgt);
         REQUIRE(result.has_value());
-        REQUIRE(*result == "include/autoconf.h");
+        REQUIRE(sv(*result) == "include/autoconf.h");
     }
 }

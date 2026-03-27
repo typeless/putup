@@ -2,26 +2,30 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/path.hpp"
+#include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <vector>
 
 namespace pup::path {
 
-auto join(std::string_view a, std::string_view b) -> String
+auto join(std::string_view a, std::string_view b) -> StringId
 {
     if (b.empty()) {
-        return String { a };
+        return global_pool().intern(a);
     }
     if (a.empty() || is_absolute(b)) {
-        return String { b };
+        return global_pool().intern(b);
     }
 
-    auto result = String { a };
-    if (result.back() != '/') {
-        result += '/';
+    auto buf = Buf {};
+    buf.append(a);
+    if (a.back() != '/') {
+        buf += '/';
     }
-    result += b;
-    return result;
+    buf.append(b);
+    return buf.intern(global_pool());
 }
 
 auto parent(std::string_view p) -> std::string_view
@@ -30,7 +34,6 @@ auto parent(std::string_view p) -> std::string_view
         return {};
     }
 
-    // Trim trailing slash (except root "/")
     auto end = p.size();
     while (end > 1 && p[end - 1] == '/') {
         --end;
@@ -41,7 +44,7 @@ auto parent(std::string_view p) -> std::string_view
         return {};
     }
     if (pos == 0) {
-        return p.substr(0, 1); // "/"
+        return p.substr(0, 1);
     }
     return p.substr(0, pos);
 }
@@ -93,7 +96,6 @@ auto is_absolute(std::string_view p) -> bool
         return true;
     }
 #ifdef _WIN32
-    // Drive letter: C:/ or C:\.
     if (p.size() >= 3 && p[1] == ':' && (p[2] == '/' || p[2] == '\\')) {
         auto c = p[0];
         return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
@@ -102,7 +104,7 @@ auto is_absolute(std::string_view p) -> bool
     return false;
 }
 
-auto normalize(std::string_view p) -> String
+auto normalize(std::string_view p) -> StringId
 {
     auto parts = std::vector<std::string_view> {};
     auto start = std::size_t { 0 };
@@ -119,39 +121,40 @@ auto normalize(std::string_view p) -> String
         } else if (part == ".." && !parts.empty() && parts.back() != "..") {
             parts.pop_back();
         } else if (part == ".." && absolute) {
-            // Cannot go above root — absorb
+            // Cannot go above root
         } else {
             parts.push_back(part);
         }
         start = end + 1;
     }
 
+    auto& pool = global_pool();
+
     if (parts.empty()) {
-        return absolute ? String { "/" } : String { "." };
+        return pool.intern(absolute ? "/" : ".");
     }
 
-    auto result = String {};
+    auto buf = Buf {};
     if (absolute) {
-        result = String { "/" };
+        buf += '/';
     }
     for (std::size_t i = 0; i < parts.size(); ++i) {
-        if (i > 0 || absolute) {
-            if (!result.empty() && result.back() != '/') {
-                result += '/';
-            }
+        if (i > 0) {
+            buf += '/';
         }
-        result += parts[i];
+        buf.append(parts[i]);
     }
-    return result;
+    return buf.intern(pool);
 }
 
-auto relative(std::string_view target, std::string_view base) -> String
+auto relative(std::string_view target, std::string_view base) -> StringId
 {
+    auto& pool = global_pool();
+
     if (target == base) {
-        return String { "." };
+        return pool.intern(".");
     }
 
-    // Split both paths into components
     auto split = [](std::string_view p) {
         auto parts = std::vector<std::string_view> {};
         auto start = std::size_t { 0 };
@@ -172,30 +175,30 @@ auto relative(std::string_view target, std::string_view base) -> String
     auto target_parts = split(target);
     auto base_parts = split(base);
 
-    // Find common prefix length
     auto common = std::size_t { 0 };
     auto max_common = std::min(target_parts.size(), base_parts.size());
     while (common < max_common && target_parts[common] == base_parts[common]) {
         ++common;
     }
 
-    auto result = String {};
-    // Go up from base to common ancestor
+    auto buf = Buf {};
     for (auto i = common; i < base_parts.size(); ++i) {
-        if (!result.empty()) {
-            result += '/';
+        if (!buf.empty()) {
+            buf += '/';
         }
-        result += "..";
+        buf.append("..");
     }
-    // Append remaining target path
     for (auto i = common; i < target_parts.size(); ++i) {
-        if (!result.empty()) {
-            result += '/';
+        if (!buf.empty()) {
+            buf += '/';
         }
-        result += target_parts[i];
+        buf.append(target_parts[i]);
     }
 
-    return result.empty() ? String { "." } : result;
+    if (buf.empty()) {
+        return pool.intern(".");
+    }
+    return buf.intern(pool);
 }
 
 } // namespace pup::path

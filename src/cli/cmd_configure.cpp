@@ -29,7 +29,7 @@ auto install_config_file(
     auto& pool = pup::global_pool();
     auto config_path = String { config_file };
     if (!pup::path::is_absolute(config_path)) {
-        config_path = pup::path::join(*pup::platform::current_directory(), config_path);
+        config_path = String { pool.get(pup::path::join(*pup::platform::current_directory(), config_path)) };
     }
 
     if (!pup::platform::exists(config_path)) {
@@ -37,7 +37,7 @@ auto install_config_file(
         return EXIT_FAILURE;
     }
 
-    auto dest = pup::path::join(pool.get(layout.output_root), "tup.config");
+    auto dest = String { pool.get(pup::path::join(pool.get(layout.output_root), "tup.config")) };
     (void)pup::platform::create_directories(pup::path::parent(dest));
     (void)pup::platform::copy_file(config_path, dest);
 
@@ -87,7 +87,7 @@ auto configure_single_variant(
 
     // Helper to ensure tup.config exists for variant detection (only on success)
     auto ensure_config = [&]() {
-        auto config_path = pup::path::join(pool.get(ctx.layout().output_root), "tup.config");
+        auto config_path = String { pool.get(pup::path::join(pool.get(ctx.layout().output_root), "tup.config")) };
         if (!pup::platform::exists(config_path)) {
             (void)pup::platform::create_directories(pup::path::parent(config_path));
             (void)pup::platform::write_file(config_path, "");

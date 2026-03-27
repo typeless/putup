@@ -348,10 +348,10 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> String
         }
     }
 
-    auto source_to_root = pup::compute_source_to_root(source_dir);
+    auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
 
     auto get_relative_path = [&source_dir, &source_to_root, &pool](StringId path_id) {
-        return pup::make_source_relative(pool.get(path_id), source_to_root, source_dir);
+        return pool.get(pup::make_source_relative(pool.get(path_id), source_to_root, source_dir));
     };
 
     auto result = String {};

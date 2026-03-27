@@ -33,31 +33,31 @@ struct ProjectLayout {
     }
 
     [[nodiscard]]
-    auto pup_dir() const -> String
+    auto pup_dir() const -> StringId
     {
         return path::join(global_pool().get(output_root), ".pup");
     }
 
     [[nodiscard]]
-    auto index_path() const -> String
+    auto index_path() const -> StringId
     {
-        return path::join(pup_dir(), "index");
+        return path::join(global_pool().get(pup_dir()), "index");
     }
 
     [[nodiscard]]
-    auto resolve_source(std::string_view rel) const -> String
+    auto resolve_source(std::string_view rel) const -> StringId
     {
         return path::join(global_pool().get(source_root), rel);
     }
 
     [[nodiscard]]
-    auto resolve_config(std::string_view rel) const -> String
+    auto resolve_config(std::string_view rel) const -> StringId
     {
         return path::join(global_pool().get(config_root), rel);
     }
 
     [[nodiscard]]
-    auto resolve_output(std::string_view rel) const -> String
+    auto resolve_output(std::string_view rel) const -> StringId
     {
         return path::join(global_pool().get(output_root), rel);
     }

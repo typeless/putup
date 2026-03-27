@@ -85,11 +85,12 @@ auto resolve_variant_path(
     std::string_view path
 ) -> String
 {
+    auto& pool = pup::global_pool();
     if (!output_root_prefix.empty() && path.starts_with(output_root_prefix)
         && (path.size() == output_root_prefix.size() || path[output_root_prefix.size()] == '/')) {
-        return pup::path::join(source_root, path);
+        return String { pool.get(pup::path::join(source_root, path)) };
     }
-    return pup::path::join(output_root, path);
+    return String { pool.get(pup::path::join(output_root, path)) };
 }
 
 /// Add job dependencies for any command that produces the given node.
@@ -768,8 +769,7 @@ auto Scheduler::execute_parallel(
     // Pre-compute source/output roots for execute_job_pre/post
     auto source_root_sv = pool.get(impl_->options.source_root);
     auto output_root_sv = pool.get(impl_->options.output_root);
-    auto relative_output_root = pup::path::relative(output_root_sv, source_root_sv);
-    auto output_root_prefix = relative_output_root;
+    auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
 
     while (finished_count < active_count) {
         // 1. Launch: fill empty slots from ready_queue
@@ -1046,7 +1046,7 @@ auto Scheduler::execute_parallel(
                     auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
                     auto stem = String { pup::path::stem(output_sv) };
                     stem += ".d";
-                    auto depfile_path = pup::path::join(base_path, stem);
+                    auto depfile_path = String { pool.get(pup::path::join(base_path, stem)) };
                     if (!pup::platform::exists(depfile_path)) {
                         return;
                     }
@@ -1157,8 +1157,7 @@ auto Scheduler::Impl::execute_job(
     // - Source-relative: prepend output_root
     auto source_root_sv = pool.get(options.source_root);
     auto output_root_sv = pool.get(options.output_root);
-    auto relative_output_root = pup::path::relative(output_root_sv, source_root_sv);
-    auto output_root_prefix = relative_output_root;
+    auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
     for (auto output_id : job.outputs) {
         auto output_sv = pool.get(output_id);
         auto output_path = pup::path::is_absolute(output_sv)
@@ -1238,7 +1237,7 @@ auto Scheduler::Impl::execute_job(
             auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
             auto stem = String { pup::path::stem(output_sv) };
             stem += ".d";
-            auto depfile_path = pup::path::join(base_path, stem);
+            auto depfile_path = String { pool.get(pup::path::join(base_path, stem)) };
 
             if (!pup::platform::exists(depfile_path)) {
                 continue;
@@ -1284,16 +1283,16 @@ auto Scheduler::build_job_list(
             auto path = graph.get_full_path(id);
             // Check if file exists - if so, it's a valid input (not missing)
             auto build_root_name = graph.get_build_root_name();
-            auto file_path = pup::path::join(output_root_sv, path);
+            auto file_path_sv = pool.get(pup::path::join(output_root_sv, path));
             // Strip build prefix from path if present (for consistent file lookup)
             auto lookup_path = path;
             auto build_prefix = String { build_root_name };
             build_prefix += '/';
             if (!build_root_name.empty() && path.starts_with(build_prefix)) {
                 lookup_path = path.substr(build_prefix.size());
-                file_path = pup::path::join(output_root_sv, lookup_path);
+                file_path_sv = pool.get(pup::path::join(output_root_sv, lookup_path));
             }
-            if (pup::platform::exists(file_path)) {
+            if (pup::platform::exists(file_path_sv)) {
                 continue; // File exists, not a missing input
             }
             return make_error<Vec<BuildJob>>(
@@ -1323,7 +1322,7 @@ auto Scheduler::build_job_list(
         auto source_dir = get_source_dir(graph.graph(), id);
         auto working_dir = String { source_root_sv };
         if (!source_dir.empty()) {
-            working_dir = pup::path::join(working_dir, source_dir);
+            working_dir = String { pool.get(pup::path::join(working_dir, source_dir)) };
         }
 
         // Check if this is a generated rule that captures stdout

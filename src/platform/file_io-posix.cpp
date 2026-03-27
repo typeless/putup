@@ -433,6 +433,7 @@ auto canonical(std::string_view path) -> Result<String>
     if (!abs) {
         return abs;
     }
+    auto& pool = pup::global_pool();
     auto p = *abs;
     auto existing = p;
     auto tail = String {};
@@ -442,19 +443,19 @@ auto canonical(std::string_view path) -> Result<String>
             auto result = String { r };
             ::free(r); // NOLINT(cppcoreguidelines-no-malloc)
             if (!tail.empty()) {
-                result = pup::path::join(result, pup::path::normalize(tail));
+                result = String { pool.get(pup::path::join(result, pool.get(pup::path::normalize(tail)))) };
             }
             return result;
         }
         auto par = pup::path::parent(existing);
         auto name = pup::path::filename(existing);
-        tail = tail.empty() ? String { name } : pup::path::join(name, tail);
+        tail = tail.empty() ? String { name } : String { pool.get(pup::path::join(name, tail)) };
         if (par == std::string_view { existing }) {
             break;
         }
         existing = par;
     }
-    return pup::path::normalize(p);
+    return String { pool.get(pup::path::normalize(p)) };
 }
 
 auto absolute(std::string_view path) -> Result<String>
@@ -466,7 +467,7 @@ auto absolute(std::string_view path) -> Result<String>
     if (!cwd) {
         return cwd;
     }
-    return pup::path::join(*cwd, path);
+    return String { pup::global_pool().get(pup::path::join(*cwd, path)) };
 }
 
 auto read_symlink(std::string_view path) -> Result<String>

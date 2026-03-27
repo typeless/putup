@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/path_utils.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
@@ -36,10 +37,10 @@ auto is_path_under(
 auto relative_to_root(
     std::string_view path_str,
     std::string_view root
-) -> String
+) -> StringId
 {
     if (!is_path_under(path_str, root)) {
-        return {};
+        return StringId::Empty;
     }
 
     auto root_sv = root;
@@ -49,10 +50,10 @@ auto relative_to_root(
     }
 
     if (path_str == root_sv) {
-        return {};
+        return StringId::Empty;
     }
 
-    return String { path_str.substr(root_sv.size() + 1) };
+    return global_pool().intern(path_str.substr(root_sv.size() + 1));
 }
 
 auto is_path_in_scope(
@@ -98,12 +99,12 @@ auto is_path_in_any_scope(
     });
 }
 
-auto compute_source_to_root(std::string_view source_dir) -> String
+auto compute_source_to_root(std::string_view source_dir) -> StringId
 {
     if (source_dir.empty()) {
-        return {};
+        return StringId::Empty;
     }
-    auto result = String {};
+    auto buf = Buf {};
     auto pos = std::size_t { 0 };
     while (pos < source_dir.size()) {
         auto slash = source_dir.find('/', pos);
@@ -111,77 +112,91 @@ auto compute_source_to_root(std::string_view source_dir) -> String
             ? source_dir.substr(pos)
             : source_dir.substr(pos, slash - pos);
         if (!segment.empty() && segment != ".") {
-            result += "../";
+            buf.append("../");
         }
         pos = slash == std::string_view::npos ? source_dir.size() : slash + 1;
     }
-    return result;
+    return buf.intern(global_pool());
 }
 
 auto make_source_relative(
     std::string_view path_sv,
     std::string_view source_to_root,
     std::string_view source_dir
-) -> String
+) -> StringId
 {
+    auto& pool = global_pool();
+
     if (path_sv.empty() || path_sv[0] == '/') {
-        return String { path_sv };
+        return pool.intern(path_sv);
     }
     if (path_sv.size() >= 2 && path_sv[0] == '.' && path_sv[1] == '.') {
         if (!source_to_root.empty() && !source_dir.empty()) {
-            auto result = String { source_to_root };
-            result += path_sv;
-            return result;
+            auto buf = Buf {};
+            buf.append(source_to_root);
+            buf.append(path_sv);
+            return buf.intern(pool);
         }
-        return String { path_sv };
+        return pool.intern(path_sv);
     }
     if (source_to_root.empty()) {
-        return String { path_sv };
+        return pool.intern(path_sv);
     }
-    auto dir_prefix = String { source_dir };
-    dir_prefix += '/';
-    if (path_sv.starts_with(std::string_view { dir_prefix })) {
-        return String { path_sv.substr(dir_prefix.size()) };
+
+    auto buf = Buf {};
+    buf.append(source_dir);
+    buf += '/';
+    auto dir_prefix = buf.view();
+    if (path_sv.starts_with(dir_prefix)) {
+        return pool.intern(path_sv.substr(dir_prefix.size()));
     }
     if (path_sv == source_dir) {
-        return String { "." };
+        return pool.intern(".");
     }
-    auto result = String { source_to_root };
-    result += path_sv;
-    return result;
+
+    auto result_buf = Buf {};
+    result_buf.append(source_to_root);
+    result_buf.append(path_sv);
+    return result_buf.intern(pool);
 }
 
 auto strip_path_prefix(
     std::string_view path_sv,
     std::string_view prefix
-) -> String
+) -> StringId
 {
+    auto& pool = global_pool();
+
     if (prefix.empty()) {
-        return String { path_sv };
+        return pool.intern(path_sv);
     }
-    auto prefix_with_slash = String { prefix };
-    prefix_with_slash += '/';
+    auto buf = Buf {};
+    buf.append(prefix);
+    buf += '/';
+    auto prefix_with_slash = buf.view();
     if (path_sv.starts_with(prefix_with_slash)) {
-        return String { path_sv.substr(prefix_with_slash.size()) };
+        return pool.intern(path_sv.substr(prefix_with_slash.size()));
     }
-    return String { path_sv };
+    return pool.intern(path_sv);
 }
 
 auto resolve_under_root(
     std::string_view path_sv,
     std::string_view source_root,
     std::string_view target_root
-) -> std::optional<String>
+) -> std::optional<StringId>
 {
     if (!path_sv.starts_with("..")) {
         return std::nullopt;
     }
 
-    auto abs_path = path::normalize(path::join(source_root, path_sv));
+    auto& pool = global_pool();
+    auto abs_path = path::normalize(pool.get(path::join(source_root, path_sv)));
     auto target_prefix = path::normalize(target_root);
-    auto rel = path::relative(abs_path, target_prefix);
+    auto rel = path::relative(pool.get(abs_path), pool.get(target_prefix));
 
-    if (!rel.empty() && !rel.starts_with("..")) {
+    auto rel_sv = pool.get(rel);
+    if (!rel_sv.empty() && !rel_sv.starts_with("..")) {
         return rel;
     }
     return std::nullopt;

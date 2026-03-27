@@ -2,40 +2,46 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 
 using namespace pup::path;
+
+namespace {
+auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
+} // namespace
 
 TEST_CASE("path::join", "[path]")
 {
     SECTION("basic join")
     {
-        REQUIRE(join("src", "foo.c") == "src/foo.c");
+        REQUIRE(sv(join("src", "foo.c")) == "src/foo.c");
     }
 
     SECTION("trailing slash on lhs")
     {
-        REQUIRE(join("src/", "foo.c") == "src/foo.c");
+        REQUIRE(sv(join("src/", "foo.c")) == "src/foo.c");
     }
 
     SECTION("empty lhs")
     {
-        REQUIRE(join("", "foo.c") == "foo.c");
+        REQUIRE(sv(join("", "foo.c")) == "foo.c");
     }
 
     SECTION("empty rhs")
     {
-        REQUIRE(join("src", "") == "src");
+        REQUIRE(sv(join("src", "")) == "src");
     }
 
     SECTION("absolute rhs replaces")
     {
-        REQUIRE(join("src", "/usr/include") == "/usr/include");
+        REQUIRE(sv(join("src", "/usr/include")) == "/usr/include");
     }
 
     SECTION("both empty")
     {
-        REQUIRE(join("", "") == "");
+        REQUIRE(sv(join("", "")) == "");
     }
 }
 
@@ -159,57 +165,57 @@ TEST_CASE("path::normalize", "[path]")
 {
     SECTION("dot segments")
     {
-        REQUIRE(normalize("src/./foo.c") == "src/foo.c");
+        REQUIRE(sv(normalize("src/./foo.c")) == "src/foo.c");
     }
 
     SECTION("dotdot segments")
     {
-        REQUIRE(normalize("src/../include/foo.h") == "include/foo.h");
+        REQUIRE(sv(normalize("src/../include/foo.h")) == "include/foo.h");
     }
 
     SECTION("complex")
     {
-        REQUIRE(normalize("a/b/c/../../d") == "a/d");
+        REQUIRE(sv(normalize("a/b/c/../../d")) == "a/d");
     }
 
     SECTION("absolute path")
     {
-        REQUIRE(normalize("/a/b/../c") == "/a/c");
+        REQUIRE(sv(normalize("/a/b/../c")) == "/a/c");
     }
 
     SECTION("absolute excess dotdot absorbed")
     {
-        REQUIRE(normalize("/a/../..") == "/");
+        REQUIRE(sv(normalize("/a/../..")) == "/");
     }
 
     SECTION("absolute single dotdot")
     {
-        REQUIRE(normalize("/..") == "/");
+        REQUIRE(sv(normalize("/..")) == "/");
     }
 
     SECTION("relative excess dotdot preserved")
     {
-        REQUIRE(normalize("a/../../b") == "../b");
+        REQUIRE(sv(normalize("a/../../b")) == "../b");
     }
 
     SECTION("empty normalizes to dot")
     {
-        REQUIRE(normalize("") == ".");
+        REQUIRE(sv(normalize("")) == ".");
     }
 
     SECTION("just dot")
     {
-        REQUIRE(normalize(".") == ".");
+        REQUIRE(sv(normalize(".")) == ".");
     }
 
     SECTION("double slashes")
     {
-        REQUIRE(normalize("src//foo.c") == "src/foo.c");
+        REQUIRE(sv(normalize("src//foo.c")) == "src/foo.c");
     }
 
     SECTION("trailing slash")
     {
-        REQUIRE(normalize("src/lib/") == "src/lib");
+        REQUIRE(sv(normalize("src/lib/")) == "src/lib");
     }
 }
 
@@ -217,26 +223,26 @@ TEST_CASE("path::relative", "[path]")
 {
     SECTION("child of base")
     {
-        REQUIRE(relative("a/b/c", "a") == "b/c");
+        REQUIRE(sv(relative("a/b/c", "a")) == "b/c");
     }
 
     SECTION("same path")
     {
-        REQUIRE(relative("a/b", "a/b") == ".");
+        REQUIRE(sv(relative("a/b", "a/b")) == ".");
     }
 
     SECTION("sibling")
     {
-        REQUIRE(relative("x/y", "a/b") == "../../x/y");
+        REQUIRE(sv(relative("x/y", "a/b")) == "../../x/y");
     }
 
     SECTION("base is child")
     {
-        REQUIRE(relative("a", "a/b/c") == "../..");
+        REQUIRE(sv(relative("a", "a/b/c")) == "../..");
     }
 
     SECTION("both empty")
     {
-        REQUIRE(relative("", "") == ".");
+        REQUIRE(sv(relative("", "")) == ".");
     }
 }

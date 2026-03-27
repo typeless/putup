@@ -38,7 +38,7 @@ auto load_index_for_all_deps(
         return std::nullopt;
     }
 
-    auto index_path = String { layout.index_path() };
+    auto index_path = String { pup::global_pool().get(layout.index_path()) };
     if (!pup::platform::exists(index_path)) {
         fprintf(stderr, "Warning: No index found - run 'putup' first\n");
         return std::nullopt;
@@ -377,17 +377,17 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
         auto working_dir = String { source_root_sv };
         if (!source_dir_sv.empty()) {
-            working_dir = pup::path::join(working_dir, source_dir_sv);
+            working_dir = String { pool.get(pup::path::join(working_dir, source_dir_sv)) };
         }
 
         // Convert project-root-relative paths to working-dir-relative
-        auto source_abs = pup::path::join(source_root_sv, source_file);
-        auto source_rel = pup::path::relative(source_abs, working_dir);
+        auto source_abs = pool.get(pup::path::join(source_root_sv, source_file));
+        auto source_rel = pool.get(pup::path::relative(source_abs, working_dir));
 
-        auto output_rel = String {};
+        auto output_rel = std::string_view {};
         if (!output_file.empty()) {
-            auto output_abs = pup::path::join(output_root_sv, output_file);
-            output_rel = pup::path::relative(output_abs, working_dir);
+            auto output_abs = pool.get(pup::path::join(output_root_sv, output_file));
+            output_rel = pool.get(pup::path::relative(output_abs, working_dir));
         }
 
         auto cmd_sv = graph::expand_instruction(ctx.graph().graph(), id);

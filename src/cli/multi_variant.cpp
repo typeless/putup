@@ -129,7 +129,7 @@ auto for_each_variant(
     auto cwd = *pup::platform::current_directory();
     auto cwd_variant = std::optional<StringId> {};
     for (auto variant : variants) {
-        auto variant_abs = pup::path::join(source_root_sv, pool.get(variant));
+        auto variant_abs = pool.get(pup::path::join(source_root_sv, pool.get(variant)));
         if (pup::is_path_under(cwd, variant_abs)) {
             cwd_variant = variant;
             break;

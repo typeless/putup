@@ -38,7 +38,7 @@ auto is_source_file(std::string_view p) -> bool
 
 auto is_variant_dir(std::string_view dir) -> bool
 {
-    return pup::platform::exists(pup::path::join(dir, "tup.config"));
+    return pup::platform::exists(pup::global_pool().get(pup::path::join(dir, "tup.config")));
 }
 
 auto fnmatch_simple(std::string_view pattern, std::string_view name) -> bool
@@ -80,29 +80,29 @@ auto parse_target(
         return make_error<Target>(ErrorCode::InvalidArgument, "empty target path");
     }
 
-    auto full_path = pup::path::join(project_root, target_path);
+    auto full_path_sv = pool.get(pup::path::join(project_root, target_path));
     auto target = Target {};
 
     auto [first_component, remainder] = split_first_component(target_path);
 
-    auto variant_path = pup::path::join(project_root, first_component);
-    if (is_variant_dir(variant_path)) {
+    auto variant_path_sv = pool.get(pup::path::join(project_root, first_component));
+    if (is_variant_dir(variant_path_sv)) {
         target.variant = pool.intern(first_component);
         target.scope_or_output = pool.intern(remainder);
-        full_path = pup::path::join(variant_path, remainder);
+        full_path_sv = pool.get(pup::path::join(variant_path_sv, remainder));
     } else {
         target.scope_or_output = pool.intern(target_path);
     }
 
-    if (pup::platform::exists(full_path)) {
-        if (pup::platform::is_file(full_path)) {
-            if (is_source_file(full_path)) {
+    if (pup::platform::exists(full_path_sv)) {
+        if (pup::platform::is_file(full_path_sv)) {
+            if (is_source_file(full_path_sv)) {
                 return make_error<Target>(ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path);
             }
             target.is_output = true;
         }
     } else {
-        auto par = String { pup::path::parent(full_path) };
+        auto par = pup::path::parent(full_path_sv);
         if (par.empty()) {
             par = project_root;
         }
@@ -110,7 +110,7 @@ auto parse_target(
             return make_error<Target>(ErrorCode::NotFound, String { "path not found: " } + target_path);
         }
 
-        if (is_source_file(full_path)) {
+        if (is_source_file(full_path_sv)) {
             return make_error<Target>(ErrorCode::InvalidArgument, String { "source file, not build output: " } + target_path);
         }
 
@@ -158,8 +158,8 @@ auto expand_glob_target(
             continue;
         }
 
-        auto entry_path = pup::path::join(project_root, name_sv);
-        if (!is_variant_dir(entry_path)) {
+        auto entry_path_sv = pool.get(pup::path::join(project_root, name_sv));
+        if (!is_variant_dir(entry_path_sv)) {
             continue;
         }
 
@@ -167,12 +167,12 @@ auto expand_glob_target(
         target.variant = entry.name;
 
         if (!remainder.empty()) {
-            auto full_path = pup::path::join(entry_path, remainder);
+            auto full_path_sv = pool.get(pup::path::join(entry_path_sv, remainder));
             target.scope_or_output = pool.intern(remainder);
-            if (pup::platform::is_file(full_path)) {
+            if (pup::platform::is_file(full_path_sv)) {
                 target.is_output = true;
-            } else if (!pup::platform::is_directory(full_path) && !is_source_file(full_path)) {
-                auto par = String { pup::path::parent(full_path) };
+            } else if (!pup::platform::is_directory(full_path_sv) && !is_source_file(full_path_sv)) {
+                auto par = pup::path::parent(full_path_sv);
                 if (!par.empty() && pup::platform::exists(par)) {
                     target.is_output = true;
                 }

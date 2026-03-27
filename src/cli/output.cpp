@@ -43,7 +43,7 @@ auto remove_empty_directories(
             continue;
         }
 
-        auto rel = pup::path::relative(dir, build_dir);
+        auto rel = pup::global_pool().get(pup::path::relative(dir, build_dir));
         if (rel.starts_with("..")) {
             continue;
         }

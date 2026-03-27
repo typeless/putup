@@ -72,11 +72,11 @@ auto compute_build_scopes(
 
     // Get relative path if cwd is under source_root
     auto rel = pup::relative_to_root(cwd, source_root_sv);
-    if (rel.empty()) {
+    if (is_empty(rel)) {
         return {};
     }
 
-    return Vec<StringId> { pool.intern(rel) };
+    return Vec<StringId> { rel };
 }
 
 namespace {
@@ -97,7 +97,7 @@ auto normalize_to_dot(String const& p) -> String
 auto join_path(std::string_view base, std::string_view rel)
     -> String
 {
-    return (rel.empty() || rel == ".") ? String { base } : pup::path::join(base, rel);
+    return (rel.empty() || rel == ".") ? String { base } : String { pup::global_pool().get(pup::path::join(base, rel)) };
 }
 
 auto sorted_contains(Vec<StringId> const& v, std::string_view key) -> bool
@@ -157,13 +157,14 @@ auto compute_tup_variantdir(
     std::string_view output_root
 ) -> String
 {
+    auto& pool = pup::global_pool();
     if (!output_root.empty() && source_root != output_root) {
-        auto output_dir = pup::path::join(output_root, source_dir);
-        auto src_dir = pup::path::join(source_root, source_dir);
+        auto output_dir = pool.get(pup::path::join(output_root, source_dir));
+        auto src_dir = pool.get(pup::path::join(source_root, source_dir));
         auto src_canonical = pup::platform::canonical(src_dir);
         auto out_canonical = pup::platform::canonical(output_dir);
         if (src_canonical && out_canonical) {
-            return pup::path::relative(*out_canonical, *src_canonical);
+            return String { pool.get(pup::path::relative(*out_canonical, *src_canonical)) };
         }
         return ".";
     }
@@ -175,11 +176,12 @@ auto find_build_subdir(
     std::string_view root
 ) -> std::optional<String>
 {
+    auto& pool = global_pool();
     for (auto const& name : { "build", "out", "variant" }) {
-        auto dir = pup::path::join(root, name);
-        if (pup::platform::exists(pup::path::join(dir, "tup.config"))
-            || pup::platform::is_directory(pup::path::join(dir, ".pup"))) {
-            return dir;
+        auto dir = pool.get(pup::path::join(root, name));
+        if (pup::platform::exists(pool.get(pup::path::join(dir, "tup.config")))
+            || pup::platform::is_directory(pool.get(pup::path::join(dir, ".pup")))) {
+            return String { dir };
         }
     }
 
@@ -190,10 +192,10 @@ auto find_build_subdir(
                 if (!entry.is_dir) {
                     continue;
                 }
-                auto entry_path = pup::path::join(root, global_pool().get(entry.name));
-                if (pup::platform::exists(pup::path::join(entry_path, "tup.config"))
-                    || pup::platform::is_directory(pup::path::join(entry_path, ".pup"))) {
-                    return entry_path;
+                auto entry_path = pool.get(pup::path::join(root, pool.get(entry.name)));
+                if (pup::platform::exists(pool.get(pup::path::join(entry_path, "tup.config")))
+                    || pup::platform::is_directory(pool.get(pup::path::join(entry_path, ".pup")))) {
+                    return String { entry_path };
                 }
             }
         }
@@ -219,7 +221,7 @@ auto discover_tupfile_dirs(
     auto& pool = global_pool();
     auto dirs = Vec<StringId> {};
 
-    if (pup::platform::exists(pup::path::join(root, "Tupfile"))) {
+    if (pup::platform::exists(pool.get(pup::path::join(root, "Tupfile")))) {
         dirs.push_back(pool.intern("."));
     }
 
@@ -303,9 +305,10 @@ auto find_config_for_dir(
     // Collect all tup.config paths from root down to target directory
     auto config_paths = Vec<String> {};
 
-    auto root_config = pup::path::join(output_root, "tup.config");
-    if (pup::platform::exists(root_config)) {
-        config_paths.push_back(root_config);
+    auto& pool = pup::global_pool();
+    auto root_config_sv = pool.get(pup::path::join(output_root, "tup.config"));
+    if (pup::platform::exists(root_config_sv)) {
+        config_paths.push_back(String { root_config_sv });
     }
 
     if (!normalized.empty()) {
@@ -318,10 +321,10 @@ auto find_config_for_dir(
             if (component.empty()) {
                 continue;
             }
-            accumulated = pup::path::join(accumulated, component);
-            auto config_path = pup::path::join(accumulated, "tup.config");
-            if (pup::platform::exists(config_path)) {
-                config_paths.push_back(config_path);
+            accumulated = String { pool.get(pup::path::join(accumulated, component)) };
+            auto config_path_sv = pool.get(pup::path::join(accumulated, "tup.config"));
+            if (pup::platform::exists(config_path_sv)) {
+                config_paths.push_back(String { config_path_sv });
             }
         }
     }
@@ -393,7 +396,7 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
     sorted_insert(ctx.state.parsing, normalized_dir);
 
     // Tupfiles are found in config_root (may differ from source_root in 3-tree builds)
-    auto tupfile_path = pup::path::join(join_path(ctx.config_root, normalize_to_empty(rel_dir)), "Tupfile");
+    auto tupfile_path = String { pup::global_pool().get(pup::path::join(join_path(ctx.config_root, normalize_to_empty(rel_dir)), "Tupfile")) };
 
     if (ctx.verbose) {
         printf("Parsing: %s\n", tupfile_path.c_str());
@@ -434,7 +437,7 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
         auto source_dir = pup::platform::canonical(join_path(ctx.source_root, rel_dir_normalized));
         auto output_dir = pup::platform::canonical(join_path(ctx.output_root, rel_dir_normalized));
         if (source_dir && output_dir) {
-            tup_outdir = pup::path::relative(*output_dir, *source_dir);
+            tup_outdir = String { pup::global_pool().get(pup::path::relative(*output_dir, *source_dir)) };
         }
     }
 
@@ -480,15 +483,16 @@ auto parse_directory(String const& rel_dir, ParseContext& ctx) -> pup::Result<vo
 
 auto try_auto_init(ProjectLayout const& layout) -> void
 {
-    auto pup_dir = layout.pup_dir();
-    if (pup::platform::exists(pup_dir)) {
+    auto& pool = global_pool();
+    auto pup_dir_sv = pool.get(layout.pup_dir());
+    if (pup::platform::exists(pup_dir_sv)) {
         return;
     }
-    if (!pup::platform::exists(pup::path::join(global_pool().get(layout.source_root), "Tupfile.ini"))) {
+    if (!pup::platform::exists(pool.get(pup::path::join(pool.get(layout.source_root), "Tupfile.ini")))) {
         return;
     }
-    (void)pup::platform::create_directories(pup_dir);
-    printf("Initialized pup in \"%s\"\n", pup_dir.c_str());
+    (void)pup::platform::create_directories(pup_dir_sv);
+    printf("Initialized pup in \"%.*s\"\n", static_cast<int>(pup_dir_sv.size()), pup_dir_sv.data());
 }
 
 struct IndexLoadResult {
@@ -500,7 +504,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
 {
     auto& pool = pup::global_pool();
     auto result = IndexLoadResult {};
-    auto index_path = pup::path::join(pup::path::join(output_root, ".pup"), "index");
+    auto index_path = String { pool.get(pup::path::join(pool.get(pup::path::join(output_root, ".pup")), "index")) };
 
     if (!pup::platform::exists(index_path)) {
         return result;
@@ -570,8 +574,9 @@ auto sort_dirs_by_depth(Vec<StringId> const& available) -> Vec<StringId>
 auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
 {
     auto ignore = pup::parser::IgnoreList::with_defaults();
+    auto& ipool = global_pool();
     for (auto root_id : { layout.config_root, layout.source_root }) {
-        auto ignore_path = pup::path::join(global_pool().get(root_id), ".pupignore");
+        auto ignore_path = String { ipool.get(pup::path::join(ipool.get(root_id), ".pupignore")) };
         if (!pup::platform::exists(ignore_path)) {
             continue;
         }
@@ -678,8 +683,8 @@ auto build_context(
 
     // Early tup.config check (before expensive parsing)
     if (ctx_opts.require_config) {
-        auto config_path = pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config");
-        if (!pup::platform::exists(config_path)) {
+        auto config_path_sv = pool.get(pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config"));
+        if (!pup::platform::exists(config_path_sv)) {
             return make_error<BuildContext>(
                 ErrorCode::NotFound,
                 "No tup.config found. Run 'pup configure' first."
@@ -689,10 +694,10 @@ auto build_context(
 
     // Set build root name for variant builds (before parsing)
     if (ctx.impl_->layout.source_root != ctx.impl_->layout.output_root) {
-        auto build_root_name = pup::path::relative(
+        auto build_root_name = pool.get(pup::path::relative(
             pool.get(ctx.impl_->layout.output_root),
             pool.get(ctx.impl_->layout.source_root)
-        );
+        ));
         ctx.impl_->graph.set_build_root_name(build_root_name);
     }
 
@@ -714,7 +719,7 @@ auto build_context(
     }
 
     // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
-    auto config_path = pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config");
+    auto config_path = String { pool.get(pup::path::join(pool.get(ctx.impl_->layout.output_root), "tup.config")) };
     if (pup::platform::exists(config_path)) {
         auto const* root_cfg = get_or_parse_config(config_path, ctx.impl_->state);
         if (root_cfg) {
@@ -817,17 +822,17 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
     if (!opts.build_dirs.empty()) {
         build_dir = String { pool.get(opts.build_dirs[0]) };
         if (!pup::path::is_absolute(build_dir)) {
-            build_dir = pup::path::join(root_sv, build_dir);
+            build_dir = String { pool.get(pup::path::join(root_sv, build_dir)) };
         }
         is_in_tree = (build_dir == root_sv);
-    } else if (pup::platform::exists(pup::path::join(cwd, ".pup")) && cwd != root_sv) {
+    } else if (pup::platform::exists(pool.get(pup::path::join(cwd, ".pup"))) && cwd != root_sv) {
         build_dir = cwd;
         is_in_tree = false;
     } else if (auto detected = find_build_subdir(root_sv)) {
         build_dir = *detected;
         is_in_tree = false;
-    } else if (pup::platform::exists(pup::path::join(root_sv, "tup.config"))
-               || pup::platform::exists(pup::path::join(root_sv, ".pup"))) {
+    } else if (pup::platform::exists(pool.get(pup::path::join(root_sv, "tup.config")))
+               || pup::platform::exists(pool.get(pup::path::join(root_sv, ".pup")))) {
         build_dir = String { root_sv };
         is_in_tree = true;
     } else {

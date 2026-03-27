@@ -46,9 +46,9 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         for (auto dir_id : ctx.parsed_dirs()) {
             auto dir_sv = pool.get(dir_id);
             auto tupfile_path = (dir_sv == "." || dir_sv.empty())
-                ? pup::path::join(pool.get(ctx.layout().source_root), "Tupfile")
-                : pup::path::join(pup::path::join(pool.get(ctx.layout().source_root), dir_sv), "Tupfile");
-            printf("[%.*s]   %s\n", static_cast<int>(variant_name.size()), variant_name.data(), tupfile_path.c_str());
+                ? pool.get(pup::path::join(pool.get(ctx.layout().source_root), "Tupfile"))
+                : pool.get(pup::path::join(pool.get(pup::path::join(pool.get(ctx.layout().source_root), dir_sv)), "Tupfile"));
+            printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(tupfile_path.size()), tupfile_path.data());
         }
     }
 

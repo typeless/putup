@@ -38,11 +38,11 @@ auto find_config_commands(
             auto path = graph.get_full_path(output_id);
             if (is_config_output(path)) {
                 // Paths in graph are project-root-relative
-                auto full_path = pup::path::join(source_root, path);
+                auto full_path_sv = global_pool().get(pup::path::join(source_root, path));
                 result.push_back({
                     .cmd_id = id,
                     .output_path = global_pool().intern(path),
-                    .exists = pup::platform::exists(full_path),
+                    .exists = pup::platform::exists(full_path_sv),
                 });
             }
         }

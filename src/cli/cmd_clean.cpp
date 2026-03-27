@@ -69,7 +69,7 @@ auto remove_indexed_outputs(
         }
 
         auto file_path_sv = pup::global_pool().get(file.path);
-        auto abs_path = pup::path::join(root, file_path_sv);
+        auto abs_path = String { pup::global_pool().get(pup::path::join(root, file_path_sv)) };
         for (auto parent = String { pup::path::parent(abs_path) };
              !parent.empty() && std::string_view { parent } != pup::path::parent(parent);
              parent = pup::path::parent(parent)) {
@@ -111,7 +111,7 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto build_dir_sv = pool_get(ctx->build_dir);
     auto root_sv = pool_get(ctx->root);
-    auto index_path = pup::path::join(pup::path::join(build_dir_sv, ".pup"), "index");
+    auto index_path = String { pup::global_pool().get(pup::path::join(pup::global_pool().get(pup::path::join(build_dir_sv, ".pup")), "index")) };
     if (!pup::platform::exists(index_path)) {
         vprint(variant_name, "Nothing to clean (no index found)\n");
         return EXIT_SUCCESS;
@@ -144,7 +144,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto& pool = pup::global_pool();
     auto build_dir_sv = pool.get(ctx->build_dir);
     auto root_sv = pool.get(ctx->root);
-    auto index_path = pup::path::join(pup::path::join(build_dir_sv, ".pup"), "index");
+    auto index_path = String { pool.get(pup::path::join(pool.get(pup::path::join(build_dir_sv, ".pup")), "index")) };
     auto error_count = std::size_t { 0 };
     auto output_dirs = Vec<StringId> {};
 
@@ -156,7 +156,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         output_dirs = std::move(result.output_dirs);
     }
 
-    auto pup_dir = pup::path::join(build_dir_sv, ".pup");
+    auto pup_dir = String { pool.get(pup::path::join(build_dir_sv, ".pup")) };
     if (pup::platform::exists(pup_dir)) {
         if (opts.dry_run) {
             vprint(variant_name, "Would remove: %s\n", pup_dir.c_str());
@@ -168,7 +168,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    auto config_path = pup::path::join(build_dir_sv, "tup.config");
+    auto config_path = String { pool.get(pup::path::join(build_dir_sv, "tup.config")) };
     if (pup::platform::exists(config_path)) {
         if (opts.dry_run) {
             vprint(variant_name, "Would remove: %s\n", config_path.c_str());

@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/string.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -22,7 +21,7 @@ auto is_path_under(
 auto relative_to_root(
     std::string_view path,
     std::string_view root
-) -> String;
+) -> StringId;
 
 [[nodiscard]]
 auto is_path_in_scope(
@@ -37,26 +36,26 @@ auto is_path_in_any_scope(
 ) -> bool;
 
 [[nodiscard]]
-auto compute_source_to_root(std::string_view source_dir) -> String;
+auto compute_source_to_root(std::string_view source_dir) -> StringId;
 
 [[nodiscard]]
 auto strip_path_prefix(
     std::string_view path,
     std::string_view prefix
-) -> String;
+) -> StringId;
 
 [[nodiscard]]
 auto resolve_under_root(
     std::string_view path,
     std::string_view source_root,
     std::string_view target_root
-) -> std::optional<String>;
+) -> std::optional<StringId>;
 
 [[nodiscard]]
 auto make_source_relative(
     std::string_view path,
     std::string_view source_to_root,
     std::string_view source_dir
-) -> String;
+) -> StringId;
 
 } // namespace pup

@@ -563,8 +563,8 @@ auto expand_path(
         if (end > start) {
             // Normalize path to remove // and resolve . and .. components
             auto path_str = std::string_view { expanded }.substr(start, end - start);
-            auto normalized = pup::path::normalize(path_str);
-            result.push_back(std::move(normalized));
+            auto normalized = pup::global_pool().get(pup::path::normalize(path_str));
+            result.push_back(String { normalized });
         }
         start = end;
     }

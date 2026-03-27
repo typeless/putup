@@ -53,7 +53,7 @@ auto normalize_path(std::string_view path_str) -> String
     if (path_str.empty()) {
         return String { path_str };
     }
-    return pup::path::normalize(path_str);
+    return String { global_pool().get(pup::path::normalize(path_str)) };
 }
 
 /// Normalize a directory path for group key lookup.
@@ -71,15 +71,16 @@ auto normalize_group_dir(
         return ".";
     }
 
-    auto normalized = pup::path::normalize(cleaned);
+    auto& pool = global_pool();
+    auto normalized = String { pool.get(pup::path::normalize(cleaned)) };
 
     if (pup::path::is_absolute(normalized)) {
-        normalized = pup::path::relative(normalized, source_root);
+        normalized = String { pool.get(pup::path::relative(normalized, source_root)) };
     } else if (!current_dir.empty() && normalized != ".") {
         auto first_slash = cleaned.find('/');
         auto first_component = std::string_view { cleaned }.substr(0, first_slash);
         if (first_component != ".") {
-            normalized = pup::path::normalize(pup::path::join(current_dir, normalized));
+            normalized = String { pool.get(pup::path::normalize(pool.get(pup::path::join(current_dir, normalized)))) };
         }
     }
 
@@ -150,7 +151,7 @@ auto normalize_to_output_relative(
 ) -> String
 {
     if (auto resolved = pup::resolve_under_root(path, source_root, output_root)) {
-        return String { *resolved };
+        return String { global_pool().get(*resolved) };
     }
     return String { path };
 }
@@ -173,17 +174,18 @@ struct PathTransformContext {
 
 auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 {
+    auto& pool = global_pool();
     auto canonical_cwd = String {};
     if (!is_empty(ctx.options.source_root) && !is_empty(ctx.options.output_root)
         && str(ctx.options.source_root) != str(ctx.options.output_root)) {
-        auto r = pup::platform::canonical(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
+        auto r = pup::platform::canonical(String { pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))) });
         if (r) {
             canonical_cwd = *r;
         }
     }
 
     return PathTransformContext {
-        .source_to_root = String { pup::compute_source_to_root(str(ctx.current_dir)) },
+        .source_to_root = String { pool.get(pup::compute_source_to_root(str(ctx.current_dir))) },
         .current_dir_str = str(ctx.current_dir),
         .source_root = str(ctx.options.source_root),
         .config_root = str(ctx.options.config_root),
@@ -197,12 +199,13 @@ auto make_transform_context(BuilderContext const& ctx) -> PathTransformContext
 /// navigate correctly from the physical CWD (which the OS uses after resolving symlinks).
 auto make_canonical_relative(PathTransformContext const& tc, std::string_view path) -> String
 {
-    auto joined = pup::path::join(tc.source_root, path);
+    auto& pool = global_pool();
+    auto joined = String { pool.get(pup::path::join(tc.source_root, path)) };
     auto abs = pup::platform::canonical(joined);
     if (abs) {
-        return pup::path::relative(*abs, tc.canonical_cwd);
+        return String { pool.get(pup::path::relative(*abs, tc.canonical_cwd)) };
     }
-    return pup::path::relative(pup::path::normalize(joined), tc.canonical_cwd);
+    return String { pool.get(pup::path::relative(pool.get(pup::path::normalize(joined)), tc.canonical_cwd)) };
 }
 
 /// Transform an input path to Tupfile-relative for command expansion.
@@ -222,7 +225,7 @@ auto transform_input_path(
             if (!tc.canonical_cwd.empty() && full_path.starts_with("..")) {
                 return make_canonical_relative(tc, full_path);
             }
-            return String { pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str) };
+            return String { global_pool().get(pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str)) };
         }
     }
 
@@ -230,32 +233,32 @@ auto transform_input_path(
     // Check if file exists in build directory - if so, use variant-prefixed path.
     auto build_root_name = graph.get_build_root_name();
     if (!build_root_name.empty()) {
-        auto build_path = pup::path::join(tc.output_root, inp);
+        auto build_path = global_pool().get(pup::path::join(tc.output_root, inp));
         if (pup::platform::exists(build_path)) {
             auto full_path = String { build_root_name } + "/" + inp;
             if (!tc.canonical_cwd.empty() && full_path.starts_with("..")) {
                 return make_canonical_relative(tc, full_path);
             }
-            return String { pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str) };
+            return String { global_pool().get(pup::make_source_relative(full_path, tc.source_to_root, tc.current_dir_str)) };
         }
     }
 
     // In 3-tree builds, files may live in config_root rather than source_root.
     // Compute a path from the source cwd (where the command runs) to the config_root location.
     if (!tc.config_root.empty() && tc.config_root != tc.source_root) {
-        auto config_path = pup::path::join(tc.config_root, inp);
-        if (pup::platform::exists(config_path)) {
-            auto source_cwd = pup::path::join(tc.source_root, tc.current_dir_str);
+        auto config_path_sv = global_pool().get(pup::path::join(tc.config_root, inp));
+        if (pup::platform::exists(config_path_sv)) {
+            auto source_cwd = String { global_pool().get(pup::path::join(tc.source_root, tc.current_dir_str)) };
             auto canonical_source = pup::platform::canonical(source_cwd);
-            auto canonical_config = pup::platform::canonical(config_path);
+            auto canonical_config = pup::platform::canonical(String { config_path_sv });
             if (canonical_source && canonical_config) {
-                return pup::path::relative(*canonical_config, *canonical_source);
+                return String { global_pool().get(pup::path::relative(*canonical_config, *canonical_source)) };
             }
         }
     }
 
     // Source file or not found - use path as-is
-    return String { pup::make_source_relative(inp, tc.source_to_root, tc.current_dir_str) };
+    return String { global_pool().get(pup::make_source_relative(inp, tc.source_to_root, tc.current_dir_str)) };
 }
 
 /// Transform an output path to Tupfile-relative for command expansion.
@@ -269,7 +272,7 @@ auto transform_output_path(
     if (!tc.canonical_cwd.empty() && out.starts_with("..")) {
         return make_canonical_relative(tc, out);
     }
-    return String { pup::make_source_relative(out, tc.source_to_root, tc.current_dir_str) };
+    return String { global_pool().get(pup::make_source_relative(out, tc.source_to_root, tc.current_dir_str)) };
 }
 
 /// Get all files that are members of a group (via file → group edges)
@@ -596,7 +599,7 @@ auto find_tuprules_files(
 
     auto results = Vec<String> {};
     for (auto const& dir : dirs) {
-        auto tuprules = pup::path::join(dir, "Tuprules.tup");
+        auto tuprules = String { global_pool().get(pup::path::join(dir, "Tuprules.tup")) };
         if (pup::platform::exists(tuprules)) {
             results.push_back(tuprules);
         }
@@ -618,7 +621,7 @@ auto resolve_include_path(
         return pup::unexpected<Error>(path_result.error());
     }
 
-    auto resolved = pup::path::join(pup::path::join(include_root, str(ctx.current_dir)), *path_result);
+    auto resolved = String { global_pool().get(pup::path::join(global_pool().get(pup::path::join(include_root, str(ctx.current_dir))), *path_result)) };
     if (!pup::platform::exists(resolved)) {
         return make_error<String>(ErrorCode::IncludeNotFound, "Include file not found: " + *path_result);
     }
@@ -634,7 +637,7 @@ auto expand_glob_pattern(
 ) -> void
 {
     auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
-                                          : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
+                                          : String { global_pool().get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))) };
 
     // First try expanding against filesystem
     auto expanded = parser::glob_expand(path, base);
@@ -642,7 +645,7 @@ auto expand_glob_pattern(
         for (auto p : *expanded) {
             // Prefix with current_dir to make path relative to project root
             if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::join(str(ctx.current_dir), str(p)));
+                result.push_back(String { global_pool().get(pup::path::join(str(ctx.current_dir), str(p))) });
             } else {
                 result.push_back(String { str(p) });
             }
@@ -653,14 +656,14 @@ auto expand_glob_pattern(
     // No files on disk - look for matching Generated nodes in graph
     // First, try demand-driven parsing of the directory containing the glob pattern
     auto pattern_dir = pup::path::parent(path);
-    auto abs_pattern_dir = pup::path::normalize(pup::path::join(str(ctx.current_dir), pattern_dir));
+    auto abs_pattern_dir = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), pattern_dir)))) };
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir);
 
     // Match glob pattern against Generated nodes
     // In 3-tree builds, Generated nodes are stored with build root prefix (e.g., ../build/hello.o)
     // but the glob pattern is relative to current directory (e.g., *.o)
     // We need to strip the build root prefix and match against the relative path
-    auto pattern_path = is_empty(ctx.current_dir) ? pup::String { path } : pup::path::normalize(pup::path::join(str(ctx.current_dir), path));
+    auto pattern_path = is_empty(ctx.current_dir) ? pup::String { path } : String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), path)))) };
     auto glob = parser::Glob { pattern_path };
     auto build_root_name = ctx.graph->get_build_root_name();
     for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
@@ -669,7 +672,7 @@ auto expand_glob_pattern(
             continue;
         }
         // Strip build root prefix to get source-relative path for matching
-        auto match_path = pup::strip_path_prefix(node_path, build_root_name);
+        auto match_path = String { global_pool().get(pup::strip_path_prefix(node_path, build_root_name)) };
         if (glob.matches(match_path)) {
             result.push_back(std::move(node_path));
         }
@@ -697,12 +700,12 @@ auto apply_exclusions(
         for (auto const& excl : *paths) {
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
                 auto base = is_empty(ctx.current_dir) ? String { str(ctx.options.source_root) }
-                                                      : pup::path::join(str(ctx.options.source_root), str(ctx.current_dir));
+                                                      : String { global_pool().get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))) };
                 auto expanded = parser::glob_expand(excl, base);
                 if (expanded && !expanded->empty()) {
                     for (auto p : *expanded) {
                         auto p_sv = str(p);
-                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(pup::path::join(str(ctx.current_dir), p_sv));
+                        auto normalized = String { global_pool().get(is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), p_sv)))) };
                         for (auto it = result.begin(); it != result.end();) {
                             if (*it == normalized) {
                                 it = result.erase(it);
@@ -713,7 +716,7 @@ auto apply_exclusions(
                     }
                 }
             } else {
-                auto normalized_excl = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pup::path::join(str(ctx.current_dir), excl));
+                auto normalized_excl = String { global_pool().get(is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), excl)))) };
                 for (auto it = result.begin(); it != result.end();) {
                     if (*it == normalized_excl) {
                         it = result.erase(it);
@@ -1228,7 +1231,7 @@ auto include_single_file(
     }
     ctx.included_files.insert(include_path_id);
 
-    auto inc_rel = pup::path::relative(include_path, include_root);
+    auto inc_rel = global_pool().get(pup::path::relative(include_path, include_root));
     auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
     if (inc_node_result) {
         ctx.sticky_sources.push_back(*inc_node_result);
@@ -1254,7 +1257,7 @@ auto include_single_file(
     if (is_rules && ctx.eval) {
         old_tup_cwd = ctx.eval->tup_cwd;
         auto include_dir = pup::path::parent(include_path);
-        auto rel_path = pup::path::relative(include_dir, pup::path::join(include_root, str(ctx.current_dir)));
+        auto rel_path = global_pool().get(pup::path::relative(include_dir, global_pool().get(pup::path::join(include_root, str(ctx.current_dir)))));
         ctx.eval->tup_cwd = rel_path.empty() ? intern(".") : intern(rel_path);
     }
 
@@ -1289,7 +1292,7 @@ auto process_include(
     auto const& include_root = is_empty(ctx.options.config_root) ? str(ctx.options.source_root) : str(ctx.options.config_root);
 
     if (inc.is_rules) {
-        auto tuprules_files = find_tuprules_files(pup::path::join(include_root, str(ctx.current_dir)), include_root);
+        auto tuprules_files = find_tuprules_files(global_pool().get(pup::path::join(include_root, str(ctx.current_dir))), include_root);
         for (auto const& tuprules : tuprules_files) {
             auto result = include_single_file(ctx, state, include_root, tuprules, true);
             if (!result) {
@@ -1867,7 +1870,7 @@ auto expand_inputs(
             // Include the path (pattern or literal)
             // For globs, this preserves the pattern for %g expansion in foreach rules
             if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::normalize(pup::path::join(str(ctx.current_dir), path)));
+                result.push_back(String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), path)))) });
             } else {
                 result.push_back(String { path });
             }
@@ -1878,10 +1881,10 @@ auto expand_inputs(
             } else if (!parser::has_glob_chars(path)) {
                 // Non-glob path: trigger demand-driven parsing if file doesn't exist
                 // (path already added above, but we may need to request cross-directory Tupfile)
-                auto full_path = pup::path::join(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)), path);
-                if (!pup::platform::exists(full_path)) {
+                auto full_path_sv = global_pool().get(pup::path::join(global_pool().get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))), path));
+                if (!pup::platform::exists(full_path_sv)) {
                     auto file_dir = pup::path::parent(path);
-                    auto abs_file_dir = pup::path::normalize(pup::path::join(str(ctx.current_dir), file_dir));
+                    auto abs_file_dir = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), file_dir)))) };
                     request_demand_driven_parse(*ctx.eval, abs_file_dir);
                 }
             }
@@ -1922,7 +1925,7 @@ auto expand_outputs(
 
             // Combine with current directory and normalize
             // Output paths are relative to Tupfile directory
-            auto full_output_path = pup::path::normalize(pup::path::join(str(ctx.current_dir), output_path));
+            auto full_output_path = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), output_path)))) };
 
             // All outputs go under BUILD_ROOT_ID.
             // This ensures Ghost nodes (created for inputs referencing not-yet-generated files)
@@ -2004,7 +2007,7 @@ auto get_or_create_directory_node(
     int depth
 ) -> Result<NodeId>
 {
-    auto normalized_path = pup::path::normalize(dir_path);
+    auto normalized_path = String { global_pool().get(pup::path::normalize(dir_path)) };
 
     if (normalized_path.empty() || normalized_path == "." || normalized_path == "/") {
         return NodeId { 0 };
@@ -2053,7 +2056,7 @@ auto get_or_create_file_node(
     auto build_root_name = ctx.graph->get_build_root_name();
 
     if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path = pup::strip_path_prefix(path, build_root_name);
+        auto lookup_path = String { global_pool().get(pup::strip_path_prefix(path, build_root_name)) };
 
         if (lookup_path != path) { // Had prefix
             if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
@@ -2064,9 +2067,9 @@ auto get_or_create_file_node(
 
     // For cross-project paths, also check after normalizing through output_root
     if (type == NodeType::Generated && path.starts_with("..")) {
-        auto normalized = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
-        if (normalized != path) {
-            if (auto existing = ctx.graph->find_by_path(normalized, BUILD_ROOT_ID)) {
+        auto norm_output = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
+        if (norm_output != path) {
+            if (auto existing = ctx.graph->find_by_path(norm_output, BUILD_ROOT_ID)) {
                 return *existing;
             }
         }
@@ -2075,9 +2078,9 @@ auto get_or_create_file_node(
     // Paths that escape source root become absolute for correct stat() resolution
     auto resolved = String { path };
     if (!is_empty(ctx.current_dir) && path.starts_with("..")) {
-        auto norm = pup::path::normalize(pup::path::join(str(ctx.current_dir), path));
+        auto norm = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.current_dir), path)))) };
         if (norm.starts_with("..")) {
-            resolved = pup::path::normalize(pup::path::join(str(ctx.options.source_root), norm));
+            resolved = String { global_pool().get(pup::path::normalize(global_pool().get(pup::path::join(str(ctx.options.source_root), norm)))) };
         } else {
             resolved = norm;
         }
@@ -2089,8 +2092,8 @@ auto get_or_create_file_node(
     // For Generated nodes, check if node was already created under BUILD_ROOT_ID
     // by expand_outputs. This handles paths without the build prefix.
     if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path = pup::strip_path_prefix(normalized, build_root_name);
-        if (auto existing = ctx.graph->find_by_path(lookup_path, BUILD_ROOT_ID)) {
+        auto lookup_path2 = String { global_pool().get(pup::strip_path_prefix(normalized, build_root_name)) };
+        if (auto existing = ctx.graph->find_by_path(lookup_path2, BUILD_ROOT_ID)) {
             return *existing;
         }
     }
@@ -2140,7 +2143,7 @@ auto resolve_input_node(
     // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
     // already have the build root prefix. Strip it to get source-relative paths.
     auto build_root_name = ctx.graph->get_build_root_name();
-    auto normalized_path = pup::strip_path_prefix(path, build_root_name);
+    auto normalized_path = String { global_pool().get(pup::strip_path_prefix(path, build_root_name)) };
     if (normalized_path != path) {
         had_build_prefix = true;
     }
@@ -2181,7 +2184,7 @@ auto resolve_input_node(
     }
 
     // Node doesn't exist - check filesystem to determine type
-    auto source_path = pup::path::join(str(ctx.options.source_root), normalized_path);
+    auto source_path = global_pool().get(pup::path::join(str(ctx.options.source_root), normalized_path));
     if (pup::platform::exists(source_path)) {
         // Source file exists - create File node under SOURCE_ROOT_ID
         return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
@@ -2190,15 +2193,15 @@ auto resolve_input_node(
     // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
     // source_root. Check config_root as a fallback for source file resolution.
     if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
-        auto config_path = pup::path::join(str(ctx.options.config_root), normalized_path);
-        if (pup::platform::exists(config_path)) {
+        auto config_path_sv = global_pool().get(pup::path::join(str(ctx.options.config_root), normalized_path));
+        if (pup::platform::exists(config_path_sv)) {
             return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
         }
     }
 
     // Check if file exists in build directory (e.g., tup.config, or already-generated files)
-    auto build_path = pup::path::join(str(ctx.options.output_root), normalized_path);
-    if (pup::platform::exists(build_path)) {
+    auto build_path_sv = global_pool().get(pup::path::join(str(ctx.options.output_root), normalized_path));
+    if (pup::platform::exists(build_path_sv)) {
         // File exists in build dir but not source - it's a Generated output from a previous build.
         // Create as Ghost so the rule that generates it can upgrade it to Generated.
         // (If the rule no longer generates it, the Ghost remains and causes an error.)
@@ -2339,7 +2342,7 @@ auto build_graph(
     // For in-tree builds (source == output), this is empty.
     // For variant builds (-B build), this is "build".
     if (str(state.options.source_root) != str(state.options.output_root)) {
-        graph.set_build_root_name(pup::path::relative(str(state.options.output_root), str(state.options.source_root)));
+        graph.set_build_root_name(global_pool().get(pup::path::relative(str(state.options.output_root), str(state.options.source_root))));
     }
 
     auto result = add_tupfile(graph, tupfile, eval, state);
@@ -2365,10 +2368,8 @@ auto add_tupfile(
         : str(state.options.config_root);
     auto tupfile_filename_sv = str(tupfile.filename);
     auto tupfile_parent = pup::path::parent(tupfile_filename_sv);
-    auto relative_dir_str = pup::path::relative(tupfile_parent, tupfile_root);
-    if (relative_dir_str == ".") {
-        relative_dir_str = "";
-    }
+    auto relative_dir_sv = global_pool().get(pup::path::relative(tupfile_parent, tupfile_root));
+    auto relative_dir_str = (relative_dir_sv == ".") ? std::string_view {} : relative_dir_sv;
 
     auto ctx = BuilderContext {
         .graph = &graph,
@@ -2381,7 +2382,7 @@ auto add_tupfile(
 
     // Create Tupfile node and add to sticky_sources for dependency tracking
     // For 3-tree builds, store relative to config_root (Tupfile's actual location)
-    auto tupfile_rel = pup::path::relative(tupfile_filename_sv, tupfile_root);
+    auto tupfile_rel = global_pool().get(pup::path::relative(tupfile_filename_sv, tupfile_root));
     auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
     if (tupfile_node_result) {
         ctx.sticky_sources.push_back(*tupfile_node_result);
@@ -2395,10 +2396,8 @@ auto add_tupfile(
         auto config_dir_id = NodeId { 0 };
         if (!is_empty(state.options.config_path)) {
             auto config_parent = pup::path::parent(str(state.options.config_path));
-            auto config_dir_rel = pup::path::relative(config_parent, str(state.options.source_root));
-            if (config_dir_rel.empty() || config_dir_rel == ".") {
-                config_dir_rel = "";
-            }
+            auto config_dir_rel_sv = global_pool().get(pup::path::relative(config_parent, str(state.options.source_root)));
+            auto config_dir_rel = (config_dir_rel_sv.empty() || config_dir_rel_sv == ".") ? std::string_view {} : config_dir_rel_sv;
             auto dir_result = get_or_create_directory_node(ctx, config_dir_rel);
             if (dir_result) {
                 config_dir_id = *dir_result;
@@ -2598,13 +2597,13 @@ auto resolve_deferred_order_only_edges(
         auto canonical_cwd = String {};
         if (!is_empty(state.options.source_root) && !is_empty(state.options.output_root)
             && str(state.options.source_root) != str(state.options.output_root)) {
-            auto r = pup::platform::canonical(pup::path::join(str(state.options.source_root), source_dir_str));
+            auto r = pup::platform::canonical(String { global_pool().get(pup::path::join(str(state.options.source_root), source_dir_str)) });
             if (r) {
                 canonical_cwd = *r;
             }
         }
         auto tc = PathTransformContext {
-            .source_to_root = String { pup::compute_source_to_root(source_dir_str) },
+            .source_to_root = String { global_pool().get(pup::compute_source_to_root(source_dir_str)) },
             .current_dir_str = source_dir_str,
             .source_root = str(state.options.source_root),
             .config_root = str(state.options.config_root),
