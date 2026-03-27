@@ -225,7 +225,14 @@ struct PatternFlags {
 - Delete `include/pup/core/string.hpp` and `src/core/string.cpp`
 - Remove `pup::String` from all remaining .cpp local variables
 - `pup::fmt()` free function replaced by `Buf::fmt()` / `HeapBuf::fmt()`
-- `path::join`, `path::normalize`, `path::relative` return `HeapBuf` (caller interns)
+- `path::join`, `path::normalize`, `path::relative` return `StringId` (intern internally)
+  - Data-driven: pool pollution from temporary path strings is <3% overhead in real builds (29 temporary calls out of 4,643 pool entries in GCC cross-compile build)
+
+### Design principles
+
+- **Return value = immutable** — functions return `StringId` (interned) or `string_view` (borrowed)
+- **Output parameter = mutable** — functions take `Buf&` / `HeapBuf&` when the caller needs to keep building
+- **No owned mutable string passed around** — that was `pup::String`'s role, and it's eliminated
 
 ## What stays unchanged
 
