@@ -884,7 +884,7 @@ auto Scheduler::execute_parallel(
 
         // If nothing is running and queue is empty, we're done
         // (remaining jobs are blocked by failed dependencies)
-        if (running == 0) {
+        if (running == 0 && ready_queue.empty()) {
             break;
         }
 
@@ -928,6 +928,10 @@ auto Scheduler::execute_parallel(
                 }
             }
             poll_timeout = std::max(static_cast<int>(min_remaining.count()), 0);
+        }
+
+        if (poll_fds.empty()) {
+            poll_timeout = 100; // 100ms fallback for waitpid
         }
 
         // 3. Wait for I/O
@@ -1093,11 +1097,15 @@ auto Scheduler::execute_parallel(
             for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
                 kill_slot(slots[si]);
             }
-            // Reap all
+            // Give children a moment to exit gracefully, escalate to SIGKILL
             for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
                 if (slots[si].active()) {
                     auto status = 0;
-                    ::waitpid(slots[si].pid, &status, 0); // blocking
+                    auto wpid = ::waitpid(slots[si].pid, &status, WNOHANG);
+                    if (wpid <= 0) {
+                        ::kill(slots[si].pid, SIGKILL);
+                        ::waitpid(slots[si].pid, &status, 0);
+                    }
                     if (slots[si].stdout_fd >= 0) {
                         ::close(slots[si].stdout_fd);
                     }
