@@ -323,4 +323,20 @@ auto run_process_with_callback(
     return result;
 }
 
+auto run_parallel_tasks(
+    int (*task)(void* ctx),
+    void** contexts,
+    std::size_t count
+) -> int
+{
+    // Windows: sequential fallback (no fork)
+    auto failed = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (task(contexts[i]) != 0) {
+            ++failed;
+        }
+    }
+    return failed;
+}
+
 } // namespace pup::platform

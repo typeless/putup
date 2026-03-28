@@ -29,7 +29,6 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <mutex>
 
 namespace pup::cli {
 
@@ -1207,8 +1206,6 @@ auto build_single_variant(
 
     auto scheduler = pup::exec::Scheduler { std::move(sched_opts) };
     auto discovered_deps = DiscoveredDeps {};
-    auto deps_mutex = std::mutex {};
-    auto progress_mutex = std::mutex {};
 
     auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose && !opts.dry_run;
     auto progress = pup::exec::ProgressState { .total = num_commands };
@@ -1220,7 +1217,6 @@ auto build_single_variant(
             auto display_sv = pool.get(job.display);
             vprint(variant_name, "%.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
         } else if (use_tty_progress) {
-            auto lock = std::lock_guard { progress_mutex };
             auto target = job.outputs.empty() ? job.display : job.outputs.front();
             progress = pup::exec::job_started(std::move(progress), job.id, target);
             auto output = pup::exec::render_tty(progress, variant_name);
@@ -1232,8 +1228,7 @@ auto build_single_variant(
         auto& pool = pup::global_pool();
         if (!job_result.success) {
             if (use_tty_progress) {
-                auto lock = std::lock_guard { progress_mutex };
-                pup::exec::finalize_progress(prev_lines);
+                    pup::exec::finalize_progress(prev_lines);
             }
             auto display_sv = pool.get(job.display);
             veprint(variant_name, "FAILED: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
@@ -1244,7 +1239,6 @@ auto build_single_variant(
         }
 
         if (!job_result.discovered_deps.empty()) {
-            auto lock = std::lock_guard { deps_mutex };
             auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
                 ? job_result.deps_for_command
                 : job.id;
@@ -1282,12 +1276,10 @@ auto build_single_variant(
         }
 
         if (use_tty_progress) {
-            auto lock = std::lock_guard { progress_mutex };
             progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
             auto output = pup::exec::render_tty(progress, variant_name);
             pup::exec::display_progress(output, prev_lines);
         } else if (!opts.verbose && !opts.dry_run) {
-            auto lock = std::lock_guard { progress_mutex };
             progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
             printf("\r%s ", pup::global_pool().get(pup::exec::render_simple(progress, variant_name)).data());
             std::fflush(stdout);
@@ -1295,7 +1287,6 @@ auto build_single_variant(
     });
 
     scheduler.on_progress([&](std::size_t /* done */, std::size_t total) {
-        auto lock = std::lock_guard { progress_mutex };
         progress.total = total;
     });
 

@@ -20,7 +20,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <queue>
-#include <thread>
 
 #ifndef _WIN32
 #    include <cerrno>
@@ -1539,8 +1538,14 @@ auto Scheduler::filter_jobs(
 
 auto detect_parallelism() -> std::size_t
 {
-    auto hw = std::size_t { std::thread::hardware_concurrency() };
-    return hw > 0 ? hw : 1;
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwNumberOfProcessors > 0 ? si.dwNumberOfProcessors : 1;
+#else
+    auto n = ::sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? static_cast<std::size_t>(n) : 1;
+#endif
 }
 
 } // namespace pup::exec

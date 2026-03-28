@@ -8,7 +8,6 @@
 #include "pup/core/string_id.hpp"
 
 #include <cstdint>
-#include <mutex>
 #include <string_view>
 
 namespace pup {
@@ -73,7 +72,6 @@ private:
     StringId* values_ = nullptr;
     std::size_t index_capacity_ = 0;
     std::size_t index_count_ = 0;
-    mutable std::mutex mutex_; ///< Thread safety for global_pool() concurrent access
 };
 
 } // namespace pup

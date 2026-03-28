@@ -5,10 +5,6 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
-#include "pup/core/vec.hpp"
-
-#include <mutex>
-
 namespace pup {
 
 auto Metrics::operator+=(Metrics const& other) -> Metrics&
@@ -32,51 +28,19 @@ auto Metrics::operator+=(Metrics const& other) -> Metrics&
 }
 
 namespace {
-
-auto registry_mutex() -> std::mutex&
-{
-    static auto mtx = std::mutex {};
-    return mtx;
-}
-
-auto metrics_registry() -> Vec<Metrics*>&
-{
-    static auto registry = Vec<Metrics*> {};
-    return registry;
-}
-
-auto register_metrics(Metrics* m) -> void
-{
-    auto lock = std::lock_guard { registry_mutex() };
-    metrics_registry().push_back(m);
-}
-
+auto g_metrics = Metrics {};
 } // namespace
 
 auto thread_metrics() -> Metrics&
 {
-    thread_local auto metrics = Metrics {};
-    thread_local auto registered = false;
-
-    if (!registered) {
-        register_metrics(&metrics);
-        registered = true;
-    }
-
-    return metrics;
+    return g_metrics;
 }
 
 auto collect_metrics() -> Metrics
 {
-    auto lock = std::lock_guard { registry_mutex() };
-    auto result = Metrics {};
+    auto result = g_metrics;
+    g_metrics = Metrics {};
 
-    for (auto* m : metrics_registry()) {
-        result += *m;
-        *m = Metrics {};
-    }
-
-    // Pool stats are a snapshot, not accumulated per-thread
     auto& pool = global_pool();
     result.pool_strings = pool.size();
     result.pool_bytes = pool.bytes();
@@ -86,11 +50,7 @@ auto collect_metrics() -> Metrics
 
 auto reset_metrics() -> void
 {
-    auto lock = std::lock_guard { registry_mutex() };
-
-    for (auto* m : metrics_registry()) {
-        *m = Metrics {};
-    }
+    g_metrics = Metrics {};
 }
 
 } // namespace pup

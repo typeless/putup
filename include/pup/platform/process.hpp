@@ -57,4 +57,14 @@ auto build_env_strings(
     bool inherit_env
 ) -> Vec<StringId>;
 
+/// Run tasks in parallel child processes (POSIX) or sequentially (Windows).
+/// Each task is a function returning an exit code (0 = success).
+/// Returns the number of tasks that returned non-zero.
+[[nodiscard]]
+auto run_parallel_tasks(
+    int (*task)(void* ctx),
+    void** contexts,
+    std::size_t count
+) -> int;
+
 } // namespace pup::platform

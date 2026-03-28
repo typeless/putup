@@ -314,6 +314,63 @@ auto run_process_with_callback(
     return result;
 }
 
+auto run_parallel_tasks(
+    int (*task)(void* ctx),
+    void** contexts,
+    std::size_t count
+) -> int
+{
+    if (count == 0) {
+        return 0;
+    }
+
+    // Fork one child per task
+    auto pids = Vec<pid_t> {};
+    pids.reserve(count);
+
+    for (std::size_t i = 0; i < count; ++i) {
+        auto pid = ::fork();
+        if (pid < 0) {
+            // Fork failed — run remaining tasks sequentially in parent
+            auto failed = 0;
+            for (auto j = i; j < count; ++j) {
+                if (task(contexts[j]) != 0) {
+                    ++failed;
+                }
+            }
+            // Reap already-forked children
+            for (auto child : pids) {
+                auto status = 0;
+                ::waitpid(child, &status, 0);
+                if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                    ++failed;
+                }
+            }
+            return failed;
+        }
+
+        if (pid == 0) {
+            // Child: run task and exit with its return code
+            auto rc = task(contexts[i]);
+            std::fflush(nullptr); // flush all stdio before exit
+            ::_exit(rc);
+        }
+
+        pids.push_back(pid);
+    }
+
+    // Parent: wait for all children
+    auto failed = 0;
+    for (auto pid : pids) {
+        auto status = 0;
+        ::waitpid(pid, &status, 0);
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            ++failed;
+        }
+    }
+    return failed;
+}
+
 } // namespace pup::platform
 
 // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)

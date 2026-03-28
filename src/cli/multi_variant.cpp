@@ -12,10 +12,11 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include "pup/platform/process.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <future>
 
 namespace pup::cli {
 
@@ -158,26 +159,44 @@ auto for_each_variant(
         }
     }
 
-    auto futures = Vec<std::future<int>> {};
+    struct TaskContext {
+        Options const* opts;
+        VariantHandler const* handler;
+        StringPool* pool;
+        Vec<StringId> const* scopes;
+        Vec<StringId> const* output_targets;
+        StringId variant;
+    };
+
+    auto task_fn = [](void* ctx_ptr) -> int {
+        auto* ctx = static_cast<TaskContext*>(ctx_ptr);
+        auto variant_opts = Options { *ctx->opts };
+        variant_opts.build_dirs = Vec<StringId> { ctx->variant };
+        variant_opts.targets = *ctx->scopes;
+        variant_opts.output_targets = *ctx->output_targets;
+        return (*ctx->handler)(variant_opts, pup::path::filename(ctx->pool->get(ctx->variant)));
+    };
+
+    auto task_contexts = Vec<TaskContext> {};
+    auto context_ptrs = Vec<void*> {};
+    task_contexts.reserve(variants.size());
+    context_ptrs.reserve(variants.size());
+
     for (auto variant : variants) {
-        futures.push_back(std::async(
-            std::launch::async,
-            [&opts, &handler, &pool, &scopes, &output_targets, variant] {
-                auto variant_opts = Options { opts };
-                variant_opts.build_dirs = Vec<StringId> { variant };
-                variant_opts.targets = scopes;
-                variant_opts.output_targets = output_targets;
-                return handler(variant_opts, pup::path::filename(pool.get(variant)));
-            }
-        ));
+        task_contexts.push_back(TaskContext {
+            .opts = &opts,
+            .handler = &handler,
+            .pool = &pool,
+            .scopes = &scopes,
+            .output_targets = &output_targets,
+            .variant = variant,
+        });
+    }
+    for (std::size_t i = 0; i < task_contexts.size(); ++i) {
+        context_ptrs.push_back(&task_contexts[i]);
     }
 
-    auto failed = 0;
-    for (auto& future : futures) {
-        if (future.get() != 0) {
-            ++failed;
-        }
-    }
+    auto failed = pup::platform::run_parallel_tasks(task_fn, context_ptrs.data(), context_ptrs.size());
 
     if (failed > 0) {
         fprintf(stderr, "%d of %zu variants failed\n", failed, variants.size());

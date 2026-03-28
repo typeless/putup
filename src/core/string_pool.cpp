@@ -154,7 +154,6 @@ auto StringPool::intern(std::string_view str) -> StringId
         return StringId::Empty;
     }
 
-    auto lock = std::lock_guard { mutex_ };
     auto h = fix_hash(fnv1a(str));
 
     if (auto existing = probe_find(h, str); !is_empty(existing)) {
@@ -181,7 +180,6 @@ auto StringPool::get(StringId id) const -> std::string_view
         return {};
     }
 
-    auto lock = std::lock_guard { mutex_ };
     auto const idx = to_underlying(id) - 1;
     if (idx >= storage_.size()) {
         return {};
@@ -196,19 +194,16 @@ auto StringPool::find(std::string_view str) const -> StringId
         return StringId::Empty;
     }
 
-    auto lock = std::lock_guard { mutex_ };
     return probe_find(fix_hash(fnv1a(str)), str);
 }
 
 auto StringPool::size() const -> std::size_t
 {
-    auto lock = std::lock_guard { mutex_ };
     return storage_.size();
 }
 
 auto StringPool::bytes() const -> std::size_t
 {
-    auto lock = std::lock_guard { mutex_ };
     auto total = std::size_t { 0 };
     for (auto i = std::size_t { 0 }; i < storage_.size(); ++i) {
         total += storage_[i].size();
@@ -218,7 +213,6 @@ auto StringPool::bytes() const -> std::size_t
 
 auto StringPool::clear() -> void
 {
-    auto lock = std::lock_guard { mutex_ };
     storage_.clear();
     std::free(meta_);
     std::free(values_);
@@ -230,7 +224,6 @@ auto StringPool::clear() -> void
 
 auto StringPool::reserve(std::size_t count) -> void
 {
-    auto lock = std::lock_guard { mutex_ };
     auto needed = count * 5 / 4 + 1;
     auto cap = next_power_of_two(needed < 16 ? 16 : needed);
 
