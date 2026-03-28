@@ -28,6 +28,24 @@ Putup reimplements tup with these goals:
 - **Custom index format** - Binary format instead of SQLite
 - **No FUSE** - Compute changes from index comparison
 - **No Lua** - Traditional Tupfile syntax only
+- **No libstdc++** - Links with `-nostdlib++`, zero runtime dependency on libstdc++/libc++
+
+### Runtime Primitives
+
+With libstdc++ eliminated, putup provides its own runtime primitives:
+
+| Primitive | Replaces | Purpose |
+|-----------|----------|---------|
+| `StringId` (4B) | `std::string` | Interned string handle (storage) |
+| `string_view` | `std::string const&` | Non-owning string reference (reading) |
+| `Buf` / `HeapBuf` | `std::string` (building) | Stack/heap string builders |
+| `Vec<T>` | `std::vector<T>` | Dynamic array |
+| `Function<Sig>` | `std::function<Sig>` | Move-only type-erased callable (32-byte SBO) |
+| `SteadyClock` / `SystemClock` | `std::chrono` clocks | Platform-implemented clocks |
+| `CPath` | manual `.c_str()` | Null-termination wrapper for string_view at C API boundary |
+| `throw_stubs.cpp` | libstdc++ runtime | operator new/delete, `__cxa_guard_*`, `__throw_*` stubs |
+
+All threading (`std::thread`, `std::mutex`, `std::atomic`, `std::future`) has been eliminated. The scheduler uses a single-threaded `poll()`-based event loop. Multi-variant parallelism uses `fork()`+`waitpid()` via `platform::run_parallel_tasks()`.
 
 ### Module Organization
 
@@ -153,7 +171,7 @@ Pup uses `Result<T>` (alias for `expected<T, Error>`) for explicit error propaga
 ```cpp
 struct Error {
     ErrorCode code;
-    std::string message;
+    StringId message;
 };
 
 template<typename T>
@@ -224,11 +242,13 @@ Key token categories:
 struct VarRef {
     enum Kind { Regular, Config, Node };  // $(X), @(X), &(X)
     Kind kind;
-    std::string name;
+    StringId name;
 };
 
 struct Expression {
-    std::vector<std::variant<std::string, VarRef>> parts;
+    struct Literal { StringId value; };
+    struct Variable { VarRef ref; };
+    Vec<std::variant<Literal, Variable>> parts;
 };
 ```
 
@@ -242,7 +262,7 @@ struct PathPattern {
     bool is_output_exclusion;   // ^pattern for output exclusion (regex)
     bool is_group;              // {binname} - tup calls these "bins"
     bool is_order_only_group;   // <groupname> for order-only groups
-    std::string group_name;
+    StringId group_name;
 };
 ```
 
@@ -251,14 +271,14 @@ struct PathPattern {
 ```cpp
 struct Rule {
     bool foreach_;
-    std::vector<PathPattern> inputs;
-    std::vector<PathPattern> order_only_inputs;
+    Vec<PathPattern> inputs;
+    Vec<PathPattern> order_only_inputs;
     Expression command;
     std::optional<Expression> display;  // From ^ ^ markers
-    std::vector<PathPattern> outputs;
-    std::vector<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;               // {binname} at end
-    std::optional<std::string> output_order_only_group;    // <groupname> at end
+    Vec<PathPattern> outputs;
+    Vec<PathPattern> extra_outputs;
+    std::optional<StringId> output_group;               // {binname} at end
+    std::optional<StringId> output_order_only_group;    // <groupname> at end
     std::optional<Expression> output_order_only_group_dir; // path/ prefix for <group>
 };
 ```
@@ -267,15 +287,15 @@ struct Rule {
 
 ```cpp
 struct BangMacro {
-    std::string name;       // !cc
+    StringId name;          // !cc
     bool foreach_;
-    std::vector<PathPattern> order_only_inputs;
+    Vec<PathPattern> order_only_inputs;
     Expression command;
     std::optional<Expression> display;
-    std::vector<PathPattern> outputs;
-    std::vector<PathPattern> extra_outputs;
-    std::optional<std::string> output_group;               // {binname} at end
-    std::optional<std::string> output_order_only_group;    // <groupname> at end
+    Vec<PathPattern> outputs;
+    Vec<PathPattern> extra_outputs;
+    std::optional<StringId> output_group;               // {binname} at end
+    std::optional<StringId> output_order_only_group;    // <groupname> at end
     std::optional<Expression> output_order_only_group_dir; // path/ prefix for <group>
 };
 ```
@@ -291,16 +311,6 @@ class Parser {
     auto parse_rule() -> Result<Rule>;
     auto parse_expression() -> Result<Expression>;
     // ...
-};
-```
-
-The parser uses a **FileResolver** interface for I/O abstraction:
-
-```cpp
-struct FileResolver {
-    virtual auto resolve(path, relative_to) -> Result<std::string> = 0;
-    virtual auto read_file(path) -> Result<std::string> = 0;
-    virtual auto find_tuprules(from_dir) -> Result<std::string> = 0;
 };
 ```
 
@@ -336,7 +346,7 @@ struct VarContext {
     std::string_view tup_cwd, tup_platform, tup_arch;
     std::string_view tup_variantdir, tup_variant_outputdir;
     std::string_view tup_srcdir, tup_outdir;
-    SortedIdVec const* imported_vars;   // Interned env var names
+    SortedIdVec const* imported_vars;  // Interned env var names
     StringPool const* string_pool;
 };
 
@@ -352,20 +362,21 @@ struct EvalContext {
     VarDb* vars;                // $(VAR)
     VarDb const* config_vars;   // @(VAR) - read-only
     VarDb* node_vars;           // &(VAR)
-    std::string tup_cwd, tup_platform, tup_arch;
-    std::string tup_variantdir, tup_variant_outputdir;
+    StringId tup_cwd, tup_platform, tup_arch;
+    StringId tup_variantdir, tup_variant_outputdir;
+    StringId tup_srcdir, tup_outdir;
 
-    // Callbacks for cross-directory resolution
-    std::function<std::vector<std::string>(std::string_view)> resolve_group;           // {groupname}
-    std::function<std::vector<std::string>(std::string_view)> resolve_order_only_group; // <groupname>
-    std::function<Result<void>(std::string const&)> request_directory;       // Demand-driven parsing
-    std::vector<std::string> const* available_tupfile_dirs;
+    // Callbacks for cross-directory resolution (pup::Function, not std::function)
+    Function<Vec<StringId>(std::string_view)> resolve_group;           // {groupname}
+    Function<Vec<StringId>(std::string_view)> resolve_order_only_group; // <groupname>
+    Function<Result<void>(std::string_view)> request_directory;         // Demand-driven parsing
+    Vec<StringId> const* available_tupfile_dirs;
 
     // Callbacks for fine-grained dependency tracking
-    std::function<void(std::string_view)> on_config_var_used;
+    Function<void(std::string_view)> on_config_var_used;
     SortedIdVec const* imported_vars;         // Interned env var names
     StringPool const* string_pool;
-    std::function<void(std::string_view)> on_env_var_used;
+    Function<void(std::string_view)> on_env_var_used;
 };
 ```
 
@@ -404,7 +415,7 @@ class Glob {
     auto is_recursive() -> bool;  // Contains **
 };
 
-auto glob_expand(pattern, base_dir, options) -> Result<std::vector<std::string>>;
+auto glob_expand(pattern, base_dir, options) -> Result<Vec<StringId>>;
 ```
 
 Supported patterns: `*`, `?`, `[abc]`, `**`, `!pattern` (exclusion)
@@ -459,8 +470,8 @@ struct CommandNode {
     StringId display = StringId::Empty;        // Display text (from ^ ^ markers)
     StringId source_dir = StringId::Empty;     // Tupfile directory (relative to root)
     StringId instruction_id = StringId::Empty; // Instruction pattern (e.g., "gcc -c %f -o %o")
-    std::vector<NodeId> inputs = {};           // Operand file NodeIds for %f expansion
-    std::vector<NodeId> outputs = {};          // Operand file NodeIds for %o expansion
+    Vec<NodeId> inputs = {};           // Operand file NodeIds for %f expansion
+    Vec<NodeId> outputs = {};          // Operand file NodeIds for %o expansion
     SortedIdVec exported_vars = {};            // Env vars to export (interned StringIds)
     std::optional<GeneratedOutput> generated_output = {};  // Output specification
     OutputAction output_action = {};           // What to do with output
@@ -470,7 +481,7 @@ struct CommandNode {
     // ALL guards must be satisfied for command to execute
     // For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
     //   → guards = [Guard{condA, true}, Guard{condB, true}]
-    std::vector<Guard> guards = {};
+    Vec<Guard> guards = {};
 };
 
 /// Condition node - represents an ifeq/ifdef/ifneq/ifndef condition
@@ -533,13 +544,13 @@ namespace node_id {
 struct Graph {
     StringPool strings;               // Interned string storage
 
-    std::deque<FileNode> files;       // Files, directories, groups
-    std::deque<CommandNode> commands; // Command nodes only
-    std::vector<Edge> edges;          // Central edge storage
+    Vec<FileNode> files;              // Files, directories, groups
+    Vec<CommandNode> commands;        // Command nodes only
+    Vec<Edge> edges;                  // Central edge storage
 
     // Phi-node model structures
-    std::deque<ConditionNode> conditions;  // Conditional guards
-    std::deque<PhiNode> phi_nodes;         // Output merges from conditional branches
+    Vec<ConditionNode> conditions;    // Conditional guards
+    Vec<PhiNode> phi_nodes;           // Output merges from conditional branches
 
     // Edge indices: NodeId -> ArenaSlice (indices into edges vector)
     Arena32 edge_arena;
@@ -551,7 +562,7 @@ struct Graph {
     NodeIdArenaIndex order_only_dependents;
 
     // Node lookup indices
-    std::vector<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
+    Vec<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
     StringPool command_strings;               // Interned expanded command strings
     SortedPairVec command_index;              // StringId(command) -> NodeId
 
@@ -583,13 +594,13 @@ class BuildGraph {
 auto add_file_node(Graph&, FileNode) -> Result<NodeId>;
 auto add_command_node(Graph&, CommandNode) -> Result<NodeId>;
 auto add_edge(Graph&, from, to, type) -> Result<void>;
-auto get_full_path(Graph const&, id) -> std::string;
+auto get_full_path(Graph const&, id) -> StringId;
 auto find_by_dir_name(Graph const&, parent_id, name) -> std::optional<NodeId>;
 auto find_by_path(Graph const&, path) -> std::optional<NodeId>;
-auto get_inputs(Graph const&, id) -> std::vector<NodeId>;
-auto get_outputs(Graph const&, id) -> std::vector<NodeId>;
-auto get_sticky_outputs(Graph const&, id) -> std::vector<NodeId>;  // Tupfile/config deps
-auto nodes_of_type(Graph const&, type) -> std::vector<NodeId>;
+auto get_inputs(Graph const&, id) -> Vec<NodeId>;
+auto get_outputs(Graph const&, id) -> Vec<NodeId>;
+auto get_sticky_outputs(Graph const&, id) -> Vec<NodeId>;  // Tupfile/config deps
+auto nodes_of_type(Graph const&, type) -> Vec<NodeId>;
 
 // Type-specific accessors
 auto get_file_node(Graph&, id) -> FileNode*;           // nullptr for command IDs
@@ -608,8 +619,8 @@ auto get_name(Graph const&, id) -> std::string_view;
 auto get_display_str(Graph const&, id) -> std::string_view;
 auto get_source_dir(Graph const&, id) -> std::string_view;
 auto get_instruction_pattern(Graph const&, id) -> std::string_view;
-auto expand_instruction(Graph const&, id, PathCache&) -> std::string;
-auto expand_instruction(Graph const&, id) -> std::string;
+auto expand_instruction(Graph const&, id, PathCache&) -> StringId;
+auto expand_instruction(Graph const&, id) -> StringId;
 
 // Command index for find_by_command() lookups
 auto build_command_index(Graph&, PathCache&) -> void;
@@ -624,14 +635,14 @@ auto is_under_build_root(Graph const&, id) -> bool;
 
 ```cpp
 struct TopoSortResult {
-    std::vector<NodeId> order;
+    Vec<NodeId> order;
     bool has_cycle;
-    std::vector<NodeId> cycle;  // Path if cycle found
+    Vec<NodeId> cycle;  // Path if cycle found
 };
 
 auto topological_sort(graph) -> TopoSortResult;
 auto reverse_topological_sort(graph) -> TopoSortResult;
-auto detect_cycles(graph) -> std::optional<std::vector<NodeId>>;
+auto detect_cycles(graph) -> std::optional<Vec<NodeId>>;
 ```
 
 Additional graph analysis:
@@ -639,7 +650,7 @@ Additional graph analysis:
 ```cpp
 auto reachable_from(graph, start) -> NodeIdMap32;
 auto node_depth(graph, id) -> std::size_t;
-auto critical_path(graph) -> std::vector<NodeId>;
+auto critical_path(graph) -> Vec<NodeId>;
 ```
 
 ### Ghost Nodes
@@ -675,9 +686,10 @@ Transforms AST to BuildGraph:
 
 ```cpp
 struct BuilderOptions {
-    std::string source_root;
-    std::string config_root;
-    std::string output_root;
+    StringId source_root;
+    StringId config_root;
+    StringId output_root;
+    StringId config_path;          // Path to tup.config (for sticky edge tracking)
     bool expand_globs;
     bool validate_inputs;
 };
@@ -732,7 +744,7 @@ When `!cc` is referenced, the builder substitutes the stored macro definition.
 
 ```cpp
 struct BuilderContext {
-    std::vector<std::pair<std::uint32_t, BangMacroDef>> macros;  // Sorted by interned name key
+    Vec<std::pair<std::uint32_t, BangMacroDef>> macros;  // Sorted by interned name key
     GroupMemberTable groups;  // Interned group name → member NodeIds
 };
 ```
@@ -751,19 +763,19 @@ parallel "DEP" command that extracts header dependencies.
 /// Command metadata for pattern matching
 struct CommandInfo {
     NodeId node_id;
-    std::string command;
-    std::string display;
-    std::vector<std::string> inputs;
-    std::vector<std::string> order_only_inputs;
-    std::vector<std::string> outputs;
-    std::string working_dir;
+    StringId command;
+    StringId display;
+    Vec<StringId> inputs;
+    Vec<StringId> order_only_inputs;
+    Vec<StringId> outputs;
+    StringId working_dir;
 };
 
 /// Output specification for generated rules
 struct GeneratedOutput {
     enum class Type { File, Stdout, Stderr };
     Type type = Type::File;
-    std::string path;
+    StringId path;
 };
 
 /// How to process generated rule output
@@ -774,11 +786,11 @@ enum class OutputAction {
 
 /// Complete specification of an auto-generated rule
 struct GeneratedRule {
-    std::vector<std::string> inputs;
-    std::vector<std::string> order_only_inputs;
-    std::string command;
-    std::string display;
-    std::vector<GeneratedOutput> outputs;
+    Vec<StringId> inputs;
+    Vec<StringId> order_only_inputs;
+    StringId command;
+    StringId display;
+    Vec<GeneratedOutput> outputs;
     OutputAction action = OutputAction::Normal;
     NodeId parent_command = INVALID_NODE_ID;
 };
@@ -791,13 +803,13 @@ Scanners detect compiler commands and generate dependency extraction commands:
 ```cpp
 class DepScanner {
     virtual auto matches(CommandInfo const&) const -> bool = 0;
-    virtual auto has_dep_flags(std::string const&) const -> bool = 0;
-    virtual auto build_dep_command(CommandInfo const&) -> std::optional<std::string> = 0;
+    virtual auto has_dep_flags(std::string_view) const -> bool = 0;
+    virtual auto build_dep_command(CommandInfo const&) -> std::optional<StringId> = 0;
 };
 
 class DepScannerRegistry {
     auto register_scanner(std::unique_ptr<DepScanner>) -> void;
-    auto match_and_generate(CommandInfo const&) -> std::vector<GeneratedRule>;
+    auto match_and_generate(CommandInfo const&) -> Vec<GeneratedRule>;
 };
 ```
 
@@ -967,8 +979,8 @@ Write process:
 ```cpp
 struct CommandResult {
     int exit_code = 0;
-    std::string stdout_output = {};
-    std::string stderr_output = {};
+    StringId stdout_output = StringId::Empty;
+    StringId stderr_output = StringId::Empty;
     std::chrono::milliseconds duration = {};
     bool timed_out = false;
     bool signaled = false;
@@ -976,16 +988,16 @@ struct CommandResult {
 };
 
 struct RunOptions {
-    std::string working_dir = {};
-    std::vector<std::string> env = {};           // Additional environment variables
-    bool inherit_env = true;                     // Inherit parent environment
+    StringId working_dir = StringId::Empty;
+    Vec<StringId> env = {};                     // Additional environment variables
+    bool inherit_env = true;                    // Inherit parent environment
     std::optional<std::chrono::seconds> timeout = {};
     bool capture_stdout = true;
     bool capture_stderr = true;
-    std::optional<std::string> stdin_data = {};  // Data to pipe to stdin
+    std::optional<StringId> stdin_data = {};    // Data to pipe to stdin
 };
 
-using OutputCallback = std::function<void(std::string_view, bool is_stderr)>;
+using OutputCallback = Function<void(std::string_view, bool is_stderr)>;
 
 class CommandRunner {
     auto run(command) -> Result<CommandResult>;
@@ -1002,13 +1014,13 @@ class CommandRunner {
 ```cpp
 struct BuildJob {
     NodeId id = 0;
-    std::string command = {};
-    std::string display = {};
-    std::string working_dir = {};
-    std::vector<std::string> inputs = {};
-    std::vector<std::string> outputs = {};
-    std::vector<std::string> order_only_inputs = {};  // Order-only dependencies
-    std::vector<std::string> exported_vars = {};      // Env vars to export to command
+    StringId command = StringId::Empty;
+    StringId display = StringId::Empty;
+    StringId working_dir = StringId::Empty;
+    Vec<StringId> inputs = {};
+    Vec<StringId> outputs = {};
+    Vec<StringId> order_only_inputs = {};  // Order-only dependencies
+    Vec<StringId> exported_vars = {};      // Env vars to export to command
 
     // For auto-generated rules (from pattern matching)
     bool capture_stdout = false;             // Capture stdout for depfile parsing
@@ -1023,10 +1035,10 @@ struct JobResult {
     NodeId id = 0;
     bool success = false;
     int exit_code = 0;
-    std::string output = {};
+    StringId output = StringId::Empty;
     std::chrono::milliseconds duration = {};
-    std::vector<std::string> discovered_deps = {};  // Implicit deps from .d files
-    NodeId deps_for_command = INVALID_NODE_ID;      // If set, deps belong to this command (not id)
+    Vec<StringId> discovered_deps = {};        // Implicit deps from .d files
+    NodeId deps_for_command = INVALID_NODE_ID; // If set, deps belong to this command (not id)
 };
 
 struct BuildStats {
@@ -1043,15 +1055,15 @@ struct SchedulerOptions {
     bool keep_going = false;                          // Continue after failures
     bool dry_run = false;                             // Print commands without executing
     bool verbose = false;                             // Print commands as they run
-    std::string source_root = {};                     // Source tree root (where Tupfile.ini lives)
-    std::string config_root = {};                     // Config tree root (where Tupfiles live)
-    std::string output_root = {};                     // Output tree root (where outputs/.pup go)
+    StringId source_root = StringId::Empty;
+    StringId config_root = StringId::Empty;
+    StringId output_root = StringId::Empty;           // Output tree root (where outputs/.pup go)
     std::optional<std::chrono::seconds> timeout = {}; // Per-command timeout
 };
 
-using JobStartCallback = std::function<void(BuildJob const&)>;
-using JobCompleteCallback = std::function<void(BuildJob const&, JobResult const&)>;
-using ProgressCallback = std::function<void(std::size_t completed, std::size_t total)>;
+using JobStartCallback = Function<void(BuildJob const&)>;
+using JobCompleteCallback = Function<void(BuildJob const&, JobResult const&)>;
+using ProgressCallback = Function<void(std::size_t completed, std::size_t total)>;
 
 class Scheduler {
     auto build(graph) -> Result<BuildStats>;
@@ -1093,15 +1105,16 @@ Mode precedence (highest to lowest):
 3. **Subset** - exclude config commands from full build
 4. **Full** - build everything
 
-**Parallel execution algorithm:**
+**Parallel execution algorithm (single-threaded, poll-based):**
 
 ```
 1. Compute in_degree[job] = count of dependencies
 2. Queue jobs where in_degree == 0
-3. Thread pool processes queue:
-   a. Dequeue job
-   b. Execute command
-   c. On completion:
+3. Single-threaded event loop:
+   a. Launch ready jobs as child processes (up to -j limit)
+   b. poll() on stdout/stderr pipes of all active children
+   c. On child exit (SIGCHLD / waitpid):
+      - Collect output, record result
       - For each dependent job:
         - Decrement in_degree
         - If in_degree == 0: enqueue
@@ -1109,9 +1122,9 @@ Mode precedence (highest to lowest):
 ```
 
 This ensures:
-- Maximum parallelism within dependency constraints
+- Maximum parallelism within dependency constraints via non-blocking I/O
 - Order-only dependencies respected for ordering only
-- Automatic load balancing across threads
+- No threads, no mutexes, no atomics — deterministic single-threaded control flow
 
 ---
 
@@ -1242,7 +1255,7 @@ Pup supports projects with Tupfiles in multiple subdirectories, enabling modular
 On startup, pup recursively scans for all directories containing `Tupfile`:
 
 ```cpp
-auto discover_tupfile_dirs(root) -> std::vector<std::string>
+auto discover_tupfile_dirs(root) -> Vec<StringId>
 {
     // Skip variant directories (contain tup.config)
     // Return sorted vector of relative paths to Tupfile directories
@@ -1271,9 +1284,9 @@ This approach:
 
 ```cpp
 struct TupfileParseState {
-    std::vector<std::string> available;  // Dirs with Tupfiles (sorted)
-    std::vector<std::string> parsed;     // Already processed (sorted)
-    std::vector<std::string> parsing;    // Currently processing (cycle detection, sorted)
+    Vec<StringId> available;  // Dirs with Tupfiles (sorted)
+    Vec<StringId> parsed;     // Already processed (sorted)
+    Vec<StringId> parsing;    // Currently processing (cycle detection, sorted)
 };
 ```
 
@@ -1285,9 +1298,10 @@ Each Tupfile gets its own variable scope:
 
 ```cpp
 struct BuilderContext {
-    std::string current_dir;
-    VarDb* vars;                        // $(VAR) - local to this Tupfile (StringPool-backed)
-    std::vector<std::pair<std::uint32_t, BangMacroDef>> macros;  // !macros (sorted by interned name)
+    BuildGraph* graph;
+    parser::EvalContext* eval;
+    parser::VarDb* vars;                // $(VAR) - local to this Tupfile (StringPool-backed)
+    Vec<std::pair<std::uint32_t, BangMacroDef>> macros;  // !macros (sorted by interned name)
     GroupMemberTable groups;            // {bins} (interned group name → member NodeIds)
 };
 ```
@@ -1381,12 +1395,7 @@ the variant-mapped output both resolve to the same node).
 **PathTransformContext** centralizes transformation parameters for command expansion:
 
 ```cpp
-struct PathTransformContext {
-    std::string source_to_root;   // "../" prefix sequence to reach project root
-    std::string current_dir_str;  // Current Tupfile directory
-    fs::path source_root;         // Source tree root
-    fs::path output_root;         // Output tree root (variant directory)
-};
+Path transformation is handled inline within the builder using `StringId`-based path operations (`pup::path::join`, `pup::path::relative`, etc.).
 ```
 
 **Dual-root architecture:**
@@ -1582,8 +1591,10 @@ CFLAGS = -I$(TUP_SRCDIR)/../include
 
 ```cpp
 // In EvalContext setup:
-tup_srcdir = fs::relative(source_root / current_dir, config_root / current_dir);
-tup_outdir = fs::relative(output_root / current_dir, config_root / current_dir);
+tup_srcdir = pup::path::relative(pup::path::join(source_root, current_dir),
+                                 pup::path::join(config_root, current_dir));
+tup_outdir = pup::path::relative(pup::path::join(output_root, current_dir),
+                                 pup::path::join(config_root, current_dir));
 ```
 
 ### Relationship to Graph Roots
@@ -1687,14 +1698,14 @@ Files and commands have different fields and lifecycles. Splitting them:
 
 ### Why String Interning?
 
-String fields dominate memory in large builds. Each `std::string` costs 32 bytes overhead regardless of content length. String interning provides:
+String fields dominate memory in large builds. String interning provides:
 
-- **4-byte handles** - `StringId` replaces `std::string`, reducing per-field overhead by 28 bytes
+- **4-byte handles** - `StringId` replaces all owned string fields, reducing per-field overhead by 28 bytes vs a typical string type
 - **Deduplication** - Repeated strings (e.g., common source_dir values) stored once
-- **Zero-allocation lookup** - `find_by_dir_name()` uses transparent comparators to lookup by `string_view` without allocating a temporary `std::string`
+- **Zero-allocation lookup** - `find_by_dir_name()` uses transparent comparators to lookup by `string_view` without allocation
 - **~40% memory reduction** - Benchmarks show ~205 bytes saved per node
 
-The `StringPool` uses a `std::deque<std::string>` for stable storage and a hash map for O(1) deduplication. Helper functions like `get_name()` and `get_source_dir()` transparently resolve `StringId` to `string_view`.
+The `StringPool` uses a custom arena with Robin Hood hashing for O(1) deduplication. Helper functions like `get_name()` and `get_source_dir()` transparently resolve `StringId` to `string_view`. Path functions (`pup::path::join`, `pup::path::parent`, etc.) return `StringId` by interning results in a global pool.
 
 ### Why Binary Index Instead of SQLite?
 
@@ -1733,13 +1744,14 @@ Benefits:
 - Easy cleanup (rm -rf build/)
 - Parallel variant builds
 
-### Why Parallel Execution with Dependency Map?
+### Why Single-Threaded poll()-Based Scheduler?
 
-The work-queue algorithm with in-degree counting:
+The scheduler uses a single-threaded event loop with `poll()` for I/O multiplexing and `fork()`/`waitpid()` for child process management:
 
-- True parallelism (no global lock on queue operations)
-- Respects all dependencies exactly
-- Automatic load balancing
+- **No threading** - Eliminates mutexes, atomics, and thread-safety concerns entirely
+- **True parallelism** - Child processes run in parallel; the event loop only manages I/O
+- **Deterministic** - Single control flow makes debugging and reasoning straightforward
+- Respects all dependencies via in-degree counting
 - Order-only dependencies for sequencing without rebuild triggers
 - Cancellation support
 
@@ -1861,6 +1873,17 @@ Like tup, pup stores paths as `(parent_dir, basename)` pairs rather than full pa
 - **Efficient caching** - `get_full_path()` caches reconstructed paths
 
 The `find_by_path()` method remains for compatibility, but internally derives from the `(parent_dir, name)` model.
+
+### Why No libstdc++?
+
+Putup links with `-nostdlib++` and provides its own runtime primitives:
+
+- **Binary size** - .text dropped from 1,060 KB to 447 KB (-58%) by eliminating exception handling tables, RTTI, and unused template instantiations
+- **Startup time** - No global constructors from `iostream`, `locale`, or allocator infrastructure
+- **Portability** - No dependency on a specific C++ standard library version; only requires a C runtime (libc)
+- **Control** - Custom `StringPool`, `Vec<T>`, `Function<Sig>`, and clock types are purpose-built for the build system's needs, with no overhead from generality
+
+The `throw_stubs.cpp` file provides the minimal runtime surface: `operator new`/`delete` (delegating to `malloc`/`free`), `__cxa_guard_*` (for thread-safe static initialization), and `__throw_*` stubs that abort on use. Multi-variant parallelism uses `fork()`+`waitpid()` via `platform::run_parallel_tasks()` instead of `std::async`.
 
 ---
 

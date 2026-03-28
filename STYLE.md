@@ -230,8 +230,8 @@ auto pred = [&ctx](auto const& item) { return item.matches(ctx); };
 
 // Lambdas - multiline (same formatting as functions)
 auto create_file = [&](
-    std::filesystem::path const& path,
-    std::string const& name
+    std::string_view path,
+    std::string_view name
 ) -> NodeId {
     // ...
 };

@@ -1357,7 +1357,7 @@ putup -B build-debug -B build-release  # Explicit -B flag
 
 When run from the project root without `-B` flags, putup automatically:
 1. Discovers all variant directories (subdirs with `tup.config` or `.pup/`)
-2. Builds them in parallel using `std::async`
+2. Builds them in parallel using `fork()`+`waitpid()` (one child process per variant)
 3. Reports combined results
 
 In verbose mode (`-v`), output lines are prefixed with `[variant-name]` to distinguish which variant produced each message.

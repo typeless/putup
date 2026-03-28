@@ -10,6 +10,7 @@ A build system using [Tupfile](https://gittup.org/tup/) syntax.
 - Git-inspired binary index (not SQLite)
 - SHA-256 content hashing
 - No FUSE, no Lua
+- No libstdc++ (`-nostdlib++`); custom primitives: `StringId`, `Vec<T>`, `Function<Sig>`
 
 **Design Coherence**: Ensure consistency between design documentation and implementation. No special-case handling or workarounds—if something doesn't fit the architecture, fix the design.
 
