@@ -18,7 +18,6 @@ srcs-y += src/core/path_utils.cpp
 srcs-y += src/core/sorted_id_vec.cpp
 srcs-y += src/core/string_pool.cpp
 srcs-y += src/core/string_utils.cpp
-srcs-y += src/core/throw_stubs.cpp
 srcs-y += src/core/terminal.cpp
 
 # Parser
@@ -76,6 +75,8 @@ srcs-y += src/platform/path-$(_os_api).cpp
 # Static library
 : {lib_objs} |> !ar |> libputup.$(_lib)
 
-# Main executable
+# Main executable (throw_stubs linked directly, not in library — avoids
+# duplicate symbols when test binary links both libputup.a and libstdc++)
 : src/main.cpp |> !cxx |> main.$(_obj)
-: {lib_objs} main.$(_obj) |> !link |> putup$(_exe)
+: src/core/throw_stubs.cpp |> !cxx |> throw_stubs.$(_obj)
+: {lib_objs} main.$(_obj) throw_stubs.$(_obj) |> !link |> putup$(_exe)
