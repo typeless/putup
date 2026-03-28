@@ -488,15 +488,15 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     if (ctx.on_var_assigned && *ctx.on_var_assigned) {
         auto const* cb = ctx.on_var_assigned;
         eval_ctx.on_var_assigned = [cb](
-            std::string_view name,
-            pup::parser::Assignment::Op op,
-            std::string_view value_before,
-            std::string_view value_after,
-            std::string_view filename,
-            std::uint32_t line,
-            std::uint32_t column,
-            bool is_effective
-        ) {
+                                       std::string_view name,
+                                       pup::parser::Assignment::Op op,
+                                       std::string_view value_before,
+                                       std::string_view value_after,
+                                       std::string_view filename,
+                                       std::uint32_t line,
+                                       std::uint32_t column,
+                                       bool is_effective
+                                   ) {
             (*cb)(name, op, value_before, value_after, filename, line, column, is_effective);
         };
     }

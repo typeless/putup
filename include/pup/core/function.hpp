@@ -22,7 +22,7 @@ public:
     Function(std::nullptr_t) { } // NOLINT(google-explicit-constructor)
 
     template<typename F>
-        requires(!std::is_same_v<std::decay_t<F>, Function>)
+    requires(!std::is_same_v<std::decay_t<F>, Function>)
     Function(F&& f) // NOLINT(google-explicit-constructor)
     {
         using Fn = std::decay_t<F>;
@@ -101,7 +101,8 @@ private:
     };
 
     Storage buf_ {};
-    R (*invoke_)(void*, Args...) = nullptr;
+    R (*invoke_)
+    (void*, Args...) = nullptr;
     void (*destroy_)(void*) = nullptr;
     void (*move_)(void* dst, void* src) = nullptr;
     bool heap_ = false;
