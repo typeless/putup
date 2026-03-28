@@ -2037,6 +2037,7 @@ Shows:
 - Files checked and changed
 - Files, edges, and implicit deps in index
 - Hash computations and stat calls
+- String pool size (interned strings count and bytes)
 - Index I/O time (load/save)
 
 **Phase timing breakdown** (for diagnosing slow incremental builds):
@@ -2051,6 +2052,7 @@ Stats:
   Implicit deps:       21718
   Hash computations:     657
   Stat calls:            657
+  String pool:        161076 strings, 2353924 bytes
   Index I/O:               2ms load, 0ms save
 
   Phase timing:
