@@ -1229,7 +1229,7 @@ auto build_single_variant(
         auto& pool = pup::global_pool();
         if (!job_result.success) {
             if (use_tty_progress) {
-                    pup::exec::finalize_progress(prev_lines);
+                pup::exec::finalize_progress(prev_lines);
             }
             auto display_sv = pool.get(job.display);
             veprint(variant_name, "FAILED: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());

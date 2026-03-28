@@ -34,7 +34,7 @@ auto cpu_count() -> std::size_t
 
 auto SteadyClock::now() noexcept -> time_point
 {
-    struct timespec ts {};
+    struct timespec ts { };
     ::clock_gettime(CLOCK_MONOTONIC, &ts);
     auto ns = static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
     return time_point { duration { ns } };
@@ -42,7 +42,7 @@ auto SteadyClock::now() noexcept -> time_point
 
 auto SystemClock::now() noexcept -> time_point
 {
-    struct timespec ts {};
+    struct timespec ts { };
     ::clock_gettime(CLOCK_REALTIME, &ts);
     auto ns = static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
     return time_point { duration { ns } };
