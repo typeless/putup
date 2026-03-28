@@ -16,7 +16,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <future>
-#include <vector>
 
 namespace pup::cli {
 
@@ -159,7 +158,7 @@ auto for_each_variant(
         }
     }
 
-    auto futures = std::vector<std::future<int>> {};
+    auto futures = Vec<std::future<int>> {};
     for (auto variant : variants) {
         futures.push_back(std::async(
             std::launch::async,

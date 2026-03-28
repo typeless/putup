@@ -227,7 +227,8 @@ auto Index::compute_paths() -> void
     // Use direct indexing instead of a hash map.
     assert(files_[0].id == 1 && "compute_paths requires 1-based contiguous IDs");
     assert(files_[n - 1].id == static_cast<NodeId>(n) && "compute_paths requires 1-based contiguous IDs");
-    auto computed = std::vector<bool>(n, false);
+    auto computed = Vec<bool> {};
+    computed.resize(n);
     auto chain = Vec<std::size_t> {}; // reusable ancestor stack
 
     for (std::size_t i = 0; i < n; ++i) {

@@ -5,8 +5,9 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
+#include "pup/core/vec.hpp"
+
 #include <mutex>
-#include <vector>
 
 namespace pup {
 
@@ -38,9 +39,9 @@ auto registry_mutex() -> std::mutex&
     return mtx;
 }
 
-auto metrics_registry() -> std::vector<Metrics*>&
+auto metrics_registry() -> Vec<Metrics*>&
 {
-    static auto registry = std::vector<Metrics*> {};
+    static auto registry = Vec<Metrics*> {};
     return registry;
 }
 

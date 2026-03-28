@@ -6,7 +6,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
-#include <vector>
+#include "pup/core/vec.hpp"
 
 namespace pup::path {
 
@@ -106,7 +106,7 @@ auto is_absolute(std::string_view p) -> bool
 
 auto normalize(std::string_view p) -> StringId
 {
-    auto parts = std::vector<std::string_view> {};
+    auto parts = Vec<std::string_view> {};
     auto start = std::size_t { 0 };
     auto absolute = is_absolute(p);
 
@@ -156,7 +156,7 @@ auto relative(std::string_view target, std::string_view base) -> StringId
     }
 
     auto split = [](std::string_view p) {
-        auto parts = std::vector<std::string_view> {};
+        auto parts = Vec<std::string_view> {};
         auto start = std::size_t { 0 };
         while (start < p.size()) {
             auto end = p.find('/', start);

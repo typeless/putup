@@ -567,7 +567,7 @@ auto Scheduler::build_incremental(
 
     // Build temporary path-to-NodeId map for changed file lookup
     // This is O(n) scan but only done once per incremental build
-    auto path_to_id = std::vector<std::pair<std::string_view, NodeId>> {};
+    auto path_to_id = Vec<std::pair<std::string_view, NodeId>> {};
     for (auto id : graph.all_nodes()) {
         auto path_id = graph.get_full_path(id);
         if (!is_empty(path_id)) {
