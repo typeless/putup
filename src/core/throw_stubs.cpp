@@ -28,7 +28,7 @@ auto __cxa_guard_release(long long* guard) -> void // NOLINT
     *reinterpret_cast<char*>(guard) = 1;
 }
 
-void __cxa_guard_abort(long long*) {} // NOLINT
+void __cxa_guard_abort(long long*) { } // NOLINT
 
 } // extern "C"
 
@@ -50,32 +50,36 @@ void* operator new[](std::size_t n) // NOLINT
     }
     return p;
 }
-void operator delete(void* p) noexcept { std::free(p); }              // NOLINT
-void operator delete[](void* p) noexcept { std::free(p); }            // NOLINT
-void operator delete(void* p, std::size_t) noexcept { std::free(p); } // NOLINT
+void operator delete(void* p) noexcept { std::free(p); }                // NOLINT
+void operator delete[](void* p) noexcept { std::free(p); }              // NOLINT
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }   // NOLINT
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); } // NOLINT
 
 namespace std { // NOLINT(cert-dcl58-cpp)
 
-[[noreturn]] void __throw_bad_alloc()
+[[noreturn]]
+void __throw_bad_alloc()
 {
     fputs("fatal: bad_alloc\n", stderr);
     abort();
 }
 
-[[noreturn]] void __throw_bad_array_new_length()
+[[noreturn]]
+void __throw_bad_array_new_length()
 {
     fputs("fatal: bad_array_new_length\n", stderr);
     abort();
 }
 
-[[noreturn]] void __throw_length_error(char const* msg)
+[[noreturn]]
+void __throw_length_error(char const* msg)
 {
     fprintf(stderr, "fatal: length_error: %s\n", msg);
     abort();
 }
 
-[[noreturn]] void __throw_out_of_range_fmt(char const* /* fmt */, ...)
+[[noreturn]]
+void __throw_out_of_range_fmt(char const* /* fmt */, ...)
 {
     fputs("fatal: out_of_range\n", stderr);
     abort();
