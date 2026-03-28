@@ -389,7 +389,7 @@ struct ParseContext {
     pup::parser::VarDb const& base_vars;
     bool verbose;
     bool root_config_only;
-    VarAssignedCallback on_var_assigned;
+    VarAssignedCallback const* on_var_assigned;
 };
 
 auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result<void>
@@ -483,8 +483,23 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         .tup_outdir = pool.intern(tup_outdir),
         .request_directory = request_directory,
         .available_tupfile_dirs = &ctx.state.available,
-        .on_var_assigned = ctx.on_var_assigned,
     };
+
+    if (ctx.on_var_assigned && *ctx.on_var_assigned) {
+        auto const* cb = ctx.on_var_assigned;
+        eval_ctx.on_var_assigned = [cb](
+            std::string_view name,
+            pup::parser::Assignment::Op op,
+            std::string_view value_before,
+            std::string_view value_after,
+            std::string_view filename,
+            std::uint32_t line,
+            std::uint32_t column,
+            bool is_effective
+        ) {
+            (*cb)(name, op, value_before, value_after, filename, line, column, is_effective);
+        };
+    }
 
     auto result = pup::Result<void> { ctx.builder.add_tupfile(ctx.graph, parse_result.tupfile, eval_ctx) };
 
@@ -798,7 +813,7 @@ auto build_context(
         .base_vars = ctx.impl_->vars,
         .verbose = ctx_opts.verbose,
         .root_config_only = ctx_opts.root_config_only,
-        .on_var_assigned = ctx_opts.on_var_assigned,
+        .on_var_assigned = &ctx_opts.on_var_assigned,
     };
 
     for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {

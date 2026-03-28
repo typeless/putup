@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ast.hpp"
+#include "pup/core/function.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
@@ -11,7 +12,6 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 
-#include <functional>
 #include <string_view>
 
 namespace pup::graph {
@@ -129,15 +129,15 @@ struct EvalContext {
     StringId tup_outdir = StringId::Empty;            ///< Relative path to output dir (TUP_OUTDIR)
 
     /// Callback for resolving group references like {groupname} (tup calls these "bins")
-    std::function<Vec<StringId>(std::string_view)> resolve_group = {};
+    Function<Vec<StringId>(std::string_view)> resolve_group = {};
 
     /// Callback for resolving order-only group references like <groupname>
-    std::function<Vec<StringId>(std::string_view)> resolve_order_only_group = {};
+    Function<Vec<StringId>(std::string_view)> resolve_order_only_group = {};
 
     /// Callback for requesting a directory's Tupfile to be parsed (for cross-directory deps)
     /// Called when a path references another directory that may have a Tupfile.
     /// Returns success if directory was parsed, error if circular/missing.
-    std::function<Result<void>(std::string_view)> request_directory = {};
+    Function<Result<void>(std::string_view)> request_directory = {};
 
     /// Set of directories that have Tupfiles (relative to root)
     /// Used to determine when to invoke request_directory callback
@@ -146,14 +146,14 @@ struct EvalContext {
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
     /// a config variable is accessed via @(VAR) or $(CONFIG_VAR).
-    std::function<void(std::string_view name)> on_config_var_used = {};
+    Function<void(std::string_view name)> on_config_var_used = {};
 
     /// Set of imported variable name StringIds
     SortedIdVec const* imported_vars = nullptr;
 
     /// Callback for tracking imported env variable usage (for fine-grained dependency tracking)
     /// Called with the variable name when an imported env var is accessed via $(VAR).
-    std::function<void(std::string_view name)> on_env_var_used = {};
+    Function<void(std::string_view name)> on_env_var_used = {};
 
     /// String pool for resolving StringIds during variable lookup
     StringPool const* string_pool = nullptr;
@@ -169,7 +169,7 @@ struct EvalContext {
     /// Callback for tracking variable assignments (for show var command)
     /// Called when a variable is assigned with the variable name, operator, before/after values,
     /// filename, line/column, and whether the assignment was effective.
-    std::function<void(
+    Function<void(
         std::string_view name,
         Assignment::Op op,
         std::string_view value_before,

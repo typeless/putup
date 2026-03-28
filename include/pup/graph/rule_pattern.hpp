@@ -3,11 +3,11 @@
 
 #pragma once
 
+#include "pup/core/function.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
-#include <functional>
 #include <optional>
 #include <string_view>
 
@@ -59,7 +59,7 @@ struct RulePattern {
 
     /// Generate a rule from a matched command
     /// Returns nullopt if pattern matches but rule shouldn't be generated
-    std::function<std::optional<GeneratedRule>(CommandInfo const&)> generate;
+    Function<std::optional<GeneratedRule>(CommandInfo const&)> generate;
 };
 
 /// Registry for rule patterns

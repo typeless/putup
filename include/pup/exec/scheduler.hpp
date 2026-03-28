@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/function.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
@@ -11,7 +12,6 @@
 #include "runner.hpp"
 
 #include <atomic>
-#include <functional>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -54,9 +54,9 @@ struct JobResult {
 };
 
 /// Callback types for scheduler events
-using JobStartCallback = std::function<void(BuildJob const&)>;
-using JobCompleteCallback = std::function<void(BuildJob const&, JobResult const&)>;
-using ProgressCallback = std::function<void(std::size_t completed, std::size_t total)>;
+using JobStartCallback = Function<void(BuildJob const&)>;
+using JobCompleteCallback = Function<void(BuildJob const&, JobResult const&)>;
+using ProgressCallback = Function<void(std::size_t completed, std::size_t total)>;
 
 /// Scheduler options
 struct SchedulerOptions {

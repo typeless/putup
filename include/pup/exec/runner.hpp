@@ -3,13 +3,13 @@
 
 #pragma once
 
+#include "pup/core/function.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
 #include <chrono>
-#include <functional>
 #include <optional>
 
 namespace pup::exec {
@@ -37,7 +37,7 @@ struct RunOptions {
 };
 
 /// Callback for command output
-using OutputCallback = std::function<void(std::string_view, bool is_stderr)>;
+using OutputCallback = Function<void(std::string_view, bool is_stderr)>;
 
 /// Command runner - executes shell commands
 class CommandRunner {

@@ -1524,8 +1524,8 @@ auto expand_rule(
     // Override resolve_order_only_group for this rule's command expansion.
     // All %<group> patterns are preserved literally for deferred resolution.
     // ScopeGuard ensures restoration even on early returns.
-    auto original_resolver = ctx.eval->resolve_order_only_group;
-    auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = original_resolver; });
+    auto original_resolver = std::move(ctx.eval->resolve_order_only_group);
+    auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = std::move(original_resolver); });
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
                                          ) -> Vec<StringId> {
         auto name_key = to_underlying(intern(name));

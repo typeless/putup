@@ -4,8 +4,8 @@
 #pragma once
 
 #include "pup/cli/options.hpp"
+#include "pup/core/function.hpp"
 
-#include <functional>
 #include <string_view>
 
 namespace pup::cli {
@@ -14,7 +14,7 @@ namespace pup::cli {
 /// @param opts Options with build_dirs containing exactly one variant
 /// @param variant_name Name of the variant (for prefixed output), empty for in-tree builds
 /// @return EXIT_SUCCESS or EXIT_FAILURE
-using VariantHandler = std::function<int(Options const&, std::string_view)>;
+using VariantHandler = Function<int(Options const&, std::string_view)>;
 
 /// Run a command for each variant (parallel when multiple)
 ///

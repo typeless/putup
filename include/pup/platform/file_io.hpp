@@ -3,13 +3,13 @@
 
 #pragma once
 
+#include "pup/core/function.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -108,7 +108,7 @@ struct DirEntry {
 [[nodiscard]]
 auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>;
 
-using WalkVisitor = std::function<bool(DirEntry const&, std::string_view rel_path)>;
+using WalkVisitor = Function<bool(DirEntry const&, std::string_view rel_path)>;
 [[nodiscard]]
 auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result<void>;
 

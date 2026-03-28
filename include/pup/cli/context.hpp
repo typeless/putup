@@ -4,12 +4,12 @@
 #pragma once
 
 #include "options.hpp"
+#include "pup/core/function.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/parser/ast.hpp"
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 
@@ -32,7 +32,7 @@ class Index;
 namespace pup::cli {
 
 /// Callback type for tracking variable assignments
-using VarAssignedCallback = std::function<void(
+using VarAssignedCallback = Function<void(
     std::string_view name,
     parser::Assignment::Op op,
     std::string_view value_before,
