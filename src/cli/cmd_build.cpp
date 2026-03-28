@@ -526,7 +526,7 @@ auto serialize_graph_nodes(
             // (output_root already contains the build root, so we need just the relative part)
             auto fs_path = node_path;
             if (node->type == pup::NodeType::Generated) {
-                strip_build_root_prefix(fs_path, graph.get_build_root_name());
+                fs_path = strip_build_root_prefix(fs_path, graph.get_build_root_name());
             }
 
             auto file_path = pup::global_pool().get((node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
