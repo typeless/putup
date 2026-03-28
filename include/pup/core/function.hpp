@@ -101,8 +101,9 @@ private:
     };
 
     Storage buf_ {};
-    R (*invoke_)
-    (void*, Args...) = nullptr;
+    // clang-format off
+    R (*invoke_)(void*, Args...) = nullptr;
+    // clang-format on
     void (*destroy_)(void*) = nullptr;
     void (*move_)(void* dst, void* src) = nullptr;
     bool heap_ = false;
