@@ -18,6 +18,7 @@ srcs-y += src/core/path_utils.cpp
 srcs-y += src/core/sorted_id_vec.cpp
 srcs-y += src/core/string_pool.cpp
 srcs-y += src/core/string_utils.cpp
+srcs-y += src/core/throw_stubs.cpp
 srcs-y += src/core/terminal.cpp
 
 # Parser

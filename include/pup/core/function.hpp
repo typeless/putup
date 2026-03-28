@@ -5,7 +5,7 @@
 
 #include <cstddef>
 #include <cstdlib>
-#include <new>
+#include <new> // placement new
 #include <type_traits>
 #include <utility>
 
@@ -32,10 +32,11 @@ public:
             new (buf_.data) Fn(std::forward<F>(f));
             heap_ = false;
         } else {
-            buf_.ptr = new (std::nothrow) Fn(std::forward<F>(f));
+            buf_.ptr = std::malloc(sizeof(Fn));
             if (!buf_.ptr) {
                 std::abort();
             }
+            new (buf_.ptr) Fn(std::forward<F>(f));
             heap_ = true;
         }
 
@@ -118,7 +119,7 @@ private:
         if (invoke_) {
             destroy_(data());
             if (heap_) {
-                ::operator delete(buf_.ptr);
+                std::free(buf_.ptr);
             }
             invoke_ = nullptr;
             destroy_ = nullptr;
