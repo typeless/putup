@@ -41,7 +41,10 @@ auto SteadyClock::now() noexcept -> time_point
     }();
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
-    auto ns = counter.QuadPart * 1'000'000'000 / freq;
+    // Split to avoid int64 overflow (counter * 1e9 overflows after ~2.5h at 10MHz)
+    auto whole_seconds = counter.QuadPart / freq;
+    auto remainder = counter.QuadPart % freq;
+    auto ns = whole_seconds * 1'000'000'000 + remainder * 1'000'000'000 / freq;
     return time_point { duration { ns } };
 }
 

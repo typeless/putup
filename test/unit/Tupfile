@@ -51,5 +51,5 @@ test-srcs-y += test_vec.cpp
 : foreach $(test-srcs-y) |> !cxx |> {test_objs}
 
 # Link test runner
-: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> !link |> putup_test$(_exe)
+: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> ^ LINK %o^ @(LINK_CMD) -lstdc++ -lm |> putup_test$(_exe)
 endif

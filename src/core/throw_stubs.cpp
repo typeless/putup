@@ -7,9 +7,9 @@
 // from_chars) still emit calls to throw functions. These stubs abort
 // instead — the code paths are unreachable in correct code.
 //
-// The C++ ABI symbols (__cxa_guard_*, operator delete, __cxa_atexit)
-// are needed for static locals and unique_ptr but normally come from
-// libstdc++/libc++. We provide minimal implementations.
+// The C++ ABI symbols (__cxa_guard_*, operator new/delete) normally
+// come from libstdc++/libc++. We provide minimal implementations.
+// __cxa_atexit comes from libc and does not need a stub.
 
 #include <cstdio>
 #include <cstdlib>
