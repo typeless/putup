@@ -5,6 +5,7 @@
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/layout.hpp"
@@ -1102,9 +1103,9 @@ auto build_single_variant(
 
         // Build command string index for find_by_command() lookups
         // Must happen after parsing (operands set) but before incremental logic
-        auto cmd_index_start = std::chrono::high_resolution_clock::now();
+        auto cmd_index_start = pup::SteadyClock::now();
         ctx.graph().build_command_index();
-        auto cmd_index_elapsed = std::chrono::high_resolution_clock::now() - cmd_index_start;
+        auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
         auto upstream_files = Vec<std::string_view> {};
@@ -1127,7 +1128,7 @@ auto build_single_variant(
             }
         }
 
-        auto change_detect_start = std::chrono::high_resolution_clock::now();
+        auto change_detect_start = pup::SteadyClock::now();
         changed_files = find_changed_files_with_implicit(
             source_root_str,
             idx,
@@ -1135,12 +1136,12 @@ auto build_single_variant(
             upstream_files,
             opts.verbose
         );
-        auto change_detect_elapsed = std::chrono::high_resolution_clock::now() - change_detect_start;
+        auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
-        auto implicit_deps_start = std::chrono::high_resolution_clock::now();
+        auto implicit_deps_start = pup::SteadyClock::now();
         changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
-        auto implicit_deps_elapsed = std::chrono::high_resolution_clock::now() - implicit_deps_start;
+        auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
         // Add output targets to force their rebuild
@@ -1160,15 +1161,15 @@ auto build_single_variant(
             }
         }
 
-        auto new_cmds_start = std::chrono::high_resolution_clock::now();
+        auto new_cmds_start = pup::SteadyClock::now();
         auto new_cmd_outputs = detect_new_commands(ctx.graph(), idx, variant_name, opts.verbose);
-        auto new_cmds_elapsed = std::chrono::high_resolution_clock::now() - new_cmds_start;
+        auto new_cmds_elapsed = pup::SteadyClock::now() - new_cmds_start;
         pup::thread_metrics().new_commands_time = std::chrono::duration_cast<std::chrono::microseconds>(new_cmds_elapsed);
         for (auto& f : new_cmd_outputs) {
             changed_files.push_back(std::move(f));
         }
 
-        auto stale_start = std::chrono::high_resolution_clock::now();
+        auto stale_start = pup::SteadyClock::now();
         remove_stale_outputs(
             ctx.graph(),
             idx,
@@ -1177,7 +1178,7 @@ auto build_single_variant(
             opts.dry_run,
             opts.verbose
         );
-        auto stale_elapsed = std::chrono::high_resolution_clock::now() - stale_start;
+        auto stale_elapsed = pup::SteadyClock::now() - stale_start;
         pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 
         if (changed_files.empty()) {
@@ -1298,7 +1299,7 @@ auto build_single_variant(
         config_cmd_ids.set(cfg.cmd_id, 1);
     }
 
-    auto start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto build_result = pup::Result<pup::exec::BuildStats> {};
 
     auto scope_with_upstream = opts.include_all_deps && !scopes.empty() && !use_incremental;
@@ -1339,7 +1340,7 @@ auto build_single_variant(
         build_result = scheduler.build(ctx.graph());
         break;
     }
-    auto end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
 
     if (use_tty_progress) {
@@ -1376,9 +1377,9 @@ auto build_single_variant(
             old_idx_ptr
         ) };
 
-        auto index_save_start = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         auto write_result = pup::Result<void> { pup::index::write_index(index_path, index) };
-        auto index_save_end = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        auto index_save_end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 
         if (!write_result) {

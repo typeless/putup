@@ -3,6 +3,7 @@
 
 #include "pup/exec/scheduler.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/metrics.hpp"
@@ -281,7 +282,7 @@ struct JobSlot {
     HeapBuf stdout_buf = {};
     HeapBuf stderr_buf = {};
     std::size_t job_index = 0;
-    std::chrono::steady_clock::time_point start_time = {};
+    pup::SteadyClock::time_point start_time = {};
 
     auto active() const -> bool { return pid > 0; }
 
@@ -394,7 +395,7 @@ auto launch_job(
     slot.stdout_fd = stdout_pipe[0];
     slot.stderr_fd = stderr_pipe[0];
     slot.job_index = job_idx;
-    slot.start_time = std::chrono::steady_clock::now();
+    slot.start_time = pup::SteadyClock::now();
 
     return true;
 }
@@ -414,7 +415,7 @@ auto reap_slot(JobSlot& slot, int status) -> JobResult
     }
 
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - slot.start_time
+        pup::SteadyClock::now() - slot.start_time
     );
 
     auto output_buf = HeapBuf {};
@@ -522,7 +523,7 @@ auto Scheduler::stats() const -> BuildStats
 
 auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 {
-    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
@@ -536,7 +537,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     impl_->stats.total_jobs = jobs.size();
 
     if (jobs.empty()) {
-        auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time
         );
@@ -546,7 +547,7 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     // Execute jobs
     auto exec_result = execute_parallel(jobs, graph);
 
-    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time
     );
@@ -925,7 +926,7 @@ auto Scheduler::execute_parallel(
         // Compute poll timeout from per-job timeouts
         auto poll_timeout = -1;
         if (impl_->options.timeout) {
-            auto now = std::chrono::steady_clock::now();
+            auto now = pup::SteadyClock::now();
             auto min_remaining = std::chrono::milliseconds::max();
             for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
                 if (!slots[si].active()) {
@@ -989,7 +990,7 @@ auto Scheduler::execute_parallel(
 
             // Check for timeout
             if (impl_->options.timeout) {
-                auto elapsed = std::chrono::steady_clock::now() - slot.start_time;
+                auto elapsed = pup::SteadyClock::now() - slot.start_time;
                 if (elapsed >= *impl_->options.timeout) {
                     ::kill(slot.pid, SIGKILL);
                 }
@@ -1281,7 +1282,7 @@ auto Scheduler::build_job_list(
     graph::BuildGraph const& graph
 ) -> Result<Vec<BuildJob>>
 {
-    auto job_list_start = std::chrono::high_resolution_clock::now();
+    auto job_list_start = pup::SteadyClock::now();
 
     // Get topological order
     auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
@@ -1429,7 +1430,7 @@ auto Scheduler::build_job_list(
         jobs.push_back(std::move(job));
     }
 
-    auto job_list_elapsed = std::chrono::high_resolution_clock::now() - job_list_start;
+    auto job_list_elapsed = pup::SteadyClock::now() - job_list_start;
     thread_metrics().job_list_time += std::chrono::duration_cast<std::chrono::microseconds>(job_list_elapsed);
 
     return jobs;
@@ -1440,7 +1441,7 @@ auto Scheduler::build_subset(
     NodeIdMap32 const& command_ids
 ) -> Result<BuildStats>
 {
-    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
@@ -1455,7 +1456,7 @@ auto Scheduler::build_subset(
     impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 
     if (jobs.empty()) {
-        auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time
         );
@@ -1464,7 +1465,7 @@ auto Scheduler::build_subset(
 
     auto exec_result = execute_parallel(jobs, graph);
 
-    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time
     );
@@ -1481,7 +1482,7 @@ auto Scheduler::build_targets(
     Vec<NodeId> const& target_ids
 ) -> Result<BuildStats>
 {
-    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
@@ -1499,7 +1500,7 @@ auto Scheduler::build_targets(
     impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
 
     if (jobs.empty()) {
-        auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+        auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
             end_time - start_time
         );
@@ -1508,7 +1509,7 @@ auto Scheduler::build_targets(
 
     auto exec_result = execute_parallel(jobs, graph);
 
-    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time
     );

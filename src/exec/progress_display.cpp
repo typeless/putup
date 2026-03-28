@@ -38,7 +38,7 @@ auto job_started(ProgressState state, NodeId id, StringId display) -> ProgressSt
     state.running.push_back(RunningJob {
         .id = id,
         .display = display,
-        .start_time = std::chrono::steady_clock::now(),
+        .start_time = pup::SteadyClock::now(),
     });
     return state;
 }
@@ -70,7 +70,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
     auto term_width = static_cast<std::size_t>(pup::terminal_width());
 
     auto sorted = state.running;
-    auto now = std::chrono::steady_clock::now();
+    auto now = pup::SteadyClock::now();
     std::ranges::sort(sorted, [now](auto const& a, auto const& b) {
         return (now - a.start_time) > (now - b.start_time);
     });

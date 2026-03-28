@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/clock.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -17,7 +18,7 @@ namespace pup::exec {
 struct RunningJob {
     NodeId id = 0;
     StringId display = StringId::Empty;
-    std::chrono::steady_clock::time_point start_time = {};
+    pup::SteadyClock::time_point start_time = {};
 };
 
 /// Progress state - pure data, no methods

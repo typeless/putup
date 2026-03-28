@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/writer.hpp"
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/platform/file_io.hpp"
@@ -259,7 +260,7 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     auto const total_size = static_cast<std::uint32_t>(total_size_64);
 
     // Get current time for racy-clean detection
-    auto now = std::chrono::system_clock::now();
+    auto now = pup::SystemClock::now();
     auto save_time_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                             now.time_since_epoch()
     )

@@ -3,6 +3,7 @@
 
 #include "pup/cli/context.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
@@ -542,7 +543,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
         return result;
     }
 
-    auto index_load_start = std::chrono::steady_clock::now();
+    auto index_load_start = pup::SteadyClock::now();
     auto index_result = pup::index::read_index(index_path_sv);
     if (!index_result) {
         return result;
@@ -550,7 +551,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
 
     result.index = std::move(*index_result);
 
-    auto index_load_end = std::chrono::steady_clock::now();
+    auto index_load_end = pup::SteadyClock::now();
     pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         index_load_end - index_load_start
     );

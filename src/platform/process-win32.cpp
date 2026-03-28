@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
@@ -76,7 +77,7 @@ auto run_process_with_callback(
     void* user_data
 ) -> Result<ProcessResult>
 {
-    auto start_time = std::chrono::steady_clock::now();
+    auto start_time = pup::SteadyClock::now();
 
     // Create pipes for stdout/stderr
     auto sa = SECURITY_ATTRIBUTES { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
@@ -218,7 +219,7 @@ auto run_process_with_callback(
 
     // Read stdout/stderr
     auto deadline = opts.timeout
-        ? std::optional { std::chrono::steady_clock::now() + *opts.timeout }
+        ? std::optional { pup::SteadyClock::now() + *opts.timeout }
         : std::nullopt;
 
     char buffer[4096];
@@ -228,7 +229,7 @@ auto run_process_with_callback(
 
     while (stdout_open || stderr_open) {
         if (deadline) {
-            auto remaining = *deadline - std::chrono::steady_clock::now();
+            auto remaining = *deadline - pup::SteadyClock::now();
             if (remaining <= std::chrono::milliseconds::zero()) {
                 timed_out = true;
                 break;
@@ -314,7 +315,7 @@ auto run_process_with_callback(
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
 
-    auto end_time = std::chrono::steady_clock::now();
+    auto end_time = pup::SteadyClock::now();
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
     result.stdout_output = pool.intern(stdout_buf.view());

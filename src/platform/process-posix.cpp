@@ -6,6 +6,7 @@
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 // POSIX APIs (pipe, execv, environ) require C-style arrays and pointer arithmetic
 
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
@@ -77,7 +78,7 @@ auto run_process_with_callback(
 ) -> Result<ProcessResult>
 {
     auto& pool = global_pool();
-    auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
 
     int stdout_pipe[2] = { -1, -1 };
     int stderr_pipe[2] = { -1, -1 };
@@ -199,7 +200,7 @@ auto run_process_with_callback(
     auto stderr_buf = HeapBuf {};
 
     auto deadline = opts.timeout
-        ? std::optional { std::chrono::steady_clock::now() + *opts.timeout }
+        ? std::optional { pup::SteadyClock::now() + *opts.timeout }
         : std::nullopt;
 
     auto buffer = std::array<char, 4096> {};
@@ -223,7 +224,7 @@ auto run_process_with_callback(
 
         auto timeout_ms = -1;
         if (deadline) {
-            auto remaining = *deadline - std::chrono::steady_clock::now();
+            auto remaining = *deadline - pup::SteadyClock::now();
             if (remaining <= std::chrono::milliseconds::zero()) {
                 timed_out = true;
                 break;
@@ -303,7 +304,7 @@ auto run_process_with_callback(
         result.exit_code = 128 + result.signal;
     }
 
-    auto end_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
+    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         end_time - start_time
     );
