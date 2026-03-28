@@ -99,6 +99,107 @@ auto resolve_variant_path(
     return pool.get(pup::path::join(output_root, path));
 }
 
+struct PreparedJob {
+    Vec<StringId> env_ids;
+    StringId working_dir;
+};
+
+auto prepare_job_launch(
+    BuildJob const& job,
+    EnvCache const& env_cache,
+    SchedulerOptions const& options,
+    std::string_view source_root_sv,
+    std::string_view output_root_sv,
+    std::string_view output_root_prefix
+) -> PreparedJob
+{
+    auto& pool = global_pool();
+
+    for (auto output_id : job.outputs) {
+        auto output_sv = pool.get(output_id);
+        auto output_path = pup::path::is_absolute(output_sv)
+            ? output_sv
+            : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
+        auto parent = pup::path::parent(output_path);
+        if (!parent.empty()) {
+            (void)pup::platform::create_directories(parent);
+        }
+    }
+
+    auto env_ids = Vec<StringId> {};
+    for (auto var_id : job.exported_vars) {
+        auto var_sv = pool.get(var_id);
+        if (auto it = env_cache_find(env_cache, var_sv)) {
+            auto eb = Buf {};
+            eb.append(var_sv);
+            eb.append('=');
+            eb.append(pool.get(it->second));
+            env_ids.push_back(eb.intern(pool));
+        }
+    }
+
+    auto working_dir = job.working_dir;
+    if (is_empty(working_dir)) {
+        working_dir = options.source_root;
+    }
+
+    return { std::move(env_ids), working_dir };
+}
+
+auto parse_stdout_depfile(
+    BuildJob const& job,
+    std::string_view stdout_sv,
+    Vec<StringId>& out_deps,
+    NodeId& out_deps_cmd
+) -> void
+{
+    if (job.inject_implicit_deps && !stdout_sv.empty()) {
+        auto depfile_result = parser::parse_depfile(stdout_sv);
+        if (depfile_result) {
+            for (auto dep_id : depfile_result->dependencies) {
+                out_deps.push_back(dep_id);
+            }
+            out_deps_cmd = job.parent_command;
+        }
+    }
+}
+
+auto discover_d_file_deps(
+    BuildJob const& job,
+    JobResult& result,
+    std::string_view source_root_sv,
+    std::string_view output_root_sv,
+    std::string_view output_root_prefix
+) -> void
+{
+    auto& pool = global_pool();
+
+    for (auto output_id : job.outputs) {
+        auto output_sv = pool.get(output_id);
+        auto ext = pup::path::extension(output_sv);
+        if (ext != ".o" && ext != ".obj") {
+            continue;
+        }
+        auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
+        auto stem_buf = Buf {};
+        stem_buf.append(pup::path::stem(output_sv));
+        stem_buf.append(".d");
+        auto depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
+        if (!pup::platform::exists(depfile_path)) {
+            continue;
+        }
+        auto depfile_result = parser::parse_depfile_path(depfile_path);
+        if (depfile_result) {
+            for (auto dep_id : depfile_result->dependencies) {
+                result.discovered_deps.push_back(dep_id);
+            }
+            if (result.deps_for_command == INVALID_NODE_ID) {
+                result.deps_for_command = job.id;
+            }
+        }
+    }
+}
+
 /// Add job dependencies for any command that produces the given node.
 /// For phi-nodes (multiple producers), only add active producers when consumer is active.
 auto sorted_insert_unique(Vec<std::size_t>& v, std::size_t val) -> void
@@ -472,7 +573,10 @@ struct Scheduler::Impl {
     auto execute_job(
         BuildJob const& job,
         CommandRunner& runner,
-        EnvCache const& env_cache
+        EnvCache const& env_cache,
+        std::string_view source_root_sv,
+        std::string_view output_root_sv,
+        std::string_view output_root_prefix
     ) -> JobResult;
 };
 
@@ -655,6 +759,7 @@ auto Scheduler::Impl::execute_sequential(
     EnvCache const& env_cache
 ) -> Result<void>
 {
+    auto& pool = global_pool();
     auto runner = CommandRunner {};
     if (!is_empty(options.source_root)) {
         runner.set_working_dir(options.source_root);
@@ -662,6 +767,10 @@ auto Scheduler::Impl::execute_sequential(
     if (options.timeout) {
         runner.set_timeout(*options.timeout); // NOLINT(bugprone-unchecked-optional-access)
     }
+
+    auto source_root_sv = pool.get(options.source_root);
+    auto output_root_sv = pool.get(options.output_root);
+    auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
 
     auto [in_degree, dependents] = build_dependency_map(jobs, graph);
 
@@ -695,7 +804,7 @@ auto Scheduler::Impl::execute_sequential(
             on_start(job);
         }
 
-        auto result = JobResult { execute_job(job, runner, env_cache) };
+        auto result = JobResult { execute_job(job, runner, env_cache, source_root_sv, output_root_sv, output_root_prefix) };
 
         if (on_complete) {
             on_complete(job, result);
@@ -793,35 +902,7 @@ auto Scheduler::execute_parallel(
                 auto job_idx = ready_queue.front();
                 auto const& job = jobs[job_idx];
 
-                // Pre-launch: ensure output directories exist (same as execute_job)
-                for (auto output_id : job.outputs) {
-                    auto output_sv = pool.get(output_id);
-                    auto output_path = pup::path::is_absolute(output_sv)
-                        ? output_sv
-                        : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
-                    auto parent = pup::path::parent(output_path);
-                    if (!parent.empty()) {
-                        (void)pup::platform::create_directories(parent);
-                    }
-                }
-
-                // Build env for this job
-                auto env_ids = Vec<StringId> {};
-                for (auto var_id : job.exported_vars) {
-                    auto var_sv = pool.get(var_id);
-                    if (auto it = env_cache_find(env_cache, var_sv)) {
-                        auto eb = Buf {};
-                        eb.append(var_sv);
-                        eb.append('=');
-                        eb.append(pool.get(it->second));
-                        env_ids.push_back(eb.intern(pool));
-                    }
-                }
-
-                auto working_dir = job.working_dir;
-                if (is_empty(working_dir)) {
-                    working_dir = impl_->options.source_root;
-                }
+                auto prepared = prepare_job_launch(job, env_cache, impl_->options, source_root_sv, output_root_sv, output_root_prefix);
 
                 if (impl_->options.dry_run) {
                     // Dry run: don't fork, just report success
@@ -856,7 +937,7 @@ auto Scheduler::execute_parallel(
                     continue;
                 }
 
-                if (!launch_job(slot, job, job_idx, working_dir, env_ids, true)) {
+                if (!launch_job(slot, job, job_idx, prepared.working_dir, prepared.env_ids, true)) {
                     // Fork failed -- treat as job failure
                     ready_queue.pop();
 
@@ -1031,21 +1112,12 @@ auto Scheduler::execute_parallel(
             // Parse depfile from stdout BEFORE reap clears the buffer
             auto stdout_deps = Vec<StringId> {};
             auto stdout_deps_cmd = INVALID_NODE_ID;
-            if (job.inject_implicit_deps && !slot.stdout_buf.empty()) {
-                auto depfile_result = parser::parse_depfile(slot.stdout_buf.view());
-                if (depfile_result) {
-                    for (auto dep_id : depfile_result->dependencies) {
-                        stdout_deps.push_back(dep_id);
-                    }
-                    stdout_deps_cmd = job.parent_command;
-                }
-            }
+            parse_stdout_depfile(job, slot.stdout_buf.view(), stdout_deps, stdout_deps_cmd);
 
             auto result = reap_slot(slot, status);
             result.id = job.id;
             --running;
 
-            // Apply stdout-based deps collected before reap
             if (!stdout_deps.empty()) {
                 for (auto dep_id : stdout_deps) {
                     result.discovered_deps.push_back(dep_id);
@@ -1054,35 +1126,7 @@ auto Scheduler::execute_parallel(
             }
 
             if (result.success) {
-                // Discover implicit deps from .d files
-                auto ext_check = [&](StringId output_id) {
-                    auto output_sv = pool.get(output_id);
-                    auto ext = pup::path::extension(output_sv);
-                    if (ext != ".o" && ext != ".obj") {
-                        return;
-                    }
-                    auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
-                    auto stem_buf = Buf {};
-                    stem_buf.append(pup::path::stem(output_sv));
-                    stem_buf.append(".d");
-                    auto depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
-                    if (!pup::platform::exists(depfile_path)) {
-                        return;
-                    }
-                    auto depfile_result = parser::parse_depfile_path(depfile_path);
-                    if (depfile_result) {
-                        for (auto dep_id : depfile_result->dependencies) {
-                            result.discovered_deps.push_back(dep_id);
-                        }
-                        if (result.deps_for_command == INVALID_NODE_ID) {
-                            result.deps_for_command = job.id;
-                        }
-                    }
-                };
-
-                for (auto output_id : job.outputs) {
-                    ext_check(output_id);
-                }
+                discover_d_file_deps(job, result, source_root_sv, output_root_sv, output_root_prefix);
             }
 
             if (impl_->on_complete) {
@@ -1151,7 +1195,10 @@ auto Scheduler::execute_parallel(
 auto Scheduler::Impl::execute_job(
     BuildJob const& job,
     CommandRunner& runner,
-    EnvCache const& env_cache
+    EnvCache const& env_cache,
+    std::string_view source_root_sv,
+    std::string_view output_root_sv,
+    std::string_view output_root_prefix
 ) -> JobResult
 {
     auto& pool = global_pool();
@@ -1163,48 +1210,18 @@ auto Scheduler::Impl::execute_job(
         .duration = {},
     };
 
+    auto prepared = prepare_job_launch(job, env_cache, options, source_root_sv, output_root_sv, output_root_prefix);
+
     if (options.dry_run) {
         result.success = true;
         return result;
     }
 
-    // Ensure output directories exist
-    // Note: create_directories() is idempotent and thread-safe
-    // Output paths may be:
-    // - Absolute: use as-is
-    // - Already variant-mapped (starts with relative output_root prefix): use source_root as base
-    // - Source-relative: prepend output_root
-    auto source_root_sv = pool.get(options.source_root);
-    auto output_root_sv = pool.get(options.output_root);
-    auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
-    for (auto output_id : job.outputs) {
-        auto output_sv = pool.get(output_id);
-        auto output_path = pup::path::is_absolute(output_sv)
-            ? output_sv
-            : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
-        auto parent = pup::path::parent(output_path);
-        if (!parent.empty()) {
-            (void)pup::platform::create_directories(parent);
-        }
-    }
-
     auto run_opts = RunOptions {};
-    if (!is_empty(job.working_dir)) {
-        run_opts.working_dir = job.working_dir;
+    if (!is_empty(prepared.working_dir)) {
+        run_opts.working_dir = prepared.working_dir;
     }
-
-    // Pass exported environment variables to command
-    // Per tup manual: "value for the variable comes from tup's environment"
-    for (auto var_id : job.exported_vars) {
-        auto var_sv = pool.get(var_id);
-        if (auto it = env_cache_find(env_cache, var_sv)) {
-            auto eb = Buf {};
-            eb.append(var_sv);
-            eb.append('=');
-            eb.append(pool.get(it->second));
-            run_opts.env.push_back(eb.intern(pool));
-        }
-    }
+    run_opts.env = std::move(prepared.env_ids);
 
     auto cmd_result = runner.run(pool.get(job.command), run_opts);
     if (!cmd_result) {
@@ -1232,47 +1249,9 @@ auto Scheduler::Impl::execute_job(
         result.output = output_buf.intern(pool);
     }
 
-    // Discover implicit dependencies from .d files (if command succeeded)
     if (result.success) {
-        // For generated rules with inject_implicit_deps, parse stdout as depfile
-        if (job.inject_implicit_deps && !stdout_sv.empty()) {
-            auto depfile_result = parser::parse_depfile(stdout_sv);
-            if (depfile_result) {
-                for (auto dep_id : depfile_result->dependencies) {
-                    result.discovered_deps.push_back(dep_id);
-                }
-                result.deps_for_command = job.parent_command;
-            }
-        }
-
-        // Traditional .d file discovery
-        for (auto output_id : job.outputs) {
-            auto output_sv = pool.get(output_id);
-            auto ext = pup::path::extension(output_sv);
-
-            // Support common object file extensions (.o on Unix, .obj on Windows)
-            if (ext != ".o" && ext != ".obj") {
-                continue;
-            }
-
-            // Compute filesystem path for the .d file
-            auto base_path = resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, pup::path::parent(output_sv));
-            auto stem_buf = Buf {};
-            stem_buf.append(pup::path::stem(output_sv));
-            stem_buf.append(".d");
-            auto depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
-
-            if (!pup::platform::exists(depfile_path)) {
-                continue;
-            }
-
-            auto depfile_result = parser::parse_depfile_path(depfile_path);
-            if (depfile_result) {
-                for (auto dep_id : depfile_result->dependencies) {
-                    result.discovered_deps.push_back(dep_id);
-                }
-            }
-        }
+        parse_stdout_depfile(job, stdout_sv, result.discovered_deps, result.deps_for_command);
+        discover_d_file_deps(job, result, source_root_sv, output_root_sv, output_root_prefix);
     }
 
     return result;
