@@ -54,4 +54,8 @@ inline auto get_platform() -> StringId
     return global_pool().intern(PLATFORM);
 }
 
+/// Number of available CPU cores (for -j auto-detection)
+[[nodiscard]]
+auto cpu_count() -> std::size_t;
+
 } // namespace pup

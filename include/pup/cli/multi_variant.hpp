@@ -22,7 +22,7 @@ using VariantHandler = Function<int(Options const&, std::string_view)>;
 /// 1. Discover source root from opts
 /// 2. Determine variants (explicit -B flags or auto-detect)
 /// 3. Single variant or in-tree: call handler directly
-/// 4. Multiple variants: spawn std::async tasks, aggregate results
+/// 4. Multiple variants: fork child processes, aggregate results
 ///
 /// @param opts Command-line options (may have multiple -B flags)
 /// @param handler Function to execute for each variant

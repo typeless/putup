@@ -11,10 +11,7 @@
 #include "pup/core/vec.hpp"
 #include "runner.hpp"
 
-#include <atomic>
-#include <mutex>
 #include <optional>
-#include <thread>
 
 namespace pup::graph {
 class BuildGraph;

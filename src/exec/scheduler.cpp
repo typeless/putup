@@ -6,6 +6,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/metrics.hpp"
+#include "pup/core/platform.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
@@ -455,7 +456,7 @@ auto kill_slot(JobSlot& slot) -> void
 struct Scheduler::Impl {
     SchedulerOptions options;
     BuildStats stats;
-    std::atomic<bool> cancelled = false;
+    bool cancelled = false;
 
     JobStartCallback on_start;
     JobCompleteCallback on_complete;
@@ -479,7 +480,7 @@ Scheduler::Scheduler(SchedulerOptions options)
 {
     impl_->options = std::move(options);
     if (impl_->options.jobs == 0) {
-        impl_->options.jobs = detect_parallelism();
+        impl_->options.jobs = pup::cpu_count();
     }
 }
 
@@ -506,12 +507,12 @@ auto Scheduler::on_progress(ProgressCallback callback) -> void
 
 auto Scheduler::cancel() -> void
 {
-    impl_->cancelled.store(true);
+    impl_->cancelled = true;
 }
 
 auto Scheduler::is_cancelled() const -> bool
 {
-    return impl_->cancelled.load();
+    return impl_->cancelled;
 }
 
 auto Scheduler::stats() const -> BuildStats
@@ -522,7 +523,7 @@ auto Scheduler::stats() const -> BuildStats
 auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-    impl_->cancelled.store(false);
+    impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
     // Build job list in topological order
@@ -681,7 +682,7 @@ auto Scheduler::Impl::execute_sequential(
     }
 
     while (!ready_queue.empty()) {
-        if (cancelled.load()) {
+        if (cancelled) {
             break;
         }
 
@@ -1109,7 +1110,7 @@ auto Scheduler::execute_parallel(
         }
 
         // 6. Check termination
-        if (impl_->cancelled.load() || (failed && !impl_->options.keep_going)) {
+        if (impl_->cancelled || (failed && !impl_->options.keep_going)) {
             // Kill remaining children
             for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
                 kill_slot(slots[si]);
@@ -1440,7 +1441,7 @@ auto Scheduler::build_subset(
 ) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-    impl_->cancelled.store(false);
+    impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
     // Build all jobs, then filter to the subset
@@ -1481,7 +1482,7 @@ auto Scheduler::build_targets(
 ) -> Result<BuildStats>
 {
     auto start_time = std::chrono::steady_clock::time_point { std::chrono::steady_clock::now() };
-    impl_->cancelled.store(false);
+    impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
     // Collect all commands needed to build these targets via reverse traversal
@@ -1538,14 +1539,7 @@ auto Scheduler::filter_jobs(
 
 auto detect_parallelism() -> std::size_t
 {
-#ifdef _WIN32
-    SYSTEM_INFO si;
-    GetSystemInfo(&si);
-    return si.dwNumberOfProcessors > 0 ? si.dwNumberOfProcessors : 1;
-#else
-    auto n = ::sysconf(_SC_NPROCESSORS_ONLN);
-    return n > 0 ? static_cast<std::size_t>(n) : 1;
-#endif
+    return pup::cpu_count();
 }
 
 } // namespace pup::exec

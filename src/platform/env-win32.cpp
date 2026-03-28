@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/platform.hpp"
 #include "pup/platform/env.hpp"
 
 #include <cstdlib>
+#include <windows.h>
 
 namespace pup::platform {
 
@@ -19,3 +21,14 @@ auto unset_env(std::string_view name) -> void
 }
 
 } // namespace pup::platform
+
+namespace pup {
+
+auto cpu_count() -> std::size_t
+{
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwNumberOfProcessors > 0 ? si.dwNumberOfProcessors : 1;
+}
+
+} // namespace pup
