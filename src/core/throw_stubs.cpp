@@ -85,14 +85,18 @@ void __throw_out_of_range_fmt(char const* /* fmt */, ...)
     abort();
 }
 
+} // namespace std
+
+// libc++ (macOS) uses std::__1::__libcpp_verbose_abort for variant/optional
+// errors. The __1 is libc++'s inline ABI namespace. We match it directly.
 #ifdef __APPLE__
-// libc++ (macOS) uses __libcpp_verbose_abort for variant/optional errors
-[[noreturn]]
-void __libcpp_verbose_abort(char const* /* fmt */, ...)
+namespace std { // NOLINT(cert-dcl58-cpp)
+inline namespace __1 {
+[[noreturn]] void __libcpp_verbose_abort(char const* /* fmt */, ...)
 {
     fputs("fatal: libc++ abort\n", stderr);
     abort();
 }
-#endif
-
+} // namespace __1
 } // namespace std
+#endif
