@@ -179,6 +179,22 @@ Supports path-based variant and scope selection.
 - Path-based targets: `putup parse build-debug`, `putup parse build-*`
 - Legacy `-B` flag still works for explicit selection
 
+**Convention checking (`--strict`)**
+
+Verify Tupfiles follow dual-mode composability conventions:
+
+```bash
+putup parse --strict
+```
+
+Checks that component libraries (directories with their own `Tuprules.tup`) follow conventions that allow building both standalone and as part of a larger project:
+
+- **Error:** Anchor variables `S` and `B` must use `?=` (not `=`) in component `Tuprules.tup`
+- **Warning:** Toolchain variables (`CC`, `CXX`, `AR`, etc.) should use `?=`
+- **Warning:** Component directories should contain `Tupfile.ini` for standalone builds
+
+Exit code is non-zero if any errors are found. Warnings print but don't fail.
+
 **Examples:**
 ```bash
 putup parse                  # Validate all Tupfiles (auto-detects variants)
@@ -186,6 +202,7 @@ putup parse -v               # Show parsing progress
 putup parse build-debug      # Parse single variant (path-based)
 putup parse build-*          # Parse all matching variants
 putup parse build-debug/lib  # Parse scoped to lib/ directory
+putup parse --strict         # Check convention compliance
 ```
 
 ### 3.3 putup clean
