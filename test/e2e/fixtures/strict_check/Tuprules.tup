@@ -1,0 +1,2 @@
+S = $(TUP_CWD)
+CC = gcc
