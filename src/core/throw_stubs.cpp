@@ -85,4 +85,14 @@ void __throw_out_of_range_fmt(char const* /* fmt */, ...)
     abort();
 }
 
+#ifdef _LIBCPP_VERSION
+// libc++ (macOS) uses __libcpp_verbose_abort for variant/optional errors
+[[noreturn]]
+void __libcpp_verbose_abort(char const* /* fmt */, ...)
+{
+    fputs("fatal: libc++ abort\n", stderr);
+    abort();
+}
+#endif
+
 } // namespace std
