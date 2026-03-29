@@ -121,6 +121,8 @@ auto parse_args(int argc, char** argv) -> Options
             }
         } else if (arg == "--json") {
             opts.show_json = true;
+        } else if (arg == "--strict") {
+            opts.strict = true;
         } else if (!arg.starts_with("-")) {
             if (is_empty(opts.command) && is_command(arg)) {
                 opts.command = pool.intern(arg);
@@ -147,7 +149,7 @@ auto print_usage() -> void
            "  configure         Generate tup.config files (two-stage build)\n"
            "  clean             Remove generated files\n"
            "  distclean         Full reset: remove .pup and variant directory\n"
-           "  parse             Parse and validate Tupfiles\n"
+           "  parse [--strict]  Parse and validate Tupfiles\n"
            "  show <format>     Show build info:\n"
            "                      script  - Shell script\n"
            "                      compdb  - compile_commands.json\n"

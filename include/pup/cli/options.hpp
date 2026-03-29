@@ -35,6 +35,7 @@ struct Options {
     Vec<StringId> targets = {};
     Vec<StringId> output_targets = {};
     bool show_json = false;
+    bool strict = false;
     StringId config_file = StringId::Empty;
 };
 

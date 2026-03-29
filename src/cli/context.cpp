@@ -391,6 +391,7 @@ struct ParseContext {
     bool verbose;
     bool root_config_only;
     VarAssignedCallback const* on_var_assigned;
+    StatementCallback const* on_statement;
 };
 
 auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result<void>
@@ -499,6 +500,13 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
                                        bool is_effective
                                    ) {
             (*cb)(name, op, value_before, value_after, filename, line, column, is_effective);
+        };
+    }
+
+    if (ctx.on_statement && *ctx.on_statement) {
+        auto const* cb = ctx.on_statement;
+        eval_ctx.on_statement = [cb](pup::parser::Statement const& stmt, std::string_view dir) {
+            (*cb)(stmt, dir);
         };
     }
 
@@ -815,6 +823,7 @@ auto build_context(
         .verbose = ctx_opts.verbose,
         .root_config_only = ctx_opts.root_config_only,
         .on_var_assigned = &ctx_opts.on_var_assigned,
+        .on_statement = &ctx_opts.on_statement,
     };
 
     for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {
