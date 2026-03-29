@@ -833,6 +833,11 @@ auto process_statement(
     parser::Statement const& stmt
 ) -> Result<void>
 {
+    if (ctx.eval && ctx.eval->on_statement) {
+        auto dir = is_empty(ctx.current_dir) ? std::string_view { "." } : str(ctx.current_dir);
+        ctx.eval->on_statement(stmt, dir);
+    }
+
     if (auto const* rule = stmt.as<parser::Rule>()) {
         return process_rule(ctx, state, *rule);
     }

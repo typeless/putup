@@ -31,6 +31,9 @@ class Index;
 
 namespace pup::cli {
 
+/// Callback type for statement inspection (strict checking)
+using StatementCallback = Function<void(parser::Statement const&, std::string_view dir)>;
+
 /// Callback type for tracking variable assignments
 using VarAssignedCallback = Function<void(
     std::string_view name,
@@ -54,6 +57,7 @@ struct BuildContextOptions {
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};
+    StatementCallback on_statement = {};
 };
 
 /// Create scanner registry for implicit dependency tracking

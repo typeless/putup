@@ -4,12 +4,14 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/cli/strict_checks.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/graph/dag.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -27,10 +29,34 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         return EXIT_FAILURE;
     }
 
+    auto diagnostics = Vec<Diagnostic> {};
+
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
         .parse_scopes = compute_build_scopes(opts, *layout),
     };
+
+    if (opts.strict) {
+        auto source_root_sv = pool.get(layout->source_root);
+
+        ctx_opts.on_statement = [&diagnostics, source_root_sv](
+                                    parser::Statement const& stmt,
+                                    std::string_view /*dir*/
+                                ) {
+            auto const* assign = stmt.as<parser::Assignment>();
+            if (!assign) {
+                return;
+            }
+
+            auto file_sv = stmt.location.filename;
+            auto file_dir = pup::path::parent(file_sv);
+            auto is_component = !file_dir.empty() && file_dir != "." && file_dir != source_root_sv;
+            auto diags = check_assignment(*assign, file_sv, is_component);
+            for (auto& d : diags) {
+                diagnostics.push_back(std::move(d));
+            }
+        };
+    }
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
@@ -68,6 +94,43 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
     }
 
     printf("[%.*s] Parsed %zu Tupfile(s), %zu commands\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.parsed_dirs().size(), commands.size());
+
+    if (opts.strict) {
+        auto component_dirs = Vec<std::string_view> {};
+        for (auto dir_id : ctx.parsed_dirs()) {
+            auto dir_sv = pool.get(dir_id);
+            if (dir_sv.empty() || dir_sv == ".") {
+                continue;
+            }
+            auto tuprules_path = pool.get(pup::path::join(
+                pool.get(pup::path::join(pool.get(ctx.layout().source_root), dir_sv)),
+                "Tuprules.tup"
+            ));
+            if (pup::platform::exists(tuprules_path)) {
+                component_dirs.push_back(
+                    pool.get(pup::path::join(pool.get(ctx.layout().source_root), dir_sv))
+                );
+            }
+        }
+
+        auto fs_diags = check_component_dirs(component_dirs);
+        for (auto& d : fs_diags) {
+            diagnostics.push_back(std::move(d));
+        }
+
+        auto has_errors = false;
+        for (auto const& d : diagnostics) {
+            auto severity_str = d.severity == Diagnostic::Error ? "error" : "warning";
+            fprintf(stderr, "%.*s:%zu: %s: %.*s\n", static_cast<int>(pool.get(d.file).size()), pool.get(d.file).data(), d.line, severity_str, static_cast<int>(pool.get(d.message).size()), pool.get(d.message).data());
+            if (d.severity == Diagnostic::Error) {
+                has_errors = true;
+            }
+        }
+
+        if (has_errors) {
+            return EXIT_FAILURE;
+        }
+    }
 
     return EXIT_SUCCESS;
 }

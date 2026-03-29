@@ -155,6 +155,10 @@ struct EvalContext {
     /// Called with the variable name when an imported env var is accessed via $(VAR).
     Function<void(std::string_view name)> on_env_var_used = {};
 
+    /// Callback for strict convention checking.
+    /// Called with each statement and the directory it belongs to.
+    Function<void(Statement const&, std::string_view dir)> on_statement = {};
+
     /// String pool for resolving StringIds during variable lookup
     StringPool const* string_pool = nullptr;
 
