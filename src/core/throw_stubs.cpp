@@ -92,7 +92,8 @@ void __throw_out_of_range_fmt(char const* /* fmt */, ...)
 #ifdef __APPLE__
 namespace std { // NOLINT(cert-dcl58-cpp)
 inline namespace __1 {
-[[noreturn]] void __libcpp_verbose_abort(char const* /* fmt */, ...)
+[[noreturn]]
+void __libcpp_verbose_abort(char const* /* fmt */, ...)
 {
     fputs("fatal: libc++ abort\n", stderr);
     abort();
