@@ -5312,3 +5312,41 @@ SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e]
         }
     }
 }
+
+// =============================================================================
+// Strict Convention Checker Tests
+// =============================================================================
+
+SCENARIO("Strict checker catches convention violations", "[e2e][strict]")
+{
+    GIVEN("a project with a component violating conventions")
+    {
+        auto f = E2EFixture { "strict_check" };
+        REQUIRE(f.init().success());
+
+        WHEN("parse --strict is run")
+        {
+            auto result = f.pup({ "parse", "--strict" });
+
+            THEN("it fails with error diagnostics")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("must use") != std::string::npos);
+            }
+        }
+
+        WHEN("parse without --strict is run")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("it succeeds (no strict checking)")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+        }
+    }
+}
