@@ -43,7 +43,7 @@ With libstdc++ eliminated, putup provides its own runtime primitives:
 | `Function<Sig>` | `std::function<Sig>` | Move-only type-erased callable (32-byte SBO) |
 | `SteadyClock` / `SystemClock` | `std::chrono` clocks | Platform-implemented clocks |
 | `CPath` | manual `.c_str()` | Null-termination wrapper for string_view at C API boundary |
-| `throw_stubs.cpp` | libstdc++ runtime | operator new/delete, `__cxa_guard_*`, `__throw_*` stubs |
+| `throw_stubs.cpp` | libstdc++ runtime | operator new/delete, `__cxa_guard_*`, `__throw_*` stubs, macOS `__libcpp_verbose_abort` |
 
 All threading (`std::thread`, `std::mutex`, `std::atomic`, `std::future`) has been eliminated. The scheduler uses a single-threaded `poll()`-based event loop. Multi-variant parallelism uses `fork()`+`waitpid()` via `platform::run_parallel_tasks()`.
 
@@ -1883,7 +1883,7 @@ Putup links with `-nostdlib++` and provides its own runtime primitives:
 - **Portability** - No dependency on a specific C++ standard library version; only requires a C runtime (libc)
 - **Control** - Custom `StringPool`, `Vec<T>`, `Function<Sig>`, and clock types are purpose-built for the build system's needs, with no overhead from generality
 
-The `throw_stubs.cpp` file provides the minimal runtime surface: `operator new`/`delete` (delegating to `malloc`/`free`), `__cxa_guard_*` (for thread-safe static initialization), and `__throw_*` stubs that abort on use. Multi-variant parallelism uses `fork()`+`waitpid()` via `platform::run_parallel_tasks()` instead of `std::async`.
+The `throw_stubs.cpp` file provides the minimal runtime surface: `operator new`/`delete` (delegating to `malloc`/`free`), `__cxa_guard_*` (for thread-safe static initialization), and `__throw_*` stubs that abort on use. On macOS, libc++ also requires `std::__1::__libcpp_verbose_abort` (used by `variant`/`optional` failure paths); the stub matches libc++'s `__1` inline ABI namespace directly. Multi-variant parallelism uses `fork()`+`waitpid()` via `platform::run_parallel_tasks()` instead of `std::async`.
 
 ---
 

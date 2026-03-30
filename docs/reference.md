@@ -1665,6 +1665,8 @@ S = ..     GMP_DIR = ../gmp → $(S)/$(GMP_DIR) = ../../gmp  ✓
 
 **Scoped `tup.config` defaults:** Components ship default config values in a `defaults.config` file with a Tupfile copy rule (`cp %f %o`) that installs it as `tup.config` during configure. Parent configs override child configs on collision (see §6.1 *Scoped Config Merging*).
 
+Use `putup parse --strict` to verify that component `Tuprules.tup` files follow these conventions (see §3.2 *Convention checking*).
+
 See `examples/bsp/gcc/` for a complete working example with three interdependent libraries.
 
 ## 8. Implicit Dependencies
