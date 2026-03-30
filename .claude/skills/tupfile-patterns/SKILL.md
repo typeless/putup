@@ -160,6 +160,8 @@ CFLAGS = -I$(B)/$(GMP_DIR) -I$(S)/$(GMP_DIR)
 
 Prefixed DIR vars (`GMP_DIR`, `MPFR_DIR`) are needed because `include_rules` merges ALL `Tuprules.tup` from root to leaf — a single `DIR` variable would collide.
 
+Verify conventions with `putup parse --strict` — flags `=` instead of `?=` for anchor/toolchain variables in component Tuprules.tup files.
+
 ## Scoped tup.config
 
 Each subdirectory can have its own `tup.config` for `@(VAR)` config variables:
