@@ -108,6 +108,29 @@ When `%f` paths break after cd (they were source-relative), capture CWD first:
 
 `$SRCDIR` and `$PWD` are shell variables. Bare `$` passes through putup to the shell; only `$(VAR)` is expanded by putup.
 
+## Host Tools
+
+When cross-compiling, you need host-native tools (code generators, format
+converters). Don't use `!cc` — that's the cross-compiler. Use the host
+compiler directly, or define a `!host_cc` macro:
+
+```tup
+import HOSTCC=gcc
+!host_cc = |> ^ HOSTCC %b^ $(HOSTCC) -Wall -O2 -o %o %f |>
+```
+
+```tup
+# tools/Tupfile — built for the HOST, not the target
+: hex2bin.c \
+|> !host_cc \
+|> hex2bin
+
+# Use host tool in a generator rule
+: input.dat | tools/gen_table \
+|> tools/gen_table %f > %o \
+|> generated_table.h <gen-headers>
+```
+
 ## Config Headers
 
 ### tup.config to C #defines (`!gen-config`)

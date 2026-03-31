@@ -112,4 +112,21 @@ CC = $(CONFIG_CC)
 : src.c | $(S)/include/<gen-headers> |> !cc |> src.o
 ```
 
+### `@(VAR)` vs `$(CONFIG_VAR)` Confusion
+
+Both access config variables but differently:
+
+```tup
+# @(FOO) reads tup.config, strips CONFIG_ prefix automatically
+CC = @(CC)           # reads CONFIG_CC from tup.config
+
+# $(CONFIG_FOO) is a regular variable set by the config system
+srcs-$(CONFIG_FOO) += foo.c    # expands CONFIG_FOO to y or empty
+```
+
+Both work, but mixing styles in the same project causes confusion. Pick one
+convention. `$(CONFIG_VAR)` is more explicit for conditional source lists;
+`@(VAR)` is more concise for value access. The kernel-style convention uses
+`@(VAR)` for values and `$(CONFIG_VAR)` for conditionals.
+
 For the full reference, see <https://github.com/typeless/putup/blob/main/docs/reference.md>.

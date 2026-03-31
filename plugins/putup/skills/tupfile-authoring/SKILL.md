@@ -196,7 +196,76 @@ Custom display text replaces the raw command in build output. Place
   ^ CC %b^ $(CC) -c %f -o %o |> output.o
 ```
 
-## 10. Debugging Build Failures
+## 10. Line Continuation
+
+Use `\` at end of line to split long rules. Place `|>` at the start of
+continuation lines for readability:
+
+```tup
+: main.c utils.c \
+|> $(CC) $(CFLAGS) -c %f -o %o \
+|> main.o
+
+CFLAGS += -Wall \
+          -Wextra \
+          -O2
+```
+
+The `|>` delimiters become visual column anchors separating inputs, command,
+and outputs. This is the recommended style for multi-line rules.
+
+## 11. `import` and `export`
+
+`import` reads an environment variable into Tup's namespace at parse time.
+`export` makes a Tup variable available to shell subprocesses.
+
+```tup
+import CC=gcc               # read $CC from env, default to gcc
+import CROSS_COMPILE=       # read $CROSS_COMPILE, default empty
+export PKG_CONFIG_PATH      # pass to shell subprocesses
+```
+
+Without `export`, shell `$VAR` is empty even if `$(VAR)` expands correctly.
+
+## 12. Shared Rule Templates
+
+For projects with many similar targets, factor the build rules into a shared
+`.tup` file. Each Tupfile becomes a pure source list:
+
+```tup
+# lib.tup — shared template (included by each library Tupfile)
+: foreach $(srcs-y) | <gen-headers> \
+|> !cc \
+|> %B.o {objs}
+: {objs} \
+|> $(AR) rcs %o %f \
+|> built-in.o
+```
+
+```tup
+# modules/kernel/Tupfile — just lists sources
+include_rules
+srcs-y += main.c
+srcs-$(CONFIG_FS) += fs.c
+srcs-$(CONFIG_NET) += network.c
+include $(ROOT)/lib.tup
+```
+
+This separates "what to build" from "how to build." Adding a source file
+means adding one line to a Tupfile — no rule changes needed.
+
+## 13. Glob Tradeoffs
+
+`srcs-y += *.c` works but has tradeoffs:
+
+- Adding/removing files is implicit (no Tupfile edit, but no review visibility)
+- No way to exclude one file from a glob
+- Explicit file lists are more maintainable for larger directories
+
+Use globs for small stable directories. Use explicit lists when files change
+frequently or when you need to exclude specific files.
+
+## 14. Debugging Build Failures
 
 **Read the first error.** putup prints errors in dependency order.
 Fix the first one -- later errors often cascade from it.
