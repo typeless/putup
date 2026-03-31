@@ -80,7 +80,7 @@ Putup ships a [Claude Code](https://claude.ai/code) plugin with skills for Tupfi
 
 **For contributors** (working in this repo):
 ```bash
-claude --plugin-dir .claude/plugins/putup
+claude --plugin-dir plugins/putup
 ```
 
 **For external users** (install from marketplace):
