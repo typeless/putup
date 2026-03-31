@@ -16,7 +16,7 @@ auto x = 42;
 auto pi = 3.14;
 auto result = compute();
 auto ptr = std::make_unique<Foo>();
-auto vec = std::vector<int>{1, 2, 3};
+auto vec = Vec<int> { 1, 2, 3 };
 auto const& ref = container;
 auto* raw = get_pointer();
 
@@ -170,7 +170,7 @@ class Graph {
 public:
     auto add_node(Node n) -> NodeId;
 private:
-    std::vector<Node> nodes_;
+    Vec<Node> nodes_;
 };
 ```
 

@@ -3,6 +3,8 @@
 A build system using [Tupfile](https://gittup.org/tup/) syntax.
 
 > **User Documentation**: See [docs/reference.md](docs/reference.md) for command reference, Tupfile syntax, and configuration.
+>
+> **Claude Code Plugin**: Load with `claude --plugin-dir .claude/plugins/putup` for skills on Tupfile authoring, project setup, cross-compilation, composable libraries, and contributing. External install: `/plugin marketplace add typeless/putup`.
 
 ## Design
 
