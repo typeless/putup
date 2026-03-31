@@ -1,0 +1,9 @@
+{
+  "name": "putup",
+  "description": "Skills for mastering the putup build system: writing Tupfiles, configuring projects, cross-compilation, composable libraries, and contributing",
+  "version": "1.0.0",
+  "author": {
+    "name": "putup contributors"
+  },
+  "repository": "https://github.com/typeless/putup"
+}

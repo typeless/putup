@@ -1,0 +1,16 @@
+{
+  "name": "typeless-putup",
+  "owner": {
+    "name": "putup contributors"
+  },
+  "metadata": {
+    "description": "Plugin marketplace for the putup build system"
+  },
+  "plugins": [
+    {
+      "name": "putup",
+      "source": "./.claude/plugins/putup",
+      "description": "Skills for mastering the putup build system: writing Tupfiles, configuring projects, cross-compilation, composable libraries, and contributing"
+    }
+  ]
+}
