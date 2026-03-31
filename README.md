@@ -74,6 +74,23 @@ Environment:
 - **[STYLE.md](STYLE.md)** - C++ code style guide
 - **[DESIGN.md](DESIGN.md)** - Internal architecture and design rationale
 
+## Claude Code Plugin
+
+Putup ships a [Claude Code](https://claude.ai/code) plugin with skills for Tupfile authoring, project setup, cross-compilation, composable libraries, and contributing.
+
+**For contributors** (working in this repo):
+```bash
+claude --plugin-dir .claude/plugins/putup
+```
+
+**For external users** (install from marketplace):
+```
+/plugin marketplace add typeless/putup
+/plugin install putup@typeless-putup
+```
+
+Skills: `/putup:tupfile-authoring`, `/putup:project-setup`, `/putup:cross-compile`, `/putup:composable-libraries`, `/putup:contributing`
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
