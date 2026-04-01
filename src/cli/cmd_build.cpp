@@ -1177,6 +1177,9 @@ auto build_single_variant(
                 if (opts.include_all_deps) {
                     printf(" (+%zu upstream deps)", upstream_files.size());
                 }
+                if (!implicit_dep_files.empty()) {
+                    printf(" (+%zu implicit deps)", implicit_dep_files.size());
+                }
                 printf("\n");
             }
         }
