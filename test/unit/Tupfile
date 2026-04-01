@@ -1,6 +1,12 @@
 ifeq (@(TESTS),y)
 include_rules
 
+ifeq (@(CXX),clang++)
+_cxxlib = -lc++
+else
+_cxxlib = -lstdc++
+endif
+
 # Catch2 amalgamated
 : $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx_thirdparty |> catch_amalgamated.$(_obj) {test_support}
 
@@ -52,5 +58,5 @@ test-srcs-y += test_vec.cpp
 : foreach $(test-srcs-y) |> !cxx |> {test_objs}
 
 # Link test runner
-: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> ^ LINK %o^ @(LINK_CMD) -lstdc++ -lm |> putup_test$(_exe)
+: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> ^ LINK %o^ @(LINK_CMD) $(_cxxlib) -lm |> putup_test$(_exe)
 endif
