@@ -284,11 +284,55 @@ auto collect_scope_with_upstream_commands(
     return commands;
 }
 
+/// Collect file paths that are implicit dependencies of in-scope commands.
+/// These files (typically headers from .d files) must not be skipped by the
+/// scope filter, even if they live outside the scoped directories.
+auto collect_implicit_dep_files(
+    pup::index::Index const& index,
+    pup::Vec<pup::StringId> const& scopes
+) -> Vec<StringId>
+{
+    auto& pool = pup::global_pool();
+    auto result = Vec<StringId> {};
+
+    // Find commands whose directory is in scope
+    auto in_scope_cmds = pup::NodeIdMap32 {};
+    for (auto const& cmd : index.commands()) {
+        auto const* dir_file = index.find_file_by_id(cmd.dir_id);
+        if (!dir_file) {
+            continue;
+        }
+        auto dir_path = pool.get(dir_file->path);
+        if (pup::is_path_in_any_scope(dir_path, scopes)) {
+            in_scope_cmds.set(cmd.id, 1);
+        }
+    }
+
+    // Collect files with implicit/sticky edges to in-scope commands
+    for (auto const& edge : index.edges()) {
+        if (edge.type != pup::LinkType::Implicit && edge.type != pup::LinkType::Sticky) {
+            continue;
+        }
+        if (!in_scope_cmds.contains(edge.to)) {
+            continue;
+        }
+        auto const* file = index.find_file_by_id(edge.from);
+        if (file && !pup::is_empty(file->path)) {
+            result.push_back(file->path);
+        }
+    }
+
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
 auto find_changed_files_with_implicit(
     std::string_view source_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& scopes,
     Vec<std::string_view> const& upstream_files,
+    Vec<StringId> const& implicit_dep_files,
     bool verbose = false
 ) -> pup::Vec<StringId>
 {
@@ -307,10 +351,12 @@ auto find_changed_files_with_implicit(
         auto& pool = pup::global_pool();
         auto file_path_sv = pool.get(file.path);
 
-        // Skip files outside scopes (but always check Tupfiles and upstream deps)
+        // Skip files outside scopes (but always check Tupfiles, upstream deps,
+        // and implicit dependencies like headers from .d files)
         if (!scopes.empty() && !is_tupfile(file_path_sv)
             && !pup::is_path_in_any_scope(file_path_sv, scopes)
-            && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)) {
+            && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)
+            && !std::binary_search(implicit_dep_files.begin(), implicit_dep_files.end(), file.path)) {
             continue;
         }
 
@@ -1112,6 +1158,13 @@ auto build_single_variant(
         if (opts.include_all_deps && !scopes.empty()) {
             upstream_files = collect_upstream_files(ctx.graph(), scopes);
         }
+
+        // Always include implicit deps (headers from .d files) for in-scope
+        // commands, even if the headers live outside the scoped directories.
+        auto implicit_dep_files = Vec<StringId> {};
+        if (!scopes.empty()) {
+            implicit_dep_files = collect_implicit_dep_files(idx, scopes);
+        }
         if (opts.verbose) {
             if (scopes.empty()) {
                 vprint(variant_name, "Full project build\n");
@@ -1134,6 +1187,7 @@ auto build_single_variant(
             idx,
             scopes,
             upstream_files,
+            implicit_dep_files,
             opts.verbose
         );
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;

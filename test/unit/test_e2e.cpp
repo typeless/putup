@@ -1289,7 +1289,7 @@ SCENARIO("Tupfile changes detected regardless of scope", "[e2e][incremental][sco
     }
 }
 
-SCENARIO("Scoped build without -a ignores upstream deps (mm behavior)", "[e2e][incremental][scope]")
+SCENARIO("Scoped build without -a detects implicit dep changes", "[e2e][incremental][scope]")
 {
     GIVEN("a project with shared include directory")
     {
@@ -1297,15 +1297,15 @@ SCENARIO("Scoped build without -a ignores upstream deps (mm behavior)", "[e2e][i
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        WHEN("an upstream dependency (header) is modified and scoped build runs WITHOUT -a")
+        WHEN("an implicit dependency (header) is modified and scoped build runs WITHOUT -a")
         {
             f.write_file("include/header.h", "#define VALUE 100\n");
             auto result = f.build({ "lib", "-v" });
 
-            THEN("the build is a no-op (upstream change ignored)")
+            THEN("the change is detected (implicit deps always checked)")
             {
                 REQUIRE(result.success());
-                REQUIRE(result.is_noop());
+                REQUIRE_FALSE(result.is_noop());
             }
         }
     }
@@ -5346,6 +5346,43 @@ SCENARIO("Strict checker catches convention violations", "[e2e][strict]")
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Scoped Build Implicit Dependency Tests
+// =============================================================================
+
+SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a project with headers outside the source scope")
+    {
+        auto f = E2EFixture { "scoped_implicit_dep" };
+        REQUIRE(f.init().success());
+
+        // Initial build (full, unscoped)
+        auto first = f.build();
+        INFO("first build stdout: " << first.stdout_output);
+        INFO("first build stderr: " << first.stderr_output);
+        REQUIRE(first.success());
+        REQUIRE(f.exists("src/main.o"));
+
+        WHEN("header outside scope is modified and scoped build runs")
+        {
+            // Modify the header (outside the src/ scope)
+            f.write_file("include/header.h", "#define VERSION 2\n");
+
+            // Scoped build: only src/ directory
+            auto result = f.pup({ "src" });
+
+            THEN("the change is detected and the file is rebuilt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
             }
         }
     }
