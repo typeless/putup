@@ -636,16 +636,17 @@ These are different options:
 
 **Scoped Build Behavior (AOSP-style mm/mma):**
 
-By default, scoped builds only check files within the scope directory (like AOSP's `mm`). With `-a`, putup also checks upstream dependencies (like AOSP's `mma`):
+Scoped builds always check implicit dependencies (headers discovered from `.d` files), even if those headers live outside the scoped directory. With `-a`, putup also checks explicit upstream dependencies from the build graph (libraries, generated files):
 
 ```bash
-putup lib        # mm behavior: only check lib/, fast
-putup -a lib     # mma behavior: check lib/ + its dependencies
+putup lib        # check lib/ + implicit deps (headers). Like AOSP's mm
+putup -a lib     # also check explicit upstream deps (libraries). Like AOSP's mma
 ```
 
-Example: If `lib/foo.c` includes `../include/header.h`:
-- `putup lib` - changes to `header.h` are ignored
-- `putup -a lib` - changes to `header.h` trigger rebuild
+Example: If `lib/foo.c` includes `../include/header.h` and links `../deps/libutil.a`:
+- `putup lib` — changes to `header.h` trigger rebuild (implicit dep, always checked)
+- `putup lib` — changes to `libutil.a` are ignored (explicit dep, outside scope)
+- `putup -a lib` — changes to `libutil.a` also trigger rebuild
 
 **`--` (End of Options)**
 
