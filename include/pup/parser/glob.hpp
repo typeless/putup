@@ -24,7 +24,7 @@ struct GlobResult {
 };
 
 /// Glob pattern matcher
-class Glob {
+class Glob final {
 public:
     explicit Glob(std::string_view pattern);
 

@@ -99,7 +99,7 @@ struct EdgeEntry {
 };
 
 /// Complete in-memory index
-class Index {
+class Index final {
 public:
     Index() = default;
 

@@ -8,7 +8,7 @@
 
 namespace pup {
 
-class IdBitSet {
+class IdBitSet final {
 public:
     IdBitSet() = default;
     ~IdBitSet();

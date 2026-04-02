@@ -8,7 +8,7 @@
 
 namespace pup {
 
-class SortedIdVec {
+class SortedIdVec final {
 public:
     SortedIdVec() = default;
     ~SortedIdVec();
@@ -65,7 +65,7 @@ private:
     auto lower_bound(std::uint32_t id) const -> std::size_t;
 };
 
-class SortedPairVec {
+class SortedPairVec final {
 public:
     SortedPairVec() = default;
     ~SortedPairVec();

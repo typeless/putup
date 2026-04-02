@@ -15,7 +15,7 @@
 namespace pup {
 
 template<typename T>
-class Vec {
+class Vec final {
 public:
     Vec() = default;
 

@@ -40,7 +40,7 @@ struct RunOptions {
 using OutputCallback = Function<void(std::string_view, bool is_stderr)>;
 
 /// Command runner - executes shell commands
-class CommandRunner {
+class CommandRunner final {
 public:
     CommandRunner() = default;
     explicit CommandRunner(RunOptions default_options);

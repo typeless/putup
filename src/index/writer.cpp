@@ -25,7 +25,7 @@ constexpr auto MAX_U32 = std::numeric_limits<std::uint32_t>::max();
 ///
 /// Deduplicates strings using StringPool for identity and SortedPairVec
 /// to map interned StringId → byte offset in the serialized table.
-class StringTable {
+class StringTable final {
 public:
     [[nodiscard]]
     auto add(std::string_view str) -> Result<std::uint32_t>;

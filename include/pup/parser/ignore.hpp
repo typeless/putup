@@ -21,7 +21,7 @@ struct IgnorePattern {
 };
 
 /// List of ignore patterns for filtering paths during Tupfile discovery
-class IgnoreList {
+class IgnoreList final {
 public:
     IgnoreList() = default;
 

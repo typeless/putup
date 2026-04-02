@@ -350,7 +350,7 @@ auto is_under_build_root(Graph const& graph, NodeId id) -> bool;
 
 /// Build graph class wrapper - wraps Graph struct for API compatibility
 /// This wrapper provides method syntax for code that hasn't been migrated yet.
-class BuildGraph {
+class BuildGraph final {
 public:
     BuildGraph();
     ~BuildGraph();

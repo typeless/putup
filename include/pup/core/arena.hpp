@@ -13,7 +13,7 @@ struct ArenaSlice {
     std::uint32_t length = 0;
 };
 
-class Arena32 {
+class Arena32 final {
 public:
     Arena32() = default;
     ~Arena32();

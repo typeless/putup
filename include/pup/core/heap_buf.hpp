@@ -14,7 +14,7 @@ namespace pup {
 
 class StringPool;
 
-class HeapBuf {
+class HeapBuf final {
 public:
     HeapBuf() = default;
     ~HeapBuf();

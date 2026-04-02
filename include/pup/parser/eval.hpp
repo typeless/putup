@@ -22,7 +22,7 @@ namespace pup::parser {
 
 /// Variable database for storing and retrieving variable values.
 /// All interning goes through global_pool().
-class VarDb {
+class VarDb final {
 public:
     VarDb() = default;
     ~VarDb() = default;

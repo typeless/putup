@@ -9,7 +9,7 @@
 
 namespace pup {
 
-class NodeIdMap32 {
+class NodeIdMap32 final {
 public:
     auto resize_files(std::uint32_t max_idx) -> void { files_.resize(max_idx); }
     auto resize_commands(std::uint32_t max_idx) -> void { cmds_.resize(max_idx); }
@@ -97,7 +97,7 @@ private:
 /// Maps NodeId → ArenaSlice via two parallel NodeIdMap32 (offset + length).
 /// Absent nodes return {0, 0}. Invariant: set_slice is never called with
 /// length == 0, so length == 0 reliably means "not present".
-class NodeIdArenaIndex {
+class NodeIdArenaIndex final {
 public:
     [[nodiscard]]
     auto get_slice(NodeId id) const -> ArenaSlice

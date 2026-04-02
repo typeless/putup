@@ -15,7 +15,7 @@ template<typename Sig>
 class Function;
 
 template<typename R, typename... Args>
-class Function<R(Args...)> {
+class Function<R(Args...)> final {
 public:
     Function() = default;
 

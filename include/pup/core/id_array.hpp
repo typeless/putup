@@ -10,7 +10,7 @@
 
 namespace pup {
 
-class IdArray32 {
+class IdArray32 final {
 public:
     IdArray32() = default;
     ~IdArray32();

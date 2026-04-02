@@ -78,7 +78,7 @@ struct BuildStats {
 };
 
 /// Build scheduler - executes commands in topological order
-class Scheduler {
+class Scheduler final {
 public:
     explicit Scheduler(SchedulerOptions options = {});
     ~Scheduler();

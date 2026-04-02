@@ -257,7 +257,7 @@ auto resolve_deferred_order_only_edges(
 // ============================================================================
 
 /// Build graph from a parsed Tupfile (thin wrapper around free functions)
-class GraphBuilder {
+class GraphBuilder final {
 public:
     explicit GraphBuilder(BuilderOptions options = {});
     ~GraphBuilder() = default;

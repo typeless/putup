@@ -66,7 +66,7 @@ struct BuildContextOptions {
 auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>;
 
 /// Build context using PIMPL to hide heavy dependencies
-class BuildContext {
+class BuildContext final {
 public:
     BuildContext();
     ~BuildContext();

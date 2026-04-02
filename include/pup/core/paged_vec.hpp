@@ -16,7 +16,7 @@ namespace pup {
 /// pointers to existing elements (new pages are allocated separately).
 /// Replaces std::deque for append-only use cases.
 template<typename T, std::size_t PageSize = 256>
-class PagedVec {
+class PagedVec final {
 public:
     PagedVec() = default;
 

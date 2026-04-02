@@ -15,7 +15,7 @@ namespace pup {
 /// Arena-based string pool with deduplication
 /// Strings are stored contiguously and referenced by StringId handles.
 /// This eliminates per-lookup allocations and reduces memory overhead.
-class StringPool {
+class StringPool final {
 public:
     StringPool();
     ~StringPool();

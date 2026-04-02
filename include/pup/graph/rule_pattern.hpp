@@ -63,7 +63,7 @@ struct RulePattern {
 };
 
 /// Registry for rule patterns
-class RulePatternRegistry {
+class RulePatternRegistry final {
 public:
     RulePatternRegistry() = default;
 

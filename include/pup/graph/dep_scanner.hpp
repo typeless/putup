@@ -78,7 +78,7 @@ inline auto make_dep_display(Vec<StringId> const& inputs) -> StringId
 
 /// Registry for dependency scanners.
 /// Scanners are checked in registration order; first match wins.
-class DepScannerRegistry {
+class DepScannerRegistry final {
 public:
     DepScannerRegistry() = default;
 

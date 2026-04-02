@@ -24,7 +24,7 @@ struct FileStat {
 [[nodiscard]]
 auto stat_file(std::string_view path) -> Result<FileStat>;
 
-class MappedFile {
+class MappedFile final {
 public:
     MappedFile();
     ~MappedFile();

@@ -19,7 +19,7 @@ namespace pup::parser {
 /// - After ':': expects inputs, '|', '|>'
 /// - After '|>': expects command text (minimal tokenization)
 /// - After second '|>': expects outputs, groups
-class Lexer {
+class Lexer final {
 public:
     /// Lexing context affects how text is tokenized
     enum class Context {
