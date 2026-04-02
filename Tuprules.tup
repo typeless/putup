@@ -45,6 +45,13 @@ LDFLAGS = @(RELEASE_LDFLAGS) @(PLATFORM_LDFLAGS)
 CFLAGS += @(DEBUG_CFLAGS) @(RELEASE_CFLAGS)
 CXXFLAGS += @(DEBUG_CXXFLAGS) @(RELEASE_CXXFLAGS)
 
+# Optional LTO (putup -D LTO or CONFIG_LTO=y in tup.config)
+ifdef LTO
+CFLAGS += -flto
+CXXFLAGS += -flto
+LDFLAGS += -flto
+endif
+
 # Macros - commands from config
 !cc = |> ^ CC %f^ @(CC_CMD) |> %B.$(_obj)
 !cc_thirdparty = |> ^ CC %f^ @(CC_THIRDPARTY_CMD) |> %B.$(_obj)
