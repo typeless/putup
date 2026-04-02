@@ -626,26 +626,7 @@ auto Scheduler::build_incremental(
         }
     }
 
-    // Build all jobs, then filter
-    auto all_jobs = build_job_list(graph);
-    if (!all_jobs) {
-        return pup::unexpected<Error>(all_jobs.error());
-    }
-
-    auto jobs = filter_jobs(*all_jobs, affected);
-    impl_->stats.total_jobs = jobs.size();
-    impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
-
-    if (jobs.empty()) {
-        return impl_->stats;
-    }
-
-    auto exec_result = execute_parallel(jobs, graph);
-    if (!exec_result && !impl_->options.keep_going) {
-        return pup::unexpected<Error>(exec_result.error());
-    }
-
-    return impl_->stats;
+    return build_subset(graph, affected);
 }
 
 auto Scheduler::execute_parallel(
