@@ -2,8 +2,12 @@
 
 A build system using the [Tupfile](https://gittup.org/tup/) format.
 
-> **Install:** `curl -fsSL https://raw.githubusercontent.com/typeless/putup/main/install.sh | sh`
->
+**Install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/typeless/putup/main/install.sh | sh
+```
+
 > **Note:** The binary is named `putup`, but `pup` works as an alias.
 
 ```
