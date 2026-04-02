@@ -1936,9 +1936,9 @@ SCENARIO("Variant builds with tup.config", "[e2e][variant]")
         f.write_file("build/tup.config", "# Variant config\nCONFIG_VARIANT=build\n");
         REQUIRE(f.init().success());
 
-        WHEN("built with --variant=build")
+        WHEN("built with -B build")
         {
-            auto result = f.build({ "--variant=build" });
+            auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds")
             {
@@ -1966,9 +1966,9 @@ SCENARIO("Variant builds with symlinked config", "[e2e][variant]")
 
         REQUIRE(f.init().success());
 
-        WHEN("built with --variant=build")
+        WHEN("built with -B build")
         {
-            auto result = f.build({ "--variant=build" });
+            auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds")
             {
