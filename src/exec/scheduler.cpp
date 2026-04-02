@@ -15,7 +15,6 @@
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
-#include "pup/platform/async_process.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/platform/process.hpp"
 
