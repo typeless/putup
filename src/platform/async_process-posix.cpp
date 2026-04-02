@@ -8,6 +8,7 @@
 
 #include "pup/platform/async_process.hpp"
 
+#include <cassert>
 #include <cerrno>
 #include <csignal>
 #include <fcntl.h>
@@ -100,7 +101,10 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
         pfds[i].revents = 0;
     }
 
-    auto result = ::poll(pfds, static_cast<nfds_t>(count), timeout_ms);
+    int result;
+    do {
+        result = ::poll(pfds, static_cast<nfds_t>(count), timeout_ms);
+    } while (result < 0 && errno == EINTR);
 
     // Propagate revents back: callers check POLLIN/POLLHUP via the return value
     // but the fd array indices match, so just store revents for the caller
@@ -168,6 +172,7 @@ auto reap(int pid, ProcessStatus& out) -> void
 
 auto send_signal(int pid, Signal sig) -> void
 {
+    assert(pid > 0 && "send_signal called with invalid pid");
     ::kill(pid, sig == Signal::Kill ? SIGKILL : SIGTERM);
 }
 
