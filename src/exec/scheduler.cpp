@@ -690,7 +690,7 @@ auto Scheduler::execute_parallel(
     auto finished_count = std::size_t { 0 };
     auto failed = false;
 
-    // Pre-compute source/output roots for execute_job_pre/post
+    // Pre-compute source/output roots for job preparation
     auto source_root_sv = pool.get(impl_->options.source_root);
     auto output_root_sv = pool.get(impl_->options.output_root);
     auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
@@ -1186,43 +1186,7 @@ auto Scheduler::build_targets(
     Vec<NodeId> const& target_ids
 ) -> Result<BuildStats>
 {
-    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-    impl_->cancelled = false;
-    impl_->stats = BuildStats {};
-
-    // Collect all commands needed to build these targets via reverse traversal
-    auto required_cmds = collect_required_commands(graph, target_ids);
-
-    // Build all jobs, then filter to required commands
-    auto all_jobs = build_job_list(graph);
-    if (!all_jobs) {
-        return pup::unexpected<Error>(all_jobs.error());
-    }
-
-    auto jobs = filter_jobs(*all_jobs, required_cmds);
-    impl_->stats.total_jobs = jobs.size();
-    impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
-
-    if (jobs.empty()) {
-        auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-        impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end_time - start_time
-        );
-        return impl_->stats;
-    }
-
-    auto exec_result = execute_parallel(jobs, graph);
-
-    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-    impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-        end_time - start_time
-    );
-
-    if (!exec_result && !impl_->options.keep_going) {
-        return pup::unexpected<Error>(exec_result.error());
-    }
-
-    return impl_->stats;
+    return build_subset(graph, collect_required_commands(graph, target_ids));
 }
 
 auto Scheduler::filter_jobs(
