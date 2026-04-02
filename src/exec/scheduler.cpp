@@ -755,11 +755,6 @@ auto Scheduler::execute_parallel(
         return impl_->execute_sequential(jobs, graph, env_cache);
     }
 
-#ifdef _WIN32
-    // Windows: fall back to sequential (async process not supported)
-    return impl_->execute_sequential(jobs, graph, env_cache);
-#else
-
     auto& pool = global_pool();
 
     // Build dependency map
@@ -1085,8 +1080,6 @@ auto Scheduler::execute_parallel(
     }
 
     return {};
-
-#endif // !_WIN32
 }
 
 auto Scheduler::Impl::execute_job(

@@ -7,7 +7,9 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
+#include <algorithm>
 #include <cassert>
+#include <string_view>
 #include <windows.h>
 
 namespace pup::platform {
@@ -341,42 +343,208 @@ auto run_parallel_tasks(
     return failed;
 }
 
-auto spawn_async(SpawnOptions const& /*opts*/) -> Result<AsyncProcess>
+auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>
 {
-    return make_error<AsyncProcess>(ErrorCode::IoError, "Async process spawning not supported on Windows");
+    auto sa = SECURITY_ATTRIBUTES { sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+
+    auto* stdout_read = static_cast<HANDLE>(nullptr);
+    auto* stdout_write = static_cast<HANDLE>(nullptr);
+    auto* stderr_read = static_cast<HANDLE>(nullptr);
+    auto* stderr_write = static_cast<HANDLE>(nullptr);
+
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        return make_error<AsyncProcess>(ErrorCode::IoError, "Failed to create stdout pipe");
+    }
+    SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+
+    if (!CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
+        CloseHandle(stdout_read);
+        CloseHandle(stdout_write);
+        return make_error<AsyncProcess>(ErrorCode::IoError, "Failed to create stderr pipe");
+    }
+    SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
+
+    // Build command line: cmd.exe /c "command"
+    auto cmdline = std::wstring { L"cmd.exe /c \"" };
+    auto cmd_len = MultiByteToWideChar(CP_UTF8, 0, opts.command.data(), static_cast<int>(opts.command.size()), nullptr, 0);
+    if (cmd_len > 0) {
+        auto wcmd = std::wstring(cmd_len, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, opts.command.data(), static_cast<int>(opts.command.size()), wcmd.data(), cmd_len);
+        cmdline += wcmd;
+    }
+    cmdline += L'"';
+
+    auto si = STARTUPINFOW {};
+    si.cb = sizeof(STARTUPINFOW);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = stdout_write;
+    si.hStdError = stderr_write;
+
+    // Build environment block (double-null-terminated wide string)
+    auto env_block = std::wstring {};
+    auto has_env = opts.env != nullptr;
+    if (has_env) {
+        for (auto* p = opts.env; *p != nullptr; ++p) {
+            auto sv = std::string_view { *p };
+            auto len = MultiByteToWideChar(CP_UTF8, 0, sv.data(), static_cast<int>(sv.size()), nullptr, 0);
+            if (len > 0) {
+                auto wvar = std::wstring(len, L'\0');
+                MultiByteToWideChar(CP_UTF8, 0, sv.data(), static_cast<int>(sv.size()), wvar.data(), len);
+                env_block += wvar;
+                env_block += L'\0';
+            }
+        }
+        env_block += L'\0';
+    }
+
+    // Convert working directory
+    auto working_dir = std::wstring {};
+    if (!opts.working_dir.empty()) {
+        auto len = MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.data(), static_cast<int>(opts.working_dir.size()), nullptr, 0);
+        if (len > 0) {
+            working_dir.resize(len);
+            MultiByteToWideChar(CP_UTF8, 0, opts.working_dir.data(), static_cast<int>(opts.working_dir.size()), working_dir.data(), len);
+        }
+    }
+
+    auto pi = PROCESS_INFORMATION {};
+    auto created = CreateProcessW(
+        nullptr,
+        cmdline.data(),
+        nullptr,
+        nullptr,
+        TRUE,
+        CREATE_UNICODE_ENVIRONMENT,
+        has_env ? env_block.data() : nullptr,
+        working_dir.empty() ? nullptr : working_dir.c_str(),
+        &si,
+        &pi
+    );
+
+    CloseHandle(stdout_write);
+    CloseHandle(stderr_write);
+
+    if (!created) {
+        CloseHandle(stdout_read);
+        CloseHandle(stderr_read);
+        return make_error<AsyncProcess>(ErrorCode::IoError, "Failed to create process");
+    }
+
+    CloseHandle(pi.hThread);
+
+    return AsyncProcess {
+        .pid = reinterpret_cast<std::intptr_t>(pi.hProcess),    // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        .stdout_fd = reinterpret_cast<std::intptr_t>(stdout_read),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        .stderr_fd = reinterpret_cast<std::intptr_t>(stderr_read),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    };
 }
 
-auto poll_fds(PollableFd* /*fds*/, std::size_t /*count*/, int /*timeout_ms*/) -> int
+auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
 {
-    assert(false && "poll_fds not supported on Windows");
-    return -1;
+    if (count == 0) {
+        Sleep(static_cast<DWORD>(std::min(timeout_ms, 100)));
+        return 0;
+    }
+
+    // Save original fds for restoration on ready
+    auto originals = Vec<std::intptr_t> {};
+    originals.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        originals.push_back(fds[i].fd);
+    }
+
+    auto deadline = GetTickCount64() + static_cast<ULONGLONG>(timeout_ms);
+
+    for (;;) {
+        auto found = 0;
+
+        for (std::size_t i = 0; i < count; ++i) {
+            if (originals[i] == -1) {
+                continue;
+            }
+
+            auto h = reinterpret_cast<HANDLE>(originals[i]); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+            auto available = DWORD { 0 };
+            auto ok = PeekNamedPipe(h, nullptr, 0, nullptr, &available, nullptr);
+
+            if (!ok || available > 0) {
+                // Ready: has data or pipe broken (EOF)
+                fds[i].fd = originals[i];
+                ++found;
+            } else {
+                fds[i].fd = -1; // No data, pipe alive — not ready
+            }
+        }
+
+        if (found > 0) {
+            return found;
+        }
+
+        if (GetTickCount64() >= deadline) {
+            return 0;
+        }
+
+        Sleep(1);
+    }
 }
 
-auto read_nonblocking(std::intptr_t /*fd*/, char* /*buf*/, std::size_t /*size*/) -> int
+auto read_nonblocking(std::intptr_t fd, char* buf, std::size_t size) -> int
 {
-    assert(false && "read_nonblocking not supported on Windows");
-    return -1;
+    auto h = reinterpret_cast<HANDLE>(fd); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto available = DWORD { 0 };
+    if (!PeekNamedPipe(h, nullptr, 0, nullptr, &available, nullptr)) {
+        return 0; // Broken pipe = EOF
+    }
+    if (available == 0) {
+        return -1; // Would block
+    }
+    auto to_read = static_cast<DWORD>(std::min(static_cast<std::size_t>(available), size));
+    auto bytes_read = DWORD { 0 };
+    if (!ReadFile(h, buf, to_read, &bytes_read, nullptr)) {
+        return 0; // Read error = treat as EOF
+    }
+    return static_cast<int>(bytes_read);
 }
 
-auto close_fd(std::intptr_t /*fd*/) -> void
+auto close_fd(std::intptr_t fd) -> void
 {
-    assert(false && "close_fd not supported on Windows");
+    if (fd != -1) {
+        CloseHandle(reinterpret_cast<HANDLE>(fd)); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    }
 }
 
-auto try_reap(std::intptr_t /*pid*/, ProcessStatus& /*out*/) -> bool
+auto try_reap(std::intptr_t pid, ProcessStatus& out) -> bool
 {
-    assert(false && "try_reap not supported on Windows");
-    return false;
+    auto h = reinterpret_cast<HANDLE>(pid); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto code = DWORD { 0 };
+    if (!GetExitCodeProcess(h, &code)) {
+        return false;
+    }
+    if (code == STILL_ACTIVE) {
+        return false;
+    }
+    out.exited = true;
+    out.exit_code = static_cast<int>(code);
+    return true;
 }
 
-auto reap(std::intptr_t /*pid*/, ProcessStatus& /*out*/) -> void
+auto reap(std::intptr_t pid, ProcessStatus& out) -> void
 {
-    assert(false && "reap not supported on Windows");
+    auto h = reinterpret_cast<HANDLE>(pid); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    WaitForSingleObject(h, INFINITE);
+    auto code = DWORD { 0 };
+    GetExitCodeProcess(h, &code);
+    out.exited = true;
+    out.exit_code = static_cast<int>(code);
+    CloseHandle(h);
 }
 
-auto send_signal(std::intptr_t /*pid*/, Signal /*sig*/) -> void
+auto send_signal(std::intptr_t pid, Signal /*sig*/) -> void
 {
-    assert(false && "send_signal not supported on Windows");
+    assert(pid != -1);
+    auto h = reinterpret_cast<HANDLE>(pid); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    TerminateProcess(h, 1);
 }
 
 } // namespace pup::platform
