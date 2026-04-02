@@ -123,6 +123,9 @@ auto parse_args(int argc, char** argv) -> Options
             opts.show_json = true;
         } else if (arg == "--strict") {
             opts.strict = true;
+        } else if (arg.starts_with("-")) {
+            fprintf(stderr, "Error: unknown option '%s'\nRun 'putup --help' for usage.\n", argv[i]);
+            std::exit(EXIT_FAILURE);
         } else if (!arg.starts_with("-")) {
             if (is_empty(opts.command) && is_command(arg)) {
                 opts.command = pool.intern(arg);
