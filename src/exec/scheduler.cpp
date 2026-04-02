@@ -15,6 +15,7 @@
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
+#include "pup/platform/async_process.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/platform/process.hpp"
 
@@ -22,15 +23,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <queue>
-
-#ifndef _WIN32
-#    include <cerrno>
-#    include <csignal>
-#    include <fcntl.h>
-#    include <poll.h>
-#    include <sys/wait.h>
-#    include <unistd.h>
-#endif
 
 namespace pup::exec {
 
@@ -368,24 +360,18 @@ auto collect_required_commands(
     return commands;
 }
 
-#ifndef _WIN32
-
 struct JobSlot {
-    pid_t pid = -1;
-    int stdout_fd = -1;
-    int stderr_fd = -1;
+    pup::platform::AsyncProcess process = {};
     HeapBuf stdout_buf = {};
     HeapBuf stderr_buf = {};
     std::size_t job_index = 0;
     pup::SteadyClock::time_point start_time = {};
 
-    auto active() const -> bool { return pid > 0; }
+    auto active() const -> bool { return process.active(); }
 
     auto reset() -> void
     {
-        pid = -1;
-        stdout_fd = -1;
-        stderr_fd = -1;
+        process = {};
         stdout_buf.clear();
         stderr_buf.clear();
         job_index = 0;
@@ -403,111 +389,44 @@ auto launch_job(
 {
     auto& pool = global_pool();
 
-    // Resolve all StringIds to string_view BEFORE fork.
-    // After fork, pool storage is immutable (COW). Pool entries are
-    // null-terminated (HeapBuf guarantee), safe for POSIX C APIs.
     auto command_str = pool.get(job.command);
     auto working_dir_str = pool.get(working_dir);
 
     auto env_strings = pup::platform::build_env_strings(env_ids, inherit_env);
-    auto env_c_strs = Vec<std::string_view> {};
-    env_c_strs.reserve(env_strings.size());
+    auto env_c_strs = Vec<char*> {};
+    env_c_strs.reserve(env_strings.size() + 1);
     for (auto s : env_strings) {
-        env_c_strs.push_back(pool.get(s));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
+        env_c_strs.push_back(const_cast<char*>(pool.get(s).data()));
     }
+    env_c_strs.push_back(nullptr);
 
-    int stdout_pipe[2] = { -1, -1 };
-    int stderr_pipe[2] = { -1, -1 };
+    auto opts = pup::platform::SpawnOptions {
+        .command = command_str,
+        .working_dir = working_dir_str,
+        .env = (inherit_env && env_ids.empty()) ? nullptr : env_c_strs.data(),
+    };
 
-    if (::pipe(stdout_pipe) < 0) {
-        return false;
-    }
-    if (::pipe(stderr_pipe) < 0) {
-        ::close(stdout_pipe[0]);
-        ::close(stdout_pipe[1]);
-        return false;
-    }
-
-    auto pid = ::fork();
-    if (pid < 0) {
-        ::close(stdout_pipe[0]);
-        ::close(stdout_pipe[1]);
-        ::close(stderr_pipe[0]);
-        ::close(stderr_pipe[1]);
+    auto result = pup::platform::spawn_async(opts);
+    if (!result) {
         return false;
     }
 
-    if (pid == 0) {
-        // Child process
-        ::dup2(stdout_pipe[1], STDOUT_FILENO);
-        ::close(stdout_pipe[0]);
-        ::close(stdout_pipe[1]);
-
-        ::dup2(stderr_pipe[1], STDERR_FILENO);
-        ::close(stderr_pipe[0]);
-        ::close(stderr_pipe[1]);
-
-        if (!working_dir_str.empty()) {
-            if (::chdir(working_dir_str.data()) < 0) {
-                ::_exit(127);
-            }
-        }
-
-        auto env_ptrs = Vec<char*> {};
-        env_ptrs.reserve(env_c_strs.size() + 1);
-        for (auto s : env_c_strs) {
-            env_ptrs.push_back(const_cast<char*>(s.data()));
-        }
-        env_ptrs.push_back(nullptr);
-
-        // NOLINTBEGIN(cppcoreguidelines-pro-type-const-cast)
-        char* const argv[] = {
-            const_cast<char*>("/bin/sh"),
-            const_cast<char*>("-c"),
-            const_cast<char*>(command_str.data()),
-            nullptr
-        };
-        // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
-
-        if (inherit_env && env_ids.empty()) {
-            ::execv("/bin/sh", argv);
-        } else {
-            ::execve("/bin/sh", argv, env_ptrs.data());
-        }
-
-        ::_exit(127);
-    }
-
-    // Parent: close write ends, keep read ends
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[1]);
-
-    // Set read ends to non-blocking for poll()
-    ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
-    ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
-
-    slot.pid = pid;
-    slot.stdout_fd = stdout_pipe[0];
-    slot.stderr_fd = stderr_pipe[0];
+    slot.process = *result;
     slot.job_index = job_idx;
     slot.start_time = pup::SteadyClock::now();
 
     return true;
 }
 
-auto reap_slot(JobSlot& slot, int status) -> JobResult
+auto reap_slot(JobSlot& slot, pup::platform::ProcessStatus const& status) -> JobResult
 {
     auto& pool = global_pool();
     auto result = JobResult {};
     result.id = 0;
 
-    if (WIFEXITED(status)) {
-        result.exit_code = WEXITSTATUS(status);
-        result.success = (result.exit_code == 0);
-    } else if (WIFSIGNALED(status)) {
-        result.exit_code = 128 + WTERMSIG(status);
-        result.success = false;
-    }
+    result.exit_code = status.exit_code;
+    result.success = (status.exit_code == 0);
 
     result.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
         pup::SteadyClock::now() - slot.start_time
@@ -527,11 +446,11 @@ auto reap_slot(JobSlot& slot, int status) -> JobResult
         result.output = pool.intern(output_buf.view());
     }
 
-    if (slot.stdout_fd >= 0) {
-        ::close(slot.stdout_fd);
+    if (slot.process.stdout_fd >= 0) {
+        pup::platform::close_fd(slot.process.stdout_fd);
     }
-    if (slot.stderr_fd >= 0) {
-        ::close(slot.stderr_fd);
+    if (slot.process.stderr_fd >= 0) {
+        pup::platform::close_fd(slot.process.stderr_fd);
     }
 
     slot.reset();
@@ -541,11 +460,9 @@ auto reap_slot(JobSlot& slot, int status) -> JobResult
 auto kill_slot(JobSlot& slot) -> void
 {
     if (slot.active()) {
-        ::kill(slot.pid, SIGTERM);
+        pup::platform::send_signal(slot.process.pid, pup::platform::Signal::Terminate);
     }
 }
-
-#endif // !_WIN32
 
 } // namespace
 
@@ -840,7 +757,7 @@ auto Scheduler::execute_parallel(
     }
 
 #ifdef _WIN32
-    // Windows: fall back to sequential (no fork/poll)
+    // Windows: fall back to sequential (async process not supported)
     return impl_->execute_sequential(jobs, graph, env_cache);
 #else
 
@@ -974,27 +891,19 @@ auto Scheduler::execute_parallel(
             break;
         }
 
-        // 2. Build pollfd array from active slots
-        auto poll_fds = Vec<pollfd> {};
-        poll_fds.reserve(running * 2);
-        struct PollMap {
-            std::size_t slot_idx;
-            bool is_stderr;
-        };
-        auto poll_map = Vec<PollMap> {};
-        poll_map.reserve(running * 2);
+        // 2. Build pollable FD array from active slots
+        auto pfds = Vec<pup::platform::PollableFd> {};
+        pfds.reserve(running * 2);
 
         for (auto i = std::size_t { 0 }; i < max_jobs; ++i) {
             if (!slots[i].active()) {
                 continue;
             }
-            if (slots[i].stdout_fd >= 0) {
-                poll_fds.push_back(pollfd { .fd = slots[i].stdout_fd, .events = POLLIN, .revents = 0 });
-                poll_map.push_back(PollMap { .slot_idx = i, .is_stderr = false });
+            if (slots[i].process.stdout_fd >= 0) {
+                pfds.push_back({ .fd = slots[i].process.stdout_fd, .is_stderr = false, .slot_index = i });
             }
-            if (slots[i].stderr_fd >= 0) {
-                poll_fds.push_back(pollfd { .fd = slots[i].stderr_fd, .events = POLLIN, .revents = 0 });
-                poll_map.push_back(PollMap { .slot_idx = i, .is_stderr = true });
+            if (slots[i].process.stderr_fd >= 0) {
+                pfds.push_back({ .fd = slots[i].process.stderr_fd, .is_stderr = true, .slot_index = i });
             }
         }
 
@@ -1016,41 +925,38 @@ auto Scheduler::execute_parallel(
             poll_timeout = std::max(static_cast<int>(min_remaining.count()), 0);
         }
 
-        if (poll_fds.empty()) {
-            poll_timeout = 100; // 100ms fallback for waitpid
+        if (pfds.empty()) {
+            poll_timeout = 100; // 100ms fallback for reap
         }
 
         // 3. Wait for I/O
-        auto poll_result = ::poll(poll_fds.data(), static_cast<nfds_t>(poll_fds.size()), poll_timeout);
-        if (poll_result < 0 && errno == EINTR) {
-            // Interrupted by signal -- check cancellation at top of next iteration
-        }
+        auto poll_result = pup::platform::poll_fds(pfds.data(), pfds.size(), poll_timeout);
 
         // 4. Drain ready pipes
         if (poll_result > 0) {
-            char buf[4096];
-            for (auto i = std::size_t { 0 }; i < poll_fds.size(); ++i) {
-                if (!(poll_fds[i].revents & (POLLIN | POLLHUP))) {
-                    continue;
+            char buf[4096]; // NOLINT(modernize-avoid-c-arrays)
+            for (auto& pfd : pfds) {
+                if (pfd.fd < 0) {
+                    continue; // marked not-ready by poll_fds
                 }
-                auto n = ::read(poll_fds[i].fd, buf, sizeof(buf));
+                auto n = pup::platform::read_nonblocking(pfd.fd, buf, sizeof(buf));
                 if (n > 0) {
-                    auto& slot = slots[poll_map[i].slot_idx];
+                    auto& slot = slots[pfd.slot_index];
                     auto data = std::string_view { buf, static_cast<std::size_t>(n) };
-                    if (poll_map[i].is_stderr) {
+                    if (pfd.is_stderr) {
                         slot.stderr_buf.append(data);
                     } else {
                         slot.stdout_buf.append(data);
                     }
                 } else if (n == 0) {
                     // EOF on this FD -- close it so we don't poll it again
-                    auto& slot = slots[poll_map[i].slot_idx];
-                    if (poll_map[i].is_stderr) {
-                        ::close(slot.stderr_fd);
-                        slot.stderr_fd = -1;
+                    auto& slot = slots[pfd.slot_index];
+                    if (pfd.is_stderr) {
+                        pup::platform::close_fd(slot.process.stderr_fd);
+                        slot.process.stderr_fd = -1;
                     } else {
-                        ::close(slot.stdout_fd);
-                        slot.stdout_fd = -1;
+                        pup::platform::close_fd(slot.process.stdout_fd);
+                        slot.process.stdout_fd = -1;
                     }
                 }
             }
@@ -1067,21 +973,20 @@ auto Scheduler::execute_parallel(
             if (impl_->options.timeout) {
                 auto elapsed = pup::SteadyClock::now() - slot.start_time;
                 if (elapsed >= *impl_->options.timeout) {
-                    ::kill(slot.pid, SIGKILL);
+                    pup::platform::send_signal(slot.process.pid, pup::platform::Signal::Kill);
                 }
             }
 
-            auto status = 0;
-            auto wpid = ::waitpid(slot.pid, &status, WNOHANG);
-            if (wpid <= 0) {
+            auto status = pup::platform::ProcessStatus {};
+            if (!pup::platform::try_reap(slot.process.pid, status)) {
                 continue; // Still running
             }
 
             // Drain any remaining pipe data before closing
-            char buf[4096];
-            if (slot.stdout_fd >= 0) {
+            char buf[4096]; // NOLINT(modernize-avoid-c-arrays)
+            if (slot.process.stdout_fd >= 0) {
                 while (true) {
-                    auto n = ::read(slot.stdout_fd, buf, sizeof(buf));
+                    auto n = pup::platform::read_nonblocking(slot.process.stdout_fd, buf, sizeof(buf));
                     if (n > 0) {
                         slot.stdout_buf.append(std::string_view { buf, static_cast<std::size_t>(n) });
                     } else {
@@ -1089,9 +994,9 @@ auto Scheduler::execute_parallel(
                     }
                 }
             }
-            if (slot.stderr_fd >= 0) {
+            if (slot.process.stderr_fd >= 0) {
                 while (true) {
-                    auto n = ::read(slot.stderr_fd, buf, sizeof(buf));
+                    auto n = pup::platform::read_nonblocking(slot.process.stderr_fd, buf, sizeof(buf));
                     if (n > 0) {
                         slot.stderr_buf.append(std::string_view { buf, static_cast<std::size_t>(n) });
                     } else {
@@ -1157,17 +1062,16 @@ auto Scheduler::execute_parallel(
             // Give children a moment to exit gracefully, escalate to SIGKILL
             for (auto si = std::size_t { 0 }; si < max_jobs; ++si) {
                 if (slots[si].active()) {
-                    auto status = 0;
-                    auto wpid = ::waitpid(slots[si].pid, &status, WNOHANG);
-                    if (wpid <= 0) {
-                        ::kill(slots[si].pid, SIGKILL);
-                        ::waitpid(slots[si].pid, &status, 0);
+                    auto ps = pup::platform::ProcessStatus {};
+                    if (!pup::platform::try_reap(slots[si].process.pid, ps)) {
+                        pup::platform::send_signal(slots[si].process.pid, pup::platform::Signal::Kill);
+                        pup::platform::reap(slots[si].process.pid, ps);
                     }
-                    if (slots[si].stdout_fd >= 0) {
-                        ::close(slots[si].stdout_fd);
+                    if (slots[si].process.stdout_fd >= 0) {
+                        pup::platform::close_fd(slots[si].process.stdout_fd);
                     }
-                    if (slots[si].stderr_fd >= 0) {
-                        ::close(slots[si].stderr_fd);
+                    if (slots[si].process.stderr_fd >= 0) {
+                        pup::platform::close_fd(slots[si].process.stderr_fd);
                     }
                     slots[si].reset();
                     --running;
