@@ -45,7 +45,7 @@ Build artifacts go to `build/`.
 
 ## Testing
 
-> **Testing Skills**: See [SKILL.md](SKILL.md) for E2E fixture conventions, test tags, and debugging tips.
+> **Testing Guide**: See [TESTING.md](TESTING.md) for E2E fixture conventions, test tags, and debugging tips.
 
 ```bash
 make test                                 # Run all tests
