@@ -9,8 +9,8 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
-#include "runner.hpp"
 
+#include <chrono>
 #include <optional>
 
 namespace pup::graph {
@@ -140,7 +140,7 @@ public:
 private:
     std::unique_ptr<Impl> impl_;
 
-    /// Execute jobs in parallel (or dispatch to sequential for jobs == 1)
+    /// Execute jobs in parallel using the async event loop
     auto execute_parallel(
         Vec<BuildJob> const& jobs,
         graph::BuildGraph const& graph

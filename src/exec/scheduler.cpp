@@ -473,21 +473,6 @@ struct Scheduler::Impl {
     JobStartCallback on_start;
     JobCompleteCallback on_complete;
     ProgressCallback on_progress;
-
-    auto execute_sequential(
-        Vec<BuildJob> const& jobs,
-        graph::BuildGraph const& graph,
-        EnvCache const& env_cache
-    ) -> Result<void>;
-
-    auto execute_job(
-        BuildJob const& job,
-        CommandRunner& runner,
-        EnvCache const& env_cache,
-        std::string_view source_root_sv,
-        std::string_view output_root_sv,
-        std::string_view output_root_prefix
-    ) -> JobResult;
 };
 
 Scheduler::Scheduler(SchedulerOptions options)
@@ -663,97 +648,12 @@ auto Scheduler::build_incremental(
     return impl_->stats;
 }
 
-auto Scheduler::Impl::execute_sequential(
-    Vec<BuildJob> const& jobs,
-    graph::BuildGraph const& graph,
-    EnvCache const& env_cache
-) -> Result<void>
-{
-    auto& pool = global_pool();
-    auto runner = CommandRunner {};
-    if (!is_empty(options.source_root)) {
-        runner.set_working_dir(options.source_root);
-    }
-    if (options.timeout) {
-        runner.set_timeout(*options.timeout); // NOLINT(bugprone-unchecked-optional-access)
-    }
-
-    auto source_root_sv = pool.get(options.source_root);
-    auto output_root_sv = pool.get(options.output_root);
-    auto output_root_prefix = pool.get(pup::path::relative(output_root_sv, source_root_sv));
-
-    auto [in_degree, dependents] = build_dependency_map(jobs, graph);
-
-    // Validate no active job depends on a skipped job
-    if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
-        return pup::unexpected<Error>(result.error());
-    }
-
-    // Count inactive jobs upfront (they never enter the queue)
-    auto inactive_count = std::count_if(jobs.begin(), jobs.end(), [](auto const& j) { return !j.guard_active; });
-    stats.skipped_jobs += static_cast<std::size_t>(inactive_count);
-
-    // Only queue active jobs with no dependencies
-    auto ready_queue = std::queue<std::size_t> {};
-    for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
-        if (in_degree[i] == 0 && jobs[i].guard_active) {
-            ready_queue.push(i);
-        }
-    }
-
-    while (!ready_queue.empty()) {
-        if (cancelled) {
-            break;
-        }
-
-        auto const job_idx = ready_queue.front();
-        ready_queue.pop();
-        auto const& job = jobs[job_idx];
-
-        if (on_start) {
-            on_start(job);
-        }
-
-        auto result = JobResult { execute_job(job, runner, env_cache, source_root_sv, output_root_sv, output_root_prefix) };
-
-        if (on_complete) {
-            on_complete(job, result);
-        }
-
-        stats.build_time += result.duration;
-
-        if (result.success) {
-            ++stats.completed_jobs;
-            for (auto dep_idx : dependents[job_idx]) {
-                if (--in_degree[dep_idx] == 0 && jobs[dep_idx].guard_active) {
-                    ready_queue.push(dep_idx);
-                }
-            }
-        } else {
-            ++stats.failed_jobs;
-            if (!options.keep_going) {
-                return make_error<void>(ErrorCode::CommandFailed, "Command failed");
-            }
-        }
-
-        if (on_progress) {
-            on_progress(stats.completed_jobs + stats.failed_jobs, stats.total_jobs);
-        }
-    }
-
-    return {};
-}
-
 auto Scheduler::execute_parallel(
     Vec<BuildJob> const& jobs,
     graph::BuildGraph const& graph
 ) -> Result<void>
 {
     auto const env_cache = build_env_cache(jobs);
-
-    if (impl_->options.jobs == 1 || jobs.size() == 1) {
-        return impl_->execute_sequential(jobs, graph, env_cache);
-    }
 
     auto& pool = global_pool();
 
@@ -1080,71 +980,6 @@ auto Scheduler::execute_parallel(
     }
 
     return {};
-}
-
-auto Scheduler::Impl::execute_job(
-    BuildJob const& job,
-    CommandRunner& runner,
-    EnvCache const& env_cache,
-    std::string_view source_root_sv,
-    std::string_view output_root_sv,
-    std::string_view output_root_prefix
-) -> JobResult
-{
-    auto& pool = global_pool();
-    auto result = JobResult {
-        .id = job.id,
-        .success = false,
-        .exit_code = 0,
-        .output = {},
-        .duration = {},
-    };
-
-    auto prepared = prepare_job_launch(job, env_cache, options, source_root_sv, output_root_sv, output_root_prefix);
-
-    if (options.dry_run) {
-        result.success = true;
-        return result;
-    }
-
-    auto run_opts = RunOptions {};
-    if (!is_empty(prepared.working_dir)) {
-        run_opts.working_dir = prepared.working_dir;
-    }
-    run_opts.env = std::move(prepared.env_ids);
-
-    auto cmd_result = runner.run(pool.get(job.command), run_opts);
-    if (!cmd_result) {
-        result.output = pool.intern("Failed to execute command");
-        return result;
-    }
-
-    result.exit_code = cmd_result->exit_code;
-    result.success = (cmd_result->exit_code == 0);
-    result.duration = cmd_result->duration;
-
-    auto stdout_sv = pool.get(cmd_result->stdout_output);
-    auto stderr_sv = pool.get(cmd_result->stderr_output);
-    auto output_buf = Buf {};
-    if (!stdout_sv.empty()) {
-        output_buf += stdout_sv;
-    }
-    if (!stderr_sv.empty()) {
-        if (!output_buf.empty()) {
-            output_buf += '\n';
-        }
-        output_buf += stderr_sv;
-    }
-    if (!output_buf.empty()) {
-        result.output = output_buf.intern(pool);
-    }
-
-    if (result.success) {
-        parse_stdout_depfile(job, stdout_sv, result.discovered_deps, result.deps_for_command);
-        discover_d_file_deps(job, result, source_root_sv, output_root_sv, output_root_prefix);
-    }
-
-    return result;
 }
 
 auto Scheduler::build_job_list(
