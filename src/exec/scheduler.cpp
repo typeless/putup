@@ -30,12 +30,6 @@
 #    include <poll.h>
 #    include <sys/wait.h>
 #    include <unistd.h>
-#    ifdef __APPLE__
-#        include <crt_externs.h>
-#        define environ (*_NSGetEnviron())
-#    else
-extern "C" char** environ; // NOLINT
-#    endif
 #endif
 
 namespace pup::exec {
