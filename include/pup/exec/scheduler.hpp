@@ -140,6 +140,14 @@ public:
 private:
     std::unique_ptr<Impl> impl_;
 
+    /// Core build loop shared by all public build methods.
+    /// When filter is non-null, only matching commands run.
+    [[nodiscard]]
+    auto run(
+        graph::BuildGraph const& graph,
+        NodeIdMap32 const* filter
+    ) -> Result<BuildStats>;
+
     /// Execute jobs in parallel using the async event loop
     auto execute_parallel(
         Vec<BuildJob> const& jobs,

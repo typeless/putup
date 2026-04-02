@@ -520,35 +520,42 @@ auto Scheduler::stats() const -> BuildStats
     return impl_->stats;
 }
 
-auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
+auto Scheduler::run(
+    graph::BuildGraph const& graph,
+    NodeIdMap32 const* filter
+) -> Result<BuildStats>
 {
-    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->cancelled = false;
     impl_->stats = BuildStats {};
 
-    // Build job list in topological order
-    auto jobs_result = build_job_list(graph);
-    if (!jobs_result) {
-        return pup::unexpected<Error>(jobs_result.error());
+    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
+
+    auto all_jobs = build_job_list(graph);
+    if (!all_jobs) {
+        return pup::unexpected<Error>(all_jobs.error());
     }
 
-    auto& jobs = *jobs_result;
+    auto jobs = Vec<BuildJob> {};
+    if (filter) {
+        jobs = filter_jobs(*all_jobs, *filter);
+        impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
+    } else {
+        jobs = std::move(*all_jobs);
+    }
+
     impl_->stats.total_jobs = jobs.size();
 
     if (jobs.empty()) {
-        auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end_time - start_time
+            pup::SteadyClock::now() - start_time
         );
         return impl_->stats;
     }
 
-    // Execute jobs
     auto exec_result = execute_parallel(jobs, graph);
 
-    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-        end_time - start_time
+        pup::SteadyClock::now() - start_time
     );
 
     if (!exec_result && !impl_->options.keep_going) {
@@ -556,6 +563,11 @@ auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
     }
 
     return impl_->stats;
+}
+
+auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
+{
+    return run(graph, nullptr);
 }
 
 auto Scheduler::build_incremental(
@@ -626,7 +638,7 @@ auto Scheduler::build_incremental(
         }
     }
 
-    return build_subset(graph, affected);
+    return run(graph, &affected);
 }
 
 auto Scheduler::execute_parallel(
@@ -1126,40 +1138,7 @@ auto Scheduler::build_subset(
     NodeIdMap32 const& command_ids
 ) -> Result<BuildStats>
 {
-    auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-    impl_->cancelled = false;
-    impl_->stats = BuildStats {};
-
-    // Build all jobs, then filter to the subset
-    auto all_jobs = build_job_list(graph);
-    if (!all_jobs) {
-        return pup::unexpected<Error>(all_jobs.error());
-    }
-
-    auto jobs = filter_jobs(*all_jobs, command_ids);
-    impl_->stats.total_jobs = jobs.size();
-    impl_->stats.skipped_jobs = all_jobs->size() - jobs.size();
-
-    if (jobs.empty()) {
-        auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-        impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end_time - start_time
-        );
-        return impl_->stats;
-    }
-
-    auto exec_result = execute_parallel(jobs, graph);
-
-    auto end_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-    impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-        end_time - start_time
-    );
-
-    if (!exec_result && !impl_->options.keep_going) {
-        return pup::unexpected<Error>(exec_result.error());
-    }
-
-    return impl_->stats;
+    return run(graph, &command_ids);
 }
 
 auto Scheduler::build_targets(
@@ -1167,7 +1146,8 @@ auto Scheduler::build_targets(
     Vec<NodeId> const& target_ids
 ) -> Result<BuildStats>
 {
-    return build_subset(graph, collect_required_commands(graph, target_ids));
+    auto cmds = collect_required_commands(graph, target_ids);
+    return run(graph, &cmds);
 }
 
 auto Scheduler::filter_jobs(
