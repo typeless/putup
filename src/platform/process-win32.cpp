@@ -434,9 +434,9 @@ auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>
     CloseHandle(pi.hThread);
 
     return AsyncProcess {
-        .pid = reinterpret_cast<std::intptr_t>(pi.hProcess),    // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        .stdout_fd = reinterpret_cast<std::intptr_t>(stdout_read),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        .stderr_fd = reinterpret_cast<std::intptr_t>(stderr_read),  // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        .pid = reinterpret_cast<std::intptr_t>(pi.hProcess),       // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        .stdout_fd = reinterpret_cast<std::intptr_t>(stdout_read), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        .stderr_fd = reinterpret_cast<std::intptr_t>(stderr_read), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     };
 }
 
@@ -448,7 +448,7 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
     }
 
     // Save original fds for restoration on ready
-    std::intptr_t stack_originals[64]; // NOLINT(modernize-avoid-c-arrays)
+    std::intptr_t stack_originals[64];                                          // NOLINT(modernize-avoid-c-arrays)
     auto* originals = count <= 64 ? stack_originals : new std::intptr_t[count]; // NOLINT
     for (std::size_t i = 0; i < count; ++i) {
         originals[i] = fds[i].fd;
@@ -478,12 +478,16 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
         }
 
         if (found > 0) {
-            if (count > 64) { delete[] originals; } // NOLINT
+            if (count > 64) {
+                delete[] originals;
+            } // NOLINT
             return found;
         }
 
         if (!infinite && GetTickCount64() >= deadline) {
-            if (count > 64) { delete[] originals; } // NOLINT
+            if (count > 64) {
+                delete[] originals;
+            } // NOLINT
             return 0;
         }
 

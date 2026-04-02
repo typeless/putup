@@ -451,7 +451,7 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
 
     // Build pollfd array on stack for typical sizes, heap for large
     constexpr auto stack_limit = std::size_t { 64 };
-    pollfd stack_buf[stack_limit]; // NOLINT(modernize-avoid-c-arrays)
+    pollfd stack_buf[stack_limit];                                     // NOLINT(modernize-avoid-c-arrays)
     auto* pfds = count <= stack_limit ? stack_buf : new pollfd[count]; // NOLINT
 
     for (auto i = std::size_t { 0 }; i < count; ++i) {

@@ -76,7 +76,10 @@ struct AsyncProcess final {
     std::intptr_t stderr_fd = -1;
 
     [[nodiscard]]
-    auto active() const -> bool { return pid != -1; }
+    auto active() const -> bool
+    {
+        return pid != -1;
+    }
 };
 
 struct SpawnOptions final {
@@ -96,7 +99,8 @@ struct PollableFd final {
     std::size_t slot_index;
 };
 
-enum class Signal { Terminate, Kill };
+enum class Signal { Terminate,
+                    Kill };
 
 [[nodiscard]]
 auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>;
