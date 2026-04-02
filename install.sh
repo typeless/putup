@@ -156,7 +156,7 @@ main() {
     detect_platform
     resolve_version
 
-    INSTALL_DIR="${PUTUP_INSTALL_DIR:-${HOME}/.local/bin}"
+    INSTALL_DIR="${PUTUP_INSTALL_DIR:-${HOME:?HOME is not set. Use PUTUP_INSTALL_DIR to specify an install location.}/.local/bin}"
     mkdir -p "${INSTALL_DIR}"
 
     RELEASE_URL="${BASE_URL}/releases/download/${VERSION}"
@@ -187,7 +187,7 @@ main() {
         if test -z "${actual}"; then
             warn "No sha256 tool found. Skipping checksum verification."
         else
-            expected=$(grep "${BINARY_NAME}" "${tmpdir}/sha256sums.txt" | cut -d' ' -f1)
+            expected=$(grep " ${BINARY_NAME}\$" "${tmpdir}/sha256sums.txt" | cut -d' ' -f1)
             if test -z "${expected}"; then
                 warn "Binary not found in checksums file. Skipping verification."
             elif test "${actual}" != "${expected}"; then
@@ -202,16 +202,28 @@ main() {
         fi
     fi
 
-    # Install binary
-    install -m 755 "${tmpdir}/${BINARY_NAME}" "${INSTALL_DIR}/putup"
+    # Install binary (use .exe on Windows)
+    case "${OS}" in
+        MINGW*|MSYS*|CYGWIN*)
+            EXE_NAME="putup.exe"
+            ALIAS_NAME="pup.exe"
+            ;;
+        *)
+            EXE_NAME="putup"
+            ALIAS_NAME="pup"
+            ;;
+    esac
 
-    # Create pup symlink
-    ln -sf putup "${INSTALL_DIR}/pup"
+    install -m 755 "${tmpdir}/${BINARY_NAME}" "${INSTALL_DIR}/${EXE_NAME}"
+
+    # Create pup symlink/copy
+    ln -sf "${EXE_NAME}" "${INSTALL_DIR}/${ALIAS_NAME}" 2>/dev/null \
+        || cp "${INSTALL_DIR}/${EXE_NAME}" "${INSTALL_DIR}/${ALIAS_NAME}"
 
     # Verify
-    if "${INSTALL_DIR}/putup" --version >/dev/null 2>&1; then
-        installed_version=$("${INSTALL_DIR}/putup" --version | head -1)
-        success "Installed ${installed_version} to ${INSTALL_DIR}/putup"
+    if "${INSTALL_DIR}/${EXE_NAME}" --version >/dev/null 2>&1; then
+        installed_version=$("${INSTALL_DIR}/${EXE_NAME}" --version | head -1)
+        success "Installed ${installed_version} to ${INSTALL_DIR}/${EXE_NAME}"
     else
         warn "Binary installed but failed to execute. Check platform compatibility."
     fi
