@@ -249,20 +249,15 @@ auto run_process_with_callback(
                     }
                     stdout_buf.append(data);
                 }
-            } else {
-                // Check if process has exited
-                auto exit_code = DWORD {};
-                if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != STILL_ACTIVE) {
-                    // Read any remaining data
-                    while (ReadFile(stdout_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
-                        auto data = std::string_view { buffer, bytes_read };
-                        if (callback) {
-                            callback(data, false, user_data);
-                        }
-                        stdout_buf.append(data);
+            } else if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+                while (ReadFile(stdout_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
+                    auto data = std::string_view { buffer, bytes_read };
+                    if (callback) {
+                        callback(data, false, user_data);
                     }
-                    stdout_open = false;
+                    stdout_buf.append(data);
                 }
+                stdout_open = false;
             }
         }
 
@@ -276,18 +271,15 @@ auto run_process_with_callback(
                     }
                     stderr_buf.append(data);
                 }
-            } else {
-                auto exit_code = DWORD {};
-                if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != STILL_ACTIVE) {
-                    while (ReadFile(stderr_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
-                        auto data = std::string_view { buffer, bytes_read };
-                        if (callback) {
-                            callback(data, true, user_data);
-                        }
-                        stderr_buf.append(data);
+            } else if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+                while (ReadFile(stderr_read, buffer, sizeof(buffer), &bytes_read, nullptr) && bytes_read > 0) {
+                    auto data = std::string_view { buffer, bytes_read };
+                    if (callback) {
+                        callback(data, true, user_data);
                     }
-                    stderr_open = false;
+                    stderr_buf.append(data);
                 }
+                stderr_open = false;
             }
         }
 
@@ -551,7 +543,7 @@ auto send_signal(std::intptr_t pid, Signal /*sig*/) -> void
 {
     // Windows has no graceful termination signal (SIGTERM equivalent) for
     // console processes. Both Terminate and Kill map to TerminateProcess.
-    assert(pid != -1);
+    assert(pid > 0 && "send_signal called with invalid pid");
     auto h = reinterpret_cast<HANDLE>(pid); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     TerminateProcess(h, 1);
 }

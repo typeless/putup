@@ -105,6 +105,7 @@ enum class Signal { Terminate,
 [[nodiscard]]
 auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>;
 
+/// POSIX: event-driven via poll(2). Windows: ~1ms polling via PeekNamedPipe.
 [[nodiscard]]
 auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int;
 
