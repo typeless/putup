@@ -436,7 +436,11 @@ auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>
     ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
     ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
 
-    return AsyncProcess { .pid = pid, .stdout_fd = stdout_pipe[0], .stderr_fd = stderr_pipe[0] };
+    return AsyncProcess {
+        .pid = static_cast<std::intptr_t>(pid),
+        .stdout_fd = static_cast<std::intptr_t>(stdout_pipe[0]),
+        .stderr_fd = static_cast<std::intptr_t>(stderr_pipe[0]),
+    };
 }
 
 auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
@@ -451,7 +455,7 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
     auto* pfds = count <= stack_limit ? stack_buf : new pollfd[count]; // NOLINT
 
     for (auto i = std::size_t { 0 }; i < count; ++i) {
-        pfds[i].fd = fds[i].fd;
+        pfds[i].fd = static_cast<int>(fds[i].fd);
         pfds[i].events = POLLIN;
         pfds[i].revents = 0;
     }
@@ -476,24 +480,24 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
     return result;
 }
 
-auto read_nonblocking(int fd, char* buf, std::size_t size) -> int
+auto read_nonblocking(std::intptr_t fd, char* buf, std::size_t size) -> int
 {
-    auto n = ::read(fd, buf, size);
+    auto n = ::read(static_cast<int>(fd), buf, size);
     if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         return -1;
     }
     return static_cast<int>(n);
 }
 
-auto close_fd(int fd) -> void
+auto close_fd(std::intptr_t fd) -> void
 {
-    ::close(fd);
+    ::close(static_cast<int>(fd));
 }
 
-auto try_reap(int pid, ProcessStatus& out) -> bool
+auto try_reap(std::intptr_t pid, ProcessStatus& out) -> bool
 {
     auto status = 0;
-    auto wpid = ::waitpid(pid, &status, WNOHANG);
+    auto wpid = ::waitpid(static_cast<pid_t>(pid), &status, WNOHANG);
     if (wpid <= 0) {
         return false;
     }
@@ -507,10 +511,10 @@ auto try_reap(int pid, ProcessStatus& out) -> bool
     return true;
 }
 
-auto reap(int pid, ProcessStatus& out) -> void
+auto reap(std::intptr_t pid, ProcessStatus& out) -> void
 {
     auto status = 0;
-    ::waitpid(pid, &status, 0);
+    ::waitpid(static_cast<pid_t>(pid), &status, 0);
 
     out.exited = true;
     if (WIFEXITED(status)) {
@@ -520,10 +524,10 @@ auto reap(int pid, ProcessStatus& out) -> void
     }
 }
 
-auto send_signal(int pid, Signal sig) -> void
+auto send_signal(std::intptr_t pid, Signal sig) -> void
 {
     assert(pid > 0 && "send_signal called with invalid pid");
-    ::kill(pid, sig == Signal::Kill ? SIGKILL : SIGTERM);
+    ::kill(static_cast<pid_t>(pid), sig == Signal::Kill ? SIGKILL : SIGTERM);
 }
 
 } // namespace pup::platform

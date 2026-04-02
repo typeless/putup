@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -70,12 +71,12 @@ auto run_parallel_tasks(
 ) -> int;
 
 struct AsyncProcess final {
-    int pid = -1;
-    int stdout_fd = -1;
-    int stderr_fd = -1;
+    std::intptr_t pid = -1;
+    std::intptr_t stdout_fd = -1;
+    std::intptr_t stderr_fd = -1;
 
     [[nodiscard]]
-    auto active() const -> bool { return pid > 0; }
+    auto active() const -> bool { return pid != -1; }
 };
 
 struct SpawnOptions final {
@@ -90,7 +91,7 @@ struct ProcessStatus final {
 };
 
 struct PollableFd final {
-    int fd;
+    std::intptr_t fd;
     bool is_stderr;
     std::size_t slot_index;
 };
@@ -104,15 +105,15 @@ auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>;
 auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int;
 
 [[nodiscard]]
-auto read_nonblocking(int fd, char* buf, std::size_t size) -> int;
+auto read_nonblocking(std::intptr_t fd, char* buf, std::size_t size) -> int;
 
-auto close_fd(int fd) -> void;
+auto close_fd(std::intptr_t fd) -> void;
 
 [[nodiscard]]
-auto try_reap(int pid, ProcessStatus& out) -> bool;
+auto try_reap(std::intptr_t pid, ProcessStatus& out) -> bool;
 
-auto reap(int pid, ProcessStatus& out) -> void;
+auto reap(std::intptr_t pid, ProcessStatus& out) -> void;
 
-auto send_signal(int pid, Signal sig) -> void;
+auto send_signal(std::intptr_t pid, Signal sig) -> void;
 
 } // namespace pup::platform

@@ -352,29 +352,29 @@ auto poll_fds(PollableFd* /*fds*/, std::size_t /*count*/, int /*timeout_ms*/) ->
     return -1;
 }
 
-auto read_nonblocking(int /*fd*/, char* /*buf*/, std::size_t /*size*/) -> int
+auto read_nonblocking(std::intptr_t /*fd*/, char* /*buf*/, std::size_t /*size*/) -> int
 {
     assert(false && "read_nonblocking not supported on Windows");
     return -1;
 }
 
-auto close_fd(int /*fd*/) -> void
+auto close_fd(std::intptr_t /*fd*/) -> void
 {
     assert(false && "close_fd not supported on Windows");
 }
 
-auto try_reap(int /*pid*/, ProcessStatus& /*out*/) -> bool
+auto try_reap(std::intptr_t /*pid*/, ProcessStatus& /*out*/) -> bool
 {
     assert(false && "try_reap not supported on Windows");
     return false;
 }
 
-auto reap(int /*pid*/, ProcessStatus& /*out*/) -> void
+auto reap(std::intptr_t /*pid*/, ProcessStatus& /*out*/) -> void
 {
     assert(false && "reap not supported on Windows");
 }
 
-auto send_signal(int /*pid*/, Signal /*sig*/) -> void
+auto send_signal(std::intptr_t /*pid*/, Signal /*sig*/) -> void
 {
     assert(false && "send_signal not supported on Windows");
 }

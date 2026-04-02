@@ -445,10 +445,10 @@ auto reap_slot(JobSlot& slot, pup::platform::ProcessStatus const& status) -> Job
         result.output = pool.intern(output_buf.view());
     }
 
-    if (slot.process.stdout_fd >= 0) {
+    if (slot.process.stdout_fd != -1) {
         pup::platform::close_fd(slot.process.stdout_fd);
     }
-    if (slot.process.stderr_fd >= 0) {
+    if (slot.process.stderr_fd != -1) {
         pup::platform::close_fd(slot.process.stderr_fd);
     }
 
@@ -898,10 +898,10 @@ auto Scheduler::execute_parallel(
             if (!slots[i].active()) {
                 continue;
             }
-            if (slots[i].process.stdout_fd >= 0) {
+            if (slots[i].process.stdout_fd != -1) {
                 pfds.push_back({ .fd = slots[i].process.stdout_fd, .is_stderr = false, .slot_index = i });
             }
-            if (slots[i].process.stderr_fd >= 0) {
+            if (slots[i].process.stderr_fd != -1) {
                 pfds.push_back({ .fd = slots[i].process.stderr_fd, .is_stderr = true, .slot_index = i });
             }
         }
@@ -935,7 +935,7 @@ auto Scheduler::execute_parallel(
         if (poll_result > 0) {
             char buf[4096]; // NOLINT(modernize-avoid-c-arrays)
             for (auto& pfd : pfds) {
-                if (pfd.fd < 0) {
+                if (pfd.fd == -1) {
                     continue; // marked not-ready by poll_fds
                 }
                 auto n = pup::platform::read_nonblocking(pfd.fd, buf, sizeof(buf));
@@ -983,7 +983,7 @@ auto Scheduler::execute_parallel(
 
             // Drain any remaining pipe data before closing
             char buf[4096]; // NOLINT(modernize-avoid-c-arrays)
-            if (slot.process.stdout_fd >= 0) {
+            if (slot.process.stdout_fd != -1) {
                 while (true) {
                     auto n = pup::platform::read_nonblocking(slot.process.stdout_fd, buf, sizeof(buf));
                     if (n > 0) {
@@ -993,7 +993,7 @@ auto Scheduler::execute_parallel(
                     }
                 }
             }
-            if (slot.process.stderr_fd >= 0) {
+            if (slot.process.stderr_fd != -1) {
                 while (true) {
                     auto n = pup::platform::read_nonblocking(slot.process.stderr_fd, buf, sizeof(buf));
                     if (n > 0) {
@@ -1066,10 +1066,10 @@ auto Scheduler::execute_parallel(
                         pup::platform::send_signal(slots[si].process.pid, pup::platform::Signal::Kill);
                         pup::platform::reap(slots[si].process.pid, ps);
                     }
-                    if (slots[si].process.stdout_fd >= 0) {
+                    if (slots[si].process.stdout_fd != -1) {
                         pup::platform::close_fd(slots[si].process.stdout_fd);
                     }
-                    if (slots[si].process.stderr_fd >= 0) {
+                    if (slots[si].process.stderr_fd != -1) {
                         pup::platform::close_fd(slots[si].process.stderr_fd);
                     }
                     slots[si].reset();
