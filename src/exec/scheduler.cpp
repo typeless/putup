@@ -359,6 +359,74 @@ auto collect_required_commands(
     return commands;
 }
 
+/// Compute all commands affected by the given changed files.
+/// Uses forward traversal: starts at changed inputs, walks forward through outputs.
+auto collect_affected_commands(
+    graph::BuildGraph const& graph,
+    Vec<StringId> const& changed_files
+) -> NodeIdMap32
+{
+    auto& pool = global_pool();
+
+    auto path_to_id = Vec<std::pair<std::string_view, NodeId>> {};
+    for (auto id : graph.all_nodes()) {
+        auto path_id = graph.get_full_path(id);
+        if (!is_empty(path_id)) {
+            path_to_id.emplace_back(pool.get(path_id), id);
+        }
+    }
+    std::sort(path_to_id.begin(), path_to_id.end());
+
+    auto affected = NodeIdMap32 {};
+    auto to_process = Vec<NodeId> {};
+
+    for (auto file_id : changed_files) {
+        auto file_path = pool.get(file_id);
+        auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
+        if (it != path_to_id.end() && it->first == file_path) {
+            auto id = it->second;
+            if (!affected.contains(id)) {
+                affected.set(id, 1);
+                to_process.push_back(id);
+            }
+
+            auto const* node = graph.get_file_node(id);
+            if (node && node->type == NodeType::Generated) {
+                for (auto input_id : graph.get_inputs(id)) {
+                    if (!affected.contains(input_id)) {
+                        affected.set(input_id, 1);
+                        to_process.push_back(input_id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Expand to include all dependent commands (including order-only).
+    // get_outputs() excludes sticky edges by design (Tupfile/config dependencies
+    // are parse-time deps, not build-time deps).
+    while (!to_process.empty()) {
+        auto id = NodeId { to_process.back() };
+        to_process.pop_back();
+
+        for (auto dep_id : graph.get_outputs(id)) {
+            if (!affected.contains(dep_id)) {
+                affected.set(dep_id, 1);
+                to_process.push_back(dep_id);
+            }
+        }
+
+        for (auto dep_id : graph.get_order_only_dependents(id)) {
+            if (!affected.contains(dep_id)) {
+                affected.set(dep_id, 1);
+                to_process.push_back(dep_id);
+            }
+        }
+    }
+
+    return affected;
+}
+
 struct JobSlot {
     pup::platform::AsyncProcess process = {};
     HeapBuf stdout_buf = {};
@@ -575,69 +643,7 @@ auto Scheduler::build_incremental(
     Vec<StringId> const& changed_files
 ) -> Result<BuildStats>
 {
-    auto& pool = global_pool();
-
-    // Build temporary path-to-NodeId map for changed file lookup
-    // This is O(n) scan but only done once per incremental build
-    auto path_to_id = Vec<std::pair<std::string_view, NodeId>> {};
-    for (auto id : graph.all_nodes()) {
-        auto path_id = graph.get_full_path(id);
-        if (!is_empty(path_id)) {
-            path_to_id.emplace_back(pool.get(path_id), id);
-        }
-    }
-    std::sort(path_to_id.begin(), path_to_id.end());
-
-    // Find all nodes affected by changes
-    auto affected = NodeIdMap32 {};
-    auto affected_vec = Vec<NodeId> {};
-    for (auto file_id : changed_files) {
-        auto file_path = pool.get(file_id);
-        auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
-        if (it != path_to_id.end() && it->first == file_path) {
-            auto id = it->second;
-            if (!affected.contains(id)) {
-                affected.set(id, 1);
-                affected_vec.push_back(id);
-            }
-
-            // For generated files that are missing/changed, also mark the producing command
-            auto const* node = graph.get_file_node(id);
-            if (node && node->type == NodeType::Generated) {
-                for (auto input_id : graph.get_inputs(id)) {
-                    if (!affected.contains(input_id)) {
-                        affected.set(input_id, 1);
-                        affected_vec.push_back(input_id);
-                    }
-                }
-            }
-        }
-    }
-
-    // Expand to include all dependent commands (including order-only)
-    // get_outputs() excludes sticky edges by design (Tupfile/config dependencies
-    // are parse-time deps, not build-time deps)
-    auto to_process = Vec<NodeId> { affected_vec };
-
-    while (!to_process.empty()) {
-        auto id = NodeId { to_process.back() };
-        to_process.pop_back();
-
-        for (auto dep_id : graph.get_outputs(id)) {
-            if (!affected.contains(dep_id)) {
-                affected.set(dep_id, 1);
-                to_process.push_back(dep_id);
-            }
-        }
-
-        for (auto dep_id : graph.get_order_only_dependents(id)) {
-            if (!affected.contains(dep_id)) {
-                affected.set(dep_id, 1);
-                to_process.push_back(dep_id);
-            }
-        }
-    }
-
+    auto affected = collect_affected_commands(graph, changed_files);
     return run(graph, &affected);
 }
 
