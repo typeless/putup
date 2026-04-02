@@ -443,18 +443,19 @@ auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>
 auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
 {
     if (count == 0) {
-        Sleep(static_cast<DWORD>(std::min(timeout_ms, 100)));
+        Sleep(static_cast<DWORD>(std::max(std::min(timeout_ms, 100), 0)));
         return 0;
     }
 
     // Save original fds for restoration on ready
-    auto originals = Vec<std::intptr_t> {};
-    originals.reserve(count);
+    std::intptr_t stack_originals[64]; // NOLINT(modernize-avoid-c-arrays)
+    auto* originals = count <= 64 ? stack_originals : new std::intptr_t[count]; // NOLINT
     for (std::size_t i = 0; i < count; ++i) {
-        originals.push_back(fds[i].fd);
+        originals[i] = fds[i].fd;
     }
 
-    auto deadline = GetTickCount64() + static_cast<ULONGLONG>(timeout_ms);
+    auto const infinite = timeout_ms < 0;
+    auto const deadline = infinite ? ULONGLONG { 0 } : GetTickCount64() + static_cast<ULONGLONG>(timeout_ms);
 
     for (;;) {
         auto found = 0;
@@ -469,19 +470,20 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
             auto ok = PeekNamedPipe(h, nullptr, 0, nullptr, &available, nullptr);
 
             if (!ok || available > 0) {
-                // Ready: has data or pipe broken (EOF)
                 fds[i].fd = originals[i];
                 ++found;
             } else {
-                fds[i].fd = -1; // No data, pipe alive — not ready
+                fds[i].fd = -1;
             }
         }
 
         if (found > 0) {
+            if (count > 64) { delete[] originals; } // NOLINT
             return found;
         }
 
-        if (GetTickCount64() >= deadline) {
+        if (!infinite && GetTickCount64() >= deadline) {
+            if (count > 64) { delete[] originals; } // NOLINT
             return 0;
         }
 
@@ -517,15 +519,16 @@ auto close_fd(std::intptr_t fd) -> void
 auto try_reap(std::intptr_t pid, ProcessStatus& out) -> bool
 {
     auto h = reinterpret_cast<HANDLE>(pid); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    // Use WaitForSingleObject(0) instead of just GetExitCodeProcess to avoid
+    // false positive when process exits with code 259 (STILL_ACTIVE)
+    if (WaitForSingleObject(h, 0) != WAIT_OBJECT_0) {
+        return false;
+    }
     auto code = DWORD { 0 };
-    if (!GetExitCodeProcess(h, &code)) {
-        return false;
-    }
-    if (code == STILL_ACTIVE) {
-        return false;
-    }
+    GetExitCodeProcess(h, &code);
     out.exited = true;
     out.exit_code = static_cast<int>(code);
+    CloseHandle(h); // match POSIX semantic: successful try_reap consumes the process
     return true;
 }
 
@@ -542,6 +545,8 @@ auto reap(std::intptr_t pid, ProcessStatus& out) -> void
 
 auto send_signal(std::intptr_t pid, Signal /*sig*/) -> void
 {
+    // Windows has no graceful termination signal (SIGTERM equivalent) for
+    // console processes. Both Terminate and Kill map to TerminateProcess.
     assert(pid != -1);
     auto h = reinterpret_cast<HANDLE>(pid); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     TerminateProcess(h, 1);
