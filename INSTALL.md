@@ -1,5 +1,15 @@
 # Installation
 
+## Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/typeless/putup/main/install.sh | sh
+```
+
+Options:
+- `PUTUP_VERSION=v0.1.0` — install a specific version
+- `PUTUP_INSTALL_DIR=/usr/local/bin` — install to a custom directory (default: `~/.local/bin`)
+
 ## Requirements
 
 - C++20 compiler: GCC 11+ or Clang 14+

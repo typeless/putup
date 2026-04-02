@@ -78,6 +78,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+      - name: Generate checksums
+        run: |
+          sha256sum \
+            putup-linux-x86_64/putup-linux-x86_64 \
+            putup-macos-arm64/putup-macos-arm64 \
+            putup-windows-x86_64.exe/putup-windows-x86_64.exe \
+            | sed 's|[^ ]*/||' > sha256sums.txt
+          cat sha256sums.txt
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
@@ -85,4 +93,5 @@ jobs:
             putup-linux-x86_64/putup-linux-x86_64
             putup-macos-arm64/putup-macos-arm64
             putup-windows-x86_64.exe/putup-windows-x86_64.exe
+            sha256sums.txt
           generate_release_notes: true
