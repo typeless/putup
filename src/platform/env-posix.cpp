@@ -2,7 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/clock.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/env.hpp"
 
 #include <cstdlib>
@@ -25,6 +27,14 @@ auto unset_env(std::string_view name) -> void
 } // namespace pup::platform
 
 namespace pup {
+
+auto get_platform() -> StringId
+{
+    if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+        return global_pool().intern(env);
+    }
+    return global_pool().intern(PLATFORM);
+}
 
 auto cpu_count() -> std::size_t
 {

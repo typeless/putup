@@ -3,11 +3,8 @@
 
 #pragma once
 
-#include "pup/core/global_pool.hpp"
-#include "pup/core/path.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 
 #include <optional>
@@ -33,34 +30,19 @@ struct ProjectLayout {
     }
 
     [[nodiscard]]
-    auto pup_dir() const -> StringId
-    {
-        return path::join(global_pool().get(output_root), ".pup");
-    }
+    auto pup_dir() const -> StringId;
 
     [[nodiscard]]
-    auto index_path() const -> StringId
-    {
-        return path::join(global_pool().get(pup_dir()), "index");
-    }
+    auto index_path() const -> StringId;
 
     [[nodiscard]]
-    auto resolve_source(std::string_view rel) const -> StringId
-    {
-        return path::join(global_pool().get(source_root), rel);
-    }
+    auto resolve_source(std::string_view rel) const -> StringId;
 
     [[nodiscard]]
-    auto resolve_config(std::string_view rel) const -> StringId
-    {
-        return path::join(global_pool().get(config_root), rel);
-    }
+    auto resolve_config(std::string_view rel) const -> StringId;
 
     [[nodiscard]]
-    auto resolve_output(std::string_view rel) const -> StringId
-    {
-        return path::join(global_pool().get(output_root), rel);
-    }
+    auto resolve_output(std::string_view rel) const -> StringId;
 };
 
 struct LayoutOptions {

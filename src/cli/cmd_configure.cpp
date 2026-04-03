@@ -8,6 +8,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/exec/scheduler.hpp"

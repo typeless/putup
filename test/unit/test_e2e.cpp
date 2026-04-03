@@ -3,6 +3,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "pup/core/heap_buf.hpp"
 
 using namespace pup::test;
 using pup::HeapBuf;

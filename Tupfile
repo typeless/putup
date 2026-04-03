@@ -11,6 +11,7 @@ srcs-y += src/core/id_bitset.cpp
 srcs-y += src/core/layout.cpp
 srcs-y += src/core/metrics.cpp
 srcs-y += src/core/path.cpp
+srcs-y += src/core/result.cpp
 srcs-y += src/core/global_pool.cpp
 srcs-y += src/core/buf.cpp
 srcs-y += src/core/heap_buf.cpp

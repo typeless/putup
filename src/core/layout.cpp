@@ -3,12 +3,40 @@
 
 #include "pup/core/layout.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
 #include <cstdlib>
 
 namespace pup {
+
+auto ProjectLayout::pup_dir() const -> StringId
+{
+    return path::join(global_pool().get(output_root), ".pup");
+}
+
+auto ProjectLayout::index_path() const -> StringId
+{
+    return path::join(global_pool().get(pup_dir()), "index");
+}
+
+auto ProjectLayout::resolve_source(std::string_view rel) const -> StringId
+{
+    return path::join(global_pool().get(source_root), rel);
+}
+
+auto ProjectLayout::resolve_config(std::string_view rel) const -> StringId
+{
+    return path::join(global_pool().get(config_root), rel);
+}
+
+auto ProjectLayout::resolve_output(std::string_view rel) const -> StringId
+{
+    return path::join(global_pool().get(output_root), rel);
+}
 
 namespace {
 

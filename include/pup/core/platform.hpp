@@ -3,11 +3,9 @@
 
 #pragma once
 
-#include "pup/core/global_pool.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/string_pool.hpp"
 
-#include <cstdlib>
+#include <cstddef>
 #include <string_view>
 
 namespace pup {
@@ -46,13 +44,7 @@ inline constexpr auto ARCH = std::string_view { "unknown" };
 
 /// Get platform string at runtime (checks TUP_PLATFORM env var first)
 [[nodiscard]]
-inline auto get_platform() -> StringId
-{
-    if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
-        return global_pool().intern(env);
-    }
-    return global_pool().intern(PLATFORM);
-}
+auto get_platform() -> StringId;
 
 /// Number of available CPU cores (for -j auto-detection)
 [[nodiscard]]
