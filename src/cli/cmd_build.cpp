@@ -1276,13 +1276,22 @@ auto build_single_variant(
         filter.intersect_with(std::move(scope_cmds), bs.graph);
     }
 
-    if (!config_cmds.empty() && !filter.active) {
-        for (auto id : pup::graph::all_nodes(bs.graph)) {
-            if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
-                filter.set.set(id, 1);
+    // Exclude config-generating commands from all build paths
+    if (!config_cmds.empty()) {
+        if (!filter.active) {
+            // No other filter: build everything except config commands
+            for (auto id : pup::graph::all_nodes(bs.graph)) {
+                if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
+                    filter.set.set(id, 1);
+                }
+            }
+            filter.active = true;
+        } else {
+            // Other filters active: strip config commands from the result
+            for (auto const& cfg : config_cmds) {
+                filter.set.remove(cfg.cmd_id);
             }
         }
-        filter.active = true;
     }
 
     auto build_result = scheduler.build(bs, filter.ptr());
