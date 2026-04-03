@@ -23,7 +23,6 @@
 #include "pup/exec/progress_display.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
-#include "pup/graph/dep_scanner.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/platform/file_io.hpp"

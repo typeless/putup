@@ -69,6 +69,18 @@ format-check:
 	@echo "Checking format..."
 	@find src include -name '*.cpp' -o -name '*.hpp' | xargs clang-format --dry-run --Werror
 
+iwyu: compdb
+	@echo "Checking includes..."
+	@fail=0; \
+	for f in $$(find src include/pup -name '*.cpp' -o -name '*.hpp' | grep -v third_party | sort); do \
+		changes=$$(clang-include-cleaner-18 -p . --print=changes "$$f" 2>/dev/null | grep "^- "); \
+		if [ -n "$$changes" ]; then \
+			echo "$$f:"; echo "$$changes"; fail=1; \
+		fi; \
+	done; \
+	if [ "$$fail" -eq 1 ]; then echo "Dead includes found."; exit 1; fi; \
+	echo "No dead includes found."
+
 check: format-check tidy test
 	@echo "All checks passed."
 

@@ -17,8 +17,6 @@
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
-#include "pup/graph/dep_scanner.hpp"
-#include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/reader.hpp"

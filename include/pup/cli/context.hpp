@@ -7,6 +7,7 @@
 #include "pup/core/function.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/vec.hpp"
+#include "pup/graph/dep_scanner.hpp"
 #include "pup/parser/ast.hpp"
 
 #include <cstdint>
@@ -21,7 +22,6 @@ class VarDb;
 }
 namespace graph {
 struct BuildState;
-class DepScannerRegistry;
 class RulePatternRegistry;
 }
 namespace index {
