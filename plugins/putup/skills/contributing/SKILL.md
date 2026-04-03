@@ -19,6 +19,7 @@ Putup requires `putup` in PATH for self-hosting builds.
 | `make V=1` | Build with verbose output |
 | `make test` | Run unit tests + E2E tests |
 | `make tidy` | Run clang-tidy |
+| `make iwyu` | Detect dead includes via clang-include-cleaner |
 | `make format` | Format with clang-format |
 | `make check` | Full CI: format-check + tidy + test |
 | `make clean` | Clean build artifacts |

@@ -27,6 +27,7 @@ make              # Configure and build (runs putup configure + putup build)
 make V=1          # Build with verbose output
 make test         # Run unit tests + E2E tests
 make tidy         # Run clang-tidy
+make iwyu         # Detect dead includes via clang-include-cleaner
 make format       # Format with clang-format
 make check        # Full CI: format-check + tidy + test
 make clean        # Clean build artifacts
@@ -125,13 +126,14 @@ This project follows **Test-Driven Development (TDD)** with **BDD-style** tests.
 make test                                    # Verify no regressions
 make format                                  # Format code
 make tidy                                    # Run clang-tidy
+make iwyu                                    # Check for dead includes
 ```
 
 **For bug fixes:** Write a test that reproduces the bug first, then fix.
 
 **For new features:** Write tests expressing the expected behavior before any implementation. Use BDD-style SCENARIO/GIVEN/WHEN/THEN for E2E tests.
 
-Always run `make format` and `make tidy` before finalizing changes.
+Always run `make format`, `make tidy`, and `make iwyu` before finalizing changes.
 
 ## Code Style
 
