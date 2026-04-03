@@ -8,7 +8,6 @@
 #include <cstring>
 #include <initializer_list>
 #include <iterator>
-#include <new>
 #include <type_traits>
 #include <utility>
 

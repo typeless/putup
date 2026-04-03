@@ -12,7 +12,6 @@
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
-#include <optional>
 #include <string_view>
 
 namespace pup::index {

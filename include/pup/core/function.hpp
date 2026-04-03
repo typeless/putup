@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdlib>
-#include <new> // placement new
 #include <type_traits>
 #include <utility>
 

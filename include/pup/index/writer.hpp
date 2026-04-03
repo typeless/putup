@@ -4,7 +4,6 @@
 #pragma once
 
 #include "entry.hpp"
-#include "format.hpp"
 #include "pup/core/result.hpp"
 
 namespace pup::index {

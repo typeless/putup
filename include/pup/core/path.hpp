@@ -5,7 +5,6 @@
 
 #include "pup/core/string_id.hpp"
 
-#include <cstddef>
 #include <string_view>
 
 namespace pup {
