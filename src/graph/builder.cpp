@@ -38,9 +38,16 @@
 namespace pup::graph {
 
 namespace {
+// ---------------------------------------------------------------------------
+// §1 — Inline helpers
+// ---------------------------------------------------------------------------
 
 auto str(StringId id) -> std::string_view { return global_pool().get(id); }
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
+
+// ---------------------------------------------------------------------------
+// §2 — Path primitives
+// ---------------------------------------------------------------------------
 
 /// Strip trailing slashes from a path string
 auto strip_trailing_slashes(std::string_view s) -> std::string_view
@@ -107,21 +114,6 @@ auto is_order_only_group_reference(std::string_view path) -> bool
     return lt_pos != std::string_view::npos && !path.empty() && path.back() == '>';
 }
 
-/// Trigger demand-driven parsing for a directory if it contains a Tupfile.
-/// This is used when referencing cross-directory groups or generated files.
-auto request_demand_driven_parse(
-    parser::EvalContext const& eval,
-    std::string_view dir_path
-) -> void
-{
-    if (eval.request_directory && eval.available_tupfile_dirs) {
-        auto dir_id = global_pool().find(dir_path);
-        if (dir_id != StringId::Empty && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id)) {
-            (void)eval.request_directory(dir_path);
-        }
-    }
-}
-
 /// Parse a group reference from a path expression
 /// Returns nullopt if the path doesn't contain a valid <group> suffix
 auto parse_group_reference(
@@ -161,6 +153,25 @@ auto normalize_to_output_relative(
     }
     return path;
 }
+
+/// Trigger demand-driven parsing for a directory if it contains a Tupfile.
+/// This is used when referencing cross-directory groups or generated files.
+auto request_demand_driven_parse(
+    parser::EvalContext const& eval,
+    std::string_view dir_path
+) -> void
+{
+    if (eval.request_directory && eval.available_tupfile_dirs) {
+        auto dir_id = global_pool().find(dir_path);
+        if (dir_id != StringId::Empty && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id)) {
+            (void)eval.request_directory(dir_path);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// §3 — Path transform context
+// ---------------------------------------------------------------------------
 
 /// Context for transforming paths to Tupfile-relative coordinates.
 ///
@@ -280,12 +291,29 @@ auto transform_output_path(
     return pup::make_source_relative(out, str(tc.source_to_root), str(tc.current_dir_id));
 }
 
-/// Get all files that are members of a group (via file → group edges)
-/// Returns file NodeIds by finding all input edges to the group node
-auto get_group_members(Graph const& graph, NodeId group_id) -> Vec<NodeId>
-{
-    return get_inputs(graph, group_id);
-}
+// ---------------------------------------------------------------------------
+// §4 — Graph node creation
+// ---------------------------------------------------------------------------
+
+/// RAII scope guard for cleanup on scope exit (zero-overhead via template)
+template<typename F>
+struct ScopeGuard {
+    F cleanup;
+    explicit ScopeGuard(F fn)
+        : cleanup { std::move(fn) }
+    {
+    }
+    ~ScopeGuard() { cleanup(); }
+    ScopeGuard(ScopeGuard const&) = delete;
+    auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
+    ScopeGuard(ScopeGuard&&) = delete;
+    auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
+};
+
+template<typename F>
+ScopeGuard(F) -> ScopeGuard<F>;
+
+constexpr auto MAX_DIRECTORY_DEPTH = 128;
 
 // ============================================================================
 // Node-Traversal Path Resolution
@@ -404,58 +432,325 @@ auto walk_to_file_node(
     return add_file_node(graph, std::move(node));
 }
 
-/// RAII scope guard for cleanup on scope exit (zero-overhead via template)
-template<typename F>
-struct ScopeGuard {
-    F cleanup;
-    explicit ScopeGuard(F fn)
-        : cleanup { std::move(fn) }
-    {
+auto get_or_create_directory_node(
+    BuilderContext& ctx,
+    std::string_view dir_path,
+    int depth = 0
+) -> Result<NodeId>
+{
+    auto normalized_path = global_pool().get(pup::path::normalize(dir_path));
+
+    if (normalized_path.empty() || normalized_path == "." || normalized_path == "/") {
+        return NodeId { 0 };
     }
-    ~ScopeGuard() { cleanup(); }
-    ScopeGuard(ScopeGuard const&) = delete;
-    auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
-    ScopeGuard(ScopeGuard&&) = delete;
-    auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
-};
 
-template<typename F>
-ScopeGuard(F) -> ScopeGuard<F>;
+    if (depth > MAX_DIRECTORY_DEPTH) {
+        return make_error<NodeId>(ErrorCode::InvalidArgument, "Directory nesting exceeds maximum depth");
+    }
 
-constexpr auto MAX_DIRECTORY_DEPTH = 128;
+    auto parent_path_sv = pup::path::parent(normalized_path);
+    auto basename_sv = pup::path::filename(normalized_path);
 
-// ============================================================================
-// Forward declarations for internal free functions
-// ============================================================================
+    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv, depth + 1);
+    if (!parent_id_result) {
+        return parent_id_result;
+    }
+    auto parent_id = *parent_id_result;
 
-auto process_statement(
+    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, basename_sv)) {
+        return *existing;
+    }
+
+    auto node = FileNode {
+        .type = NodeType::Directory,
+        .name = intern(basename_sv),
+        .parent_dir = parent_id,
+    };
+
+    return add_file_node(ctx.state->graph, std::move(node));
+}
+
+auto get_or_create_file_node(
+    BuilderContext& ctx,
+    std::string_view path,
+    NodeType type
+) -> Result<NodeId>
+{
+    // Convert working-directory-relative paths to source-root-relative or absolute
+    // Paths like "../../build/foo" from "src/bar" should become "build/foo"
+    // For Generated nodes, first check if path already has build root prefix.
+    // This happens when expand_outputs returns paths like "../build/lib/add.o".
+    // We must strip the prefix and look up under BUILD_ROOT_ID before any other
+    // path manipulation that could corrupt the lookup.
+    auto build_root_name = get_build_root_name(ctx.state->graph);
+
+    if (type == NodeType::Generated && !build_root_name.empty()) {
+        auto lookup_path_sv = global_pool().get(pup::strip_path_prefix(path, build_root_name));
+
+        if (lookup_path_sv != path) {
+            if (auto existing = find_by_path(ctx.state->graph, lookup_path_sv, BUILD_ROOT_ID)) {
+                return *existing;
+            }
+        }
+    }
+
+    // For cross-project paths, also check after normalizing through output_root
+    if (type == NodeType::Generated && path.starts_with("..")) {
+        auto norm_output_sv = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
+        if (norm_output_sv != path) {
+            if (auto existing = find_by_path(ctx.state->graph, norm_output_sv, BUILD_ROOT_ID)) {
+                return *existing;
+            }
+        }
+    }
+
+    auto& pool = global_pool();
+    auto resolved = path;
+    if (!is_empty(ctx.current_dir) && path.starts_with("..")) {
+        auto norm = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
+        if (norm.starts_with("..")) {
+            resolved = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.options.source_root), norm))));
+        } else {
+            resolved = norm;
+        }
+    }
+
+    auto normalized = normalize_path(resolved);
+
+    // For Generated nodes, check if node was already created under BUILD_ROOT_ID
+    // by expand_outputs. This handles paths without the build prefix.
+    if (type == NodeType::Generated && !build_root_name.empty()) {
+        auto lookup_path2 = pool.get(pup::strip_path_prefix(normalized, build_root_name));
+        if (auto existing = find_by_path(ctx.state->graph, lookup_path2, BUILD_ROOT_ID)) {
+            return *existing;
+        }
+    }
+
+    // For Generated nodes, use walk_to_file_node to ensure they're created under BUILD_ROOT_ID.
+    // This maintains consistency with expand_outputs() which also uses BUILD_ROOT_ID.
+    if (type == NodeType::Generated) {
+        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
+    }
+
+    auto basename_sv = pup::path::filename(normalized);
+
+    auto parent_path_sv = pup::path::parent(normalized);
+    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv);
+    if (!parent_id_result) {
+        return parent_id_result;
+    }
+    auto parent_id = *parent_id_result;
+
+    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, basename_sv)) {
+        return *existing;
+    }
+
+    auto node = FileNode {
+        .type = type,
+        .name = intern(basename_sv),
+        .parent_dir = parent_id,
+    };
+
+    return add_file_node(ctx.state->graph, std::move(node));
+}
+
+auto resolve_input_node(
+    BuilderContext& ctx,
+    std::string_view path
+) -> Result<NodeId>
+{
+    // Input paths are already source-relative from expand_inputs() which normalizes them
+    // by combining with current_dir. No further normalization needed here.
+
+    // Track whether the path originally had the build prefix or pointed to output_root.
+    // This indicates the path should reference a generated file, not a source file.
+    auto had_build_prefix = false;
+
+    // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
+    // already have the build root prefix. Strip it to get source-relative paths.
+    auto build_root_name = get_build_root_name(ctx.state->graph);
+    auto normalized_path = global_pool().get(pup::strip_path_prefix(path, build_root_name));
+    if (normalized_path != path) {
+        had_build_prefix = true;
+    }
+
+    if (normalized_path.starts_with("..")) {
+        auto before = normalized_path;
+        normalized_path = normalize_to_output_relative(
+            normalized_path, str(ctx.options.source_root), str(ctx.options.output_root)
+        );
+        if (before != normalized_path) {
+            had_build_prefix = true;
+        }
+    }
+
+    // With BUILD_ROOT_ID model:
+    // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths
+    // - Generated/Ghost files are under BUILD_ROOT_ID at source-relative paths
+
+    // First check if node exists under BUILD_ROOT_ID (generated files)
+    if (auto existing = find_by_path(ctx.state->graph, normalized_path, BUILD_ROOT_ID)) {
+        return *existing;
+    }
+
+    // If path had build prefix, it's referencing a generated file. Even if a source file
+    // exists at the same path, create a Ghost node under BUILD_ROOT_ID so it can be
+    // upgraded to Generated when the output rule is processed.
+    if (had_build_prefix) {
+        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+    }
+
+    // Check under SOURCE_ROOT_ID (source files)
+    if (auto existing = find_by_path(ctx.state->graph, normalized_path, SOURCE_ROOT_ID)) {
+        return *existing;
+    }
+
+    // Node doesn't exist - check filesystem to determine type
+    auto source_path = global_pool().get(pup::path::join(str(ctx.options.source_root), normalized_path));
+    if (pup::platform::exists(source_path)) {
+        // Source file exists - create File node under SOURCE_ROOT_ID
+        return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+    }
+
+    // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
+    // source_root. Check config_root as a fallback for source file resolution.
+    if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
+        auto config_path_sv = global_pool().get(pup::path::join(str(ctx.options.config_root), normalized_path));
+        if (pup::platform::exists(config_path_sv)) {
+            return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+        }
+    }
+
+    // Check if file exists in build directory (e.g., tup.config, or already-generated files)
+    auto build_path_sv = global_pool().get(pup::path::join(str(ctx.options.output_root), normalized_path));
+    if (pup::platform::exists(build_path_sv)) {
+        // File exists in build dir but not source - it's a Generated output from a previous build.
+        // Create as Ghost so the rule that generates it can upgrade it to Generated.
+        // (If the rule no longer generates it, the Ghost remains and causes an error.)
+        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+    }
+
+    // File doesn't exist anywhere - create Ghost node under BUILD_ROOT_ID
+    // Ghost nodes represent not-yet-generated files, which will be under build root
+    return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+}
+
+/// Get all files that are members of a group (via file → group edges)
+/// Returns file NodeIds by finding all input edges to the group node
+auto get_group_members(Graph const& graph, NodeId group_id) -> Vec<NodeId>
+{
+    return get_inputs(graph, group_id);
+}
+
+auto get_or_create_group_node(
     BuilderContext& ctx,
     BuilderState& state,
-    parser::Statement const& stmt
-) -> Result<void>;
+    std::string_view directory,
+    std::string_view name
+) -> Result<NodeId>
+{
+    auto key_id = to_underlying(pup::path::join(directory, name));
+    auto const* cached = state.group_nodes.find(key_id);
+    if (cached) {
+        return *cached;
+    }
 
-auto process_rule(
+    // Get or create parent directory node
+    auto parent_id_result = get_or_create_directory_node(ctx, directory);
+    if (!parent_id_result) {
+        return parent_id_result;
+    }
+    auto parent_id = *parent_id_result;
+
+    // Check if group node already exists in graph (e.g., from previous Tupfile)
+    // Group nodes are stored with angle-bracket name like "<gen-headers>"
+    auto gb = Buf {};
+    gb += '<';
+    gb += name;
+    gb += '>';
+    auto group_basename = gb.view();
+    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, group_basename)) {
+        state.group_nodes.insert(key_id, *existing);
+        return *existing;
+    }
+
+    // Create new group node
+    auto node = FileNode {
+        .type = NodeType::Group,
+        .name = intern(group_basename),
+        .parent_dir = parent_id,
+    };
+
+    auto result = add_file_node(ctx.state->graph, std::move(node));
+    if (result) {
+        state.group_nodes.insert(key_id, *result);
+    }
+    return result;
+}
+
+auto create_command_node(
     BuilderContext& ctx,
     BuilderState& state,
-    parser::Rule const& rule
-) -> Result<void>;
+    std::string_view instruction,
+    std::string_view display
+) -> Result<NodeId>
+{
+    auto exported = SortedIdVec {};
+    exported.merge_from(ctx.exported_vars);
 
-auto process_bang_macro(
-    BuilderContext& ctx,
-    parser::BangMacro const& macro
-) -> Result<void>;
+    auto node = CommandNode {
+        .display = intern(display),
+        .source_dir = ctx.current_dir,
+        .instruction_id = intern(instruction),
+        .exported_vars = std::move(exported),
+        .guards = ctx.condition_stack,
+    };
 
-auto process_assignment(
-    BuilderContext& ctx,
-    BuilderState& state,
-    parser::Assignment const& assign
-) -> Result<void>;
+    auto cmd_id_result = add_command_node(ctx.state->graph, std::move(node));
+    if (!cmd_id_result) {
+        return cmd_id_result;
+    }
 
-auto process_conditional(
-    BuilderContext& ctx,
-    BuilderState& state,
-    parser::Conditional const& cond
-) -> Result<void>;
+    auto cmd_id = *cmd_id_result;
+
+    // Add sticky edges from Tupfile and included files to this command
+    for (auto src_id : ctx.sticky_sources) {
+        (void)add_edge(ctx.state->graph, src_id, cmd_id, LinkType::Sticky);
+    }
+
+    // Add sticky edges from used config variables (fine-grained dependency tracking)
+    auto const* cv = ctx.used_config_vars.data();
+    for (std::size_t i = 0, n = ctx.used_config_vars.size(); i < n; ++i) {
+        auto const* node_id = state.config_var_nodes.find(cv[i]);
+        if (node_id) {
+            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
+        }
+    }
+
+    // Add sticky edges from condition config variables (phi-node model)
+    auto const* ccv = ctx.condition_config_vars.data();
+    for (std::size_t i = 0, n = ctx.condition_config_vars.size(); i < n; ++i) {
+        auto const* node_id = state.config_var_nodes.find(ccv[i]);
+        if (node_id) {
+            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
+        }
+    }
+
+    // Add sticky edges from used imported env variables (fine-grained dependency tracking)
+    auto const* uev = ctx.used_env_vars.data();
+    for (std::size_t i = 0, n = ctx.used_env_vars.size(); i < n; ++i) {
+        auto const* node_id = state.imported_env_var_nodes.find(uev[i]);
+        if (node_id) {
+            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
+        }
+    }
+
+    return cmd_id;
+}
+
+// ---------------------------------------------------------------------------
+// §5 — Condition model
+// ---------------------------------------------------------------------------
 
 /// Check if all guards in the condition stack are satisfied (current context is active)
 /// Returns true if no guards or all guards match their expected polarity
@@ -501,141 +796,36 @@ auto are_guards_mutually_exclusive(
     return false;
 }
 
-auto process_include(
-    BuilderContext& ctx,
-    BuilderState& state,
-    parser::Include const& inc
-) -> Result<void>;
-
-auto process_import(
-    BuilderContext& ctx,
-    BuilderState& state,
-    parser::Import const& imp
-) -> Result<void>;
-
-auto process_export(
-    BuilderContext& ctx,
-    parser::Export const& exp
-) -> Result<void>;
-
-auto expand_rule(
-    BuilderContext& ctx,
-    BuilderState& state,
-    parser::Rule const& rule,
-    Vec<StringId> const& inputs
-) -> Result<void>;
-
-auto expand_inputs(
-    BuilderContext& ctx,
-    Vec<parser::PathPattern> const& patterns
-) -> Result<Vec<StringId>>;
-
-auto expand_outputs(
-    BuilderContext& ctx,
-    Vec<parser::PathPattern> const& patterns,
-    parser::PatternFlags const& flags
-) -> Result<Vec<StringId>>;
-
-auto expand_command(
-    BuilderContext& ctx,
-    parser::Expression const& cmd,
-    parser::PatternFlags flags,
-    Vec<StringId> const& outputs,
-    StringId* out_instruction = nullptr
-) -> Result<StringId>;
-
-auto get_or_create_directory_node(
-    BuilderContext& ctx,
-    std::string_view dir_path,
-    int depth = 0
-) -> Result<NodeId>;
-
-auto get_or_create_file_node(
-    BuilderContext& ctx,
-    std::string_view path,
-    NodeType type = NodeType::File
-) -> Result<NodeId>;
-
-auto resolve_input_node(
-    BuilderContext& ctx,
-    std::string_view path
-) -> Result<NodeId>;
-
-auto get_or_create_group_node(
-    BuilderContext& ctx,
-    BuilderState& state,
-    std::string_view directory,
-    std::string_view name
-) -> Result<NodeId>;
-
-auto create_command_node(
-    BuilderContext& ctx,
-    BuilderState& state,
-    std::string_view instruction,
-    std::string_view display
-) -> Result<NodeId>;
-
-/// Collect all Tuprules.tup files from root to start_dir (root-first order).
-/// Per tup semantics, include_rules includes every Tuprules.tup from the
-/// project root down to the current directory. Gaps are allowed.
-auto find_tuprules_files(
-    std::string_view start_dir,
-    std::string_view root
-) -> Vec<StringId>
+/// Format a conditional expression as a string for the condition node
+auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const& cond) -> StringId
 {
-    auto& pool = global_pool();
-    auto dirs = Vec<StringId> {};
-    auto search_sv = start_dir;
-
-    while (search_sv.size() >= root.size()) {
-        dirs.push_back(pool.intern(search_sv));
-        if (search_sv == root) {
-            break;
-        }
-        auto par = pup::path::parent(search_sv);
-        if (par == search_sv || par.empty()) {
-            break;
-        }
-        search_sv = par;
+    auto buf = Buf {};
+    switch (cond.kind) {
+    case parser::Conditional::Kind::Ifdef:
+        buf.fmt("ifdef({})", str(cond.var_name));
+        break;
+    case parser::Conditional::Kind::Ifndef:
+        buf.fmt("ifndef({})", str(cond.var_name));
+        break;
+    case parser::Conditional::Kind::Ifeq: {
+        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
+        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
+        buf.fmt("ifeq({},{})", str(lhs), str(rhs));
+        break;
     }
-
-    std::reverse(dirs.begin(), dirs.end());
-
-    auto results = Vec<StringId> {};
-    for (auto dir_id : dirs) {
-        auto tuprules_id = pup::path::join(pool.get(dir_id), "Tuprules.tup");
-        if (pup::platform::exists(pool.get(tuprules_id))) {
-            results.push_back(tuprules_id);
-        }
+    case parser::Conditional::Kind::Ifneq: {
+        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
+        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
+        buf.fmt("ifneq({},{})", str(lhs), str(rhs));
+        break;
     }
-
-    return results;
+    }
+    return buf.intern(global_pool());
 }
 
-/// Resolve an explicit include path (not include_rules)
-/// Returns the resolved path or an error
-auto resolve_include_path(
-    BuilderContext& ctx,
-    std::string_view include_root,
-    parser::Expression const& path_expr
-) -> Result<StringId>
-{
-    auto& pool = global_pool();
-    auto path_result = parser::expand(*ctx.eval, path_expr);
-    if (!path_result) {
-        return pup::unexpected<Error>(path_result.error());
-    }
-
-    auto path_sv = pool.get(*path_result);
-    auto base_sv = pool.get(pup::path::join(include_root, str(ctx.current_dir)));
-    auto resolved_id = pup::path::join(base_sv, path_sv);
-    if (!pup::platform::exists(pool.get(resolved_id))) {
-        auto err = Buf {};
-        err.fmt("Include file not found: {}", path_sv);
-        return make_error<StringId>(ErrorCode::IncludeNotFound, err.view());
-    }
-    return resolved_id;
-}
+// ---------------------------------------------------------------------------
+// §6 — Glob expansion
+// ---------------------------------------------------------------------------
 
 /// Expand a glob pattern against filesystem and graph nodes.
 /// Adds matched paths to result vector.
@@ -733,6 +923,234 @@ auto apply_exclusions(
     }
 }
 
+// ---------------------------------------------------------------------------
+// §7 — Command/rule expansion
+// ---------------------------------------------------------------------------
+
+auto expand_command(
+    BuilderContext& ctx,
+    parser::Expression const& cmd,
+    parser::PatternFlags flags,
+    Vec<StringId> const& outputs,
+    StringId* out_instruction = nullptr
+) -> Result<StringId>
+{
+    auto& pool = global_pool();
+    auto literal = parser::expand(*ctx.eval, cmd);
+    if (!literal) {
+        return pup::unexpected<Error>(literal.error());
+    }
+
+    auto expanded = parser::expand(*ctx.eval, pool.get(*literal));
+    if (!expanded) {
+        return pup::unexpected<Error>(expanded.error());
+    }
+
+    if (out_instruction) {
+        *out_instruction = *expanded;
+    }
+
+    auto tc = make_transform_context(ctx);
+    auto cmd_outputs = Vec<StringId> {};
+    cmd_outputs.reserve(outputs.size());
+    for (auto out : outputs) {
+        cmd_outputs.push_back(transform_output_path(tc, str(out)));
+    }
+
+    auto primary_output_sv = cmd_outputs.empty() ? std::string_view {} : str(cmd_outputs[0]);
+    flags.output = primary_output_sv;
+    flags.output_base = parser::path_basename(primary_output_sv);
+    auto outputs_sv = Vec<std::string_view> {};
+    outputs_sv.reserve(cmd_outputs.size());
+    for (auto id : cmd_outputs) {
+        outputs_sv.push_back(str(id));
+    }
+    flags.all_outputs = std::move(outputs_sv);
+
+    auto pattern_result = parser::expand_pattern(*ctx.eval, pool.get(*expanded), flags);
+    if (!pattern_result) {
+        return pup::unexpected<Error>(pattern_result.error());
+    }
+    return *pattern_result;
+}
+
+/// Lookup a bang macro from the expanded command text.
+/// Returns pointer to the macro definition, or nullptr if command doesn't reference a macro.
+auto lookup_bang_macro(
+    BuilderContext& ctx,
+    parser::Expression const& command,
+    parser::PatternFlags const& flags
+) -> Result<BangMacroDef const*>
+{
+    auto expanded_cmd = expand_command(ctx, command, flags, {});
+    if (!expanded_cmd) {
+        return pup::unexpected<Error>(expanded_cmd.error());
+    }
+
+    auto cmd_sv = str(*expanded_cmd);
+    while (!cmd_sv.empty() && (cmd_sv.front() == ' ' || cmd_sv.front() == '\t')) {
+        cmd_sv.remove_prefix(1);
+    }
+
+    if (cmd_sv.empty() || cmd_sv[0] != '!') {
+        return nullptr;
+    }
+
+    auto name_end = cmd_sv.find_first_of(" \t", 1);
+    auto macro_name = (name_end == std::string_view::npos)
+        ? cmd_sv.substr(1)
+        : cmd_sv.substr(1, name_end - 1);
+
+    auto key = to_underlying(intern(macro_name));
+    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
+    if (it == ctx.macros.end() || it->first != key) {
+        auto err = Buf {};
+        err.fmt("Unknown bang macro: !{}", macro_name);
+        return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, err.view());
+    }
+
+    return &it->second;
+}
+
+auto expand_outputs(
+    BuilderContext& ctx,
+    Vec<parser::PathPattern> const& patterns,
+    parser::PatternFlags const& flags
+) -> Result<Vec<StringId>>
+{
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
+
+    for (auto const& pattern : patterns) {
+        if (pattern.is_group) {
+            continue;
+        }
+        if (pattern.is_output_exclusion) {
+            continue;
+        }
+
+        auto paths = parser::expand_path(*ctx.eval, pattern);
+        if (!paths) {
+            return pup::unexpected<Error>(paths.error());
+        }
+
+        for (auto path_id : *paths) {
+            auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), flags);
+            auto output_path_sv = expanded ? pool.get(*expanded) : pool.get(path_id);
+
+            auto full_output_path_id = pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv)));
+
+            auto node_id = walk_to_file_node(
+                ctx.state->graph,
+                BUILD_ROOT_ID,
+                pool.get(full_output_path_id),
+                NodeType::Generated
+            );
+
+            if (!node_id) {
+                return pup::unexpected<Error>(node_id.error());
+            }
+
+            result.push_back(intern(get_full_path(ctx.state->graph, *node_id, ctx.state->path_cache)));
+        }
+    }
+
+    return result;
+}
+
+auto expand_inputs(
+    BuilderContext& ctx,
+    Vec<parser::PathPattern> const& patterns
+) -> Result<Vec<StringId>>
+{
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
+
+    for (auto const& pattern : patterns) {
+        if (pattern.is_exclusion || pattern.is_output_exclusion) {
+            continue;
+        }
+
+        if (pattern.is_group) {
+            auto gkey = to_underlying(intern(str(pattern.group_name)));
+            if (auto const* members = ctx.groups.find(gkey)) {
+                for (auto id : *members) {
+                    auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+                    if (!path_sv.empty()) {
+                        result.push_back(intern(path_sv));
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (pattern.is_order_only_group) {
+            auto group_dir = StringId::Empty;
+
+            if (!pattern.path.empty()) {
+                auto expanded = parser::expand(*ctx.eval, pattern.path);
+                if (expanded) {
+                    group_dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
+                    request_demand_driven_parse(*ctx.eval, str(group_dir));
+                }
+            } else {
+                group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
+            }
+
+            auto group_name_sv = str(pattern.group_name);
+            auto ref_buf = Buf {};
+            auto group_dir_sv = str(group_dir);
+            if (group_dir_sv.empty()) {
+                ref_buf += '<';
+                ref_buf += group_name_sv;
+                ref_buf += '>';
+            } else {
+                ref_buf += group_dir_sv;
+                ref_buf += "/<";
+                ref_buf += group_name_sv;
+                ref_buf += '>';
+            }
+            result.push_back(ref_buf.intern(pool));
+            continue;
+        }
+
+        auto paths = parser::expand_path(*ctx.eval, pattern);
+        if (!paths) {
+            return pup::unexpected<Error>(paths.error());
+        }
+
+        for (auto path_id : *paths) {
+            auto path_sv = pool.get(path_id);
+            auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
+            if (group_ref) {
+                request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
+                result.push_back(path_id);
+                continue;
+            }
+            if (!is_empty(ctx.current_dir)) {
+                result.push_back(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path_sv))));
+            } else {
+                result.push_back(path_id);
+            }
+
+            if (ctx.options.expand_globs && parser::has_glob_chars(path_sv)) {
+                expand_glob_pattern(ctx, path_sv, result);
+            } else if (!parser::has_glob_chars(path_sv)) {
+                auto full_path_sv = pool.get(pup::path::join(pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))), path_sv));
+                if (!pup::platform::exists(full_path_sv)) {
+                    auto file_dir = pup::path::parent(path_sv);
+                    auto abs_file_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), file_dir))));
+                    request_demand_driven_parse(*ctx.eval, abs_file_dir_sv);
+                }
+            }
+        }
+    }
+
+    apply_exclusions(ctx, patterns, result);
+
+    return result;
+}
+
 /// Process generated rules (e.g., DEP commands for dependency scanning).
 /// Creates command nodes and edges for each generated rule.
 auto process_generated_rules(
@@ -798,85 +1216,143 @@ auto process_generated_rules(
     }
 }
 
-/// Lookup a bang macro from the expanded command text.
-/// Returns pointer to the macro definition, or nullptr if command doesn't reference a macro.
-auto lookup_bang_macro(
-    BuilderContext& ctx,
-    parser::Expression const& command,
-    parser::PatternFlags const& flags
-) -> Result<BangMacroDef const*>
-{
-    auto expanded_cmd = expand_command(ctx, command, flags, {});
-    if (!expanded_cmd) {
-        return pup::unexpected<Error>(expanded_cmd.error());
-    }
+// ---------------------------------------------------------------------------
+// §8 — Include/import/export
+// ---------------------------------------------------------------------------
 
-    auto cmd_sv = str(*expanded_cmd);
-    while (!cmd_sv.empty() && (cmd_sv.front() == ' ' || cmd_sv.front() == '\t')) {
-        cmd_sv.remove_prefix(1);
-    }
-
-    if (cmd_sv.empty() || cmd_sv[0] != '!') {
-        return nullptr;
-    }
-
-    auto name_end = cmd_sv.find_first_of(" \t", 1);
-    auto macro_name = (name_end == std::string_view::npos)
-        ? cmd_sv.substr(1)
-        : cmd_sv.substr(1, name_end - 1);
-
-    auto key = to_underlying(intern(macro_name));
-    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
-    if (it == ctx.macros.end() || it->first != key) {
-        auto err = Buf {};
-        err.fmt("Unknown bang macro: !{}", macro_name);
-        return make_error<BangMacroDef const*>(ErrorCode::UnknownMacro, err.view());
-    }
-
-    return &it->second;
-}
-
-// ============================================================================
-// Internal free function implementations
-// ============================================================================
-
+// Forward declaration (mutual recursion: include_single_file → process_statement → process_conditional → process_statement)
 auto process_statement(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Statement const& stmt
+) -> Result<void>;
+
+/// Collect all Tuprules.tup files from root to start_dir (root-first order).
+/// Per tup semantics, include_rules includes every Tuprules.tup from the
+/// project root down to the current directory. Gaps are allowed.
+auto find_tuprules_files(
+    std::string_view start_dir,
+    std::string_view root
+) -> Vec<StringId>
+{
+    auto& pool = global_pool();
+    auto dirs = Vec<StringId> {};
+    auto search_sv = start_dir;
+
+    while (search_sv.size() >= root.size()) {
+        dirs.push_back(pool.intern(search_sv));
+        if (search_sv == root) {
+            break;
+        }
+        auto par = pup::path::parent(search_sv);
+        if (par == search_sv || par.empty()) {
+            break;
+        }
+        search_sv = par;
+    }
+
+    std::reverse(dirs.begin(), dirs.end());
+
+    auto results = Vec<StringId> {};
+    for (auto dir_id : dirs) {
+        auto tuprules_id = pup::path::join(pool.get(dir_id), "Tuprules.tup");
+        if (pup::platform::exists(pool.get(tuprules_id))) {
+            results.push_back(tuprules_id);
+        }
+    }
+
+    return results;
+}
+
+/// Resolve an explicit include path (not include_rules)
+/// Returns the resolved path or an error
+auto resolve_include_path(
+    BuilderContext& ctx,
+    std::string_view include_root,
+    parser::Expression const& path_expr
+) -> Result<StringId>
+{
+    auto& pool = global_pool();
+    auto path_result = parser::expand(*ctx.eval, path_expr);
+    if (!path_result) {
+        return pup::unexpected<Error>(path_result.error());
+    }
+
+    auto path_sv = pool.get(*path_result);
+    auto base_sv = pool.get(pup::path::join(include_root, str(ctx.current_dir)));
+    auto resolved_id = pup::path::join(base_sv, path_sv);
+    if (!pup::platform::exists(pool.get(resolved_id))) {
+        auto err = Buf {};
+        err.fmt("Include file not found: {}", path_sv);
+        return make_error<StringId>(ErrorCode::IncludeNotFound, err.view());
+    }
+    return resolved_id;
+}
+
+auto include_single_file(
+    BuilderContext& ctx,
+    BuilderState& state,
+    std::string_view include_root,
+    std::string_view include_path,
+    bool is_rules
 ) -> Result<void>
 {
-    if (ctx.eval && ctx.eval->on_statement) {
-        auto dir = is_empty(ctx.current_dir) ? std::string_view { "." } : str(ctx.current_dir);
-        ctx.eval->on_statement(stmt, dir);
+    auto include_path_id = to_underlying(intern(include_path));
+    if (ctx.included_files.contains(include_path_id)) {
+        return {};
+    }
+    ctx.included_files.insert(include_path_id);
+
+    auto inc_rel = global_pool().get(pup::path::relative(include_path, include_root));
+    auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
+    if (inc_node_result) {
+        ctx.sticky_sources.push_back(*inc_node_result);
     }
 
-    if (auto const* rule = stmt.as<parser::Rule>()) {
-        return process_rule(ctx, state, *rule);
+    auto source_result = pup::platform::read_file(include_path);
+    if (!source_result) {
+        auto err = Buf {};
+        err.fmt("Cannot open include file: {}", include_path);
+        return make_error<void>(ErrorCode::IoError, err.view());
+    }
+    auto source = std::move(*source_result);
+
+    auto parse_result = parser::parse_tupfile(source.view(), include_path);
+    if (!parse_result.success()) {
+        for (auto const& err : parse_result.errors) {
+            auto err_msg = str(err.message);
+            fprintf(stderr, "%.*s:%d:%d: error: %.*s\n", static_cast<int>(include_path.size()), include_path.data(), err.location.line, err.location.column, static_cast<int>(err_msg.size()), err_msg.data());
+        }
+        auto err = Buf {};
+        err.fmt("Parse error in include file: {}", include_path);
+        return make_error<void>(ErrorCode::ParseError, err.view());
     }
 
-    if (auto const* macro = stmt.as<parser::BangMacro>()) {
-        return process_bang_macro(ctx, *macro);
+    auto old_tup_cwd = StringId::Empty;
+    if (is_rules && ctx.eval) {
+        old_tup_cwd = ctx.eval->tup_cwd;
+        auto include_dir = pup::path::parent(include_path);
+        auto rel_path = global_pool().get(pup::path::relative(include_dir, global_pool().get(pup::path::join(include_root, str(ctx.current_dir)))));
+        ctx.eval->tup_cwd = rel_path.empty() ? intern(".") : intern(rel_path);
     }
 
-    if (auto const* assign = stmt.as<parser::Assignment>()) {
-        return process_assignment(ctx, state, *assign);
+    auto old_current_file = ctx.current_file;
+    ctx.current_file = intern(include_path);
+
+    for (auto const& stmt : parse_result.tupfile.statements) {
+        auto result = process_statement(ctx, state, *stmt);
+        if (!result) {
+            ctx.current_file = old_current_file;
+            if (is_rules && ctx.eval) {
+                ctx.eval->tup_cwd = old_tup_cwd;
+            }
+            return pup::unexpected<Error>(result.error());
+        }
     }
 
-    if (auto const* cond = stmt.as<parser::Conditional>()) {
-        return process_conditional(ctx, state, *cond);
-    }
-
-    if (auto const* inc = stmt.as<parser::Include>()) {
-        return process_include(ctx, state, *inc);
-    }
-
-    if (auto const* imp = stmt.as<parser::Import>()) {
-        return process_import(ctx, state, *imp);
-    }
-
-    if (auto const* exp = stmt.as<parser::Export>()) {
-        return process_export(ctx, *exp);
+    ctx.current_file = old_current_file;
+    if (is_rules && ctx.eval) {
+        ctx.eval->tup_cwd = old_tup_cwd;
     }
 
     return {};
@@ -906,84 +1382,97 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) ->
     ctx.pending_weak_assignments.clear();
 }
 
-auto process_rule(
+// ---------------------------------------------------------------------------
+// §9 — Statement processors
+// ---------------------------------------------------------------------------
+
+auto process_export(
     BuilderContext& ctx,
-    BuilderState& state,
-    parser::Rule const& rule
+    parser::Export const& exp
 ) -> Result<void>
 {
-    // Apply any pending weak assignments (??=) before expanding commands
-    // This ensures ??= assignments that precede rules take effect
-    apply_pending_weak_assignments(ctx, state);
-
-    // Expand input patterns
-    auto inputs = Result<Vec<StringId>> { expand_inputs(ctx, rule.inputs) };
-    if (!inputs) {
-        return pup::unexpected<Error>(inputs.error());
-    }
-
-    // Skip rules where input pattern evaluated to empty (tup behavior)
-    // - rule.inputs.empty() means no input pattern was specified (": |> cmd")
-    // - inputs->empty() means the pattern(s) evaluated to no files
-    // Only skip if pattern was specified but produced nothing
-    if (!rule.foreach_ && !rule.inputs.empty() && inputs->empty()) {
-        return {};
-    }
-
-    if (rule.foreach_) {
-        auto patterns = Vec<StringId> {};
-        auto files = Vec<StringId> {};
-        for (auto inp : *inputs) {
-            if (parser::has_glob_chars(str(inp))) {
-                patterns.push_back(inp);
-            } else {
-                files.push_back(inp);
-            }
-        }
-
-        // Foreach rule: create one command per file, include patterns for %g
-        for (auto file : files) {
-            auto iter_inputs = patterns;
-            iter_inputs.push_back(file);
-            auto result = expand_rule(ctx, state, rule, iter_inputs);
-            if (!result) {
-                return pup::unexpected<Error>(result.error());
-            }
-        }
-    } else {
-        // Normal rule: single command for all inputs
-        auto result = expand_rule(ctx, state, rule, *inputs);
-        if (!result) {
-            return pup::unexpected<Error>(result.error());
-        }
-    }
-
+    // Per tup manual: "adds the environment variable VARIABLE to the export
+    // list for future :-rules"
+    ctx.exported_vars.insert(to_underlying(intern(str(exp.var_name))));
     return {};
 }
 
-auto process_bang_macro(
+auto process_import(
     BuilderContext& ctx,
-    parser::BangMacro const& macro
+    BuilderState& state,
+    parser::Import const& imp
 ) -> Result<void>
 {
-    auto def = BangMacroDef {};
-    def.name = macro.name;
-    def.foreach_ = macro.foreach_;
-    def.order_only_inputs = macro.order_only_inputs;
-    def.command = macro.command;
-    def.display = macro.display;
-    def.outputs = macro.outputs;
-    def.extra_outputs = macro.extra_outputs;
-    def.output_group = macro.output_group;
-    def.output_order_only_group = macro.output_order_only_group;
-    def.output_order_only_group_dir = macro.output_order_only_group_dir;
-    auto key = to_underlying(intern(str(macro.name)));
-    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
-    if (it != ctx.macros.end() && it->first == key) {
-        it->second = std::move(def);
-    } else {
-        ctx.macros.insert(it, { key, std::move(def) });
+    // Per tup manual: "sets a variable inside the Tupfile that has the value
+    // of the environment variable"
+    auto var_name_sv = str(imp.var_name);
+    auto value_id = StringId::Empty;
+
+    // Need null-terminated string for getenv
+    auto name_buf = Buf {};
+    name_buf += var_name_sv;
+
+    // 1. Try environment first
+    if (auto const* env_val = std::getenv(name_buf.c_str())) {
+        value_id = intern(env_val);
     }
+    // 2. Fall back to cached value from previous build (passed via options)
+    else if (auto it = std::lower_bound(
+                 state.options.cached_env_vars.begin(),
+                 state.options.cached_env_vars.end(),
+                 var_name_sv,
+                 [](auto const& p, std::string_view k) { return str(p.first) < k; }
+             );
+             it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
+        value_id = it->second;
+    }
+    // 3. Fall back to default value
+    else if (imp.default_value) {
+        auto expanded = parser::expand(*ctx.eval, *imp.default_value);
+        if (!expanded) {
+            return pup::unexpected<Error>(expanded.error());
+        }
+        value_id = *expanded;
+    }
+
+    auto value_sv = str(value_id);
+
+    auto var_name_id = to_underlying(intern(var_name_sv));
+    if (state.env_var_dir_id != INVALID_NODE_ID) {
+        auto node_name_buf = Buf {};
+        node_name_buf += var_name_sv;
+        node_name_buf += '=';
+        node_name_buf += value_sv;
+        auto content_hash = sha256(value_sv);
+
+        auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
+        auto const name_id = intern(node_name_buf.view());
+        if (existing_node_id) {
+            auto* existing = get_file_node(ctx.state->graph, *existing_node_id);
+            if (existing && existing->name != name_id) {
+                existing->name = name_id;
+                existing->content_hash = content_hash;
+            }
+        } else {
+            auto node = FileNode {
+                .type = NodeType::Variable,
+                .name = name_id,
+                .parent_dir = state.env_var_dir_id,
+                .content_hash = content_hash,
+            };
+            auto result = add_file_node(ctx.state->graph, std::move(node));
+            if (result) {
+                state.imported_env_var_nodes.insert(var_name_id, *result);
+            }
+        }
+    }
+
+    if (ctx.vars) {
+        ctx.vars->set(var_name_sv, value_sv);
+    }
+
+    // Track this as an imported variable for fine-grained dependency tracking
+    state.imported_var_names.insert(var_name_id);
 
     return {};
 }
@@ -1109,31 +1598,31 @@ auto process_assignment(
     return {};
 }
 
-/// Format a conditional expression as a string for the condition node
-auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const& cond) -> StringId
+auto process_bang_macro(
+    BuilderContext& ctx,
+    parser::BangMacro const& macro
+) -> Result<void>
 {
-    auto buf = Buf {};
-    switch (cond.kind) {
-    case parser::Conditional::Kind::Ifdef:
-        buf.fmt("ifdef({})", str(cond.var_name));
-        break;
-    case parser::Conditional::Kind::Ifndef:
-        buf.fmt("ifndef({})", str(cond.var_name));
-        break;
-    case parser::Conditional::Kind::Ifeq: {
-        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
-        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
-        buf.fmt("ifeq({},{})", str(lhs), str(rhs));
-        break;
+    auto def = BangMacroDef {};
+    def.name = macro.name;
+    def.foreach_ = macro.foreach_;
+    def.order_only_inputs = macro.order_only_inputs;
+    def.command = macro.command;
+    def.display = macro.display;
+    def.outputs = macro.outputs;
+    def.extra_outputs = macro.extra_outputs;
+    def.output_group = macro.output_group;
+    def.output_order_only_group = macro.output_order_only_group;
+    def.output_order_only_group_dir = macro.output_order_only_group_dir;
+    auto key = to_underlying(intern(str(macro.name)));
+    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
+    if (it != ctx.macros.end() && it->first == key) {
+        it->second = std::move(def);
+    } else {
+        ctx.macros.insert(it, { key, std::move(def) });
     }
-    case parser::Conditional::Kind::Ifneq: {
-        auto lhs = parser::expand(eval, cond.lhs).value_or(StringId::Empty);
-        auto rhs = parser::expand(eval, cond.rhs).value_or(StringId::Empty);
-        buf.fmt("ifneq({},{})", str(lhs), str(rhs));
-        break;
-    }
-    }
-    return buf.intern(global_pool());
+
+    return {};
 }
 
 auto process_conditional(
@@ -1226,75 +1715,6 @@ auto process_conditional(
     return {};
 }
 
-auto include_single_file(
-    BuilderContext& ctx,
-    BuilderState& state,
-    std::string_view include_root,
-    std::string_view include_path,
-    bool is_rules
-) -> Result<void>
-{
-    auto include_path_id = to_underlying(intern(include_path));
-    if (ctx.included_files.contains(include_path_id)) {
-        return {};
-    }
-    ctx.included_files.insert(include_path_id);
-
-    auto inc_rel = global_pool().get(pup::path::relative(include_path, include_root));
-    auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
-    if (inc_node_result) {
-        ctx.sticky_sources.push_back(*inc_node_result);
-    }
-
-    auto source_result = pup::platform::read_file(include_path);
-    if (!source_result) {
-        auto err = Buf {};
-        err.fmt("Cannot open include file: {}", include_path);
-        return make_error<void>(ErrorCode::IoError, err.view());
-    }
-    auto source = std::move(*source_result);
-
-    auto parse_result = parser::parse_tupfile(source.view(), include_path);
-    if (!parse_result.success()) {
-        for (auto const& err : parse_result.errors) {
-            auto err_msg = str(err.message);
-            fprintf(stderr, "%.*s:%d:%d: error: %.*s\n", static_cast<int>(include_path.size()), include_path.data(), err.location.line, err.location.column, static_cast<int>(err_msg.size()), err_msg.data());
-        }
-        auto err = Buf {};
-        err.fmt("Parse error in include file: {}", include_path);
-        return make_error<void>(ErrorCode::ParseError, err.view());
-    }
-
-    auto old_tup_cwd = StringId::Empty;
-    if (is_rules && ctx.eval) {
-        old_tup_cwd = ctx.eval->tup_cwd;
-        auto include_dir = pup::path::parent(include_path);
-        auto rel_path = global_pool().get(pup::path::relative(include_dir, global_pool().get(pup::path::join(include_root, str(ctx.current_dir)))));
-        ctx.eval->tup_cwd = rel_path.empty() ? intern(".") : intern(rel_path);
-    }
-
-    auto old_current_file = ctx.current_file;
-    ctx.current_file = intern(include_path);
-
-    for (auto const& stmt : parse_result.tupfile.statements) {
-        auto result = process_statement(ctx, state, *stmt);
-        if (!result) {
-            ctx.current_file = old_current_file;
-            if (is_rules && ctx.eval) {
-                ctx.eval->tup_cwd = old_tup_cwd;
-            }
-            return pup::unexpected<Error>(result.error());
-        }
-    }
-
-    ctx.current_file = old_current_file;
-    if (is_rules && ctx.eval) {
-        ctx.eval->tup_cwd = old_tup_cwd;
-    }
-
-    return {};
-}
-
 auto process_include(
     BuilderContext& ctx,
     BuilderState& state,
@@ -1319,97 +1739,6 @@ auto process_include(
         return pup::unexpected<Error>(resolved.error());
     }
     return include_single_file(ctx, state, include_root, str(*resolved), false);
-}
-
-auto process_import(
-    BuilderContext& ctx,
-    BuilderState& state,
-    parser::Import const& imp
-) -> Result<void>
-{
-    // Per tup manual: "sets a variable inside the Tupfile that has the value
-    // of the environment variable"
-    auto var_name_sv = str(imp.var_name);
-    auto value_id = StringId::Empty;
-
-    // Need null-terminated string for getenv
-    auto name_buf = Buf {};
-    name_buf += var_name_sv;
-
-    // 1. Try environment first
-    if (auto const* env_val = std::getenv(name_buf.c_str())) {
-        value_id = intern(env_val);
-    }
-    // 2. Fall back to cached value from previous build (passed via options)
-    else if (auto it = std::lower_bound(
-                 state.options.cached_env_vars.begin(),
-                 state.options.cached_env_vars.end(),
-                 var_name_sv,
-                 [](auto const& p, std::string_view k) { return str(p.first) < k; }
-             );
-             it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
-        value_id = it->second;
-    }
-    // 3. Fall back to default value
-    else if (imp.default_value) {
-        auto expanded = parser::expand(*ctx.eval, *imp.default_value);
-        if (!expanded) {
-            return pup::unexpected<Error>(expanded.error());
-        }
-        value_id = *expanded;
-    }
-
-    auto value_sv = str(value_id);
-
-    auto var_name_id = to_underlying(intern(var_name_sv));
-    if (state.env_var_dir_id != INVALID_NODE_ID) {
-        auto node_name_buf = Buf {};
-        node_name_buf += var_name_sv;
-        node_name_buf += '=';
-        node_name_buf += value_sv;
-        auto content_hash = sha256(value_sv);
-
-        auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
-        auto const name_id = intern(node_name_buf.view());
-        if (existing_node_id) {
-            auto* existing = get_file_node(ctx.state->graph, *existing_node_id);
-            if (existing && existing->name != name_id) {
-                existing->name = name_id;
-                existing->content_hash = content_hash;
-            }
-        } else {
-            auto node = FileNode {
-                .type = NodeType::Variable,
-                .name = name_id,
-                .parent_dir = state.env_var_dir_id,
-                .content_hash = content_hash,
-            };
-            auto result = add_file_node(ctx.state->graph, std::move(node));
-            if (result) {
-                state.imported_env_var_nodes.insert(var_name_id, *result);
-            }
-        }
-    }
-
-    if (ctx.vars) {
-        ctx.vars->set(var_name_sv, value_sv);
-    }
-
-    // Track this as an imported variable for fine-grained dependency tracking
-    state.imported_var_names.insert(var_name_id);
-
-    return {};
-}
-
-auto process_export(
-    BuilderContext& ctx,
-    parser::Export const& exp
-) -> Result<void>
-{
-    // Per tup manual: "adds the environment variable VARIABLE to the export
-    // list for future :-rules"
-    ctx.exported_vars.insert(to_underlying(intern(str(exp.var_name))));
-    return {};
 }
 
 auto expand_rule(
@@ -1805,506 +2134,108 @@ auto expand_rule(
     return {};
 }
 
-auto expand_inputs(
-    BuilderContext& ctx,
-    Vec<parser::PathPattern> const& patterns
-) -> Result<Vec<StringId>>
-{
-    auto& pool = global_pool();
-    auto result = Vec<StringId> {};
-
-    for (auto const& pattern : patterns) {
-        if (pattern.is_exclusion || pattern.is_output_exclusion) {
-            continue;
-        }
-
-        if (pattern.is_group) {
-            auto gkey = to_underlying(intern(str(pattern.group_name)));
-            if (auto const* members = ctx.groups.find(gkey)) {
-                for (auto id : *members) {
-                    auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
-                    if (!path_sv.empty()) {
-                        result.push_back(intern(path_sv));
-                    }
-                }
-            }
-            continue;
-        }
-
-        if (pattern.is_order_only_group) {
-            auto group_dir = StringId::Empty;
-
-            if (!pattern.path.empty()) {
-                auto expanded = parser::expand(*ctx.eval, pattern.path);
-                if (expanded) {
-                    group_dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
-                    request_demand_driven_parse(*ctx.eval, str(group_dir));
-                }
-            } else {
-                group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
-            }
-
-            auto group_name_sv = str(pattern.group_name);
-            auto ref_buf = Buf {};
-            auto group_dir_sv = str(group_dir);
-            if (group_dir_sv.empty()) {
-                ref_buf += '<';
-                ref_buf += group_name_sv;
-                ref_buf += '>';
-            } else {
-                ref_buf += group_dir_sv;
-                ref_buf += "/<";
-                ref_buf += group_name_sv;
-                ref_buf += '>';
-            }
-            result.push_back(ref_buf.intern(pool));
-            continue;
-        }
-
-        auto paths = parser::expand_path(*ctx.eval, pattern);
-        if (!paths) {
-            return pup::unexpected<Error>(paths.error());
-        }
-
-        for (auto path_id : *paths) {
-            auto path_sv = pool.get(path_id);
-            auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
-            if (group_ref) {
-                request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
-                result.push_back(path_id);
-                continue;
-            }
-            if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path_sv))));
-            } else {
-                result.push_back(path_id);
-            }
-
-            if (ctx.options.expand_globs && parser::has_glob_chars(path_sv)) {
-                expand_glob_pattern(ctx, path_sv, result);
-            } else if (!parser::has_glob_chars(path_sv)) {
-                auto full_path_sv = pool.get(pup::path::join(pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir))), path_sv));
-                if (!pup::platform::exists(full_path_sv)) {
-                    auto file_dir = pup::path::parent(path_sv);
-                    auto abs_file_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), file_dir))));
-                    request_demand_driven_parse(*ctx.eval, abs_file_dir_sv);
-                }
-            }
-        }
-    }
-
-    apply_exclusions(ctx, patterns, result);
-
-    return result;
-}
-
-auto expand_outputs(
-    BuilderContext& ctx,
-    Vec<parser::PathPattern> const& patterns,
-    parser::PatternFlags const& flags
-) -> Result<Vec<StringId>>
-{
-    auto& pool = global_pool();
-    auto result = Vec<StringId> {};
-
-    for (auto const& pattern : patterns) {
-        if (pattern.is_group) {
-            continue;
-        }
-        if (pattern.is_output_exclusion) {
-            continue;
-        }
-
-        auto paths = parser::expand_path(*ctx.eval, pattern);
-        if (!paths) {
-            return pup::unexpected<Error>(paths.error());
-        }
-
-        for (auto path_id : *paths) {
-            auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), flags);
-            auto output_path_sv = expanded ? pool.get(*expanded) : pool.get(path_id);
-
-            auto full_output_path_id = pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv)));
-
-            auto node_id = walk_to_file_node(
-                ctx.state->graph,
-                BUILD_ROOT_ID,
-                pool.get(full_output_path_id),
-                NodeType::Generated
-            );
-
-            if (!node_id) {
-                return pup::unexpected<Error>(node_id.error());
-            }
-
-            result.push_back(intern(get_full_path(ctx.state->graph, *node_id, ctx.state->path_cache)));
-        }
-    }
-
-    return result;
-}
-
-auto expand_command(
-    BuilderContext& ctx,
-    parser::Expression const& cmd,
-    parser::PatternFlags flags,
-    Vec<StringId> const& outputs,
-    StringId* out_instruction
-) -> Result<StringId>
-{
-    auto& pool = global_pool();
-    auto literal = parser::expand(*ctx.eval, cmd);
-    if (!literal) {
-        return pup::unexpected<Error>(literal.error());
-    }
-
-    auto expanded = parser::expand(*ctx.eval, pool.get(*literal));
-    if (!expanded) {
-        return pup::unexpected<Error>(expanded.error());
-    }
-
-    if (out_instruction) {
-        *out_instruction = *expanded;
-    }
-
-    auto tc = make_transform_context(ctx);
-    auto cmd_outputs = Vec<StringId> {};
-    cmd_outputs.reserve(outputs.size());
-    for (auto out : outputs) {
-        cmd_outputs.push_back(transform_output_path(tc, str(out)));
-    }
-
-    auto primary_output_sv = cmd_outputs.empty() ? std::string_view {} : str(cmd_outputs[0]);
-    flags.output = primary_output_sv;
-    flags.output_base = parser::path_basename(primary_output_sv);
-    auto outputs_sv = Vec<std::string_view> {};
-    outputs_sv.reserve(cmd_outputs.size());
-    for (auto id : cmd_outputs) {
-        outputs_sv.push_back(str(id));
-    }
-    flags.all_outputs = std::move(outputs_sv);
-
-    auto pattern_result = parser::expand_pattern(*ctx.eval, pool.get(*expanded), flags);
-    if (!pattern_result) {
-        return pup::unexpected<Error>(pattern_result.error());
-    }
-    return *pattern_result;
-}
-
-auto get_or_create_directory_node(
-    BuilderContext& ctx,
-    std::string_view dir_path,
-    int depth
-) -> Result<NodeId>
-{
-    auto normalized_path = global_pool().get(pup::path::normalize(dir_path));
-
-    if (normalized_path.empty() || normalized_path == "." || normalized_path == "/") {
-        return NodeId { 0 };
-    }
-
-    if (depth > MAX_DIRECTORY_DEPTH) {
-        return make_error<NodeId>(ErrorCode::InvalidArgument, "Directory nesting exceeds maximum depth");
-    }
-
-    auto parent_path_sv = pup::path::parent(normalized_path);
-    auto basename_sv = pup::path::filename(normalized_path);
-
-    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv, depth + 1);
-    if (!parent_id_result) {
-        return parent_id_result;
-    }
-    auto parent_id = *parent_id_result;
-
-    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, basename_sv)) {
-        return *existing;
-    }
-
-    auto node = FileNode {
-        .type = NodeType::Directory,
-        .name = intern(basename_sv),
-        .parent_dir = parent_id,
-    };
-
-    return add_file_node(ctx.state->graph, std::move(node));
-}
-
-auto get_or_create_file_node(
-    BuilderContext& ctx,
-    std::string_view path,
-    NodeType type
-) -> Result<NodeId>
-{
-    // Convert working-directory-relative paths to source-root-relative or absolute
-    // Paths like "../../build/foo" from "src/bar" should become "build/foo"
-    // For Generated nodes, first check if path already has build root prefix.
-    // This happens when expand_outputs returns paths like "../build/lib/add.o".
-    // We must strip the prefix and look up under BUILD_ROOT_ID before any other
-    // path manipulation that could corrupt the lookup.
-    auto build_root_name = get_build_root_name(ctx.state->graph);
-
-    if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path_sv = global_pool().get(pup::strip_path_prefix(path, build_root_name));
-
-        if (lookup_path_sv != path) {
-            if (auto existing = find_by_path(ctx.state->graph, lookup_path_sv, BUILD_ROOT_ID)) {
-                return *existing;
-            }
-        }
-    }
-
-    // For cross-project paths, also check after normalizing through output_root
-    if (type == NodeType::Generated && path.starts_with("..")) {
-        auto norm_output_sv = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
-        if (norm_output_sv != path) {
-            if (auto existing = find_by_path(ctx.state->graph, norm_output_sv, BUILD_ROOT_ID)) {
-                return *existing;
-            }
-        }
-    }
-
-    auto& pool = global_pool();
-    auto resolved = path;
-    if (!is_empty(ctx.current_dir) && path.starts_with("..")) {
-        auto norm = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
-        if (norm.starts_with("..")) {
-            resolved = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.options.source_root), norm))));
-        } else {
-            resolved = norm;
-        }
-    }
-
-    auto normalized = normalize_path(resolved);
-
-    // For Generated nodes, check if node was already created under BUILD_ROOT_ID
-    // by expand_outputs. This handles paths without the build prefix.
-    if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path2 = pool.get(pup::strip_path_prefix(normalized, build_root_name));
-        if (auto existing = find_by_path(ctx.state->graph, lookup_path2, BUILD_ROOT_ID)) {
-            return *existing;
-        }
-    }
-
-    // For Generated nodes, use walk_to_file_node to ensure they're created under BUILD_ROOT_ID.
-    // This maintains consistency with expand_outputs() which also uses BUILD_ROOT_ID.
-    if (type == NodeType::Generated) {
-        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
-    }
-
-    auto basename_sv = pup::path::filename(normalized);
-
-    auto parent_path_sv = pup::path::parent(normalized);
-    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv);
-    if (!parent_id_result) {
-        return parent_id_result;
-    }
-    auto parent_id = *parent_id_result;
-
-    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, basename_sv)) {
-        return *existing;
-    }
-
-    auto node = FileNode {
-        .type = type,
-        .name = intern(basename_sv),
-        .parent_dir = parent_id,
-    };
-
-    return add_file_node(ctx.state->graph, std::move(node));
-}
-
-auto resolve_input_node(
-    BuilderContext& ctx,
-    std::string_view path
-) -> Result<NodeId>
-{
-    // Input paths are already source-relative from expand_inputs() which normalizes them
-    // by combining with current_dir. No further normalization needed here.
-
-    // Track whether the path originally had the build prefix or pointed to output_root.
-    // This indicates the path should reference a generated file, not a source file.
-    auto had_build_prefix = false;
-
-    // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
-    // already have the build root prefix. Strip it to get source-relative paths.
-    auto build_root_name = get_build_root_name(ctx.state->graph);
-    auto normalized_path = global_pool().get(pup::strip_path_prefix(path, build_root_name));
-    if (normalized_path != path) {
-        had_build_prefix = true;
-    }
-
-    if (normalized_path.starts_with("..")) {
-        auto before = normalized_path;
-        normalized_path = normalize_to_output_relative(
-            normalized_path, str(ctx.options.source_root), str(ctx.options.output_root)
-        );
-        if (before != normalized_path) {
-            had_build_prefix = true;
-        }
-    }
-
-    // With BUILD_ROOT_ID model:
-    // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths
-    // - Generated/Ghost files are under BUILD_ROOT_ID at source-relative paths
-
-    // First check if node exists under BUILD_ROOT_ID (generated files)
-    if (auto existing = find_by_path(ctx.state->graph, normalized_path, BUILD_ROOT_ID)) {
-        return *existing;
-    }
-
-    // If path had build prefix, it's referencing a generated file. Even if a source file
-    // exists at the same path, create a Ghost node under BUILD_ROOT_ID so it can be
-    // upgraded to Generated when the output rule is processed.
-    if (had_build_prefix) {
-        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
-    }
-
-    // Check under SOURCE_ROOT_ID (source files)
-    if (auto existing = find_by_path(ctx.state->graph, normalized_path, SOURCE_ROOT_ID)) {
-        return *existing;
-    }
-
-    // Node doesn't exist - check filesystem to determine type
-    auto source_path = global_pool().get(pup::path::join(str(ctx.options.source_root), normalized_path));
-    if (pup::platform::exists(source_path)) {
-        // Source file exists - create File node under SOURCE_ROOT_ID
-        return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
-    }
-
-    // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
-    // source_root. Check config_root as a fallback for source file resolution.
-    if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
-        auto config_path_sv = global_pool().get(pup::path::join(str(ctx.options.config_root), normalized_path));
-        if (pup::platform::exists(config_path_sv)) {
-            return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
-        }
-    }
-
-    // Check if file exists in build directory (e.g., tup.config, or already-generated files)
-    auto build_path_sv = global_pool().get(pup::path::join(str(ctx.options.output_root), normalized_path));
-    if (pup::platform::exists(build_path_sv)) {
-        // File exists in build dir but not source - it's a Generated output from a previous build.
-        // Create as Ghost so the rule that generates it can upgrade it to Generated.
-        // (If the rule no longer generates it, the Ghost remains and causes an error.)
-        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
-    }
-
-    // File doesn't exist anywhere - create Ghost node under BUILD_ROOT_ID
-    // Ghost nodes represent not-yet-generated files, which will be under build root
-    return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
-}
-
-auto get_or_create_group_node(
+auto process_rule(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string_view directory,
-    std::string_view name
-) -> Result<NodeId>
+    parser::Rule const& rule
+) -> Result<void>
 {
-    auto key_id = to_underlying(pup::path::join(directory, name));
-    auto const* cached = state.group_nodes.find(key_id);
-    if (cached) {
-        return *cached;
+    // Apply any pending weak assignments (??=) before expanding commands
+    // This ensures ??= assignments that precede rules take effect
+    apply_pending_weak_assignments(ctx, state);
+
+    // Expand input patterns
+    auto inputs = Result<Vec<StringId>> { expand_inputs(ctx, rule.inputs) };
+    if (!inputs) {
+        return pup::unexpected<Error>(inputs.error());
     }
 
-    // Get or create parent directory node
-    auto parent_id_result = get_or_create_directory_node(ctx, directory);
-    if (!parent_id_result) {
-        return parent_id_result;
-    }
-    auto parent_id = *parent_id_result;
-
-    // Check if group node already exists in graph (e.g., from previous Tupfile)
-    // Group nodes are stored with angle-bracket name like "<gen-headers>"
-    auto gb = Buf {};
-    gb += '<';
-    gb += name;
-    gb += '>';
-    auto group_basename = gb.view();
-    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, group_basename)) {
-        state.group_nodes.insert(key_id, *existing);
-        return *existing;
+    // Skip rules where input pattern evaluated to empty (tup behavior)
+    // - rule.inputs.empty() means no input pattern was specified (": |> cmd")
+    // - inputs->empty() means the pattern(s) evaluated to no files
+    // Only skip if pattern was specified but produced nothing
+    if (!rule.foreach_ && !rule.inputs.empty() && inputs->empty()) {
+        return {};
     }
 
-    // Create new group node
-    auto node = FileNode {
-        .type = NodeType::Group,
-        .name = intern(group_basename),
-        .parent_dir = parent_id,
-    };
+    if (rule.foreach_) {
+        auto patterns = Vec<StringId> {};
+        auto files = Vec<StringId> {};
+        for (auto inp : *inputs) {
+            if (parser::has_glob_chars(str(inp))) {
+                patterns.push_back(inp);
+            } else {
+                files.push_back(inp);
+            }
+        }
 
-    auto result = add_file_node(ctx.state->graph, std::move(node));
-    if (result) {
-        state.group_nodes.insert(key_id, *result);
+        // Foreach rule: create one command per file, include patterns for %g
+        for (auto file : files) {
+            auto iter_inputs = patterns;
+            iter_inputs.push_back(file);
+            auto result = expand_rule(ctx, state, rule, iter_inputs);
+            if (!result) {
+                return pup::unexpected<Error>(result.error());
+            }
+        }
+    } else {
+        // Normal rule: single command for all inputs
+        auto result = expand_rule(ctx, state, rule, *inputs);
+        if (!result) {
+            return pup::unexpected<Error>(result.error());
+        }
     }
-    return result;
+
+    return {};
 }
 
-auto create_command_node(
+auto process_statement(
     BuilderContext& ctx,
     BuilderState& state,
-    std::string_view instruction,
-    std::string_view display
-) -> Result<NodeId>
+    parser::Statement const& stmt
+) -> Result<void>
 {
-    auto exported = SortedIdVec {};
-    exported.merge_from(ctx.exported_vars);
-
-    auto node = CommandNode {
-        .display = intern(display),
-        .source_dir = ctx.current_dir,
-        .instruction_id = intern(instruction),
-        .exported_vars = std::move(exported),
-        .guards = ctx.condition_stack,
-    };
-
-    auto cmd_id_result = add_command_node(ctx.state->graph, std::move(node));
-    if (!cmd_id_result) {
-        return cmd_id_result;
+    if (ctx.eval && ctx.eval->on_statement) {
+        auto dir = is_empty(ctx.current_dir) ? std::string_view { "." } : str(ctx.current_dir);
+        ctx.eval->on_statement(stmt, dir);
     }
 
-    auto cmd_id = *cmd_id_result;
-
-    // Add sticky edges from Tupfile and included files to this command
-    for (auto src_id : ctx.sticky_sources) {
-        (void)add_edge(ctx.state->graph, src_id, cmd_id, LinkType::Sticky);
+    if (auto const* rule = stmt.as<parser::Rule>()) {
+        return process_rule(ctx, state, *rule);
     }
 
-    // Add sticky edges from used config variables (fine-grained dependency tracking)
-    auto const* cv = ctx.used_config_vars.data();
-    for (std::size_t i = 0, n = ctx.used_config_vars.size(); i < n; ++i) {
-        auto const* node_id = state.config_var_nodes.find(cv[i]);
-        if (node_id) {
-            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
-        }
+    if (auto const* macro = stmt.as<parser::BangMacro>()) {
+        return process_bang_macro(ctx, *macro);
     }
 
-    // Add sticky edges from condition config variables (phi-node model)
-    auto const* ccv = ctx.condition_config_vars.data();
-    for (std::size_t i = 0, n = ctx.condition_config_vars.size(); i < n; ++i) {
-        auto const* node_id = state.config_var_nodes.find(ccv[i]);
-        if (node_id) {
-            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
-        }
+    if (auto const* assign = stmt.as<parser::Assignment>()) {
+        return process_assignment(ctx, state, *assign);
     }
 
-    // Add sticky edges from used imported env variables (fine-grained dependency tracking)
-    auto const* uev = ctx.used_env_vars.data();
-    for (std::size_t i = 0, n = ctx.used_env_vars.size(); i < n; ++i) {
-        auto const* node_id = state.imported_env_var_nodes.find(uev[i]);
-        if (node_id) {
-            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
-        }
+    if (auto const* cond = stmt.as<parser::Conditional>()) {
+        return process_conditional(ctx, state, *cond);
     }
 
-    return cmd_id;
+    if (auto const* inc = stmt.as<parser::Include>()) {
+        return process_include(ctx, state, *inc);
+    }
+
+    if (auto const* imp = stmt.as<parser::Import>()) {
+        return process_import(ctx, state, *imp);
+    }
+
+    if (auto const* exp = stmt.as<parser::Export>()) {
+        return process_export(ctx, *exp);
+    }
+
+    return {};
 }
 
 } // anonymous namespace
 
-// ============================================================================
-// Public free function API
-// ============================================================================
+// ---------------------------------------------------------------------------
+// §10 — Public API
+// ---------------------------------------------------------------------------
 
 auto make_builder_state(BuilderOptions opts) -> BuilderState
 {
@@ -2651,9 +2582,9 @@ auto resolve_deferred_order_only_edges(
     return {};
 }
 
-// ============================================================================
-// GraphBuilder wrapper implementation
-// ============================================================================
+// ---------------------------------------------------------------------------
+// §11 — GraphBuilder wrapper
+// ---------------------------------------------------------------------------
 
 GraphBuilder::GraphBuilder(BuilderOptions options)
     : state_ { make_builder_state(std::move(options)) }
