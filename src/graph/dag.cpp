@@ -983,6 +983,21 @@ auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view
 }
 
 // =============================================================================
+// BuildState free functions
+// =============================================================================
+
+auto make_build_state() -> BuildState
+{
+    return BuildState { .graph = make_graph(), .path_cache = {} };
+}
+
+auto set_build_root_name(BuildState& state, std::string_view name) -> void
+{
+    graph::set_build_root_name(state.graph, name);
+    graph::clear_path_cache(state.path_cache);
+}
+
+// =============================================================================
 // BuildGraph wrapper class implementation
 // =============================================================================
 

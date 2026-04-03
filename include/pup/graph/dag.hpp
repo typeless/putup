@@ -344,6 +344,24 @@ auto get_build_root_name(Graph const& graph) -> std::string_view;
 auto is_under_build_root(Graph const& graph, NodeId id) -> bool;
 
 // =============================================================================
+// BuildState - thin data carrier (replaces BuildGraph over time)
+// =============================================================================
+
+/// Simple aggregate holding the graph and its path cache.
+/// Replaces BuildGraph as a thin data carrier with no methods.
+struct BuildState {
+    Graph graph;
+    mutable PathCache path_cache;
+};
+
+/// Create a BuildState with an initialized graph
+[[nodiscard]]
+auto make_build_state() -> BuildState;
+
+/// Set build root name and clear path cache
+auto set_build_root_name(BuildState& state, std::string_view name) -> void;
+
+// =============================================================================
 // Legacy class wrapper (for gradual migration)
 // =============================================================================
 
