@@ -15,7 +15,6 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include <optional>
-#include <span>
 #include <string_view>
 
 namespace pup::graph {
