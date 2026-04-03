@@ -1066,10 +1066,7 @@ using JobCompleteCallback = Function<void(BuildJob const&, JobResult const&)>;
 using ProgressCallback = Function<void(std::size_t completed, std::size_t total)>;
 
 class Scheduler {
-    auto build(graph) -> Result<BuildStats>;
-    auto build_incremental(graph, changed_files) -> Result<BuildStats>;
-    auto build_subset(graph, command_ids) -> Result<BuildStats>;
-    auto build_targets(graph, target_ids) -> Result<BuildStats>;
+    auto build(state, filter = nullptr) -> Result<BuildStats>;
     auto on_job_start(callback) -> void;
     auto on_job_complete(callback) -> void;
     auto on_progress(callback) -> void;
@@ -1079,31 +1076,20 @@ class Scheduler {
 };
 ```
 
-**Build methods:**
+The scheduler has a single `build()` method. An optional `NodeIdMap32` filter selects which commands to execute; `nullptr` means build everything.
 
-| Method | Purpose |
-|--------|---------|
-| `build()` | Full build - execute all commands in topological order |
-| `build_incremental()` | Rebuild commands whose inputs changed |
-| `build_subset()` | Build only specified command IDs |
-| `build_targets()` | Build specific outputs and their dependencies (reverse traversal) |
+**Composable filters:**
 
-**Build mode selection:**
+Build constraints are computed as independent `NodeIdMap32` filters, then intersected:
 
-```cpp
-enum class BuildMode {
-    Incremental,  // Old index exists, files changed
-    Targets,      // Specific outputs requested (--output-targets)
-    Subset,       // Exclude config commands from full build
-    Full,         // Build everything
-};
-```
+| Filter | Source | Graph algorithm |
+|--------|--------|-----------------|
+| **affected** | Changed files (incremental) | `collect_affected_commands()` — forward traversal from inputs |
+| **required** | Output targets on CLI | `collect_required_commands()` — backward traversal from outputs |
+| **scope** | `-a` scoped build | Commands in scoped dirs + upstream deps |
+| **non-config** | Config commands exist | All commands minus config-generating rules |
 
-Mode precedence (highest to lowest):
-1. **Incremental** - if old index exists and files changed
-2. **Targets** - if specific output targets requested (and not incremental)
-3. **Subset** - exclude config commands from full build
-4. **Full** - build everything
+Active filters are intersected so constraints compose correctly. For example, `putup -B build build/putup` intersects the **affected** filter (only changed files) with the **required** filter (only the binary's deps), building exactly the minimal set. A `nullptr` filter (no active constraints) produces a full build.
 
 **Parallel execution algorithm (single-threaded, poll-based):**
 
@@ -1201,8 +1187,10 @@ changed.insert(changed.end(), new_outputs.begin(), new_outputs.end());
 // 7. Remove stale outputs from deleted commands
 remove_stale_outputs(graph, old_index, source_root);
 
-// Execute incremental build
-auto stats = scheduler.build_incremental(graph, changed);
+// Build with composable filter (affected ∩ required ∩ scope)
+auto filter = collect_affected_commands(graph, changed);
+// ... intersect with required/scope filters if active ...
+auto stats = scheduler.build(state, &filter);
 ```
 
 **Change detection algorithm:**
