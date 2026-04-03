@@ -15,6 +15,7 @@
 #include "pup/core/vec.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cstddef>

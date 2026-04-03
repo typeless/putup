@@ -3338,7 +3338,7 @@ SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
 
 SCENARIO("Configure handles config rule depending on non-config rule", "[e2e][configure][deps]")
 {
-    // Bug: build_subset only runs config-output rules, ignoring their dependencies.
+    // Bug: passing only config-output commands as a filter ignores their dependencies.
     // If a config rule depends on an intermediate file produced by a non-config rule,
     // the dependency is not run, causing the config rule to fail.
 
