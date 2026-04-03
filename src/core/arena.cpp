@@ -4,6 +4,7 @@
 #include "pup/core/arena.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <utility>

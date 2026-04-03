@@ -5,7 +5,13 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/metrics.hpp"
-#include "pup/core/string_pool.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/types.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <string_view>
 
 extern "C" {
 #include "sha256/sha256.h"

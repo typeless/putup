@@ -3,16 +3,26 @@
 
 #include "pup/parser/parser.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/parser/ast.hpp"
 #include "pup/parser/lexer.hpp"
 
 #include "pup/core/function.hpp"
+#include "pup/parser/token.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <memory>
 #include <optional>
+#include <string_view>
+#include <utility>
+#include <variant>
 
 namespace pup::parser {
 

@@ -2,28 +2,43 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/context.hpp"
+#include "pup/cli/options.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
+#include "pup/core/paged_vec.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
 #include "pup/index/reader.hpp"
+#include "pup/parser/ast.hpp"
 #include "pup/parser/config.hpp"
 #include "pup/parser/ignore.hpp"
 #include "pup/parser/parser.hpp"
+#include "pup/platform/file_io.hpp"
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 namespace pup::cli {
 

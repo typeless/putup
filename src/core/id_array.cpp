@@ -3,6 +3,7 @@
 
 #include "pup/core/id_array.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <utility>

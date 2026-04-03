@@ -4,6 +4,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include <string_view>
 
 namespace pup {
 

@@ -6,8 +6,12 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/parser/ast.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <cstddef>
+#include <string_view>
 #include <variant>
 
 namespace pup::cli {

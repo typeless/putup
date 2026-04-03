@@ -5,11 +5,15 @@
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/cli/options.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
@@ -17,6 +21,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
 
 namespace pup::cli {
 

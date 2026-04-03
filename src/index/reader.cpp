@@ -2,10 +2,21 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/reader.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/index/entry.hpp"
+#include "pup/index/format.hpp"
+#include "pup/platform/file_io.hpp"
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <span>
+#include <string_view>
+#include <utility>
 
 namespace pup::index {
 

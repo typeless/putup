@@ -3,6 +3,7 @@
 
 #include "pup/core/id_bitset.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <utility>

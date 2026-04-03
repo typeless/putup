@@ -4,9 +4,12 @@
 #include "pup/parser/lexer.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/parser/token.hpp"
 
-#include <algorithm>
-#include <utility>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string_view>
 
 namespace pup::parser {
 

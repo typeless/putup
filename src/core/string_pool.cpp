@@ -2,8 +2,11 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/string_pool.hpp"
+#include "pup/core/string_id.hpp"
 
+#include <cstdint>
 #include <cstdlib>
+#include <string_view>
 #include <utility>
 
 namespace pup {

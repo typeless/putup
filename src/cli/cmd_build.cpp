@@ -5,6 +5,7 @@
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/cli/options.hpp"
 #include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
@@ -13,14 +14,16 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/exec/progress_display.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
-#include "pup/graph/rule_pattern.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/platform/file_io.hpp"
@@ -28,8 +31,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 namespace pup::cli {
 

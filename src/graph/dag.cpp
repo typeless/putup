@@ -9,11 +9,19 @@
 #include "pup/core/path_utils.hpp"
 
 #include "pup/core/path.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/platform/file_io.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <charconv>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 namespace pup::graph {
 

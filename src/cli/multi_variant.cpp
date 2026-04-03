@@ -3,13 +3,17 @@
 
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/cli/options.hpp"
 #include "pup/cli/target.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include "pup/platform/process.hpp"
@@ -17,6 +21,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
+#include <string_view>
 
 namespace pup::cli {
 

@@ -4,8 +4,13 @@
 #include "pup/parser/ignore.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/result.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
+#include <cstddef>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 namespace pup::parser {
 

@@ -4,10 +4,15 @@
 #include "pup/exec/runner.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/platform/process.hpp"
 
 #include <cctype>
+#include <string_view>
+#include <utility>
 
 namespace pup::exec {
 

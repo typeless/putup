@@ -4,9 +4,13 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include "pup/core/global_pool.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
+#include <optional>
+#include <utility>
 
 namespace pup::graph {
 

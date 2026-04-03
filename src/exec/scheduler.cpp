@@ -4,13 +4,18 @@
 #include "pup/exec/scheduler.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
@@ -20,8 +25,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
+#include <memory>
 #include <queue>
+#include <string_view>
+#include <utility>
 
 namespace pup::exec {
 

@@ -3,6 +3,7 @@
 
 #include "pup/core/sorted_id_vec.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <utility>

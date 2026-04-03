@@ -4,17 +4,23 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/context.hpp"
 #include "pup/cli/multi_variant.hpp"
+#include "pup/cli/options.hpp"
 #include "pup/cli/strict_checks.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/result.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
+#include "pup/parser/ast.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <cstdio>
 #include <cstdlib>
+#include <string_view>
+#include <utility>
 
 namespace pup::cli {
 

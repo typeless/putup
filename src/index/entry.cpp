@@ -4,12 +4,20 @@
 #include "pup/index/entry.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/hash.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/index/format.hpp"
 
 #include <cassert>
 #include <charconv>
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+#include <utility>
 
 namespace pup::index {
 

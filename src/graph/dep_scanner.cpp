@@ -5,7 +5,12 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/graph/rule_pattern.hpp"
+#include <memory>
+#include <utility>
 
 namespace pup::graph {
 

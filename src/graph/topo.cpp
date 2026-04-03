@@ -4,9 +4,14 @@
 #include "pup/graph/topo.hpp"
 
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/graph/dag.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <stack>
+#include <utility>
 
 namespace pup::graph {
 

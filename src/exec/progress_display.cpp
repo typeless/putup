@@ -3,12 +3,17 @@
 
 #include "pup/exec/progress_display.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
+#include "pup/core/types.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <string_view>
 
 namespace pup::exec {
 

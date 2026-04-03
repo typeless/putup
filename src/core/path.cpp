@@ -4,9 +4,13 @@
 #include "pup/core/path.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include "pup/core/vec.hpp"
+#include <algorithm>
+#include <cstddef>
+#include <string_view>
 
 namespace pup::path {
 

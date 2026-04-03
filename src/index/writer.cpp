@@ -3,17 +3,27 @@
 
 #include "pup/index/writer.hpp"
 #include "pup/core/clock.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/index/entry.hpp"
+#include "pup/index/format.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_pool.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <span>
+#include <string_view>
 
 namespace pup::index {
 

@@ -3,13 +3,21 @@
 
 #include "pup/graph/builder.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/result.hpp"
+#include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/types.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
+#include "pup/parser/ast.hpp"
 #include "pup/parser/eval.hpp"
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
@@ -17,10 +25,15 @@
 #include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <cstdint>
 #include <cstdio>
 
 #include <algorithm>
 #include <cstdlib>
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 namespace pup::graph {
 

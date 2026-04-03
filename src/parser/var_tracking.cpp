@@ -4,8 +4,11 @@
 #include "pup/parser/var_tracking.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
+#include "pup/parser/ast.hpp"
 
 #include <algorithm>
+#include <string_view>
 
 namespace pup::parser {
 

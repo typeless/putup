@@ -4,17 +4,24 @@
 #include "pup/parser/eval.hpp"
 
 #include "pup/core/buf.hpp"
+#include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/graph/builder.hpp"
 
 #include "pup/core/path.hpp"
+#include "pup/parser/ast.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cstdlib>
+#include <optional>
+#include <string_view>
+#include <variant>
 
 namespace pup::parser {
 

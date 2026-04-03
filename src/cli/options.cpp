@@ -4,6 +4,7 @@
 #include "pup/cli/options.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <charconv>
@@ -11,6 +12,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 namespace pup::cli {
 
