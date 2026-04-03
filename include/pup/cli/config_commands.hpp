@@ -7,7 +7,10 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
-#include "pup/graph/dag.hpp"
+
+namespace pup::graph {
+class BuildGraph;
+}
 
 namespace pup::cli {
 

@@ -3,10 +3,22 @@
 
 #include "pup/graph/dep_scanner.hpp"
 
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
 namespace pup::graph {
+
+auto make_dep_display(Vec<StringId> const& inputs) -> StringId
+{
+    if (inputs.empty()) {
+        return global_pool().intern("DEP");
+    }
+    auto buf = Buf {};
+    buf.append("DEP ");
+    buf.append(global_pool().get(inputs[0]));
+    return buf.intern(global_pool());
+}
 
 auto DepScannerRegistry::register_scanner(std::unique_ptr<DepScanner> scanner) -> void
 {

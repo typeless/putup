@@ -5,14 +5,16 @@
 
 #include "ast.hpp"
 #include "pup/core/function.hpp"
-#include "pup/core/global_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 
 #include <string_view>
+
+namespace pup {
+class StringPool;
+}
 
 namespace pup::graph {
 struct VarDepTracker;

@@ -997,4 +997,30 @@ BuildGraph::BuildGraph(BuildGraph&&) noexcept = default;
 
 auto BuildGraph::operator=(BuildGraph&&) noexcept -> BuildGraph& = default;
 
+auto BuildGraph::get_full_path(NodeId id) const -> StringId
+{
+    auto sv = graph::get_full_path(graph_, id, path_cache_);
+    return global_pool().intern(sv);
+}
+
+auto BuildGraph::intern(std::string_view str) -> StringId
+{
+    return global_pool().intern(str);
+}
+
+auto BuildGraph::str(StringId id) const -> std::string_view
+{
+    return global_pool().get(id);
+}
+
+auto BuildGraph::string_pool() -> StringPool&
+{
+    return global_pool();
+}
+
+auto BuildGraph::string_pool() const -> StringPool const&
+{
+    return global_pool();
+}
+
 } // namespace pup::graph

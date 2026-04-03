@@ -3,9 +3,11 @@
 
 #include "pup/graph/builder.hpp"
 #include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/parser/eval.hpp"

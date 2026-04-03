@@ -6,7 +6,6 @@
 #include "pup/core/function.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
 #include <chrono>

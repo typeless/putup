@@ -5,6 +5,7 @@
 // Run with: ./build/test/unit/pup_test "[.benchmark]"
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/glob.hpp"

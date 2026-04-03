@@ -3,10 +3,8 @@
 
 #pragma once
 
-#include "pup/core/global_pool.hpp"
 #include "pup/core/source_location.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 
 #include <memory>
@@ -70,13 +68,7 @@ struct Expression final : AstNode {
     }
 
     [[nodiscard]]
-    auto as_literal() const -> std::string_view
-    {
-        if (is_literal()) {
-            return global_pool().get(std::get<Literal>(parts[0]).value);
-        }
-        return {};
-    }
+    auto as_literal() const -> std::string_view;
 
     [[nodiscard]]
     auto empty() const -> bool

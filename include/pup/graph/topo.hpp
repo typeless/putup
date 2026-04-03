@@ -4,11 +4,8 @@
 #pragma once
 
 #include "dag.hpp"
-#include "pup/core/result.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
-
-#include <optional>
 
 namespace pup::graph {
 

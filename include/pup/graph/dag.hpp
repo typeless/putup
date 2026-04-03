@@ -4,7 +4,6 @@
 #pragma once
 
 #include "pup/core/arena.hpp"
-#include "pup/core/global_pool.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/paged_vec.hpp"
 #include "pup/core/result.hpp"
@@ -562,11 +561,7 @@ public:
     }
 
     [[nodiscard]]
-    auto get_full_path(NodeId id) const -> StringId
-    {
-        auto sv = graph::get_full_path(graph_, id, path_cache_);
-        return global_pool().intern(sv);
-    }
+    auto get_full_path(NodeId id) const -> StringId;
 
     [[nodiscard]]
     auto expand_instruction(NodeId id) const -> StringId
@@ -627,31 +622,17 @@ public:
         return graph_;
     }
 
-    /// Intern a string in the global string pool
     [[nodiscard]]
-    auto intern(std::string_view str) -> StringId
-    {
-        return global_pool().intern(str);
-    }
-
-    /// Get string from the global string pool
-    [[nodiscard]]
-    auto str(StringId id) const -> std::string_view
-    {
-        return global_pool().get(id);
-    }
+    auto intern(std::string_view str) -> StringId;
 
     [[nodiscard]]
-    auto string_pool() -> StringPool&
-    {
-        return global_pool();
-    }
+    auto str(StringId id) const -> std::string_view;
 
     [[nodiscard]]
-    auto string_pool() const -> StringPool const&
-    {
-        return global_pool();
-    }
+    auto string_pool() -> StringPool&;
+
+    [[nodiscard]]
+    auto string_pool() const -> StringPool const&;
 
 private:
     Graph graph_;

@@ -3,10 +3,7 @@
 
 #pragma once
 
-#include "pup/core/buf.hpp"
-#include "pup/core/global_pool.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
@@ -65,16 +62,7 @@ public:
 
 /// Build display string for DEP commands (e.g., "DEP foo.c")
 [[nodiscard]]
-inline auto make_dep_display(Vec<StringId> const& inputs) -> StringId
-{
-    if (inputs.empty()) {
-        return global_pool().intern("DEP");
-    }
-    auto buf = Buf {};
-    buf.append("DEP ");
-    buf.append(global_pool().get(inputs[0]));
-    return buf.intern(global_pool());
-}
+auto make_dep_display(Vec<StringId> const& inputs) -> StringId;
 
 /// Registry for dependency scanners.
 /// Scanners are checked in registration order; first match wins.
