@@ -188,108 +188,6 @@ auto is_tupfile(std::string_view path) -> bool
         || path.ends_with("/tup.config") || path == "tup.config";
 }
 
-/// Walk backward through the DAG from commands in scope, returning all
-/// reachable nodes (the transitive upstream closure).
-auto walk_upstream_from_scope(
-    pup::graph::BuildState const& state,
-    pup::Vec<pup::StringId> const& scopes
-) -> Vec<pup::NodeId>
-{
-    if (scopes.empty()) {
-        return {};
-    }
-
-    auto const& g = state.graph;
-    auto visited = pup::NodeIdMap32 {};
-    auto result = Vec<pup::NodeId> {};
-    auto stack = Vec<pup::NodeId> {};
-
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(id)) {
-            continue;
-        }
-        auto const* node = pup::graph::get_command_node(g, id);
-        if (!node) {
-            continue;
-        }
-
-        auto source_dir_sv = pup::graph::get_source_dir(g, id);
-        if (!pup::is_path_in_any_scope(source_dir_sv, scopes)) {
-            continue;
-        }
-
-        visited.set(id, 1);
-        result.push_back(id);
-
-        for (auto input_id : pup::graph::get_inputs(g, id)) {
-            stack.push_back(input_id);
-        }
-        for (auto dep_id : pup::graph::get_order_only(g, id)) {
-            stack.push_back(dep_id);
-        }
-    }
-
-    while (!stack.empty()) {
-        auto id = stack.back();
-        stack.pop_back();
-
-        if (visited.contains(id)) {
-            continue;
-        }
-        visited.set(id, 1);
-        result.push_back(id);
-
-        for (auto input_id : pup::graph::get_inputs(g, id)) {
-            stack.push_back(input_id);
-        }
-        for (auto dep_id : pup::graph::get_order_only(g, id)) {
-            stack.push_back(dep_id);
-        }
-    }
-
-    return result;
-}
-
-/// Collect all upstream input file paths for commands in the given scopes.
-auto collect_upstream_files(
-    pup::graph::BuildState const& state,
-    pup::Vec<pup::StringId> const& scopes
-) -> Vec<std::string_view>
-{
-    auto const& g = state.graph;
-    auto upstream = Vec<std::string_view> {};
-    for (auto id : walk_upstream_from_scope(state, scopes)) {
-        if (pup::node_id::is_command(id)) {
-            continue;
-        }
-        auto const* node = pup::graph::get_file_node(g, id);
-        if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
-            auto path_sv = pup::graph::get_full_path(g, id, state.path_cache);
-            if (!path_sv.empty()) {
-                upstream.push_back(path_sv);
-            }
-        }
-    }
-    std::sort(upstream.begin(), upstream.end());
-    upstream.erase(std::unique(upstream.begin(), upstream.end()), upstream.end());
-    return upstream;
-}
-
-/// Collect commands in scope plus all transitive upstream producer commands.
-auto collect_scope_with_upstream_commands(
-    pup::graph::BuildState const& state,
-    pup::Vec<pup::StringId> const& scopes
-) -> pup::NodeIdMap32
-{
-    auto commands = pup::NodeIdMap32 {};
-    for (auto id : walk_upstream_from_scope(state, scopes)) {
-        if (pup::node_id::is_command(id) && pup::graph::get_command_node(state.graph, id)) {
-            commands.set(id, 1);
-        }
-    }
-    return commands;
-}
-
 /// Collect file paths that are implicit dependencies of in-scope commands.
 /// These files (typically headers from .d files) must not be skipped by the
 /// scope filter, even if they live outside the scoped directories.
@@ -1052,6 +950,26 @@ auto intersect_filters(
     return result;
 }
 
+struct BuildFilter {
+    pup::NodeIdMap32 set;
+    bool active = false;
+
+    auto intersect_with(pup::NodeIdMap32 next, pup::graph::Graph const& g) -> void
+    {
+        if (active) {
+            set = intersect_filters(set, next, g);
+        } else {
+            set = std::move(next);
+            active = true;
+        }
+    }
+
+    auto ptr() const -> pup::NodeIdMap32 const*
+    {
+        return active ? &set : nullptr;
+    }
+};
+
 /// Build a single variant with the given options.
 /// Expects opts.build_dirs to contain at most one element.
 auto build_single_variant(
@@ -1137,7 +1055,7 @@ auto build_single_variant(
 
         auto upstream_files = Vec<std::string_view> {};
         if (opts.include_all_deps && !scopes.empty()) {
-            upstream_files = collect_upstream_files(bs, scopes);
+            upstream_files = pup::graph::collect_upstream_files(bs, scopes);
         }
 
         // Always include implicit deps (headers from .d files) for in-scope
@@ -1340,47 +1258,34 @@ auto build_single_variant(
     auto start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
 
     // Composable filter: layer independent concerns, intersect when combined
-    auto filter = pup::NodeIdMap32 {};
-    auto has_filter = false;
+    auto filter = BuildFilter {};
 
     if (use_incremental && !changed_files.empty()) {
-        filter = pup::graph::collect_affected_commands(bs.graph, changed_files);
-        has_filter = true;
+        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files), bs.graph);
     }
 
     if (!target_node_ids.empty()) {
-        auto required = pup::graph::collect_required_commands(bs.graph, target_node_ids);
-        if (has_filter) {
-            filter = intersect_filters(filter, required, bs.graph);
-        } else {
-            filter = std::move(required);
-            has_filter = true;
-        }
+        filter.intersect_with(pup::graph::collect_required_commands(bs.graph, target_node_ids), bs.graph);
     }
 
     if (opts.include_all_deps && !scopes.empty() && !use_incremental) {
-        auto scope_cmds = collect_scope_with_upstream_commands(bs, scopes);
+        auto scope_cmds = pup::graph::collect_scope_with_upstream_commands(bs.graph, scopes);
         for (auto const& cfg : config_cmds) {
             scope_cmds.remove(cfg.cmd_id);
         }
-        if (has_filter) {
-            filter = intersect_filters(filter, scope_cmds, bs.graph);
-        } else {
-            filter = std::move(scope_cmds);
-            has_filter = true;
-        }
+        filter.intersect_with(std::move(scope_cmds), bs.graph);
     }
 
-    if (!config_cmds.empty() && !has_filter) {
+    if (!config_cmds.empty() && !filter.active) {
         for (auto id : pup::graph::all_nodes(bs.graph)) {
             if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
-                filter.set(id, 1);
+                filter.set.set(id, 1);
             }
         }
-        has_filter = true;
+        filter.active = true;
     }
 
-    auto build_result = scheduler.build(bs, has_filter ? &filter : nullptr);
+    auto build_result = scheduler.build(bs, filter.ptr());
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
 

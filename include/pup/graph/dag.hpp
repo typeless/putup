@@ -367,6 +367,22 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
 [[nodiscard]]
 auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids) -> NodeIdMap32;
 
+/// Collect commands in scope plus all transitive upstream producer commands.
+/// Uses backward traversal from in-scope commands through inputs and order-only deps.
+[[nodiscard]]
+auto collect_scope_with_upstream_commands(
+    Graph const& graph,
+    Vec<StringId> const& scopes
+) -> NodeIdMap32;
+
+/// Collect all upstream input file paths for commands in the given scopes.
+/// Returns sorted, deduplicated paths.
+[[nodiscard]]
+auto collect_upstream_files(
+    BuildState const& state,
+    Vec<StringId> const& scopes
+) -> Vec<std::string_view>;
+
 /// Set build root name and clear path cache
 auto set_build_root_name(BuildState& state, std::string_view name) -> void;
 

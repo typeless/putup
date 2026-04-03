@@ -1104,4 +1104,107 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
     return affected;
 }
 
+namespace {
+
+/// Walk backward through the DAG from commands in scope, returning all
+/// reachable nodes (the transitive upstream closure).
+auto walk_upstream_from_scope(
+    Graph const& graph,
+    Vec<StringId> const& scopes
+) -> Vec<NodeId>
+{
+    if (scopes.empty()) {
+        return {};
+    }
+
+    auto visited = NodeIdMap32 {};
+    auto result = Vec<NodeId> {};
+    auto stack = Vec<NodeId> {};
+
+    for (auto id : all_nodes(graph)) {
+        if (!node_id::is_command(id)) {
+            continue;
+        }
+        auto const* node = get_command_node(graph, id);
+        if (!node) {
+            continue;
+        }
+
+        auto source_dir_sv = get_source_dir(graph, id);
+        if (!is_path_in_any_scope(source_dir_sv, scopes)) {
+            continue;
+        }
+
+        visited.set(id, 1);
+        result.push_back(id);
+
+        for (auto input_id : get_inputs(graph, id)) {
+            stack.push_back(input_id);
+        }
+        for (auto dep_id : get_order_only(graph, id)) {
+            stack.push_back(dep_id);
+        }
+    }
+
+    while (!stack.empty()) {
+        auto id = stack.back();
+        stack.pop_back();
+
+        if (visited.contains(id)) {
+            continue;
+        }
+        visited.set(id, 1);
+        result.push_back(id);
+
+        for (auto input_id : get_inputs(graph, id)) {
+            stack.push_back(input_id);
+        }
+        for (auto dep_id : get_order_only(graph, id)) {
+            stack.push_back(dep_id);
+        }
+    }
+
+    return result;
+}
+
+} // anonymous namespace
+
+auto collect_scope_with_upstream_commands(
+    Graph const& graph,
+    Vec<StringId> const& scopes
+) -> NodeIdMap32
+{
+    auto commands = NodeIdMap32 {};
+    for (auto id : walk_upstream_from_scope(graph, scopes)) {
+        if (node_id::is_command(id) && get_command_node(graph, id)) {
+            commands.set(id, 1);
+        }
+    }
+    return commands;
+}
+
+auto collect_upstream_files(
+    BuildState const& state,
+    Vec<StringId> const& scopes
+) -> Vec<std::string_view>
+{
+    auto const& g = state.graph;
+    auto upstream = Vec<std::string_view> {};
+    for (auto id : walk_upstream_from_scope(g, scopes)) {
+        if (node_id::is_command(id)) {
+            continue;
+        }
+        auto const* node = get_file_node(g, id);
+        if (node && (node->type == NodeType::File || node->type == NodeType::Generated)) {
+            auto path_sv = get_full_path(g, id, state.path_cache);
+            if (!path_sv.empty()) {
+                upstream.push_back(path_sv);
+            }
+        }
+    }
+    std::sort(upstream.begin(), upstream.end());
+    upstream.erase(std::unique(upstream.begin(), upstream.end()), upstream.end());
+    return upstream;
+}
+
 } // namespace pup::graph
