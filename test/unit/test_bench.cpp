@@ -18,53 +18,56 @@ using pup::NodeType;
 
 namespace {
 
-auto collect_node_ids(BuildGraph const& graph) -> std::vector<pup::NodeId>
+auto collect_node_ids(Graph const& graph) -> std::vector<pup::NodeId>
 {
     auto ids = std::vector<pup::NodeId> {};
-    for (auto id : graph.nodes_of_type(NodeType::File))
+    for (auto id : nodes_of_type(graph, NodeType::File))
         ids.push_back(id);
-    for (auto id : graph.nodes_of_type(NodeType::Command))
+    for (auto id : nodes_of_type(graph, NodeType::Command))
         ids.push_back(id);
-    for (auto id : graph.nodes_of_type(NodeType::Generated))
+    for (auto id : nodes_of_type(graph, NodeType::Generated))
         ids.push_back(id);
     return ids;
 }
 
-auto generate_linear_graph(std::size_t n) -> BuildGraph
+auto generate_linear_graph(std::size_t n) -> BuildState
 {
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
+    auto& graph = bs.graph;
     for (auto i = std::size_t { 0 }; i < n; ++i) {
         char buf[64];
         snprintf(buf, sizeof(buf), "file_%zu.c", i);
-        (void)graph.add_file_node(FileNode { .type = NodeType::File,
-            .name = graph.intern(buf) });
+        (void)add_file_node(graph, FileNode { .type = NodeType::File,
+            .name = pup::global_pool().intern(buf) });
     }
-    return graph;
+    return bs;
 }
 
 auto generate_order_only_graph(
     std::size_t n_commands
-) -> std::pair<BuildGraph, pup::NodeId>
+) -> std::pair<BuildState, pup::NodeId>
 {
-    auto graph = BuildGraph {};
-    auto header = graph.add_file_node(FileNode { .type = NodeType::File, .name = graph.intern("common.h") });
+    auto bs = make_build_state();
+    auto& graph = bs.graph;
+    auto header = add_file_node(graph, FileNode { .type = NodeType::File, .name = pup::global_pool().intern("common.h") });
 
     for (auto i = std::size_t { 0 }; i < n_commands; ++i) {
         char buf[64];
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
-        auto cmd = graph.add_command_node(CommandNode {
-            .instruction_id = graph.intern(buf) });
-        (void)graph.add_order_only_edge(*header, *cmd);
+        auto cmd = add_command_node(graph, CommandNode {
+            .instruction_id = pup::global_pool().intern(buf) });
+        (void)add_order_only_edge(graph, *header, *cmd);
     }
-    return { std::move(graph), *header };
+    return { std::move(bs), *header };
 }
 
-auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -> BuildGraph
+auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -> BuildState
 {
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
+    auto& graph = bs.graph;
 
     // Create a shared order-only dependency
-    auto shared_result = graph.add_file_node(FileNode { .name = graph.intern("shared.h") });
+    auto shared_result = add_file_node(graph, FileNode { .name = pup::global_pool().intern("shared.h") });
     auto shared = *shared_result;
 
     // Create 'width' independent chains of 'depth' nodes
@@ -73,21 +76,21 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
         for (auto d = std::size_t { 0 }; d < depth; ++d) {
             char buf[64];
             snprintf(buf, sizeof(buf), "cmd_%zu_%zu", w, d);
-            auto node_result = graph.add_command_node(CommandNode {
-                .instruction_id = graph.intern(buf) });
+            auto node_result = add_command_node(graph, CommandNode {
+                .instruction_id = pup::global_pool().intern(buf) });
             auto node = *node_result;
 
             // Connect to previous in chain
             if (prev)
-                (void)graph.add_edge(*prev, node);
+                (void)add_edge(graph, *prev, node);
 
             // Add order-only dep on shared header
-            (void)graph.add_order_only_edge(shared, node);
+            (void)add_order_only_edge(graph, shared, node);
 
             prev = node;
         }
     }
-    return graph;
+    return bs;
 }
 
 } // namespace
@@ -101,14 +104,14 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
 {
     BENCHMARK_ADVANCED("1k nodes - all lookups")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_linear_graph(1000);
-        auto ids = collect_node_ids(graph);
+        auto bs = generate_linear_graph(1000);
+        auto ids = collect_node_ids(bs.graph);
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = graph.get_file_node(id);
+                auto const* node = get_file_node(bs.graph, id);
                 if (node)
-                    sum += pup::global_pool().get(graph.get_full_path(node->id)).size();
+                    sum += pup::global_pool().get(get_full_path(bs.graph, node->id)).size();
             }
             return sum;
         });
@@ -116,14 +119,14 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
 
     BENCHMARK_ADVANCED("10k nodes - all lookups")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_linear_graph(10000);
-        auto ids = collect_node_ids(graph);
+        auto bs = generate_linear_graph(10000);
+        auto ids = collect_node_ids(bs.graph);
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = graph.get_file_node(id);
+                auto const* node = get_file_node(bs.graph, id);
                 if (node)
-                    sum += pup::global_pool().get(graph.get_full_path(node->id)).size();
+                    sum += pup::global_pool().get(get_full_path(bs.graph, node->id)).size();
             }
             return sum;
         });
@@ -131,14 +134,14 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
 
     BENCHMARK_ADVANCED("20k nodes - all lookups")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_linear_graph(20000);
-        auto ids = collect_node_ids(graph);
+        auto bs = generate_linear_graph(20000);
+        auto ids = collect_node_ids(bs.graph);
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = graph.get_file_node(id);
+                auto const* node = get_file_node(bs.graph, id);
                 if (node)
-                    sum += pup::global_pool().get(graph.get_full_path(node->id)).size();
+                    sum += pup::global_pool().get(get_full_path(bs.graph, node->id)).size();
             }
             return sum;
         });
@@ -153,25 +156,25 @@ TEST_CASE("Benchmark: order-only dependent lookup", "[.benchmark][graph]")
 {
     BENCHMARK_ADVANCED("100 commands")(Catch::Benchmark::Chronometer meter)
     {
-        auto [graph, header_id] = generate_order_only_graph(100);
+        auto [bs, header_id] = generate_order_only_graph(100);
         meter.measure([&] {
-            return graph.get_order_only_dependents(header_id);
+            return get_order_only_dependents(bs.graph, header_id);
         });
     };
 
     BENCHMARK_ADVANCED("1k commands")(Catch::Benchmark::Chronometer meter)
     {
-        auto [graph, header_id] = generate_order_only_graph(1000);
+        auto [bs, header_id] = generate_order_only_graph(1000);
         meter.measure([&] {
-            return graph.get_order_only_dependents(header_id);
+            return get_order_only_dependents(bs.graph, header_id);
         });
     };
 
     BENCHMARK_ADVANCED("10k commands")(Catch::Benchmark::Chronometer meter)
     {
-        auto [graph, header_id] = generate_order_only_graph(10000);
+        auto [bs, header_id] = generate_order_only_graph(10000);
         meter.measure([&] {
-            return graph.get_order_only_dependents(header_id);
+            return get_order_only_dependents(bs.graph, header_id);
         });
     };
 }
@@ -184,33 +187,33 @@ TEST_CASE("Benchmark: topo sort with order-only edges", "[.benchmark][graph]")
 {
     BENCHMARK_ADVANCED("10 wide × 10 deep")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_wide_graph_with_order_only(10, 10);
+        auto bs = generate_wide_graph_with_order_only(10, 10);
         meter.measure([&] {
-            return topological_sort(graph);
+            return topological_sort(bs.graph);
         });
     };
 
     BENCHMARK_ADVANCED("50 wide × 10 deep")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_wide_graph_with_order_only(50, 10);
+        auto bs = generate_wide_graph_with_order_only(50, 10);
         meter.measure([&] {
-            return topological_sort(graph);
+            return topological_sort(bs.graph);
         });
     };
 
     BENCHMARK_ADVANCED("100 wide × 10 deep")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_wide_graph_with_order_only(100, 10);
+        auto bs = generate_wide_graph_with_order_only(100, 10);
         meter.measure([&] {
-            return topological_sort(graph);
+            return topological_sort(bs.graph);
         });
     };
 
     BENCHMARK_ADVANCED("200 wide × 10 deep")(Catch::Benchmark::Chronometer meter)
     {
-        auto graph = generate_wide_graph_with_order_only(200, 10);
+        auto bs = generate_wide_graph_with_order_only(200, 10);
         meter.measure([&] {
-            return topological_sort(graph);
+            return topological_sort(bs.graph);
         });
     };
 }

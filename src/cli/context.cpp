@@ -383,7 +383,7 @@ auto make_read_error(std::string_view path) -> pup::Error
 struct ParseContext {
     TupfileParseState& state;
     pup::graph::GraphBuilder& builder;
-    pup::graph::BuildGraph& graph;
+    pup::graph::BuildState& graph;
     std::string_view source_root;
     std::string_view config_root;
     std::string_view output_root;
@@ -654,7 +654,7 @@ auto make_layout_options(Options const& opts) -> LayoutOptions
 }
 
 struct BuildContext::Impl {
-    graph::BuildGraph graph;
+    graph::BuildState graph = graph::make_build_state();
     ProjectLayout layout;
     parser::VarDb config_vars;
     parser::VarDb vars;
@@ -678,12 +678,12 @@ auto BuildContext::layout() const -> ProjectLayout const&
     return impl_->layout;
 }
 
-auto BuildContext::graph() const -> graph::BuildGraph const&
+auto BuildContext::graph() const -> graph::BuildState const&
 {
     return impl_->graph;
 }
 
-auto BuildContext::graph() -> graph::BuildGraph&
+auto BuildContext::graph() -> graph::BuildState&
 {
     return impl_->graph;
 }
@@ -741,7 +741,7 @@ auto build_context(
             pool.get(ctx.impl_->layout.output_root),
             pool.get(ctx.impl_->layout.source_root)
         ));
-        ctx.impl_->graph.set_build_root_name(build_root_name);
+        graph::set_build_root_name(ctx.impl_->graph, build_root_name);
     }
 
     // 2. Auto-init if needed

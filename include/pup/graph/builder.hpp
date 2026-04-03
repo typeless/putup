@@ -92,7 +92,7 @@ struct GroupMemberTable {
 
 /// Context for building the graph (per-Tupfile state)
 struct BuilderContext {
-    BuildGraph* graph = nullptr;
+    BuildState* state = nullptr;
     parser::EvalContext* eval = nullptr;
     parser::VarDb* vars = nullptr; ///< Variable database for import
     BuilderOptions options = {};
@@ -234,12 +234,12 @@ auto build_graph(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
     BuilderState& state
-) -> Result<BuildGraph>;
+) -> Result<BuildState>;
 
-/// Add a Tupfile to an existing graph
+/// Add a Tupfile to an existing build state
 [[nodiscard]]
 auto add_tupfile(
-    BuildGraph& graph,
+    BuildState& build_state,
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
     BuilderState& state
@@ -248,7 +248,7 @@ auto add_tupfile(
 /// Resolve deferred order-only edges after all Tupfiles are parsed
 [[nodiscard]]
 auto resolve_deferred_order_only_edges(
-    BuildGraph& graph,
+    BuildState& build_state,
     BuilderState& state
 ) -> Result<void>;
 
@@ -273,12 +273,12 @@ public:
     auto build(
         parser::Tupfile const& tupfile,
         parser::EvalContext& eval
-    ) -> Result<BuildGraph>;
+    ) -> Result<BuildState>;
 
-    /// Add a Tupfile to an existing graph
+    /// Add a Tupfile to an existing build state
     [[nodiscard]]
     auto add_tupfile(
-        BuildGraph& graph,
+        BuildState& build_state,
         parser::Tupfile const& tupfile,
         parser::EvalContext& eval
     ) -> Result<void>;
@@ -293,7 +293,7 @@ public:
 
     /// Resolve deferred order-only edges after all Tupfiles are parsed
     [[nodiscard]]
-    auto resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>;
+    auto resolve_deferred_order_only_edges(BuildState& build_state) -> Result<void>;
 
     /// Access underlying state for direct manipulation
     [[nodiscard]]

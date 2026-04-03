@@ -14,7 +14,7 @@
 #include <optional>
 
 namespace pup::graph {
-class BuildGraph;
+struct BuildState;
 }
 
 namespace pup::exec {
@@ -91,19 +91,19 @@ public:
 
     /// Build from a dependency graph
     [[nodiscard]]
-    auto build(graph::BuildGraph const& graph) -> Result<BuildStats>;
+    auto build(graph::BuildState const& graph) -> Result<BuildStats>;
 
     /// Build only the commands that depend on changed files
     [[nodiscard]]
     auto build_incremental(
-        graph::BuildGraph const& graph,
+        graph::BuildState const& graph,
         Vec<StringId> const& changed_files
     ) -> Result<BuildStats>;
 
     /// Build only a specific subset of commands
     [[nodiscard]]
     auto build_subset(
-        graph::BuildGraph const& graph,
+        graph::BuildState const& graph,
         NodeIdMap32 const& command_ids
     ) -> Result<BuildStats>;
 
@@ -111,7 +111,7 @@ public:
     /// Uses reverse traversal to find commands needed.
     [[nodiscard]]
     auto build_targets(
-        graph::BuildGraph const& graph,
+        graph::BuildState const& graph,
         Vec<NodeId> const& target_ids
     ) -> Result<BuildStats>;
 
@@ -144,20 +144,20 @@ private:
     /// When filter is non-null, only matching commands run.
     [[nodiscard]]
     auto run(
-        graph::BuildGraph const& graph,
+        graph::BuildState const& graph,
         NodeIdMap32 const* filter
     ) -> Result<BuildStats>;
 
     /// Execute jobs in parallel using the async event loop
     auto execute_parallel(
         Vec<BuildJob> const& jobs,
-        graph::BuildGraph const& graph
+        graph::BuildState const& graph
     ) -> Result<void>;
 
     /// Build job list from graph in topological order
     [[nodiscard]]
     auto build_job_list(
-        graph::BuildGraph const& graph
+        graph::BuildState const& graph
     ) -> Result<Vec<BuildJob>>;
 
     /// Determine which jobs need to run based on changes

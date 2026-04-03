@@ -105,7 +105,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     }
 
     auto& ctx = *result;
-    auto topo = pup::graph::topological_sort(ctx.graph());
+    auto topo = pup::graph::topological_sort(ctx.graph().graph);
     auto const& cfg = ctx.config_vars();
 
     auto script_prologue = cfg.get("SCRIPT_PROLOGUE");
@@ -135,8 +135,8 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     printf("%.*s\n\n", static_cast<int>(script_prologue.size()), script_prologue.data());
 
     auto output_dirs = Vec<StringId> {};
-    for (auto id : ctx.graph().all_nodes()) {
-        auto const* node = ctx.graph().get_file_node(id);
+    for (auto id : graph::all_nodes(ctx.graph().graph)) {
+        auto const* node = graph::get_file_node(ctx.graph().graph, id);
         if (!node) {
             continue;
         }
@@ -144,13 +144,13 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto node_path_id = ctx.graph().get_full_path(id);
+        auto node_path_id = graph::get_full_path(ctx.graph().graph, id);
         auto node_path = global_pool().get(node_path_id);
         if (node_path.empty()) {
             continue;
         }
 
-        auto inputs = ctx.graph().get_inputs(id);
+        auto inputs = graph::get_inputs(ctx.graph().graph, id);
         for (auto input_id : inputs) {
             if (node_id::is_command(input_id)) {
                 auto parent = pup::path::parent(node_path);
@@ -179,7 +179,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         if (!node_id::is_command(id)) {
             continue;
         }
-        auto const* node = ctx.graph().get_command_node(id);
+        auto const* node = graph::get_command_node(ctx.graph().graph, id);
         if (!node) {
             continue;
         }
@@ -188,9 +188,9 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto source_dir = graph::get_source_dir(ctx.graph().graph(), id);
+        auto source_dir = graph::get_source_dir(ctx.graph().graph, id);
         auto dir = source_dir.empty() ? std::string_view { "." } : source_dir;
-        auto cmd_id = graph::expand_instruction(ctx.graph().graph(), id);
+        auto cmd_id = graph::expand_instruction(ctx.graph().graph, id);
 
         auto line = expand_script_run(script_run, dir, global_pool().get(cmd_id));
         auto line_sv = global_pool().get(line);
@@ -225,10 +225,10 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     auto index = load_index_for_all_deps(opts, ctx.layout());
 
     if (opts.summary) {
-        auto commands = ctx.graph().nodes_of_type(pup::NodeType::Command);
+        auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
         printf("[%.*s] Tupfiles: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.parsed_dirs().size());
-        printf("[%.*s] Nodes: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.graph().node_count());
-        printf("[%.*s] Edges: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.graph().edge_count());
+        printf("[%.*s] Nodes: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), graph::node_count(ctx.graph().graph));
+        printf("[%.*s] Edges: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), graph::edge_count(ctx.graph().graph));
         printf("[%.*s] Commands: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), commands.size());
 
         if (index) {
@@ -244,9 +244,9 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         if (opts.verbose) {
             printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
             for (auto id : commands) {
-                if (ctx.graph().get_command_node(id)) {
-                    auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
-                    auto cmd_str_id = graph::expand_instruction(ctx.graph().graph(), id);
+                if (graph::get_command_node(ctx.graph().graph, id)) {
+                    auto display_sv = graph::get_display_str(ctx.graph().graph, id);
+                    auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
                     auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
                     printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display.size()), display.data());
                 }
@@ -259,31 +259,31 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     printf("  rankdir=LR;\n");
 
     auto declared_nodes = pup::NodeIdMap32 {};
-    for (auto id : ctx.graph().all_nodes()) {
+    for (auto id : graph::all_nodes(ctx.graph().graph)) {
         declared_nodes.set(id, 1);
 
         auto get_label = [&]() -> std::string_view {
             if (node_id::is_command(id)) {
-                auto const* cmd = ctx.graph().get_command_node(id);
+                auto const* cmd = graph::get_command_node(ctx.graph().graph, id);
                 if (!cmd) {
                     return {};
                 }
-                auto display_sv = graph::get_display_str(ctx.graph().graph(), id);
-                auto cmd_str_id = graph::expand_instruction(ctx.graph().graph(), id);
+                auto display_sv = graph::get_display_str(ctx.graph().graph, id);
+                auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
                 return display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
             }
-            return pool.get(ctx.graph().get_full_path(id));
+            return pool.get(graph::get_full_path(ctx.graph().graph, id));
         };
         auto label = escape_dot_label(get_label());
 
         printf("  %s [label=\"%s\"];\n", format_node_id(id).data(), pool.get(label).data());
 
-        for (auto input_id : ctx.graph().get_inputs(id)) {
+        for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
             printf("  %s -> %s;\n", format_node_id(input_id).data(), format_node_id(id).data());
         }
 
         // Output order-only edges (dotted)
-        for (auto oo_id : ctx.graph().get_order_only(id)) {
+        for (auto oo_id : graph::get_order_only(ctx.graph().graph, id)) {
             printf("  %s -> %s [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id).data(), format_node_id(id).data());
         }
     }
@@ -340,18 +340,18 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto& ctx = *result;
 
     printf("[\n");
-    auto commands = ctx.graph().nodes_of_type(pup::NodeType::Command);
+    auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
     auto first = true;
 
     for (auto id : commands) {
-        auto const* node = ctx.graph().get_command_node(id);
+        auto const* node = graph::get_command_node(ctx.graph().graph, id);
         if (!node) {
             continue;
         }
 
         auto source_file = std::string_view {};
-        for (auto input_id : ctx.graph().get_inputs(id)) {
-            auto input_path_id = ctx.graph().get_full_path(input_id);
+        for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
+            auto input_path_id = graph::get_full_path(ctx.graph().graph, input_id);
             auto sv = pool.get(input_path_id);
             if (sv.empty()) {
                 continue;
@@ -363,8 +363,8 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         }
 
         auto output_file = std::string_view {};
-        for (auto output_id : ctx.graph().get_outputs(id)) {
-            auto output_path_id = ctx.graph().get_full_path(output_id);
+        for (auto output_id : graph::get_outputs(ctx.graph().graph, id)) {
+            auto output_path_id = graph::get_full_path(ctx.graph().graph, output_id);
             auto sv = pool.get(output_path_id);
             if (sv.empty()) {
                 continue;
@@ -382,7 +382,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         auto& pool = global_pool();
         auto source_root_sv = pool.get(ctx.layout().source_root);
         auto output_root_sv = pool.get(ctx.layout().output_root);
-        auto source_dir_sv = graph::get_source_dir(ctx.graph().graph(), id);
+        auto source_dir_sv = graph::get_source_dir(ctx.graph().graph, id);
         auto working_dir = source_dir_sv.empty() ? source_root_sv : pool.get(pup::path::join(source_root_sv, source_dir_sv));
 
         // Convert project-root-relative paths to working-dir-relative
@@ -395,7 +395,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             output_rel = pool.get(pup::path::relative(output_abs, working_dir));
         }
 
-        auto cmd_str_id = graph::expand_instruction(ctx.graph().graph(), id);
+        auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
         auto args = pup::core::tokenize_shell_command(pool.get(cmd_str_id));
         if (args.empty()) {
             continue;
@@ -565,7 +565,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     }
 
     auto& ctx = *result;
-    auto const& graph = ctx.graph().graph();
+    auto const& graph = ctx.graph().graph;
 
     // Build instruction usage map: instruction_id -> list of command IDs using it
     auto instruction_usage = Vec<std::pair<StringId, Vec<NodeId>>> {};

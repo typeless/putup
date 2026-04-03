@@ -196,7 +196,7 @@ auto sorted_insert_unique(Vec<std::size_t>& v, std::size_t val) -> void
 }
 
 auto add_producer_dependencies(
-    graph::BuildGraph const& graph,
+    graph::Graph const& graph,
     NodeIdMap32 const& cmd_to_job,
     Vec<BuildJob> const& jobs,
     NodeId node_id,
@@ -206,7 +206,7 @@ auto add_producer_dependencies(
 {
     auto current_active = jobs[current_job].guard_active;
 
-    for (auto producer_id : graph.get_inputs(node_id)) {
+    for (auto producer_id : graph::get_inputs(graph, node_id)) {
         if (node_id::is_command(producer_id) && cmd_to_job.contains(producer_id)) {
             auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(producer_id));
             if (dep_idx != current_job) {
@@ -225,7 +225,7 @@ auto add_producer_dependencies(
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
 auto build_dependency_map(
     Vec<BuildJob> const& jobs,
-    graph::BuildGraph const& graph
+    graph::Graph const& graph
 ) -> std::pair<Vec<std::size_t>, Vec<Vec<std::size_t>>>
 {
     auto in_degree = Vec<std::size_t> {};
@@ -247,7 +247,7 @@ auto build_dependency_map(
         auto current_active = jobs[j].guard_active;
 
         // Check regular inputs - traverse graph edges
-        for (auto input_id : graph.get_inputs(cmd_id)) {
+        for (auto input_id : graph::get_inputs(graph, cmd_id)) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
             if (node_id::is_command(input_id)) {
                 if (cmd_to_job.contains(input_id)) {
@@ -267,15 +267,15 @@ auto build_dependency_map(
 
         // Case 3: Order-only inputs (groups and files)
         // These establish ordering without creating true data dependencies.
-        for (auto oo_id : graph.get_order_only(cmd_id)) {
-            auto const* oo_node = graph.get_file_node(oo_id);
+        for (auto oo_id : graph::get_order_only(graph, cmd_id)) {
+            auto const* oo_node = graph::get_file_node(graph, oo_id);
             if (!oo_node) {
                 continue;
             }
 
             // For Group nodes, get member files and find their producers
             if (oo_node->type == NodeType::Group) {
-                for (auto member_id : graph.get_inputs(oo_id)) {
+                for (auto member_id : graph::get_inputs(graph, oo_id)) {
                     add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
                 }
             } else {
@@ -323,7 +323,7 @@ auto validate_guard_dependencies(
 /// Collect all commands required to build the given target nodes.
 /// Uses reverse traversal: starts at targets, walks backward through inputs.
 auto collect_required_commands(
-    graph::BuildGraph const& graph,
+    graph::Graph const& graph,
     Vec<NodeId> const& target_ids
 ) -> NodeIdMap32
 {
@@ -343,15 +343,15 @@ auto collect_required_commands(
         }
         visited.set(id, 1);
 
-        if (node_id::is_command(id) && graph.get_command_node(id)) {
+        if (node_id::is_command(id) && graph::get_command_node(graph, id)) {
             commands.set(id, 1);
         }
 
-        for (auto input_id : graph.get_inputs(id)) {
+        for (auto input_id : graph::get_inputs(graph, id)) {
             stack.push_back(input_id);
         }
 
-        for (auto dep_id : graph.get_order_only(id)) {
+        for (auto dep_id : graph::get_order_only(graph, id)) {
             stack.push_back(dep_id);
         }
     }
@@ -362,15 +362,15 @@ auto collect_required_commands(
 /// Compute all commands affected by the given changed files.
 /// Uses forward traversal: starts at changed inputs, walks forward through outputs.
 auto collect_affected_commands(
-    graph::BuildGraph const& graph,
+    graph::Graph const& graph,
     Vec<StringId> const& changed_files
 ) -> NodeIdMap32
 {
     auto& pool = global_pool();
 
     auto path_to_id = Vec<std::pair<std::string_view, NodeId>> {};
-    for (auto id : graph.all_nodes()) {
-        auto path_id = graph.get_full_path(id);
+    for (auto id : graph::all_nodes(graph)) {
+        auto path_id = graph::get_full_path(graph, id);
         if (!is_empty(path_id)) {
             path_to_id.emplace_back(pool.get(path_id), id);
         }
@@ -390,9 +390,9 @@ auto collect_affected_commands(
                 to_process.push_back(id);
             }
 
-            auto const* node = graph.get_file_node(id);
+            auto const* node = graph::get_file_node(graph, id);
             if (node && node->type == NodeType::Generated) {
-                for (auto input_id : graph.get_inputs(id)) {
+                for (auto input_id : graph::get_inputs(graph, id)) {
                     if (!affected.contains(input_id)) {
                         affected.set(input_id, 1);
                         to_process.push_back(input_id);
@@ -409,14 +409,14 @@ auto collect_affected_commands(
         auto id = NodeId { to_process.back() };
         to_process.pop_back();
 
-        for (auto dep_id : graph.get_outputs(id)) {
+        for (auto dep_id : graph::get_outputs(graph, id)) {
             if (!affected.contains(dep_id)) {
                 affected.set(dep_id, 1);
                 to_process.push_back(dep_id);
             }
         }
 
-        for (auto dep_id : graph.get_order_only_dependents(id)) {
+        for (auto dep_id : graph::get_order_only_dependents(graph, id)) {
             if (!affected.contains(dep_id)) {
                 affected.set(dep_id, 1);
                 to_process.push_back(dep_id);
@@ -600,35 +600,35 @@ auto Scheduler::stats() const -> BuildStats
 // Public build API
 // ---------------------------------------------------------------------------
 
-auto Scheduler::build(graph::BuildGraph const& graph) -> Result<BuildStats>
+auto Scheduler::build(graph::BuildState const& state) -> Result<BuildStats>
 {
-    return run(graph, nullptr);
+    return run(state, nullptr);
 }
 
 auto Scheduler::build_incremental(
-    graph::BuildGraph const& graph,
+    graph::BuildState const& state,
     Vec<StringId> const& changed_files
 ) -> Result<BuildStats>
 {
-    auto affected = collect_affected_commands(graph, changed_files);
-    return run(graph, &affected);
+    auto affected = collect_affected_commands(state.graph, changed_files);
+    return run(state, &affected);
 }
 
 auto Scheduler::build_subset(
-    graph::BuildGraph const& graph,
+    graph::BuildState const& state,
     NodeIdMap32 const& command_ids
 ) -> Result<BuildStats>
 {
-    return run(graph, &command_ids);
+    return run(state, &command_ids);
 }
 
 auto Scheduler::build_targets(
-    graph::BuildGraph const& graph,
+    graph::BuildState const& state,
     Vec<NodeId> const& target_ids
 ) -> Result<BuildStats>
 {
-    auto cmds = collect_required_commands(graph, target_ids);
-    return run(graph, &cmds);
+    auto cmds = collect_required_commands(state.graph, target_ids);
+    return run(state, &cmds);
 }
 
 // ---------------------------------------------------------------------------
@@ -636,7 +636,7 @@ auto Scheduler::build_targets(
 // ---------------------------------------------------------------------------
 
 auto Scheduler::run(
-    graph::BuildGraph const& graph,
+    graph::BuildState const& state,
     NodeIdMap32 const* filter
 ) -> Result<BuildStats>
 {
@@ -645,7 +645,7 @@ auto Scheduler::run(
 
     auto start_time = pup::SteadyClock::time_point { pup::SteadyClock::now() };
 
-    auto all_jobs = build_job_list(graph);
+    auto all_jobs = build_job_list(state);
     if (!all_jobs) {
         return pup::unexpected<Error>(all_jobs.error());
     }
@@ -667,7 +667,7 @@ auto Scheduler::run(
         return impl_->stats;
     }
 
-    auto exec_result = execute_parallel(jobs, graph);
+    auto exec_result = execute_parallel(jobs, state);
 
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         pup::SteadyClock::now() - start_time
@@ -698,13 +698,13 @@ auto Scheduler::filter_jobs(
 }
 
 auto Scheduler::build_job_list(
-    graph::BuildGraph const& graph
+    graph::BuildState const& state
 ) -> Result<Vec<BuildJob>>
 {
     auto job_list_start = pup::SteadyClock::now();
 
     // Get topological order
-    auto topo_result = graph::TopoSortResult { graph::topological_sort(graph) };
+    auto topo_result = graph::TopoSortResult { graph::topological_sort(state.graph) };
     if (topo_result.has_cycle) {
         return make_error<Vec<BuildJob>>(
             ErrorCode::CyclicDependency, "Dependency cycle detected"
@@ -719,38 +719,39 @@ auto Scheduler::build_job_list(
     // Validate no unrealized ghost nodes remain (missing inputs)
     // Exception: Ghost nodes whose files actually exist on disk are valid
     // non-generated input files (e.g., tup.config, manually-created config files)
+    auto const& g = state.graph;
+    auto& cache = state.path_cache;
+
     for (auto id : topo_result.order) {
-        auto const* node = graph.get_file_node(id);
-        if (node && node->type == NodeType::Ghost && !graph.get_outputs(id).empty()) {
-            auto path_id = graph.get_full_path(id);
-            auto path = pool.get(path_id);
-            auto build_root_name = graph.get_build_root_name();
-            auto file_path_sv = pool.get(pup::path::join(output_root_sv, path));
-            auto lookup_path = path;
+        auto const* node = graph::get_file_node(g, id);
+        if (node && node->type == NodeType::Ghost && !graph::get_outputs(g, id).empty()) {
+            auto path_sv = graph::get_full_path(g, id, cache);
+            auto build_root_name = graph::get_build_root_name(g);
+            auto file_path_sv = pool.get(pup::path::join(output_root_sv, path_sv));
+            auto lookup_path = path_sv;
             auto build_prefix = Buf {};
             build_prefix += build_root_name;
             build_prefix += '/';
-            if (!build_root_name.empty() && path.starts_with(build_prefix.view())) {
-                lookup_path = path.substr(build_prefix.size());
+            if (!build_root_name.empty() && path_sv.starts_with(build_prefix.view())) {
+                lookup_path = path_sv.substr(build_prefix.size());
                 file_path_sv = pool.get(pup::path::join(output_root_sv, lookup_path));
             }
             if (pup::platform::exists(file_path_sv)) {
                 continue;
             }
             auto err = Buf {};
-            err.fmt("Missing input file (unresolved ghost): {}\n  Hint: try building with -a to include upstream dependencies", path);
+            err.fmt("Missing input file (unresolved ghost): {}\n  Hint: try building with -a to include upstream dependencies", path_sv);
             return make_error<Vec<BuildJob>>(ErrorCode::ParseError, err.view());
         }
     }
 
     auto jobs = Vec<BuildJob> {};
-    auto cache = graph::PathCache {};
 
     for (auto id : topo_result.order) {
         if (!node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph.get_command_node(id);
+        auto const* node = graph::get_command_node(g, id);
         if (!node) {
             continue;
         }
@@ -759,7 +760,7 @@ auto Scheduler::build_job_list(
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
-        auto source_dir = get_source_dir(graph.graph(), id);
+        auto source_dir = graph::get_source_dir(g, id);
         auto working_dir_id = StringId::Empty;
         if (!source_dir.empty()) {
             working_dir_id = pup::path::join(source_root_sv, source_dir);
@@ -780,7 +781,7 @@ auto Scheduler::build_job_list(
         }
 
         // Expand command from instruction pattern + operands
-        auto cmd_id = expand_instruction(graph.graph(), id, cache, source_root_sv, config_root_sv);
+        auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
         auto display_id = node->display;
 
         auto exported_ids = Vec<StringId> {};
@@ -790,7 +791,7 @@ auto Scheduler::build_job_list(
         }
 
         // Evaluate guards - command only executes if ALL guards are satisfied
-        auto guard_active = graph::is_guard_satisfied(graph.graph(), *node);
+        auto guard_active = graph::is_guard_satisfied(g, *node);
 
         auto job = BuildJob {
             .id = id,
@@ -808,40 +809,40 @@ auto Scheduler::build_job_list(
         };
 
         // Collect input paths
-        for (auto input_id : graph.get_inputs(id)) {
-            auto input_path = graph.get_full_path(input_id);
-            if (!is_empty(input_path)) {
-                job.inputs.push_back(input_path);
+        for (auto input_id : graph::get_inputs(g, id)) {
+            auto input_path = graph::get_full_path(g, input_id, cache);
+            if (!input_path.empty()) {
+                job.inputs.push_back(pool.intern(input_path));
             }
         }
 
         // Collect output paths
-        for (auto output_id : graph.get_outputs(id)) {
-            auto output_path = graph.get_full_path(output_id);
-            if (!is_empty(output_path)) {
-                job.outputs.push_back(output_path);
+        for (auto output_id : graph::get_outputs(g, id)) {
+            auto output_path = graph::get_full_path(g, output_id, cache);
+            if (!output_path.empty()) {
+                job.outputs.push_back(pool.intern(output_path));
             }
         }
 
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
-        for (auto oi_id : graph.get_order_only(id)) {
-            auto const* oi_node = graph.get_file_node(oi_id);
+        for (auto oi_id : graph::get_order_only(g, id)) {
+            auto const* oi_node = graph::get_file_node(g, oi_id);
             if (!oi_node) {
                 continue;
             }
 
             if (oi_node->type == NodeType::Group) {
-                for (auto member_id : graph.get_inputs(oi_id)) {
-                    auto member_path = graph.get_full_path(member_id);
-                    if (!is_empty(member_path)) {
-                        job.order_only_inputs.push_back(member_path);
+                for (auto member_id : graph::get_inputs(g, oi_id)) {
+                    auto member_path = graph::get_full_path(g, member_id, cache);
+                    if (!member_path.empty()) {
+                        job.order_only_inputs.push_back(pool.intern(member_path));
                     }
                 }
             } else {
-                auto oi_path = graph.get_full_path(oi_id);
-                if (!is_empty(oi_path)) {
-                    job.order_only_inputs.push_back(oi_path);
+                auto oi_path = graph::get_full_path(g, oi_id, cache);
+                if (!oi_path.empty()) {
+                    job.order_only_inputs.push_back(pool.intern(oi_path));
                 }
             }
         }
@@ -857,7 +858,7 @@ auto Scheduler::build_job_list(
 
 auto Scheduler::execute_parallel(
     Vec<BuildJob> const& jobs,
-    graph::BuildGraph const& graph
+    graph::BuildState const& state
 ) -> Result<void>
 {
     auto const env_cache = build_env_cache(jobs);
@@ -865,7 +866,7 @@ auto Scheduler::execute_parallel(
     auto& pool = global_pool();
 
     // Build dependency map
-    auto [in_degree, dependents] = build_dependency_map(jobs, graph);
+    auto [in_degree, dependents] = build_dependency_map(jobs, state.graph);
 
     if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
         return pup::unexpected<Error>(result.error());

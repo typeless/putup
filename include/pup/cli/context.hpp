@@ -20,7 +20,7 @@ namespace parser {
 class VarDb;
 }
 namespace graph {
-class BuildGraph;
+struct BuildState;
 class DepScannerRegistry;
 class RulePatternRegistry;
 }
@@ -80,9 +80,9 @@ public:
     [[nodiscard]]
     auto layout() const -> ProjectLayout const&;
     [[nodiscard]]
-    auto graph() const -> graph::BuildGraph const&;
+    auto graph() const -> graph::BuildState const&;
     [[nodiscard]]
-    auto graph() -> graph::BuildGraph&;
+    auto graph() -> graph::BuildState&;
     /// Root-level config vars (from output_root/tup.config + -D overrides).
     /// Per-directory Tupfile evaluation uses scoped merged configs instead.
     [[nodiscard]]

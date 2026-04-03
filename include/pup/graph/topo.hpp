@@ -19,19 +19,19 @@ struct TopoSortResult {
 /// Perform topological sort on the graph
 /// Returns nodes in dependency order (dependencies before dependents)
 [[nodiscard]]
-auto topological_sort(BuildGraph const& graph) -> TopoSortResult;
+auto topological_sort(Graph const& graph) -> TopoSortResult;
 
 /// Detect cycles in the graph
 /// Returns the cycle path if found, or empty vector if no cycles
 [[nodiscard]]
-auto detect_cycles(BuildGraph const& graph) -> Vec<NodeId>;
+auto detect_cycles(Graph const& graph) -> Vec<NodeId>;
 
 /// Check if graph is a DAG (no cycles)
 [[nodiscard]]
-auto is_dag(BuildGraph const& graph) -> bool;
+auto is_dag(Graph const& graph) -> bool;
 
 /// Check if there is a path from source to target
 [[nodiscard]]
-auto has_path(BuildGraph const& graph, NodeId source, NodeId target) -> bool;
+auto has_path(Graph const& graph, NodeId source, NodeId target) -> bool;
 
 } // namespace pup::graph

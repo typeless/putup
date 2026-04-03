@@ -185,7 +185,7 @@ auto is_tupfile(std::string_view path) -> bool
 /// Walk backward through the DAG from commands in scope, returning all
 /// reachable nodes (the transitive upstream closure).
 auto walk_upstream_from_scope(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::Vec<pup::StringId> const& scopes
 ) -> Vec<pup::NodeId>
 {
@@ -193,21 +193,21 @@ auto walk_upstream_from_scope(
         return {};
     }
 
+    auto const& g = state.graph;
     auto visited = pup::NodeIdMap32 {};
     auto result = Vec<pup::NodeId> {};
     auto stack = Vec<pup::NodeId> {};
 
-    // Seed with commands whose source_dir is in scope
-    for (auto id : graph.all_nodes()) {
+    for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph.get_command_node(id);
+        auto const* node = pup::graph::get_command_node(g, id);
         if (!node) {
             continue;
         }
 
-        auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
+        auto source_dir_sv = pup::graph::get_source_dir(g, id);
         if (!pup::is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }
@@ -215,10 +215,10 @@ auto walk_upstream_from_scope(
         visited.set(id, 1);
         result.push_back(id);
 
-        for (auto input_id : graph.get_inputs(id)) {
+        for (auto input_id : pup::graph::get_inputs(g, id)) {
             stack.push_back(input_id);
         }
-        for (auto dep_id : graph.get_order_only(id)) {
+        for (auto dep_id : pup::graph::get_order_only(g, id)) {
             stack.push_back(dep_id);
         }
     }
@@ -233,10 +233,10 @@ auto walk_upstream_from_scope(
         visited.set(id, 1);
         result.push_back(id);
 
-        for (auto input_id : graph.get_inputs(id)) {
+        for (auto input_id : pup::graph::get_inputs(g, id)) {
             stack.push_back(input_id);
         }
-        for (auto dep_id : graph.get_order_only(id)) {
+        for (auto dep_id : pup::graph::get_order_only(g, id)) {
             stack.push_back(dep_id);
         }
     }
@@ -246,21 +246,21 @@ auto walk_upstream_from_scope(
 
 /// Collect all upstream input file paths for commands in the given scopes.
 auto collect_upstream_files(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::Vec<pup::StringId> const& scopes
 ) -> Vec<std::string_view>
 {
+    auto const& g = state.graph;
     auto upstream = Vec<std::string_view> {};
-    auto& pool = pup::global_pool();
-    for (auto id : walk_upstream_from_scope(graph, scopes)) {
+    for (auto id : walk_upstream_from_scope(state, scopes)) {
         if (pup::node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph.get_file_node(id);
+        auto const* node = pup::graph::get_file_node(g, id);
         if (node && (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated)) {
-            auto path_id = graph.get_full_path(id);
-            if (!pup::is_empty(path_id)) {
-                upstream.push_back(pool.get(path_id));
+            auto path_sv = pup::graph::get_full_path(g, id, state.path_cache);
+            if (!path_sv.empty()) {
+                upstream.push_back(path_sv);
             }
         }
     }
@@ -271,13 +271,13 @@ auto collect_upstream_files(
 
 /// Collect commands in scope plus all transitive upstream producer commands.
 auto collect_scope_with_upstream_commands(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::Vec<pup::StringId> const& scopes
 ) -> pup::NodeIdMap32
 {
     auto commands = pup::NodeIdMap32 {};
-    for (auto id : walk_upstream_from_scope(graph, scopes)) {
-        if (pup::node_id::is_command(id) && graph.get_command_node(id)) {
+    for (auto id : walk_upstream_from_scope(state, scopes)) {
+        if (pup::node_id::is_command(id) && pup::graph::get_command_node(state.graph, id)) {
             commands.set(id, 1);
         }
     }
@@ -544,35 +544,33 @@ auto create_implicit_file(
 /// Serialize file and directory nodes from the build graph to the index.
 /// Returns the populated index and a path-to-id mapping for later use.
 auto serialize_graph_nodes(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     std::string_view source_root,
     std::string_view output_root
 ) -> std::pair<pup::index::Index, PathIdMap>
 {
+    auto const& g = state.graph;
     auto index = pup::index::Index {};
     auto path_to_id = PathIdMap {};
 
-    for (auto id : graph.all_nodes()) {
+    for (auto id : pup::graph::all_nodes(g)) {
         if (pup::node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph.get_file_node(id);
+        auto const* node = pup::graph::get_file_node(g, id);
         if (!node) {
             continue;
         }
 
         if (node->type == pup::NodeType::File || node->type == pup::NodeType::Generated) {
-            auto node_path_id = graph.get_full_path(id);
-            auto node_path = pup::global_pool().get(node_path_id);
+            auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             if (node_path.empty()) {
                 continue;
             }
 
-            // For generated files, strip build root for filesystem path construction
-            // (output_root already contains the build root, so we need just the relative part)
             auto fs_path = node_path;
             if (node->type == pup::NodeType::Generated) {
-                fs_path = strip_build_root_prefix(fs_path, graph.get_build_root_name());
+                fs_path = strip_build_root_prefix(fs_path, pup::graph::get_build_root_name(g));
             }
 
             auto file_path = pup::global_pool().get((node->type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
@@ -603,7 +601,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = pool.intern(pup::graph::get_name(graph.graph(), id)),
+                .name = pool.intern(pup::graph::get_name(g, id)),
                 .path = pool.intern(node_path),
                 .size = file_size,
                 .mtime_ns = mtime_ns,
@@ -612,7 +610,7 @@ auto serialize_graph_nodes(
             index.add_file(std::move(entry));
             path_id_insert(path_to_id, pool.intern(node_path), id);
         } else if (node->type == pup::NodeType::Directory || node->type == pup::NodeType::GeneratedDir) {
-            auto node_path = pup::global_pool().get(graph.get_full_path(id));
+            auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             auto& pool = pup::global_pool();
 
             auto entry = pup::index::FileEntry {
@@ -621,7 +619,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = pool.intern(pup::graph::get_name(graph.graph(), id)),
+                .name = pool.intern(pup::graph::get_name(g, id)),
                 .path = pool.intern(node_path),
                 .size = 0,
                 .mtime_ns = 0,
@@ -642,7 +640,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = node->type,
                 .flags = node->flags,
-                .name = pool.intern(pup::graph::get_name(graph.graph(), id)),
+                .name = pool.intern(pup::graph::get_name(g, id)),
                 .path = pup::StringId::Empty,
                 .size = 0,
                 .content_hash = (node->type == pup::NodeType::Variable) ? node->content_hash : pup::Hash256 {},
@@ -657,27 +655,26 @@ auto serialize_graph_nodes(
 /// Serialize command nodes from the build graph to the index.
 /// v8: Store template + operands instead of fully-expanded command.
 auto serialize_command_nodes(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::index::Index& index,
     PathIdMap const& path_to_id
 ) -> void
 {
-    for (auto id : graph.all_nodes()) {
+    auto const& g = state.graph;
+    for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
             continue;
         }
-        auto const* cmd = graph.get_command_node(id);
+        auto const* cmd = pup::graph::get_command_node(g, id);
         if (!cmd) {
             continue;
         }
 
-        // v8: instruction and operands are stored directly on CommandNode
         auto inputs = cmd->inputs;
         auto outputs = cmd->outputs;
         auto& pool = pup::global_pool();
 
-        // Look up source_dir in path_to_id to get the directory NodeId
-        auto source_dir_sv = pup::graph::get_source_dir(graph.graph(), id);
+        auto source_dir_sv = pup::graph::get_source_dir(g, id);
         auto dir_id = pup::NodeId { 0 };
         if (!source_dir_sv.empty()) {
             auto it = path_id_find(path_to_id, source_dir_sv);
@@ -689,8 +686,8 @@ auto serialize_command_nodes(
         auto entry = pup::index::CommandEntry {
             .id = id,
             .dir_id = dir_id,
-            .instruction_pattern = pool.intern(pup::graph::get_instruction_pattern(graph.graph(), id)),
-            .display = pool.intern(pup::graph::get_display_str(graph.graph(), id)),
+            .instruction_pattern = pool.intern(pup::graph::get_instruction_pattern(g, id)),
+            .display = pool.intern(pup::graph::get_display_str(g, id)),
             .env = pup::StringId::Empty,
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
@@ -701,11 +698,11 @@ auto serialize_command_nodes(
 
 /// Serialize edges from the build graph to the index.
 auto serialize_edges(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::index::Index& index
 ) -> void
 {
-    for (auto const& edge : graph.edges()) {
+    for (auto const& edge : state.graph.edges) {
         index.add_edge(pup::index::EdgeEntry {
             .from = edge.from,
             .to = edge.to,
@@ -716,10 +713,10 @@ auto serialize_edges(
 }
 
 /// Compute the next available NodeId after all existing nodes.
-auto compute_next_id(pup::graph::BuildGraph const& graph) -> pup::NodeId
+auto compute_next_id(pup::graph::BuildState const& state) -> pup::NodeId
 {
     auto max_file_id = pup::NodeId { 0 };
-    for (auto id : graph.all_nodes()) {
+    for (auto id : pup::graph::all_nodes(state.graph)) {
         if (!pup::node_id::is_command(id) && id > max_file_id) {
             max_file_id = id;
         }
@@ -812,7 +809,7 @@ auto preserve_old_implicit_edges(
 auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
-    pup::graph::BuildGraph const& graph
+    pup::graph::BuildState const& state
 ) -> pup::Vec<StringId>
 {
     auto result = pup::Vec<StringId> { changed };
@@ -862,15 +859,15 @@ auto expand_implicit_deps(
             }
 
             auto cmd_str_id = pup::index::get_command_string(index, *cmd);
-            auto cmd_node_id = graph.find_by_command(pup::global_pool().get(cmd_str_id));
+            auto cmd_node_id = pup::graph::find_by_command(state.graph, pup::global_pool().get(cmd_str_id));
             if (!cmd_node_id) {
                 continue;
             }
 
-            for (auto output_id : graph.get_outputs(*cmd_node_id)) {
-                auto output_path_id = graph.get_full_path(output_id);
-                auto output_path = pup::global_pool().get(output_path_id);
-                if (!output_path.empty()) {
+            for (auto output_id : pup::graph::get_outputs(state.graph, *cmd_node_id)) {
+                auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+                if (!output_path_sv.empty()) {
+                    auto output_path_id = pup::global_pool().intern(output_path_sv);
                     if (!std::binary_search(added.begin(), added.end(), output_path_id)) {
                         auto pos = std::lower_bound(added.begin(), added.end(), output_path_id);
                         added.insert(pos, output_path_id);
@@ -887,7 +884,7 @@ auto expand_implicit_deps(
 /// Build a complete index from the build graph and discovered dependencies.
 /// Orchestrates the serialization of nodes, commands, edges, and implicit deps.
 auto build_index(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     DiscoveredDeps const& discovered_deps,
     std::string_view source_root,
     std::string_view output_root,
@@ -895,16 +892,13 @@ auto build_index(
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
-    auto [index, path_to_id] = serialize_graph_nodes(graph, source_root, output_root);
+    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, output_root);
 
-    // Serialize command nodes
-    serialize_command_nodes(graph, index, path_to_id);
+    serialize_command_nodes(state, index, path_to_id);
 
-    // Serialize edges from the build graph
-    serialize_edges(graph, index);
+    serialize_edges(state, index);
 
-    // Setup context for implicit dependency processing
-    auto next_id = compute_next_id(graph);
+    auto next_id = compute_next_id(state);
     auto added_edges = EdgePairVec {};
     auto ctx = ImplicitDepContext {
         .index = index,
@@ -929,7 +923,7 @@ auto build_index(
 /// Returns node IDs on success, or empty optional with error printed on failure.
 auto validate_output_targets(
     pup::Vec<pup::StringId> const& targets,
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     std::string_view variant_name,
     bool verbose
 ) -> std::optional<pup::Vec<pup::NodeId>>
@@ -938,12 +932,12 @@ auto validate_output_targets(
     auto node_ids = pup::Vec<pup::NodeId> {};
     for (auto target_id : targets) {
         auto target_sv = pool.get(target_id);
-        auto node_id = graph.find_by_path(target_sv, pup::BUILD_ROOT_ID);
+        auto node_id = pup::graph::find_by_path(state.graph, target_sv, pup::BUILD_ROOT_ID);
         if (!node_id) {
             veprint(variant_name, "Error: %.*s is not in build graph\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }
-        auto const* node = graph.get_file_node(*node_id);
+        auto const* node = pup::graph::get_file_node(state.graph, *node_id);
         if (!node || node->type != pup::NodeType::Generated) {
             veprint(variant_name, "Error: %.*s is not a build output\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
@@ -958,33 +952,34 @@ auto validate_output_targets(
 
 /// Detect new commands (in graph but not index) and add their outputs to changed files.
 auto detect_new_commands(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::index::Index const& idx,
     std::string_view variant_name,
     bool verbose
 ) -> pup::Vec<StringId>
 {
+    auto const& g = state.graph;
     auto changed = pup::Vec<StringId> {};
-    for (auto id : graph.all_nodes()) {
+    for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph.get_command_node(id);
+        auto const* node = pup::graph::get_command_node(g, id);
         if (!node) {
             continue;
         }
 
-        auto cmd_str_id = graph.expand_instruction(id);
+        auto cmd_str_id = pup::graph::expand_instruction(g, id, state.path_cache);
         auto found = idx.find_command_by_command(pup::global_pool().get(cmd_str_id));
         if (!found) {
-            for (auto output_id : graph.get_outputs(id)) {
-                auto output_path_id = graph.get_full_path(output_id);
-                if (!pup::is_empty(output_path_id)) {
-                    changed.push_back(output_path_id);
+            for (auto output_id : pup::graph::get_outputs(g, id)) {
+                auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
+                if (!output_path_sv.empty()) {
+                    changed.push_back(pup::global_pool().intern(output_path_sv));
                 }
             }
             if (verbose) {
-                auto display_sv = pup::graph::get_display_str(graph.graph(), id);
+                auto display_sv = pup::graph::get_display_str(g, id);
                 vprint(variant_name, "  New command: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
             }
         }
@@ -994,7 +989,7 @@ auto detect_new_commands(
 
 /// Remove stale outputs from removed commands and report them.
 auto remove_stale_outputs(
-    pup::graph::BuildGraph const& graph,
+    pup::graph::BuildState const& state,
     pup::index::Index const& idx,
     std::string_view source_root,
     std::string_view variant_name,
@@ -1004,7 +999,7 @@ auto remove_stale_outputs(
 {
     for (auto const& cmd : idx.commands()) {
         auto cmd_str_id = pup::index::get_command_string(idx, cmd);
-        if (graph.find_by_command(pup::global_pool().get(cmd_str_id))) {
+        if (pup::graph::find_by_command(state.graph, pup::global_pool().get(cmd_str_id))) {
             continue;
         }
 
@@ -1118,7 +1113,8 @@ auto build_single_variant(
     }
 
     auto& ctx = *result;
-    auto num_commands = std::size_t { ctx.graph().nodes_of_type(pup::NodeType::Command).size() };
+    auto& bs = ctx.graph();
+    auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
 
     if (num_commands == 0) {
         vprint(variant_name, "Nothing to do.\n");
@@ -1127,7 +1123,7 @@ auto build_single_variant(
 
     auto target_ids_result = validate_output_targets(
         opts.output_targets,
-        ctx.graph(),
+        bs,
         variant_name,
         opts.verbose
     );
@@ -1150,13 +1146,13 @@ auto build_single_variant(
         // Build command string index for find_by_command() lookups
         // Must happen after parsing (operands set) but before incremental logic
         auto cmd_index_start = pup::SteadyClock::now();
-        ctx.graph().build_command_index();
+        pup::graph::build_command_index(bs.graph, bs.path_cache);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
         auto upstream_files = Vec<std::string_view> {};
         if (opts.include_all_deps && !scopes.empty()) {
-            upstream_files = collect_upstream_files(ctx.graph(), scopes);
+            upstream_files = collect_upstream_files(bs, scopes);
         }
 
         // Always include implicit deps (headers from .d files) for in-scope
@@ -1197,14 +1193,14 @@ auto build_single_variant(
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
         auto implicit_deps_start = pup::SteadyClock::now();
-        changed_files = expand_implicit_deps(changed_files, idx, ctx.graph());
+        changed_files = expand_implicit_deps(changed_files, idx, bs);
         auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
         // Add output targets to force their rebuild
         // Output targets are source-relative (e.g., "hello"), but changed_files uses
         // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
-        auto build_root_name = ctx.graph().get_build_root_name();
+        auto build_root_name = pup::graph::get_build_root_name(bs.graph);
         for (auto output_id : opts.output_targets) {
             auto output_sv = pup::global_pool().get(output_id);
             auto prefixed_id = StringId::Empty;
@@ -1219,7 +1215,7 @@ auto build_single_variant(
         }
 
         auto new_cmds_start = pup::SteadyClock::now();
-        auto new_cmd_outputs = detect_new_commands(ctx.graph(), idx, variant_name, opts.verbose);
+        auto new_cmd_outputs = detect_new_commands(bs, idx, variant_name, opts.verbose);
         auto new_cmds_elapsed = pup::SteadyClock::now() - new_cmds_start;
         pup::thread_metrics().new_commands_time = std::chrono::duration_cast<std::chrono::microseconds>(new_cmds_elapsed);
         for (auto& f : new_cmd_outputs) {
@@ -1228,7 +1224,7 @@ auto build_single_variant(
 
         auto stale_start = pup::SteadyClock::now();
         remove_stale_outputs(
-            ctx.graph(),
+            bs,
             idx,
             source_root_str,
             variant_name,
@@ -1350,7 +1346,7 @@ auto build_single_variant(
 
     // Identify config-generating commands to exclude from regular build
     // (config rules should only run during 'pup configure')
-    auto config_cmds = find_config_commands(ctx.graph(), pup::global_pool().get(ctx.layout().source_root));
+    auto config_cmds = find_config_commands(bs, pup::global_pool().get(ctx.layout().source_root));
     auto config_cmd_ids = NodeIdMap32 {};
     for (auto const& cfg : config_cmds) {
         config_cmd_ids.set(cfg.cmd_id, 1);
@@ -1369,32 +1365,32 @@ auto build_single_variant(
 
     switch (mode) {
     case BuildMode::Incremental: {
-        build_result = scheduler.build_incremental(ctx.graph(), changed_files);
+        build_result = scheduler.build_incremental(bs, changed_files);
         break;
     }
     case BuildMode::ScopeWithUpstream: {
-        auto scope_cmds = collect_scope_with_upstream_commands(ctx.graph(), scopes);
+        auto scope_cmds = collect_scope_with_upstream_commands(bs, scopes);
         for (auto const& cfg : config_cmds) {
             scope_cmds.remove(cfg.cmd_id);
         }
-        build_result = scheduler.build_subset(ctx.graph(), scope_cmds);
+        build_result = scheduler.build_subset(bs, scope_cmds);
         break;
     }
     case BuildMode::Targets:
-        build_result = scheduler.build_targets(ctx.graph(), target_node_ids);
+        build_result = scheduler.build_targets(bs, target_node_ids);
         break;
     case BuildMode::Subset: {
         auto non_config_cmds = pup::NodeIdMap32 {};
-        for (auto id : ctx.graph().all_nodes()) {
+        for (auto id : pup::graph::all_nodes(bs.graph)) {
             if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
                 non_config_cmds.set(id, 1);
             }
         }
-        build_result = scheduler.build_subset(ctx.graph(), non_config_cmds);
+        build_result = scheduler.build_subset(bs, non_config_cmds);
         break;
     }
     case BuildMode::Full:
-        build_result = scheduler.build(ctx.graph());
+        build_result = scheduler.build(bs);
         break;
     }
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
@@ -1427,7 +1423,7 @@ auto build_single_variant(
         // and they'll be detected as changed on next build.
         auto output_root_str = pup::global_pool().get(ctx.layout().output_root);
         auto index = pup::index::Index { build_index(
-            ctx.graph(),
+            bs,
             discovered_deps,
             source_root_str,
             output_root_str,

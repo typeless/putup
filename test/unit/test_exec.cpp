@@ -218,9 +218,9 @@ TEST_CASE("Scheduler basic operation", "[exec]")
 {
     SECTION("empty graph")
     {
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
         auto scheduler = Scheduler {};
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 0);
@@ -229,24 +229,24 @@ TEST_CASE("Scheduler basic operation", "[exec]")
 
     SECTION("single command dry run")
     {
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto input_id = graph.add_file_node(graph::FileNode {
-            .name = graph.intern("input.txt"),
+        auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
+            .name = intern("input.txt"),
         });
 
-        auto cmd_id = graph.add_command_node(graph::CommandNode {
-            .display = graph.intern("CAT input.txt"),
-            .instruction_id = graph.intern("cat input.txt > output.txt"),
+        auto cmd_id = graph::add_command_node(bs.graph, graph::CommandNode {
+            .display = intern("CAT input.txt"),
+            .instruction_id = intern("cat input.txt > output.txt"),
         });
 
-        auto output_id = graph.add_file_node(graph::FileNode {
+        auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
             .type = NodeType::Generated,
-            .name = graph.intern("output.txt"),
+            .name = intern("output.txt"),
         });
 
-        (void)graph.add_edge(*input_id, *cmd_id);
-        (void)graph.add_edge(*cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
+        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
 
         auto opts = SchedulerOptions {
             .jobs = 1,
@@ -254,7 +254,7 @@ TEST_CASE("Scheduler basic operation", "[exec]")
         };
 
         auto scheduler = Scheduler { opts };
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 1);
@@ -269,29 +269,29 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         // Two independent compile commands that share no dependencies
         //   a.c -> cmd1 -> a.o
         //   b.c -> cmd2 -> b.o
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto a_c = graph.add_file_node(graph::FileNode { .name = graph.intern("a.c") });
-        auto b_c = graph.add_file_node(graph::FileNode { .name = graph.intern("b.c") });
+        auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.c") });
+        auto b_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("b.c") });
 
-        auto cmd1 = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc -c a.c -o a.o"),
+        auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc -c a.c -o a.o"),
         });
-        auto cmd2 = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc -c b.c -o b.o"),
+        auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc -c b.c -o b.o"),
         });
 
-        auto a_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
-        auto b_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("b.o") });
+        auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
+        auto b_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("b.o") });
 
-        (void)graph.add_edge(*a_c, *cmd1);
-        (void)graph.add_edge(*cmd1, *a_o);
-        (void)graph.add_edge(*b_c, *cmd2);
-        (void)graph.add_edge(*cmd2, *b_o);
+        (void)graph::add_edge(bs.graph, *a_c, *cmd1);
+        (void)graph::add_edge(bs.graph, *cmd1, *a_o);
+        (void)graph::add_edge(bs.graph, *b_c, *cmd2);
+        (void)graph::add_edge(bs.graph, *cmd2, *b_o);
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 2);
@@ -301,26 +301,26 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
     SECTION("dependent commands run sequentially")
     {
         // a.c -> compile -> a.o -> link -> a.out
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto a_c = graph.add_file_node(graph::FileNode { .name = graph.intern("a.c") });
-        auto compile_cmd = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc -c a.c -o a.o"),
+        auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.c") });
+        auto compile_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc -c a.c -o a.o"),
         });
-        auto a_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("a.o") });
-        auto link_cmd = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc a.o -o a.out"),
+        auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
+        auto link_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc a.o -o a.out"),
         });
-        auto a_out = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("a.out") });
+        auto a_out = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.out") });
 
-        (void)graph.add_edge(*a_c, *compile_cmd);
-        (void)graph.add_edge(*compile_cmd, *a_o);
-        (void)graph.add_edge(*a_o, *link_cmd);
-        (void)graph.add_edge(*link_cmd, *a_out);
+        (void)graph::add_edge(bs.graph, *a_c, *compile_cmd);
+        (void)graph::add_edge(bs.graph, *compile_cmd, *a_o);
+        (void)graph::add_edge(bs.graph, *a_o, *link_cmd);
+        (void)graph::add_edge(bs.graph, *link_cmd, *a_out);
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 2);
@@ -335,33 +335,33 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //   cmd1   cmd2  (can run in parallel)
         //      |   /
         //       link     (waits for both)
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto a_c = graph.add_file_node(graph::FileNode { .name = graph.intern("main.c") });
-        auto cmd1 = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc -c main.c -o main.o"),
+        auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("main.c") });
+        auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc -c main.c -o main.o"),
         });
-        auto cmd2 = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc -c main.c -o main_opt.o"),
+        auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc -c main.c -o main_opt.o"),
         });
-        auto main_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("main.o") });
-        auto main_opt_o = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("main_opt.o") });
-        auto link_cmd = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc main.o main_opt.o -o app"),
+        auto main_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("main.o") });
+        auto main_opt_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("main_opt.o") });
+        auto link_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc main.o main_opt.o -o app"),
         });
-        auto app = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("app") });
+        auto app = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("app") });
 
-        (void)graph.add_edge(*a_c, *cmd1);
-        (void)graph.add_edge(*a_c, *cmd2);
-        (void)graph.add_edge(*cmd1, *main_o);
-        (void)graph.add_edge(*cmd2, *main_opt_o);
-        (void)graph.add_edge(*main_o, *link_cmd);
-        (void)graph.add_edge(*main_opt_o, *link_cmd);
-        (void)graph.add_edge(*link_cmd, *app);
+        (void)graph::add_edge(bs.graph, *a_c, *cmd1);
+        (void)graph::add_edge(bs.graph, *a_c, *cmd2);
+        (void)graph::add_edge(bs.graph, *cmd1, *main_o);
+        (void)graph::add_edge(bs.graph, *cmd2, *main_opt_o);
+        (void)graph::add_edge(bs.graph, *main_o, *link_cmd);
+        (void)graph::add_edge(bs.graph, *main_opt_o, *link_cmd);
+        (void)graph::add_edge(bs.graph, *link_cmd, *app);
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 3);
@@ -374,26 +374,26 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //        src
         //       / | |
         //      c1 c2 c3  (all can run in parallel)
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto src = graph.add_file_node(graph::FileNode { .name = graph.intern("lib.c") });
-        auto cmd1 = graph.add_command_node(graph::CommandNode { .instruction_id = graph.intern("gcc -c -O0 lib.c -o lib_debug.o") });
-        auto cmd2 = graph.add_command_node(graph::CommandNode { .instruction_id = graph.intern("gcc -c -O2 lib.c -o lib_opt.o") });
-        auto cmd3 = graph.add_command_node(graph::CommandNode { .instruction_id = graph.intern("gcc -c -Os lib.c -o lib_size.o") });
-        auto out1 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("lib_debug.o") });
-        auto out2 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("lib_opt.o") });
-        auto out3 = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("lib_size.o") });
+        auto src = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("lib.c") });
+        auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -O0 lib.c -o lib_debug.o") });
+        auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -O2 lib.c -o lib_opt.o") });
+        auto cmd3 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -Os lib.c -o lib_size.o") });
+        auto out1 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_debug.o") });
+        auto out2 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_opt.o") });
+        auto out3 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_size.o") });
 
-        (void)graph.add_edge(*src, *cmd1);
-        (void)graph.add_edge(*src, *cmd2);
-        (void)graph.add_edge(*src, *cmd3);
-        (void)graph.add_edge(*cmd1, *out1);
-        (void)graph.add_edge(*cmd2, *out2);
-        (void)graph.add_edge(*cmd3, *out3);
+        (void)graph::add_edge(bs.graph, *src, *cmd1);
+        (void)graph::add_edge(bs.graph, *src, *cmd2);
+        (void)graph::add_edge(bs.graph, *src, *cmd3);
+        (void)graph::add_edge(bs.graph, *cmd1, *out1);
+        (void)graph::add_edge(bs.graph, *cmd2, *out2);
+        (void)graph::add_edge(bs.graph, *cmd3, *out3);
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 3);
@@ -406,24 +406,24 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //    a.o  b.o  c.o
         //      \  |  /
         //       link    (must wait for all)
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto a_o = graph.add_file_node(graph::FileNode { .name = graph.intern("a.o") });
-        auto b_o = graph.add_file_node(graph::FileNode { .name = graph.intern("b.o") });
-        auto c_o = graph.add_file_node(graph::FileNode { .name = graph.intern("c.o") });
-        auto link_cmd = graph.add_command_node(graph::CommandNode {
-            .instruction_id = graph.intern("gcc a.o b.o c.o -o program"),
+        auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.o") });
+        auto b_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("b.o") });
+        auto c_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("c.o") });
+        auto link_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
+            .instruction_id = intern("gcc a.o b.o c.o -o program"),
         });
-        auto program = graph.add_file_node(graph::FileNode { .type = NodeType::Generated, .name = graph.intern("program") });
+        auto program = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("program") });
 
-        (void)graph.add_edge(*a_o, *link_cmd);
-        (void)graph.add_edge(*b_o, *link_cmd);
-        (void)graph.add_edge(*c_o, *link_cmd);
-        (void)graph.add_edge(*link_cmd, *program);
+        (void)graph::add_edge(bs.graph, *a_o, *link_cmd);
+        (void)graph::add_edge(bs.graph, *b_o, *link_cmd);
+        (void)graph::add_edge(bs.graph, *c_o, *link_cmd);
+        (void)graph::add_edge(bs.graph, *link_cmd, *program);
 
         auto opts = SchedulerOptions { .jobs = 4, .dry_run = true };
         auto scheduler = Scheduler { opts };
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->total_jobs == 1);
@@ -440,26 +440,26 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         // Set an env var that the command will echo
         pup::platform::set_env("PUP_TEST_EXPORT_VAR", "exported_value_123");
 
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto input_id = graph.add_file_node(graph::FileNode {
-            .name = graph.intern("/dev/null"),
+        auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
+            .name = intern("/dev/null"),
         });
 
         // Command that echoes the exported var
         auto cmd_node = graph::CommandNode {
-            .instruction_id = graph.intern("echo $PUP_TEST_EXPORT_VAR"),
+            .instruction_id = intern("echo $PUP_TEST_EXPORT_VAR"),
         };
-        cmd_node.exported_vars.insert(to_underlying(graph.intern("PUP_TEST_EXPORT_VAR")));
-        auto cmd_id = graph.add_command_node(std::move(cmd_node));
+        cmd_node.exported_vars.insert(to_underlying(intern("PUP_TEST_EXPORT_VAR")));
+        auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));
 
-        auto output_id = graph.add_file_node(graph::FileNode {
+        auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
             .type = NodeType::Generated,
-            .name = graph.intern("/tmp/test_output.txt"),
+            .name = intern("/tmp/test_output.txt"),
         });
 
-        (void)graph.add_edge(*input_id, *cmd_id);
-        (void)graph.add_edge(*cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
+        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
 
         auto captured_output = std::string {};
         auto opts = SchedulerOptions { .jobs = 1 };
@@ -469,7 +469,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
             captured_output = std::string { sv(result.output) };
         });
 
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         REQUIRE(result->completed_jobs == 1);
@@ -482,26 +482,26 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
     {
         pup::platform::set_env("PUP_TEST_HIDDEN_VAR", "hidden_value");
 
-        auto graph = graph::BuildGraph {};
+        auto bs = graph::make_build_state();
 
-        auto input_id = graph.add_file_node(graph::FileNode {
-            .name = graph.intern("/dev/null"),
+        auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
+            .name = intern("/dev/null"),
         });
 
         // Command without exported_vars - var should NOT be in env
         auto cmd_node = graph::CommandNode {
-            .instruction_id = graph.intern("echo ${PUP_TEST_HIDDEN_VAR:-default}"),
+            .instruction_id = intern("echo ${PUP_TEST_HIDDEN_VAR:-default}"),
         };
         // Note: exported_vars is empty
-        auto cmd_id = graph.add_command_node(std::move(cmd_node));
+        auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));
 
-        auto output_id = graph.add_file_node(graph::FileNode {
+        auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
             .type = NodeType::Generated,
-            .name = graph.intern("/tmp/test_output2.txt"),
+            .name = intern("/tmp/test_output2.txt"),
         });
 
-        (void)graph.add_edge(*input_id, *cmd_id);
-        (void)graph.add_edge(*cmd_id, *output_id);
+        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
+        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
 
         auto captured_output = std::string {};
         auto opts = SchedulerOptions { .jobs = 1 };
@@ -511,7 +511,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
             captured_output = std::string { sv(result.output) };
         });
 
-        auto result = scheduler.build(graph);
+        auto result = scheduler.build(bs);
 
         REQUIRE(result.has_value());
         // Since inherit_env is true by default, the var IS available

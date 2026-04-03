@@ -9,7 +9,7 @@
 #include "pup/core/vec.hpp"
 
 namespace pup::graph {
-class BuildGraph;
+struct BuildState;
 }
 
 namespace pup::cli {
@@ -27,13 +27,13 @@ struct ConfigCommand {
 /// Paths in the graph are project-root-relative, so source_root is used
 /// to resolve the full filesystem path for existence checks.
 auto find_config_commands(
-    graph::BuildGraph const& graph,
+    graph::BuildState const& state,
     std::string_view source_root
 ) -> Vec<ConfigCommand>;
 
 /// Collect all commands that the given commands depend on (transitively).
 auto collect_command_dependencies(
-    graph::BuildGraph const& graph,
+    graph::BuildState const& state,
     NodeIdMap32 const& commands
 ) -> NodeIdMap32;
 

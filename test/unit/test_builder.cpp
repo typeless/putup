@@ -134,7 +134,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     // This is the case that was broken by the refactoring
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -161,7 +161,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     rule1.output_order_only_group = intern("local-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     (void)r1;
 
     // Second Tupfile: also in modules/kernel, references <local-group> (empty path)
@@ -181,7 +181,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
+    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
     REQUIRE(r2.has_value());
 }
 
@@ -191,7 +191,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     // Should use normalize_group_dir(expanded_path, current_dir, source_root)
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     vars.set("ROOT", fixture.root().generic_string());
     auto ctx = EvalContext { .vars = &vars };
@@ -219,7 +219,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     (void)r1;
 
     // Second Tupfile: modules/kernel references $(ROOT)/include/generated/<gen-headers>
@@ -240,7 +240,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
+    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
     REQUIRE(r2.has_value());
 }
 
@@ -251,7 +251,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     // Even when dir_part is empty
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -278,7 +278,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     (void)r1;
 
     // Second: reference with relative path ../../include/generated/<gen-headers>
@@ -300,7 +300,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
+    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
     REQUIRE(r2.has_value());
 }
 
@@ -311,7 +311,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
 TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
 {
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -363,22 +363,22 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
     rule3.outputs.push_back(out3);
     tupfile.statements.push_back(make_rule_statement(std::move(rule3)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Verify the link command has both .o files as inputs
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     auto link_cmd_count = 0;
     for (auto id : commands) {
-        auto const* node = graph.get_command_node(id);
-        auto cmd_str = expand_instruction(graph.graph(), id);
+        auto const* node = get_command_node(bs.graph,id);
+        auto cmd_str = expand_instruction(bs.graph, id);
         if (node && sv(cmd_str).find("-o app") != std::string_view::npos) {
-            auto inputs = graph.get_inputs(id);
+            auto inputs = get_inputs(bs.graph,id);
             // Should have at least 2 .o inputs (may also have Tupfile as sticky)
             auto o_count = 0;
             for (auto input_id : inputs) {
-                auto const* input_node = graph.get_file_node(input_id);
-                if (input_node && sv(graph.get_full_path(input_node->id)).find(".o") != std::string::npos) {
+                auto const* input_node = get_file_node(bs.graph,input_id);
+                if (input_node && sv(get_full_path(bs.graph,input_node->id)).find(".o") != std::string::npos) {
                     ++o_count;
                 }
             }
@@ -400,7 +400,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     fixture.create_file("src/bar.c");
     fixture.create_file("src/baz.h"); // Should not match *.c
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -427,11 +427,11 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Should have 2 compile commands (foo.c and bar.c)
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     REQUIRE(commands.size() == 2);
 }
 
@@ -439,7 +439,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
 {
     auto fixture = BuilderTestFixture {};
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -472,11 +472,11 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
     rule2.outputs.push_back(out2);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     REQUIRE(r1.has_value());
 
     // Verify generated files exist in graph
-    auto generated = graph.nodes_of_type(NodeType::Generated);
+    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     REQUIRE(generated.size() == 2);
 }
 
@@ -490,7 +490,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     fixture.create_file("build-variant/tup.config");
     fixture.create_file("src/main.c");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -516,7 +516,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     // Should find tup.config in the variant directory
     REQUIRE(result.has_value());
 }
@@ -532,7 +532,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     fixture.create_file("src/bar.c");
     fixture.create_file("src/baz.c"); // Will be excluded
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -565,20 +565,20 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Count .o outputs - baz.c should be excluded
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     auto compile_count = 0;
     auto has_baz = false;
     for (auto id : commands) {
-        auto outputs = graph.get_outputs(id);
+        auto outputs = get_outputs(bs.graph,id);
         for (auto out_id : outputs) {
-            auto const* node = graph.get_file_node(out_id);
-            if (node && sv(graph.get_full_path(node->id)).find(".o") != std::string::npos) {
+            auto const* node = get_file_node(bs.graph,out_id);
+            if (node && sv(get_full_path(bs.graph,node->id)).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (sv(graph.get_full_path(node->id)).find("baz.o") != std::string::npos) {
+                if (sv(get_full_path(bs.graph,node->id)).find("baz.o") != std::string::npos) {
                     has_baz = true;
                 }
             }
@@ -597,7 +597,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     fixture.create_file("src/test_main.c"); // Will be excluded
     fixture.create_file("src/test_util.c"); // Will be excluded
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -630,20 +630,20 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Count .o outputs - test_*.c should be excluded
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     auto compile_count = 0;
     auto has_test = false;
     for (auto id : commands) {
-        auto outputs = graph.get_outputs(id);
+        auto outputs = get_outputs(bs.graph,id);
         for (auto out_id : outputs) {
-            auto const* node = graph.get_file_node(out_id);
-            if (node && sv(graph.get_full_path(node->id)).find(".o") != std::string::npos) {
+            auto const* node = get_file_node(bs.graph,out_id);
+            if (node && sv(get_full_path(bs.graph,node->id)).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (sv(graph.get_full_path(node->id)).find("test_") != std::string::npos) {
+                if (sv(get_full_path(bs.graph,node->id)).find("test_") != std::string::npos) {
                     has_test = true;
                 }
             }
@@ -662,7 +662,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     fixture.create_file("src/util.c");
     fixture.create_file("src/helper_impl.c"); // Will be excluded - gets #included
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -699,20 +699,20 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
 
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Count .o outputs - helper_impl.c should be excluded
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     auto compile_count = 0;
     auto has_helper = false;
     for (auto id : commands) {
-        auto outputs = graph.get_outputs(id);
+        auto outputs = get_outputs(bs.graph,id);
         for (auto out_id : outputs) {
-            auto const* node = graph.get_file_node(out_id);
-            if (node && sv(graph.get_full_path(node->id)).find(".o") != std::string::npos) {
+            auto const* node = get_file_node(bs.graph,out_id);
+            if (node && sv(get_full_path(bs.graph,node->id)).find(".o") != std::string::npos) {
                 ++compile_count;
-                if (sv(graph.get_full_path(node->id)).find("helper_impl") != std::string::npos) {
+                if (sv(get_full_path(bs.graph,node->id)).find("helper_impl") != std::string::npos) {
                     has_helper = true;
                 }
             }
@@ -731,7 +731,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 {
     auto fixture = BuilderTestFixture {};
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -758,7 +758,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     REQUIRE(r1.has_value());
 
     // Tupfile in modules/kernel: references ../../include/generated/<gen-headers>
@@ -781,20 +781,20 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
+    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
     REQUIRE(r2.has_value());
 
     // Resolve deferred order-only edges (required after all tupfiles are parsed)
-    auto resolve_result = builder.resolve_deferred_order_only_edges(graph);
+    auto resolve_result = builder.resolve_deferred_order_only_edges(bs);
     REQUIRE(resolve_result.has_value());
 
     // Verify the kernel.o command has an order-only dependency on config.h
     auto found = false;
-    for (auto id : graph.nodes_of_type(NodeType::Command)) {
-        auto const* node = graph.get_command_node(id);
-        auto cmd_str = expand_instruction(graph.graph(), id);
+    for (auto id : nodes_of_type(bs.graph,NodeType::Command)) {
+        auto const* node = get_command_node(bs.graph,id);
+        auto cmd_str = expand_instruction(bs.graph, id);
         if (node && sv(cmd_str).find("compile kernel.c") != std::string_view::npos) {
-            auto order_only = graph.get_order_only(id);
+            auto order_only = get_order_only(bs.graph,id);
             // Should have config.h as order-only
             found = !order_only.empty();
             break;
@@ -819,7 +819,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     // code called normalize_group_dir("") which returns "."
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -846,7 +846,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     rule1.output_order_only_group = intern("root-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     REQUIRE(r1.has_value());
 
     // Case 2: Reference with empty path from modules/kernel
@@ -868,22 +868,22 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
+    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
     REQUIRE(r2.has_value());
 
     // Resolve deferred order-only edges (required after all tupfiles are parsed)
-    auto resolve_result = builder.resolve_deferred_order_only_edges(graph);
+    auto resolve_result = builder.resolve_deferred_order_only_edges(bs);
     REQUIRE(resolve_result.has_value());
 
     // The critical verification: check that the group WAS found
     // If normalize_group_dir("") returns "." then it will match
     // If it returns current_dir ("modules/kernel") then it won't match
     auto found_order_only = false;
-    for (auto id : graph.nodes_of_type(NodeType::Command)) {
-        auto const* node = graph.get_command_node(id);
-        auto cmd_str = expand_instruction(graph.graph(), id);
+    for (auto id : nodes_of_type(bs.graph,NodeType::Command)) {
+        auto const* node = get_command_node(bs.graph,id);
+        auto cmd_str = expand_instruction(bs.graph, id);
         if (node && sv(cmd_str).find("compile") != std::string_view::npos) {
-            auto order_only = graph.get_order_only(id);
+            auto order_only = get_order_only(bs.graph,id);
             if (!order_only.empty()) {
                 found_order_only = true;
             }
@@ -902,7 +902,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/main.c");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -928,17 +928,17 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Verify output is in variant directory
-    auto generated = graph.nodes_of_type(NodeType::Generated);
+    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     REQUIRE(generated.size() == 1);
 
-    auto const* node = graph.get_file_node(generated[0]);
+    auto const* node = get_file_node(bs.graph,generated[0]);
     REQUIRE(node != nullptr);
     // Output should be under build-variant/src/main.o or absolute path
-    CHECK(sv(graph.get_full_path(node->id)).find("main.o") != std::string::npos);
+    CHECK(sv(get_full_path(bs.graph,node->id)).find("main.o") != std::string::npos);
 }
 
 // =============================================================================
@@ -952,7 +952,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     fs::create_directories(fixture.root() / "modules" / "app" / "sub" / "deep");
     fixture.create_file("modules/app/sub/deep/impl.c");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -981,17 +981,17 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Verify the header was resolved correctly
-    auto files = graph.nodes_of_type(NodeType::File);
+    auto files = nodes_of_type(bs.graph,NodeType::File);
     auto found_header = false;
     for (auto id : files) {
-        auto const* node = graph.get_file_node(id);
-        if (node && sv(graph.get_full_path(node->id)).find("common.h") != std::string::npos) {
+        auto const* node = get_file_node(bs.graph,id);
+        if (node && sv(get_full_path(bs.graph,node->id)).find("common.h") != std::string::npos) {
             // Path should be normalized to include/common.h
-            CHECK(sv(graph.get_full_path(node->id)) =="include/common.h");
+            CHECK(sv(get_full_path(bs.graph,node->id)) =="include/common.h");
             found_header = true;
             break;
         }
@@ -1004,7 +1004,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/util/helpers.c");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1030,15 +1030,15 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Find the helpers.c file node
-    auto files = graph.nodes_of_type(NodeType::File);
+    auto files = nodes_of_type(bs.graph,NodeType::File);
     FileNode const* helpers_node = nullptr;
     for (auto id : files) {
-        auto const* node = graph.get_file_node(id);
-        if (node && sv(graph.get_full_path(node->id)).find("helpers.c") != std::string::npos) {
+        auto const* node = get_file_node(bs.graph,id);
+        if (node && sv(get_full_path(bs.graph,node->id)).find("helpers.c") != std::string::npos) {
             helpers_node = node;
             break;
         }
@@ -1046,17 +1046,17 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     REQUIRE(helpers_node != nullptr);
 
     // Verify the node has name and parent_dir set
-    CHECK(get_name(graph.graph(), helpers_node->id) == "helpers.c");
+    CHECK(get_name(bs.graph, helpers_node->id) == "helpers.c");
     CHECK(helpers_node->parent_dir != 0); // Not root
 
     // Verify the parent directory node exists
-    auto const* parent_dir = graph.get_file_node(helpers_node->parent_dir);
+    auto const* parent_dir = get_file_node(bs.graph,helpers_node->parent_dir);
     REQUIRE(parent_dir != nullptr);
     CHECK(parent_dir->type == NodeType::Directory);
-    CHECK(get_name(graph.graph(), parent_dir->id) == "util");
+    CHECK(get_name(bs.graph, parent_dir->id) == "util");
 
     // Verify we can find the file via (parent_dir, name)
-    auto found = graph.find_by_dir_name(helpers_node->parent_dir, "helpers.c");
+    auto found = find_by_dir_name(bs.graph,helpers_node->parent_dir, "helpers.c");
     REQUIRE(found.has_value());
     CHECK(*found == helpers_node->id);
 }
@@ -1072,7 +1072,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     // This ensures inputs and outputs resolve to the same node (in-place Ghost→Generated upgrade).
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1103,17 +1103,17 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Find the output node
-    auto generated = graph.nodes_of_type(NodeType::Generated);
+    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     REQUIRE(generated.size() >= 1);
 
     FileNode const* output_node = nullptr;
     for (auto id : generated) {
-        auto const* node = graph.get_file_node(id);
-        if (node && get_name(graph.graph(), id) == "main.o") {
+        auto const* node = get_file_node(bs.graph,id);
+        if (node && get_name(bs.graph, id) == "main.o") {
             output_node = node;
             break;
         }
@@ -1122,7 +1122,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
 
     // The full path is source-root-relative: "src/main.o"
     // Variant mapping (to "build-variant/src/main.o") is applied at command expansion time
-    auto full_path = graph.get_full_path(output_node->id);
+    auto full_path = get_full_path(bs.graph,output_node->id);
     CHECK(sv(full_path) == "src/main.o");
 
     // It should NOT be an absolute path
@@ -1136,7 +1136,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     // ../../boot/boot.hex which resolves to the same node as boot/Tupfile's output
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1171,15 +1171,15 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     rule1.outputs.push_back(out1);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(graph, tupfile1, ctx);
+    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
     REQUIRE(r1.has_value());
 
     // Find the generated boot.hex node
-    auto generated = graph.nodes_of_type(NodeType::Generated);
+    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     FileNode const* boot_hex_node = nullptr;
     for (auto id : generated) {
-        auto const* node = graph.get_file_node(id);
-        if (node && get_name(graph.graph(), id) == "boot.hex") {
+        auto const* node = get_file_node(bs.graph,id);
+        if (node && get_name(bs.graph, id) == "boot.hex") {
             boot_hex_node = node;
             break;
         }
@@ -1187,7 +1187,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     REQUIRE(boot_hex_node != nullptr);
 
     // The output path is source-root-relative: "boot/boot.hex"
-    auto boot_hex_path = graph.get_full_path(boot_hex_node->id);
+    auto boot_hex_path = get_full_path(bs.graph,boot_hex_node->id);
     CHECK(sv(boot_hex_path) == "boot/boot.hex");
 
     // Second Tupfile: output/hex/Tupfile references ../../boot/boot.hex (source-relative)
@@ -1204,15 +1204,15 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(graph, tupfile2, ctx);
+    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
     REQUIRE(r2.has_value());
 
     // Find the command node
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     CommandNode const* srec_cmd = nullptr;
     for (auto id : commands) {
-        auto const* node = graph.get_command_node(id);
-        auto cmd_str = expand_instruction(graph.graph(), id);
+        auto const* node = get_command_node(bs.graph,id);
+        auto cmd_str = expand_instruction(bs.graph, id);
         if (node && sv(cmd_str).find("srec_cat") != std::string_view::npos) {
             srec_cmd = node;
             break;
@@ -1222,7 +1222,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
 
     // The srec_cat command should have boot.hex as an input
     // This verifies that the input path resolved to the same node as the output
-    auto inputs = graph.get_inputs(srec_cmd->id);
+    auto inputs = get_inputs(bs.graph,srec_cmd->id);
     bool found_boot_hex = false;
     for (auto input_id : inputs) {
         if (input_id == boot_hex_node->id) {
@@ -1240,7 +1240,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     // Variant mapping happens at command expansion time via transform_output_path().
 
     auto fixture = BuilderTestFixture {};
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1260,7 +1260,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     auto builder = GraphBuilder { options };
 
     // Set build root name for variant build (normally done by builder.build())
-    graph.set_build_root_name("build");
+    set_build_root_name(bs, "build");
 
     // Set TUP_VARIANT_OUTPUTDIR as tup would for sub/dir Tupfile with build variant
     // From sub/dir, path to build/sub/dir is ../../build/sub/dir
@@ -1278,15 +1278,15 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Find the output node
-    auto generated = graph.nodes_of_type(NodeType::Generated);
+    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     FileNode const* output_node = nullptr;
     for (auto id : generated) {
-        auto const* node = graph.get_file_node(id);
-        if (node && get_name(graph.graph(), id) == "out.txt") {
+        auto const* node = get_file_node(bs.graph,id);
+        if (node && get_name(bs.graph, id) == "out.txt") {
             output_node = node;
             break;
         }
@@ -1294,7 +1294,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     REQUIRE(output_node != nullptr);
 
     // Output is stored at variant-mapped path (via walk_to_file_node with variant_output_dir)
-    auto full_path = graph.get_full_path(output_node->id);
+    auto full_path = get_full_path(bs.graph,output_node->id);
     CHECK(sv(full_path) == "build/sub/dir/out.txt");
 }
 
@@ -1310,7 +1310,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     fixture.create_file("main.c");
     fixture.create_file("Tupfile");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1336,17 +1336,17 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     REQUIRE(!commands.empty());
 
-    auto const* cmd_node = graph.get_command_node(commands[0]);
+    auto const* cmd_node = get_command_node(bs.graph,commands[0]);
     REQUIRE(cmd_node != nullptr);
 
     // At root, paths should be direct (no ../ prefixes)
-    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(bs.graph, commands[0]);
     CHECK(sv(cmd_str).find("../") == std::string_view::npos);
     CHECK(sv(cmd_str).find("-c main.c") != std::string_view::npos);
     CHECK(sv(cmd_str).find("-o main.o") != std::string_view::npos);
@@ -1361,7 +1361,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     fixture.create_file("src/lib/add.c");
     fixture.create_file("src/lib/Tupfile");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1387,18 +1387,18 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Find the command node
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     REQUIRE(!commands.empty());
 
-    auto const* cmd_node = graph.get_command_node(commands[0]);
+    auto const* cmd_node = get_command_node(bs.graph,commands[0]);
     REQUIRE(cmd_node != nullptr);
 
     // Command should use "add.c" not "../../src/lib/add.c"
-    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(bs.graph, commands[0]);
     CHECK(sv(cmd_str).find("../../src/lib/add.c") == std::string_view::npos);
     CHECK(sv(cmd_str).find("-c add.c") != std::string_view::npos);
     CHECK(sv(cmd_str).find("-o add.o") != std::string_view::npos);
@@ -1416,7 +1416,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     fixture.create_file("src/lib/Tupfile");
     fixture.create_file("src/util/helper.c");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1443,18 +1443,18 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Find the command node
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     REQUIRE(!commands.empty());
 
-    auto const* cmd_node = graph.get_command_node(commands[0]);
+    auto const* cmd_node = get_command_node(bs.graph,commands[0]);
     REQUIRE(cmd_node != nullptr);
 
     // Local file should be simplified, cross-directory uses root-relative path
-    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(bs.graph, commands[0]);
     INFO("Command: " << std::string { sv(cmd_str) });
     CHECK(sv(cmd_str).find("main.c") != std::string_view::npos);
     // Cross-directory reference becomes root-relative: ../../src/util/helper.c
@@ -1472,7 +1472,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     fixture.create_file("src/lib/Tupfile");
     fs::create_directories(fixture.root() / "build" / "src" / "lib");
 
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1488,7 +1488,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     auto builder = GraphBuilder { options };
 
     // Set build root name for variant build (normally done by builder.build())
-    graph.set_build_root_name("build");
+    set_build_root_name(bs, "build");
 
     ctx.tup_variant_outputdir = intern("../../build/src/lib");
 
@@ -1504,16 +1504,16 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
-    auto commands = graph.nodes_of_type(NodeType::Command);
+    auto commands = nodes_of_type(bs.graph,NodeType::Command);
     REQUIRE(!commands.empty());
 
-    auto const* cmd_node = graph.get_command_node(commands[0]);
+    auto const* cmd_node = get_command_node(bs.graph,commands[0]);
     REQUIRE(cmd_node != nullptr);
 
-    auto cmd_str = expand_instruction(graph.graph(), commands[0]);
+    auto cmd_str = expand_instruction(bs.graph, commands[0]);
     INFO("Command: " << std::string { sv(cmd_str) });
 
     // Input should be simplified (just "add.c", not round-trip path)
@@ -1538,8 +1538,8 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     fixture.create_file("src/Tupfile");
     fs::create_directories(fixture.root() / "build" / "src");
 
-    auto graph = BuildGraph {};
-    graph.set_build_root_name("build");
+    auto bs = make_build_state();
+    set_build_root_name(bs, "build");
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1567,15 +1567,15 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(graph, tupfile, ctx);
+    auto result = builder.add_tupfile(bs, tupfile, ctx);
     REQUIRE(result.has_value());
 
     // Find the output node
-    auto generated = graph.nodes_of_type(NodeType::Generated);
+    auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     FileNode const* output_node = nullptr;
     for (auto id : generated) {
-        auto const* node = graph.get_file_node(id);
-        if (node && get_name(graph.graph(), id) == "..hidden") {
+        auto const* node = get_file_node(bs.graph,id);
+        if (node && get_name(bs.graph, id) == "..hidden") {
             output_node = node;
             break;
         }
@@ -1584,7 +1584,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
 
     // In variant build, output goes to build/src/..hidden
     // The key check is that "..hidden" is treated as a literal filename, not "../hidden"
-    auto full_path = graph.get_full_path(output_node->id);
+    auto full_path = get_full_path(bs.graph,output_node->id);
     INFO("Full path: " << std::string { sv(full_path) });
     CHECK(sv(full_path) == "build/src/..hidden");
 }

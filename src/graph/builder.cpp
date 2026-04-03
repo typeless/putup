@@ -206,7 +206,7 @@ auto make_canonical_relative(PathTransformContext const& tc, std::string_view pa
 /// Input paths are source-relative. For Generated/Ghost files under BUILD_ROOT_ID,
 /// we need to use get_full_path() to get the path including the build root prefix.
 auto transform_input_path(
-    BuildGraph& graph,
+    BuildState& bs,
     PathTransformContext const& tc,
     std::string_view inp
 ) -> StringId
@@ -215,8 +215,8 @@ auto transform_input_path(
     auto source_to_root = str(tc.source_to_root);
     auto current_dir_sv = str(tc.current_dir_id);
 
-    if (auto node_id = graph.find_by_path(inp, BUILD_ROOT_ID)) {
-        auto full_path_sv = pool.get(graph.get_full_path(*node_id));
+    if (auto node_id = find_by_path(bs.graph, inp, BUILD_ROOT_ID)) {
+        auto full_path_sv = get_full_path(bs.graph, *node_id, bs.path_cache);
         if (!full_path_sv.empty()) {
             if (!is_empty(tc.canonical_cwd) && full_path_sv.starts_with("..")) {
                 return make_canonical_relative(tc, full_path_sv);
@@ -225,7 +225,7 @@ auto transform_input_path(
         }
     }
 
-    auto build_root_name = graph.get_build_root_name();
+    auto build_root_name = get_build_root_name(bs.graph);
     if (!build_root_name.empty()) {
         auto build_path = pool.get(pup::path::join(str(tc.output_root), inp));
         if (pup::platform::exists(build_path)) {
@@ -269,11 +269,9 @@ auto transform_output_path(
 
 /// Get all files that are members of a group (via file → group edges)
 /// Returns file NodeIds by finding all input edges to the group node
-auto get_group_members(BuildGraph& graph, NodeId group_id) -> Vec<NodeId>
+auto get_group_members(Graph const& graph, NodeId group_id) -> Vec<NodeId>
 {
-    // Files point TO groups via Group edges (file → group)
-    // So group.inputs contains the member files
-    return graph.get_inputs(group_id);
+    return get_inputs(graph, group_id);
 }
 
 // ============================================================================
@@ -295,7 +293,7 @@ auto get_group_members(BuildGraph& graph, NodeId group_id) -> Vec<NodeId>
 /// @param path Path to walk (already variable-expanded)
 /// @return NodeId of the final directory
 auto walk_path_to_directory(
-    BuildGraph& graph,
+    Graph& graph,
     NodeId start_dir_id,
     std::string_view path
 ) -> NodeId
@@ -319,7 +317,7 @@ auto walk_path_to_directory(
             // Walk to parent - node's parent_dir points to parent (0 = root)
             // Only go up if we're not already at root
             if (current_id != NodeId { 0 }) {
-                auto* node = graph.get_file_node(current_id);
+                auto* node = get_file_node(graph, current_id);
                 if (node) {
                     current_id = node->parent_dir;
                 }
@@ -327,16 +325,16 @@ auto walk_path_to_directory(
             // If already at root (current_id == 0), stay at root
         } else {
             // Find or create child directory
-            if (auto child = graph.find_by_dir_name(current_id, comp_str)) {
+            if (auto child = find_by_dir_name(graph, current_id, comp_str)) {
                 current_id = *child;
             } else {
                 // Create new directory node
                 auto node = FileNode {
                     .type = NodeType::Directory,
-                    .name = graph.intern(comp_str),
+                    .name = intern(comp_str),
                     .parent_dir = current_id,
                 };
-                auto result = graph.add_file_node(std::move(node));
+                auto result = add_file_node(graph, std::move(node));
                 if (result) {
                     current_id = *result;
                 }
@@ -354,7 +352,7 @@ auto walk_path_to_directory(
 /// @param type NodeType for the file node
 /// @return NodeId of the file node
 auto walk_to_file_node(
-    BuildGraph& graph,
+    Graph& graph,
     NodeId start_id,
     std::string_view path,
     NodeType type
@@ -373,10 +371,10 @@ auto walk_to_file_node(
     }
 
     // Find or create the file node
-    if (auto existing = graph.find_by_dir_name(target_dir_id, basename)) {
-        // Handle type upgrade (Ghost → Generated, File → Generated)
+    if (auto existing = find_by_dir_name(graph, target_dir_id, basename)) {
+        // Handle type upgrade (Ghost -> Generated, File -> Generated)
         if (type == NodeType::Generated) {
-            auto* node = graph.get_file_node(*existing);
+            auto* node = get_file_node(graph, *existing);
             if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
                 node->type = NodeType::Generated;
             }
@@ -387,10 +385,10 @@ auto walk_to_file_node(
     // Create new node
     auto node = FileNode {
         .type = type,
-        .name = graph.intern(basename),
+        .name = intern(basename),
         .parent_dir = target_dir_id,
     };
-    return graph.add_file_node(std::move(node));
+    return add_file_node(graph, std::move(node));
 }
 
 /// RAII scope guard for cleanup on scope exit (zero-overhead via template)
@@ -451,7 +449,7 @@ auto process_conditional(
 auto is_context_active(BuilderContext const& ctx) -> bool
 {
     for (auto const& guard : ctx.condition_stack) {
-        auto const* cond = ctx.graph->get_condition_node(guard.condition);
+        auto const* cond = get_condition_node(ctx.state->graph,guard.condition);
         if (cond && cond->current_value != guard.polarity) {
             return false;
         }
@@ -656,9 +654,9 @@ auto expand_glob_pattern(
 
     auto pattern_path_sv = is_empty(ctx.current_dir) ? path : pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
     auto glob = parser::Glob { pattern_path_sv };
-    auto build_root_name = ctx.graph->get_build_root_name();
-    for (auto id : ctx.graph->nodes_of_type(NodeType::Generated)) {
-        auto node_path_sv = pool.get(ctx.graph->get_full_path(id));
+    auto build_root_name = get_build_root_name(ctx.state->graph);
+    for (auto id : nodes_of_type(ctx.state->graph,NodeType::Generated)) {
+        auto node_path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
         if (node_path_sv.empty()) {
             continue;
         }
@@ -743,7 +741,7 @@ auto process_generated_rules(
         for (auto input_id_val : gen_rule.inputs) {
             auto input_id = resolve_input_node(ctx, pool.get(input_id_val));
             if (input_id) {
-                (void)ctx.graph->add_edge(*input_id, *gen_cmd_id);
+                (void)add_edge(ctx.state->graph,*input_id, *gen_cmd_id);
                 gen_input_ids.push_back(*input_id);
             }
         }
@@ -767,18 +765,18 @@ auto process_generated_rules(
                 // Regular file path - create edge directly (skip glob patterns)
                 auto oi_node = resolve_input_node(ctx, oi);
                 if (oi_node) {
-                    (void)ctx.graph->add_order_only_edge(*oi_node, *gen_cmd_id);
+                    (void)add_order_only_edge(ctx.state->graph,*oi_node, *gen_cmd_id);
                 }
             }
         }
 
         // Add edge from generated command to parent command (dep-scan runs before compile)
-        (void)ctx.graph->add_edge(*gen_cmd_id, parent_cmd_id);
+        (void)add_edge(ctx.state->graph,*gen_cmd_id, parent_cmd_id);
 
         // Store generated rule info and operands on the node.
         // outputs intentionally left empty: generated rules are dep-scan commands
         // whose output is captured via generated_output, not %o expansion.
-        if (auto* node = ctx.graph->get_command_node(*gen_cmd_id)) {
+        if (auto* node = get_command_node(ctx.state->graph,*gen_cmd_id)) {
             node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
             node->output_action = gen_rule.action;
             node->parent_command = gen_rule.parent_command;
@@ -814,7 +812,7 @@ auto lookup_bang_macro(
         ? cmd_sv.substr(1)
         : cmd_sv.substr(1, name_end - 1);
 
-    auto key = to_underlying(ctx.graph->intern(macro_name));
+    auto key = to_underlying(intern(macro_name));
     auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
     if (it == ctx.macros.end() || it->first != key) {
         auto err = Buf {};
@@ -966,7 +964,7 @@ auto process_bang_macro(
     def.output_group = macro.output_group;
     def.output_order_only_group = macro.output_order_only_group;
     def.output_order_only_group_dir = macro.output_order_only_group_dir;
-    auto key = to_underlying(ctx.graph->intern(str(macro.name)));
+    auto key = to_underlying(intern(str(macro.name)));
     auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
     if (it != ctx.macros.end() && it->first == key) {
         it->second = std::move(def);
@@ -1026,7 +1024,7 @@ auto process_assignment(
     auto value_before = intern(db->get(name_sv));
     auto is_effective = true;
 
-    auto name_id = ctx.graph->intern(name_sv);
+    auto name_id = intern(name_sv);
     auto record_deps = [&]() {
         if (!captured_config_deps.empty()) {
             auto& deps = state.var_config_deps.get_or_create(name_id);
@@ -1160,7 +1158,7 @@ auto process_conditional(
         .current_value = condition_true,
     };
 
-    auto cond_id_result = ctx.graph->add_condition_node(std::move(cond_node));
+    auto cond_id_result = add_condition_node(ctx.state->graph,std::move(cond_node));
     if (!cond_id_result) {
         return pup::unexpected<Error>(cond_id_result.error());
     }
@@ -1223,7 +1221,7 @@ auto include_single_file(
     bool is_rules
 ) -> Result<void>
 {
-    auto include_path_id = to_underlying(ctx.graph->intern(include_path));
+    auto include_path_id = to_underlying(intern(include_path));
     if (ctx.included_files.contains(include_path_id)) {
         return {};
     }
@@ -1350,7 +1348,7 @@ auto process_import(
 
     auto value_sv = str(value_id);
 
-    auto var_name_id = to_underlying(ctx.graph->intern(var_name_sv));
+    auto var_name_id = to_underlying(intern(var_name_sv));
     if (state.env_var_dir_id != INVALID_NODE_ID) {
         auto node_name_buf = Buf {};
         node_name_buf += var_name_sv;
@@ -1359,9 +1357,9 @@ auto process_import(
         auto content_hash = sha256(value_sv);
 
         auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
-        auto const name_id = ctx.graph->intern(node_name_buf.view());
+        auto const name_id = intern(node_name_buf.view());
         if (existing_node_id) {
-            auto* existing = ctx.graph->get_file_node(*existing_node_id);
+            auto* existing = get_file_node(ctx.state->graph,*existing_node_id);
             if (existing && existing->name != name_id) {
                 existing->name = name_id;
                 existing->content_hash = content_hash;
@@ -1373,7 +1371,7 @@ auto process_import(
                 .parent_dir = state.env_var_dir_id,
                 .content_hash = content_hash,
             };
-            auto result = ctx.graph->add_file_node(std::move(node));
+            auto result = add_file_node(ctx.state->graph,std::move(node));
             if (result) {
                 state.imported_env_var_nodes.insert(var_name_id, *result);
             }
@@ -1397,7 +1395,7 @@ auto process_export(
 {
     // Per tup manual: "adds the environment variable VARIABLE to the export
     // list for future :-rules"
-    ctx.exported_vars.insert(to_underlying(ctx.graph->intern(str(exp.var_name))));
+    ctx.exported_vars.insert(to_underlying(intern(str(exp.var_name))));
     return {};
 }
 
@@ -1425,7 +1423,7 @@ auto expand_rule(
     auto cmd_inputs = Vec<StringId> {};
     cmd_inputs.reserve(file_inputs.size());
     for (auto inp : file_inputs) {
-        cmd_inputs.push_back(transform_input_path(*ctx.graph, tc, str(inp)));
+        cmd_inputs.push_back(transform_input_path(*ctx.state, tc, str(inp)));
     }
 
     auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
@@ -1548,7 +1546,7 @@ auto expand_rule(
         key_buf += dir;
         key_buf += '/';
         key_buf += name;
-        auto key_id = to_underlying(ctx.graph->intern(key_buf.view()));
+        auto key_id = to_underlying(intern(key_buf.view()));
         auto const* node_id = state.group_nodes.find(key_id);
         if (node_id) {
             if (!deferred_group_ids.contains(*node_id)) {
@@ -1668,7 +1666,7 @@ auto expand_rule(
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }
-        auto edge_result = ctx.graph->add_edge(*input_id, *cmd_id);
+        auto edge_result = add_edge(ctx.state->graph,*input_id, *cmd_id);
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
@@ -1684,23 +1682,23 @@ auto expand_rule(
         }
 
         // Check for duplicate output - another command already produces this file
-        auto output_inputs = ctx.graph->get_inputs(*output_id);
+        auto output_inputs = get_inputs(ctx.state->graph,*output_id);
         if (!output_inputs.empty()) {
             for (auto existing_id : output_inputs) {
                 if (node_id::is_command(existing_id)) {
                     // Check if this is a phi-node case (complementary guards)
                     // Allow multiple commands producing the same output if they have
                     // mutually exclusive guards (same condition, opposite polarity)
-                    auto const* existing_cmd = ctx.graph->get_command_node(existing_id);
+                    auto const* existing_cmd = get_command_node(ctx.state->graph,existing_id);
                     if (existing_cmd && are_guards_mutually_exclusive(existing_cmd->guards, ctx.condition_stack)) {
                         continue;
                     }
-                    auto existing_cmd_id = expand_instruction(ctx.graph->graph(), existing_id, ctx.graph->path_cache());
+                    auto existing_cmd_id = expand_instruction(ctx.state->graph, existing_id, ctx.state->path_cache);
                     auto existing_cmd_sv = global_pool().get(existing_cmd_id);
                     if (existing_cmd_sv.empty()) {
                         existing_cmd_sv = "<unknown>";
                     }
-                    auto output_path_sv = global_pool().get(ctx.graph->get_full_path(*output_id));
+                    auto output_path_sv = get_full_path(ctx.state->graph, *output_id, ctx.state->path_cache);
                     auto err = Buf {};
                     err.fmt("Unable to create output '{}' because it is already owned by command:\n  {}", output_path_sv, existing_cmd_sv);
                     return make_error<void>(ErrorCode::DuplicateNode, err.view());
@@ -1708,7 +1706,7 @@ auto expand_rule(
             }
         }
 
-        auto edge_result = ctx.graph->add_edge(*cmd_id, *output_id);
+        auto edge_result = add_edge(ctx.state->graph,*cmd_id, *output_id);
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
@@ -1757,13 +1755,13 @@ auto expand_rule(
             auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*output_oo_group));
             if (group_id_result) {
                 // Add edge: file → group (file is member of group)
-                (void)ctx.graph->add_edge(*output_id, *group_id_result, LinkType::Group);
+                (void)add_edge(ctx.state->graph,*output_id, *group_id_result, LinkType::Group);
             }
         }
     }
 
     // Store explicit operands on the command node for expand_instruction()
-    if (auto* cmd = ctx.graph->get_command_node(*cmd_id)) {
+    if (auto* cmd = get_command_node(ctx.state->graph,*cmd_id)) {
         cmd->inputs = std::move(input_ids);
         cmd->outputs = std::move(output_ids);
     }
@@ -1777,7 +1775,7 @@ auto expand_rule(
         }
         auto oi_node = resolve_input_node(ctx, oi_sv);
         if (oi_node) {
-            (void)ctx.graph->add_order_only_edge(*oi_node, *cmd_id);
+            (void)add_order_only_edge(ctx.state->graph,*oi_node, *cmd_id);
         }
     }
 
@@ -1808,12 +1806,12 @@ auto expand_inputs(
         }
 
         if (pattern.is_group) {
-            auto gkey = to_underlying(ctx.graph->intern(str(pattern.group_name)));
+            auto gkey = to_underlying(intern(str(pattern.group_name)));
             if (auto const* members = ctx.groups.find(gkey)) {
                 for (auto id : *members) {
-                    auto path_id = ctx.graph->get_full_path(id);
-                    if (!is_empty(path_id)) {
-                        result.push_back(path_id);
+                    auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+                    if (!path_sv.empty()) {
+                        result.push_back(intern(path_sv));
                     }
                 }
             }
@@ -1916,7 +1914,7 @@ auto expand_outputs(
             auto full_output_path_id = pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv)));
 
             auto node_id = walk_to_file_node(
-                *ctx.graph,
+                ctx.state->graph,
                 BUILD_ROOT_ID,
                 pool.get(full_output_path_id),
                 NodeType::Generated
@@ -1926,7 +1924,7 @@ auto expand_outputs(
                 return pup::unexpected<Error>(node_id.error());
             }
 
-            result.push_back(ctx.graph->get_full_path(*node_id));
+            result.push_back(intern(get_full_path(ctx.state->graph, *node_id, ctx.state->path_cache)));
         }
     }
 
@@ -2005,17 +2003,17 @@ auto get_or_create_directory_node(
     }
     auto parent_id = *parent_id_result;
 
-    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename_sv)) {
+    if (auto existing = find_by_dir_name(ctx.state->graph,parent_id, basename_sv)) {
         return *existing;
     }
 
     auto node = FileNode {
         .type = NodeType::Directory,
-        .name = ctx.graph->intern(basename_sv),
+        .name = intern(basename_sv),
         .parent_dir = parent_id,
     };
 
-    return ctx.graph->add_file_node(std::move(node));
+    return add_file_node(ctx.state->graph,std::move(node));
 }
 
 auto get_or_create_file_node(
@@ -2030,13 +2028,13 @@ auto get_or_create_file_node(
     // This happens when expand_outputs returns paths like "../build/lib/add.o".
     // We must strip the prefix and look up under BUILD_ROOT_ID before any other
     // path manipulation that could corrupt the lookup.
-    auto build_root_name = ctx.graph->get_build_root_name();
+    auto build_root_name = get_build_root_name(ctx.state->graph);
 
     if (type == NodeType::Generated && !build_root_name.empty()) {
         auto lookup_path_sv = global_pool().get(pup::strip_path_prefix(path, build_root_name));
 
         if (lookup_path_sv != path) {
-            if (auto existing = ctx.graph->find_by_path(lookup_path_sv, BUILD_ROOT_ID)) {
+            if (auto existing = find_by_path(ctx.state->graph,lookup_path_sv, BUILD_ROOT_ID)) {
                 return *existing;
             }
         }
@@ -2046,7 +2044,7 @@ auto get_or_create_file_node(
     if (type == NodeType::Generated && path.starts_with("..")) {
         auto norm_output_sv = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
         if (norm_output_sv != path) {
-            if (auto existing = ctx.graph->find_by_path(norm_output_sv, BUILD_ROOT_ID)) {
+            if (auto existing = find_by_path(ctx.state->graph,norm_output_sv, BUILD_ROOT_ID)) {
                 return *existing;
             }
         }
@@ -2069,7 +2067,7 @@ auto get_or_create_file_node(
     // by expand_outputs. This handles paths without the build prefix.
     if (type == NodeType::Generated && !build_root_name.empty()) {
         auto lookup_path2 = pool.get(pup::strip_path_prefix(normalized, build_root_name));
-        if (auto existing = ctx.graph->find_by_path(lookup_path2, BUILD_ROOT_ID)) {
+        if (auto existing = find_by_path(ctx.state->graph,lookup_path2, BUILD_ROOT_ID)) {
             return *existing;
         }
     }
@@ -2077,7 +2075,7 @@ auto get_or_create_file_node(
     // For Generated nodes, use walk_to_file_node to ensure they're created under BUILD_ROOT_ID.
     // This maintains consistency with expand_outputs() which also uses BUILD_ROOT_ID.
     if (type == NodeType::Generated) {
-        return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
+        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
     }
 
     auto basename_sv = pup::path::filename(normalized);
@@ -2089,17 +2087,17 @@ auto get_or_create_file_node(
     }
     auto parent_id = *parent_id_result;
 
-    if (auto existing = ctx.graph->find_by_dir_name(parent_id, basename_sv)) {
+    if (auto existing = find_by_dir_name(ctx.state->graph,parent_id, basename_sv)) {
         return *existing;
     }
 
     auto node = FileNode {
         .type = type,
-        .name = ctx.graph->intern(basename_sv),
+        .name = intern(basename_sv),
         .parent_dir = parent_id,
     };
 
-    return ctx.graph->add_file_node(std::move(node));
+    return add_file_node(ctx.state->graph,std::move(node));
 }
 
 auto resolve_input_node(
@@ -2116,7 +2114,7 @@ auto resolve_input_node(
 
     // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
     // already have the build root prefix. Strip it to get source-relative paths.
-    auto build_root_name = ctx.graph->get_build_root_name();
+    auto build_root_name = get_build_root_name(ctx.state->graph);
     auto normalized_path = global_pool().get(pup::strip_path_prefix(path, build_root_name));
     if (normalized_path != path) {
         had_build_prefix = true;
@@ -2137,7 +2135,7 @@ auto resolve_input_node(
     // - Generated/Ghost files are under BUILD_ROOT_ID at source-relative paths
 
     // First check if node exists under BUILD_ROOT_ID (generated files)
-    if (auto existing = ctx.graph->find_by_path(normalized_path, BUILD_ROOT_ID)) {
+    if (auto existing = find_by_path(ctx.state->graph,normalized_path, BUILD_ROOT_ID)) {
         return *existing;
     }
 
@@ -2145,11 +2143,11 @@ auto resolve_input_node(
     // exists at the same path, create a Ghost node under BUILD_ROOT_ID so it can be
     // upgraded to Generated when the output rule is processed.
     if (had_build_prefix) {
-        return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
     }
 
     // Check under SOURCE_ROOT_ID (source files)
-    if (auto existing = ctx.graph->find_by_path(normalized_path, SOURCE_ROOT_ID)) {
+    if (auto existing = find_by_path(ctx.state->graph,normalized_path, SOURCE_ROOT_ID)) {
         return *existing;
     }
 
@@ -2157,7 +2155,7 @@ auto resolve_input_node(
     auto source_path = global_pool().get(pup::path::join(str(ctx.options.source_root), normalized_path));
     if (pup::platform::exists(source_path)) {
         // Source file exists - create File node under SOURCE_ROOT_ID
-        return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+        return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
     }
 
     // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
@@ -2165,7 +2163,7 @@ auto resolve_input_node(
     if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
         auto config_path_sv = global_pool().get(pup::path::join(str(ctx.options.config_root), normalized_path));
         if (pup::platform::exists(config_path_sv)) {
-            return walk_to_file_node(*ctx.graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+            return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
         }
     }
 
@@ -2175,12 +2173,12 @@ auto resolve_input_node(
         // File exists in build dir but not source - it's a Generated output from a previous build.
         // Create as Ghost so the rule that generates it can upgrade it to Generated.
         // (If the rule no longer generates it, the Ghost remains and causes an error.)
-        return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
     }
 
     // File doesn't exist anywhere - create Ghost node under BUILD_ROOT_ID
     // Ghost nodes represent not-yet-generated files, which will be under build root
-    return walk_to_file_node(*ctx.graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+    return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
 }
 
 auto get_or_create_group_node(
@@ -2210,7 +2208,7 @@ auto get_or_create_group_node(
     gb += name;
     gb += '>';
     auto group_basename = gb.view();
-    if (auto existing = ctx.graph->find_by_dir_name(parent_id, group_basename)) {
+    if (auto existing = find_by_dir_name(ctx.state->graph,parent_id, group_basename)) {
         state.group_nodes.insert(key_id, *existing);
         return *existing;
     }
@@ -2218,11 +2216,11 @@ auto get_or_create_group_node(
     // Create new group node
     auto node = FileNode {
         .type = NodeType::Group,
-        .name = ctx.graph->intern(group_basename),
+        .name = intern(group_basename),
         .parent_dir = parent_id,
     };
 
-    auto result = ctx.graph->add_file_node(std::move(node));
+    auto result = add_file_node(ctx.state->graph,std::move(node));
     if (result) {
         state.group_nodes.insert(key_id, *result);
     }
@@ -2240,14 +2238,14 @@ auto create_command_node(
     exported.merge_from(ctx.exported_vars);
 
     auto node = CommandNode {
-        .display = ctx.graph->intern(display),
+        .display = intern(display),
         .source_dir = ctx.current_dir,
-        .instruction_id = ctx.graph->intern(instruction),
+        .instruction_id = intern(instruction),
         .exported_vars = std::move(exported),
         .guards = ctx.condition_stack,
     };
 
-    auto cmd_id_result = ctx.graph->add_command_node(std::move(node));
+    auto cmd_id_result = add_command_node(ctx.state->graph,std::move(node));
     if (!cmd_id_result) {
         return cmd_id_result;
     }
@@ -2256,7 +2254,7 @@ auto create_command_node(
 
     // Add sticky edges from Tupfile and included files to this command
     for (auto src_id : ctx.sticky_sources) {
-        (void)ctx.graph->add_edge(src_id, cmd_id, LinkType::Sticky);
+        (void)add_edge(ctx.state->graph,src_id, cmd_id, LinkType::Sticky);
     }
 
     // Add sticky edges from used config variables (fine-grained dependency tracking)
@@ -2264,7 +2262,7 @@ auto create_command_node(
     for (std::size_t i = 0, n = ctx.used_config_vars.size(); i < n; ++i) {
         auto const* node_id = state.config_var_nodes.find(cv[i]);
         if (node_id) {
-            (void)ctx.graph->add_edge(*node_id, cmd_id, LinkType::Sticky);
+            (void)add_edge(ctx.state->graph,*node_id, cmd_id, LinkType::Sticky);
         }
     }
 
@@ -2273,7 +2271,7 @@ auto create_command_node(
     for (std::size_t i = 0, n = ctx.condition_config_vars.size(); i < n; ++i) {
         auto const* node_id = state.config_var_nodes.find(ccv[i]);
         if (node_id) {
-            (void)ctx.graph->add_edge(*node_id, cmd_id, LinkType::Sticky);
+            (void)add_edge(ctx.state->graph,*node_id, cmd_id, LinkType::Sticky);
         }
     }
 
@@ -2282,7 +2280,7 @@ auto create_command_node(
     for (std::size_t i = 0, n = ctx.used_env_vars.size(); i < n; ++i) {
         auto const* node_id = state.imported_env_var_nodes.find(uev[i]);
         if (node_id) {
-            (void)ctx.graph->add_edge(*node_id, cmd_id, LinkType::Sticky);
+            (void)add_edge(ctx.state->graph,*node_id, cmd_id, LinkType::Sticky);
         }
     }
 
@@ -2306,26 +2304,26 @@ auto build_graph(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
     BuilderState& state
-) -> Result<BuildGraph>
+) -> Result<BuildState>
 {
-    auto graph = BuildGraph {};
+    auto bs = make_build_state();
 
     // Set build root name: relative path from source to output root.
     // For in-tree builds (source == output), this is empty.
     // For variant builds (-B build), this is "build".
     if (str(state.options.source_root) != str(state.options.output_root)) {
-        graph.set_build_root_name(global_pool().get(pup::path::relative(str(state.options.output_root), str(state.options.source_root))));
+        set_build_root_name(bs, global_pool().get(pup::path::relative(str(state.options.output_root), str(state.options.source_root))));
     }
 
-    auto result = add_tupfile(graph, tupfile, eval, state);
+    auto result = add_tupfile(bs, tupfile, eval, state);
     if (!result) {
         return pup::unexpected<Error>(result.error());
     }
-    return graph;
+    return bs;
 }
 
 auto add_tupfile(
-    BuildGraph& graph,
+    BuildState& build_state,
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
     BuilderState& state
@@ -2344,7 +2342,7 @@ auto add_tupfile(
     auto relative_dir_str = (relative_dir_sv == ".") ? std::string_view {} : relative_dir_sv;
 
     auto ctx = BuilderContext {
-        .graph = &graph,
+        .state = &build_state,
         .eval = &eval,
         .vars = eval.vars,
         .options = state.options,
@@ -2381,9 +2379,9 @@ auto add_tupfile(
                 continue;
             }
 
-            auto var_name_id = to_underlying(graph.intern(var_name));
+            auto var_name_id = to_underlying(intern(var_name));
 
-            if (auto existing = graph.find_by_dir_name(config_dir_id, var_name)) {
+            if (auto existing = find_by_dir_name(build_state.graph, config_dir_id, var_name)) {
                 state.config_var_nodes.insert(var_name_id, *existing);
                 continue;
             }
@@ -2391,12 +2389,12 @@ auto add_tupfile(
             auto value = eval.config_vars->get(var_name);
             auto node = FileNode {
                 .type = NodeType::Variable,
-                .name = graph.intern(var_name),
+                .name = intern(var_name),
                 .parent_dir = config_dir_id,
                 .content_hash = sha256(value),
             };
 
-            auto var_id_result = graph.add_file_node(std::move(node));
+            auto var_id_result = add_file_node(build_state.graph, std::move(node));
             if (var_id_result) {
                 state.config_var_nodes.insert(var_name_id, *var_id_result);
             }
@@ -2407,16 +2405,16 @@ auto add_tupfile(
     // Only initialize once; subsequent Tupfiles reuse existing nodes
     if (state.env_var_dir_id == INVALID_NODE_ID) {
         // Check if $ directory already exists in graph (from same build session)
-        if (auto existing = graph.find_by_dir_name(NodeId { 0 }, "$")) {
+        if (auto existing = find_by_dir_name(build_state.graph, NodeId { 0 }, "$")) {
             state.env_var_dir_id = *existing;
         } else {
             // Create new $ directory under root
             auto env_dir_node = FileNode {
                 .type = NodeType::Directory,
-                .name = graph.intern("$"),
+                .name = intern("$"),
                 .parent_dir = NodeId { 0 },
             };
-            auto result = graph.add_file_node(std::move(env_dir_node));
+            auto result = add_file_node(build_state.graph, std::move(env_dir_node));
             if (result) {
                 state.env_var_dir_id = *result;
             }
@@ -2428,13 +2426,13 @@ auto add_tupfile(
 
     // Set up callback to track which config variables are used during expansion
     eval.on_config_var_used = [&ctx](std::string_view name) {
-        ctx.used_config_vars.insert(to_underlying(ctx.graph->intern(name)));
+        ctx.used_config_vars.insert(to_underlying(intern(name)));
     };
 
     // Set up callback to track which imported env variables are used during expansion
     eval.imported_vars = &state.imported_var_names;
     eval.on_env_var_used = [&ctx](std::string_view name) {
-        ctx.used_env_vars.insert(to_underlying(ctx.graph->intern(name)));
+        ctx.used_env_vars.insert(to_underlying(intern(name)));
     };
 
     // Wire up transitive dependency trackers for variable tracking
@@ -2444,16 +2442,16 @@ auto add_tupfile(
     // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
                          ) -> Vec<StringId> {
-        auto gkey = to_underlying(ctx.graph->intern(name));
+        auto gkey = to_underlying(intern(name));
         auto const* members = ctx.groups.find(gkey);
         if (!members) {
             return {};
         }
         auto paths = Vec<StringId> {};
         for (auto id : *members) {
-            auto path_id = ctx.graph->get_full_path(id);
-            if (!is_empty(path_id)) {
-                paths.push_back(path_id);
+            auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+            if (!path_sv.empty()) {
+                paths.push_back(intern(path_sv));
             }
         }
         return paths;
@@ -2469,17 +2467,17 @@ auto add_tupfile(
         key_buf += dir;
         key_buf += '/';
         key_buf += name;
-        auto key_id = to_underlying(ctx.graph->intern(key_buf.view()));
+        auto key_id = to_underlying(intern(key_buf.view()));
         auto const* node_id = state.group_nodes.find(key_id);
         if (!node_id) {
             return {};
         }
         auto paths = Vec<StringId> {};
-        auto members = get_group_members(*ctx.graph, *node_id);
+        auto members = get_group_members(ctx.state->graph, *node_id);
         for (auto id : members) {
-            auto path_id = ctx.graph->get_full_path(id);
-            if (!is_empty(path_id)) {
-                paths.push_back(path_id);
+            auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+            if (!path_sv.empty()) {
+                paths.push_back(intern(path_sv));
             }
         }
         return paths;
@@ -2510,10 +2508,12 @@ auto add_tupfile(
 }
 
 auto resolve_deferred_order_only_edges(
-    BuildGraph& graph,
+    BuildState& build_state,
     BuilderState& state
 ) -> Result<void>
 {
+    auto& g = build_state.graph;
+
     // Pass 1: Create graph edges and accumulate members per (command, group_name).
     // Same-named groups from different directories contribute to the same replacement.
     // Key: packed (command_id << 32 | interned_group_name)
@@ -2524,26 +2524,26 @@ auto resolve_deferred_order_only_edges(
     auto accumulated = Vec<std::pair<std::uint64_t, Vec<NodeId>>> {};
 
     for (auto const& edge : state.deferred_edges) {
-        auto const* group_node = graph.get_file_node(edge.group_id);
+        auto const* group_node = get_file_node(g, edge.group_id);
         if (!group_node || group_node->type != NodeType::Group) {
             continue;
         }
 
-        auto members = get_group_members(graph, edge.group_id);
+        auto members = get_group_members(g, edge.group_id);
         if (members.empty()) {
-            auto group_path_sv = global_pool().get(graph.get_full_path(edge.group_id));
+            auto group_path_sv = get_full_path(g, edge.group_id, build_state.path_cache);
             auto warn = Buf {};
             warn.fmt("order-only group {} has no members", group_path_sv);
             state.warnings.push_back(warn.intern(global_pool()));
             continue;
         }
 
-        (void)graph.add_order_only_edge(edge.group_id, edge.command_id);
+        (void)add_order_only_edge(g, edge.group_id, edge.command_id);
 
-        auto group_basename = std::string_view { graph.str(group_node->name) };
+        auto group_basename = str(group_node->name);
         if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {
             auto bare_name = group_basename.substr(1, group_basename.size() - 2);
-            auto name_id = to_underlying(graph.intern(bare_name));
+            auto name_id = to_underlying(intern(bare_name));
             auto key = pack_key(edge.command_id, name_id);
             auto it = std::lower_bound(accumulated.begin(), accumulated.end(), key, [](auto const& p, auto k) { return p.first < k; });
             if (it != accumulated.end() && it->first == key) {
@@ -2558,23 +2558,23 @@ auto resolve_deferred_order_only_edges(
     for (auto const& [key, members] : accumulated) {
         auto command_id = static_cast<NodeId>(key >> 32);
         auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
-        auto group_name = graph.str(name_id);
+        auto group_name = str(name_id);
         auto pat_buf = Buf {};
         pat_buf += "%<";
         pat_buf += group_name;
         pat_buf += '>';
         auto pattern_sv = pat_buf.view();
 
-        auto* cmd_node = graph.get_command_node(command_id);
+        auto* cmd_node = get_command_node(g, command_id);
         if (!cmd_node) {
             continue;
         }
-        auto cmd_sv = graph.str(cmd_node->instruction_id);
+        auto cmd_sv = str(cmd_node->instruction_id);
         if (cmd_sv.find(pattern_sv) == std::string_view::npos) {
             continue;
         }
 
-        auto source_dir_sv = graph.str(cmd_node->source_dir);
+        auto source_dir_sv = str(cmd_node->source_dir);
         auto canonical_cwd = StringId::Empty;
         if (!is_empty(state.options.source_root) && !is_empty(state.options.output_root)
             && str(state.options.source_root) != str(state.options.output_root)) {
@@ -2595,7 +2595,7 @@ auto resolve_deferred_order_only_edges(
 
         auto replacement = Buf {};
         for (auto id : members) {
-            auto p_sv = global_pool().get(graph.get_full_path(id));
+            auto p_sv = get_full_path(g, id, build_state.path_cache);
             if (!p_sv.empty()) {
                 if (!replacement.empty()) {
                     replacement += ' ';
@@ -2615,10 +2615,10 @@ auto resolve_deferred_order_only_edges(
                 pos = cmd_sv.find(pattern_sv, last);
             }
             result += cmd_sv.substr(last);
-            cmd_node->instruction_id = graph.intern(result.view());
+            cmd_node->instruction_id = intern(result.view());
         }
 
-        auto display_sv = graph.str(cmd_node->display);
+        auto display_sv = str(cmd_node->display);
         if (display_sv.find(pattern_sv) != std::string_view::npos) {
             auto result = Buf {};
             auto pos = display_sv.find(pattern_sv);
@@ -2630,7 +2630,7 @@ auto resolve_deferred_order_only_edges(
                 pos = display_sv.find(pattern_sv, last);
             }
             result += display_sv.substr(last);
-            cmd_node->display = graph.intern(result.view());
+            cmd_node->display = intern(result.view());
         }
     }
 
@@ -2660,23 +2660,23 @@ auto GraphBuilder::warnings() const -> Vec<StringId> const&
 auto GraphBuilder::build(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval
-) -> Result<BuildGraph>
+) -> Result<BuildState>
 {
     return build_graph(tupfile, eval, state_);
 }
 
 auto GraphBuilder::add_tupfile(
-    BuildGraph& graph,
+    BuildState& build_state,
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval
 ) -> Result<void>
 {
-    return pup::graph::add_tupfile(graph, tupfile, eval, state_);
+    return pup::graph::add_tupfile(build_state, tupfile, eval, state_);
 }
 
-auto GraphBuilder::resolve_deferred_order_only_edges(BuildGraph& graph) -> Result<void>
+auto GraphBuilder::resolve_deferred_order_only_edges(BuildState& build_state) -> Result<void>
 {
-    return pup::graph::resolve_deferred_order_only_edges(graph, state_);
+    return pup::graph::resolve_deferred_order_only_edges(build_state, state_);
 }
 
 auto GraphBuilder::state() -> BuilderState&
