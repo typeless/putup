@@ -1037,40 +1037,19 @@ auto remove_stale_outputs(
     }
 }
 
-/// Build mode precedence (highest to lowest):
-/// 1. Incremental - if old index exists and files changed
-/// 2. ScopeWithUpstream - fresh build with -a and explicit targets
-/// 3. Targets - if specific output targets requested (and not incremental)
-/// 4. Subset - exclude config commands from full build
-/// 5. Full - build everything
-enum class BuildMode {
-    Incremental,
-    ScopeWithUpstream,
-    Targets,
-    Subset,
-    Full,
-};
-
-auto determine_build_mode(
-    bool has_targets,
-    bool use_incremental,
-    bool has_config_cmds,
-    bool scope_with_upstream
-) -> BuildMode
+auto intersect_filters(
+    pup::NodeIdMap32 const& a,
+    pup::NodeIdMap32 const& b,
+    pup::graph::Graph const& graph
+) -> pup::NodeIdMap32
 {
-    if (use_incremental) {
-        return BuildMode::Incremental;
+    auto result = pup::NodeIdMap32 {};
+    for (auto id : pup::graph::all_nodes(graph)) {
+        if (a.contains(id) && b.contains(id)) {
+            result.set(id, 1);
+        }
     }
-    if (scope_with_upstream) {
-        return BuildMode::ScopeWithUpstream;
-    }
-    if (has_targets) {
-        return BuildMode::Targets;
-    }
-    if (has_config_cmds) {
-        return BuildMode::Subset;
-    }
-    return BuildMode::Full;
+    return result;
 }
 
 /// Build a single variant with the given options.
@@ -1359,46 +1338,49 @@ auto build_single_variant(
     }
 
     auto start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-    auto build_result = pup::Result<pup::exec::BuildStats> {};
 
-    auto scope_with_upstream = opts.include_all_deps && !scopes.empty() && !use_incremental;
-    auto mode = determine_build_mode(
-        !target_node_ids.empty(),
-        use_incremental,
-        !config_cmds.empty(),
-        scope_with_upstream
-    );
+    // Composable filter: layer independent concerns, intersect when combined
+    auto filter = pup::NodeIdMap32 {};
+    auto has_filter = false;
 
-    switch (mode) {
-    case BuildMode::Incremental: {
-        build_result = scheduler.build_incremental(bs, changed_files);
-        break;
+    if (use_incremental && !changed_files.empty()) {
+        filter = pup::graph::collect_affected_commands(bs.graph, changed_files);
+        has_filter = true;
     }
-    case BuildMode::ScopeWithUpstream: {
+
+    if (!target_node_ids.empty()) {
+        auto required = pup::graph::collect_required_commands(bs.graph, target_node_ids);
+        if (has_filter) {
+            filter = intersect_filters(filter, required, bs.graph);
+        } else {
+            filter = std::move(required);
+            has_filter = true;
+        }
+    }
+
+    if (opts.include_all_deps && !scopes.empty() && !use_incremental) {
         auto scope_cmds = collect_scope_with_upstream_commands(bs, scopes);
         for (auto const& cfg : config_cmds) {
             scope_cmds.remove(cfg.cmd_id);
         }
-        build_result = scheduler.build_subset(bs, scope_cmds);
-        break;
+        if (has_filter) {
+            filter = intersect_filters(filter, scope_cmds, bs.graph);
+        } else {
+            filter = std::move(scope_cmds);
+            has_filter = true;
+        }
     }
-    case BuildMode::Targets:
-        build_result = scheduler.build_targets(bs, target_node_ids);
-        break;
-    case BuildMode::Subset: {
-        auto non_config_cmds = pup::NodeIdMap32 {};
+
+    if (!config_cmds.empty() && !has_filter) {
         for (auto id : pup::graph::all_nodes(bs.graph)) {
             if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
-                non_config_cmds.set(id, 1);
+                filter.set(id, 1);
             }
         }
-        build_result = scheduler.build_subset(bs, non_config_cmds);
-        break;
+        has_filter = true;
     }
-    case BuildMode::Full:
-        build_result = scheduler.build(bs);
-        break;
-    }
+
+    auto build_result = scheduler.build(bs, has_filter ? &filter : nullptr);
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
 

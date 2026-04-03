@@ -89,31 +89,9 @@ public:
     Scheduler(Scheduler&&) noexcept;
     auto operator=(Scheduler&&) noexcept -> Scheduler&;
 
-    /// Build from a dependency graph
+    /// Build commands matching the filter. nullptr = build all.
     [[nodiscard]]
-    auto build(graph::BuildState const& graph) -> Result<BuildStats>;
-
-    /// Build only the commands that depend on changed files
-    [[nodiscard]]
-    auto build_incremental(
-        graph::BuildState const& graph,
-        Vec<StringId> const& changed_files
-    ) -> Result<BuildStats>;
-
-    /// Build only a specific subset of commands
-    [[nodiscard]]
-    auto build_subset(
-        graph::BuildState const& graph,
-        NodeIdMap32 const& command_ids
-    ) -> Result<BuildStats>;
-
-    /// Build specific targets and all required dependencies.
-    /// Uses reverse traversal to find commands needed.
-    [[nodiscard]]
-    auto build_targets(
-        graph::BuildState const& graph,
-        Vec<NodeId> const& target_ids
-    ) -> Result<BuildStats>;
+    auto build(graph::BuildState const& state, NodeIdMap32 const* filter = nullptr) -> Result<BuildStats>;
 
     /// Set callback for job start
     auto on_job_start(JobStartCallback callback) -> void;
@@ -139,14 +117,6 @@ public:
 
 private:
     std::unique_ptr<Impl> impl_;
-
-    /// Core build loop shared by all public build methods.
-    /// When filter is non-null, only matching commands run.
-    [[nodiscard]]
-    auto run(
-        graph::BuildState const& graph,
-        NodeIdMap32 const* filter
-    ) -> Result<BuildStats>;
 
     /// Execute jobs in parallel using the async event loop
     auto execute_parallel(

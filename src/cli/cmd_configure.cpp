@@ -182,7 +182,7 @@ auto configure_single_variant(
         }
     });
 
-    auto build_result = scheduler.build_subset(ctx.graph(), all_commands);
+    auto build_result = scheduler.build(ctx.graph(), &all_commands);
 
     if (!opts.verbose) {
         printf("\n");

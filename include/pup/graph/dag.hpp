@@ -357,6 +357,16 @@ struct BuildState {
 [[nodiscard]]
 auto make_build_state() -> BuildState;
 
+/// Collect all commands affected by the given changed files.
+/// Uses forward traversal: starts at changed inputs, walks forward through outputs.
+[[nodiscard]]
+auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files) -> NodeIdMap32;
+
+/// Collect all commands required to build the given target nodes.
+/// Uses reverse traversal: starts at targets, walks backward through inputs.
+[[nodiscard]]
+auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids) -> NodeIdMap32;
+
 /// Set build root name and clear path cache
 auto set_build_root_name(BuildState& state, std::string_view name) -> void;
 

@@ -1005,4 +1005,102 @@ auto set_build_root_name(BuildState& state, std::string_view name) -> void
     graph::clear_path_cache(state.path_cache);
 }
 
+// =============================================================================
+// Graph algorithms (moved from scheduler — these operate on Graph, not Scheduler)
+// =============================================================================
+
+auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids) -> NodeIdMap32
+{
+    auto visited = NodeIdMap32 {};
+    auto commands = NodeIdMap32 {};
+    auto stack = Vec<NodeId> {};
+    for (auto id : target_ids) {
+        stack.push_back(id);
+    }
+
+    while (!stack.empty()) {
+        auto id = stack.back();
+        stack.pop_back();
+
+        if (visited.contains(id)) {
+            continue;
+        }
+        visited.set(id, 1);
+
+        if (node_id::is_command(id) && get_command_node(graph, id)) {
+            commands.set(id, 1);
+        }
+
+        for (auto input_id : get_inputs(graph, id)) {
+            stack.push_back(input_id);
+        }
+
+        for (auto dep_id : get_order_only(graph, id)) {
+            stack.push_back(dep_id);
+        }
+    }
+
+    return commands;
+}
+
+auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files) -> NodeIdMap32
+{
+    auto& pool = global_pool();
+
+    auto path_to_id = Vec<std::pair<std::string_view, NodeId>> {};
+    for (auto id : all_nodes(graph)) {
+        auto path_id = get_full_path(graph, id);
+        if (!is_empty(path_id)) {
+            path_to_id.emplace_back(pool.get(path_id), id);
+        }
+    }
+    std::sort(path_to_id.begin(), path_to_id.end());
+
+    auto affected = NodeIdMap32 {};
+    auto to_process = Vec<NodeId> {};
+
+    for (auto file_id : changed_files) {
+        auto file_path = pool.get(file_id);
+        auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
+        if (it != path_to_id.end() && it->first == file_path) {
+            auto id = it->second;
+            if (!affected.contains(id)) {
+                affected.set(id, 1);
+                to_process.push_back(id);
+            }
+
+            auto const* node = get_file_node(graph, id);
+            if (node && node->type == NodeType::Generated) {
+                for (auto input_id : get_inputs(graph, id)) {
+                    if (!affected.contains(input_id)) {
+                        affected.set(input_id, 1);
+                        to_process.push_back(input_id);
+                    }
+                }
+            }
+        }
+    }
+
+    while (!to_process.empty()) {
+        auto id = NodeId { to_process.back() };
+        to_process.pop_back();
+
+        for (auto dep_id : get_outputs(graph, id)) {
+            if (!affected.contains(dep_id)) {
+                affected.set(dep_id, 1);
+                to_process.push_back(dep_id);
+            }
+        }
+
+        for (auto dep_id : get_order_only_dependents(graph, id)) {
+            if (!affected.contains(dep_id)) {
+                affected.set(dep_id, 1);
+                to_process.push_back(dep_id);
+            }
+        }
+    }
+
+    return affected;
+}
+
 } // namespace pup::graph
