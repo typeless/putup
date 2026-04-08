@@ -964,6 +964,13 @@ struct BuildFilter {
         }
     }
 
+    auto subtract(pup::NodeId id) -> void
+    {
+        if (active) {
+            set.remove(id);
+        }
+    }
+
     auto ptr() const -> pup::NodeIdMap32 const*
     {
         return active ? &set : nullptr;
@@ -1289,7 +1296,7 @@ auto build_single_variant(
         } else {
             // Other filters active: strip config commands from the result
             for (auto const& cfg : config_cmds) {
-                filter.set.remove(cfg.cmd_id);
+                filter.subtract(cfg.cmd_id);
             }
         }
     }
