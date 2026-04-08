@@ -1,0 +1,4 @@
+: a.c |> cc -c %f -o %o |> a.o
+: a.o |> cc %f -o %o |> prog_a
+: b.c |> cc -c %f -o %o |> b.o
+: b.o |> cc %f -o %o |> prog_b

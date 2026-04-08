@@ -5388,3 +5388,42 @@ SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental
         }
     }
 }
+
+// =============================================================================
+// Target Build No-Op Tests
+// =============================================================================
+
+SCENARIO("Target build stabilizes to no-op", "[e2e][incremental][target]")
+{
+    GIVEN("a project with two independent targets")
+    {
+        auto f = E2EFixture { "target_noop" };
+        REQUIRE(f.init().success());
+
+        // Full build — both targets
+        auto first = f.build();
+        INFO("first build: " << first.stdout_output);
+        REQUIRE(first.success());
+        REQUIRE(f.is_executable("prog_a"));
+        REQUIRE(f.is_executable("prog_b"));
+
+        WHEN("target build runs for prog_a, then runs again")
+        {
+            // First target build — may rebuild some commands
+            auto target1 = f.pup({ "prog_a" });
+            INFO("target build 1: " << target1.stdout_output);
+            REQUIRE(target1.success());
+
+            // Second target build — must be no-op
+            auto target2 = f.pup({ "prog_a" });
+
+            THEN("the second target build is a no-op")
+            {
+                INFO("target build 2 stdout: " << target2.stdout_output);
+                INFO("target build 2 stderr: " << target2.stderr_output);
+                REQUIRE(target2.success());
+                REQUIRE(target2.is_noop());
+            }
+        }
+    }
+}
