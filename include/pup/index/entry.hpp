@@ -86,7 +86,6 @@ struct EdgeEntry {
     NodeId from = 0;
     NodeId to = 0;
     LinkType type = LinkType::Normal;
-    NodeId group_cmd_id = 0; ///< For group edges
 
     /// Convert to raw format
     [[nodiscard]]

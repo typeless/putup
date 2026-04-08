@@ -24,7 +24,8 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   7 - Separate ID spaces: files 1..N, commands 0x80000001...; ID field removed
 ///   8 - Template deduplication: commands store template + operands, reconstruct lazily
 ///   9 - Stat cache: mtime_ns in file entries, save_time_ns in header for racy-clean detection
-inline constexpr auto INDEX_VERSION = std::uint32_t { 9 };
+///  10 - Remove unused group_cmd_id field from edges (reserved bytes expanded)
+inline constexpr auto INDEX_VERSION = std::uint32_t { 10 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
@@ -82,8 +83,7 @@ struct alignas(8) RawEdge {
     std::uint32_t from_id = 0;                 ///< Source node ID
     std::uint32_t to_id = 0;                   ///< Destination node ID
     std::uint8_t type = 0;                     ///< LinkType
-    std::array<std::uint8_t, 3> reserved = {}; ///< Padding
-    std::uint32_t group_cmd_id = 0;            ///< For group edges: command that owns group
+    std::array<std::uint8_t, 7> reserved = {}; ///< Padding
 };
 
 static_assert(sizeof(RawEdge) == 16, "RawEdge must be 16 bytes");

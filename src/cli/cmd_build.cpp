@@ -615,7 +615,6 @@ auto serialize_edges(
             .from = edge.from,
             .to = edge.to,
             .type = edge.type,
-            .group_cmd_id = edge.group_cmd_id,
         });
     }
 }
@@ -662,7 +661,6 @@ auto process_implicit_deps(
                     .from = dep_id,
                     .to = cmd_id,
                     .type = pup::LinkType::Implicit,
-                    .group_cmd_id = 0,
                 });
             }
         }
@@ -708,7 +706,6 @@ auto preserve_old_implicit_edges(
                 .from = new_from_id,
                 .to = edge.to,
                 .type = pup::LinkType::Implicit,
-                .group_cmd_id = 0,
             });
         }
     }

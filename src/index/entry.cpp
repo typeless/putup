@@ -97,7 +97,6 @@ auto EdgeEntry::to_raw() const -> RawEdge
         .to_id = to,
         .type = static_cast<std::uint8_t>(type),
         .reserved = {},
-        .group_cmd_id = group_cmd_id,
     };
 }
 
@@ -107,7 +106,6 @@ auto EdgeEntry::from_raw(RawEdge const& raw) -> EdgeEntry
         .from = raw.from_id,
         .to = raw.to_id,
         .type = static_cast<LinkType>(raw.type),
-        .group_cmd_id = raw.group_cmd_id,
     };
 }
 

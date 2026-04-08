@@ -509,7 +509,6 @@ struct PhiNode {
 struct Edge {
     NodeId from, to;
     LinkType type;
-    NodeId group_cmd_id;    // For group edges
 };
 ```
 
@@ -891,8 +890,7 @@ v8 introduces **instruction-based command storage** for significant space saving
 │ Edge[] (16 bytes each)              │
 │   from_id: u32                      │
 │   to_id: u32                        │
-│   type: u8, reserved: 3 bytes       │
-│   group_cmd_id: u32                 │
+│   type: u8, reserved: 7 bytes       │
 ├─────────────────────────────────────┤
 │ Operand Offset Table (4 bytes × N)  │  ← NEW
 │   offset[i] = position in data      │

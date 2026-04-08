@@ -191,7 +191,6 @@ TEST_CASE("EdgeEntry conversion", "[index]")
             .from = 10,
             .to = 20,
             .type = LinkType::Sticky,
-            .group_cmd_id = 5,
         };
 
         auto raw = edge.to_raw();
@@ -199,14 +198,12 @@ TEST_CASE("EdgeEntry conversion", "[index]")
         REQUIRE(raw.from_id == 10);
         REQUIRE(raw.to_id == 20);
         REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Sticky));
-        REQUIRE(raw.group_cmd_id == 5);
 
         auto restored = EdgeEntry::from_raw(raw);
 
         REQUIRE(restored.from == edge.from);
         REQUIRE(restored.to == edge.to);
         REQUIRE(restored.type == edge.type);
-        REQUIRE(restored.group_cmd_id == edge.group_cmd_id);
     }
 
     SECTION("Implicit edge (header dependency)")
@@ -215,7 +212,6 @@ TEST_CASE("EdgeEntry conversion", "[index]")
             .from = 100,
             .to = 200,
             .type = LinkType::Implicit,
-            .group_cmd_id = 0,
         };
 
         auto raw = edge.to_raw();
@@ -223,14 +219,12 @@ TEST_CASE("EdgeEntry conversion", "[index]")
         REQUIRE(raw.from_id == 100);
         REQUIRE(raw.to_id == 200);
         REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Implicit));
-        REQUIRE(raw.group_cmd_id == 0);
 
         auto restored = EdgeEntry::from_raw(raw);
 
         REQUIRE(restored.from == edge.from);
         REQUIRE(restored.to == edge.to);
         REQUIRE(restored.type == LinkType::Implicit);
-        REQUIRE(restored.group_cmd_id == edge.group_cmd_id);
     }
 }
 

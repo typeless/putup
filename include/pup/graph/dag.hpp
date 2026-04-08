@@ -30,7 +30,6 @@ struct Edge {
     NodeId from = 0;
     NodeId to = 0;
     LinkType type = LinkType::Normal;
-    NodeId group_cmd_id = 0; ///< For group edges, the command that produced the group
 };
 
 /// File node - represents files, directories, groups, variables, ghosts
