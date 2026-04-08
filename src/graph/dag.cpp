@@ -142,20 +142,7 @@ auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<voi
 
 auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>
 {
-    if (!validate_node_id(graph, from)) {
-        return make_error<void>(ErrorCode::InvalidNodeId, "Invalid source node ID");
-    }
-    if (!validate_node_id(graph, to)) {
-        return make_error<void>(ErrorCode::InvalidNodeId, "Invalid destination node ID");
-    }
-
-    auto old_to = graph.order_only_to_index.get_slice(to);
-    graph.order_only_to_index.set_slice(to, graph.edge_arena.append_extend(old_to, from));
-
-    auto old_deps = graph.order_only_dependents.get_slice(from);
-    graph.order_only_dependents.set_slice(from, graph.edge_arena.append_extend(old_deps, to));
-
-    return {};
+    return add_edge(graph, from, to, LinkType::OrderOnly);
 }
 
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*
@@ -394,7 +381,10 @@ auto get_inputs(Graph const& graph, NodeId id) -> Vec<NodeId>
     auto result = Vec<NodeId> {};
     result.reserve(span.size());
     for (auto idx : span) {
-        result.push_back(graph.edges[idx].from);
+        auto const& edge = graph.edges[idx];
+        if (edge.type != LinkType::OrderOnly) {
+            result.push_back(edge.from);
+        }
     }
     return result;
 }
@@ -409,7 +399,7 @@ auto get_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>
     auto result = Vec<NodeId> {};
     for (auto idx : span) {
         auto const& edge = graph.edges[idx];
-        if (edge.type != LinkType::Sticky) {
+        if (edge.type != LinkType::Sticky && edge.type != LinkType::OrderOnly) {
             result.push_back(edge.to);
         }
     }
@@ -435,30 +425,34 @@ auto get_sticky_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>
 
 auto get_order_only(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
-    auto s = graph.order_only_to_index.get_slice(id);
+    auto s = graph.edges_to_index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
     auto result = Vec<NodeId> {};
-    result.reserve(span.size());
-    for (auto v : span) {
-        result.push_back(v);
+    for (auto idx : span) {
+        auto const& edge = graph.edges[idx];
+        if (edge.type == LinkType::OrderOnly) {
+            result.push_back(edge.from);
+        }
     }
     return result;
 }
 
 auto get_order_only_dependents(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
-    auto s = graph.order_only_dependents.get_slice(id);
+    auto s = graph.edges_from_index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
     auto result = Vec<NodeId> {};
-    result.reserve(span.size());
-    for (auto v : span) {
-        result.push_back(v);
+    for (auto idx : span) {
+        auto const& edge = graph.edges[idx];
+        if (edge.type == LinkType::OrderOnly) {
+            result.push_back(edge.to);
+        }
     }
     return result;
 }
@@ -470,6 +464,7 @@ auto node_count(Graph const& graph) -> std::size_t
     return file_count + cmd_count;
 }
 
+// Includes all edge types: Normal, Sticky, OrderOnly.
 auto edge_count(Graph const& graph) -> std::size_t
 {
     return graph.edges.size();
@@ -493,8 +488,6 @@ auto clear(Graph& graph) -> void
     graph.edge_arena.clear();
     graph.edges_to_index.clear();
     graph.edges_from_index.clear();
-    graph.order_only_to_index.clear();
-    graph.order_only_dependents.clear();
     graph.dir_children.clear();
     graph.command_strings.clear();
     graph.command_index.clear();
@@ -544,7 +537,7 @@ auto all_nodes(Graph const& graph) -> Vec<NodeId>
 auto root_nodes(Graph const& graph) -> Vec<NodeId>
 {
     auto has_inputs = [&](NodeId id) {
-        return graph.edges_to_index.contains(id) || graph.order_only_to_index.contains(id);
+        return graph.edges_to_index.contains(id);
     };
 
     auto result = Vec<NodeId> {};

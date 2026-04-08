@@ -74,13 +74,13 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
         // Same basename in different directories
         auto src_file = add_file_node(g, FileNode {
-            .name = intern("util.c"),
-            .parent_dir = *src_dir,
-        });
+                                             .name = intern("util.c"),
+                                             .parent_dir = *src_dir,
+                                         });
         auto lib_file = add_file_node(g, FileNode {
-            .name = intern("util.c"),
-            .parent_dir = *lib_dir,
-        });
+                                             .name = intern("util.c"),
+                                             .parent_dir = *lib_dir,
+                                         });
         REQUIRE(src_file.has_value());
         REQUIRE(lib_file.has_value());
 
@@ -99,14 +99,14 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         // Build: src/foo.c
         auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
         auto foo_file = add_file_node(g, FileNode {
-            .name = intern("foo.c"),
-            .parent_dir = *src_dir,
-        });
+                                             .name = intern("foo.c"),
+                                             .parent_dir = *src_dir,
+                                         });
         REQUIRE(src_dir.has_value());
         REQUIRE(foo_file.has_value());
 
-        REQUIRE(sv(get_full_path(g, *src_dir)) =="src");
-        REQUIRE(sv(get_full_path(g, *foo_file)) =="src/foo.c");
+        REQUIRE(sv(get_full_path(g, *src_dir)) == "src");
+        REQUIRE(sv(get_full_path(g, *foo_file)) == "src/foo.c");
     }
 
     SECTION("get_full_path - deep hierarchy")
@@ -118,29 +118,29 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         auto d_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("d"), .parent_dir = *c_dir });
         auto file = add_file_node(g, FileNode { .name = intern("file.txt"), .parent_dir = *d_dir });
 
-        REQUIRE(sv(get_full_path(g, *a_dir)) =="a");
-        REQUIRE(sv(get_full_path(g, *b_dir)) =="a/b");
-        REQUIRE(sv(get_full_path(g, *c_dir)) =="a/b/c");
-        REQUIRE(sv(get_full_path(g, *d_dir)) =="a/b/c/d");
-        REQUIRE(sv(get_full_path(g, *file)) =="a/b/c/d/file.txt");
+        REQUIRE(sv(get_full_path(g, *a_dir)) == "a");
+        REQUIRE(sv(get_full_path(g, *b_dir)) == "a/b");
+        REQUIRE(sv(get_full_path(g, *c_dir)) == "a/b/c");
+        REQUIRE(sv(get_full_path(g, *d_dir)) == "a/b/c/d");
+        REQUIRE(sv(get_full_path(g, *file)) == "a/b/c/d/file.txt");
     }
 
     SECTION("get_full_path - name with path separator (no parent_dir)")
     {
         auto node = add_file_node(g, FileNode { .name = intern("legacy/path.c") });
-        REQUIRE(sv(get_full_path(g, *node)) =="legacy/path.c");
+        REQUIRE(sv(get_full_path(g, *node)) == "legacy/path.c");
     }
 
     SECTION("get_full_path - root level file")
     {
         auto file = add_file_node(g, FileNode { .name = intern("Makefile") });
-        REQUIRE(sv(get_full_path(g, *file)) =="Makefile");
+        REQUIRE(sv(get_full_path(g, *file)) == "Makefile");
     }
 
     SECTION("get_full_path - invalid node returns empty")
     {
-        REQUIRE(sv(get_full_path(g, 0)) =="");
-        REQUIRE(sv(get_full_path(g, 9999)) =="");
+        REQUIRE(sv(get_full_path(g, 0)) == "");
+        REQUIRE(sv(get_full_path(g, 9999)) == "");
     }
 
     SECTION("get_full_path - caching works")
@@ -487,8 +487,9 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
         // Find positions in the sorted order
         auto find_pos = [&](pup::NodeId id) -> std::size_t {
             for (std::size_t i = 0; i < result.order.size(); ++i) {
-                if (result.order[i] == id)
+                if (result.order[i] == id) {
                     return i;
+                }
             }
             return result.order.size();
         };
@@ -517,6 +518,104 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
     }
 }
 
+TEST_CASE("Unified edge storage for order-only edges", "[graph]")
+{
+    auto bs = make_build_state();
+    auto& g = bs.graph;
+
+    // group1 ---(order-only)---> cmd ---(normal)---> output.o
+    //                             ^
+    // input.c ----(normal)-------+
+
+    auto group_id = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<libs>") });
+    auto input_id = add_file_node(g, FileNode { .name = intern("input.c") });
+    auto cmd_id = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
+    auto output_id = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
+
+    REQUIRE(group_id.has_value());
+    REQUIRE(input_id.has_value());
+    REQUIRE(cmd_id.has_value());
+    REQUIRE(output_id.has_value());
+
+    (void)add_edge(g, *input_id, *cmd_id);
+    (void)add_edge(g, *cmd_id, *output_id);
+    (void)add_order_only_edge(g, *group_id, *cmd_id);
+
+    SECTION("order-only edges are counted in edge_count")
+    {
+        REQUIRE(edge_count(g) == 3);
+    }
+
+    SECTION("get_inputs excludes order-only sources")
+    {
+        auto inputs = get_inputs(g, *cmd_id);
+        REQUIRE(inputs.size() == 1);
+        REQUIRE(inputs[0] == *input_id);
+    }
+
+    SECTION("get_outputs excludes order-only targets")
+    {
+        auto outputs = get_outputs(g, *group_id);
+        REQUIRE(outputs.empty());
+    }
+
+    SECTION("get_order_only returns correct sources via unified index")
+    {
+        auto oo = get_order_only(g, *cmd_id);
+        REQUIRE(oo.size() == 1);
+        REQUIRE(oo[0] == *group_id);
+    }
+
+    SECTION("get_order_only_dependents returns correct targets via unified index")
+    {
+        auto deps = get_order_only_dependents(g, *group_id);
+        REQUIRE(deps.size() == 1);
+        REQUIRE(deps[0] == *cmd_id);
+    }
+
+    SECTION("root_nodes excludes nodes with only order-only inputs")
+    {
+        auto roots = root_nodes(g);
+        // cmd has inputs (normal + order-only), so it's not a root
+        REQUIRE(std::ranges::find(roots, *cmd_id) == roots.end());
+        // group1 has no inputs, so it IS a root
+        REQUIRE(std::ranges::find(roots, *group_id) != roots.end());
+        // input.c has no inputs, so it IS a root
+        REQUIRE(std::ranges::find(roots, *input_id) != roots.end());
+    }
+
+    SECTION("leaf_nodes excludes nodes with only order-only forward edges")
+    {
+        // group1 has only an order-only forward edge to cmd.
+        // Before unification this was stored separately and leaf_nodes missed it,
+        // so group1 incorrectly appeared as a leaf. After unification, group1
+        // should NOT be a leaf because it has a forward edge (order-only counts).
+        auto leaves = leaf_nodes(g);
+        REQUIRE(std::ranges::find(leaves, *group_id) == leaves.end());
+    }
+
+    SECTION("root_nodes excludes command with only order-only input")
+    {
+        auto bs2 = make_build_state();
+        auto& g2 = bs2.graph;
+
+        auto grp = add_file_node(g2, FileNode { .type = NodeType::Group, .name = intern("<order>") });
+        auto cmd = add_command_node(g2, CommandNode { .instruction_id = intern("touch") });
+        auto out = add_file_node(g2, FileNode { .type = NodeType::Generated, .name = intern("stamp") });
+
+        REQUIRE(grp.has_value());
+        REQUIRE(cmd.has_value());
+        REQUIRE(out.has_value());
+
+        (void)add_order_only_edge(g2, *grp, *cmd);
+        (void)add_edge(g2, *cmd, *out);
+
+        auto roots = root_nodes(g2);
+        REQUIRE(std::ranges::find(roots, *cmd) == roots.end());
+        REQUIRE(std::ranges::find(roots, *grp) != roots.end());
+    }
+}
+
 // Regression test: get_outputs() must exclude sticky edges
 //
 // Background: Sticky edges connect Tupfile/config nodes to commands they define.
@@ -528,8 +627,8 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
 // incremental builds, the expansion loop followed get_outputs() transitively,
 // causing a cascade through shared Tupfile nodes to ALL commands.
 //
-// Fix: Separate storage - sticky edges go to sticky_outputs, get_outputs()
-// returns only non-sticky edges (matching tup's design).
+// Fix: get_outputs() filters out LinkType::Sticky and LinkType::OrderOnly edges,
+// returning only data-flow edges (matching tup's design).
 //
 // This test would FAIL with the old implementation where get_outputs()
 // included sticky edges.
@@ -696,7 +795,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         REQUIRE(cmd != nullptr);
         REQUIRE(cmd->instruction_id != pup::StringId::Empty);
         REQUIRE(get_instruction_pattern(g, *cmd_id) == "cp foo bar");
-        REQUIRE(sv(expand_instruction(g, *cmd_id)) =="cp foo bar");
+        REQUIRE(sv(expand_instruction(g, *cmd_id)) == "cp foo bar");
     }
 
     SECTION("command node with empty instruction_id")
@@ -746,18 +845,18 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
     REQUIRE(src_dir.has_value());
 
     auto foo_c = add_file_node(g, FileNode {
-        .name = intern("foo.c"),
-        .parent_dir = *src_dir,
-    });
+                                      .name = intern("foo.c"),
+                                      .parent_dir = *src_dir,
+                                  });
     auto bar_c = add_file_node(g, FileNode {
-        .name = intern("bar.c"),
-        .parent_dir = *src_dir,
-    });
+                                      .name = intern("bar.c"),
+                                      .parent_dir = *src_dir,
+                                  });
     auto foo_o = add_file_node(g, FileNode {
-        .type = NodeType::Generated,
-        .name = intern("foo.o"),
-        .parent_dir = *src_dir,
-    });
+                                      .type = NodeType::Generated,
+                                      .name = intern("foo.o"),
+                                      .parent_dir = *src_dir,
+                                  });
     REQUIRE(foo_c.has_value());
     REQUIRE(bar_c.has_value());
     REQUIRE(foo_o.has_value());
@@ -774,7 +873,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="gcc -c foo.c -o foo.o");
+        CHECK(sv(result) == "gcc -c foo.c -o foo.o");
     }
 
     SECTION("%f with multiple inputs")
@@ -789,7 +888,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="gcc -c foo.c bar.c -o foo.o");
+        CHECK(sv(result) == "gcc -c foo.c bar.c -o foo.o");
     }
 
     SECTION("%b (basename of first input)")
@@ -803,7 +902,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo foo.c");
+        CHECK(sv(result) == "echo foo.c");
     }
 
     SECTION("%B (stem of first input)")
@@ -817,7 +916,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo foo");
+        CHECK(sv(result) == "echo foo");
     }
 
     SECTION("%e (extension of first input)")
@@ -831,7 +930,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo c");
+        CHECK(sv(result) == "echo c");
     }
 
     SECTION("%d (Tupfile directory name)")
@@ -847,7 +946,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo src");
+        CHECK(sv(result) == "echo src");
     }
 
     SECTION("%d with nested source_dir")
@@ -862,7 +961,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo baz");
+        CHECK(sv(result) == "echo baz");
     }
 
     SECTION("%O (basename of first output)")
@@ -876,7 +975,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo foo.o");
+        CHECK(sv(result) == "echo foo.o");
     }
 
     SECTION("%Nf (N-th input)")
@@ -890,16 +989,16 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="gcc foo.c bar.c");
+        CHECK(sv(result) == "gcc foo.c bar.c");
     }
 
     SECTION("%No (N-th output)")
     {
         auto bar_o = add_file_node(g, FileNode {
-            .type = NodeType::Generated,
-            .name = intern("bar.o"),
-            .parent_dir = *src_dir,
-        });
+                                          .type = NodeType::Generated,
+                                          .name = intern("bar.o"),
+                                          .parent_dir = *src_dir,
+                                      });
         REQUIRE(bar_o.has_value());
 
         auto node = CommandNode {
@@ -911,7 +1010,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo bar.o");
+        CHECK(sv(result) == "echo bar.o");
     }
 
     SECTION("%% escapes to literal percent")
@@ -923,7 +1022,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="echo 100%");
+        CHECK(sv(result) == "echo 100%");
     }
 
     SECTION("no patterns returns verbatim")
@@ -935,7 +1034,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) =="cp /src/file /dst/file");
+        CHECK(sv(result) == "cp /src/file /dst/file");
     }
 
     SECTION("empty instruction returns empty")
@@ -1017,7 +1116,9 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
 
     auto find_pos = [&](pup::NodeId id) -> std::size_t {
         for (auto i = std::size_t { 0 }; i < result.order.size(); ++i) {
-            if (result.order[i] == id) return i;
+            if (result.order[i] == id) {
+                return i;
+            }
         }
         return result.order.size();
     };

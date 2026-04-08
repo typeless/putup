@@ -149,7 +149,7 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
 }
 
 // =============================================================================
-// Benchmark 2: get_order_only_dependents() - Should show O(n) per call
+// Benchmark 2: get_order_only_dependents() - Scans all edges from a node and filters — O(fan-out)
 // =============================================================================
 
 TEST_CASE("Benchmark: order-only dependent lookup", "[.benchmark][graph]")

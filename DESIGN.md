@@ -160,7 +160,8 @@ enum class LinkType : std::uint8_t {
     Normal = 1,     // Standard dependency
     Sticky = 2,     // Explicit Tupfile dependency
     Group  = 3,     // Group membership
-    Implicit = 4    // Header deps from .d files
+    Implicit = 4,   // Header deps from .d files
+    OrderOnly = 5,  // Order-only dependency (must build first, but not a data dep)
 };
 ```
 
@@ -557,9 +558,7 @@ struct Graph {
     NodeIdArenaIndex edges_to_index;
     NodeIdArenaIndex edges_from_index;
 
-    // Order-only edges (separate from edges vector)
-    NodeIdArenaIndex order_only_to_index;
-    NodeIdArenaIndex order_only_dependents;
+    // Order-only edges use LinkType::OrderOnly in the unified edges vector
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)

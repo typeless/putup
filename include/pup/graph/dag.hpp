@@ -110,8 +110,6 @@ struct Graph {
     Arena32 edge_arena;
     NodeIdArenaIndex edges_to_index;
     NodeIdArenaIndex edges_from_index;
-    NodeIdArenaIndex order_only_to_index;
-    NodeIdArenaIndex order_only_dependents;
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)

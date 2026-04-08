@@ -105,10 +105,11 @@ enum class NodeType : std::uint8_t {
 
 /// Dependency edge types
 enum class LinkType : std::uint8_t {
-    Normal = 1,   ///< Standard dependency (input->cmd, cmd->output)
-    Sticky = 2,   ///< Explicit dependency from Tupfile
-    Group = 3,    ///< Group membership link
-    Implicit = 4, ///< Header dependencies discovered from .d files
+    Normal = 1,    ///< Standard dependency (input->cmd, cmd->output)
+    Sticky = 2,    ///< Explicit dependency from Tupfile
+    Group = 3,     ///< Group membership link
+    Implicit = 4,  ///< Header dependencies discovered from .d files
+    OrderOnly = 5, ///< Order-only dependency (must build first, but not a data dep)
 };
 
 /// Node state flags (bitmask)

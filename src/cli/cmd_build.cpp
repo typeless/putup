@@ -607,6 +607,10 @@ auto serialize_edges(
 ) -> void
 {
     for (auto const& edge : state.graph.edges) {
+        // Order-only edges are ephemeral — rebuilt from Tupfiles on each parse
+        if (edge.type == pup::LinkType::OrderOnly) {
+            continue;
+        }
         index.add_edge(pup::index::EdgeEntry {
             .from = edge.from,
             .to = edge.to,
