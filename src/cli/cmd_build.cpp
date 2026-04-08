@@ -964,13 +964,6 @@ struct BuildFilter {
         }
     }
 
-    auto subtract(pup::NodeId id) -> void
-    {
-        if (active) {
-            set.remove(id);
-        }
-    }
-
     auto ptr() const -> pup::NodeIdMap32 const*
     {
         return active ? &set : nullptr;
@@ -1283,22 +1276,15 @@ auto build_single_variant(
         filter.intersect_with(std::move(scope_cmds), bs.graph);
     }
 
-    // Exclude config-generating commands from all build paths
+    // Exclude config-generating commands (they run during configure, not build)
     if (!config_cmds.empty()) {
-        if (!filter.active) {
-            // No other filter: build everything except config commands
-            for (auto id : pup::graph::all_nodes(bs.graph)) {
-                if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
-                    filter.set.set(id, 1);
-                }
-            }
-            filter.active = true;
-        } else {
-            // Other filters active: strip config commands from the result
-            for (auto const& cfg : config_cmds) {
-                filter.subtract(cfg.cmd_id);
+        auto non_config = pup::NodeIdMap32 {};
+        for (auto id : pup::graph::all_nodes(bs.graph)) {
+            if (node_id::is_command(id) && !config_cmd_ids.contains(id)) {
+                non_config.set(id, 1);
             }
         }
+        filter.intersect_with(std::move(non_config), bs.graph);
     }
 
     auto build_result = scheduler.build(bs, filter.ptr());
