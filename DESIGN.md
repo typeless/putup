@@ -1078,18 +1078,25 @@ class Scheduler {
 
 The scheduler has a single `build()` method. An optional `NodeIdMap32` filter selects which commands to execute; `nullptr` means build everything.
 
-**Composable filters:**
+**Composable filters — closed algebra over intersection:**
 
-Build constraints are computed as independent `NodeIdMap32` filters, then intersected:
+Build constraints are computed as independent `NodeIdMap32` sets, then combined with a single operation: `intersect_with()`.
 
 | Filter | Source | Graph algorithm |
 |--------|--------|-----------------|
 | **affected** | Changed files (incremental) | `collect_affected_commands()` — forward traversal from inputs |
 | **required** | Output targets on CLI | `collect_required_commands()` — backward traversal from outputs |
 | **scope** | `-a` scoped build | Commands in scoped dirs + upstream deps |
-| **non-config** | Config commands exist | All commands minus config-generating rules |
+| **non-config** | Config commands exist | Complement set: all commands except config-generating rules |
 
-Active filters are intersected so constraints compose correctly. For example, `putup -B build build/putup` intersects the **affected** filter (only changed files) with the **required** filter (only the binary's deps), building exactly the minimal set. A `nullptr` filter (no active constraints) produces a full build.
+The algebra is closed under one operation (∩) with four independent operands:
+- **Identity** — no filter (`nullptr`) means all commands; adding no constraint changes nothing.
+- **Composition** — each `intersect_with()` narrows the set; applying all four yields the minimal executable set.
+- **Commutativity** — order of intersection doesn't matter; the result is the same regardless of which constraint is applied first.
+
+Config exclusion uses the same mechanism as every other constraint: intersect with the complement set (non-config commands) rather than subtracting config commands. There is no `subtract()` operation.
+
+For example, `putup -B build build/putup` intersects the **affected** filter (only changed files) with the **required** filter (only the binary's deps), building exactly the minimal set.
 
 **Parallel execution algorithm (single-threaded, poll-based):**
 
@@ -1187,10 +1194,11 @@ changed.insert(changed.end(), new_outputs.begin(), new_outputs.end());
 // 7. Remove stale outputs from deleted commands
 remove_stale_outputs(graph, old_index, source_root);
 
-// Build with composable filter (affected ∩ required ∩ scope)
-auto filter = collect_affected_commands(graph, changed);
-// ... intersect with required/scope filters if active ...
-auto stats = scheduler.build(state, &filter);
+// Build with composable filter (affected ∩ required ∩ scope ∩ non_config)
+auto filter = BuildFilter {};
+filter.intersect_with(collect_affected_commands(graph, changed), graph);
+// ... intersect with required/scope/non_config if active ...
+auto stats = scheduler.build(state, filter.ptr());
 ```
 
 **Change detection algorithm:**
