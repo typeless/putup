@@ -1007,6 +1007,9 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
         auto file_path = pool.get(file_id);
         auto found = find_by_path(graph, file_path);
         if (!found) {
+            found = find_by_path(graph, file_path, BUILD_ROOT_ID);
+        }
+        if (!found) {
             continue;
         }
         auto id = *found;

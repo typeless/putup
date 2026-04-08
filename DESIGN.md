@@ -1193,7 +1193,7 @@ remove_stale_outputs(graph, old_index, source_root);
 
 // Build with composable filter (affected ∩ required ∩ scope ∩ non_config)
 auto filter = BuildFilter {};
-filter.intersect_with(collect_affected_commands(graph, changed), graph);
+filter.intersect_with(collect_affected_commands(graph, changed));
 // ... intersect with required/scope/non_config if active ...
 auto stats = scheduler.build(state, filter.ptr());
 ```
