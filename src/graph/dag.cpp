@@ -371,90 +371,50 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>
     return result;
 }
 
-auto get_inputs(Graph const& graph, NodeId id) -> Vec<NodeId>
+auto edges_where(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask) -> Vec<NodeId>
 {
-    auto s = graph.edges_to_index.get_slice(id);
+    auto const& index = (dir == EdgeDirection::Forward)
+        ? graph.edges_from_index
+        : graph.edges_to_index;
+
+    auto s = index.get_slice(id);
     if (s.length == 0) {
         return {};
     }
     auto span = graph.edge_arena.slice(s);
     auto result = Vec<NodeId> {};
-    result.reserve(span.size());
     for (auto idx : span) {
         auto const& edge = graph.edges[idx];
-        if (edge.type != LinkType::OrderOnly) {
-            result.push_back(edge.from);
+        if (link_type_bit(edge.type) & mask) {
+            result.push_back(dir == EdgeDirection::Forward ? edge.to : edge.from);
         }
     }
     return result;
+}
+
+auto get_inputs(Graph const& graph, NodeId id) -> Vec<NodeId>
+{
+    return edges_where(graph, id, EdgeDirection::Backward, edge_mask::inputs);
 }
 
 auto get_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
-    auto s = graph.edges_from_index.get_slice(id);
-    if (s.length == 0) {
-        return {};
-    }
-    auto span = graph.edge_arena.slice(s);
-    auto result = Vec<NodeId> {};
-    for (auto idx : span) {
-        auto const& edge = graph.edges[idx];
-        if (edge.type != LinkType::Sticky && edge.type != LinkType::OrderOnly) {
-            result.push_back(edge.to);
-        }
-    }
-    return result;
+    return edges_where(graph, id, EdgeDirection::Forward, edge_mask::data_flow);
 }
 
 auto get_sticky_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
-    auto s = graph.edges_from_index.get_slice(id);
-    if (s.length == 0) {
-        return {};
-    }
-    auto span = graph.edge_arena.slice(s);
-    auto result = Vec<NodeId> {};
-    for (auto idx : span) {
-        auto const& edge = graph.edges[idx];
-        if (edge.type == LinkType::Sticky) {
-            result.push_back(edge.to);
-        }
-    }
-    return result;
+    return edges_where(graph, id, EdgeDirection::Forward, edge_mask::sticky);
 }
 
 auto get_order_only(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
-    auto s = graph.edges_to_index.get_slice(id);
-    if (s.length == 0) {
-        return {};
-    }
-    auto span = graph.edge_arena.slice(s);
-    auto result = Vec<NodeId> {};
-    for (auto idx : span) {
-        auto const& edge = graph.edges[idx];
-        if (edge.type == LinkType::OrderOnly) {
-            result.push_back(edge.from);
-        }
-    }
-    return result;
+    return edges_where(graph, id, EdgeDirection::Backward, edge_mask::order_only);
 }
 
 auto get_order_only_dependents(Graph const& graph, NodeId id) -> Vec<NodeId>
 {
-    auto s = graph.edges_from_index.get_slice(id);
-    if (s.length == 0) {
-        return {};
-    }
-    auto span = graph.edge_arena.slice(s);
-    auto result = Vec<NodeId> {};
-    for (auto idx : span) {
-        auto const& edge = graph.edges[idx];
-        if (edge.type == LinkType::OrderOnly) {
-            result.push_back(edge.to);
-        }
-    }
-    return result;
+    return edges_where(graph, id, EdgeDirection::Forward, edge_mask::order_only);
 }
 
 auto node_count(Graph const& graph) -> std::size_t

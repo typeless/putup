@@ -14,6 +14,7 @@
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -218,6 +219,41 @@ auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std
 /// Get all nodes of a given type
 [[nodiscard]]
 auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>;
+
+/// Edge traversal direction
+enum class EdgeDirection : std::uint8_t {
+    Forward,
+    Backward,
+};
+
+/// Bitmask of LinkType values for edge filtering
+using LinkTypeMask = std::uint8_t;
+
+/// Create a LinkTypeMask from a single LinkType
+[[nodiscard]]
+constexpr auto link_type_bit(LinkType t) -> LinkTypeMask
+{
+    return LinkTypeMask { 1 } << (static_cast<std::uint8_t>(t) - 1);
+}
+
+namespace edge_mask {
+inline constexpr auto data_flow = link_type_bit(LinkType::Normal)
+    | link_type_bit(LinkType::Group)
+    | link_type_bit(LinkType::Implicit);
+
+inline constexpr auto inputs = link_type_bit(LinkType::Normal)
+    | link_type_bit(LinkType::Sticky)
+    | link_type_bit(LinkType::Group)
+    | link_type_bit(LinkType::Implicit);
+
+inline constexpr auto sticky = link_type_bit(LinkType::Sticky);
+
+inline constexpr auto order_only = link_type_bit(LinkType::OrderOnly);
+} // namespace edge_mask
+
+/// Query edges by direction and type mask
+[[nodiscard]]
+auto edges_where(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask) -> Vec<NodeId>;
 
 /// Get direct dependencies of a node
 [[nodiscard]]

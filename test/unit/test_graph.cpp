@@ -1127,3 +1127,113 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
     auto c2_pos = find_pos(*c2);
     REQUIRE(c1_pos < c2_pos);
 }
+
+TEST_CASE("edges_where parameterized edge query", "[graph]")
+{
+    using pup::LinkType;
+
+    auto bs = make_build_state();
+    auto& g = bs.graph;
+
+    auto input = add_file_node(g, FileNode { .name = intern("input.c") });
+    auto output = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("output.o") });
+    auto tupfile = add_file_node(g, FileNode { .name = intern("Tupfile") });
+    auto group = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<libs>") });
+    auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
+
+    REQUIRE(input.has_value());
+    REQUIRE(output.has_value());
+    REQUIRE(tupfile.has_value());
+    REQUIRE(group.has_value());
+    REQUIRE(cmd.has_value());
+
+    (void)add_edge(g, *input, *cmd, LinkType::Normal);
+    (void)add_edge(g, *cmd, *output, LinkType::Normal);
+    (void)add_edge(g, *tupfile, *cmd, LinkType::Sticky);
+    (void)add_order_only_edge(g, *group, *cmd);
+
+    using pup::graph::EdgeDirection;
+    using pup::graph::edge_mask::data_flow;
+    using pup::graph::edge_mask::inputs;
+    using pup::graph::edge_mask::order_only;
+    using pup::graph::edge_mask::sticky;
+
+    SECTION("backward data_flow returns Normal inputs only")
+    {
+        auto result = edges_where(g, *cmd, EdgeDirection::Backward, data_flow);
+        REQUIRE(result.size() == 1);
+        REQUIRE(result[0] == *input);
+    }
+
+    SECTION("backward inputs returns Normal + Sticky but not OrderOnly")
+    {
+        auto result = edges_where(g, *cmd, EdgeDirection::Backward, inputs);
+        REQUIRE(result.size() == 2);
+        REQUIRE(std::ranges::find(result, *input) != result.end());
+        REQUIRE(std::ranges::find(result, *tupfile) != result.end());
+        REQUIRE(std::ranges::find(result, *group) == result.end());
+    }
+
+    SECTION("backward order_only returns only OO sources")
+    {
+        auto result = edges_where(g, *cmd, EdgeDirection::Backward, order_only);
+        REQUIRE(result.size() == 1);
+        REQUIRE(result[0] == *group);
+    }
+
+    SECTION("forward data_flow from cmd returns output")
+    {
+        auto result = edges_where(g, *cmd, EdgeDirection::Forward, data_flow);
+        REQUIRE(result.size() == 1);
+        REQUIRE(result[0] == *output);
+    }
+
+    SECTION("forward sticky from cmd returns nothing (sticky goes TO cmd)")
+    {
+        auto result = edges_where(g, *cmd, EdgeDirection::Forward, sticky);
+        REQUIRE(result.empty());
+    }
+
+    SECTION("backward sticky returns Tupfile")
+    {
+        auto result = edges_where(g, *cmd, EdgeDirection::Backward, sticky);
+        REQUIRE(result.size() == 1);
+        REQUIRE(result[0] == *tupfile);
+    }
+
+    SECTION("combined mask: data_flow | order_only")
+    {
+        auto combined = static_cast<pup::graph::LinkTypeMask>(data_flow | order_only);
+        auto result = edges_where(g, *cmd, EdgeDirection::Backward, combined);
+        REQUIRE(result.size() == 2);
+        REQUIRE(std::ranges::find(result, *input) != result.end());
+        REQUIRE(std::ranges::find(result, *group) != result.end());
+    }
+
+    SECTION("equivalence: get_inputs == edges_where backward inputs")
+    {
+        auto a = get_inputs(g, *cmd);
+        auto b = edges_where(g, *cmd, EdgeDirection::Backward, inputs);
+        std::ranges::sort(a);
+        std::ranges::sort(b);
+        REQUIRE(a == b);
+    }
+
+    SECTION("equivalence: get_outputs == edges_where forward data_flow")
+    {
+        auto a = get_outputs(g, *cmd);
+        auto b = edges_where(g, *cmd, EdgeDirection::Forward, data_flow);
+        std::ranges::sort(a);
+        std::ranges::sort(b);
+        REQUIRE(a == b);
+    }
+
+    SECTION("equivalence: get_order_only == edges_where backward order_only")
+    {
+        auto a = get_order_only(g, *cmd);
+        auto b = edges_where(g, *cmd, EdgeDirection::Backward, order_only);
+        std::ranges::sort(a);
+        std::ranges::sort(b);
+        REQUIRE(a == b);
+    }
+}
