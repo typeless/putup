@@ -1100,23 +1100,6 @@ auto build_single_variant(
         auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
-        // Add output targets to force their rebuild
-        // Output targets are source-relative (e.g., "hello"), but changed_files uses
-        // full paths from get_full_path() which include build root prefix (e.g., "build-debug/hello").
-        auto build_root_name = pup::graph::get_build_root_name(bs.graph);
-        for (auto output_id : opts.output_targets) {
-            auto output_sv = pup::global_pool().get(output_id);
-            auto prefixed_id = StringId::Empty;
-            if (!build_root_name.empty()) {
-                prefixed_id = pup::path::join(build_root_name, output_sv);
-            } else {
-                prefixed_id = pup::global_pool().intern(output_sv);
-            }
-            if (std::ranges::find(changed_files, prefixed_id) == changed_files.end()) {
-                changed_files.push_back(prefixed_id);
-            }
-        }
-
         auto new_cmds_start = pup::SteadyClock::now();
         auto new_cmd_outputs = detect_new_commands(bs, idx, variant_name, opts.verbose);
         auto new_cmds_elapsed = pup::SteadyClock::now() - new_cmds_start;
