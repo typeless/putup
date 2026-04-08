@@ -1000,36 +1000,27 @@ auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids
 auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files) -> NodeIdMap32
 {
     auto& pool = global_pool();
-
-    auto path_to_id = Vec<std::pair<std::string_view, NodeId>> {};
-    for (auto id : all_nodes(graph)) {
-        auto path_id = get_full_path(graph, id);
-        if (!is_empty(path_id)) {
-            path_to_id.emplace_back(pool.get(path_id), id);
-        }
-    }
-    std::sort(path_to_id.begin(), path_to_id.end());
-
     auto affected = NodeIdMap32 {};
     auto to_process = Vec<NodeId> {};
 
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
-        auto it = std::lower_bound(path_to_id.begin(), path_to_id.end(), file_path, [](auto const& p, auto const& k) { return p.first < k; });
-        if (it != path_to_id.end() && it->first == file_path) {
-            auto id = it->second;
-            if (!affected.contains(id)) {
-                affected.set(id, 1);
-                to_process.push_back(id);
-            }
+        auto found = find_by_path(graph, file_path);
+        if (!found) {
+            continue;
+        }
+        auto id = *found;
+        if (!affected.contains(id)) {
+            affected.set(id, 1);
+            to_process.push_back(id);
+        }
 
-            auto const* node = get_file_node(graph, id);
-            if (node && node->type == NodeType::Generated) {
-                for (auto input_id : get_inputs(graph, id)) {
-                    if (!affected.contains(input_id)) {
-                        affected.set(input_id, 1);
-                        to_process.push_back(input_id);
-                    }
+        auto const* node = get_file_node(graph, id);
+        if (node && node->type == NodeType::Generated) {
+            for (auto input_id : get_inputs(graph, id)) {
+                if (!affected.contains(input_id)) {
+                    affected.set(input_id, 1);
+                    to_process.push_back(input_id);
                 }
             }
         }

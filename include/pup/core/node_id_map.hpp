@@ -62,6 +62,27 @@ public:
         return size() == 0;
     }
 
+    auto for_each_id(void (*fn)(NodeId id, void* ctx), void* ctx) const -> void
+    {
+        struct Relay {
+            void (*fn)(NodeId, void*);
+            void* ctx;
+            NodeId flag;
+        };
+        auto cb = [](std::uint32_t idx, std::uint32_t, void* r) {
+            auto* relay = static_cast<Relay*>(r);
+            relay->fn(NodeId { idx } | relay->flag, relay->ctx);
+        };
+        auto file_relay = Relay { fn, ctx, 0 };
+        files_.for_each(cb, &file_relay);
+        auto cmd_relay = Relay { fn, ctx, node_id::COMMAND_FLAG };
+        cmds_.for_each(cb, &cmd_relay);
+        auto cond_relay = Relay { fn, ctx, node_id::CONDITION_FLAG };
+        conds_.for_each(cb, &cond_relay);
+        auto phi_relay = Relay { fn, ctx, node_id::PHI_FLAG };
+        phis_.for_each(cb, &phi_relay);
+    }
+
 private:
     IdArray32 files_, cmds_, conds_, phis_;
 

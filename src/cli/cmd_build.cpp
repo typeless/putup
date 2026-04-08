@@ -938,16 +938,29 @@ auto remove_stale_outputs(
 
 auto intersect_filters(
     pup::NodeIdMap32 const& a,
-    pup::NodeIdMap32 const& b,
-    pup::graph::Graph const& graph
+    pup::NodeIdMap32 const& b
 ) -> pup::NodeIdMap32
 {
     auto result = pup::NodeIdMap32 {};
-    for (auto id : pup::graph::all_nodes(graph)) {
-        if (a.contains(id) && b.contains(id)) {
-            result.set(id, 1);
-        }
-    }
+    auto const& smaller = (a.size() <= b.size()) ? a : b;
+    auto const& larger = (a.size() <= b.size()) ? b : a;
+
+    struct Ctx {
+        pup::NodeIdMap32 const* other;
+        pup::NodeIdMap32* result;
+    };
+    auto ctx = Ctx { &larger, &result };
+
+    smaller.for_each_id(
+        [](pup::NodeId id, void* c) {
+            auto* x = static_cast<Ctx*>(c);
+            if (x->other->contains(id)) {
+                x->result->set(id, 1);
+            }
+        },
+        &ctx
+    );
+
     return result;
 }
 
@@ -955,10 +968,10 @@ struct BuildFilter {
     pup::NodeIdMap32 set;
     bool active = false;
 
-    auto intersect_with(pup::NodeIdMap32 next, pup::graph::Graph const& g) -> void
+    auto intersect_with(pup::NodeIdMap32 next) -> void
     {
         if (active) {
-            set = intersect_filters(set, next, g);
+            set = intersect_filters(set, next);
         } else {
             set = std::move(next);
             active = true;
@@ -1245,11 +1258,11 @@ auto build_single_variant(
     auto filter = BuildFilter {};
 
     if (use_incremental && !changed_files.empty()) {
-        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files), bs.graph);
+        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files));
     }
 
     if (!target_node_ids.empty()) {
-        filter.intersect_with(pup::graph::collect_required_commands(bs.graph, target_node_ids), bs.graph);
+        filter.intersect_with(pup::graph::collect_required_commands(bs.graph, target_node_ids));
     }
 
     if (opts.include_all_deps && !scopes.empty() && !use_incremental) {
@@ -1257,7 +1270,7 @@ auto build_single_variant(
         for (auto const& cfg : config_cmds) {
             scope_cmds.remove(cfg.cmd_id);
         }
-        filter.intersect_with(std::move(scope_cmds), bs.graph);
+        filter.intersect_with(std::move(scope_cmds));
     }
 
     // Exclude config-generating commands (they run during configure, not build)
@@ -1268,7 +1281,7 @@ auto build_single_variant(
                 non_config.set(id, 1);
             }
         }
-        filter.intersect_with(std::move(non_config), bs.graph);
+        filter.intersect_with(std::move(non_config));
     }
 
     auto build_result = scheduler.build(bs, filter.ptr());

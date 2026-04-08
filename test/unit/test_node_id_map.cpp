@@ -5,6 +5,9 @@
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
 
+#include <algorithm>
+#include <vector>
+
 using namespace pup;
 
 TEST_CASE("NodeIdMap32 dispatches by node type", "[node_id_map]")
@@ -118,4 +121,59 @@ TEST_CASE("NodeIdArenaIndex stores and retrieves slices", "[node_id_map]")
         index.clear();
         REQUIRE_FALSE(index.contains(file_id));
     }
+}
+
+TEST_CASE("NodeIdMap32::for_each_id visits all node types", "[node_id_map]")
+{
+    auto map = NodeIdMap32 {};
+    map.resize_files(100);
+    map.resize_commands(50);
+    map.resize_conditions(10);
+    map.resize_phis(10);
+
+    auto file_a = NodeId { 5 };
+    auto file_b = NodeId { 42 };
+    auto cmd_a = node_id::make_command(3);
+    auto cmd_b = node_id::make_command(17);
+    auto cond = node_id::make_condition(2);
+    auto phi = node_id::make_phi(7);
+
+    map.set(file_a, 1);
+    map.set(file_b, 1);
+    map.set(cmd_a, 1);
+    map.set(cmd_b, 1);
+    map.set(cond, 1);
+    map.set(phi, 1);
+
+    auto collected = std::vector<NodeId> {};
+    map.for_each_id(
+        [](NodeId id, void* ctx) {
+            static_cast<std::vector<NodeId>*>(ctx)->push_back(id);
+        },
+        &collected
+    );
+
+    REQUIRE(collected.size() == 6);
+    std::sort(collected.begin(), collected.end());
+
+    // File IDs have no flag bits, so they sort lowest
+    REQUIRE(std::find(collected.begin(), collected.end(), file_a) != collected.end());
+    REQUIRE(std::find(collected.begin(), collected.end(), file_b) != collected.end());
+    REQUIRE(std::find(collected.begin(), collected.end(), cmd_a) != collected.end());
+    REQUIRE(std::find(collected.begin(), collected.end(), cmd_b) != collected.end());
+    REQUIRE(std::find(collected.begin(), collected.end(), cond) != collected.end());
+    REQUIRE(std::find(collected.begin(), collected.end(), phi) != collected.end());
+}
+
+TEST_CASE("NodeIdMap32::for_each_id on empty map visits nothing", "[node_id_map]")
+{
+    auto map = NodeIdMap32 {};
+    auto count = std::size_t { 0 };
+    map.for_each_id(
+        [](NodeId, void* ctx) {
+            ++*static_cast<std::size_t*>(ctx);
+        },
+        &count
+    );
+    REQUIRE(count == 0);
 }

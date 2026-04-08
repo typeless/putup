@@ -1237,3 +1237,51 @@ TEST_CASE("edges_where parameterized edge query", "[graph]")
         REQUIRE(a == b);
     }
 }
+
+TEST_CASE("collect_affected_commands resolves directory-structured paths", "[graph]")
+{
+    auto bs = make_build_state();
+    auto& g = bs.graph;
+
+    auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
+    auto foo_c = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+    auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc -c src/foo.c -o foo.o") });
+    auto foo_o = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("foo.o") });
+
+    (void)add_edge(g, *foo_c, *cmd);
+    (void)add_edge(g, *cmd, *foo_o);
+
+    SECTION("changed source propagates to its command and output")
+    {
+        auto changed = pup::Vec<pup::StringId> { intern("src/foo.c") };
+        auto affected = collect_affected_commands(g, changed);
+
+        REQUIRE(affected.contains(*foo_c));
+        REQUIRE(affected.contains(*cmd));
+        REQUIRE(affected.contains(*foo_o));
+    }
+
+    SECTION("unknown path produces empty result")
+    {
+        auto changed = pup::Vec<pup::StringId> { intern("src/bar.c") };
+        auto affected = collect_affected_commands(g, changed);
+
+        REQUIRE(affected.empty());
+    }
+
+    SECTION("generated file marks producing command affected")
+    {
+        auto cmd2 = add_command_node(g, CommandNode { .instruction_id = intern("link foo.o -o app") });
+        auto app = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("app") });
+        (void)add_edge(g, *foo_o, *cmd2);
+        (void)add_edge(g, *cmd2, *app);
+
+        auto changed = pup::Vec<pup::StringId> { intern("foo.o") };
+        auto affected = collect_affected_commands(g, changed);
+
+        REQUIRE(affected.contains(*foo_o));
+        REQUIRE(affected.contains(*cmd));
+        REQUIRE(affected.contains(*cmd2));
+        REQUIRE(affected.contains(*app));
+    }
+}
