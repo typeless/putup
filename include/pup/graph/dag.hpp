@@ -121,7 +121,7 @@ struct Graph {
     bool command_index_built = false;
 
     // Structured path algebra
-    PathPool paths;             ///< Interning trie of (parent PathId, basename StringId) entries
+    mutable PathPool paths;     ///< Interning trie of (parent PathId, basename StringId) entries
     SortedPairVec path_to_node; ///< Resolve: PathId → NodeId (reverse of FileNode::path_id)
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)

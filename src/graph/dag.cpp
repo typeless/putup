@@ -1033,11 +1033,12 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
 
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
-        auto found = find_by_path(graph, file_path);
-        if (!found) {
+        auto path_id = graph.paths.intern_path(file_path, pool);
+        auto const* resolved = graph.path_to_node.find(to_underlying(path_id));
+        if (!resolved) {
             continue;
         }
-        auto id = *found;
+        auto id = static_cast<NodeId>(*resolved);
         if (!affected.contains(id)) {
             affected.set(id, 1);
             to_process.push_back(id);
