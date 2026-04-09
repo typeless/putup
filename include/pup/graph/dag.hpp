@@ -6,6 +6,8 @@
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/paged_vec.hpp"
+#include "pup/core/path_id.hpp"
+#include "pup/core/path_pool.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
@@ -41,6 +43,7 @@ struct FileNode {
 
     StringId name = StringId::Empty; ///< Basename only (interned, tup-style identification)
     NodeId parent_dir = 0;           ///< Parent directory node (used with name for lookup)
+    PathId path_id = PathId::Root;   ///< Structured path handle (reflect: NodeId → PathId)
     Hash256 content_hash = { {} };   ///< Content hash (double braces force zero-init)
 };
 
@@ -116,6 +119,10 @@ struct Graph {
     StringPool command_strings;      ///< Interned expanded command strings (separate pool for find_by_command)
     SortedPairVec command_index;     ///< StringId(command) → NodeId
     bool command_index_built = false;
+
+    // Structured path algebra
+    PathPool paths;             ///< Interning trie of (parent PathId, basename StringId) entries
+    SortedPairVec path_to_node; ///< Resolve: PathId → NodeId (reverse of FileNode::path_id)
 
     NodeId next_file_id = 2;                               ///< Next file node ID (starts at 2, BUILD_ROOT is 1)
     NodeId next_command_id = node_id::make_command(1);     ///< Next command node ID

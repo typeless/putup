@@ -41,6 +41,7 @@ auto make_graph() -> Graph
         .type = NodeType::Directory,
         .name = StringId::Empty, // Name set by set_build_root_name()
         .parent_dir = SOURCE_ROOT_ID,
+        .path_id = PathId::Root, // Empty name → Root path, updated by set_build_root_name()
     };
     graph.next_file_id = 2; // Start regular nodes at ID 2
 
@@ -84,6 +85,19 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 {
     auto const id = graph.next_file_id++;
     node.id = id;
+
+    // Populate path_id from parent's path_id + this node's name
+    if (!is_empty(node.name)) {
+        auto parent_path = PathId::Root;
+        if (node.parent_dir != 0) {
+            auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
+            if (parent) {
+                parent_path = parent->path_id;
+            }
+        }
+        node.path_id = graph.paths.intern(parent_path, node.name);
+        graph.path_to_node.insert(to_underlying(node.path_id), id);
+    }
 
     auto const idx = node_id::index(id);
     if (idx >= graph.files.size()) {
@@ -456,20 +470,28 @@ auto clear(Graph& graph) -> void
     graph.command_strings.clear();
     graph.command_index.clear();
     graph.command_index_built = false;
+    graph.paths.clear();
+    graph.path_to_node.clear();
     // build_root_name_id is still valid (global_pool is not cleared)
     auto build_root_name = build_root_name_id;
 
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
     graph.dir_children.resize(2);
+    auto build_root_path = PathId::Root;
+    if (!is_empty(build_root_name)) {
+        build_root_path = graph.paths.intern(PathId::Root, build_root_name);
+    }
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = build_root_name,
         .parent_dir = SOURCE_ROOT_ID,
+        .path_id = build_root_path,
     };
     if (!is_empty(build_root_name)) {
         graph.dir_children[0].insert(to_underlying(build_root_name), BUILD_ROOT_ID);
+        graph.path_to_node.insert(to_underlying(build_root_path), BUILD_ROOT_ID);
     }
     graph.next_file_id = 2;
     graph.next_command_id = node_id::make_command(1);
@@ -630,6 +652,8 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
 
     if (!is_empty(name_id)) {
         graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
+        graph.files[BUILD_ROOT_ID].path_id = graph.paths.intern(PathId::Root, name_id);
+        graph.path_to_node.insert(to_underlying(graph.files[BUILD_ROOT_ID].path_id), BUILD_ROOT_ID);
     }
 }
 

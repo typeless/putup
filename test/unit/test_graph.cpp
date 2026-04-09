@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/cli/config_commands.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/topo.hpp"
@@ -1283,5 +1284,53 @@ TEST_CASE("collect_affected_commands resolves directory-structured paths", "[gra
         REQUIRE(affected.contains(*cmd));
         REQUIRE(affected.contains(*cmd2));
         REQUIRE(affected.contains(*app));
+    }
+}
+
+TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
+{
+    auto bs = make_build_state();
+    auto& g = bs.graph;
+
+    auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
+    auto foo = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+
+    REQUIRE(src_dir.has_value());
+    REQUIRE(foo.has_value());
+
+    SECTION("directory node has non-root path_id")
+    {
+        auto const* node = get_file_node(g, *src_dir);
+        REQUIRE(node != nullptr);
+        REQUIRE_FALSE(pup::is_root(node->path_id));
+        REQUIRE(g.paths.name(node->path_id) == intern("src"));
+        REQUIRE(g.paths.parent(node->path_id) == pup::PathId::Root);
+    }
+
+    SECTION("file node has chained path_id")
+    {
+        auto const* node = get_file_node(g, *foo);
+        auto const* parent = get_file_node(g, *src_dir);
+        REQUIRE(node != nullptr);
+        REQUIRE(parent != nullptr);
+        REQUIRE(g.paths.name(node->path_id) == intern("foo.c"));
+        REQUIRE(g.paths.parent(node->path_id) == parent->path_id);
+    }
+
+    SECTION("path_to_node resolves PathId back to NodeId")
+    {
+        auto const* node = get_file_node(g, *foo);
+        REQUIRE(node != nullptr);
+        auto const* resolved = g.path_to_node.find(pup::to_underlying(node->path_id));
+        REQUIRE(resolved != nullptr);
+        REQUIRE(static_cast<pup::NodeId>(*resolved) == *foo);
+    }
+
+    SECTION("to_string round-trips through path_id")
+    {
+        auto const* node = get_file_node(g, *foo);
+        REQUIRE(node != nullptr);
+        auto& pool = pup::global_pool();
+        REQUIRE(sv(g.paths.to_string(node->path_id, pool)) == "src/foo.c");
     }
 }
