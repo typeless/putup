@@ -314,7 +314,11 @@ auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<
 
 auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>
 {
-    return find_by_path(graph, path, SOURCE_ROOT_ID);
+    auto found = find_by_path(graph, path, SOURCE_ROOT_ID);
+    if (!found) {
+        found = find_by_path(graph, path, BUILD_ROOT_ID);
+    }
+    return found;
 }
 
 auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std::optional<NodeId>
@@ -1006,9 +1010,6 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
         auto found = find_by_path(graph, file_path);
-        if (!found) {
-            found = find_by_path(graph, file_path, BUILD_ROOT_ID);
-        }
         if (!found) {
             continue;
         }
