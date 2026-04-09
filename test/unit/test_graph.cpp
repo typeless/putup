@@ -1298,13 +1298,14 @@ TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
     REQUIRE(src_dir.has_value());
     REQUIRE(foo.has_value());
 
-    SECTION("directory node has non-root path_id")
+    SECTION("directory node has SourceRoot-grounded path_id")
     {
         auto const* node = get_file_node(g, *src_dir);
         REQUIRE(node != nullptr);
         REQUIRE_FALSE(pup::is_root(node->path_id));
         REQUIRE(g.paths.name(node->path_id) == intern("src"));
-        REQUIRE(g.paths.parent(node->path_id) == pup::PathId::Root);
+        REQUIRE(g.paths.parent(node->path_id) == pup::PathId::SourceRoot);
+        REQUIRE(g.paths.root(node->path_id) == pup::PathId::SourceRoot);
     }
 
     SECTION("file node has chained path_id")

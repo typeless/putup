@@ -41,8 +41,9 @@ auto make_graph() -> Graph
         .type = NodeType::Directory,
         .name = StringId::Empty, // Name set by set_build_root_name()
         .parent_dir = SOURCE_ROOT_ID,
-        .path_id = PathId::Root, // Empty name → Root path, updated by set_build_root_name()
+        .path_id = PathId::BuildRoot,
     };
+    graph.path_to_node.insert(to_underlying(PathId::BuildRoot), BUILD_ROOT_ID);
     graph.next_file_id = 2; // Start regular nodes at ID 2
 
     return graph;
@@ -86,9 +87,11 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     auto const id = graph.next_file_id++;
     node.id = id;
 
-    // Populate path_id from parent's path_id + this node's name
+    // Populate path_id from parent's path_id + this node's name.
+    // Nodes under BUILD_ROOT_ID get BuildRoot-grounded PathIds.
+    // Nodes under SOURCE_ROOT_ID (0) get SourceRoot-grounded PathIds.
     if (!is_empty(node.name)) {
-        auto parent_path = PathId::Root;
+        auto parent_path = PathId::SourceRoot;
         if (node.parent_dir != 0) {
             auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
             if (parent) {
@@ -332,18 +335,27 @@ auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<No
         return std::nullopt;
     }
     auto& pool = global_pool();
-    auto path_id = graph.paths.intern_path(path, pool);
-    if (is_root(path_id)) {
-        return std::nullopt;
+
+    // Try BuildRoot first (generated files), then SourceRoot
+    auto build_id = graph.paths.intern_path(path, pool, PathId::BuildRoot);
+    if (!is_root(build_id)) {
+        auto const* resolved = graph.path_to_node.find(to_underlying(build_id));
+        if (resolved) {
+            return static_cast<NodeId>(*resolved);
+        }
     }
-    auto const* resolved = graph.path_to_node.find(to_underlying(path_id));
-    if (resolved) {
-        return static_cast<NodeId>(*resolved);
+    auto source_id = graph.paths.intern_path(path, pool, PathId::SourceRoot);
+    if (!is_root(source_id)) {
+        auto const* resolved = graph.path_to_node.find(to_underlying(source_id));
+        if (resolved) {
+            return static_cast<NodeId>(*resolved);
+        }
     }
-    // Fallback for paths not in the path trie (e.g., rooted overload callers)
-    auto found = find_by_path(graph, path, SOURCE_ROOT_ID);
+
+    // Fallback: walk directory tree (for nodes not yet in path_to_node)
+    auto found = find_by_path(graph, path, BUILD_ROOT_ID);
     if (!found) {
-        found = find_by_path(graph, path, BUILD_ROOT_ID);
+        found = find_by_path(graph, path, SOURCE_ROOT_ID);
     }
     return found;
 }
@@ -491,20 +503,16 @@ auto clear(Graph& graph) -> void
     // Reinitialize build root node (same as make_graph)
     graph.files.resize(2);
     graph.dir_children.resize(2);
-    auto build_root_path = PathId::Root;
-    if (!is_empty(build_root_name)) {
-        build_root_path = graph.paths.intern(PathId::Root, build_root_name);
-    }
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
         .name = build_root_name,
         .parent_dir = SOURCE_ROOT_ID,
-        .path_id = build_root_path,
+        .path_id = PathId::BuildRoot,
     };
+    graph.path_to_node.insert(to_underlying(PathId::BuildRoot), BUILD_ROOT_ID);
     if (!is_empty(build_root_name)) {
         graph.dir_children[0].insert(to_underlying(build_root_name), BUILD_ROOT_ID);
-        graph.path_to_node.insert(to_underlying(build_root_path), BUILD_ROOT_ID);
     }
     graph.next_file_id = 2;
     graph.next_command_id = node_id::make_command(1);
@@ -609,8 +617,20 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
         return is_empty(sid) ? global_pool().get(node->name) : cache.pool.get(sid);
     }
 
-    auto materialized = graph.paths.to_string(node->path_id, global_pool());
-    auto cached_id = cache.pool.intern(global_pool().get(materialized));
+    // Materialize path. For BuildRoot-grounded paths, prepend build root name
+    // so display paths include the build prefix (e.g., "build/gcc/foo.o").
+    auto path_sv = global_pool().get(graph.paths.to_string(node->path_id, global_pool()));
+    auto build_root_name = get_build_root_name(graph);
+    if (!build_root_name.empty() && graph.paths.root(node->path_id) == PathId::BuildRoot) {
+        auto buf = Buf {};
+        buf += build_root_name;
+        buf += '/';
+        buf += path_sv;
+        auto cached_id = cache.pool.intern(buf.view());
+        cache.ids.set(id, to_underlying(cached_id));
+        return cache.pool.get(cached_id);
+    }
+    auto cached_id = cache.pool.intern(path_sv);
     cache.ids.set(id, to_underlying(cached_id));
     return cache.pool.get(cached_id);
 }
@@ -624,7 +644,13 @@ auto get_full_path(Graph const& graph, NodeId id) -> StringId
     if (!node || is_root(node->path_id)) {
         return StringId::Empty;
     }
-    return graph.paths.to_string(node->path_id, global_pool());
+    auto& pool = global_pool();
+    auto path_sv = pool.get(graph.paths.to_string(node->path_id, pool));
+    auto build_root_name = get_build_root_name(graph);
+    if (!build_root_name.empty() && graph.paths.root(node->path_id) == PathId::BuildRoot) {
+        return pool.intern(pool.get(pup::path::join(build_root_name, path_sv)));
+    }
+    return pool.intern(path_sv);
 }
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
@@ -650,9 +676,9 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
 
     if (!is_empty(name_id)) {
         graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
-        graph.files[BUILD_ROOT_ID].path_id = graph.paths.intern(PathId::Root, name_id);
-        graph.path_to_node.insert(to_underlying(graph.files[BUILD_ROOT_ID].path_id), BUILD_ROOT_ID);
     }
+    // path_id stays PathId::BuildRoot (set in make_graph).
+    // The name is for display only (get_full_path), not for PathId identity.
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
@@ -1031,8 +1057,13 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
 
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
-        auto path_id = graph.paths.intern_path(file_path, pool);
-        auto const* resolved = graph.path_to_node.find(to_underlying(path_id));
+        // Try both roots — changed files could be source or build outputs
+        auto build_path_id = graph.paths.intern_path(file_path, pool, PathId::BuildRoot);
+        auto const* resolved = graph.path_to_node.find(to_underlying(build_path_id));
+        if (!resolved) {
+            auto source_path_id = graph.paths.intern_path(file_path, pool, PathId::SourceRoot);
+            resolved = graph.path_to_node.find(to_underlying(source_path_id));
+        }
         if (!resolved) {
             continue;
         }
