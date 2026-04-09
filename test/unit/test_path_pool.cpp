@@ -208,3 +208,103 @@ TEST_CASE("PathPool clear resets state", "[path_pool]")
     REQUIRE_FALSE(is_root(id));
     REQUIRE(pool.size() == 1);
 }
+
+TEST_CASE("PathPool rooted path algebra", "[path_pool]")
+{
+    auto pool = PathPool {};
+    auto& sp = global_pool();
+
+    SECTION("reserved roots are distinct")
+    {
+        REQUIRE(PathId::Ungrounded != PathId::SourceRoot);
+        REQUIRE(PathId::SourceRoot != PathId::BuildRoot);
+        REQUIRE(PathId::Ungrounded != PathId::BuildRoot);
+    }
+
+    SECTION("reserved roots are roots")
+    {
+        REQUIRE(is_root(PathId::Ungrounded));
+        REQUIRE(is_root(PathId::SourceRoot));
+        REQUIRE(is_root(PathId::BuildRoot));
+    }
+
+    SECTION("reserved roots are fixed points of parent")
+    {
+        REQUIRE(pool.parent(PathId::Ungrounded) == PathId::Ungrounded);
+        REQUIRE(pool.parent(PathId::SourceRoot) == PathId::SourceRoot);
+        REQUIRE(pool.parent(PathId::BuildRoot) == PathId::BuildRoot);
+    }
+
+    SECTION("root() walks to root ancestor")
+    {
+        auto src = pool.intern_path("gcc/foo.c", sp);
+        REQUIRE(pool.root(src) == PathId::Ungrounded);
+
+        auto build = pool.intern_path("gcc/foo.o", sp, PathId::BuildRoot);
+        REQUIRE(pool.root(build) == PathId::BuildRoot);
+
+        auto source = pool.intern_path("gcc/foo.c", sp, PathId::SourceRoot);
+        REQUIRE(pool.root(source) == PathId::SourceRoot);
+    }
+
+    SECTION("is_grounded")
+    {
+        auto ungrounded = pool.intern_path("gcc/foo.c", sp);
+        REQUIRE_FALSE(pool.is_grounded(ungrounded));
+
+        auto grounded = pool.intern_path("gcc/foo.o", sp, PathId::BuildRoot);
+        REQUIRE(pool.is_grounded(grounded));
+    }
+
+    SECTION("same relative path under different roots produces different PathIds")
+    {
+        auto source = pool.intern_path("gcc/foo.c", sp, PathId::SourceRoot);
+        auto build = pool.intern_path("gcc/foo.c", sp, PathId::BuildRoot);
+        auto ungrounded = pool.intern_path("gcc/foo.c", sp);
+        REQUIRE(source != build);
+        REQUIRE(source != ungrounded);
+        REQUIRE(build != ungrounded);
+    }
+
+    SECTION("to_string skips root component")
+    {
+        auto build = pool.intern_path("gcc/libcody/libcody.a", sp, PathId::BuildRoot);
+        REQUIRE(sv(pool.to_string(build, sp)) == "gcc/libcody/libcody.a");
+
+        auto source = pool.intern_path("gcc/main.c", sp, PathId::SourceRoot);
+        REQUIRE(sv(pool.to_string(source, sp)) == "gcc/main.c");
+    }
+
+    SECTION("ground re-interns ungrounded path under root")
+    {
+        auto ungrounded = pool.intern_path("gcc/libcody/libcody.a", sp);
+        REQUIRE(pool.root(ungrounded) == PathId::Ungrounded);
+
+        auto grounded = pool.ground(ungrounded, PathId::BuildRoot);
+        REQUIRE(pool.root(grounded) == PathId::BuildRoot);
+        REQUIRE(sv(pool.to_string(grounded, sp)) == "gcc/libcody/libcody.a");
+    }
+
+    SECTION("ground produces same PathId as direct intern_path with root")
+    {
+        auto ungrounded = pool.intern_path("gcc/foo.o", sp);
+        auto grounded = pool.ground(ungrounded, PathId::BuildRoot);
+        auto direct = pool.intern_path("gcc/foo.o", sp, PathId::BuildRoot);
+        REQUIRE(grounded == direct);
+    }
+
+    SECTION("ground of Ungrounded sentinel returns target root")
+    {
+        REQUIRE(pool.ground(PathId::Ungrounded, PathId::SourceRoot) == PathId::SourceRoot);
+        REQUIRE(pool.ground(PathId::Ungrounded, PathId::BuildRoot) == PathId::BuildRoot);
+    }
+
+    SECTION("intern preserves root of parent")
+    {
+        auto build_gcc = pool.intern(PathId::BuildRoot, intern("gcc"));
+        REQUIRE(pool.root(build_gcc) == PathId::BuildRoot);
+
+        auto build_gcc_foo = pool.intern(build_gcc, intern("foo.o"));
+        REQUIRE(pool.root(build_gcc_foo) == PathId::BuildRoot);
+    }
+}
