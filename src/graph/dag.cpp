@@ -328,6 +328,19 @@ auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<
 
 auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>
 {
+    if (path.empty()) {
+        return std::nullopt;
+    }
+    auto& pool = global_pool();
+    auto path_id = graph.paths.intern_path(path, pool);
+    if (is_root(path_id)) {
+        return std::nullopt;
+    }
+    auto const* resolved = graph.path_to_node.find(to_underlying(path_id));
+    if (resolved) {
+        return static_cast<NodeId>(*resolved);
+    }
+    // Fallback for paths not in the path trie (e.g., rooted overload callers)
     auto found = find_by_path(graph, path, SOURCE_ROOT_ID);
     if (!found) {
         found = find_by_path(graph, path, BUILD_ROOT_ID);
@@ -587,46 +600,31 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
         return "";
     }
 
-    auto const name = global_pool().get(node->name);
-    if (name.empty()) {
+    if (is_root(node->path_id)) {
         return "";
     }
 
     if (cache.ids.contains(id)) {
         auto sid = make_string_id(cache.ids.get(id));
-        if (is_empty(sid)) {
-            return name;
-        }
-        return cache.pool.get(sid);
+        return is_empty(sid) ? global_pool().get(node->name) : cache.pool.get(sid);
     }
 
-    cache.ids.set(id, 0);
-
-    auto buf = Buf {};
-    if (node->parent_dir != 0) {
-        auto parent_path = get_full_path(graph, node->parent_dir, cache);
-        if (!parent_path.empty()) {
-            buf += parent_path;
-            if (parent_path.back() != '/') {
-                buf += '/';
-            }
-            buf += name;
-        } else {
-            buf += name;
-        }
-    } else {
-        buf += name;
-    }
-
-    auto path_id = cache.pool.intern(buf.view());
-    cache.ids.set(id, to_underlying(path_id));
-    return cache.pool.get(path_id);
+    auto materialized = graph.paths.to_string(node->path_id, global_pool());
+    auto cached_id = cache.pool.intern(global_pool().get(materialized));
+    cache.ids.set(id, to_underlying(cached_id));
+    return cache.pool.get(cached_id);
 }
 
 auto get_full_path(Graph const& graph, NodeId id) -> StringId
 {
-    auto cache = PathCache {};
-    return global_pool().intern(get_full_path(graph, id, cache));
+    if (id == 0 || node_id::is_command(id)) {
+        return StringId::Empty;
+    }
+    auto const* node = get_file_node(graph, id);
+    if (!node || is_root(node->path_id)) {
+        return StringId::Empty;
+    }
+    return graph.paths.to_string(node->path_id, global_pool());
 }
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void

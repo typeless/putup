@@ -10,7 +10,6 @@
 #include "pup/core/vec.hpp"
 
 #include <cstddef>
-#include <cstdint>
 #include <string_view>
 
 namespace pup {
