@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <string_view>
+
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
