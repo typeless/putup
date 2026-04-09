@@ -3,6 +3,8 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path_id.hpp"
+#include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/rule_pattern.hpp"
 
@@ -10,6 +12,11 @@ using namespace pup::graph;
 
 namespace {
 auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
+auto path(std::string_view s) -> pup::PathId
+{
+    static auto paths = pup::PathPool {};
+    return paths.intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
+}
 } // namespace
 
 TEST_CASE("RulePatternRegistry basic operations", "[rule_pattern]")
@@ -43,7 +50,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -68,7 +75,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CXX bar.o"),
             .inputs = { intern("bar.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("bar.o") },
+            .outputs = { path("bar.o") },
             .working_dir = intern("src"),
         };
 
@@ -85,7 +92,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CXX main.o"),
             .inputs = { intern("main.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("main.o") },
+            .outputs = { path("main.o") },
             .working_dir = intern("."),
         };
 
@@ -102,7 +109,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -119,7 +126,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CXX bar.o"),
             .inputs = { intern("bar.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("bar.o") },
+            .outputs = { path("bar.o") },
             .working_dir = intern("."),
         };
 
@@ -136,7 +143,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -153,7 +160,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -170,7 +177,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -186,7 +193,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -202,7 +209,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -234,7 +241,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -250,7 +257,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -267,7 +274,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CXX foo.o"),
             .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("build/src"),
         };
 
@@ -284,7 +291,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("CXX main.o"),
             .inputs = { intern("main.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("main.o") },
+            .outputs = { path("main.o") },
             .working_dir = intern("."),
         };
 
@@ -302,7 +309,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("LINK app"),
             .inputs = { intern("foo.o"), intern("bar.o") },
             .order_only_inputs = {},
-            .outputs = { intern("app") },
+            .outputs = { path("app") },
             .working_dir = intern("."),
         };
 
@@ -318,13 +325,14 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .display = intern("AR libfoo.a"),
             .inputs = { intern("foo.o"), intern("bar.o") },
             .order_only_inputs = {},
-            .outputs = { intern("libfoo.a") },
+            .outputs = { path("libfoo.a") },
             .working_dir = intern("."),
         };
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.empty());
     }
+
 }
 
 TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
@@ -340,7 +348,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c"), intern("bar.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -357,7 +365,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -374,7 +382,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -391,7 +399,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -408,7 +416,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -425,7 +433,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -445,7 +453,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -466,7 +474,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -484,7 +492,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -501,7 +509,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CXX foo.o"),
             .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -518,7 +526,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC main.o"),
             .inputs = { intern("main.c") },
             .order_only_inputs = {},
-            .outputs = { intern("main.o") },
+            .outputs = { path("main.o") },
             .working_dir = intern("."),
         };
 
@@ -535,7 +543,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("/path/to/MYMODULE/foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -551,7 +559,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -567,7 +575,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -585,7 +593,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .display = intern("CXX foo.o"),
                 .inputs = { intern("foo.cc") },
                 .order_only_inputs = {},
-                .outputs = { intern("foo.o") },
+                .outputs = { path("foo.o") },
                 .working_dir = intern("."),
             };
 
@@ -602,7 +610,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .display = intern("CXX foo.o"),
                 .inputs = { intern("foo.cxx") },
                 .order_only_inputs = {},
-                .outputs = { intern("foo.o") },
+                .outputs = { path("foo.o") },
                 .working_dir = intern("."),
             };
 
@@ -619,7 +627,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .display = intern("CXX foo.o"),
                 .inputs = { intern("foo.C") },
                 .order_only_inputs = {},
-                .outputs = { intern("foo.o") },
+                .outputs = { path("foo.o") },
                 .working_dir = intern("."),
             };
 
@@ -636,7 +644,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .display = intern("CXX foo.o"),
                 .inputs = { intern("foo.c++") },
                 .order_only_inputs = {},
-                .outputs = { intern("foo.o") },
+                .outputs = { path("foo.o") },
                 .working_dir = intern("."),
             };
 
@@ -655,7 +663,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -677,7 +685,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC driver.o"),
             .inputs = { intern("driver.c") },
             .order_only_inputs = {},
-            .outputs = { intern("driver.o") },
+            .outputs = { path("driver.o") },
             .working_dir = intern("."),
         };
 
@@ -695,7 +703,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC-BFD (3 files)"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { intern("bfd-archive.o"), intern("bfd-bfd.o"), intern("bfd-cache.o") },
+            .outputs = { path("bfd-archive.o"), path("bfd-bfd.o"), path("bfd-cache.o") },
             .working_dir = intern("."),
         };
 
@@ -711,7 +719,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -727,7 +735,7 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -750,7 +758,7 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = { intern("include/generated/autoconf.h"), intern("include/generated/modules.def") },
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("modules/test"),
         };
 
@@ -771,7 +779,7 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .display = intern("CC bar.o"),
             .inputs = { intern("bar.c") },
             .order_only_inputs = {},
-            .outputs = { intern("bar.o") },
+            .outputs = { path("bar.o") },
             .working_dir = intern("."),
         };
 
@@ -788,7 +796,7 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .display = intern("CXX main.o"),
             .inputs = { intern("main.cpp") },
             .order_only_inputs = { intern("gen-headers/config.h") },
-            .outputs = { intern("main.o") },
+            .outputs = { path("main.o") },
             .working_dir = intern("src"),
         };
 

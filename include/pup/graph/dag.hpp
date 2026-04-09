@@ -142,6 +142,12 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool;
 [[nodiscard]]
 auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>;
 
+/// Create or find a file node from a PathId, walking the PathPool trie.
+/// Creates intermediate directory nodes as needed.
+/// Handles type upgrade (Ghost/File -> Generated).
+[[nodiscard]]
+auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<NodeId>;
+
 /// Add a command node to the graph
 [[nodiscard]]
 auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
@@ -310,6 +316,11 @@ auto root_nodes(Graph const& graph) -> Vec<NodeId>;
 /// Get leaf nodes (nodes with no outputs)
 [[nodiscard]]
 auto leaf_nodes(Graph const& graph) -> Vec<NodeId>;
+
+/// Materialize a PathId to its display string. For BuildRoot-grounded paths,
+/// prepends the build root name (e.g., "build/gcc/foo.o").
+[[nodiscard]]
+auto materialize_path(Graph const& graph, PathId path_id) -> StringId;
 
 /// Reconstruct full path from (parent_dir, name) chain
 /// Uses provided cache for efficiency.

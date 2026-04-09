@@ -5435,10 +5435,10 @@ SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-o
     //   2. Consumer links the library via $(B)/$(LIB_DIR)/libmath.a
     //
     // The group pattern forces has_group_pattern=true, so final_instruction
-    // becomes cmd_text (parse-time %o expansion). PathPool::write produces
-    // output paths WITHOUT the build root prefix, so %o in the archive
-    // command becomes "libmath.a" instead of "../../build/zzz_lib/libmath.a".
-    // The archive creates the file in the source tree instead of build tree.
+    // becomes cmd_text (parse-time %o expansion). Output PathIds must be
+    // BuildRoot-grounded so materialize_path() prepends the build root
+    // prefix. Without grounding, %o becomes "libmath.a" (bare filename)
+    // instead of "../../build/zzz_lib/libmath.a".
     GIVEN("a 3-tree project with order-only groups in archive command")
     {
         auto f = E2EFixture { "3tree_cross_subdir_output" };

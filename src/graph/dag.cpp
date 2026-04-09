@@ -117,6 +117,51 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     return id;
 }
 
+auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<NodeId>
+{
+    // Recursion terminates at a root sentinel.
+    // BuildRoot/Ungrounded → BUILD_ROOT_ID, SourceRoot → SOURCE_ROOT_ID.
+    if (is_root(path_id)) {
+        return path_id == PathId::SourceRoot ? SOURCE_ROOT_ID : BUILD_ROOT_ID;
+    }
+
+    auto const* existing = graph.path_to_node.find(to_underlying(path_id));
+    if (existing) {
+        if (type == NodeType::Generated) {
+            auto* node = get_file_node(graph, *existing);
+            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                node->type = NodeType::Generated;
+            }
+        }
+        return *existing;
+    }
+
+    auto parent_path = graph.paths.parent(path_id);
+    auto parent_result = ensure_file_node(graph, parent_path, NodeType::Directory);
+    if (!parent_result) {
+        return parent_result;
+    }
+
+    auto name = graph.paths.name(path_id);
+    if (auto found = find_by_dir_name(graph, *parent_result, global_pool().get(name))) {
+        graph.path_to_node.insert(to_underlying(path_id), *found);
+        if (type == NodeType::Generated) {
+            auto* node = get_file_node(graph, *found);
+            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                node->type = NodeType::Generated;
+            }
+        }
+        return *found;
+    }
+
+    auto node = FileNode {
+        .type = type,
+        .name = name,
+        .parent_dir = *parent_result,
+    };
+    return add_file_node(graph, std::move(node));
+}
+
 auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
 {
     auto const id = graph.next_command_id++;

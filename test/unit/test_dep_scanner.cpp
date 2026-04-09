@@ -3,6 +3,8 @@
 
 #include "catch_amalgamated.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path_id.hpp"
+#include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
@@ -11,6 +13,11 @@ using namespace pup::graph;
 
 namespace {
 auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
+auto path(std::string_view s) -> pup::PathId
+{
+    static auto paths = pup::PathPool {};
+    return paths.intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
+}
 } // namespace
 
 TEST_CASE("DepScannerRegistry basic operations", "[dep_scanner]")
@@ -51,7 +58,7 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -68,7 +75,7 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
             .display = intern("AR libfoo.a"),
             .inputs = { intern("foo.o") },
             .order_only_inputs = {},
-            .outputs = { intern("libfoo.a") },
+            .outputs = { path("libfoo.a") },
             .working_dir = intern("."),
         };
 
@@ -90,7 +97,7 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -109,7 +116,7 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -125,7 +132,7 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .display = intern("AR libfoo.a"),
             .inputs = { intern("foo.o") },
             .order_only_inputs = {},
-            .outputs = { intern("libfoo.a") },
+            .outputs = { path("libfoo.a") },
             .working_dir = intern("."),
         };
 
@@ -157,7 +164,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
         REQUIRE(scanner.matches(cmd));
@@ -171,7 +178,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .display = intern("CXX foo.o"),
             .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
         REQUIRE(scanner.matches(cmd));
@@ -185,7 +192,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .display = intern("LINK foo"),
             .inputs = { intern("foo.o") },
             .order_only_inputs = {},
-            .outputs = { intern("foo") },
+            .outputs = { path("foo") },
             .working_dir = intern("."),
         };
         REQUIRE(!scanner.matches(cmd));
@@ -219,7 +226,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -257,7 +264,7 @@ TEST_CASE("GccScanner compiler wrapper handling", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -275,7 +282,7 @@ TEST_CASE("GccScanner compiler wrapper handling", "[dep_scanner][gcc]")
             .display = intern("CXX foo.o"),
             .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -297,7 +304,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -314,7 +321,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -331,7 +338,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -348,7 +355,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .display = intern("CXX foo.o"),
             .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -365,7 +372,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.c") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -387,7 +394,7 @@ TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = { intern("foo.m") },
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -404,7 +411,7 @@ TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
             .display = intern("CXX bar.o"),
             .inputs = { intern("bar.mm") },
             .order_only_inputs = {},
-            .outputs = { intern("bar.o") },
+            .outputs = { path("bar.o") },
             .working_dir = intern("."),
         };
 
@@ -426,7 +433,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .display = intern("CC-BFD (3 files)"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { intern("bfd-archive.o"), intern("bfd-bfd.o"), intern("bfd-cache.o") },
+            .outputs = { path("bfd-archive.o"), path("bfd-bfd.o"), path("bfd-cache.o") },
             .working_dir = intern("."),
         };
 
@@ -442,7 +449,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
@@ -458,7 +465,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .display = intern("CC foo.o"),
             .inputs = {},
             .order_only_inputs = {},
-            .outputs = { intern("foo.o") },
+            .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
 
