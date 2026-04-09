@@ -14,6 +14,7 @@
 
 namespace pup {
 
+class Buf;
 class StringPool;
 
 /// Interning trie of structured paths.
@@ -53,6 +54,9 @@ public:
     /// Skips the root component (Ungrounded/SourceRoot/BuildRoot).
     [[nodiscard]]
     auto to_string(PathId id, StringPool& pool) const -> StringId;
+
+    /// Materialize: write full path into a Buf. No interning — for transient use.
+    auto write(PathId id, Buf& buf, StringPool const& pool) const -> void;
 
     /// Walk to root: returns Ungrounded, SourceRoot, or BuildRoot.
     [[nodiscard]]

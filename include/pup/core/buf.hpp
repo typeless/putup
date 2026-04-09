@@ -73,7 +73,7 @@ public:
     }
 
 private:
-    static constexpr std::uint32_t INLINE_CAP = 256;
+    static constexpr std::uint32_t INLINE_CAP = 4096;
     char buf_[INLINE_CAP] = {};
     char* data_ = buf_;
     std::uint32_t size_ = 0;

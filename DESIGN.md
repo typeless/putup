@@ -765,7 +765,7 @@ struct CommandInfo {
     StringId display;
     Vec<StringId> inputs;
     Vec<StringId> order_only_inputs;
-    Vec<StringId> outputs;
+    Vec<PathId> outputs;            // BuildRoot-grounded PathIds
     StringId working_dir;
 };
 

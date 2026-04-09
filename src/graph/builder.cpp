@@ -479,7 +479,6 @@ auto get_or_create_file_node(
     // Convert working-directory-relative paths to source-root-relative or absolute
     // Paths like "../../build/foo" from "src/bar" should become "build/foo"
     // For Generated nodes, first check if path already has build root prefix.
-    // This happens when expand_outputs returns paths like "../build/lib/add.o".
     // We must strip the prefix and look up under BUILD_ROOT_ID before any other
     // path manipulation that could corrupt the lookup.
     auto build_root_name = get_build_root_name(ctx.state->graph);
@@ -517,8 +516,8 @@ auto get_or_create_file_node(
 
     auto normalized = normalize_path(resolved);
 
-    // For Generated nodes, check if node was already created under BUILD_ROOT_ID
-    // by expand_outputs. This handles paths without the build prefix.
+    // For Generated nodes, check if node was already created under BUILD_ROOT_ID.
+    // This handles paths without the build prefix.
     if (type == NodeType::Generated && !build_root_name.empty()) {
         auto lookup_path2 = pool.get(pup::strip_path_prefix(normalized, build_root_name));
         if (auto existing = find_by_path(ctx.state->graph, lookup_path2, BUILD_ROOT_ID)) {
@@ -527,7 +526,6 @@ auto get_or_create_file_node(
     }
 
     // For Generated nodes, use walk_to_file_node to ensure they're created under BUILD_ROOT_ID.
-    // This maintains consistency with expand_outputs() which also uses BUILD_ROOT_ID.
     if (type == NodeType::Generated) {
         return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
     }
@@ -931,7 +929,7 @@ auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    Vec<StringId> const& outputs,
+    Vec<PathId> const& outputs,
     StringId* out_instruction = nullptr
 ) -> Result<StringId>
 {
@@ -954,7 +952,8 @@ auto expand_command(
     auto cmd_outputs = Vec<StringId> {};
     cmd_outputs.reserve(outputs.size());
     for (auto out : outputs) {
-        cmd_outputs.push_back(transform_output_path(tc, str(out)));
+        auto materialized = materialize_path(ctx.state->graph, out);
+        cmd_outputs.push_back(transform_output_path(tc, str(materialized)));
     }
 
     auto primary_output_sv = cmd_outputs.empty() ? std::string_view {} : str(cmd_outputs[0]);
@@ -1016,10 +1015,10 @@ auto expand_outputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags
-) -> Result<Vec<StringId>>
+) -> Result<Vec<PathId>>
 {
     auto& pool = global_pool();
-    auto result = Vec<StringId> {};
+    auto result = Vec<PathId> {};
 
     for (auto const& pattern : patterns) {
         if (pattern.is_group) {
@@ -1038,20 +1037,9 @@ auto expand_outputs(
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), flags);
             auto output_path_sv = expanded ? pool.get(*expanded) : pool.get(path_id);
 
-            auto full_output_path_id = pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv)));
+            auto full_output_path_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv))));
 
-            auto node_id = walk_to_file_node(
-                ctx.state->graph,
-                BUILD_ROOT_ID,
-                pool.get(full_output_path_id),
-                NodeType::Generated
-            );
-
-            if (!node_id) {
-                return pup::unexpected<Error>(node_id.error());
-            }
-
-            result.push_back(intern(get_full_path(ctx.state->graph, *node_id, ctx.state->path_cache)));
+            result.push_back(ctx.state->graph.paths.intern_path(full_output_path_sv, pool, PathId::BuildRoot));
         }
     }
 
@@ -2017,8 +2005,8 @@ auto expand_rule(
 
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
-    for (auto output : *outputs) {
-        auto output_id = get_or_create_file_node(ctx, str(output), NodeType::Generated);
+    for (auto output_path : *outputs) {
+        auto output_id = ensure_file_node(ctx.state->graph, output_path, NodeType::Generated);
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
         }

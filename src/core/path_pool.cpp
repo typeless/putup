@@ -116,6 +116,33 @@ auto PathPool::to_string(PathId id, StringPool& pool) const -> StringId
     return buf.intern(pool);
 }
 
+auto PathPool::write(PathId id, Buf& buf, StringPool const& pool) const -> void
+{
+    if (is_root(id)) {
+        return;
+    }
+
+    auto const& entry = entries_[to_underlying(id)];
+    if (is_root(entry.parent)) {
+        buf.append(pool.get(entry.name));
+        return;
+    }
+
+    auto stack = Vec<StringId> {};
+    auto cur = id;
+    while (!is_root(cur)) {
+        stack.push_back(entries_[to_underlying(cur)].name);
+        cur = entries_[to_underlying(cur)].parent;
+    }
+
+    for (auto i = stack.size(); i > 0; --i) {
+        if (i < stack.size()) {
+            buf += '/';
+        }
+        buf.append(pool.get(stack[i - 1]));
+    }
+}
+
 auto PathPool::root(PathId id) const -> PathId
 {
     auto cur = id;
@@ -140,7 +167,6 @@ auto PathPool::ground(PathId id, PathId target_root) -> PathId
         return target_root;
     }
 
-    // Collect components from leaf to root
     auto stack = Vec<StringId> {};
     auto cur = id;
     while (!is_root(cur)) {
@@ -148,7 +174,6 @@ auto PathPool::ground(PathId id, PathId target_root) -> PathId
         cur = entries_[to_underlying(cur)].parent;
     }
 
-    // Re-intern under target root
     auto result = target_root;
     for (auto i = stack.size(); i > 0; --i) {
         result = intern(result, stack[i - 1]);

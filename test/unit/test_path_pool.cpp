@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
@@ -190,6 +191,55 @@ TEST_CASE("PathPool to_string materializes path", "[path_pool]")
         for (auto p : paths) {
             auto id = pool.intern_path(p, sp);
             REQUIRE(sv(pool.to_string(id, sp)) == p);
+        }
+    }
+}
+
+TEST_CASE("PathPool write materializes into Buf", "[path_pool]")
+{
+    auto pool = PathPool {};
+    auto& sp = global_pool();
+
+    SECTION("root writes empty")
+    {
+        auto buf = Buf {};
+        pool.write(PathId::Root, buf, sp);
+        REQUIRE(buf.view() == "");
+    }
+
+    SECTION("single component")
+    {
+        auto id = pool.intern_path("src", sp);
+        auto buf = Buf {};
+        pool.write(id, buf, sp);
+        REQUIRE(buf.view() == "src");
+    }
+
+    SECTION("multi-component path")
+    {
+        auto id = pool.intern_path("src/lib/foo.c", sp);
+        auto buf = Buf {};
+        pool.write(id, buf, sp);
+        REQUIRE(buf.view() == "src/lib/foo.c");
+    }
+
+    SECTION("write appends to existing buffer content")
+    {
+        auto id = pool.intern_path("foo.o", sp);
+        auto buf = Buf {};
+        buf += "output: ";
+        pool.write(id, buf, sp);
+        REQUIRE(buf.view() == "output: foo.o");
+    }
+
+    SECTION("matches to_string output")
+    {
+        auto paths = { "a", "a/b", "a/b/c/d/e.txt", "Makefile" };
+        for (auto p : paths) {
+            auto id = pool.intern_path(p, sp);
+            auto buf = Buf {};
+            pool.write(id, buf, sp);
+            REQUIRE(buf.view() == sv(pool.to_string(id, sp)));
         }
     }
 }

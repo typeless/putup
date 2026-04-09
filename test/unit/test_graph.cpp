@@ -1335,3 +1335,83 @@ TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
         REQUIRE(sv(g.paths.to_string(node->path_id, pool)) == "src/foo.c");
     }
 }
+
+TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
+{
+    auto bs = make_build_state();
+    auto& graph = bs.graph;
+    auto& pool = pup::global_pool();
+
+    set_build_root_name(graph, "build");
+
+    SECTION("creates new file node under build root")
+    {
+        auto path_id = graph.paths.intern_path("foo.o", pool, pup::PathId::BuildRoot);
+        auto result = ensure_file_node(graph, path_id, NodeType::Generated);
+        REQUIRE(result.has_value());
+
+        auto const* node = get_file_node(graph, *result);
+        REQUIRE(node != nullptr);
+        REQUIRE(node->type == NodeType::Generated);
+        REQUIRE(node->name == intern("foo.o"));
+        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::BuildRoot);
+    }
+
+    SECTION("returns existing node on second call")
+    {
+        auto path_id = graph.paths.intern_path("bar.o", pool, pup::PathId::BuildRoot);
+        auto first = ensure_file_node(graph, path_id, NodeType::Generated);
+        auto second = ensure_file_node(graph, path_id, NodeType::Generated);
+        REQUIRE(first.has_value());
+        REQUIRE(second.has_value());
+        REQUIRE(*first == *second);
+    }
+
+    SECTION("creates intermediate directories")
+    {
+        auto path_id = graph.paths.intern_path("src/lib/baz.o", pool, pup::PathId::BuildRoot);
+        auto result = ensure_file_node(graph, path_id, NodeType::Generated);
+        REQUIRE(result.has_value());
+
+        auto const* node = get_file_node(graph, *result);
+        REQUIRE(node != nullptr);
+        REQUIRE(node->name == intern("baz.o"));
+
+        auto const* parent = get_file_node(graph, node->parent_dir);
+        REQUIRE(parent != nullptr);
+        REQUIRE(parent->name == intern("lib"));
+        REQUIRE(parent->type == NodeType::Directory);
+    }
+
+    SECTION("upgrades Ghost to Generated")
+    {
+        auto path_id = graph.paths.intern_path("ghost.o", pool, pup::PathId::BuildRoot);
+
+        auto ghost_result = ensure_file_node(graph, path_id, NodeType::Ghost);
+        REQUIRE(ghost_result.has_value());
+        REQUIRE(get_file_node(graph, *ghost_result)->type == NodeType::Ghost);
+
+        auto gen_result = ensure_file_node(graph, path_id, NodeType::Generated);
+        REQUIRE(gen_result.has_value());
+        REQUIRE(*gen_result == *ghost_result);
+        REQUIRE(get_file_node(graph, *gen_result)->type == NodeType::Generated);
+    }
+
+    SECTION("path_to_node is consistent after creation")
+    {
+        auto path_id = graph.paths.intern_path("check.o", pool, pup::PathId::BuildRoot);
+        auto result = ensure_file_node(graph, path_id, NodeType::Generated);
+        REQUIRE(result.has_value());
+
+        auto const* found = graph.path_to_node.find(pup::to_underlying(path_id));
+        REQUIRE(found != nullptr);
+        REQUIRE(*found == *result);
+    }
+
+    SECTION("BuildRoot PathId returns BUILD_ROOT_ID")
+    {
+        auto result = ensure_file_node(graph, pup::PathId::BuildRoot, NodeType::Directory);
+        REQUIRE(result.has_value());
+        REQUIRE(*result == pup::BUILD_ROOT_ID);
+    }
+}
