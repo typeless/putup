@@ -50,8 +50,26 @@ public:
     auto name(PathId id) const -> StringId;
 
     /// Materialize: reconstruct the full path string. For display/filesystem only.
+    /// Skips the root component (Ungrounded/SourceRoot/BuildRoot).
     [[nodiscard]]
     auto to_string(PathId id, StringPool& pool) const -> StringId;
+
+    /// Walk to root: returns Ungrounded, SourceRoot, or BuildRoot.
+    [[nodiscard]]
+    auto root(PathId id) const -> PathId;
+
+    /// Check if a path is grounded (root is SourceRoot or BuildRoot).
+    [[nodiscard]]
+    auto is_grounded(PathId id) const -> bool;
+
+    /// Re-intern an ungrounded path chain under a root.
+    /// Requires: root(id) == Ungrounded, root ∈ {SourceRoot, BuildRoot}.
+    [[nodiscard]]
+    auto ground(PathId id, PathId root) -> PathId;
+
+    /// Parse a slash-separated path starting from a specific root.
+    [[nodiscard]]
+    auto intern_path(std::string_view path, StringPool& pool, PathId root) -> PathId;
 
     [[nodiscard]]
     auto size() const -> std::size_t;

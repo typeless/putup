@@ -9,13 +9,33 @@ namespace pup {
 
 /// Lightweight handle to an interned path in a PathPool.
 /// A path is a chain of (parent PathId, basename StringId) entries.
-/// PathId::Root represents the project root (analogous to StringId::Empty).
-enum class PathId : std::uint32_t { Root = 0 };
+///
+/// Three reserved roots define the path domain:
+///   Ungrounded (0) — path fragment with no root (intermediate form)
+///   SourceRoot (1) — source tree root
+///   BuildRoot  (2) — build tree root
+///
+/// Every grounded path chains back to SourceRoot or BuildRoot.
+/// Ungrounded paths are intermediate forms used during parsing/expansion.
+enum class PathId : std::uint32_t {
+    Ungrounded = 0, ///< Fragment with no root (sentinel)
+    SourceRoot = 1, ///< Source tree root
+    BuildRoot = 2,  ///< Build tree root
+
+    Root = 0, ///< Deprecated alias for Ungrounded (backward compatibility)
+};
 
 [[nodiscard]]
 constexpr auto is_root(PathId id) -> bool
 {
-    return id == PathId::Root;
+    return id == PathId::Ungrounded || id == PathId::SourceRoot || id == PathId::BuildRoot;
+}
+
+/// Check if a PathId is one of the three reserved roots.
+[[nodiscard]]
+constexpr auto is_reserved(PathId id) -> bool
+{
+    return id == PathId::Ungrounded || id == PathId::SourceRoot || id == PathId::BuildRoot;
 }
 
 [[nodiscard]]

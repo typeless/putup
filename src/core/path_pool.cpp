@@ -16,8 +16,14 @@ namespace pup {
 
 PathPool::PathPool()
 {
-    entries_.push_back(Entry {});
-    children_.resize(1);
+    // Reserve entries 0-2 for the three roots.
+    // Entry 0 = Ungrounded (parent=self, name=Empty)
+    // Entry 1 = SourceRoot (parent=self, name=Empty)
+    // Entry 2 = BuildRoot  (parent=self, name=Empty)
+    entries_.push_back(Entry { .parent = PathId::Ungrounded, .name = StringId::Empty });
+    entries_.push_back(Entry { .parent = PathId::SourceRoot, .name = StringId::Empty });
+    entries_.push_back(Entry { .parent = PathId::BuildRoot, .name = StringId::Empty });
+    children_.resize(3);
 }
 
 PathPool::~PathPool() = default;
@@ -110,9 +116,69 @@ auto PathPool::to_string(PathId id, StringPool& pool) const -> StringId
     return buf.intern(pool);
 }
 
+auto PathPool::root(PathId id) const -> PathId
+{
+    auto cur = id;
+    while (!is_reserved(cur)) {
+        cur = entries_[to_underlying(cur)].parent;
+    }
+    return cur;
+}
+
+auto PathPool::is_grounded(PathId id) const -> bool
+{
+    auto r = root(id);
+    return r == PathId::SourceRoot || r == PathId::BuildRoot;
+}
+
+auto PathPool::ground(PathId id, PathId target_root) -> PathId
+{
+    assert(root(id) == PathId::Ungrounded);
+    assert(target_root == PathId::SourceRoot || target_root == PathId::BuildRoot);
+
+    if (id == PathId::Ungrounded) {
+        return target_root;
+    }
+
+    // Collect components from leaf to root
+    auto stack = Vec<StringId> {};
+    auto cur = id;
+    while (!is_reserved(cur)) {
+        stack.push_back(entries_[to_underlying(cur)].name);
+        cur = entries_[to_underlying(cur)].parent;
+    }
+
+    // Re-intern under target root
+    auto result = target_root;
+    for (auto i = stack.size(); i > 0; --i) {
+        result = intern(result, stack[i - 1]);
+    }
+    return result;
+}
+
+auto PathPool::intern_path(std::string_view path, StringPool& pool, PathId start) -> PathId
+{
+    auto current = start;
+    auto remaining = path;
+
+    while (!remaining.empty()) {
+        auto slash = remaining.find('/');
+        auto comp = (slash == std::string_view::npos) ? remaining : remaining.substr(0, slash);
+        remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
+
+        if (comp.empty() || comp == ".") {
+            continue;
+        }
+
+        current = intern(current, pool.intern(comp));
+    }
+
+    return current;
+}
+
 auto PathPool::size() const -> std::size_t
 {
-    return entries_.size() - 1;
+    return entries_.size() - 3;
 }
 
 auto PathPool::clear() -> void
@@ -120,8 +186,10 @@ auto PathPool::clear() -> void
     entries_.clear();
     children_.clear();
 
-    entries_.push_back(Entry {});
-    children_.resize(1);
+    entries_.push_back(Entry { .parent = PathId::Ungrounded, .name = StringId::Empty });
+    entries_.push_back(Entry { .parent = PathId::SourceRoot, .name = StringId::Empty });
+    entries_.push_back(Entry { .parent = PathId::BuildRoot, .name = StringId::Empty });
+    children_.resize(3);
 }
 
 } // namespace pup
