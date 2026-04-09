@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 
 namespace pup {
 
@@ -34,15 +33,3 @@ constexpr auto make_string_id(std::uint32_t value) -> StringId
 }
 
 } // namespace pup
-
-namespace std {
-
-template<>
-struct hash<pup::StringId> {
-    auto operator()(pup::StringId id) const noexcept -> std::size_t
-    {
-        return std::hash<std::uint32_t> {}(pup::to_underlying(id));
-    }
-};
-
-} // namespace std
