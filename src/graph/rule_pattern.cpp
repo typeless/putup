@@ -55,11 +55,12 @@ auto make_gcc_depfile_pattern() -> RulePattern
                 return std::nullopt;
             }
 
+            auto string_inputs = cmd.path_pool ? materialize_inputs(cmd.inputs, *cmd.path_pool) : Vec<StringId> {};
             return GeneratedRule {
-                .inputs = cmd.inputs,
+                .inputs = std::move(string_inputs),
                 .order_only_inputs = cmd.order_only_inputs,
                 .command = *dep_cmd,
-                .display = make_dep_display(cmd.inputs),
+                .display = cmd.path_pool ? make_dep_display(cmd.inputs, *cmd.path_pool) : global_pool().intern("DEP"),
                 .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty } },
                 .action = OutputAction::InjectImplicitDeps,
                 .parent_command = cmd.node_id,
