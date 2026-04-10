@@ -78,7 +78,7 @@ public:
 
 private:
     struct Entry {
-        PathId parent = PathId::Root;
+        PathId parent = PathId::Ungrounded;
         StringId name = StringId::Empty;
     };
 
