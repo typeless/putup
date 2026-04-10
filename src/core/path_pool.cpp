@@ -119,7 +119,7 @@ auto PathPool::to_string(PathId id, StringPool& pool) const -> StringId
 auto PathPool::root(PathId id) const -> PathId
 {
     auto cur = id;
-    while (!is_reserved(cur)) {
+    while (!is_root(cur)) {
         cur = entries_[to_underlying(cur)].parent;
     }
     return cur;
@@ -143,7 +143,7 @@ auto PathPool::ground(PathId id, PathId target_root) -> PathId
     // Collect components from leaf to root
     auto stack = Vec<StringId> {};
     auto cur = id;
-    while (!is_reserved(cur)) {
+    while (!is_root(cur)) {
         stack.push_back(entries_[to_underlying(cur)].name);
         cur = entries_[to_underlying(cur)].parent;
     }

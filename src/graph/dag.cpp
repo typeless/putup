@@ -334,26 +334,20 @@ auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<No
     if (path.empty()) {
         return std::nullopt;
     }
-    auto& pool = global_pool();
 
-    // Try BuildRoot first (generated files), then SourceRoot
-    auto build_id = graph.paths.intern_path(path, pool, PathId::BuildRoot);
-    if (!is_root(build_id)) {
-        auto const* resolved = graph.path_to_node.find(to_underlying(build_id));
-        if (resolved) {
-            return static_cast<NodeId>(*resolved);
-        }
-    }
-    auto source_id = graph.paths.intern_path(path, pool, PathId::SourceRoot);
-    if (!is_root(source_id)) {
-        auto const* resolved = graph.path_to_node.find(to_underlying(source_id));
-        if (resolved) {
-            return static_cast<NodeId>(*resolved);
+    // For paths with the build root prefix (e.g., "build/foo.o"), strip the
+    // prefix before looking up under BuildRoot (which already implies the build tree).
+    auto lookup_path = path;
+    auto build_root_name = get_build_root_name(graph);
+    if (!build_root_name.empty()) {
+        auto stripped = global_pool().get(pup::strip_path_prefix(path, build_root_name));
+        if (stripped != path) {
+            lookup_path = stripped;
         }
     }
 
-    // Fallback: walk directory tree (for nodes not yet in path_to_node)
-    auto found = find_by_path(graph, path, BUILD_ROOT_ID);
+    // Walk directory tree: try BuildRoot first (generated files), then SourceRoot
+    auto found = find_by_path(graph, lookup_path, BUILD_ROOT_ID);
     if (!found) {
         found = find_by_path(graph, path, SOURCE_ROOT_ID);
     }
@@ -597,6 +591,19 @@ auto leaf_nodes(Graph const& graph) -> Vec<NodeId>
     return result;
 }
 
+/// Materialize a PathId to its display string. For BuildRoot-grounded paths,
+/// prepends the build root name (e.g., "build/gcc/foo.o").
+auto materialize_path(Graph const& graph, PathId path_id) -> StringId
+{
+    auto& pool = global_pool();
+    auto path_sv = pool.get(graph.paths.to_string(path_id, pool));
+    auto build_root_name = get_build_root_name(graph);
+    if (!build_root_name.empty() && graph.paths.root(path_id) == PathId::BuildRoot) {
+        return pup::path::join(build_root_name, path_sv);
+    }
+    return pool.intern(path_sv);
+}
+
 auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::string_view
 {
     if (id == 0 || node_id::is_command(id)) {
@@ -617,20 +624,8 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
         return is_empty(sid) ? global_pool().get(node->name) : cache.pool.get(sid);
     }
 
-    // Materialize path. For BuildRoot-grounded paths, prepend build root name
-    // so display paths include the build prefix (e.g., "build/gcc/foo.o").
-    auto path_sv = global_pool().get(graph.paths.to_string(node->path_id, global_pool()));
-    auto build_root_name = get_build_root_name(graph);
-    if (!build_root_name.empty() && graph.paths.root(node->path_id) == PathId::BuildRoot) {
-        auto buf = Buf {};
-        buf += build_root_name;
-        buf += '/';
-        buf += path_sv;
-        auto cached_id = cache.pool.intern(buf.view());
-        cache.ids.set(id, to_underlying(cached_id));
-        return cache.pool.get(cached_id);
-    }
-    auto cached_id = cache.pool.intern(path_sv);
+    auto materialized = materialize_path(graph, node->path_id);
+    auto cached_id = cache.pool.intern(global_pool().get(materialized));
     cache.ids.set(id, to_underlying(cached_id));
     return cache.pool.get(cached_id);
 }
@@ -644,13 +639,7 @@ auto get_full_path(Graph const& graph, NodeId id) -> StringId
     if (!node || is_root(node->path_id)) {
         return StringId::Empty;
     }
-    auto& pool = global_pool();
-    auto path_sv = pool.get(graph.paths.to_string(node->path_id, pool));
-    auto build_root_name = get_build_root_name(graph);
-    if (!build_root_name.empty() && graph.paths.root(node->path_id) == PathId::BuildRoot) {
-        return pool.intern(pool.get(pup::path::join(build_root_name, path_sv)));
-    }
-    return pool.intern(path_sv);
+    return materialize_path(graph, node->path_id);
 }
 
 auto invalidate_path_cache(PathCache& cache, NodeId id) -> void
@@ -1055,19 +1044,30 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
     auto affected = NodeIdMap32 {};
     auto to_process = Vec<NodeId> {};
 
+    auto build_root_name = get_build_root_name(graph);
+
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
-        // Try both roots — changed files could be source or build outputs
-        auto build_path_id = graph.paths.intern_path(file_path, pool, PathId::BuildRoot);
-        auto const* resolved = graph.path_to_node.find(to_underlying(build_path_id));
-        if (!resolved) {
-            auto source_path_id = graph.paths.intern_path(file_path, pool, PathId::SourceRoot);
-            resolved = graph.path_to_node.find(to_underlying(source_path_id));
+
+        // Changed file paths from the index include the build root prefix
+        // (e.g., "build/foo.o"). Strip it before looking up under BuildRoot,
+        // which already implies the build tree.
+        auto build_lookup = file_path;
+        if (!build_root_name.empty()) {
+            auto stripped = pool.get(pup::strip_path_prefix(file_path, build_root_name));
+            if (stripped != file_path) {
+                build_lookup = stripped;
+            }
         }
-        if (!resolved) {
+
+        auto found = find_by_path(graph, build_lookup, BUILD_ROOT_ID);
+        if (!found) {
+            found = find_by_path(graph, file_path, SOURCE_ROOT_ID);
+        }
+        if (!found) {
             continue;
         }
-        auto id = static_cast<NodeId>(*resolved);
+        auto id = *found;
         if (!affected.contains(id)) {
             affected.set(id, 1);
             to_process.push_back(id);

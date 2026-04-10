@@ -22,18 +22,12 @@ enum class PathId : std::uint32_t {
     SourceRoot = 1, ///< Source tree root
     BuildRoot = 2,  ///< Build tree root
 
-    Root = 0, ///< Deprecated alias for Ungrounded (backward compatibility)
+    Root = Ungrounded, ///< Alias for Ungrounded
 };
-
-[[nodiscard]]
-constexpr auto is_root(PathId id) -> bool
-{
-    return id == PathId::Ungrounded || id == PathId::SourceRoot || id == PathId::BuildRoot;
-}
 
 /// Check if a PathId is one of the three reserved roots.
 [[nodiscard]]
-constexpr auto is_reserved(PathId id) -> bool
+constexpr auto is_root(PathId id) -> bool
 {
     return id == PathId::Ungrounded || id == PathId::SourceRoot || id == PathId::BuildRoot;
 }
