@@ -136,6 +136,40 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         return *existing;
     }
 
+    // Lazy resolution: ungrounded PathIds are grounded before creation.
+    // Try BuildRoot first (outputs are more common), then SourceRoot.
+    if (!graph.paths.is_grounded(path_id)) {
+        auto build_id = graph.paths.ground(path_id, PathId::BuildRoot);
+        if (auto const* hit = graph.path_to_node.find(to_underlying(build_id))) {
+            graph.path_to_node.insert(to_underlying(path_id), *hit);
+            if (type == NodeType::Generated) {
+                auto* node = get_file_node(graph, *hit);
+                if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                    node->type = NodeType::Generated;
+                }
+            }
+            return *hit;
+        }
+
+        auto source_id = graph.paths.ground(path_id, PathId::SourceRoot);
+        if (auto const* hit = graph.path_to_node.find(to_underlying(source_id))) {
+            graph.path_to_node.insert(to_underlying(path_id), *hit);
+            if (type == NodeType::Generated) {
+                auto* node = get_file_node(graph, *hit);
+                if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                    node->type = NodeType::Generated;
+                }
+            }
+            return *hit;
+        }
+
+        // No existing node — ground based on type and create.
+        auto root = (type == NodeType::File || type == NodeType::Directory)
+            ? PathId::SourceRoot
+            : PathId::BuildRoot;
+        return ensure_file_node(graph, graph.paths.ground(path_id, root), type);
+    }
+
     auto parent_path = graph.paths.parent(path_id);
     auto parent_result = ensure_file_node(graph, parent_path, NodeType::Directory);
     if (!parent_result) {
