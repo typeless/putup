@@ -1,0 +1,9 @@
+include_rules
+
+# Cross-subdir library reference via $(B), mirroring GCC BSP pattern.
+# Root Tuprules.tup sets LIBIBERTY_DIR = zzz_lib (project-root-relative).
+# $(B) = $(TUP_VARIANT_OUTPUTDIR)/$(S) where S is set by local Tuprules.tup.
+LIBMATH_A = $(B)/$(LIBIBERTY_DIR)/libmath.a
+
+: foreach *.c |> !cc |> %B.o
+: *.o $(LIBMATH_A) |> !link |> prog

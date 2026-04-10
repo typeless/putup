@@ -5427,3 +5427,89 @@ SCENARIO("Target build stabilizes to no-op", "[e2e][incremental][target]")
         }
     }
 }
+
+SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-of-tree-config]")
+{
+    // Reproduces GCC BSP pattern where:
+    //   1. Library archive uses order-only group: %<objs> in command
+    //   2. Consumer links the library via $(B)/$(LIB_DIR)/libmath.a
+    //
+    // The group pattern forces has_group_pattern=true, so final_instruction
+    // becomes cmd_text (parse-time %o expansion). PathPool::write produces
+    // output paths WITHOUT the build root prefix, so %o in the archive
+    // command becomes "libmath.a" instead of "../../build/zzz_lib/libmath.a".
+    // The archive creates the file in the source tree instead of build tree.
+    GIVEN("a 3-tree project with order-only groups in archive command")
+    {
+        auto f = E2EFixture { "3tree_cross_subdir_output" };
+        auto source_dir = f.workdir() / "source";
+        auto config_dir = f.workdir() / "config";
+        auto build_dir = f.workdir() / "build";
+
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("parsing with verbose output")
+        {
+            auto conf = f.pup({
+                "configure",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string()
+            });
+            REQUIRE(conf.success());
+
+            auto result = f.pup({
+                "parse",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-v"
+            });
+
+            THEN("archive %o includes build-relative path, not bare filename")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                // The archive command must write to the build tree.
+                // Bug:   "ar rcs libmath.a ..."  (bare filename → written to source tree)
+                // Fixed: "ar rcs ../../build/zzz_lib/libmath.a ..."
+                auto ar_pos = result.stdout_output.find("ar rcs ");
+                REQUIRE(ar_pos != std::string::npos);
+                // Extract the %o argument (first word after "ar rcs ")
+                auto output_start = ar_pos + 7; // strlen("ar rcs ")
+                auto output_end = result.stdout_output.find(' ', output_start);
+                auto output_arg = result.stdout_output.substr(output_start, output_end - output_start);
+                INFO("archive output arg: " << output_arg);
+                // %o must point to the build directory, not be a bare filename
+                REQUIRE(output_arg.find("build") != std::string::npos);
+            }
+        }
+
+        WHEN("building")
+        {
+            auto conf = f.pup({
+                "configure",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string()
+            });
+            REQUIRE(conf.success());
+
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string()
+            });
+
+            THEN("build succeeds with library in build tree")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/zzz_lib/libmath.a"));
+                REQUIRE_FALSE(f.exists("source/zzz_lib/libmath.a"));
+            }
+        }
+    }
+}
