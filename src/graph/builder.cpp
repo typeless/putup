@@ -830,7 +830,7 @@ auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const&
 auto expand_glob_pattern(
     BuilderContext& ctx,
     std::string_view path,
-    Vec<StringId>& result
+    Vec<PathId>& result
 ) -> void
 {
     auto& pool = global_pool();
@@ -840,11 +840,8 @@ auto expand_glob_pattern(
     auto expanded = parser::glob_expand(path, base_sv);
     if (expanded && !expanded->empty()) {
         for (auto p : *expanded) {
-            if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::join(str(ctx.current_dir), str(p)));
-            } else {
-                result.push_back(p);
-            }
+            auto joined_sv = !is_empty(ctx.current_dir) ? pool.get(pup::path::join(str(ctx.current_dir), str(p))) : str(p);
+            result.push_back(ctx.state->graph.paths.intern_path(joined_sv, pool));
         }
         return;
     }
@@ -863,7 +860,7 @@ auto expand_glob_pattern(
         }
         auto match_path_sv = pool.get(pup::strip_path_prefix(node_path_sv, build_root_name));
         if (glob.matches(match_path_sv)) {
-            result.push_back(pool.intern(node_path_sv));
+            result.push_back(ctx.state->graph.paths.intern_path(node_path_sv, pool));
         }
     }
 }
@@ -873,7 +870,7 @@ auto expand_glob_pattern(
 auto apply_exclusions(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
-    Vec<StringId>& result
+    Vec<PathId>& result
 ) -> void
 {
     auto& pool = global_pool();
@@ -896,9 +893,10 @@ auto apply_exclusions(
                 if (expanded && !expanded->empty()) {
                     for (auto p : *expanded) {
                         auto p_sv = str(p);
-                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), p_sv)));
+                        auto normalized_sv = pool.get(is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), p_sv))));
+                        auto excl_path_id = ctx.state->graph.paths.intern_path(normalized_sv, pool);
                         for (auto it = result.begin(); it != result.end();) {
-                            if (pool.get(*it) == pool.get(normalized)) {
+                            if (*it == excl_path_id) {
                                 it = result.erase(it);
                             } else {
                                 ++it;
@@ -907,10 +905,10 @@ auto apply_exclusions(
                     }
                 }
             } else {
-                auto normalized_excl = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
-                auto normalized_sv = pool.get(normalized_excl);
+                auto normalized_sv = pool.get(is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl))));
+                auto excl_path_id = ctx.state->graph.paths.intern_path(normalized_sv, pool);
                 for (auto it = result.begin(); it != result.end();) {
-                    if (pool.get(*it) == normalized_sv) {
+                    if (*it == excl_path_id) {
                         it = result.erase(it);
                     } else {
                         ++it;
@@ -1049,10 +1047,10 @@ auto expand_outputs(
 auto expand_inputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns
-) -> Result<Vec<StringId>>
+) -> Result<Vec<PathId>>
 {
     auto& pool = global_pool();
-    auto result = Vec<StringId> {};
+    auto result = Vec<PathId> {};
 
     for (auto const& pattern : patterns) {
         if (pattern.is_exclusion || pattern.is_output_exclusion) {
@@ -1065,40 +1063,16 @@ auto expand_inputs(
                 for (auto id : *members) {
                     auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
                     if (!path_sv.empty()) {
-                        result.push_back(intern(path_sv));
+                        result.push_back(ctx.state->graph.paths.intern_path(path_sv, pool));
                     }
                 }
             }
             continue;
         }
 
+        // Order-only groups are handled separately in expand_rule's
+        // pre-processing loop — skip them here.
         if (pattern.is_order_only_group) {
-            auto group_dir = StringId::Empty;
-
-            if (!pattern.path.empty()) {
-                auto expanded = parser::expand(*ctx.eval, pattern.path);
-                if (expanded) {
-                    group_dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
-                    request_demand_driven_parse(*ctx.eval, str(group_dir));
-                }
-            } else {
-                group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
-            }
-
-            auto group_name_sv = str(pattern.group_name);
-            auto ref_buf = Buf {};
-            auto group_dir_sv = str(group_dir);
-            if (group_dir_sv.empty()) {
-                ref_buf += '<';
-                ref_buf += group_name_sv;
-                ref_buf += '>';
-            } else {
-                ref_buf += group_dir_sv;
-                ref_buf += "/<";
-                ref_buf += group_name_sv;
-                ref_buf += '>';
-            }
-            result.push_back(ref_buf.intern(pool));
             continue;
         }
 
@@ -1112,14 +1086,14 @@ auto expand_inputs(
             auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
-                result.push_back(path_id);
+                // Group references in regular inputs are handled as order-only
+                // by expand_rule's pre-processing loop — skip here.
                 continue;
             }
-            if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path_sv))));
-            } else {
-                result.push_back(path_id);
-            }
+            auto normalized = !is_empty(ctx.current_dir)
+                ? pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path_sv))))
+                : pool.get(path_id);
+            result.push_back(ctx.state->graph.paths.intern_path(normalized, pool));
 
             if (ctx.options.expand_globs && parser::has_glob_chars(path_sv)) {
                 expand_glob_pattern(ctx, path_sv, result);
@@ -1733,17 +1707,20 @@ auto expand_rule(
     BuilderContext& ctx,
     BuilderState& state,
     parser::Rule const& rule,
-    Vec<StringId> const& inputs
+    Vec<PathId> const& inputs
 ) -> Result<void>
 {
+    auto& pool = global_pool();
     ctx.used_config_vars.clear();
     ctx.used_env_vars.clear();
 
     auto glob_pattern = StringId::Empty;
-    auto file_inputs = Vec<StringId> {};
+    auto file_inputs = Vec<PathId> {};
     for (auto inp : inputs) {
-        if (parser::has_glob_chars(str(inp))) {
-            glob_pattern = inp;
+        auto path_buf = Buf {};
+        ctx.state->graph.paths.write(inp, path_buf, pool);
+        if (parser::has_glob_chars(path_buf.view())) {
+            glob_pattern = path_buf.intern(pool);
         } else {
             file_inputs.push_back(inp);
         }
@@ -1753,7 +1730,9 @@ auto expand_rule(
     auto cmd_inputs = Vec<StringId> {};
     cmd_inputs.reserve(file_inputs.size());
     for (auto inp : file_inputs) {
-        cmd_inputs.push_back(transform_input_path(*ctx.state, tc, str(inp)));
+        auto path_buf = Buf {};
+        ctx.state->graph.paths.write(inp, path_buf, pool);
+        cmd_inputs.push_back(transform_input_path(*ctx.state, tc, path_buf.view()));
     }
 
     auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
@@ -1946,9 +1925,11 @@ auto expand_rule(
     }
     auto order_only_paths = Vec<StringId> {};
     for (auto const& pattern : all_order_only) {
-        auto order_inputs = Result<Vec<StringId>> { expand_inputs(ctx, { pattern }) };
+        auto order_inputs = expand_inputs(ctx, { pattern });
         if (order_inputs) {
-            order_only_paths.insert(order_only_paths.end(), order_inputs->begin(), order_inputs->end());
+            for (auto oi_path : *order_inputs) {
+                order_only_paths.push_back(ctx.state->graph.paths.to_string(oi_path, pool));
+            }
         }
     }
 
@@ -1972,6 +1953,7 @@ auto expand_rule(
         .order_only_inputs = order_only_paths,
         .outputs = *outputs,
         .working_dir = intern(str(ctx.current_dir)),
+        .path_pool = &ctx.state->graph.paths,
     };
 
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
@@ -1985,14 +1967,10 @@ auto expand_rule(
     process_generated_rules(ctx, state, generated_rules, *cmd_id);
 
     // Create edges from inputs to command and collect operand NodeIds
-    // Use file_inputs (excludes glob patterns which aren't valid paths)
-    // Skip group references - they are handled by deferred edge resolution (order-only)
+    // file_inputs are PathIds — no group references possible (filtered in expand_inputs)
     auto input_ids = Vec<NodeId> {};
-    for (auto input : file_inputs) {
-        if (is_order_only_group_reference(str(input))) {
-            continue;
-        }
-        auto input_id = resolve_input_node(ctx, str(input));
+    for (auto input_path : file_inputs) {
+        auto input_id = ensure_file_node(ctx.state->graph, input_path, NodeType::Ghost);
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }
@@ -2133,7 +2111,7 @@ auto process_rule(
     apply_pending_weak_assignments(ctx, state);
 
     // Expand input patterns
-    auto inputs = Result<Vec<StringId>> { expand_inputs(ctx, rule.inputs) };
+    auto inputs = expand_inputs(ctx, rule.inputs);
     if (!inputs) {
         return pup::unexpected<Error>(inputs.error());
     }
@@ -2147,10 +2125,13 @@ auto process_rule(
     }
 
     if (rule.foreach_) {
-        auto patterns = Vec<StringId> {};
-        auto files = Vec<StringId> {};
+        auto& pool = global_pool();
+        auto patterns = Vec<PathId> {};
+        auto files = Vec<PathId> {};
         for (auto inp : *inputs) {
-            if (parser::has_glob_chars(str(inp))) {
+            auto path_buf = Buf {};
+            ctx.state->graph.paths.write(inp, path_buf, pool);
+            if (parser::has_glob_chars(path_buf.view())) {
                 patterns.push_back(inp);
             } else {
                 files.push_back(inp);

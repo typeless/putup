@@ -5,6 +5,7 @@
 
 #include "pup/core/function.hpp"
 #include "pup/core/path_id.hpp"
+#include "pup/core/path_pool.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -19,10 +20,11 @@ struct CommandInfo {
     NodeId node_id = INVALID_NODE_ID;
     StringId command = StringId::Empty;
     StringId display = StringId::Empty;
-    Vec<StringId> inputs;
+    Vec<PathId> inputs;
     Vec<StringId> order_only_inputs;
     Vec<PathId> outputs;
     StringId working_dir = StringId::Empty;
+    PathPool const* path_pool = nullptr;
 };
 
 /// Output specification for generated rules

@@ -13,10 +13,18 @@ using namespace pup::graph;
 
 namespace {
 auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
-auto path(std::string_view s) -> pup::PathId
+auto& test_paths()
 {
     static auto paths = pup::PathPool {};
-    return paths.intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
+    return paths;
+}
+auto path(std::string_view s) -> pup::PathId
+{
+    return test_paths().intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
+}
+auto input_path(std::string_view s) -> pup::PathId
+{
+    return test_paths().intern_path(s, pup::global_pool());
 }
 } // namespace
 
@@ -56,10 +64,11 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
             .node_id = 1,
             .command = intern("gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto const* scanner = registry.find_match(cmd);
@@ -73,10 +82,11 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
             .node_id = 2,
             .command = intern("ar rcs libfoo.a foo.o"),
             .display = intern("AR libfoo.a"),
-            .inputs = { intern("foo.o") },
+            .inputs = { input_path("foo.o") },
             .order_only_inputs = {},
             .outputs = { path("libfoo.a") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto const* scanner = registry.find_match(cmd);
@@ -95,10 +105,11 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .node_id = 10,
             .command = intern("gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto rules = registry.match_and_generate(cmd);
@@ -114,10 +125,11 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .node_id = 11,
             .command = intern("gcc -MD -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto rules = registry.match_and_generate(cmd);
@@ -130,10 +142,11 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .node_id = 12,
             .command = intern("ar rcs libfoo.a foo.o"),
             .display = intern("AR libfoo.a"),
-            .inputs = { intern("foo.o") },
+            .inputs = { input_path("foo.o") },
             .order_only_inputs = {},
             .outputs = { path("libfoo.a") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto rules = registry.match_and_generate(cmd);
@@ -162,10 +175,11 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .node_id = 1,
             .command = intern("gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
         REQUIRE(scanner.matches(cmd));
     }
@@ -176,10 +190,11 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .node_id = 2,
             .command = intern("clang++ -c foo.cpp -o foo.o"),
             .display = intern("CXX foo.o"),
-            .inputs = { intern("foo.cpp") },
+            .inputs = { input_path("foo.cpp") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
         REQUIRE(scanner.matches(cmd));
     }
@@ -190,10 +205,11 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .node_id = 3,
             .command = intern("gcc foo.o -o foo"),
             .display = intern("LINK foo"),
-            .inputs = { intern("foo.o") },
+            .inputs = { input_path("foo.o") },
             .order_only_inputs = {},
             .outputs = { path("foo") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
         REQUIRE(!scanner.matches(cmd));
     }
@@ -224,10 +240,11 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .node_id = 4,
             .command = intern("gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -245,6 +262,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .order_only_inputs = {},
             .outputs = {},
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -262,10 +280,11 @@ TEST_CASE("GccScanner compiler wrapper handling", "[dep_scanner][gcc]")
             .node_id = 1,
             .command = intern("ccache gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         REQUIRE(scanner.matches(cmd));
@@ -280,10 +299,11 @@ TEST_CASE("GccScanner compiler wrapper handling", "[dep_scanner][gcc]")
             .node_id = 2,
             .command = intern("distcc g++ -c foo.cpp -o foo.o"),
             .display = intern("CXX foo.o"),
-            .inputs = { intern("foo.cpp") },
+            .inputs = { input_path("foo.cpp") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -302,10 +322,11 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .node_id = 1,
             .command = intern("gcc -I../include -I/usr/local/include -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -319,10 +340,11 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .node_id = 10,
             .command = intern("gcc -I include -I ../lib -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -336,10 +358,11 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .node_id = 2,
             .command = intern("gcc -DNDEBUG -DFOO=bar -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -353,10 +376,11 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .node_id = 3,
             .command = intern("g++ -std=c++20 -c foo.cpp -o foo.o"),
             .display = intern("CXX foo.o"),
-            .inputs = { intern("foo.cpp") },
+            .inputs = { input_path("foo.cpp") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -370,10 +394,11 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
             .node_id = 4,
             .command = intern("gcc -Wall -Wextra -O2 -g -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.c") },
+            .inputs = { input_path("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -392,10 +417,11 @@ TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
             .node_id = 1,
             .command = intern("clang -c foo.m -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { intern("foo.m") },
+            .inputs = { input_path("foo.m") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -409,10 +435,11 @@ TEST_CASE("GccScanner Objective-C support", "[dep_scanner][gcc]")
             .node_id = 2,
             .command = intern("clang++ -c bar.mm -o bar.o"),
             .display = intern("CXX bar.o"),
-            .inputs = { intern("bar.mm") },
+            .inputs = { input_path("bar.mm") },
             .order_only_inputs = {},
             .outputs = { path("bar.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -435,6 +462,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .order_only_inputs = {},
             .outputs = { path("bfd-archive.o"), path("bfd-bfd.o"), path("bfd-cache.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -451,6 +479,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
@@ -467,6 +496,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
+            .path_pool = &test_paths(),
         };
 
         auto dep_cmd = scanner.build_dep_command(cmd);
