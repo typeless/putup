@@ -1,0 +1,7 @@
+S = $(TUP_CWD)
+B = $(TUP_VARIANT_OUTPUTDIR)/$(S)
+LIBIBERTY_DIR = zzz_lib
+
+!cc = |> ^ CC %o^ cc -c %f -o %o |>
+!ar = |> ^ AR %o^ ar rcs %o %f |>
+!link = |> ^ LINK %o^ cc %f -o %o |>

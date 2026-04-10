@@ -1,0 +1,8 @@
+include_rules
+
+# Config generator (runs during configure step)
+: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
+
+# Compile and archive (uses order-only group to mirror GCC BSP pattern)
+: foreach *.c |> !cc |> %B.o <objs>
+: <objs> |> ^ AR %o^ ar rcs %o %<objs> |> libmath.a

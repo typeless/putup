@@ -1,0 +1,3 @@
+S ?= $(TUP_CWD)
+B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
+LIBIBERTY_DIR ?= zzz_lib
