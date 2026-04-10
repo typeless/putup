@@ -1414,4 +1414,111 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         REQUIRE(result.has_value());
         REQUIRE(*result == pup::BUILD_ROOT_ID);
     }
+
+    SECTION("ungrounded PathId resolves to existing BuildRoot node")
+    {
+        auto grounded = graph.paths.intern_path("obj/main.o", pool, pup::PathId::BuildRoot);
+        auto existing = ensure_file_node(graph, grounded, NodeType::Generated);
+        REQUIRE(existing.has_value());
+
+        auto ungrounded = graph.paths.intern_path("obj/main.o", pool, pup::PathId::Ungrounded);
+        REQUIRE(!graph.paths.is_grounded(ungrounded));
+
+        auto resolved = ensure_file_node(graph, ungrounded, NodeType::Generated);
+        REQUIRE(resolved.has_value());
+        REQUIRE(*resolved == *existing);
+
+        auto const* node = get_file_node(graph, *resolved);
+        REQUIRE(node != nullptr);
+        REQUIRE(graph.paths.is_grounded(node->path_id));
+        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::BuildRoot);
+    }
+
+    SECTION("ungrounded PathId resolves to existing SourceRoot node")
+    {
+        auto grounded = graph.paths.intern_path("input.c", pool, pup::PathId::SourceRoot);
+        auto existing = ensure_file_node(graph, grounded, NodeType::File);
+        REQUIRE(existing.has_value());
+
+        auto ungrounded = graph.paths.intern_path("input.c", pool, pup::PathId::Ungrounded);
+        auto resolved = ensure_file_node(graph, ungrounded, NodeType::File);
+        REQUIRE(resolved.has_value());
+        REQUIRE(*resolved == *existing);
+
+        auto const* node = get_file_node(graph, *resolved);
+        REQUIRE(node != nullptr);
+        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::SourceRoot);
+    }
+
+    SECTION("ungrounded Ghost creates under BuildRoot")
+    {
+        auto ungrounded = graph.paths.intern_path("gen/output.o", pool, pup::PathId::Ungrounded);
+        REQUIRE(!graph.paths.is_grounded(ungrounded));
+
+        auto result = ensure_file_node(graph, ungrounded, NodeType::Ghost);
+        REQUIRE(result.has_value());
+
+        auto const* node = get_file_node(graph, *result);
+        REQUIRE(node != nullptr);
+        REQUIRE(node->type == NodeType::Ghost);
+        REQUIRE(graph.paths.is_grounded(node->path_id));
+        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::BuildRoot);
+    }
+
+    SECTION("ungrounded Generated creates under BuildRoot")
+    {
+        auto ungrounded = graph.paths.intern_path("out/lib.a", pool, pup::PathId::Ungrounded);
+        auto result = ensure_file_node(graph, ungrounded, NodeType::Generated);
+        REQUIRE(result.has_value());
+
+        auto const* node = get_file_node(graph, *result);
+        REQUIRE(node != nullptr);
+        REQUIRE(node->type == NodeType::Generated);
+        REQUIRE(graph.paths.is_grounded(node->path_id));
+        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::BuildRoot);
+    }
+
+    SECTION("ungrounded File creates under SourceRoot")
+    {
+        auto ungrounded = graph.paths.intern_path("src/foo.c", pool, pup::PathId::Ungrounded);
+        auto result = ensure_file_node(graph, ungrounded, NodeType::File);
+        REQUIRE(result.has_value());
+
+        auto const* node = get_file_node(graph, *result);
+        REQUIRE(node != nullptr);
+        REQUIRE(node->type == NodeType::File);
+        REQUIRE(graph.paths.is_grounded(node->path_id));
+        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::SourceRoot);
+    }
+
+    SECTION("ungrounded Generated upgrades existing BuildRoot Ghost")
+    {
+        auto grounded = graph.paths.intern_path("dep.o", pool, pup::PathId::BuildRoot);
+        auto ghost = ensure_file_node(graph, grounded, NodeType::Ghost);
+        REQUIRE(ghost.has_value());
+        REQUIRE(get_file_node(graph, *ghost)->type == NodeType::Ghost);
+
+        auto ungrounded = graph.paths.intern_path("dep.o", pool, pup::PathId::Ungrounded);
+        auto gen = ensure_file_node(graph, ungrounded, NodeType::Generated);
+        REQUIRE(gen.has_value());
+        REQUIRE(*gen == *ghost);
+        REQUIRE(get_file_node(graph, *gen)->type == NodeType::Generated);
+    }
+
+    SECTION("ungrounded prefers BuildRoot over SourceRoot for lookup")
+    {
+        auto build_id = graph.paths.intern_path("shared.h", pool, pup::PathId::BuildRoot);
+        auto build_node = ensure_file_node(graph, build_id, NodeType::Generated);
+        REQUIRE(build_node.has_value());
+
+        auto source_id = graph.paths.intern_path("shared.h", pool, pup::PathId::SourceRoot);
+        auto source_node = ensure_file_node(graph, source_id, NodeType::File);
+        REQUIRE(source_node.has_value());
+        REQUIRE(*build_node != *source_node);
+
+        auto ungrounded = graph.paths.intern_path("shared.h", pool, pup::PathId::Ungrounded);
+        auto resolved = ensure_file_node(graph, ungrounded, NodeType::Generated);
+        REQUIRE(resolved.has_value());
+        REQUIRE(*resolved == *build_node);
+    }
 }
