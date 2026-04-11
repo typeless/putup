@@ -62,11 +62,7 @@ public:
 
 /// Build display string for DEP commands (e.g., "DEP foo.c")
 [[nodiscard]]
-auto make_dep_display(Vec<PathId> const& inputs, PathPool const& paths) -> StringId;
-
-/// Materialize Vec<PathId> to Vec<StringId> via PathPool::to_string
-[[nodiscard]]
-auto materialize_inputs(Vec<PathId> const& inputs, PathPool const& paths) -> Vec<StringId>;
+auto make_dep_display(Vec<StringId> const& inputs) -> StringId;
 
 /// Registry for dependency scanners.
 /// Scanners are checked in registration order; first match wins.

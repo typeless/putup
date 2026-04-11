@@ -12,18 +12,10 @@ using namespace pup::graph;
 
 namespace {
 auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
-auto& test_paths()
-{
-    static auto paths = pup::PathPool {};
-    return paths;
-}
 auto path(std::string_view s) -> pup::PathId
 {
-    return test_paths().intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
-}
-auto input_path(std::string_view s) -> pup::PathId
-{
-    return test_paths().intern_path(s, pup::global_pool());
+    static auto paths = pup::PathPool {};
+    return paths.intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
 }
 } // namespace
 
@@ -56,11 +48,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 42,
             .command = intern("gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -82,11 +73,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 100,
             .command = intern("clang -c bar.cpp -o bar.o"),
             .display = intern("CXX bar.o"),
-            .inputs = { input_path("bar.cpp") },
+            .inputs = { intern("bar.cpp") },
             .order_only_inputs = {},
             .outputs = { path("bar.o") },
             .working_dir = intern("src"),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -100,11 +90,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 200,
             .command = intern("g++ -std=c++20 -c main.cpp -o main.o"),
             .display = intern("CXX main.o"),
-            .inputs = { input_path("main.cpp") },
+            .inputs = { intern("main.cpp") },
             .order_only_inputs = {},
             .outputs = { path("main.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -118,11 +107,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 250,
             .command = intern("ccache gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -136,11 +124,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 251,
             .command = intern("distcc g++ -c bar.cpp -o bar.o"),
             .display = intern("CXX bar.o"),
-            .inputs = { input_path("bar.cpp") },
+            .inputs = { intern("bar.cpp") },
             .order_only_inputs = {},
             .outputs = { path("bar.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -154,11 +141,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 260,
             .command = intern("arm-linux-gnueabihf-gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -172,11 +158,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 270,
             .command = intern("/usr/bin/gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -190,11 +175,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 300,
             .command = intern("gcc -MD -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -207,11 +191,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 400,
             .command = intern("gcc -MMD -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -224,11 +207,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 410,
             .command = intern("gcc -MF deps.d -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -241,11 +223,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 420,
             .command = intern("gcc -M foo.c"),
             .display = intern("DEP foo.c"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = {},
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -258,11 +239,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 430,
             .command = intern("gcc -c foo.c -M"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -275,11 +255,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 440,
             .command = intern("gcc -DMYDEBUG -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -293,11 +272,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 450,
             .command = intern("g++ -I../../include -I../../third_party -c foo.cpp -o foo.o"),
             .display = intern("CXX foo.o"),
-            .inputs = { input_path("foo.cpp") },
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("build/src"),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -311,11 +289,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 460,
             .command = intern("g++ -std=c++20 -Wall -Wextra -I../include -DNDEBUG -O2 -c main.cpp -o main.o"),
             .display = intern("CXX main.o"),
-            .inputs = { input_path("main.cpp") },
+            .inputs = { intern("main.cpp") },
             .order_only_inputs = {},
             .outputs = { path("main.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -330,11 +307,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 500,
             .command = intern("gcc foo.o bar.o -o app"),
             .display = intern("LINK app"),
-            .inputs = { input_path("foo.o"), input_path("bar.o") },
+            .inputs = { intern("foo.o"), intern("bar.o") },
             .order_only_inputs = {},
             .outputs = { path("app") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -347,11 +323,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
             .node_id = 600,
             .command = intern("ar rcs libfoo.a foo.o bar.o"),
             .display = intern("AR libfoo.a"),
-            .inputs = { input_path("foo.o"), input_path("bar.o") },
+            .inputs = { intern("foo.o"), intern("bar.o") },
             .order_only_inputs = {},
             .outputs = { path("libfoo.a") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -371,11 +346,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 700,
             .command = intern("gcc -c foo.c bar.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c"), input_path("bar.c") },
+            .inputs = { intern("foo.c"), intern("bar.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -389,11 +363,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 710,
             .command = intern("gcc -isystem/usr/local/include -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -407,11 +380,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 720,
             .command = intern("gcc -iquote../include -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -425,11 +397,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 730,
             .command = intern("gcc -DFOO -UBAR -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -443,11 +414,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 740,
             .command = intern("gcc -include config.h -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -461,11 +431,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 750,
             .command = intern("gcc --sysroot=/opt/sdk -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -482,11 +451,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 755,
             .command = intern(R"(gcc -DMBEDTLS_CONFIG_FILE='"../include/mbedtls_config.h"' -c foo.c -o foo.o)"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -504,11 +472,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 756,
             .command = intern(R"(gcc -D__PFILENAME__=\"\" -c foo.c -o foo.o)"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -523,11 +490,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 760,
             .command = intern("sccache gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -541,11 +507,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 770,
             .command = intern("icecc g++ -c foo.cpp -o foo.o"),
             .display = intern("CXX foo.o"),
-            .inputs = { input_path("foo.cpp") },
+            .inputs = { intern("foo.cpp") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -559,11 +524,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 780,
             .command = intern("gcc -c main.c -o main.o"),
             .display = intern("CC main.o"),
-            .inputs = { input_path("main.c") },
+            .inputs = { intern("main.c") },
             .order_only_inputs = {},
             .outputs = { path("main.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -577,11 +541,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 790,
             .command = intern("gcc -c /path/to/MYMODULE/foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("/path/to/MYMODULE/foo.c") },
+            .inputs = { intern("/path/to/MYMODULE/foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -594,11 +557,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 800,
             .command = intern("gcc -MP -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -611,11 +573,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 810,
             .command = intern("gcc -MT foo.o -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -630,11 +591,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .node_id = 820,
                 .command = intern("g++ -c foo.cc -o foo.o"),
                 .display = intern("CXX foo.o"),
-                .inputs = { input_path("foo.cc") },
+                .inputs = { intern("foo.cc") },
                 .order_only_inputs = {},
                 .outputs = { path("foo.o") },
                 .working_dir = intern("."),
-                .path_pool = &test_paths(),
             };
 
             auto generated = registry.match_and_generate(cmd);
@@ -648,11 +608,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .node_id = 821,
                 .command = intern("g++ -c foo.cxx -o foo.o"),
                 .display = intern("CXX foo.o"),
-                .inputs = { input_path("foo.cxx") },
+                .inputs = { intern("foo.cxx") },
                 .order_only_inputs = {},
                 .outputs = { path("foo.o") },
                 .working_dir = intern("."),
-                .path_pool = &test_paths(),
             };
 
             auto generated = registry.match_and_generate(cmd);
@@ -666,11 +625,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .node_id = 822,
                 .command = intern("g++ -c foo.C -o foo.o"),
                 .display = intern("CXX foo.o"),
-                .inputs = { input_path("foo.C") },
+                .inputs = { intern("foo.C") },
                 .order_only_inputs = {},
                 .outputs = { path("foo.o") },
                 .working_dir = intern("."),
-                .path_pool = &test_paths(),
             };
 
             auto generated = registry.match_and_generate(cmd);
@@ -684,11 +642,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
                 .node_id = 823,
                 .command = intern("g++ -c foo.c++ -o foo.o"),
                 .display = intern("CXX foo.o"),
-                .inputs = { input_path("foo.c++") },
+                .inputs = { intern("foo.c++") },
                 .order_only_inputs = {},
                 .outputs = { path("foo.o") },
                 .working_dir = intern("."),
-                .path_pool = &test_paths(),
             };
 
             auto generated = registry.match_and_generate(cmd);
@@ -704,11 +661,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 830,
             .command = intern("gcc -Ibuild/dir/../../include -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -727,11 +683,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 831,
             .command = intern("gcc -I../../../build-s1f3/modules/MSR/driver/../../../include/generated -c driver.c -o driver.o"),
             .display = intern("CC driver.o"),
-            .inputs = { input_path("driver.c") },
+            .inputs = { intern("driver.c") },
             .order_only_inputs = {},
             .outputs = { path("driver.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -750,7 +705,6 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .order_only_inputs = {},
             .outputs = { path("bfd-archive.o"), path("bfd-bfd.o"), path("bfd-cache.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -767,7 +721,6 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -780,11 +733,10 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
             .node_id = 832,
             .command = intern("gcc -I. -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = {},
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -804,11 +756,10 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .node_id = 900,
             .command = intern("gcc -c foo.c -o foo.o"),
             .display = intern("CC foo.o"),
-            .inputs = { input_path("foo.c") },
+            .inputs = { intern("foo.c") },
             .order_only_inputs = { intern("include/generated/autoconf.h"), intern("include/generated/modules.def") },
             .outputs = { path("foo.o") },
             .working_dir = intern("modules/test"),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -826,11 +777,10 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .node_id = 901,
             .command = intern("gcc -c bar.c -o bar.o"),
             .display = intern("CC bar.o"),
-            .inputs = { input_path("bar.c") },
+            .inputs = { intern("bar.c") },
             .order_only_inputs = {},
             .outputs = { path("bar.o") },
             .working_dir = intern("."),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
@@ -844,11 +794,10 @@ TEST_CASE("Generated rules inherit order-only inputs", "[rule_pattern]")
             .node_id = 902,
             .command = intern("g++ -std=c++20 -c main.cpp -o main.o"),
             .display = intern("CXX main.o"),
-            .inputs = { input_path("main.cpp") },
+            .inputs = { intern("main.cpp") },
             .order_only_inputs = { intern("gen-headers/config.h") },
             .outputs = { path("main.o") },
             .working_dir = intern("src"),
-            .path_pool = &test_paths(),
         };
 
         auto generated = registry.match_and_generate(cmd);
