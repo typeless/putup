@@ -1573,6 +1573,27 @@ auto expand_rule(
     }
     auto macro_ptr = *macro_result;
 
+    // Resolve effective fields: merge rule + macro once.
+    // - command/display: macro wins (it IS the command template)
+    // - outputs: macro fills in only if rule has none
+    // - groups: rule wins, macro is fallback
+    // - order-only inputs: concatenated (handled below via all_order_only)
+    auto const& eff_command = macro_ptr ? macro_ptr->command : rule.command;
+    auto const* eff_display = macro_ptr && macro_ptr->display ? &*macro_ptr->display
+        : rule.display                                        ? &*rule.display
+                                                              : nullptr;
+    auto const& eff_outputs = macro_ptr && rule.outputs.empty() ? macro_ptr->outputs
+                                                                : rule.outputs;
+    auto eff_output_group = rule.output_group  ? rule.output_group
+        : macro_ptr && macro_ptr->output_group ? macro_ptr->output_group
+                                               : std::optional<StringId> {};
+    auto eff_output_oo_group = rule.output_order_only_group ? rule.output_order_only_group
+        : macro_ptr && macro_ptr->output_order_only_group   ? macro_ptr->output_order_only_group
+                                                            : std::optional<StringId> {};
+    auto const* eff_oo_group_dir = rule.output_order_only_group_dir ? &*rule.output_order_only_group_dir
+        : macro_ptr && macro_ptr->output_order_only_group_dir       ? &*macro_ptr->output_order_only_group_dir
+                                                                    : nullptr;
+
     // Pre-resolve order-only group references so %<group> can expand them in commands
     // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
     // Stores known group names (sorted); the resolver constructs %<name> on the fly.
@@ -1685,46 +1706,24 @@ auto expand_rule(
     auto cmd_text = StringId::Empty;
     auto display = StringId::Empty;
     auto instruction_pattern = StringId::Empty;
-    auto outputs_patterns = rule.outputs;
 
-    // Use macro's outputs if rule doesn't specify any (macro_ptr set earlier)
-    if (macro_ptr && outputs_patterns.empty()) {
-        outputs_patterns = macro_ptr->outputs;
-    }
-
-    // Expand outputs
-    auto outputs = expand_outputs(ctx, outputs_patterns, flags);
+    auto outputs = expand_outputs(ctx, eff_outputs, flags);
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
     }
 
-    // Now expand command with actual outputs for %o substitution
-    // Also capture instruction (after variable expansion, before pattern substitution)
-    if (macro_ptr) {
-        auto macro_cmd = expand_command(ctx, macro_ptr->command, flags, *outputs, &instruction_pattern);
-        if (!macro_cmd) {
-            return pup::unexpected<Error>(macro_cmd.error());
-        }
-        cmd_text = *macro_cmd;
+    // Expand command with actual outputs for %o substitution.
+    // Also capture instruction (after variable expansion, before pattern substitution).
+    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, &instruction_pattern);
+    if (!cmd_result) {
+        return pup::unexpected<Error>(cmd_result.error());
+    }
+    cmd_text = *cmd_result;
 
-        if (macro_ptr->display) {
-            auto disp_result = expand_command(ctx, *macro_ptr->display, flags, *outputs);
-            if (disp_result) {
-                display = *disp_result;
-            }
-        }
-    } else {
-        auto full_cmd = expand_command(ctx, rule.command, flags, *outputs, &instruction_pattern);
-        if (!full_cmd) {
-            return pup::unexpected<Error>(full_cmd.error());
-        }
-        cmd_text = *full_cmd;
-
-        if (rule.display) {
-            auto disp_result = expand_command(ctx, *rule.display, flags, *outputs);
-            if (disp_result) {
-                display = *disp_result;
-            }
+    if (eff_display) {
+        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs);
+        if (disp_result) {
+            display = *disp_result;
         }
     }
 
@@ -1836,36 +1835,17 @@ auto expand_rule(
         output_ids.push_back(*output_id);
 
         // Add to output group {name} if specified
-        // Only add if the current context is active (guards satisfied)
-        // This prevents inactive branches from contributing to groups
-        auto output_group = rule.output_group;
-        if (!output_group && macro_ptr && macro_ptr->output_group) {
-            output_group = macro_ptr->output_group;
-        }
-        if (output_group && is_context_active(ctx)) {
-            auto gkey = to_underlying(*output_group);
+        if (eff_output_group && is_context_active(ctx)) {
+            auto gkey = to_underlying(*eff_output_group);
             ctx.groups.get_or_create(gkey).push_back(*output_id);
         }
 
         // Add to order-only group <name> if specified
-        // Supports path/<group> syntax where path specifies the group's directory
-        // Only add if context is active (prevents inactive branches from contributing)
-        auto output_oo_group = rule.output_order_only_group;
-        if (!output_oo_group && macro_ptr && macro_ptr->output_order_only_group) {
-            output_oo_group = macro_ptr->output_order_only_group;
-        }
-        if (output_oo_group && is_context_active(ctx)) {
+        if (eff_output_oo_group && is_context_active(ctx)) {
             auto dir = StringId::Empty;
 
-            parser::Expression const* group_dir_expr = nullptr;
-            if (rule.output_order_only_group_dir) {
-                group_dir_expr = &*rule.output_order_only_group_dir;
-            } else if (macro_ptr && macro_ptr->output_order_only_group_dir) {
-                group_dir_expr = &*macro_ptr->output_order_only_group_dir;
-            }
-
-            if (group_dir_expr) {
-                auto expanded = parser::expand(*ctx.eval, *group_dir_expr);
+            if (eff_oo_group_dir) {
+                auto expanded = parser::expand(*ctx.eval, *eff_oo_group_dir);
                 if (expanded) {
                     dir = normalize_group_dir(str(*expanded), str(ctx.current_dir), str(ctx.options.source_root));
                 }
@@ -1875,7 +1855,7 @@ auto expand_rule(
                 dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
             }
 
-            auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*output_oo_group));
+            auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*eff_output_oo_group));
             if (group_id_result) {
                 // Add edge: file → group (file is member of group)
                 (void)add_edge(ctx.state->graph, *output_id, *group_id_result, LinkType::Group);
