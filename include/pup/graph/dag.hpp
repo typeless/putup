@@ -225,10 +225,6 @@ auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<
 [[nodiscard]]
 auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>;
 
-/// Find a node by path starting from a specific root node
-[[nodiscard]]
-auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std::optional<NodeId>;
-
 /// Get all nodes of a given type
 [[nodiscard]]
 auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>;

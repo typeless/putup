@@ -231,13 +231,15 @@ auto transform_input_path(
     auto source_to_root = str(tc.source_to_root);
     auto current_dir_sv = str(tc.current_dir_id);
 
-    if (auto node_id = find_by_path(bs.graph, inp, BUILD_ROOT_ID)) {
-        auto full_path_sv = get_full_path(bs.graph, *node_id, bs.path_cache);
-        if (!full_path_sv.empty()) {
-            if (!is_empty(tc.canonical_cwd) && full_path_sv.starts_with("..")) {
-                return make_canonical_relative(tc, full_path_sv);
+    if (auto path_id = bs.graph.paths.find_path(inp, pool, PathId::BuildRoot)) {
+        if (auto const* hit = bs.graph.path_to_node.find(to_underlying(*path_id))) {
+            auto full_path_sv = get_full_path(bs.graph, NodeId { *hit }, bs.path_cache);
+            if (!full_path_sv.empty()) {
+                if (!is_empty(tc.canonical_cwd) && full_path_sv.starts_with("..")) {
+                    return make_canonical_relative(tc, full_path_sv);
+                }
+                return pup::make_source_relative(full_path_sv, source_to_root, current_dir_sv);
             }
-            return pup::make_source_relative(full_path_sv, source_to_root, current_dir_sv);
         }
     }
 
@@ -353,8 +355,10 @@ auto resolve_input_node(
     auto& pool = global_pool();
 
     // First check if node exists under BUILD_ROOT_ID (generated files)
-    if (auto existing = find_by_path(ctx.state->graph, normalized_path, BUILD_ROOT_ID)) {
-        return *existing;
+    if (auto build_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::BuildRoot)) {
+        if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path))) {
+            return NodeId { *hit };
+        }
     }
 
     // If path had build prefix, it's referencing a generated file. Even if a source file
@@ -366,8 +370,10 @@ auto resolve_input_node(
     }
 
     // Check under SOURCE_ROOT_ID (source files)
-    if (auto existing = find_by_path(ctx.state->graph, normalized_path, SOURCE_ROOT_ID)) {
-        return *existing;
+    if (auto source_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::SourceRoot)) {
+        if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*source_path))) {
+            return NodeId { *hit };
+        }
     }
 
     // Node doesn't exist - check filesystem to determine type
