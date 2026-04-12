@@ -1584,12 +1584,18 @@ auto expand_rule(
                                                               : nullptr;
     auto const& eff_outputs = macro_ptr && rule.outputs.empty() ? macro_ptr->outputs
                                                                 : rule.outputs;
-    auto eff_output_group = rule.output_group  ? rule.output_group
-        : macro_ptr && macro_ptr->output_group ? macro_ptr->output_group
-                                               : std::optional<StringId> {};
-    auto eff_output_oo_group = rule.output_order_only_group ? rule.output_order_only_group
-        : macro_ptr && macro_ptr->output_order_only_group   ? macro_ptr->output_order_only_group
-                                                            : std::optional<StringId> {};
+    auto eff_output_group = std::optional<StringId> {};
+    if (rule.output_group) {
+        eff_output_group = rule.output_group;
+    } else if (macro_ptr && macro_ptr->output_group) {
+        eff_output_group = macro_ptr->output_group;
+    }
+    auto eff_output_oo_group = std::optional<StringId> {};
+    if (rule.output_order_only_group) {
+        eff_output_oo_group = rule.output_order_only_group;
+    } else if (macro_ptr && macro_ptr->output_order_only_group) {
+        eff_output_oo_group = macro_ptr->output_order_only_group;
+    }
     auto const* eff_oo_group_dir = rule.output_order_only_group_dir ? &*rule.output_order_only_group_dir
         : macro_ptr && macro_ptr->output_order_only_group_dir       ? &*macro_ptr->output_order_only_group_dir
                                                                     : nullptr;
