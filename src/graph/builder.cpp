@@ -912,13 +912,35 @@ auto expand_inputs(
     return result;
 }
 
+/// Store deferred order-only edges from groups to a command.
+/// Groups can't be resolved to edges immediately because group membership
+/// may grow as more Tupfiles are parsed. Edges are materialized later by
+/// resolve_deferred_order_only_edges().
+auto add_deferred_group_edges(
+    BuilderState& state,
+    Vec<NodeId> const& group_ids,
+    NodeId cmd_id
+) -> void
+{
+    for (auto group_id : group_ids) {
+        auto edge = DeferredOrderOnlyEdge { group_id, cmd_id };
+        auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
+        if (pos == state.deferred_edges.end() || !(*pos == edge)) {
+            state.deferred_edges.insert(pos, edge);
+        }
+    }
+}
+
 /// Process generated rules (e.g., DEP commands for dependency scanning).
 /// Creates command nodes and edges for each generated rule.
+/// Group order-only dependencies are passed as resolved NodeIds from the
+/// parent rule's pre-resolution, avoiding string→NodeId re-parsing.
 auto process_generated_rules(
     BuilderContext& ctx,
     BuilderState& state,
     Vec<GeneratedRule> const& generated_rules,
-    NodeId parent_cmd_id
+    NodeId parent_cmd_id,
+    Vec<NodeId> const& deferred_groups
 ) -> void
 {
     auto& pool = global_pool();
@@ -938,29 +960,20 @@ auto process_generated_rules(
             }
         }
 
-        // Create order-only edges for generated command (e.g., gen-headers)
-        // For group references, defer to resolve_deferred_order_only_edges()
+        // Create order-only file edges (group refs filtered out upstream)
         for (auto oi_id : gen_rule.order_only_inputs) {
             auto oi = pool.get(oi_id);
-            auto group_ref = parse_group_reference(oi, str(ctx.current_dir), str(ctx.options.source_root));
-            if (group_ref) {
-                // This is a group reference - get/create group node and defer edge
-                auto group_id_result = get_or_create_group_node(ctx, state, str(group_ref->group_dir), group_ref->group_name);
-                if (group_id_result) {
-                    auto edge = DeferredOrderOnlyEdge { *group_id_result, *gen_cmd_id };
-                    auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
-                    if (pos == state.deferred_edges.end() || !(*pos == edge)) {
-                        state.deferred_edges.insert(pos, edge);
-                    }
-                }
-            } else if (!parser::has_glob_chars(oi)) {
-                // Regular file path - create edge directly (skip glob patterns)
-                auto oi_node = resolve_input_node(ctx, oi);
-                if (oi_node) {
-                    (void)add_order_only_edge(ctx.state->graph, *oi_node, *gen_cmd_id);
-                }
+            if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
+                continue;
+            }
+            auto oi_node = resolve_input_node(ctx, oi);
+            if (oi_node) {
+                (void)add_order_only_edge(ctx.state->graph, *oi_node, *gen_cmd_id);
             }
         }
+
+        // Propagate parent's group dependencies to this generated command
+        add_deferred_group_edges(state, deferred_groups, *gen_cmd_id);
 
         // Add edge from generated command to parent command (dep-scan runs before compile)
         (void)add_edge(ctx.state->graph, *gen_cmd_id, parent_cmd_id);
@@ -1570,15 +1583,17 @@ auto expand_rule(
     auto deferred_group_ids = NodeIdMap32 {};
     auto deferred_group_vec = Vec<NodeId> {};
 
-    // Also check regular inputs for order-only group references
-    // In tup, <group> references are always order-only even when in the inputs section
-    // Include macro's order_only_inputs to trigger demand-driven parsing
+    // Merge rule + macro order-only inputs once (reused for group pre-resolution and expansion)
+    auto all_order_only = rule.order_only_inputs;
+    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
+        all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
+    }
+
+    // Check all inputs (regular + order-only) for group references.
+    // In tup, <group> references are always order-only even when in the inputs section.
     auto all_inputs = Vec<parser::PathPattern> {};
     all_inputs.insert(all_inputs.end(), rule.inputs.begin(), rule.inputs.end());
-    all_inputs.insert(all_inputs.end(), rule.order_only_inputs.begin(), rule.order_only_inputs.end());
-    if (macro_ptr) {
-        all_inputs.insert(all_inputs.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
-    }
+    all_inputs.insert(all_inputs.end(), all_order_only.begin(), all_order_only.end());
 
     for (auto const& pattern : all_inputs) {
         if (pattern.is_order_only_group) {
@@ -1713,16 +1728,20 @@ auto expand_rule(
         }
     }
 
-    // Expand order-only inputs early so we can pass them to generated rules
-    auto all_order_only = rule.order_only_inputs;
-    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
-        all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
+    // Expand non-group order-only inputs. Typed groups (<name>) are already handled
+    // by the pre-resolution loop above — their NodeIds are in deferred_group_vec.
+    // Expression-based group refs may still slip through expand_inputs (rare).
+    auto order_only_file_patterns = Vec<parser::PathPattern> {};
+    for (auto const& p : all_order_only) {
+        if (!p.is_order_only_group) {
+            order_only_file_patterns.push_back(p);
+        }
     }
     auto order_only_paths = Vec<StringId> {};
-    for (auto const& pattern : all_order_only) {
-        auto order_inputs = Result<Vec<StringId>> { expand_inputs(ctx, { pattern }) };
+    if (!order_only_file_patterns.empty()) {
+        auto order_inputs = expand_inputs(ctx, order_only_file_patterns);
         if (order_inputs) {
-            order_only_paths.insert(order_only_paths.end(), order_inputs->begin(), order_inputs->end());
+            order_only_paths = std::move(*order_inputs);
         }
     }
 
@@ -1756,7 +1775,7 @@ auto expand_rule(
         generated_rules = ctx.options.pattern_registry->match_and_generate(cmd_info);
     }
 
-    process_generated_rules(ctx, state, generated_rules, *cmd_id);
+    process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);
 
     // Create edges from inputs to command and collect operand NodeIds
     // Use file_inputs (excludes glob patterns which aren't valid paths)
@@ -1883,15 +1902,7 @@ auto expand_rule(
         }
     }
 
-    // Store deferred edges for groups
-    // These will be resolved after all Tupfiles are parsed (group might grow)
-    for (auto group_id : deferred_group_vec) {
-        auto edge = DeferredOrderOnlyEdge { group_id, *cmd_id };
-        auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
-        if (pos == state.deferred_edges.end() || !(*pos == edge)) {
-            state.deferred_edges.insert(pos, edge);
-        }
-    }
+    add_deferred_group_edges(state, deferred_group_vec, *cmd_id);
 
     return {};
 }
