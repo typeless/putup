@@ -318,112 +318,6 @@ constexpr auto MAX_DIRECTORY_DEPTH = 128;
 // to the same node when the paths are equivalent (e.g., $(B)/include/header.h
 // from an input and the variant-mapped output both resolve to the same node).
 
-/// Walk a path from a starting directory node, creating intermediate directories.
-/// Returns the final directory node.
-///
-/// @param graph The build graph
-/// @param start_dir_id Starting directory node (typically Tupfile's parent)
-/// @param path Path to walk (already variable-expanded)
-/// @return NodeId of the final directory
-auto walk_path_to_directory(
-    Graph& graph,
-    NodeId start_dir_id,
-    std::string_view path
-) -> NodeId
-{
-    if (path.empty() || path == ".") {
-        return start_dir_id;
-    }
-
-    auto current_id = start_dir_id;
-    auto remaining = path;
-
-    while (!remaining.empty()) {
-        auto slash = remaining.find('/');
-        auto comp_str = slash == std::string_view::npos ? remaining : remaining.substr(0, slash);
-        remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
-        if (comp_str.empty() || comp_str == ".") {
-            continue;
-        }
-
-        if (comp_str == "..") {
-            // Walk to parent - node's parent_dir points to parent (0 = root)
-            // Only go up if we're not already at root
-            if (current_id != NodeId { 0 }) {
-                auto* node = get_file_node(graph, current_id);
-                if (node) {
-                    current_id = node->parent_dir;
-                }
-            }
-            // If already at root (current_id == 0), stay at root
-        } else {
-            // Find or create child directory
-            if (auto child = find_by_dir_name(graph, current_id, comp_str)) {
-                current_id = *child;
-            } else {
-                // Create new directory node
-                auto node = FileNode {
-                    .type = NodeType::Directory,
-                    .name = intern(comp_str),
-                    .parent_dir = current_id,
-                };
-                auto result = add_file_node(graph, std::move(node));
-                if (result) {
-                    current_id = *result;
-                }
-            }
-        }
-    }
-
-    return current_id;
-}
-
-/// Walk a path and create/find the file node at the end.
-/// @param graph The build graph
-/// @param start_id Starting node (BUILD_ROOT_ID for generated, SOURCE_ROOT_ID for source)
-/// @param path Path to the file (relative to start_id)
-/// @param type NodeType for the file node
-/// @return NodeId of the file node
-auto walk_to_file_node(
-    Graph& graph,
-    NodeId start_id,
-    std::string_view path,
-    NodeType type
-) -> Result<NodeId>
-{
-    if (path.empty()) {
-        return make_error<NodeId>(ErrorCode::InvalidArgument, "Empty path");
-    }
-
-    auto par = pup::path::parent(path);
-    auto basename = pup::path::filename(path);
-
-    auto target_dir_id = start_id;
-    if (!par.empty() && par != ".") {
-        target_dir_id = walk_path_to_directory(graph, start_id, par);
-    }
-
-    // Find or create the file node
-    if (auto existing = find_by_dir_name(graph, target_dir_id, basename)) {
-        // Handle type upgrade (Ghost -> Generated, File -> Generated)
-        if (type == NodeType::Generated) {
-            auto* node = get_file_node(graph, *existing);
-            if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                node->type = NodeType::Generated;
-            }
-        }
-        return *existing;
-    }
-
-    // Create new node
-    auto node = FileNode {
-        .type = type,
-        .name = intern(basename),
-        .parent_dir = target_dir_id,
-    };
-    return add_file_node(graph, std::move(node));
-}
-
 auto get_or_create_directory_node(
     BuilderContext& ctx,
     std::string_view dir_path,
@@ -496,6 +390,8 @@ auto resolve_input_node(
     // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths
     // - Generated/Ghost files are under BUILD_ROOT_ID at source-relative paths
 
+    auto& pool = global_pool();
+
     // First check if node exists under BUILD_ROOT_ID (generated files)
     if (auto existing = find_by_path(ctx.state->graph, normalized_path, BUILD_ROOT_ID)) {
         return *existing;
@@ -505,7 +401,8 @@ auto resolve_input_node(
     // exists at the same path, create a Ghost node under BUILD_ROOT_ID so it can be
     // upgraded to Generated when the output rule is processed.
     if (had_build_prefix) {
-        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+        auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
+        return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
     }
 
     // Check under SOURCE_ROOT_ID (source files)
@@ -514,33 +411,32 @@ auto resolve_input_node(
     }
 
     // Node doesn't exist - check filesystem to determine type
-    auto source_path = global_pool().get(pup::path::join(str(ctx.options.source_root), normalized_path));
+    auto source_path = pool.get(pup::path::join(str(ctx.options.source_root), normalized_path));
     if (pup::platform::exists(source_path)) {
-        // Source file exists - create File node under SOURCE_ROOT_ID
-        return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+        auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
+        return ensure_file_node(ctx.state->graph, path_id, NodeType::File);
     }
 
     // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
     // source_root. Check config_root as a fallback for source file resolution.
     if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
-        auto config_path_sv = global_pool().get(pup::path::join(str(ctx.options.config_root), normalized_path));
+        auto config_path_sv = pool.get(pup::path::join(str(ctx.options.config_root), normalized_path));
         if (pup::platform::exists(config_path_sv)) {
-            return walk_to_file_node(ctx.state->graph, SOURCE_ROOT_ID, normalized_path, NodeType::File);
+            auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
+            return ensure_file_node(ctx.state->graph, path_id, NodeType::File);
         }
     }
 
     // Check if file exists in build directory (e.g., tup.config, or already-generated files)
-    auto build_path_sv = global_pool().get(pup::path::join(str(ctx.options.output_root), normalized_path));
+    auto build_path_sv = pool.get(pup::path::join(str(ctx.options.output_root), normalized_path));
     if (pup::platform::exists(build_path_sv)) {
-        // File exists in build dir but not source - it's a Generated output from a previous build.
-        // Create as Ghost so the rule that generates it can upgrade it to Generated.
-        // (If the rule no longer generates it, the Ghost remains and causes an error.)
-        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+        auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
+        return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
     }
 
     // File doesn't exist anywhere - create Ghost node under BUILD_ROOT_ID
-    // Ghost nodes represent not-yet-generated files, which will be under build root
-    return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized_path, NodeType::Ghost);
+    auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
+    return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
 }
 
 /// Get all files that are members of a group (via file → group edges)
