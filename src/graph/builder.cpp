@@ -61,14 +61,6 @@ auto strip_trailing_slashes(std::string_view s) -> std::string_view
 /// Normalize a file path for consistent lookup
 /// - Removes double slashes
 /// - Resolves . and .. components using lexically_normal
-auto normalize_path(std::string_view path_str) -> std::string_view
-{
-    if (path_str.empty()) {
-        return path_str;
-    }
-    return global_pool().get(pup::path::normalize(path_str));
-}
-
 /// Normalize a directory path for group key lookup.
 /// - Strips trailing slashes
 /// - Converts absolute paths to project-relative
@@ -463,88 +455,6 @@ auto get_or_create_directory_node(
 
     auto node = FileNode {
         .type = NodeType::Directory,
-        .name = intern(basename_sv),
-        .parent_dir = parent_id,
-    };
-
-    return add_file_node(ctx.state->graph, std::move(node));
-}
-
-auto get_or_create_file_node(
-    BuilderContext& ctx,
-    std::string_view path,
-    NodeType type
-) -> Result<NodeId>
-{
-    // Convert working-directory-relative paths to source-root-relative or absolute
-    // Paths like "../../build/foo" from "src/bar" should become "build/foo"
-    // For Generated nodes, first check if path already has build root prefix.
-    // We must strip the prefix and look up under BUILD_ROOT_ID before any other
-    // path manipulation that could corrupt the lookup.
-    auto build_root_name = get_build_root_name(ctx.state->graph);
-
-    if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path_sv = global_pool().get(pup::strip_path_prefix(path, build_root_name));
-
-        if (lookup_path_sv != path) {
-            if (auto existing = find_by_path(ctx.state->graph, lookup_path_sv, BUILD_ROOT_ID)) {
-                return *existing;
-            }
-        }
-    }
-
-    // For cross-project paths, also check after normalizing through output_root
-    if (type == NodeType::Generated && path.starts_with("..")) {
-        auto norm_output_sv = normalize_to_output_relative(path, str(ctx.options.source_root), str(ctx.options.output_root));
-        if (norm_output_sv != path) {
-            if (auto existing = find_by_path(ctx.state->graph, norm_output_sv, BUILD_ROOT_ID)) {
-                return *existing;
-            }
-        }
-    }
-
-    auto& pool = global_pool();
-    auto resolved = path;
-    if (!is_empty(ctx.current_dir) && path.starts_with("..")) {
-        auto norm = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
-        if (norm.starts_with("..")) {
-            resolved = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.options.source_root), norm))));
-        } else {
-            resolved = norm;
-        }
-    }
-
-    auto normalized = normalize_path(resolved);
-
-    // For Generated nodes, check if node was already created under BUILD_ROOT_ID.
-    // This handles paths without the build prefix.
-    if (type == NodeType::Generated && !build_root_name.empty()) {
-        auto lookup_path2 = pool.get(pup::strip_path_prefix(normalized, build_root_name));
-        if (auto existing = find_by_path(ctx.state->graph, lookup_path2, BUILD_ROOT_ID)) {
-            return *existing;
-        }
-    }
-
-    // For Generated nodes, use walk_to_file_node to ensure they're created under BUILD_ROOT_ID.
-    if (type == NodeType::Generated) {
-        return walk_to_file_node(ctx.state->graph, BUILD_ROOT_ID, normalized, NodeType::Generated);
-    }
-
-    auto basename_sv = pup::path::filename(normalized);
-
-    auto parent_path_sv = pup::path::parent(normalized);
-    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv);
-    if (!parent_id_result) {
-        return parent_id_result;
-    }
-    auto parent_id = *parent_id_result;
-
-    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, basename_sv)) {
-        return *existing;
-    }
-
-    auto node = FileNode {
-        .type = type,
         .name = intern(basename_sv),
         .parent_dir = parent_id,
     };
@@ -1292,7 +1202,8 @@ auto include_single_file(
     ctx.included_files.insert(include_path_id);
 
     auto inc_rel = global_pool().get(pup::path::relative(include_path, include_root));
-    auto inc_node_result = get_or_create_file_node(ctx, inc_rel, NodeType::File);
+    auto inc_path_id = ctx.state->graph.paths.intern_path(inc_rel, global_pool(), PathId::SourceRoot);
+    auto inc_node_result = ensure_file_node(ctx.state->graph, inc_path_id, NodeType::File);
     if (inc_node_result) {
         ctx.sticky_sources.push_back(*inc_node_result);
     }
@@ -2285,7 +2196,8 @@ auto add_tupfile(
     // Create Tupfile node and add to sticky_sources for dependency tracking
     // For 3-tree builds, store relative to config_root (Tupfile's actual location)
     auto tupfile_rel = global_pool().get(pup::path::relative(tupfile_filename_sv, tupfile_root));
-    auto tupfile_node_result = get_or_create_file_node(ctx, tupfile_rel, NodeType::File);
+    auto tupfile_path_id = ctx.state->graph.paths.intern_path(tupfile_rel, global_pool(), PathId::SourceRoot);
+    auto tupfile_node_result = ensure_file_node(ctx.state->graph, tupfile_path_id, NodeType::File);
     if (tupfile_node_result) {
         ctx.sticky_sources.push_back(*tupfile_node_result);
     }
