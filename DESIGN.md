@@ -561,6 +561,7 @@ struct Graph {
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children;  // Per-directory name -> NodeId (indexed by parent dir)
+    SortedPairVec path_to_node;      // PathId -> NodeId (reverse of FileNode::path_id)
     StringPool command_strings;               // Interned expanded command strings
     SortedPairVec command_index;              // StringId(command) -> NodeId
 
@@ -585,11 +586,14 @@ class BuildGraph {
 
 **Path storage model**: Nodes store only their basename in `name`. Full paths are reconstructed by walking the `parent_dir` chain via `get_full_path()`, which caches results for efficiency.
 
+**Node creation**: All file/directory/ghost/generated nodes are created through `ensure_file_node(graph, path_id, type)`, which takes a grounded `PathId` and walks the PathPool trie to create intermediate directory nodes as needed. It deduplicates via `path_to_node` (PathId→NodeId map) and handles type upgrades (Ghost→Generated). The builder's `resolve_input_node` performs filesystem probing and heuristics to determine the correct root (SourceRoot vs BuildRoot) and NodeType, then delegates to `ensure_file_node` for actual node creation.
+
 **Graph operations:**
 
 ```cpp
 // Free functions (functional style)
 auto add_file_node(Graph&, FileNode) -> Result<NodeId>;
+auto ensure_file_node(Graph&, PathId, NodeType) -> Result<NodeId>; // Primary creation path
 auto add_command_node(Graph&, CommandNode) -> Result<NodeId>;
 auto add_edge(Graph&, from, to, type) -> Result<void>;
 auto get_full_path(Graph const&, id) -> StringId;
