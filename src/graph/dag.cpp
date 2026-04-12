@@ -409,27 +409,29 @@ auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<
     return *found;
 }
 
-auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>
+/// Resolve a file path (possibly with build-root prefix) to a NodeId.
+/// Strips the build-root prefix before looking up under BuildRoot, then
+/// falls back to SourceRoot. Returns nullopt if the path isn't in the graph.
+auto resolve_file_path(
+    Graph const& graph,
+    std::string_view path,
+    StringPool const& pool
+) -> std::optional<NodeId>
 {
     if (path.empty()) {
         return std::nullopt;
     }
 
-    auto const& pool = global_pool();
-
-    // For paths with the build root prefix (e.g., "build/foo.o"), strip the
-    // prefix before looking up under BuildRoot (which already implies the build tree).
-    auto lookup_path = path;
+    auto build_lookup = path;
     auto build_root_name = get_build_root_name(graph);
     if (!build_root_name.empty()) {
         auto stripped = pool.get(pup::strip_path_prefix(path, build_root_name));
         if (stripped != path) {
-            lookup_path = stripped;
+            build_lookup = stripped;
         }
     }
 
-    // Try BuildRoot first (generated files), then SourceRoot
-    if (auto pid = graph.paths.find_path(lookup_path, pool, PathId::BuildRoot)) {
+    if (auto pid = graph.paths.find_path(build_lookup, pool, PathId::BuildRoot)) {
         if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
             return NodeId { *hit };
         }
@@ -1099,35 +1101,10 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
     auto affected = NodeIdMap32 {};
     auto to_process = Vec<NodeId> {};
 
-    auto build_root_name = get_build_root_name(graph);
-
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
 
-        // Changed file paths from the index include the build root prefix
-        // (e.g., "build/foo.o"). Strip it before looking up under BuildRoot,
-        // which already implies the build tree.
-        auto build_lookup = file_path;
-        if (!build_root_name.empty()) {
-            auto stripped = pool.get(pup::strip_path_prefix(file_path, build_root_name));
-            if (stripped != file_path) {
-                build_lookup = stripped;
-            }
-        }
-
-        auto found = std::optional<NodeId> {};
-        if (auto pid = graph.paths.find_path(build_lookup, pool, PathId::BuildRoot)) {
-            if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
-                found = NodeId { *hit };
-            }
-        }
-        if (!found) {
-            if (auto pid = graph.paths.find_path(file_path, pool, PathId::SourceRoot)) {
-                if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
-                    found = NodeId { *hit };
-                }
-            }
-        }
+        auto found = resolve_file_path(graph, file_path, pool);
         if (!found) {
             continue;
         }

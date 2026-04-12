@@ -220,11 +220,6 @@ auto find_by_dir_name(
 [[nodiscard]]
 auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>;
 
-/// Find a node by path (walks path components using find_by_dir_name)
-/// Starts from SOURCE_ROOT_ID (0) by default
-[[nodiscard]]
-auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<NodeId>;
-
 /// Get all nodes of a given type
 [[nodiscard]]
 auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>;
