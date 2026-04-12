@@ -305,8 +305,6 @@ struct ScopeGuard {
 template<typename F>
 ScopeGuard(F) -> ScopeGuard<F>;
 
-constexpr auto MAX_DIRECTORY_DEPTH = 128;
-
 // ============================================================================
 // Node-Traversal Path Resolution
 // ============================================================================
@@ -317,44 +315,6 @@ constexpr auto MAX_DIRECTORY_DEPTH = 128;
 // This naturally unifies input and output path resolution because both traverse
 // to the same node when the paths are equivalent (e.g., $(B)/include/header.h
 // from an input and the variant-mapped output both resolve to the same node).
-
-auto get_or_create_directory_node(
-    BuilderContext& ctx,
-    std::string_view dir_path,
-    int depth = 0
-) -> Result<NodeId>
-{
-    auto normalized_path = global_pool().get(pup::path::normalize(dir_path));
-
-    if (normalized_path.empty() || normalized_path == "." || normalized_path == "/") {
-        return NodeId { 0 };
-    }
-
-    if (depth > MAX_DIRECTORY_DEPTH) {
-        return make_error<NodeId>(ErrorCode::InvalidArgument, "Directory nesting exceeds maximum depth");
-    }
-
-    auto parent_path_sv = pup::path::parent(normalized_path);
-    auto basename_sv = pup::path::filename(normalized_path);
-
-    auto parent_id_result = get_or_create_directory_node(ctx, parent_path_sv, depth + 1);
-    if (!parent_id_result) {
-        return parent_id_result;
-    }
-    auto parent_id = *parent_id_result;
-
-    if (auto existing = find_by_dir_name(ctx.state->graph, parent_id, basename_sv)) {
-        return *existing;
-    }
-
-    auto node = FileNode {
-        .type = NodeType::Directory,
-        .name = intern(basename_sv),
-        .parent_dir = parent_id,
-    };
-
-    return add_file_node(ctx.state->graph, std::move(node));
-}
 
 auto resolve_input_node(
     BuilderContext& ctx,
@@ -460,7 +420,8 @@ auto get_or_create_group_node(
     }
 
     // Get or create parent directory node
-    auto parent_id_result = get_or_create_directory_node(ctx, directory);
+    auto dir_path_id = ctx.state->graph.paths.intern_path(directory, global_pool(), PathId::SourceRoot);
+    auto parent_id_result = ensure_file_node(ctx.state->graph, dir_path_id, NodeType::Directory);
     if (!parent_id_result) {
         return parent_id_result;
     }
@@ -2108,7 +2069,8 @@ auto add_tupfile(
             auto config_parent = pup::path::parent(str(state.options.config_path));
             auto config_dir_rel_sv = global_pool().get(pup::path::relative(config_parent, str(state.options.source_root)));
             auto config_dir_rel = (config_dir_rel_sv.empty() || config_dir_rel_sv == ".") ? std::string_view {} : config_dir_rel_sv;
-            auto dir_result = get_or_create_directory_node(ctx, config_dir_rel);
+            auto dir_path_id = build_state.graph.paths.intern_path(config_dir_rel, global_pool(), PathId::SourceRoot);
+            auto dir_result = ensure_file_node(build_state.graph, dir_path_id, NodeType::Directory);
             if (dir_result) {
                 config_dir_id = *dir_result;
             }
