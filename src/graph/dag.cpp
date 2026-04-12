@@ -43,6 +43,7 @@ auto make_graph() -> Graph
         .parent_dir = SOURCE_ROOT_ID,
         .path_id = PathId::BuildRoot,
     };
+    graph.path_to_node.insert(to_underlying(PathId::SourceRoot), SOURCE_ROOT_ID);
     graph.path_to_node.insert(to_underlying(PathId::BuildRoot), BUILD_ROOT_ID);
     graph.next_file_id = 2; // Start regular nodes at ID 2
 
@@ -414,56 +415,31 @@ auto find_by_path(Graph const& graph, std::string_view path) -> std::optional<No
         return std::nullopt;
     }
 
+    auto const& pool = global_pool();
+
     // For paths with the build root prefix (e.g., "build/foo.o"), strip the
     // prefix before looking up under BuildRoot (which already implies the build tree).
     auto lookup_path = path;
     auto build_root_name = get_build_root_name(graph);
     if (!build_root_name.empty()) {
-        auto stripped = global_pool().get(pup::strip_path_prefix(path, build_root_name));
+        auto stripped = pool.get(pup::strip_path_prefix(path, build_root_name));
         if (stripped != path) {
             lookup_path = stripped;
         }
     }
 
-    // Walk directory tree: try BuildRoot first (generated files), then SourceRoot
-    auto found = find_by_path(graph, lookup_path, BUILD_ROOT_ID);
-    if (!found) {
-        found = find_by_path(graph, path, SOURCE_ROOT_ID);
-    }
-    return found;
-}
-
-auto find_by_path(Graph const& graph, std::string_view path, NodeId root) -> std::optional<NodeId>
-{
-    if (path.empty()) {
-        return std::nullopt;
-    }
-
-    auto parent_id = root;
-    auto remaining = path;
-
-    while (!remaining.empty()) {
-        auto slash = remaining.find('/');
-        auto name = slash == std::string_view::npos ? remaining : remaining.substr(0, slash);
-        remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
-        if (name.empty() || name == ".") {
-            continue;
+    // Try BuildRoot first (generated files), then SourceRoot
+    if (auto pid = graph.paths.find_path(lookup_path, pool, PathId::BuildRoot)) {
+        if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
+            return NodeId { *hit };
         }
-
-        auto found = find_by_dir_name(graph, parent_id, name);
-        if (!found) {
-            return std::nullopt;
+    }
+    if (auto pid = graph.paths.find_path(path, pool, PathId::SourceRoot)) {
+        if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
+            return NodeId { *hit };
         }
-
-        parent_id = *found;
     }
-
-    // For root=0, we need parent_id != 0 to be valid
-    // For root=BUILD_ROOT_ID, any result is valid (including BUILD_ROOT_ID itself if path is empty after normalization)
-    if (root == SOURCE_ROOT_ID) {
-        return parent_id != SOURCE_ROOT_ID ? std::optional { parent_id } : std::nullopt;
-    }
-    return parent_id != root ? std::optional { parent_id } : std::nullopt;
+    return std::nullopt;
 }
 
 auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>
@@ -1139,9 +1115,18 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
             }
         }
 
-        auto found = find_by_path(graph, build_lookup, BUILD_ROOT_ID);
+        auto found = std::optional<NodeId> {};
+        if (auto pid = graph.paths.find_path(build_lookup, pool, PathId::BuildRoot)) {
+            if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
+                found = NodeId { *hit };
+            }
+        }
         if (!found) {
-            found = find_by_path(graph, file_path, SOURCE_ROOT_ID);
+            if (auto pid = graph.paths.find_path(file_path, pool, PathId::SourceRoot)) {
+                if (auto const* hit = graph.path_to_node.find(to_underlying(*pid))) {
+                    found = NodeId { *hit };
+                }
+            }
         }
         if (!found) {
             continue;

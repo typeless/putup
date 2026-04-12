@@ -201,6 +201,37 @@ auto PathPool::intern_path(std::string_view path, StringPool& pool, PathId start
     return current;
 }
 
+auto PathPool::find_path(std::string_view path, StringPool const& pool, PathId start) const -> std::optional<PathId>
+{
+    auto current = start;
+    auto remaining = path;
+
+    while (!remaining.empty()) {
+        auto slash = remaining.find('/');
+        auto comp = (slash == std::string_view::npos) ? remaining : remaining.substr(0, slash);
+        remaining = (slash == std::string_view::npos) ? std::string_view {} : remaining.substr(slash + 1);
+
+        if (comp.empty() || comp == ".") {
+            continue;
+        }
+
+        auto name = pool.find(comp);
+        if (is_empty(name)) {
+            return std::nullopt;
+        }
+
+        auto const parent_idx = to_underlying(current);
+        auto const* found = children_[parent_idx].find(to_underlying(name));
+        if (!found) {
+            return std::nullopt;
+        }
+
+        current = make_path_id(*found);
+    }
+
+    return current;
+}
+
 auto PathPool::size() const -> std::size_t
 {
     return entries_.size() - 3;

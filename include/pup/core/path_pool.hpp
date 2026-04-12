@@ -10,6 +10,7 @@
 #include "pup/core/vec.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <string_view>
 
 namespace pup {
@@ -74,6 +75,11 @@ public:
     /// Parse a slash-separated path starting from a specific root.
     [[nodiscard]]
     auto intern_path(std::string_view path, StringPool& pool, PathId root) -> PathId;
+
+    /// Lookup a slash-separated path without creating entries. Returns nullopt if any
+    /// component is missing. Read-only counterpart of intern_path.
+    [[nodiscard]]
+    auto find_path(std::string_view path, StringPool const& pool, PathId root) const -> std::optional<PathId>;
 
     [[nodiscard]]
     auto size() const -> std::size_t;

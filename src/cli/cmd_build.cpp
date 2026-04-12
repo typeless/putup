@@ -837,7 +837,12 @@ auto validate_output_targets(
     auto node_ids = pup::Vec<pup::NodeId> {};
     for (auto target_id : targets) {
         auto target_sv = pool.get(target_id);
-        auto node_id = pup::graph::find_by_path(state.graph, target_sv, pup::BUILD_ROOT_ID);
+        auto node_id = std::optional<pup::NodeId> {};
+        if (auto pid = state.graph.paths.find_path(target_sv, pool, pup::PathId::BuildRoot)) {
+            if (auto const* hit = state.graph.path_to_node.find(pup::to_underlying(*pid))) {
+                node_id = pup::NodeId { *hit };
+            }
+        }
         if (!node_id) {
             veprint(variant_name, "Error: %.*s is not in build graph\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
