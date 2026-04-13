@@ -15,6 +15,12 @@ using namespace pup::graph;
 using pup::LinkType;
 using pup::NodeType;
 
+// White-box access for PathPool and interning tests (not part of public API)
+namespace pup::graph {
+auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
+auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
+} // namespace pup::graph
+
 namespace {
 auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
 auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
@@ -332,9 +338,7 @@ TEST_CASE("BuildGraph node types", "[graph]")
         auto id = add_file_node(g, node);
 
         REQUIRE(id.has_value());
-        auto const* n = get_file_node(g, *id);
-        REQUIRE(n != nullptr);
-        REQUIRE(n->type == NodeType::Group);
+        REQUIRE(get_node_type(g, *id) == NodeType::Group);
     }
 
     SECTION("get_parent_dir accessor")
@@ -1411,11 +1415,9 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         auto result = ensure_file_node(graph, path_id, NodeType::Generated);
         REQUIRE(result.has_value());
 
-        auto const* node = get_file_node(graph, *result);
-        REQUIRE(node != nullptr);
-        REQUIRE(node->type == NodeType::Generated);
-        REQUIRE(node->name == intern("foo.o"));
-        REQUIRE(graph.paths.root(node->path_id) == pup::PathId::BuildRoot);
+        REQUIRE(get_node_type(graph, *result) == NodeType::Generated);
+        REQUIRE(get_name(graph, *result) == "foo.o");
+        REQUIRE(graph.paths.root(get_file_node(graph, *result)->path_id) == pup::PathId::BuildRoot);
     }
 
     SECTION("returns existing node on second call")
@@ -1434,14 +1436,11 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         auto result = ensure_file_node(graph, path_id, NodeType::Generated);
         REQUIRE(result.has_value());
 
-        auto const* node = get_file_node(graph, *result);
-        REQUIRE(node != nullptr);
-        REQUIRE(node->name == intern("baz.o"));
+        REQUIRE(get_name(graph, *result) == "baz.o");
 
-        auto const* parent = get_file_node(graph, node->parent_dir);
-        REQUIRE(parent != nullptr);
-        REQUIRE(parent->name == intern("lib"));
-        REQUIRE(parent->type == NodeType::Directory);
+        auto parent_id = get_parent_dir(graph, *result);
+        REQUIRE(get_name(graph, parent_id) == "lib");
+        REQUIRE(get_node_type(graph, parent_id) == NodeType::Directory);
     }
 
     SECTION("upgrades Ghost to Generated")
@@ -1450,12 +1449,12 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 
         auto ghost_result = ensure_file_node(graph, path_id, NodeType::Ghost);
         REQUIRE(ghost_result.has_value());
-        REQUIRE(get_file_node(graph, *ghost_result)->type == NodeType::Ghost);
+        REQUIRE(get_node_type(graph, *ghost_result) == NodeType::Ghost);
 
         auto gen_result = ensure_file_node(graph, path_id, NodeType::Generated);
         REQUIRE(gen_result.has_value());
         REQUIRE(*gen_result == *ghost_result);
-        REQUIRE(get_file_node(graph, *gen_result)->type == NodeType::Generated);
+        REQUIRE(get_node_type(graph, *gen_result) == NodeType::Generated);
     }
 
     SECTION("path_to_node is consistent after creation")
@@ -1557,13 +1556,13 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         auto grounded = graph.paths.intern_path("dep.o", pool, pup::PathId::BuildRoot);
         auto ghost = ensure_file_node(graph, grounded, NodeType::Ghost);
         REQUIRE(ghost.has_value());
-        REQUIRE(get_file_node(graph, *ghost)->type == NodeType::Ghost);
+        REQUIRE(get_node_type(graph, *ghost) == NodeType::Ghost);
 
         auto ungrounded = graph.paths.intern_path("dep.o", pool, pup::PathId::Ungrounded);
         auto gen = ensure_file_node(graph, ungrounded, NodeType::Generated);
         REQUIRE(gen.has_value());
         REQUIRE(*gen == *ghost);
-        REQUIRE(get_file_node(graph, *gen)->type == NodeType::Generated);
+        REQUIRE(get_node_type(graph, *gen) == NodeType::Generated);
     }
 
     SECTION("ungrounded prefers BuildRoot over SourceRoot for lookup")
