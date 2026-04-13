@@ -148,37 +148,13 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Add an order-only edge (dependency that doesn't trigger rebuild)
-[[nodiscard]]
-auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>;
-
-/// Get a file node by ID (mutable) - returns nullptr for command IDs
-[[nodiscard]]
-auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
-
-/// Get a file node by ID (const) - returns nullptr for command IDs
+/// Get a file node by ID - returns nullptr for command IDs
 [[nodiscard]]
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
 
-/// Get a command node by ID (mutable) - returns nullptr for file IDs
-[[nodiscard]]
-auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
-
-/// Get a command node by ID (const) - returns nullptr for file IDs
+/// Get a command node by ID - returns nullptr for file IDs
 [[nodiscard]]
 auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
-
-/// Add a condition node to the graph
-[[nodiscard]]
-auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
-
-/// Get a condition node by ID (mutable) - returns nullptr for non-condition IDs
-[[nodiscard]]
-auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*;
-
-/// Get a condition node by ID (const) - returns nullptr for non-condition IDs
-[[nodiscard]]
-auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
 
 /// Check if all guards on a command are satisfied
 [[nodiscard]]

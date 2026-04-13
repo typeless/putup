@@ -37,6 +37,12 @@
 
 namespace pup::graph {
 
+// Graph-module-internal functions (defined in dag.cpp, not in public header)
+auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
+auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
+auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
+auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
+
 namespace {
 // ---------------------------------------------------------------------------
 // §1 — Inline helpers
@@ -1498,7 +1504,7 @@ auto process_generated_rules(
             }
             auto oi_node = resolve_input_node(ctx, oi);
             if (oi_node) {
-                (void)add_order_only_edge(ctx.state->graph, *oi_node, *gen_cmd_id);
+                (void)add_edge(ctx.state->graph, *oi_node, *gen_cmd_id, LinkType::OrderOnly);
             }
         }
 
@@ -1888,7 +1894,7 @@ auto expand_rule(
         }
         auto oi_node = resolve_input_node(ctx, oi_sv);
         if (oi_node) {
-            (void)add_order_only_edge(ctx.state->graph, *oi_node, *cmd_id);
+            (void)add_edge(ctx.state->graph, *oi_node, *cmd_id, LinkType::OrderOnly);
         }
     }
 
@@ -2225,7 +2231,7 @@ auto finalize_graph(
             continue;
         }
 
-        (void)add_order_only_edge(g, edge.group_id, edge.command_id);
+        (void)add_edge(g, edge.group_id, edge.command_id, LinkType::OrderOnly);
 
         auto group_basename = str(group_node->name);
         if (group_basename.size() > 2 && group_basename.front() == '<' && group_basename.back() == '>') {

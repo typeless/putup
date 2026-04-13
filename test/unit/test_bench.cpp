@@ -14,6 +14,7 @@
 
 using namespace pup::graph;
 using namespace pup::parser;
+using pup::LinkType;
 using pup::NodeType;
 
 namespace {
@@ -56,7 +57,7 @@ auto generate_order_only_graph(
         snprintf(buf, sizeof(buf), "gcc_%zu", i);
         auto cmd = add_command_node(graph, CommandNode {
             .instruction_id = pup::global_pool().intern(buf) });
-        (void)add_order_only_edge(graph, *header, *cmd);
+        (void)add_edge(graph, *header, *cmd, LinkType::OrderOnly);
     }
     return { std::move(bs), *header };
 }
@@ -85,7 +86,7 @@ auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -
                 (void)add_edge(graph, *prev, node);
 
             // Add order-only dep on shared header
-            (void)add_order_only_edge(graph, shared, node);
+            (void)add_edge(graph, shared, node, LinkType::OrderOnly);
 
             prev = node;
         }

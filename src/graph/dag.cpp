@@ -26,6 +26,11 @@
 
 namespace pup::graph {
 
+// Forward declarations for mutable overloads (const versions in public header)
+auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
+auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
+auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*;
+
 auto make_graph() -> Graph
 {
     auto graph = Graph {};
@@ -237,11 +242,6 @@ auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type) -> Result<voi
     return {};
 }
 
-auto add_order_only_edge(Graph& graph, NodeId from, NodeId to) -> Result<void>
-{
-    return add_edge(graph, from, to, LinkType::OrderOnly);
-}
-
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*
 {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
@@ -295,12 +295,6 @@ auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
     return id;
 }
 
-auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
-{
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
-    return const_cast<ConditionNode*>(get_condition_node(std::as_const(graph), id));
-}
-
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*
 {
     if (!node_id::is_condition(id)) {
@@ -312,6 +306,12 @@ auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*
     }
     auto const& node = graph.conditions[idx];
     return node.id == id ? &node : nullptr;
+}
+
+auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
+    return const_cast<ConditionNode*>(get_condition_node(std::as_const(graph), id));
 }
 
 auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>
