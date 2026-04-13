@@ -146,7 +146,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // First Tupfile: modules/kernel defines <local-group>
     auto tupfile1 = Tupfile {};
@@ -161,7 +161,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     rule1.output_order_only_group = intern("local-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     (void)r1;
 
     // Second Tupfile: also in modules/kernel, references <local-group> (empty path)
@@ -181,7 +181,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
+    auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 }
 
@@ -204,7 +204,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // First Tupfile: include/generated defines <gen-headers>
     auto tupfile1 = Tupfile {};
@@ -219,7 +219,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     (void)r1;
 
     // Second Tupfile: modules/kernel references $(ROOT)/include/generated/<gen-headers>
@@ -240,7 +240,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
+    auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 }
 
@@ -263,7 +263,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // First: define group in include/generated
     auto tupfile1 = Tupfile {};
@@ -278,7 +278,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     (void)r1;
 
     // Second: reference with relative path ../../include/generated/<gen-headers>
@@ -300,7 +300,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
+    auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 }
 
@@ -323,7 +323,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // Create source files
     fixture.create_file("src/a.c");
@@ -363,7 +363,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
     rule3.outputs.push_back(out3);
     tupfile.statements.push_back(make_rule_statement(std::move(rule3)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Verify the link command has both .o files as inputs
@@ -412,7 +412,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -427,7 +427,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Should have 2 compile commands (foo.c and bar.c)
@@ -451,7 +451,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // First Tupfile: generate some .h files
     auto tupfile1 = Tupfile {};
@@ -472,7 +472,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
     rule2.outputs.push_back(out2);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     REQUIRE(r1.has_value());
 
     // Verify generated files exist in graph
@@ -502,7 +502,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -516,7 +516,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     // Should find tup.config in the variant directory
     REQUIRE(result.has_value());
 }
@@ -544,7 +544,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -565,7 +565,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Count .o outputs - baz.c should be excluded
@@ -609,7 +609,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -630,7 +630,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Count .o outputs - test_*.c should be excluded
@@ -674,7 +674,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -699,7 +699,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
 
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Count .o outputs - helper_impl.c should be excluded
@@ -743,7 +743,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // Tupfile in include/generated: defines <gen-headers>
     auto tupfile1 = Tupfile {};
@@ -758,7 +758,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     rule1.output_order_only_group = intern("gen-headers");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     REQUIRE(r1.has_value());
 
     // Tupfile in modules/kernel: references ../../include/generated/<gen-headers>
@@ -781,11 +781,11 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
+    auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 
     // Resolve deferred order-only edges (required after all tupfiles are parsed)
-    auto resolve_result = builder.resolve_deferred_order_only_edges(bs);
+    auto resolve_result = resolve_deferred_order_only_edges(bs, builder_state);
     REQUIRE(resolve_result.has_value());
 
     // Verify the kernel.o command has an order-only dependency on config.h
@@ -831,7 +831,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // Case 1: Group defined at root level (directory ".")
     auto tupfile1 = Tupfile {};
@@ -846,7 +846,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     rule1.output_order_only_group = intern("root-group");
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     REQUIRE(r1.has_value());
 
     // Case 2: Reference with empty path from modules/kernel
@@ -868,11 +868,11 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
+    auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 
     // Resolve deferred order-only edges (required after all tupfiles are parsed)
-    auto resolve_result = builder.resolve_deferred_order_only_edges(bs);
+    auto resolve_result = resolve_deferred_order_only_edges(bs, builder_state);
     REQUIRE(resolve_result.has_value());
 
     // The critical verification: check that the group WAS found
@@ -914,7 +914,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -928,7 +928,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Verify output is in variant directory
@@ -964,7 +964,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // Tupfile in deeply nested directory
     auto tupfile = Tupfile {};
@@ -981,7 +981,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Verify the header was resolved correctly
@@ -1016,7 +1016,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -1030,7 +1030,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Find the helpers.c file node
@@ -1088,7 +1088,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -1103,7 +1103,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Find the output node
@@ -1155,7 +1155,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // First Tupfile: boot/Tupfile generates boot.hex
     auto tupfile1 = Tupfile {};
@@ -1171,7 +1171,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     rule1.outputs.push_back(out1);
     tupfile1.statements.push_back(make_rule_statement(std::move(rule1)));
 
-    auto r1 = builder.add_tupfile(bs, tupfile1, ctx);
+    auto r1 = add_tupfile(bs, tupfile1, ctx, builder_state);
     REQUIRE(r1.has_value());
 
     // Find the generated boot.hex node
@@ -1204,7 +1204,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     rule2.outputs.push_back(out2);
     tupfile2.statements.push_back(make_rule_statement(std::move(rule2)));
 
-    auto r2 = builder.add_tupfile(bs, tupfile2, ctx);
+    auto r2 = add_tupfile(bs, tupfile2, ctx, builder_state);
     REQUIRE(r2.has_value());
 
     // Find the command node
@@ -1257,7 +1257,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // Set build root name for variant build (normally done by builder.build())
     set_build_root_name(bs, "build");
@@ -1278,7 +1278,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Find the output node
@@ -1322,7 +1322,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path(""));
@@ -1336,7 +1336,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     auto commands = nodes_of_type(bs.graph,NodeType::Command);
@@ -1373,7 +1373,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src/lib"));
@@ -1387,7 +1387,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Find the command node
@@ -1428,7 +1428,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src/lib"));
@@ -1443,7 +1443,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Find the command node
@@ -1485,7 +1485,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     // Set build root name for variant build (normally done by builder.build())
     set_build_root_name(bs, "build");
@@ -1504,7 +1504,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     auto commands = nodes_of_type(bs.graph,NodeType::Command);
@@ -1551,7 +1551,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder = GraphBuilder { options };
+    auto builder_state = make_builder_state(options);
 
     ctx.tup_variant_outputdir = intern("../../build/src");
 
@@ -1567,7 +1567,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     rule.outputs.push_back(output);
     tupfile.statements.push_back(make_rule_statement(std::move(rule)));
 
-    auto result = builder.add_tupfile(bs, tupfile, ctx);
+    auto result = add_tupfile(bs, tupfile, ctx, builder_state);
     REQUIRE(result.has_value());
 
     // Find the output node

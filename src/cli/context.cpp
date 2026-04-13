@@ -397,7 +397,7 @@ auto make_read_error(std::string_view path) -> pup::Error
 
 struct ParseContext {
     TupfileParseState& state;
-    pup::graph::GraphBuilder& builder;
+    pup::graph::BuilderState& builder_state;
     pup::graph::BuildState& graph;
     std::string_view source_root;
     std::string_view config_root;
@@ -525,7 +525,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         };
     }
 
-    auto result = pup::Result<void> { ctx.builder.add_tupfile(ctx.graph, parse_result.tupfile, eval_ctx) };
+    auto result = pup::Result<void> { pup::graph::add_tupfile(ctx.graph, parse_result.tupfile, eval_ctx, ctx.builder_state) };
 
     sorted_erase(ctx.state.parsing, normalized_dir);
     sorted_insert(ctx.state.parsed, normalized_dir);
@@ -825,11 +825,11 @@ auto build_context(
         .pattern_registry = ctx_opts.pattern_registry,
         .cached_env_vars = std::move(cached_env_vars),
     };
-    auto builder = graph::GraphBuilder(std::move(builder_opts));
+    auto builder_state = graph::make_builder_state(std::move(builder_opts));
 
     auto parse_ctx = ParseContext {
         .state = ctx.impl_->state,
-        .builder = builder,
+        .builder_state = builder_state,
         .graph = ctx.impl_->graph,
         .source_root = pool.get(ctx.impl_->layout.source_root),
         .config_root = pool.get(ctx.impl_->layout.config_root),
@@ -856,10 +856,9 @@ auto build_context(
         }
     }
 
-    // Resolve deferred order-only edges (side effect: modifies graph; return value is count, unused)
-    (void)builder.resolve_deferred_order_only_edges(ctx.impl_->graph);
+    (void)graph::resolve_deferred_order_only_edges(ctx.impl_->graph, builder_state);
 
-    for (auto warning_id : builder.warnings()) {
+    for (auto warning_id : builder_state.warnings) {
         fprintf(stderr, "warning: %s\n", pool.get(warning_id).data());
     }
 
