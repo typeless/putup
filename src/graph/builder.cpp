@@ -45,6 +45,24 @@ namespace {
 auto str(StringId id) -> std::string_view { return global_pool().get(id); }
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 
+/// RAII scope guard for cleanup on scope exit (zero-overhead via template)
+template<typename F>
+struct ScopeGuard {
+    F cleanup;
+    explicit ScopeGuard(F fn)
+        : cleanup { std::move(fn) }
+    {
+    }
+    ~ScopeGuard() { cleanup(); }
+    ScopeGuard(ScopeGuard const&) = delete;
+    auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
+    ScopeGuard(ScopeGuard&&) = delete;
+    auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
+};
+
+template<typename F>
+ScopeGuard(F) -> ScopeGuard<F>;
+
 // ---------------------------------------------------------------------------
 // §2 — Path primitives
 // ---------------------------------------------------------------------------
@@ -286,26 +304,8 @@ auto transform_output_path(
 }
 
 // ---------------------------------------------------------------------------
-// §4 — Graph node creation
+// §4 — Node resolution and creation
 // ---------------------------------------------------------------------------
-
-/// RAII scope guard for cleanup on scope exit (zero-overhead via template)
-template<typename F>
-struct ScopeGuard {
-    F cleanup;
-    explicit ScopeGuard(F fn)
-        : cleanup { std::move(fn) }
-    {
-    }
-    ~ScopeGuard() { cleanup(); }
-    ScopeGuard(ScopeGuard const&) = delete;
-    auto operator=(ScopeGuard const&) -> ScopeGuard& = delete;
-    ScopeGuard(ScopeGuard&&) = delete;
-    auto operator=(ScopeGuard&&) -> ScopeGuard& = delete;
-};
-
-template<typename F>
-ScopeGuard(F) -> ScopeGuard<F>;
 
 // ============================================================================
 // Node-Traversal Path Resolution
@@ -695,7 +695,7 @@ auto apply_exclusions(
 }
 
 // ---------------------------------------------------------------------------
-// §7 — Command/rule expansion
+// §7 — Input/output expansion
 // ---------------------------------------------------------------------------
 
 auto expand_command(
@@ -912,84 +912,6 @@ auto expand_inputs(
     return result;
 }
 
-/// Store deferred order-only edges from groups to a command.
-/// Groups can't be resolved to edges immediately because group membership
-/// may grow as more Tupfiles are parsed. Edges are materialized later by
-/// resolve_deferred_order_only_edges().
-auto add_deferred_group_edges(
-    BuilderState& state,
-    Vec<NodeId> const& group_ids,
-    NodeId cmd_id
-) -> void
-{
-    for (auto group_id : group_ids) {
-        auto edge = DeferredOrderOnlyEdge { group_id, cmd_id };
-        auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
-        if (pos == state.deferred_edges.end() || !(*pos == edge)) {
-            state.deferred_edges.insert(pos, edge);
-        }
-    }
-}
-
-/// Process generated rules (e.g., DEP commands for dependency scanning).
-/// Creates command nodes and edges for each generated rule.
-/// Group order-only dependencies are passed as resolved NodeIds from the
-/// parent rule's pre-resolution, avoiding string→NodeId re-parsing.
-auto process_generated_rules(
-    BuilderContext& ctx,
-    BuilderState& state,
-    Vec<GeneratedRule> const& generated_rules,
-    NodeId parent_cmd_id,
-    Vec<NodeId> const& deferred_groups
-) -> void
-{
-    auto& pool = global_pool();
-    for (auto const& gen_rule : generated_rules) {
-        auto gen_cmd_id = create_command_node(ctx, state, pool.get(gen_rule.command), pool.get(gen_rule.display));
-        if (!gen_cmd_id) {
-            continue;
-        }
-
-        // Create edges from inputs to generated command and collect operands
-        auto gen_input_ids = Vec<NodeId> {};
-        for (auto input_id_val : gen_rule.inputs) {
-            auto input_id = resolve_input_node(ctx, pool.get(input_id_val));
-            if (input_id) {
-                (void)add_edge(ctx.state->graph, *input_id, *gen_cmd_id);
-                gen_input_ids.push_back(*input_id);
-            }
-        }
-
-        // Create order-only file edges (group refs filtered out upstream)
-        for (auto oi_id : gen_rule.order_only_inputs) {
-            auto oi = pool.get(oi_id);
-            if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
-                continue;
-            }
-            auto oi_node = resolve_input_node(ctx, oi);
-            if (oi_node) {
-                (void)add_order_only_edge(ctx.state->graph, *oi_node, *gen_cmd_id);
-            }
-        }
-
-        // Propagate parent's group dependencies to this generated command
-        add_deferred_group_edges(state, deferred_groups, *gen_cmd_id);
-
-        // Add edge from generated command to parent command (dep-scan runs before compile)
-        (void)add_edge(ctx.state->graph, *gen_cmd_id, parent_cmd_id);
-
-        // Store generated rule info and operands on the node.
-        // outputs intentionally left empty: generated rules are dep-scan commands
-        // whose output is captured via generated_output, not %o expansion.
-        if (auto* node = get_command_node(ctx.state->graph, *gen_cmd_id)) {
-            node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
-            node->output_action = gen_rule.action;
-            node->parent_command = gen_rule.parent_command;
-            node->inputs = std::move(gen_input_ids);
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // §8 — Include/import/export
 // ---------------------------------------------------------------------------
@@ -1158,7 +1080,7 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) ->
 }
 
 // ---------------------------------------------------------------------------
-// §9 — Statement processors
+// §9 — Directive processors
 // ---------------------------------------------------------------------------
 
 auto process_export(
@@ -1514,6 +1436,88 @@ auto process_include(
         return pup::unexpected<Error>(resolved.error());
     }
     return include_single_file(ctx, state, include_root, str(*resolved), false);
+}
+
+// ---------------------------------------------------------------------------
+// §10 — Rule expansion
+// ---------------------------------------------------------------------------
+
+/// Store deferred order-only edges from groups to a command.
+/// Groups can't be resolved to edges immediately because group membership
+/// may grow as more Tupfiles are parsed. Edges are materialized later by
+/// resolve_deferred_order_only_edges().
+auto add_deferred_group_edges(
+    BuilderState& state,
+    Vec<NodeId> const& group_ids,
+    NodeId cmd_id
+) -> void
+{
+    for (auto group_id : group_ids) {
+        auto edge = DeferredOrderOnlyEdge { group_id, cmd_id };
+        auto pos = std::lower_bound(state.deferred_edges.begin(), state.deferred_edges.end(), edge);
+        if (pos == state.deferred_edges.end() || !(*pos == edge)) {
+            state.deferred_edges.insert(pos, edge);
+        }
+    }
+}
+
+/// Process generated rules (e.g., DEP commands for dependency scanning).
+/// Creates command nodes and edges for each generated rule.
+/// Group order-only dependencies are passed as resolved NodeIds from the
+/// parent rule's pre-resolution, avoiding string→NodeId re-parsing.
+auto process_generated_rules(
+    BuilderContext& ctx,
+    BuilderState& state,
+    Vec<GeneratedRule> const& generated_rules,
+    NodeId parent_cmd_id,
+    Vec<NodeId> const& deferred_groups
+) -> void
+{
+    auto& pool = global_pool();
+    for (auto const& gen_rule : generated_rules) {
+        auto gen_cmd_id = create_command_node(ctx, state, pool.get(gen_rule.command), pool.get(gen_rule.display));
+        if (!gen_cmd_id) {
+            continue;
+        }
+
+        // Create edges from inputs to generated command and collect operands
+        auto gen_input_ids = Vec<NodeId> {};
+        for (auto input_id_val : gen_rule.inputs) {
+            auto input_id = resolve_input_node(ctx, pool.get(input_id_val));
+            if (input_id) {
+                (void)add_edge(ctx.state->graph, *input_id, *gen_cmd_id);
+                gen_input_ids.push_back(*input_id);
+            }
+        }
+
+        // Create order-only file edges (group refs filtered out upstream)
+        for (auto oi_id : gen_rule.order_only_inputs) {
+            auto oi = pool.get(oi_id);
+            if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
+                continue;
+            }
+            auto oi_node = resolve_input_node(ctx, oi);
+            if (oi_node) {
+                (void)add_order_only_edge(ctx.state->graph, *oi_node, *gen_cmd_id);
+            }
+        }
+
+        // Propagate parent's group dependencies to this generated command
+        add_deferred_group_edges(state, deferred_groups, *gen_cmd_id);
+
+        // Add edge from generated command to parent command (dep-scan runs before compile)
+        (void)add_edge(ctx.state->graph, *gen_cmd_id, parent_cmd_id);
+
+        // Store generated rule info and operands on the node.
+        // outputs intentionally left empty: generated rules are dep-scan commands
+        // whose output is captured via generated_output, not %o expansion.
+        if (auto* node = get_command_node(ctx.state->graph, *gen_cmd_id)) {
+            node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
+            node->output_action = gen_rule.action;
+            node->parent_command = gen_rule.parent_command;
+            node->inputs = std::move(gen_input_ids);
+        }
+    }
 }
 
 auto expand_rule(
@@ -1993,7 +1997,7 @@ auto process_statement(
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
-// §10 — Public API
+// §11 — Public API
 // ---------------------------------------------------------------------------
 
 auto make_builder_state(BuilderOptions opts) -> BuilderState
@@ -2344,7 +2348,7 @@ auto resolve_deferred_order_only_edges(
 }
 
 // ---------------------------------------------------------------------------
-// §11 — GraphBuilder wrapper
+// §12 — GraphBuilder wrapper
 // ---------------------------------------------------------------------------
 
 GraphBuilder::GraphBuilder(BuilderOptions options)
