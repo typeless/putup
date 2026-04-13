@@ -110,9 +110,8 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = get_file_node(bs.graph, id);
-                if (node)
-                    sum += pup::global_pool().get(get_full_path(bs.graph, node->id)).size();
+                if (!pup::node_id::is_command(id))
+                    sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
             }
             return sum;
         });
@@ -125,9 +124,8 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = get_file_node(bs.graph, id);
-                if (node)
-                    sum += pup::global_pool().get(get_full_path(bs.graph, node->id)).size();
+                if (!pup::node_id::is_command(id))
+                    sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
             }
             return sum;
         });
@@ -140,9 +138,8 @@ TEST_CASE("Benchmark: get_node lookup scaling", "[.benchmark][graph]")
         meter.measure([&] {
             auto sum = std::size_t { 0 };
             for (auto id : ids) {
-                auto const* node = get_file_node(bs.graph, id);
-                if (node)
-                    sum += pup::global_pool().get(get_full_path(bs.graph, node->id)).size();
+                if (!pup::node_id::is_command(id))
+                    sum += pup::global_pool().get(get_full_path(bs.graph, id)).size();
             }
             return sum;
         });

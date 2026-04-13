@@ -148,14 +148,6 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Get a file node by ID - returns nullptr for command IDs
-[[nodiscard]]
-auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
-
-/// Get a command node by ID - returns nullptr for file IDs
-[[nodiscard]]
-auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
-
 /// Get the type of a node (File, Generated, Ghost, Directory, Group, Command, etc.)
 [[nodiscard]]
 auto get_node_type(Graph const& graph, NodeId id) -> NodeType;

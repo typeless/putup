@@ -26,9 +26,12 @@
 
 namespace pup::graph {
 
-// Forward declarations for mutable overloads (const versions in public header)
+// Forward declarations for internal node accessors (no longer in public header)
+auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
+auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
 auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
+auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
 auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*;
 
 auto make_graph() -> Graph
