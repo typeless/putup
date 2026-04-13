@@ -156,6 +156,10 @@ auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
 [[nodiscard]]
 auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
 
+/// Get the type of a node (File, Generated, Ghost, Directory, Group, Command, etc.)
+[[nodiscard]]
+auto get_node_type(Graph const& graph, NodeId id) -> NodeType;
+
 /// Check if all guards on a command are satisfied
 [[nodiscard]]
 auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool;

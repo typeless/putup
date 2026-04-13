@@ -847,8 +847,7 @@ auto validate_output_targets(
             veprint(variant_name, "Error: %.*s is not in build graph\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }
-        auto const* node = pup::graph::get_file_node(state.graph, *node_id);
-        if (!node || node->type != pup::NodeType::Generated) {
+        if (pup::graph::get_node_type(state.graph, *node_id) != pup::NodeType::Generated) {
             veprint(variant_name, "Error: %.*s is not a build output\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }

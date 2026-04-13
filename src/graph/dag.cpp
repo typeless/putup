@@ -280,6 +280,15 @@ auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
     return node.id == id ? &node : nullptr;
 }
 
+auto get_node_type(Graph const& graph, NodeId id) -> NodeType
+{
+    if (node_id::is_command(id)) {
+        return NodeType::Command;
+    }
+    auto const* node = get_file_node(graph, id);
+    return node ? node->type : NodeType::File;
+}
+
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
 {
     auto const id = graph.next_condition_id;

@@ -277,13 +277,8 @@ auto build_dependency_map(
         // Case 3: Order-only inputs (groups and files)
         // These establish ordering without creating true data dependencies.
         for (auto oo_id : graph::get_order_only(graph, cmd_id)) {
-            auto const* oo_node = graph::get_file_node(graph, oo_id);
-            if (!oo_node) {
-                continue;
-            }
-
             // For Group nodes, get member files and find their producers
-            if (oo_node->type == NodeType::Group) {
+            if (graph::get_node_type(graph, oo_id) == NodeType::Group) {
                 for (auto member_id : graph::get_inputs(graph, oo_id)) {
                     add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
                 }
@@ -587,8 +582,7 @@ auto Scheduler::build_job_list(
     auto& cache = state.path_cache;
 
     for (auto id : topo_result.order) {
-        auto const* node = graph::get_file_node(g, id);
-        if (node && node->type == NodeType::Ghost && !graph::get_outputs(g, id).empty()) {
+        if (graph::get_node_type(g, id) == NodeType::Ghost && !graph::get_outputs(g, id).empty()) {
             auto path_sv = graph::get_full_path(g, id, cache);
             auto build_root_name = graph::get_build_root_name(g);
             auto file_path_sv = pool.get(pup::path::join(output_root_sv, path_sv));
@@ -691,12 +685,7 @@ auto Scheduler::build_job_list(
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
         for (auto oi_id : graph::get_order_only(g, id)) {
-            auto const* oi_node = graph::get_file_node(g, oi_id);
-            if (!oi_node) {
-                continue;
-            }
-
-            if (oi_node->type == NodeType::Group) {
+            if (graph::get_node_type(g, oi_id) == NodeType::Group) {
                 for (auto member_id : graph::get_inputs(g, oi_id)) {
                     auto member_path = graph::get_full_path(g, member_id, cache);
                     if (!member_path.empty()) {
