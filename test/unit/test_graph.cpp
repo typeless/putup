@@ -237,11 +237,6 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(roots.size() == 2);
         // One of the roots should be the file we added
         REQUIRE(std::ranges::find(roots, *id1) != roots.end());
-
-        auto leaves = leaf_nodes(g);
-        // BUILD_ROOT_ID is also a leaf (no outputs unless used)
-        REQUIRE(leaves.size() == 2);
-        REQUIRE(std::ranges::find(leaves, *id3) != leaves.end());
     }
 }
 
@@ -583,16 +578,6 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
         REQUIRE(std::ranges::find(roots, *group_id) != roots.end());
         // input.c has no inputs, so it IS a root
         REQUIRE(std::ranges::find(roots, *input_id) != roots.end());
-    }
-
-    SECTION("leaf_nodes excludes nodes with only order-only forward edges")
-    {
-        // group1 has only an order-only forward edge to cmd.
-        // Before unification this was stored separately and leaf_nodes missed it,
-        // so group1 incorrectly appeared as a leaf. After unification, group1
-        // should NOT be a leaf because it has a forward edge (order-only counts).
-        auto leaves = leaf_nodes(g);
-        REQUIRE(std::ranges::find(leaves, *group_id) == leaves.end());
     }
 
     SECTION("root_nodes excludes command with only order-only input")

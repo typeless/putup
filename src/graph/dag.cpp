@@ -329,12 +329,6 @@ auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>
     return id;
 }
 
-auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*
-{
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
-    return const_cast<PhiNode*>(get_phi_node(std::as_const(graph), id));
-}
-
 auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*
 {
     if (!node_id::is_phi(id)) {
@@ -346,6 +340,12 @@ auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*
     }
     auto const& node = graph.phi_nodes[idx];
     return node.id == id ? &node : nullptr;
+}
+
+auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - Scott Meyers const_cast pattern
+    return const_cast<PhiNode*>(get_phi_node(std::as_const(graph), id));
 }
 
 auto resolve_phi_node(Graph const& graph, NodeId phi_id) -> NodeId
