@@ -609,11 +609,6 @@ auto Scheduler::build_job_list(
         if (!node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph::get_command_node(g, id);
-        if (!node) {
-            continue;
-        }
-
         // Compute working directory: source_dir for subdirectory Tupfiles.
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
@@ -627,29 +622,23 @@ auto Scheduler::build_job_list(
         }
 
         // Check if this is a generated rule that captures stdout
-        auto capture_stdout = false;
-        auto inject_implicit = false;
-        auto parent_cmd = INVALID_NODE_ID;
-        if (node->generated_output && node->generated_output->type == graph::GeneratedOutput::Type::Stdout) {
-            capture_stdout = true;
-            if (node->output_action == graph::OutputAction::InjectImplicitDeps) {
-                inject_implicit = true;
-                parent_cmd = node->parent_command;
-            }
-        }
+        auto capture_stdout = graph::is_stdout_capture(g, id);
+        auto inject_implicit = capture_stdout && graph::get_output_action(g, id) == graph::OutputAction::InjectImplicitDeps;
+        auto parent_cmd = inject_implicit ? graph::get_parent_command(g, id) : INVALID_NODE_ID;
 
         // Expand command from instruction pattern + operands
         auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
-        auto display_id = node->display;
+        auto display_id = graph::get_display_id(g, id);
 
+        auto const& exported_raw = graph::get_exported_vars(g, id);
         auto exported_ids = Vec<StringId> {};
-        exported_ids.reserve(node->exported_vars.size());
-        for (auto raw_id : node->exported_vars) {
+        exported_ids.reserve(exported_raw.size());
+        for (auto raw_id : exported_raw) {
             exported_ids.push_back(make_string_id(raw_id));
         }
 
         // Evaluate guards - command only executes if ALL guards are satisfied
-        auto guard_active = graph::is_guard_satisfied(g, *node);
+        auto guard_active = graph::is_guard_satisfied(g, id);
 
         auto job = BuildJob {
             .id = id,

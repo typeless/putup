@@ -321,6 +321,37 @@ auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
     return node ? node->outputs : empty;
 }
 
+auto get_output_action(Graph const& graph, NodeId id) -> OutputAction
+{
+    auto const* node = get_command_node(graph, id);
+    return node ? node->output_action : OutputAction::Normal;
+}
+
+auto get_exported_vars(Graph const& graph, NodeId id) -> SortedIdVec const&
+{
+    static auto const empty = SortedIdVec {};
+    auto const* node = get_command_node(graph, id);
+    return node ? node->exported_vars : empty;
+}
+
+auto get_parent_command(Graph const& graph, NodeId id) -> NodeId
+{
+    auto const* node = get_command_node(graph, id);
+    return node ? node->parent_command : INVALID_NODE_ID;
+}
+
+auto get_display_id(Graph const& graph, NodeId id) -> StringId
+{
+    auto const* node = get_command_node(graph, id);
+    return node ? node->display : StringId::Empty;
+}
+
+auto is_stdout_capture(Graph const& graph, NodeId id) -> bool
+{
+    auto const* node = get_command_node(graph, id);
+    return node && node->generated_output && node->generated_output->type == GeneratedOutput::Type::Stdout;
+}
+
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
 {
     auto const id = graph.next_condition_id;
@@ -404,9 +435,13 @@ auto resolve_phi_node(Graph const& graph, NodeId phi_id) -> NodeId
     return cond->current_value ? phi->then_output : phi->else_output;
 }
 
-auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool
+auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool
 {
-    for (auto const& guard : cmd.guards) {
+    auto const* cmd = get_command_node(graph, id);
+    if (!cmd) {
+        return true;
+    }
+    for (auto const& guard : cmd->guards) {
         auto const* cond = get_condition_node(graph, guard.condition);
         if (!cond) {
             return false;

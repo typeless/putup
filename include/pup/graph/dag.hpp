@@ -180,9 +180,29 @@ auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
 [[nodiscard]]
 auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
 
+/// Get the output action of a command node (Normal or InjectImplicitDeps)
+[[nodiscard]]
+auto get_output_action(Graph const& graph, NodeId id) -> OutputAction;
+
+/// Get the exported environment variables of a command node
+[[nodiscard]]
+auto get_exported_vars(Graph const& graph, NodeId id) -> SortedIdVec const&;
+
+/// Get the parent command for InjectImplicitDeps commands
+[[nodiscard]]
+auto get_parent_command(Graph const& graph, NodeId id) -> NodeId;
+
+/// Get the display StringId of a command node (raw interned ID, not resolved to string_view)
+[[nodiscard]]
+auto get_display_id(Graph const& graph, NodeId id) -> StringId;
+
+/// Check if a command captures stdout (generated rule with Stdout output type)
+[[nodiscard]]
+auto is_stdout_capture(Graph const& graph, NodeId id) -> bool;
+
 /// Check if all guards on a command are satisfied
 [[nodiscard]]
-auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool;
+auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool;
 
 /// Find a node by parent directory and basename (tup-style lookup)
 [[nodiscard]]
