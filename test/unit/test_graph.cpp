@@ -12,6 +12,7 @@
 #include <algorithm>
 
 using namespace pup::graph;
+using pup::LinkType;
 using pup::NodeType;
 
 namespace {
@@ -376,7 +377,7 @@ TEST_CASE("BuildGraph edge types", "[graph]")
         REQUIRE(id1.has_value());
         REQUIRE(id2.has_value());
 
-        auto e = add_order_only_edge(g, *id1, *id2);
+        auto e = add_edge(g, *id1, *id2, LinkType::OrderOnly);
         REQUIRE(e.has_value());
 
         auto order_inputs = get_order_only(g, *id2);
@@ -461,7 +462,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
     // Normal edge: cmd -> output.o
     (void)add_edge(g, *cmd_id, *output_id);
     // Order-only edge: header.h -> cmd
-    (void)add_order_only_edge(g, *header_id, *cmd_id);
+    (void)add_edge(g, *header_id, *cmd_id, LinkType::OrderOnly);
 
     SECTION("get_order_only_dependents returns correct nodes")
     {
@@ -502,7 +503,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
     {
         // Create a cycle via order-only: output.o --order-only--> header.h
         // This creates: header.h -> cmd -> output.o -> header.h (cycle)
-        (void)add_order_only_edge(g, *output_id, *header_id);
+        (void)add_edge(g, *output_id, *header_id, LinkType::OrderOnly);
 
         auto result = topological_sort(g);
         REQUIRE(result.has_cycle);
@@ -530,7 +531,7 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
 
     (void)add_edge(g, *input_id, *cmd_id);
     (void)add_edge(g, *cmd_id, *output_id);
-    (void)add_order_only_edge(g, *group_id, *cmd_id);
+    (void)add_edge(g, *group_id, *cmd_id, LinkType::OrderOnly);
 
     SECTION("order-only edges are counted in edge_count")
     {
@@ -588,7 +589,7 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
         REQUIRE(cmd.has_value());
         REQUIRE(out.has_value());
 
-        (void)add_order_only_edge(g2, *grp, *cmd);
+        (void)add_edge(g2, *grp, *cmd, LinkType::OrderOnly);
         (void)add_edge(g2, *cmd, *out);
 
         auto roots = root_nodes(g2);
@@ -1058,7 +1059,7 @@ TEST_CASE("collect_command_dependencies follows order-only deps through groups",
     REQUIRE(c2.has_value());
     REQUIRE(file2.has_value());
 
-    (void)add_order_only_edge(g, *group1, *c2);
+    (void)add_edge(g, *group1, *c2, LinkType::OrderOnly);
     (void)add_edge(g, *c2, *file2, LinkType::Normal);
 
     auto commands = pup::NodeIdMap32 {};
@@ -1090,7 +1091,7 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
     // c2: has order-only dep on group1
     auto c2 = add_command_node(g, CommandNode { .instruction_id = intern("consumer") });
     REQUIRE(c2.has_value());
-    (void)add_order_only_edge(g, *group1, *c2);
+    (void)add_edge(g, *group1, *c2, LinkType::OrderOnly);
 
     auto result = topological_sort(g);
     REQUIRE_FALSE(result.has_cycle);
@@ -1131,7 +1132,7 @@ TEST_CASE("edges_where parameterized edge query", "[graph]")
     (void)add_edge(g, *input, *cmd, LinkType::Normal);
     (void)add_edge(g, *cmd, *output, LinkType::Normal);
     (void)add_edge(g, *tupfile, *cmd, LinkType::Sticky);
-    (void)add_order_only_edge(g, *group, *cmd);
+    (void)add_edge(g, *group, *cmd, LinkType::OrderOnly);
 
     using pup::graph::EdgeDirection;
     using pup::graph::edge_mask::data_flow;
