@@ -24,7 +24,7 @@ auto is_config_output(std::string_view path) -> bool
 } // anonymous namespace
 
 auto find_config_commands(
-    graph::BuildState const& state,
+    graph::BuildGraph const& state,
     std::string_view source_root
 ) -> Vec<ConfigCommand>
 {
@@ -56,7 +56,7 @@ auto find_config_commands(
 }
 
 auto collect_command_dependencies(
-    graph::BuildState const& state,
+    graph::BuildGraph const& state,
     NodeIdMap32 const& commands
 ) -> NodeIdMap32
 {

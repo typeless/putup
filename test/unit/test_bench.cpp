@@ -30,9 +30,9 @@ auto collect_node_ids(Graph const& graph) -> std::vector<pup::NodeId>
     return ids;
 }
 
-auto generate_linear_graph(std::size_t n) -> BuildState
+auto generate_linear_graph(std::size_t n) -> BuildGraph
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& graph = bs.graph;
     for (auto i = std::size_t { 0 }; i < n; ++i) {
         char buf[64];
@@ -45,9 +45,9 @@ auto generate_linear_graph(std::size_t n) -> BuildState
 
 auto generate_order_only_graph(
     std::size_t n_commands
-) -> std::pair<BuildState, pup::NodeId>
+) -> std::pair<BuildGraph, pup::NodeId>
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& graph = bs.graph;
     auto header = add_file_node(graph, FileNode { .type = NodeType::File, .name = pup::global_pool().intern("common.h") });
 
@@ -61,9 +61,9 @@ auto generate_order_only_graph(
     return { std::move(bs), *header };
 }
 
-auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -> BuildState
+auto generate_wide_graph_with_order_only(std::size_t width, std::size_t depth) -> BuildGraph
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& graph = bs.graph;
 
     // Create a shared order-only dependency

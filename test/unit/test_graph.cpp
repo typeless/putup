@@ -21,7 +21,7 @@ auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().int
 
 TEST_CASE("BuildGraph basic operations", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     SECTION("add nodes")
@@ -247,7 +247,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
 
 TEST_CASE("Topological sort", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     SECTION("simple linear graph")
@@ -332,7 +332,7 @@ TEST_CASE("Topological sort", "[graph]")
 
 TEST_CASE("BuildGraph node types", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     SECTION("Group node type")
@@ -375,7 +375,7 @@ TEST_CASE("BuildGraph node types", "[graph]")
 
 TEST_CASE("BuildGraph edge types", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     SECTION("order-only edges")
@@ -414,7 +414,7 @@ TEST_CASE("BuildGraph edge types", "[graph]")
 
 TEST_CASE("Graph traversal", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     //     a
@@ -444,7 +444,7 @@ TEST_CASE("Graph traversal", "[graph]")
 
 TEST_CASE("Order-only dependencies in topological sort", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     // Build a graph where:
@@ -521,7 +521,7 @@ TEST_CASE("Order-only dependencies in topological sort", "[graph]")
 
 TEST_CASE("Unified edge storage for order-only edges", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     // group1 ---(order-only)---> cmd ---(normal)---> output.o
@@ -597,7 +597,7 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
 
     SECTION("root_nodes excludes command with only order-only input")
     {
-        auto bs2 = make_build_state();
+        auto bs2 = make_build_graph();
         auto& g2 = bs2.graph;
 
         auto grp = add_file_node(g2, FileNode { .type = NodeType::Group, .name = intern("<order>") });
@@ -636,7 +636,7 @@ TEST_CASE("Unified edge storage for order-only edges", "[graph]")
 TEST_CASE("get_outputs excludes sticky edges", "[graph][regression]")
 {
     using pup::LinkType;
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     // Scenario: Tupfile defines a command, source.c is input
@@ -673,7 +673,7 @@ TEST_CASE("get_outputs excludes sticky edges", "[graph][regression]")
 TEST_CASE("Sticky edge API", "[graph]")
 {
     using pup::LinkType;
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     auto tupfile_id = add_file_node(g, FileNode { .name = intern("Tupfile") });
@@ -765,7 +765,7 @@ TEST_CASE("Template tracking via StringId deduplication", "[graph][template]")
 
 TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     SECTION("command node with instruction_id")
@@ -838,7 +838,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
 
 TEST_CASE("expand_instruction reconstructs command from operands", "[graph][instruction]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     // Build directory hierarchy: src/foo.c, src/bar.c, src/foo.o
@@ -1052,7 +1052,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
 TEST_CASE("collect_command_dependencies follows order-only deps through groups", "[graph][groups][order-only]")
 {
     using pup::LinkType;
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     // Scenario: c1 produces file1, file1 is added to group1, c2 has order-only dep on group1
@@ -1092,7 +1092,7 @@ TEST_CASE("collect_command_dependencies follows order-only deps through groups",
 TEST_CASE("Topological sort respects order-only deps through groups", "[topo][groups][order-only]")
 {
     using pup::LinkType;
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     // c1: produces file1, file1 is in group1
@@ -1133,7 +1133,7 @@ TEST_CASE("edges_where parameterized edge query", "[graph]")
 {
     using pup::LinkType;
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     auto input = add_file_node(g, FileNode { .name = intern("input.c") });
@@ -1241,7 +1241,7 @@ TEST_CASE("edges_where parameterized edge query", "[graph]")
 
 TEST_CASE("collect_affected_commands resolves directory-structured paths", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
@@ -1289,7 +1289,7 @@ TEST_CASE("collect_affected_commands resolves directory-structured paths", "[gra
 
 TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& g = bs.graph;
 
     auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
@@ -1338,7 +1338,7 @@ TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
 
 TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 {
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto& graph = bs.graph;
     auto& pool = pup::global_pool();
 

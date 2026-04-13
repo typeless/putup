@@ -240,7 +240,7 @@ auto make_canonical_relative(PathTransformContext const& tc, std::string_view pa
 /// Input paths are source-relative. For Generated/Ghost files under BUILD_ROOT_ID,
 /// we need to use get_full_path() to get the path including the build root prefix.
 auto transform_input_path(
-    BuildState& bs,
+    BuildGraph& bs,
     PathTransformContext const& tc,
     std::string_view inp
 ) -> StringId
@@ -414,7 +414,7 @@ auto get_group_members(Graph const& graph, NodeId group_id) -> Vec<NodeId>
 
 auto get_or_create_group_node(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     std::string_view directory,
     std::string_view name
 ) -> Result<NodeId>
@@ -461,7 +461,7 @@ auto get_or_create_group_node(
 
 auto create_command_node(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     std::string_view instruction,
     std::string_view display
 ) -> Result<NodeId>
@@ -919,7 +919,7 @@ auto expand_inputs(
 // Forward declaration (mutual recursion: include_single_file → process_statement → process_conditional → process_statement)
 auto process_statement(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Statement const& stmt
 ) -> Result<void>;
 
@@ -987,7 +987,7 @@ auto resolve_include_path(
 
 auto include_single_file(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     std::string_view include_root,
     std::string_view include_path,
     bool is_rules
@@ -1057,7 +1057,7 @@ auto include_single_file(
 
 /// Apply pending weak assignments (??=) - last wins for each variable name
 /// Iterates in reverse order so later assignments take precedence
-auto apply_pending_weak_assignments(BuilderContext& ctx, BuilderState& state) -> void
+auto apply_pending_weak_assignments(BuilderContext& ctx, Builder& state) -> void
 {
     if (!ctx.vars || ctx.pending_weak_assignments.empty()) {
         return;
@@ -1096,7 +1096,7 @@ auto process_export(
 
 auto process_import(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Import const& imp
 ) -> Result<void>
 {
@@ -1176,7 +1176,7 @@ auto process_import(
 
 auto process_assignment(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Assignment const& assign
 ) -> Result<void>
 {
@@ -1324,7 +1324,7 @@ auto process_bang_macro(
 
 auto process_conditional(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Conditional const& cond
 ) -> Result<void>
 {
@@ -1414,7 +1414,7 @@ auto process_conditional(
 
 auto process_include(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Include const& inc
 ) -> Result<void>
 {
@@ -1447,7 +1447,7 @@ auto process_include(
 /// may grow as more Tupfiles are parsed. Edges are materialized later by
 /// finalize_graph().
 auto add_deferred_group_edges(
-    BuilderState& state,
+    Builder& state,
     Vec<NodeId> const& group_ids,
     NodeId cmd_id
 ) -> void
@@ -1467,7 +1467,7 @@ auto add_deferred_group_edges(
 /// parent rule's pre-resolution, avoiding string→NodeId re-parsing.
 auto process_generated_rules(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     Vec<GeneratedRule> const& generated_rules,
     NodeId parent_cmd_id,
     Vec<NodeId> const& deferred_groups
@@ -1522,7 +1522,7 @@ auto process_generated_rules(
 
 auto expand_rule(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Rule const& rule,
     Vec<StringId> const& inputs
 ) -> Result<void>
@@ -1899,7 +1899,7 @@ auto expand_rule(
 
 auto process_rule(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Rule const& rule
 ) -> Result<void>
 {
@@ -1954,7 +1954,7 @@ auto process_rule(
 
 auto process_statement(
     BuilderContext& ctx,
-    BuilderState& state,
+    Builder& state,
     parser::Statement const& stmt
 ) -> Result<void>
 {
@@ -2000,18 +2000,18 @@ auto process_statement(
 // §11 — Public API
 // ---------------------------------------------------------------------------
 
-auto make_builder_state(BuilderOptions opts) -> BuilderState
+auto make_builder(BuilderOptions opts) -> Builder
 {
-    auto state = BuilderState {};
+    auto state = Builder {};
     state.options = std::move(opts);
     return state;
 }
 
 auto add_tupfile(
-    BuildState& build_state,
+    BuildGraph& build_state,
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
-    BuilderState& state
+    Builder& state
 ) -> Result<void>
 {
     // Compute current_dir relative to config_root (where Tupfiles live)
@@ -2195,8 +2195,8 @@ auto add_tupfile(
 }
 
 auto finalize_graph(
-    BuildState& build_state,
-    BuilderState& state
+    BuildGraph& build_state,
+    Builder& state
 ) -> Result<void>
 {
     auto& g = build_state.graph;
