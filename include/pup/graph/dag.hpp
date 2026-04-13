@@ -160,6 +160,26 @@ auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
 [[nodiscard]]
 auto get_node_type(Graph const& graph, NodeId id) -> NodeType;
 
+/// Get the parent directory node of a file node
+[[nodiscard]]
+auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId;
+
+/// Get the flags of a file node
+[[nodiscard]]
+auto get_node_flags(Graph const& graph, NodeId id) -> NodeFlags;
+
+/// Get the content hash of a file node
+[[nodiscard]]
+auto get_content_hash(Graph const& graph, NodeId id) -> Hash256;
+
+/// Get the input operand NodeIds of a command node
+[[nodiscard]]
+auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
+
+/// Get the output operand NodeIds of a command node
+[[nodiscard]]
+auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
+
 /// Check if all guards on a command are satisfied
 [[nodiscard]]
 auto is_guard_satisfied(Graph const& graph, CommandNode const& cmd) -> bool;

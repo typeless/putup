@@ -337,6 +337,69 @@ TEST_CASE("BuildGraph node types", "[graph]")
         REQUIRE(n->type == NodeType::Group);
     }
 
+    SECTION("get_parent_dir accessor")
+    {
+        auto dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
+        REQUIRE(dir.has_value());
+
+        auto file = add_file_node(g, FileNode { .name = intern("main.c"), .parent_dir = *dir });
+        REQUIRE(file.has_value());
+
+        CHECK(get_parent_dir(g, *file) == *dir);
+        CHECK(get_parent_dir(g, *dir) == 0);
+    }
+
+    SECTION("get_node_flags accessor")
+    {
+        auto modified = add_file_node(g, FileNode { .flags = pup::NodeFlags::Modified, .name = intern("a.c") });
+        auto plain = add_file_node(g, FileNode { .name = intern("b.c") });
+        REQUIRE(modified.has_value());
+        REQUIRE(plain.has_value());
+
+        CHECK(get_node_flags(g, *modified) == pup::NodeFlags::Modified);
+        CHECK(get_node_flags(g, *plain) == pup::NodeFlags::None);
+    }
+
+    SECTION("get_content_hash accessor")
+    {
+        auto hash = pup::Hash256 {};
+        hash[0] = std::byte { 0xAB };
+        hash[31] = std::byte { 0xCD };
+
+        auto node = add_file_node(g, FileNode { .name = intern("var"), .content_hash = hash });
+        REQUIRE(node.has_value());
+
+        auto result = get_content_hash(g, *node);
+        CHECK(result[0] == std::byte { 0xAB });
+        CHECK(result[31] == std::byte { 0xCD });
+    }
+
+    SECTION("get_command_inputs and get_command_outputs accessors")
+    {
+        auto in1 = add_file_node(g, FileNode { .name = intern("a.c") });
+        auto in2 = add_file_node(g, FileNode { .name = intern("b.c") });
+        auto out = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("a.o") });
+        REQUIRE(in1.has_value());
+        REQUIRE(in2.has_value());
+        REQUIRE(out.has_value());
+
+        auto cmd = add_command_node(g, CommandNode {
+            .instruction_id = intern("gcc -c %f -o %o"),
+            .inputs = { *in1, *in2 },
+            .outputs = { *out },
+        });
+        REQUIRE(cmd.has_value());
+
+        auto const& inputs = get_command_inputs(g, *cmd);
+        REQUIRE(inputs.size() == 2);
+        CHECK(inputs[0] == *in1);
+        CHECK(inputs[1] == *in2);
+
+        auto const& outputs = get_command_outputs(g, *cmd);
+        REQUIRE(outputs.size() == 1);
+        CHECK(outputs[0] == *out);
+    }
+
     SECTION("all node types")
     {
         auto file_id = add_file_node(g, FileNode { .name = intern("a.c") });

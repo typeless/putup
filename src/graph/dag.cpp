@@ -289,6 +289,38 @@ auto get_node_type(Graph const& graph, NodeId id) -> NodeType
     return node ? node->type : NodeType::File;
 }
 
+auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId
+{
+    auto const* node = get_file_node(graph, id);
+    return node ? node->parent_dir : NodeId { 0 };
+}
+
+auto get_node_flags(Graph const& graph, NodeId id) -> NodeFlags
+{
+    auto const* node = get_file_node(graph, id);
+    return node ? node->flags : NodeFlags::None;
+}
+
+auto get_content_hash(Graph const& graph, NodeId id) -> Hash256
+{
+    auto const* node = get_file_node(graph, id);
+    return node ? node->content_hash : Hash256 {};
+}
+
+auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
+{
+    static auto const empty = Vec<NodeId> {};
+    auto const* node = get_command_node(graph, id);
+    return node ? node->inputs : empty;
+}
+
+auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
+{
+    static auto const empty = Vec<NodeId> {};
+    auto const* node = get_command_node(graph, id);
+    return node ? node->outputs : empty;
+}
+
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
 {
     auto const id = graph.next_condition_id;
