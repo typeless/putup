@@ -1445,7 +1445,7 @@ auto process_include(
 /// Store deferred order-only edges from groups to a command.
 /// Groups can't be resolved to edges immediately because group membership
 /// may grow as more Tupfiles are parsed. Edges are materialized later by
-/// resolve_deferred_group_edges().
+/// finalize_graph().
 auto add_deferred_group_edges(
     BuilderState& state,
     Vec<NodeId> const& group_ids,
@@ -2007,28 +2007,6 @@ auto make_builder_state(BuilderOptions opts) -> BuilderState
     return state;
 }
 
-auto build_graph(
-    parser::Tupfile const& tupfile,
-    parser::EvalContext& eval,
-    BuilderState& state
-) -> Result<BuildState>
-{
-    auto bs = make_build_state();
-
-    // Set build root name: relative path from source to output root.
-    // For in-tree builds (source == output), this is empty.
-    // For variant builds (-B build), this is "build".
-    if (str(state.options.source_root) != str(state.options.output_root)) {
-        set_build_root_name(bs, global_pool().get(pup::path::relative(str(state.options.output_root), str(state.options.source_root))));
-    }
-
-    auto result = add_tupfile(bs, tupfile, eval, state);
-    if (!result) {
-        return pup::unexpected<Error>(result.error());
-    }
-    return bs;
-}
-
 auto add_tupfile(
     BuildState& build_state,
     parser::Tupfile const& tupfile,
@@ -2216,7 +2194,7 @@ auto add_tupfile(
     return {};
 }
 
-auto resolve_deferred_group_edges(
+auto finalize_graph(
     BuildState& build_state,
     BuilderState& state
 ) -> Result<void>
