@@ -856,7 +856,7 @@ auto build_context(
         }
     }
 
-    (void)graph::resolve_deferred_order_only_edges(ctx.impl_->graph, builder_state);
+    (void)graph::resolve_deferred_group_edges(ctx.impl_->graph, builder_state);
 
     for (auto warning_id : builder_state.warnings) {
         fprintf(stderr, "warning: %s\n", pool.get(warning_id).data());
