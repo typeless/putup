@@ -524,53 +524,6 @@ auto edge_count(Graph const& graph) -> std::size_t
     return graph.edges.size();
 }
 
-auto empty(Graph const& graph) -> bool
-{
-    return graph.files.size() <= 1 && graph.commands.size() <= 1;
-}
-
-auto clear(Graph& graph) -> void
-{
-    // Preserve build root name StringId before clearing (global_pool is process-wide, not cleared)
-    auto build_root_name_id = graph.files[BUILD_ROOT_ID].name;
-
-    graph.files.clear();
-    graph.commands.clear();
-    graph.conditions.clear();
-    graph.phi_nodes.clear();
-    graph.edges.clear();
-    graph.edge_arena.clear();
-    graph.edges_to_index.clear();
-    graph.edges_from_index.clear();
-    graph.dir_children.clear();
-    graph.command_strings.clear();
-    graph.command_index.clear();
-    graph.command_index_built = false;
-    graph.paths.clear();
-    graph.path_to_node.clear();
-    // build_root_name_id is still valid (global_pool is not cleared)
-    auto build_root_name = build_root_name_id;
-
-    // Reinitialize build root node (same as make_graph)
-    graph.files.resize(2);
-    graph.dir_children.resize(2);
-    graph.files[1] = FileNode {
-        .id = BUILD_ROOT_ID,
-        .type = NodeType::Directory,
-        .name = build_root_name,
-        .parent_dir = SOURCE_ROOT_ID,
-        .path_id = PathId::BuildRoot,
-    };
-    graph.path_to_node.insert(to_underlying(PathId::BuildRoot), BUILD_ROOT_ID);
-    if (!is_empty(build_root_name)) {
-        graph.dir_children[0].insert(to_underlying(build_root_name), BUILD_ROOT_ID);
-    }
-    graph.next_file_id = 2;
-    graph.next_command_id = node_id::make_command(1);
-    graph.next_condition_id = node_id::make_condition(1);
-    graph.next_phi_id = node_id::make_phi(1);
-}
-
 auto all_nodes(Graph const& graph) -> Vec<NodeId>
 {
     auto result = Vec<NodeId> {};
@@ -730,22 +683,6 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
 auto get_build_root_name(Graph const& graph) -> std::string_view
 {
     return global_pool().get(graph.files[BUILD_ROOT_ID].name);
-}
-
-auto is_under_build_root(Graph const& graph, NodeId id) -> bool
-{
-    if (id == 0 || id == BUILD_ROOT_ID || node_id::is_command(id)) {
-        return id == BUILD_ROOT_ID;
-    }
-
-    auto const* node = get_file_node(graph, id);
-    while (node && node->parent_dir != SOURCE_ROOT_ID) {
-        if (node->parent_dir == BUILD_ROOT_ID) {
-            return true;
-        }
-        node = get_file_node(graph, node->parent_dir);
-    }
-    return false;
 }
 
 auto get_name(Graph const& graph, NodeId id) -> std::string_view

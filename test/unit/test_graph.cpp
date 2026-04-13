@@ -158,7 +158,7 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         REQUIRE(path2 == "cached/test.c");
     }
 
-    SECTION("invalidate_path_cache and clear_path_cache")
+    SECTION("clear_path_cache")
     {
         auto dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("dir") });
         auto file = add_file_node(g, FileNode { .name = intern("file.c"), .parent_dir = *dir });
@@ -166,11 +166,6 @@ TEST_CASE("BuildGraph basic operations", "[graph]")
         // Populate cache
         (void)get_full_path(g, *file, bs.path_cache);
         (void)get_full_path(g, *dir, bs.path_cache);
-
-        // Invalidate single entry
-        invalidate_path_cache(bs.path_cache, *file);
-        // Should still work (recomputes)
-        REQUIRE(get_full_path(g, *file, bs.path_cache) == "dir/file.c");
 
         // Clear entire cache
         clear_path_cache(bs.path_cache);
@@ -670,14 +665,14 @@ TEST_CASE("Sticky edge API", "[graph]")
     (void)add_edge(g, *cmd_id, *output_id, LinkType::Normal);
     (void)add_edge(g, *tupfile_id, *cmd_id, LinkType::Sticky);
 
-    SECTION("get_sticky_outputs returns only sticky edges")
+    SECTION("edges_where sticky returns only sticky edges")
     {
-        auto tupfile_sticky = get_sticky_outputs(g, *tupfile_id);
+        auto tupfile_sticky = edges_where(g, *tupfile_id, EdgeDirection::Forward, edge_mask::sticky);
         REQUIRE(tupfile_sticky.size() == 1);
         REQUIRE(tupfile_sticky[0] == *cmd_id);
 
-        REQUIRE(get_sticky_outputs(g, *source_id).empty());
-        REQUIRE(get_sticky_outputs(g, *cmd_id).empty());
+        REQUIRE(edges_where(g, *source_id, EdgeDirection::Forward, edge_mask::sticky).empty());
+        REQUIRE(edges_where(g, *cmd_id, EdgeDirection::Forward, edge_mask::sticky).empty());
     }
 
     SECTION("inputs include all edge types")
@@ -706,7 +701,7 @@ TEST_CASE("Sticky edge API", "[graph]")
         auto cmd2_id = add_command_node(g, CommandNode { .instruction_id = intern("gcc other.c") });
         (void)add_edge(g, *tupfile_id, *cmd2_id, LinkType::Sticky);
 
-        REQUIRE(get_sticky_outputs(g, *tupfile_id).size() == 2);
+        REQUIRE(edges_where(g, *tupfile_id, EdgeDirection::Forward, edge_mask::sticky).size() == 2);
         REQUIRE(get_outputs(g, *tupfile_id).empty());
     }
 
@@ -719,7 +714,7 @@ TEST_CASE("Sticky edge API", "[graph]")
         REQUIRE(source_outputs.size() == 1);
         REQUIRE(source_outputs[0] == *cmd_id);
 
-        auto source_sticky = get_sticky_outputs(g, *source_id);
+        auto source_sticky = edges_where(g, *source_id, EdgeDirection::Forward, edge_mask::sticky);
         REQUIRE(source_sticky.size() == 1);
         REQUIRE(source_sticky[0] == *cmd2_id);
     }

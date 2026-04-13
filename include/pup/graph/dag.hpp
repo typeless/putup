@@ -130,10 +130,6 @@ struct Graph {
     NodeId next_phi_id = node_id::make_phi(1);             ///< Next phi node ID
 };
 
-/// Create a new empty graph with build root initialized
-[[nodiscard]]
-auto make_graph() -> Graph;
-
 /// Add a file node to the graph
 [[nodiscard]]
 auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>;
@@ -248,11 +244,6 @@ auto get_inputs(Graph const& graph, NodeId id) -> Vec<NodeId>;
 [[nodiscard]]
 auto get_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>;
 
-/// Get sticky dependents of a node (Tupfile/config dependencies)
-/// Sticky edges are parse-time dependencies - use for reparse decisions, not rebuilds.
-[[nodiscard]]
-auto get_sticky_outputs(Graph const& graph, NodeId id) -> Vec<NodeId>;
-
 /// Get order-only dependencies
 [[nodiscard]]
 auto get_order_only(Graph const& graph, NodeId id) -> Vec<NodeId>;
@@ -268,13 +259,6 @@ auto node_count(Graph const& graph) -> std::size_t;
 /// Get total number of edges
 [[nodiscard]]
 auto edge_count(Graph const& graph) -> std::size_t;
-
-/// Check if graph is empty
-[[nodiscard]]
-auto empty(Graph const& graph) -> bool;
-
-/// Clear the graph
-auto clear(Graph& graph) -> void;
 
 /// Get all node IDs
 [[nodiscard]]
@@ -298,9 +282,6 @@ auto get_full_path(Graph const& graph, NodeId id, PathCache& cache) -> std::stri
 /// Note: Creates temporary cache - prefer the cached version for repeated calls.
 [[nodiscard]]
 auto get_full_path(Graph const& graph, NodeId id) -> StringId;
-
-/// Invalidate path cache entry for a node (call when parent_dir or name changes)
-auto invalidate_path_cache(PathCache& cache, NodeId id) -> void;
 
 /// Clear the entire path cache
 auto clear_path_cache(PathCache& cache) -> void;
@@ -355,10 +336,6 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void;
 /// Get the build root name
 [[nodiscard]]
 auto get_build_root_name(Graph const& graph) -> std::string_view;
-
-/// Check if a node is under the build root (Generated/Ghost files)
-[[nodiscard]]
-auto is_under_build_root(Graph const& graph, NodeId id) -> bool;
 
 // =============================================================================
 // BuildGraph - thin data carrier (replaces BuildGraph over time)
