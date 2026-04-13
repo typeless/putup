@@ -247,7 +247,7 @@ auto add_tupfile(
 
 /// Resolve deferred order-only edges after all Tupfiles are parsed
 [[nodiscard]]
-auto resolve_deferred_order_only_edges(
+auto resolve_deferred_group_edges(
     BuildState& build_state,
     BuilderState& state
 ) -> Result<void>;

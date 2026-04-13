@@ -1445,7 +1445,7 @@ auto process_include(
 /// Store deferred order-only edges from groups to a command.
 /// Groups can't be resolved to edges immediately because group membership
 /// may grow as more Tupfiles are parsed. Edges are materialized later by
-/// resolve_deferred_order_only_edges().
+/// resolve_deferred_group_edges().
 auto add_deferred_group_edges(
     BuilderState& state,
     Vec<NodeId> const& group_ids,
@@ -2216,7 +2216,7 @@ auto add_tupfile(
     return {};
 }
 
-auto resolve_deferred_order_only_edges(
+auto resolve_deferred_group_edges(
     BuildState& build_state,
     BuilderState& state
 ) -> Result<void>
