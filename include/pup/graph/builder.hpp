@@ -92,7 +92,7 @@ struct GroupMemberTable {
 
 /// Context for building the graph (per-Tupfile state)
 struct BuilderContext {
-    BuildState* state = nullptr;
+    BuildGraph* state = nullptr;
     parser::EvalContext* eval = nullptr;
     parser::VarDb* vars = nullptr; ///< Variable database for import
     BuilderOptions options = {};
@@ -173,7 +173,7 @@ struct VarDepTracker {
 };
 
 // ============================================================================
-// BuilderState - Persistent state across multiple Tupfiles
+// Builder - Persistent state across multiple Tupfiles
 // ============================================================================
 
 /// Deferred order-only edge reference for circular parsing situations
@@ -190,7 +190,7 @@ struct DeferredOrderOnlyEdge {
 };
 
 /// Per-session state that persists across multiple Tupfiles
-struct BuilderState {
+struct Builder {
     BuilderOptions options;
     Vec<StringId> errors;
     Vec<StringId> warnings;
@@ -226,23 +226,23 @@ struct BuilderState {
 
 /// Create a new builder state with the given options
 [[nodiscard]]
-auto make_builder_state(BuilderOptions opts) -> BuilderState;
+auto make_builder(BuilderOptions opts) -> Builder;
 
 /// Add a Tupfile to an existing build state
 [[nodiscard]]
 auto add_tupfile(
-    BuildState& build_state,
+    BuildGraph& build_state,
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
-    BuilderState& state
+    Builder& state
 ) -> Result<void>;
 
 /// Finalize the graph after all Tupfiles are parsed.
 /// Resolves deferred group edges and expands %<group> patterns in commands.
 [[nodiscard]]
 auto finalize_graph(
-    BuildState& build_state,
-    BuilderState& state
+    BuildGraph& build_state,
+    Builder& state
 ) -> Result<void>;
 
 } // namespace pup::graph

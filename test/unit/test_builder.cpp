@@ -134,7 +134,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
     // This is the case that was broken by the refactoring
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -146,7 +146,7 @@ TEST_CASE("GraphBuilder order-only group - case 1: empty pattern.path", "[e2e][b
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // First Tupfile: modules/kernel defines <local-group>
     auto tupfile1 = Tupfile {};
@@ -191,7 +191,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
     // Should use normalize_group_dir(expanded_path, current_dir, source_root)
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     vars.set("ROOT", fixture.root().generic_string());
     auto ctx = EvalContext { .vars = &vars };
@@ -204,7 +204,7 @@ TEST_CASE("GraphBuilder order-only group - case 2: non-empty pattern.path with v
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // First Tupfile: include/generated defines <gen-headers>
     auto tupfile1 = Tupfile {};
@@ -251,7 +251,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
     // Even when dir_part is empty
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -263,7 +263,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // First: define group in include/generated
     auto tupfile1 = Tupfile {};
@@ -311,7 +311,7 @@ TEST_CASE("GraphBuilder order-only group - case 3: path/<group> pattern", "[e2e]
 TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
 {
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -323,7 +323,7 @@ TEST_CASE("GraphBuilder bin group reference {name}", "[e2e][builder][group]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // Create source files
     fixture.create_file("src/a.c");
@@ -400,7 +400,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
     fixture.create_file("src/bar.c");
     fixture.create_file("src/baz.h"); // Should not match *.c
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -412,7 +412,7 @@ TEST_CASE("GraphBuilder glob expansion - filesystem", "[e2e][builder][glob]")
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -439,7 +439,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
 {
     auto fixture = BuilderTestFixture {};
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -451,7 +451,7 @@ TEST_CASE("GraphBuilder glob expansion - generated files", "[e2e][builder][glob]
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // First Tupfile: generate some .h files
     auto tupfile1 = Tupfile {};
@@ -490,7 +490,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
     fixture.create_file("build-variant/tup.config");
     fixture.create_file("src/main.c");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -502,7 +502,7 @@ TEST_CASE("GraphBuilder tup.config in variant directory", "[e2e][builder][config
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -532,7 +532,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
     fixture.create_file("src/bar.c");
     fixture.create_file("src/baz.c"); // Will be excluded
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -544,7 +544,7 @@ TEST_CASE("GraphBuilder exclusion patterns - explicit file", "[e2e][builder][exc
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -597,7 +597,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
     fixture.create_file("src/test_main.c"); // Will be excluded
     fixture.create_file("src/test_util.c"); // Will be excluded
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -609,7 +609,7 @@ TEST_CASE("GraphBuilder exclusion patterns - glob pattern", "[e2e][builder][excl
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -662,7 +662,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
     fixture.create_file("src/util.c");
     fixture.create_file("src/helper_impl.c"); // Will be excluded - gets #included
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -674,7 +674,7 @@ TEST_CASE("GraphBuilder caret exclusion patterns for foreach", "[e2e][builder][e
         .expand_globs = true,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -731,7 +731,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
 {
     auto fixture = BuilderTestFixture {};
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -743,7 +743,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // Tupfile in include/generated: defines <gen-headers>
     auto tupfile1 = Tupfile {};
@@ -819,7 +819,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     // code called normalize_group_dir("") which returns "."
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -831,7 +831,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // Case 1: Group defined at root level (directory ".")
     auto tupfile1 = Tupfile {};
@@ -902,7 +902,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/main.c");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -914,7 +914,7 @@ TEST_CASE("GraphBuilder variant output mapping", "[e2e][builder][variant]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -952,7 +952,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
     fs::create_directories(fixture.root() / "modules" / "app" / "sub" / "deep");
     fixture.create_file("modules/app/sub/deep/impl.c");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -964,7 +964,7 @@ TEST_CASE("GraphBuilder deep directory with parent references", "[e2e][builder][
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // Tupfile in deeply nested directory
     auto tupfile = Tupfile {};
@@ -1004,7 +1004,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     auto fixture = BuilderTestFixture {};
     fixture.create_file("src/util/helpers.c");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1016,7 +1016,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -1072,7 +1072,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
     // This ensures inputs and outputs resolve to the same node (in-place Ghost→Generated upgrade).
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1088,7 +1088,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src"));
@@ -1136,7 +1136,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     // ../../boot/boot.hex which resolves to the same node as boot/Tupfile's output
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1155,7 +1155,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // First Tupfile: boot/Tupfile generates boot.hex
     auto tupfile1 = Tupfile {};
@@ -1240,7 +1240,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     // Variant mapping happens at command expansion time via transform_output_path().
 
     auto fixture = BuilderTestFixture {};
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1257,7 +1257,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // Set build root name for variant build (normally done by builder.build())
     set_build_root_name(bs, "build");
@@ -1310,7 +1310,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
     fixture.create_file("main.c");
     fixture.create_file("Tupfile");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1322,7 +1322,7 @@ TEST_CASE("GraphBuilder path simplification at root", "[e2e][builder][paths]")
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path(""));
@@ -1361,7 +1361,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
     fixture.create_file("src/lib/add.c");
     fixture.create_file("src/lib/Tupfile");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1373,7 +1373,7 @@ TEST_CASE("GraphBuilder path simplification in subdirectory commands", "[e2e][bu
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src/lib"));
@@ -1416,7 +1416,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
     fixture.create_file("src/lib/Tupfile");
     fixture.create_file("src/util/helper.c");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1428,7 +1428,7 @@ TEST_CASE("GraphBuilder path simplification - cross-directory reference", "[e2e]
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     auto tupfile = Tupfile {};
     tupfile.filename = intern(fixture.tupfile_path("src/lib"));
@@ -1472,7 +1472,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
     fixture.create_file("src/lib/Tupfile");
     fs::create_directories(fixture.root() / "build" / "src" / "lib");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
 
@@ -1485,7 +1485,7 @@ TEST_CASE("GraphBuilder path simplification in variant build", "[e2e][builder][p
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     // Set build root name for variant build (normally done by builder.build())
     set_build_root_name(bs, "build");
@@ -1538,7 +1538,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     fixture.create_file("src/Tupfile");
     fs::create_directories(fixture.root() / "build" / "src");
 
-    auto bs = make_build_state();
+    auto bs = make_build_graph();
     set_build_root_name(bs, "build");
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
@@ -1551,7 +1551,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
         .expand_globs = false,
         .validate_inputs = false,
     };
-    auto builder_state = make_builder_state(options);
+    auto builder_state = make_builder(options);
 
     ctx.tup_variant_outputdir = intern("../../build/src");
 

@@ -218,7 +218,7 @@ TEST_CASE("Scheduler basic operation", "[exec]")
 {
     SECTION("empty graph")
     {
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
         auto scheduler = Scheduler {};
         auto result = scheduler.build(bs);
 
@@ -229,7 +229,7 @@ TEST_CASE("Scheduler basic operation", "[exec]")
 
     SECTION("single command dry run")
     {
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
             .name = intern("input.txt"),
@@ -269,7 +269,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         // Two independent compile commands that share no dependencies
         //   a.c -> cmd1 -> a.o
         //   b.c -> cmd2 -> b.o
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.c") });
         auto b_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("b.c") });
@@ -301,7 +301,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
     SECTION("dependent commands run sequentially")
     {
         // a.c -> compile -> a.o -> link -> a.out
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.c") });
         auto compile_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
@@ -335,7 +335,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //   cmd1   cmd2  (can run in parallel)
         //      |   /
         //       link     (waits for both)
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("main.c") });
         auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode {
@@ -374,7 +374,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //        src
         //       / | |
         //      c1 c2 c3  (all can run in parallel)
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto src = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("lib.c") });
         auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -O0 lib.c -o lib_debug.o") });
@@ -406,7 +406,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         //    a.o  b.o  c.o
         //      \  |  /
         //       link    (must wait for all)
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.o") });
         auto b_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("b.o") });
@@ -440,7 +440,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         // Set an env var that the command will echo
         pup::platform::set_env("PUP_TEST_EXPORT_VAR", "exported_value_123");
 
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
             .name = intern("/dev/null"),
@@ -482,7 +482,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
     {
         pup::platform::set_env("PUP_TEST_HIDDEN_VAR", "hidden_value");
 
-        auto bs = graph::make_build_state();
+        auto bs = graph::make_build_graph();
 
         auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
             .name = intern("/dev/null"),

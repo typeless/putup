@@ -397,8 +397,8 @@ auto make_read_error(std::string_view path) -> pup::Error
 
 struct ParseContext {
     TupfileParseState& state;
-    pup::graph::BuilderState& builder_state;
-    pup::graph::BuildState& graph;
+    pup::graph::Builder& builder_state;
+    pup::graph::BuildGraph& graph;
     std::string_view source_root;
     std::string_view config_root;
     std::string_view output_root;
@@ -669,7 +669,7 @@ auto make_layout_options(Options const& opts) -> LayoutOptions
 }
 
 struct BuildContext::Impl {
-    graph::BuildState graph = graph::make_build_state();
+    graph::BuildGraph graph = graph::make_build_graph();
     ProjectLayout layout;
     parser::VarDb config_vars;
     parser::VarDb vars;
@@ -693,12 +693,12 @@ auto BuildContext::layout() const -> ProjectLayout const&
     return impl_->layout;
 }
 
-auto BuildContext::graph() const -> graph::BuildState const&
+auto BuildContext::graph() const -> graph::BuildGraph const&
 {
     return impl_->graph;
 }
 
-auto BuildContext::graph() -> graph::BuildState&
+auto BuildContext::graph() -> graph::BuildGraph&
 {
     return impl_->graph;
 }
@@ -825,7 +825,7 @@ auto build_context(
         .pattern_registry = ctx_opts.pattern_registry,
         .cached_env_vars = std::move(cached_env_vars),
     };
-    auto builder_state = graph::make_builder_state(std::move(builder_opts));
+    auto builder_state = graph::make_builder(std::move(builder_opts));
 
     auto parse_ctx = ParseContext {
         .state = ctx.impl_->state,

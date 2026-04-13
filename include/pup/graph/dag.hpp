@@ -385,19 +385,19 @@ auto get_build_root_name(Graph const& graph) -> std::string_view;
 auto is_under_build_root(Graph const& graph, NodeId id) -> bool;
 
 // =============================================================================
-// BuildState - thin data carrier (replaces BuildGraph over time)
+// BuildGraph - thin data carrier (replaces BuildGraph over time)
 // =============================================================================
 
 /// Simple aggregate holding the graph and its path cache.
 /// Replaces BuildGraph as a thin data carrier with no methods.
-struct BuildState {
+struct BuildGraph {
     Graph graph;
     mutable PathCache path_cache;
 };
 
-/// Create a BuildState with an initialized graph
+/// Create a BuildGraph with an initialized graph
 [[nodiscard]]
-auto make_build_state() -> BuildState;
+auto make_build_graph() -> BuildGraph;
 
 /// Collect all commands affected by the given changed files.
 /// Uses forward traversal: starts at changed inputs, walks forward through outputs.
@@ -421,11 +421,11 @@ auto collect_scope_with_upstream_commands(
 /// Returns sorted, deduplicated paths.
 [[nodiscard]]
 auto collect_upstream_files(
-    BuildState const& state,
+    BuildGraph const& state,
     Vec<StringId> const& scopes
 ) -> Vec<std::string_view>;
 
 /// Set build root name and clear path cache
-auto set_build_root_name(BuildState& state, std::string_view name) -> void;
+auto set_build_root_name(BuildGraph& state, std::string_view name) -> void;
 
 } // namespace pup::graph

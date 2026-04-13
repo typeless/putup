@@ -502,7 +502,7 @@ auto Scheduler::stats() const -> BuildStats
 // Public build API
 // ---------------------------------------------------------------------------
 
-auto Scheduler::build(graph::BuildState const& state, NodeIdMap32 const* filter) -> Result<BuildStats>
+auto Scheduler::build(graph::BuildGraph const& state, NodeIdMap32 const* filter) -> Result<BuildStats>
 {
     impl_->cancelled = false;
     impl_->stats = BuildStats {};
@@ -562,7 +562,7 @@ auto Scheduler::filter_jobs(
 }
 
 auto Scheduler::build_job_list(
-    graph::BuildState const& state
+    graph::BuildGraph const& state
 ) -> Result<Vec<BuildJob>>
 {
     auto job_list_start = pup::SteadyClock::now();
@@ -722,7 +722,7 @@ auto Scheduler::build_job_list(
 
 auto Scheduler::execute_parallel(
     Vec<BuildJob> const& jobs,
-    graph::BuildState const& state
+    graph::BuildGraph const& state
 ) -> Result<void>
 {
     auto const env_cache = build_env_cache(jobs);

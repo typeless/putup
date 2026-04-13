@@ -1043,15 +1043,15 @@ auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view
 }
 
 // =============================================================================
-// BuildState free functions
+// BuildGraph free functions
 // =============================================================================
 
-auto make_build_state() -> BuildState
+auto make_build_graph() -> BuildGraph
 {
-    return BuildState { .graph = make_graph(), .path_cache = {} };
+    return BuildGraph { .graph = make_graph(), .path_cache = {} };
 }
 
-auto set_build_root_name(BuildState& state, std::string_view name) -> void
+auto set_build_root_name(BuildGraph& state, std::string_view name) -> void
 {
     graph::set_build_root_name(state.graph, name);
     graph::clear_path_cache(state.path_cache);
@@ -1227,7 +1227,7 @@ auto collect_scope_with_upstream_commands(
 }
 
 auto collect_upstream_files(
-    BuildState const& state,
+    BuildGraph const& state,
     Vec<StringId> const& scopes
 ) -> Vec<std::string_view>
 {

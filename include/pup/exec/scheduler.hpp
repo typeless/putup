@@ -14,7 +14,7 @@
 #include <optional>
 
 namespace pup::graph {
-struct BuildState;
+struct BuildGraph;
 }
 
 namespace pup::exec {
@@ -91,7 +91,7 @@ public:
 
     /// Build commands matching the filter. nullptr = build all.
     [[nodiscard]]
-    auto build(graph::BuildState const& state, NodeIdMap32 const* filter = nullptr) -> Result<BuildStats>;
+    auto build(graph::BuildGraph const& state, NodeIdMap32 const* filter = nullptr) -> Result<BuildStats>;
 
     /// Set callback for job start
     auto on_job_start(JobStartCallback callback) -> void;
@@ -121,13 +121,13 @@ private:
     /// Execute jobs in parallel using the async event loop
     auto execute_parallel(
         Vec<BuildJob> const& jobs,
-        graph::BuildState const& graph
+        graph::BuildGraph const& graph
     ) -> Result<void>;
 
     /// Build job list from graph in topological order
     [[nodiscard]]
     auto build_job_list(
-        graph::BuildState const& graph
+        graph::BuildGraph const& graph
     ) -> Result<Vec<BuildJob>>;
 
     /// Determine which jobs need to run based on changes

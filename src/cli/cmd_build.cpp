@@ -448,7 +448,7 @@ auto create_implicit_file(
 /// Serialize file and directory nodes from the build graph to the index.
 /// Returns the populated index and a path-to-id mapping for later use.
 auto serialize_graph_nodes(
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     std::string_view source_root,
     std::string_view output_root
 ) -> std::pair<pup::index::Index, PathIdMap>
@@ -559,7 +559,7 @@ auto serialize_graph_nodes(
 /// Serialize command nodes from the build graph to the index.
 /// v8: Store template + operands instead of fully-expanded command.
 auto serialize_command_nodes(
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     pup::index::Index& index,
     PathIdMap const& path_to_id
 ) -> void
@@ -602,7 +602,7 @@ auto serialize_command_nodes(
 
 /// Serialize edges from the build graph to the index.
 auto serialize_edges(
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     pup::index::Index& index
 ) -> void
 {
@@ -620,7 +620,7 @@ auto serialize_edges(
 }
 
 /// Compute the next available NodeId after all existing nodes.
-auto compute_next_id(pup::graph::BuildState const& state) -> pup::NodeId
+auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
 {
     auto max_file_id = pup::NodeId { 0 };
     for (auto id : pup::graph::all_nodes(state.graph)) {
@@ -714,7 +714,7 @@ auto preserve_old_implicit_edges(
 auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
-    pup::graph::BuildState const& state
+    pup::graph::BuildGraph const& state
 ) -> pup::Vec<StringId>
 {
     auto result = pup::Vec<StringId> { changed };
@@ -789,7 +789,7 @@ auto expand_implicit_deps(
 /// Build a complete index from the build graph and discovered dependencies.
 /// Orchestrates the serialization of nodes, commands, edges, and implicit deps.
 auto build_index(
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     DiscoveredDeps const& discovered_deps,
     std::string_view source_root,
     std::string_view output_root,
@@ -828,7 +828,7 @@ auto build_index(
 /// Returns node IDs on success, or empty optional with error printed on failure.
 auto validate_output_targets(
     pup::Vec<pup::StringId> const& targets,
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     std::string_view variant_name,
     bool verbose
 ) -> std::optional<pup::Vec<pup::NodeId>>
@@ -862,7 +862,7 @@ auto validate_output_targets(
 
 /// Detect new commands (in graph but not index) and add their outputs to changed files.
 auto detect_new_commands(
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
     std::string_view variant_name,
     bool verbose
@@ -899,7 +899,7 @@ auto detect_new_commands(
 
 /// Remove stale outputs from removed commands and report them.
 auto remove_stale_outputs(
-    pup::graph::BuildState const& state,
+    pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
     std::string_view source_root,
     std::string_view variant_name,
