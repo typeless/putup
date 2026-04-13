@@ -103,12 +103,7 @@ auto collect_command_dependencies(
         };
 
         for (auto oo_id : graph::get_order_only(g, cmd_id)) {
-            auto const* oo_node = graph::get_file_node(g, oo_id);
-            if (!oo_node) {
-                continue;
-            }
-
-            if (oo_node->type == NodeType::Group) {
+            if (graph::get_node_type(g, oo_id) == NodeType::Group) {
                 for (auto member_id : graph::get_inputs(g, oo_id)) {
                     add_producers(member_id);
                 }

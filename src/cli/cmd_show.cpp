@@ -143,11 +143,8 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto output_dirs = Vec<StringId> {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
-        auto const* node = graph::get_file_node(ctx.graph().graph, id);
-        if (!node) {
-            continue;
-        }
-        if (node->type != pup::NodeType::Generated && node->type != pup::NodeType::File) {
+        auto node_type = graph::get_node_type(ctx.graph().graph, id);
+        if (node_type != pup::NodeType::Generated && node_type != pup::NodeType::File) {
             continue;
         }
 
