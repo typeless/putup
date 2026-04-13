@@ -35,11 +35,6 @@ auto find_config_commands(
         if (!node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph::get_command_node(g, id);
-        if (!node) {
-            continue;
-        }
-
         for (auto output_id : graph::get_outputs(g, id)) {
             auto path = graph::get_full_path(g, output_id, state.path_cache);
             if (is_config_output(path)) {

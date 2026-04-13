@@ -248,12 +248,10 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         if (opts.verbose) {
             printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
             for (auto id : commands) {
-                if (graph::get_command_node(ctx.graph().graph, id)) {
-                    auto display_sv = graph::get_display_str(ctx.graph().graph, id);
-                    auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
-                    auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
-                    printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display.size()), display.data());
-                }
+                auto display_sv = graph::get_display_str(ctx.graph().graph, id);
+                auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
+                auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
+                printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display.size()), display.data());
             }
         }
         return EXIT_SUCCESS;
@@ -268,10 +266,6 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
         auto get_label = [&]() -> std::string_view {
             if (node_id::is_command(id)) {
-                auto const* cmd = graph::get_command_node(ctx.graph().graph, id);
-                if (!cmd) {
-                    return {};
-                }
                 auto display_sv = graph::get_display_str(ctx.graph().graph, id);
                 auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
                 return display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
@@ -348,11 +342,6 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto first = true;
 
     for (auto id : commands) {
-        auto const* node = graph::get_command_node(ctx.graph().graph, id);
-        if (!node) {
-            continue;
-        }
-
         auto source_file = std::string_view {};
         for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
             auto input_path_id = graph::get_full_path(ctx.graph().graph, input_id);
