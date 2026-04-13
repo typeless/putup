@@ -345,8 +345,12 @@ TEST_CASE("BuildGraph node types", "[graph]")
         auto file = add_file_node(g, FileNode { .name = intern("main.c"), .parent_dir = *dir });
         REQUIRE(file.has_value());
 
+        auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
+        REQUIRE(cmd.has_value());
+
         CHECK(get_parent_dir(g, *file) == *dir);
         CHECK(get_parent_dir(g, *dir) == 0);
+        CHECK(get_parent_dir(g, *cmd) == 0);
     }
 
     SECTION("get_node_flags accessor")
@@ -356,8 +360,12 @@ TEST_CASE("BuildGraph node types", "[graph]")
         REQUIRE(modified.has_value());
         REQUIRE(plain.has_value());
 
+        auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
+        REQUIRE(cmd.has_value());
+
         CHECK(get_node_flags(g, *modified) == pup::NodeFlags::Modified);
         CHECK(get_node_flags(g, *plain) == pup::NodeFlags::None);
+        CHECK(get_node_flags(g, *cmd) == pup::NodeFlags::None);
     }
 
     SECTION("get_content_hash accessor")
@@ -369,9 +377,15 @@ TEST_CASE("BuildGraph node types", "[graph]")
         auto node = add_file_node(g, FileNode { .name = intern("var"), .content_hash = hash });
         REQUIRE(node.has_value());
 
+        auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
+        REQUIRE(cmd.has_value());
+
         auto result = get_content_hash(g, *node);
         CHECK(result[0] == std::byte { 0xAB });
         CHECK(result[31] == std::byte { 0xCD });
+
+        auto cmd_hash = get_content_hash(g, *cmd);
+        CHECK(cmd_hash == pup::Hash256 {});
     }
 
     SECTION("get_command_inputs and get_command_outputs accessors")
@@ -398,6 +412,9 @@ TEST_CASE("BuildGraph node types", "[graph]")
         auto const& outputs = get_command_outputs(g, *cmd);
         REQUIRE(outputs.size() == 1);
         CHECK(outputs[0] == *out);
+
+        CHECK(get_command_inputs(g, *in1).empty());
+        CHECK(get_command_outputs(g, *in1).empty());
     }
 
     SECTION("all node types")

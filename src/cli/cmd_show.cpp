@@ -183,12 +183,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         if (!node_id::is_command(id)) {
             continue;
         }
-        auto const* node = graph::get_command_node(ctx.graph().graph, id);
-        if (!node) {
-            continue;
-        }
-
-        if (node->output_action == graph::OutputAction::InjectImplicitDeps) {
+        if (graph::get_output_action(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
             continue;
         }
 

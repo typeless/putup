@@ -614,7 +614,7 @@ auto get_phi_node(Graph&, id) -> PhiNode*;             // nullptr for non-phi ID
 auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
 auto add_phi_node(Graph&, PhiNode) -> Result<NodeId>;
 auto resolve_phi_node(Graph const&, phi_id) -> NodeId; // Returns active output
-auto is_guard_satisfied(Graph const&, CommandNode const&) -> bool;
+auto is_guard_satisfied(Graph const&, NodeId) -> bool;
 
 // String access helpers (resolve StringId -> string_view)
 auto get_name(Graph const&, id) -> std::string_view;
@@ -1830,7 +1830,7 @@ foo.c ─────┬─→ [cmd1: gcc -g]  ─→ app@DEBUG=y ──┐
 
 ```cpp
 // When building job list, evaluate guards via helper
-auto guard_active = is_guard_satisfied(graph, *cmd);
+auto guard_active = is_guard_satisfied(graph, cmd_id);
 
 // is_guard_satisfied() checks ALL guards:
 for (auto const& guard : cmd.guards) {
