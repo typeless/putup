@@ -134,10 +134,6 @@ struct Graph {
 [[nodiscard]]
 auto make_graph() -> Graph;
 
-/// Validate that a node ID exists in the graph
-[[nodiscard]]
-auto validate_node_id(Graph const& graph, NodeId id) -> bool;
-
 /// Add a file node to the graph
 [[nodiscard]]
 auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>;
@@ -187,22 +183,6 @@ auto get_condition_node(Graph& graph, NodeId id) -> ConditionNode*;
 /// Get a condition node by ID (const) - returns nullptr for non-condition IDs
 [[nodiscard]]
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
-
-/// Add a phi node to the graph
-[[nodiscard]]
-auto add_phi_node(Graph& graph, PhiNode node) -> Result<NodeId>;
-
-/// Get a phi node by ID (mutable) - returns nullptr for non-phi IDs
-[[nodiscard]]
-auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*;
-
-/// Get a phi node by ID (const) - returns nullptr for non-phi IDs
-[[nodiscard]]
-auto get_phi_node(Graph const& graph, NodeId id) -> PhiNode const*;
-
-/// Resolve a phi node to its active output based on current condition values
-[[nodiscard]]
-auto resolve_phi_node(Graph const& graph, NodeId phi_id) -> NodeId;
 
 /// Check if all guards on a command are satisfied
 [[nodiscard]]
@@ -303,10 +283,6 @@ auto all_nodes(Graph const& graph) -> Vec<NodeId>;
 /// Get root nodes (nodes with no inputs)
 [[nodiscard]]
 auto root_nodes(Graph const& graph) -> Vec<NodeId>;
-
-/// Get leaf nodes (nodes with no outputs)
-[[nodiscard]]
-auto leaf_nodes(Graph const& graph) -> Vec<NodeId>;
 
 /// Materialize a PathId to its display string. For BuildRoot-grounded paths,
 /// prepends the build root name (e.g., "build/gcc/foo.o").
