@@ -785,7 +785,7 @@ TEST_CASE("GraphBuilder cross-directory order-only group with relative path", "[
     REQUIRE(r2.has_value());
 
     // Resolve deferred order-only edges (required after all tupfiles are parsed)
-    auto resolve_result = resolve_deferred_group_edges(bs, builder_state);
+    auto resolve_result = finalize_graph(bs, builder_state);
     REQUIRE(resolve_result.has_value());
 
     // Verify the kernel.o command has an order-only dependency on config.h
@@ -872,7 +872,7 @@ TEST_CASE("GraphBuilder normalize_group_dir empty string returns dot", "[e2e][bu
     REQUIRE(r2.has_value());
 
     // Resolve deferred order-only edges (required after all tupfiles are parsed)
-    auto resolve_result = resolve_deferred_group_edges(bs, builder_state);
+    auto resolve_result = finalize_graph(bs, builder_state);
     REQUIRE(resolve_result.has_value());
 
     // The critical verification: check that the group WAS found

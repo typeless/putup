@@ -228,14 +228,6 @@ struct BuilderState {
 [[nodiscard]]
 auto make_builder_state(BuilderOptions opts) -> BuilderState;
 
-/// Build graph from a single Tupfile AST
-[[nodiscard]]
-auto build_graph(
-    parser::Tupfile const& tupfile,
-    parser::EvalContext& eval,
-    BuilderState& state
-) -> Result<BuildState>;
-
 /// Add a Tupfile to an existing build state
 [[nodiscard]]
 auto add_tupfile(
@@ -245,9 +237,10 @@ auto add_tupfile(
     BuilderState& state
 ) -> Result<void>;
 
-/// Resolve deferred order-only edges after all Tupfiles are parsed
+/// Finalize the graph after all Tupfiles are parsed.
+/// Resolves deferred group edges and expands %<group> patterns in commands.
 [[nodiscard]]
-auto resolve_deferred_group_edges(
+auto finalize_graph(
     BuildState& build_state,
     BuilderState& state
 ) -> Result<void>;
