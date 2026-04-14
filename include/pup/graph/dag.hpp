@@ -148,20 +148,65 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Generic property accessor. Specialized per property type out-of-line in
-/// dag.cpp. Covers properties whose return type uniquely identifies what's
-/// being read (NodeType, NodeFlags, Hash256, OutputAction). Properties with
-/// ambiguous return types (NodeId, StringId) use the named accessors below.
-template<typename T>
+/// Role tags for scalar-property access via get<Tag>. The four tags that
+/// are also concrete types (NodeType, NodeFlags, Hash256, OutputAction)
+/// identify themselves by their return type. The four below are pure role
+/// tags whose storage type is StringId.
+struct Name { };
+struct Display { };
+struct SourceDir { };
+struct InstructionPattern { };
+
+/// Storage type each get<Tag> maps to.
+template<typename Tag>
+struct get_storage;
+
+template<>
+struct get_storage<NodeType> {
+    using type = NodeType;
+};
+template<>
+struct get_storage<NodeFlags> {
+    using type = NodeFlags;
+};
+template<>
+struct get_storage<Hash256> {
+    using type = Hash256;
+};
+template<>
+struct get_storage<OutputAction> {
+    using type = OutputAction;
+};
+template<>
+struct get_storage<Name> {
+    using type = StringId;
+};
+template<>
+struct get_storage<Display> {
+    using type = StringId;
+};
+template<>
+struct get_storage<SourceDir> {
+    using type = StringId;
+};
+template<>
+struct get_storage<InstructionPattern> {
+    using type = StringId;
+};
+
+/// Generic scalar-property accessor. Specialized per tag out-of-line in
+/// dag.cpp. Callers that want a string_view for StringId-returning tags
+/// can wrap the result in global_pool().get(...).
+template<typename Tag>
 [[nodiscard]]
-auto get(Graph const& graph, NodeId id) -> T;
+auto get(Graph const& graph, NodeId id) -> typename get_storage<Tag>::type;
 
 /// Role tags for composite-property access via view<Tag>.
 struct Inputs { };
 struct Outputs { };
 struct ExportedVars { };
 
-/// Storage type each role tag maps to.
+/// Storage type each view<Tag> maps to.
 template<typename Tag>
 struct view_storage;
 
@@ -193,10 +238,6 @@ auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId;
 /// Get the parent command for InjectImplicitDeps commands
 [[nodiscard]]
 auto get_parent_command(Graph const& graph, NodeId id) -> NodeId;
-
-/// Get the display StringId of a command node (raw interned ID, not resolved to string_view)
-[[nodiscard]]
-auto get_display_id(Graph const& graph, NodeId id) -> StringId;
 
 /// Check if a command captures stdout (generated rule with Stdout output type)
 [[nodiscard]]
@@ -308,10 +349,6 @@ auto get_full_path(Graph const& graph, NodeId id) -> StringId;
 /// Clear the entire path cache
 auto clear_path_cache(PathCache& cache) -> void;
 
-/// Get file node name as string_view
-[[nodiscard]]
-auto get_name(Graph const& graph, NodeId id) -> std::string_view;
-
 /// Expand instruction pattern into full command string by substituting
 /// operand paths (%f, %o, %b, %B, %e, %d, %O, %Nf, %No) from the graph.
 [[nodiscard]]
@@ -338,18 +375,6 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
 /// Build the command string index for find_by_command() lookups.
 /// Must be called after all commands have their operands set (post-parsing).
 auto build_command_index(Graph& graph, PathCache& cache) -> void;
-
-/// Get command node display string as string_view
-[[nodiscard]]
-auto get_display_str(Graph const& graph, NodeId id) -> std::string_view;
-
-/// Get command node source directory as string_view
-[[nodiscard]]
-auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view;
-
-/// Get command node instruction pattern as string_view (pre-pattern-expansion)
-[[nodiscard]]
-auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".

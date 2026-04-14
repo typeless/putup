@@ -861,7 +861,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         auto const* cmd = get_command_node(g, *cmd_id);
         REQUIRE(cmd != nullptr);
         REQUIRE(cmd->instruction_id == instruction);
-        REQUIRE(get_instruction_pattern(g, *cmd_id) == "gcc -O2 -c -o %o %f");
+        REQUIRE(sv(get<InstructionPattern>(g, *cmd_id)) == "gcc -O2 -c -o %o %f");
     }
 
     SECTION("command node with literal instruction (no patterns)")
@@ -875,7 +875,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         auto const* cmd = get_command_node(g, *cmd_id);
         REQUIRE(cmd != nullptr);
         REQUIRE(cmd->instruction_id != pup::StringId::Empty);
-        REQUIRE(get_instruction_pattern(g, *cmd_id) == "cp foo bar");
+        REQUIRE(sv(get<InstructionPattern>(g, *cmd_id)) == "cp foo bar");
         REQUIRE(sv(expand_instruction(g, *cmd_id)) == "cp foo bar");
     }
 
@@ -888,7 +888,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         auto const* cmd = get_command_node(g, *cmd_id);
         REQUIRE(cmd != nullptr);
         REQUIRE(cmd->instruction_id == pup::StringId::Empty);
-        REQUIRE(get_instruction_pattern(g, *cmd_id).empty());
+        REQUIRE(sv(get<InstructionPattern>(g, *cmd_id)).empty());
     }
 
     SECTION("multiple commands share same instruction")
@@ -912,7 +912,7 @@ TEST_CASE("CommandNode stores instruction_id", "[graph][instruction]")
         auto const* cmd2 = get_command_node(g, *cmd2_id);
 
         REQUIRE(cmd1->instruction_id == cmd2->instruction_id);
-        REQUIRE(get_instruction_pattern(g, *cmd1_id) == get_instruction_pattern(g, *cmd2_id));
+        REQUIRE(sv(get<InstructionPattern>(g, *cmd1_id)) == sv(get<InstructionPattern>(g, *cmd2_id)));
     }
 }
 
@@ -1431,7 +1431,7 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         REQUIRE(result.has_value());
 
         REQUIRE(get<NodeType>(graph,*result) == NodeType::Generated);
-        REQUIRE(get_name(graph, *result) == "foo.o");
+        REQUIRE(sv(get<Name>(graph, *result)) == "foo.o");
         REQUIRE(graph.paths.root(get_file_node(graph, *result)->path_id) == pup::PathId::BuildRoot);
     }
 
@@ -1451,10 +1451,10 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         auto result = ensure_file_node(graph, path_id, NodeType::Generated);
         REQUIRE(result.has_value());
 
-        REQUIRE(get_name(graph, *result) == "baz.o");
+        REQUIRE(sv(get<Name>(graph, *result)) == "baz.o");
 
         auto parent_id = get_parent_dir(graph, *result);
-        REQUIRE(get_name(graph, parent_id) == "lib");
+        REQUIRE(sv(get<Name>(graph, parent_id)) == "lib");
         REQUIRE(get<NodeType>(graph,parent_id) == NodeType::Directory);
     }
 

@@ -90,7 +90,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
         auto cache = pup::graph::PathCache {};
         for (auto id : commands) {
-            auto display_sv = pup::graph::get_display_str(ctx.graph().graph, id);
+            auto display_sv = pool.get(pup::graph::get<pup::graph::Display>(ctx.graph().graph, id));
             auto cmd_str_id = pup::graph::expand_instruction(ctx.graph().graph, id, cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root));
             auto label = display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
             printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(label.size()), label.data());

@@ -119,13 +119,13 @@ auto configure_single_variant(
     // Filter config commands by scope if specified
     auto config_commands = pup::NodeIdMap32 {};
     for (auto const& cfg : configs) {
-        auto source_dir_sv = pup::graph::get_source_dir(ctx.graph().graph, cfg.cmd_id);
+        auto source_dir_sv = pool.get(pup::graph::get<pup::graph::SourceDir>(ctx.graph().graph, cfg.cmd_id));
         if (!scopes.empty() && !pup::is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }
         config_commands.set(cfg.cmd_id, 1);
         if (opts.verbose) {
-            auto display_sv = pup::graph::get_display_str(ctx.graph().graph, cfg.cmd_id);
+            auto display_sv = pool.get(pup::graph::get<pup::graph::Display>(ctx.graph().graph, cfg.cmd_id));
             if (display_sv.empty()) {
                 display_sv = "<unknown>";
             }

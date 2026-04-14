@@ -1035,13 +1035,13 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     REQUIRE(helpers_id != 0);
 
     // Verify the node has name and parent_dir set
-    CHECK(get_name(bs.graph, helpers_id) == "helpers.c");
+    CHECK(sv(get<Name>(bs.graph, helpers_id)) == "helpers.c");
     auto helpers_parent_dir_id = get_parent_dir(bs.graph, helpers_id);
     CHECK(helpers_parent_dir_id != 0); // Not root
 
     // Verify the parent directory node exists
     CHECK(get<NodeType>(bs.graph, helpers_parent_dir_id) == NodeType::Directory);
-    CHECK(get_name(bs.graph, helpers_parent_dir_id) == "util");
+    CHECK(sv(get<Name>(bs.graph, helpers_parent_dir_id)) == "util");
 
     // Verify we can find the file via (parent_dir, name)
     auto found = find_by_dir_name(bs.graph, helpers_parent_dir_id, "helpers.c");
@@ -1100,7 +1100,7 @@ TEST_CASE("GraphBuilder out-of-tree build outputs use relative paths", "[e2e][bu
 
     NodeId output_id = 0;
     for (auto id : generated) {
-        if (get_name(bs.graph, id) == "main.o") {
+        if (sv(get<Name>(bs.graph, id)) == "main.o") {
             output_id = id;
             break;
         }
@@ -1165,7 +1165,7 @@ TEST_CASE("GraphBuilder out-of-tree cross-directory generated file reference", "
     auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     NodeId boot_hex_id = 0;
     for (auto id : generated) {
-        if (get_name(bs.graph, id) == "boot.hex") {
+        if (sv(get<Name>(bs.graph, id)) == "boot.hex") {
             boot_hex_id = id;
             break;
         }
@@ -1270,7 +1270,7 @@ TEST_CASE("GraphBuilder TUP_VARIANT_OUTPUTDIR matches tup behavior", "[e2e][buil
     auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     NodeId output_id = 0;
     for (auto id : generated) {
-        if (get_name(bs.graph, id) == "out.txt") {
+        if (sv(get<Name>(bs.graph, id)) == "out.txt") {
             output_id = id;
             break;
         }
@@ -1546,7 +1546,7 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     auto generated = nodes_of_type(bs.graph,NodeType::Generated);
     NodeId output_id = 0;
     for (auto id : generated) {
-        if (get_name(bs.graph, id) == "..hidden") {
+        if (sv(get<Name>(bs.graph, id)) == "..hidden") {
             output_id = id;
             break;
         }

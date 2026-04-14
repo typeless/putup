@@ -503,7 +503,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = type,
                 .flags = pup::graph::get<pup::NodeFlags>(g, id),
-                .name = pool.intern(pup::graph::get_name(g, id)),
+                .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pool.intern(node_path),
                 .size = file_size,
                 .mtime_ns = mtime_ns,
@@ -521,7 +521,7 @@ auto serialize_graph_nodes(
                 .src_id = 0,
                 .type = type,
                 .flags = pup::graph::get<pup::NodeFlags>(g, id),
-                .name = pool.intern(pup::graph::get_name(g, id)),
+                .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pool.intern(node_path),
                 .size = 0,
                 .mtime_ns = 0,
@@ -535,14 +535,13 @@ auto serialize_graph_nodes(
                    || type == pup::NodeType::Group
                    || type == pup::NodeType::Ghost) {
             // These node types must be in index to maintain consecutive ID sequence
-            auto& pool = pup::global_pool();
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
                 .flags = pup::graph::get<pup::NodeFlags>(g, id),
-                .name = pool.intern(pup::graph::get_name(g, id)),
+                .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pup::StringId::Empty,
                 .size = 0,
                 .content_hash = (type == pup::NodeType::Variable) ? pup::graph::get<pup::Hash256>(g, id) : pup::Hash256 {},
@@ -572,7 +571,7 @@ auto serialize_command_nodes(
         auto outputs = pup::graph::view<pup::graph::Outputs>(g, id);
         auto& pool = pup::global_pool();
 
-        auto source_dir_sv = pup::graph::get_source_dir(g, id);
+        auto source_dir_sv = pool.get(pup::graph::get<pup::graph::SourceDir>(g, id));
         auto dir_id = pup::NodeId { 0 };
         if (!source_dir_sv.empty()) {
             auto it = path_id_find(path_to_id, source_dir_sv);
@@ -584,8 +583,8 @@ auto serialize_command_nodes(
         auto entry = pup::index::CommandEntry {
             .id = id,
             .dir_id = dir_id,
-            .instruction_pattern = pool.intern(pup::graph::get_instruction_pattern(g, id)),
-            .display = pool.intern(pup::graph::get_display_str(g, id)),
+            .instruction_pattern = pup::graph::get<pup::graph::InstructionPattern>(g, id),
+            .display = pup::graph::get<pup::graph::Display>(g, id),
             .env = pup::StringId::Empty,
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
@@ -877,7 +876,7 @@ auto detect_new_commands(
                 }
             }
             if (verbose) {
-                auto display_sv = pup::graph::get_display_str(g, id);
+                auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
                 vprint(variant_name, "  New command: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
             }
         }
