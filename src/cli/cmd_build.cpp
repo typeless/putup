@@ -462,7 +462,7 @@ auto serialize_graph_nodes(
             continue;
         }
 
-        auto type = pup::graph::get_node_type(g, id);
+        auto type = pup::graph::get<pup::NodeType>(g, id);
 
         if (type == pup::NodeType::File || type == pup::NodeType::Generated) {
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
@@ -502,7 +502,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get_node_flags(g, id),
+                .flags = pup::graph::get<pup::NodeFlags>(g, id),
                 .name = pool.intern(pup::graph::get_name(g, id)),
                 .path = pool.intern(node_path),
                 .size = file_size,
@@ -520,7 +520,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get_node_flags(g, id),
+                .flags = pup::graph::get<pup::NodeFlags>(g, id),
                 .name = pool.intern(pup::graph::get_name(g, id)),
                 .path = pool.intern(node_path),
                 .size = 0,
@@ -541,11 +541,11 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get_node_flags(g, id),
+                .flags = pup::graph::get<pup::NodeFlags>(g, id),
                 .name = pool.intern(pup::graph::get_name(g, id)),
                 .path = pup::StringId::Empty,
                 .size = 0,
-                .content_hash = (type == pup::NodeType::Variable) ? pup::graph::get_content_hash(g, id) : pup::Hash256 {},
+                .content_hash = (type == pup::NodeType::Variable) ? pup::graph::get<pup::Hash256>(g, id) : pup::Hash256 {},
             };
             index.add_file(std::move(entry));
         }
@@ -841,7 +841,7 @@ auto validate_output_targets(
             veprint(variant_name, "Error: %.*s is not in build graph\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }
-        if (pup::graph::get_node_type(state.graph, *node_id) != pup::NodeType::Generated) {
+        if (pup::graph::get<pup::NodeType>(state.graph, *node_id) != pup::NodeType::Generated) {
             veprint(variant_name, "Error: %.*s is not a build output\n", static_cast<int>(target_sv.size()), target_sv.data());
             return std::nullopt;
         }

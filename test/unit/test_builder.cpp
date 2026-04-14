@@ -1040,7 +1040,7 @@ TEST_CASE("GraphBuilder directory node creation", "[e2e][builder][dir-nodes]")
     CHECK(helpers_parent_dir_id != 0); // Not root
 
     // Verify the parent directory node exists
-    CHECK(get_node_type(bs.graph, helpers_parent_dir_id) == NodeType::Directory);
+    CHECK(get<NodeType>(bs.graph, helpers_parent_dir_id) == NodeType::Directory);
     CHECK(get_name(bs.graph, helpers_parent_dir_id) == "util");
 
     // Verify we can find the file via (parent_dir, name)

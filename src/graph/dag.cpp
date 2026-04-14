@@ -283,31 +283,10 @@ auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*
     return node.id == id ? &node : nullptr;
 }
 
-auto get_node_type(Graph const& graph, NodeId id) -> NodeType
-{
-    if (node_id::is_command(id)) {
-        return NodeType::Command;
-    }
-    auto const* node = get_file_node(graph, id);
-    return node ? node->type : NodeType::File;
-}
-
 auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId
 {
     auto const* node = get_file_node(graph, id);
     return node ? node->parent_dir : NodeId { 0 };
-}
-
-auto get_node_flags(Graph const& graph, NodeId id) -> NodeFlags
-{
-    auto const* node = get_file_node(graph, id);
-    return node ? node->flags : NodeFlags::None;
-}
-
-auto get_content_hash(Graph const& graph, NodeId id) -> Hash256
-{
-    auto const* node = get_file_node(graph, id);
-    return node ? node->content_hash : Hash256 {};
 }
 
 auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
@@ -322,12 +301,6 @@ auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
     static auto const empty = Vec<NodeId> {};
     auto const* node = get_command_node(graph, id);
     return node ? node->outputs : empty;
-}
-
-auto get_output_action(Graph const& graph, NodeId id) -> OutputAction
-{
-    auto const* node = get_command_node(graph, id);
-    return node ? node->output_action : OutputAction::Normal;
 }
 
 auto get_exported_vars(Graph const& graph, NodeId id) -> SortedIdVec const&
