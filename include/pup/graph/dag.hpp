@@ -148,6 +148,14 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
+/// Generic property accessor — prefer over named get_* variants where the
+/// return type uniquely identifies the property. Specialized out-of-line in
+/// dag.cpp. Instantiations for ambiguous return types (e.g. NodeId, StringId)
+/// are intentionally not provided; use the named accessor instead.
+template<typename T>
+[[nodiscard]]
+auto get(Graph const& graph, NodeId id) -> T;
+
 /// Get the type of a node (File, Generated, Ghost, Directory, Group, Command, etc.)
 [[nodiscard]]
 auto get_node_type(Graph const& graph, NodeId id) -> NodeType;

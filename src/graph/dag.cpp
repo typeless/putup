@@ -355,6 +355,49 @@ auto is_stdout_capture(Graph const& graph, NodeId id) -> bool
     return node && node->generated_output && node->generated_output->type == GeneratedOutput::Type::Stdout;
 }
 
+namespace {
+template<typename T>
+auto read_file_field(Graph const& g, NodeId id, T FileNode::*field, T def) -> T
+{
+    auto const* node = get_file_node(g, id);
+    return node ? node->*field : def;
+}
+
+template<typename T>
+auto read_command_field(Graph const& g, NodeId id, T CommandNode::*field, T def) -> T
+{
+    auto const* node = get_command_node(g, id);
+    return node ? node->*field : def;
+}
+} // namespace
+
+template<>
+auto get<NodeType>(Graph const& graph, NodeId id) -> NodeType
+{
+    if (node_id::is_command(id)) {
+        return NodeType::Command;
+    }
+    return read_file_field(graph, id, &FileNode::type, NodeType::File);
+}
+
+template<>
+auto get<NodeFlags>(Graph const& graph, NodeId id) -> NodeFlags
+{
+    return read_file_field(graph, id, &FileNode::flags, NodeFlags::None);
+}
+
+template<>
+auto get<Hash256>(Graph const& graph, NodeId id) -> Hash256
+{
+    return read_file_field(graph, id, &FileNode::content_hash, Hash256 {});
+}
+
+template<>
+auto get<OutputAction>(Graph const& graph, NodeId id) -> OutputAction
+{
+    return read_command_field(graph, id, &CommandNode::output_action, OutputAction::Normal);
+}
+
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
 {
     auto const id = graph.next_condition_id;
