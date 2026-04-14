@@ -357,7 +357,7 @@ TEST_CASE("BuildGraph node types", "[graph]")
         CHECK(get_parent_dir(g, *cmd) == 0);
     }
 
-    SECTION("get_command_inputs and get_command_outputs accessors")
+    SECTION("view<Inputs> and view<Outputs>")
     {
         auto in1 = add_file_node(g, FileNode { .name = intern("a.c") });
         auto in2 = add_file_node(g, FileNode { .name = intern("b.c") });
@@ -373,17 +373,17 @@ TEST_CASE("BuildGraph node types", "[graph]")
         });
         REQUIRE(cmd.has_value());
 
-        auto const& inputs = get_command_inputs(g, *cmd);
+        auto const& inputs = view<Inputs>(g, *cmd);
         REQUIRE(inputs.size() == 2);
         CHECK(inputs[0] == *in1);
         CHECK(inputs[1] == *in2);
 
-        auto const& outputs = get_command_outputs(g, *cmd);
+        auto const& outputs = view<Outputs>(g, *cmd);
         REQUIRE(outputs.size() == 1);
         CHECK(outputs[0] == *out);
 
-        CHECK(get_command_inputs(g, *in1).empty());
-        CHECK(get_command_outputs(g, *in1).empty());
+        CHECK(view<Inputs>(g, *in1).empty());
+        CHECK(view<Outputs>(g, *in1).empty());
     }
 
     SECTION("all node types")

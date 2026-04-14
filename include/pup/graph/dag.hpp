@@ -156,21 +156,39 @@ template<typename T>
 [[nodiscard]]
 auto get(Graph const& graph, NodeId id) -> T;
 
+/// Role tags for composite-property access via view<Tag>.
+struct Inputs { };
+struct Outputs { };
+struct ExportedVars { };
+
+/// Storage type each role tag maps to.
+template<typename Tag>
+struct view_storage;
+
+template<>
+struct view_storage<Inputs> {
+    using type = Vec<NodeId>;
+};
+template<>
+struct view_storage<Outputs> {
+    using type = Vec<NodeId>;
+};
+template<>
+struct view_storage<ExportedVars> {
+    using type = SortedIdVec;
+};
+
+/// Composite-property accessor returning a range-like const reference.
+/// Specialized per role tag out-of-line in dag.cpp. Use for collection
+/// properties (inputs, outputs, exported vars) where iteration is the
+/// natural access pattern.
+template<typename Tag>
+[[nodiscard]]
+auto view(Graph const& graph, NodeId id) -> typename view_storage<Tag>::type const&;
+
 /// Get the parent directory node of a file node
 [[nodiscard]]
 auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId;
-
-/// Get the input operand NodeIds of a command node
-[[nodiscard]]
-auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
-
-/// Get the output operand NodeIds of a command node
-[[nodiscard]]
-auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
-
-/// Get the exported environment variables of a command node
-[[nodiscard]]
-auto get_exported_vars(Graph const& graph, NodeId id) -> SortedIdVec const&;
 
 /// Get the parent command for InjectImplicitDeps commands
 [[nodiscard]]

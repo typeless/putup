@@ -289,21 +289,24 @@ auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId
     return node ? node->parent_dir : NodeId { 0 };
 }
 
-auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
+template<>
+auto view<Inputs>(Graph const& graph, NodeId id) -> Vec<NodeId> const&
 {
     static auto const empty = Vec<NodeId> {};
     auto const* node = get_command_node(graph, id);
     return node ? node->inputs : empty;
 }
 
-auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&
+template<>
+auto view<Outputs>(Graph const& graph, NodeId id) -> Vec<NodeId> const&
 {
     static auto const empty = Vec<NodeId> {};
     auto const* node = get_command_node(graph, id);
     return node ? node->outputs : empty;
 }
 
-auto get_exported_vars(Graph const& graph, NodeId id) -> SortedIdVec const&
+template<>
+auto view<ExportedVars>(Graph const& graph, NodeId id) -> SortedIdVec const&
 {
     static auto const empty = SortedIdVec {};
     auto const* node = get_command_node(graph, id);

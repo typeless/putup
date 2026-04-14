@@ -568,8 +568,8 @@ auto serialize_command_nodes(
             continue;
         }
 
-        auto inputs = pup::graph::get_command_inputs(g, id);
-        auto outputs = pup::graph::get_command_outputs(g, id);
+        auto inputs = pup::graph::view<pup::graph::Inputs>(g, id);
+        auto outputs = pup::graph::view<pup::graph::Outputs>(g, id);
         auto& pool = pup::global_pool();
 
         auto source_dir_sv = pup::graph::get_source_dir(g, id);

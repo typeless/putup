@@ -630,7 +630,7 @@ auto Scheduler::build_job_list(
         auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
         auto display_id = graph::get_display_id(g, id);
 
-        auto const& exported_raw = graph::get_exported_vars(g, id);
+        auto const& exported_raw = graph::view<graph::ExportedVars>(g, id);
         auto exported_ids = Vec<StringId> {};
         exported_ids.reserve(exported_raw.size());
         for (auto raw_id : exported_raw) {
