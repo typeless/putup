@@ -448,6 +448,49 @@ TEST_CASE("BuildGraph node types", "[graph]")
     }
 }
 
+TEST_CASE("get<T> template accessor for unique-return-type properties", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    auto dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
+    auto file = add_file_node(g, FileNode {
+        .flags = pup::NodeFlags::Modified,
+        .name = intern("main.c"),
+        .parent_dir = *dir,
+    });
+    auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
+    REQUIRE(dir.has_value());
+    REQUIRE(file.has_value());
+    REQUIRE(cmd.has_value());
+
+    SECTION("get<NodeType> matches get_node_type")
+    {
+        CHECK(get<NodeType>(g, *file) == get_node_type(g, *file));
+        CHECK(get<NodeType>(g, *dir) == get_node_type(g, *dir));
+        CHECK(get<NodeType>(g, *cmd) == NodeType::Command);
+    }
+
+    SECTION("get<NodeFlags> matches get_node_flags")
+    {
+        CHECK(get<pup::NodeFlags>(g, *file) == get_node_flags(g, *file));
+        CHECK(get<pup::NodeFlags>(g, *dir) == pup::NodeFlags::None);
+        CHECK(get<pup::NodeFlags>(g, *cmd) == pup::NodeFlags::None);
+    }
+
+    SECTION("get<Hash256> matches get_content_hash")
+    {
+        CHECK(get<pup::Hash256>(g, *file) == get_content_hash(g, *file));
+        CHECK(get<pup::Hash256>(g, *cmd) == pup::Hash256 {});
+    }
+
+    SECTION("get<OutputAction> matches get_output_action")
+    {
+        CHECK(get<OutputAction>(g, *cmd) == get_output_action(g, *cmd));
+        CHECK(get<OutputAction>(g, *file) == OutputAction::Normal);
+    }
+}
+
 TEST_CASE("BuildGraph edge types", "[graph]")
 {
     auto bs = make_build_graph();
