@@ -338,7 +338,7 @@ TEST_CASE("BuildGraph node types", "[graph]")
         auto id = add_file_node(g, node);
 
         REQUIRE(id.has_value());
-        REQUIRE(get_node_type(g, *id) == NodeType::Group);
+        REQUIRE(get<NodeType>(g, *id) == NodeType::Group);
     }
 
     SECTION("get_parent_dir accessor")
@@ -355,41 +355,6 @@ TEST_CASE("BuildGraph node types", "[graph]")
         CHECK(get_parent_dir(g, *file) == *dir);
         CHECK(get_parent_dir(g, *dir) == 0);
         CHECK(get_parent_dir(g, *cmd) == 0);
-    }
-
-    SECTION("get_node_flags accessor")
-    {
-        auto modified = add_file_node(g, FileNode { .flags = pup::NodeFlags::Modified, .name = intern("a.c") });
-        auto plain = add_file_node(g, FileNode { .name = intern("b.c") });
-        REQUIRE(modified.has_value());
-        REQUIRE(plain.has_value());
-
-        auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
-        REQUIRE(cmd.has_value());
-
-        CHECK(get_node_flags(g, *modified) == pup::NodeFlags::Modified);
-        CHECK(get_node_flags(g, *plain) == pup::NodeFlags::None);
-        CHECK(get_node_flags(g, *cmd) == pup::NodeFlags::None);
-    }
-
-    SECTION("get_content_hash accessor")
-    {
-        auto hash = pup::Hash256 {};
-        hash[0] = std::byte { 0xAB };
-        hash[31] = std::byte { 0xCD };
-
-        auto node = add_file_node(g, FileNode { .name = intern("var"), .content_hash = hash });
-        REQUIRE(node.has_value());
-
-        auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
-        REQUIRE(cmd.has_value());
-
-        auto result = get_content_hash(g, *node);
-        CHECK(result[0] == std::byte { 0xAB });
-        CHECK(result[31] == std::byte { 0xCD });
-
-        auto cmd_hash = get_content_hash(g, *cmd);
-        CHECK(cmd_hash == pup::Hash256 {});
     }
 
     SECTION("get_command_inputs and get_command_outputs accessors")
@@ -453,40 +418,47 @@ TEST_CASE("get<T> template accessor for unique-return-type properties", "[graph]
     auto bs = make_build_graph();
     auto& g = bs.graph;
 
+    auto hash = pup::Hash256 {};
+    hash[0] = std::byte { 0xAB };
+    hash[31] = std::byte { 0xCD };
+
     auto dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
     auto file = add_file_node(g, FileNode {
         .flags = pup::NodeFlags::Modified,
         .name = intern("main.c"),
         .parent_dir = *dir,
+        .content_hash = hash,
     });
     auto cmd = add_command_node(g, CommandNode { .instruction_id = intern("gcc") });
     REQUIRE(dir.has_value());
     REQUIRE(file.has_value());
     REQUIRE(cmd.has_value());
 
-    SECTION("get<NodeType> matches get_node_type")
+    SECTION("get<NodeType>")
     {
-        CHECK(get<NodeType>(g, *file) == get_node_type(g, *file));
-        CHECK(get<NodeType>(g, *dir) == get_node_type(g, *dir));
+        CHECK(get<NodeType>(g, *file) == NodeType::File);
+        CHECK(get<NodeType>(g, *dir) == NodeType::Directory);
         CHECK(get<NodeType>(g, *cmd) == NodeType::Command);
     }
 
-    SECTION("get<NodeFlags> matches get_node_flags")
+    SECTION("get<NodeFlags>")
     {
-        CHECK(get<pup::NodeFlags>(g, *file) == get_node_flags(g, *file));
+        CHECK(get<pup::NodeFlags>(g, *file) == pup::NodeFlags::Modified);
         CHECK(get<pup::NodeFlags>(g, *dir) == pup::NodeFlags::None);
         CHECK(get<pup::NodeFlags>(g, *cmd) == pup::NodeFlags::None);
     }
 
-    SECTION("get<Hash256> matches get_content_hash")
+    SECTION("get<Hash256>")
     {
-        CHECK(get<pup::Hash256>(g, *file) == get_content_hash(g, *file));
+        auto result = get<pup::Hash256>(g, *file);
+        CHECK(result[0] == std::byte { 0xAB });
+        CHECK(result[31] == std::byte { 0xCD });
         CHECK(get<pup::Hash256>(g, *cmd) == pup::Hash256 {});
     }
 
-    SECTION("get<OutputAction> matches get_output_action")
+    SECTION("get<OutputAction>")
     {
-        CHECK(get<OutputAction>(g, *cmd) == get_output_action(g, *cmd));
+        CHECK(get<OutputAction>(g, *cmd) == OutputAction::Normal);
         CHECK(get<OutputAction>(g, *file) == OutputAction::Normal);
     }
 }
@@ -1458,7 +1430,7 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         auto result = ensure_file_node(graph, path_id, NodeType::Generated);
         REQUIRE(result.has_value());
 
-        REQUIRE(get_node_type(graph, *result) == NodeType::Generated);
+        REQUIRE(get<NodeType>(graph,*result) == NodeType::Generated);
         REQUIRE(get_name(graph, *result) == "foo.o");
         REQUIRE(graph.paths.root(get_file_node(graph, *result)->path_id) == pup::PathId::BuildRoot);
     }
@@ -1483,7 +1455,7 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 
         auto parent_id = get_parent_dir(graph, *result);
         REQUIRE(get_name(graph, parent_id) == "lib");
-        REQUIRE(get_node_type(graph, parent_id) == NodeType::Directory);
+        REQUIRE(get<NodeType>(graph,parent_id) == NodeType::Directory);
     }
 
     SECTION("upgrades Ghost to Generated")
@@ -1492,12 +1464,12 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 
         auto ghost_result = ensure_file_node(graph, path_id, NodeType::Ghost);
         REQUIRE(ghost_result.has_value());
-        REQUIRE(get_node_type(graph, *ghost_result) == NodeType::Ghost);
+        REQUIRE(get<NodeType>(graph,*ghost_result) == NodeType::Ghost);
 
         auto gen_result = ensure_file_node(graph, path_id, NodeType::Generated);
         REQUIRE(gen_result.has_value());
         REQUIRE(*gen_result == *ghost_result);
-        REQUIRE(get_node_type(graph, *gen_result) == NodeType::Generated);
+        REQUIRE(get<NodeType>(graph,*gen_result) == NodeType::Generated);
     }
 
     SECTION("path_to_node is consistent after creation")
@@ -1599,13 +1571,13 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         auto grounded = graph.paths.intern_path("dep.o", pool, pup::PathId::BuildRoot);
         auto ghost = ensure_file_node(graph, grounded, NodeType::Ghost);
         REQUIRE(ghost.has_value());
-        REQUIRE(get_node_type(graph, *ghost) == NodeType::Ghost);
+        REQUIRE(get<NodeType>(graph,*ghost) == NodeType::Ghost);
 
         auto ungrounded = graph.paths.intern_path("dep.o", pool, pup::PathId::Ungrounded);
         auto gen = ensure_file_node(graph, ungrounded, NodeType::Generated);
         REQUIRE(gen.has_value());
         REQUIRE(*gen == *ghost);
-        REQUIRE(get_node_type(graph, *gen) == NodeType::Generated);
+        REQUIRE(get<NodeType>(graph,*gen) == NodeType::Generated);
     }
 
     SECTION("ungrounded prefers BuildRoot over SourceRoot for lookup")

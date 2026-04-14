@@ -278,7 +278,7 @@ auto build_dependency_map(
         // These establish ordering without creating true data dependencies.
         for (auto oo_id : graph::get_order_only(graph, cmd_id)) {
             // For Group nodes, get member files and find their producers
-            if (graph::get_node_type(graph, oo_id) == NodeType::Group) {
+            if (graph::get<NodeType>(graph, oo_id) == NodeType::Group) {
                 for (auto member_id : graph::get_inputs(graph, oo_id)) {
                     add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
                 }
@@ -582,7 +582,7 @@ auto Scheduler::build_job_list(
     auto& cache = state.path_cache;
 
     for (auto id : topo_result.order) {
-        if (graph::get_node_type(g, id) == NodeType::Ghost && !graph::get_outputs(g, id).empty()) {
+        if (graph::get<NodeType>(g, id) == NodeType::Ghost && !graph::get_outputs(g, id).empty()) {
             auto path_sv = graph::get_full_path(g, id, cache);
             auto build_root_name = graph::get_build_root_name(g);
             auto file_path_sv = pool.get(pup::path::join(output_root_sv, path_sv));
@@ -623,7 +623,7 @@ auto Scheduler::build_job_list(
 
         // Check if this is a generated rule that captures stdout
         auto capture_stdout = graph::is_stdout_capture(g, id);
-        auto inject_implicit = capture_stdout && graph::get_output_action(g, id) == graph::OutputAction::InjectImplicitDeps;
+        auto inject_implicit = capture_stdout && graph::get<graph::OutputAction>(g, id) == graph::OutputAction::InjectImplicitDeps;
         auto parent_cmd = inject_implicit ? graph::get_parent_command(g, id) : INVALID_NODE_ID;
 
         // Expand command from instruction pattern + operands
@@ -674,7 +674,7 @@ auto Scheduler::build_job_list(
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
         for (auto oi_id : graph::get_order_only(g, id)) {
-            if (graph::get_node_type(g, oi_id) == NodeType::Group) {
+            if (graph::get<NodeType>(g, oi_id) == NodeType::Group) {
                 for (auto member_id : graph::get_inputs(g, oi_id)) {
                     auto member_path = graph::get_full_path(g, member_id, cache);
                     if (!member_path.empty()) {

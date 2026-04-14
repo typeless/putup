@@ -148,29 +148,17 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>;
 [[nodiscard]]
 auto add_edge(Graph& graph, NodeId from, NodeId to, LinkType type = LinkType::Normal) -> Result<void>;
 
-/// Generic property accessor — prefer over named get_* variants where the
-/// return type uniquely identifies the property. Specialized out-of-line in
-/// dag.cpp. Instantiations for ambiguous return types (e.g. NodeId, StringId)
-/// are intentionally not provided; use the named accessor instead.
+/// Generic property accessor. Specialized per property type out-of-line in
+/// dag.cpp. Covers properties whose return type uniquely identifies what's
+/// being read (NodeType, NodeFlags, Hash256, OutputAction). Properties with
+/// ambiguous return types (NodeId, StringId) use the named accessors below.
 template<typename T>
 [[nodiscard]]
 auto get(Graph const& graph, NodeId id) -> T;
 
-/// Get the type of a node (File, Generated, Ghost, Directory, Group, Command, etc.)
-[[nodiscard]]
-auto get_node_type(Graph const& graph, NodeId id) -> NodeType;
-
 /// Get the parent directory node of a file node
 [[nodiscard]]
 auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId;
-
-/// Get the flags of a file node
-[[nodiscard]]
-auto get_node_flags(Graph const& graph, NodeId id) -> NodeFlags;
-
-/// Get the content hash of a file node
-[[nodiscard]]
-auto get_content_hash(Graph const& graph, NodeId id) -> Hash256;
 
 /// Get the input operand NodeIds of a command node
 [[nodiscard]]
@@ -179,10 +167,6 @@ auto get_command_inputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
 /// Get the output operand NodeIds of a command node
 [[nodiscard]]
 auto get_command_outputs(Graph const& graph, NodeId id) -> Vec<NodeId> const&;
-
-/// Get the output action of a command node (Normal or InjectImplicitDeps)
-[[nodiscard]]
-auto get_output_action(Graph const& graph, NodeId id) -> OutputAction;
 
 /// Get the exported environment variables of a command node
 [[nodiscard]]

@@ -143,7 +143,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto output_dirs = Vec<StringId> {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
-        auto node_type = graph::get_node_type(ctx.graph().graph, id);
+        auto node_type = graph::get<pup::NodeType>(ctx.graph().graph, id);
         if (node_type != pup::NodeType::Generated && node_type != pup::NodeType::File) {
             continue;
         }
@@ -183,7 +183,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         if (!node_id::is_command(id)) {
             continue;
         }
-        if (graph::get_output_action(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
+        if (graph::get<graph::OutputAction>(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
             continue;
         }
 
