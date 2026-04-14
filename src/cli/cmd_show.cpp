@@ -187,7 +187,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
             continue;
         }
 
-        auto source_dir = graph::get_source_dir(ctx.graph().graph, id);
+        auto source_dir = global_pool().get(graph::get<graph::SourceDir>(ctx.graph().graph, id));
         auto dir = source_dir.empty() ? std::string_view { "." } : source_dir;
         auto cmd_id = graph::expand_instruction(ctx.graph().graph, id);
 
@@ -243,7 +243,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         if (opts.verbose) {
             printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
             for (auto id : commands) {
-                auto display_sv = graph::get_display_str(ctx.graph().graph, id);
+                auto display_sv = global_pool().get(graph::get<graph::Display>(ctx.graph().graph, id));
                 auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
                 auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
                 printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display.size()), display.data());
@@ -261,7 +261,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
         auto get_label = [&]() -> std::string_view {
             if (node_id::is_command(id)) {
-                auto display_sv = graph::get_display_str(ctx.graph().graph, id);
+                auto display_sv = global_pool().get(graph::get<graph::Display>(ctx.graph().graph, id));
                 auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
                 return display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
             }
@@ -370,7 +370,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         auto& pool = global_pool();
         auto source_root_sv = pool.get(ctx.layout().source_root);
         auto output_root_sv = pool.get(ctx.layout().output_root);
-        auto source_dir_sv = graph::get_source_dir(ctx.graph().graph, id);
+        auto source_dir_sv = global_pool().get(graph::get<graph::SourceDir>(ctx.graph().graph, id));
         auto working_dir = source_dir_sv.empty() ? source_root_sv : pool.get(pup::path::join(source_root_sv, source_dir_sv));
 
         // Convert project-root-relative paths to working-dir-relative

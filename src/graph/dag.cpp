@@ -319,12 +319,6 @@ auto get_parent_command(Graph const& graph, NodeId id) -> NodeId
     return node ? node->parent_command : INVALID_NODE_ID;
 }
 
-auto get_display_id(Graph const& graph, NodeId id) -> StringId
-{
-    auto const* node = get_command_node(graph, id);
-    return node ? node->display : StringId::Empty;
-}
-
 auto is_stdout_capture(Graph const& graph, NodeId id) -> bool
 {
     auto const* node = get_command_node(graph, id);
@@ -372,6 +366,30 @@ template<>
 auto get<OutputAction>(Graph const& graph, NodeId id) -> OutputAction
 {
     return read_command_field(graph, id, &CommandNode::output_action, OutputAction::Normal);
+}
+
+template<>
+auto get<Name>(Graph const& graph, NodeId id) -> StringId
+{
+    return read_file_field(graph, id, &FileNode::name, StringId::Empty);
+}
+
+template<>
+auto get<Display>(Graph const& graph, NodeId id) -> StringId
+{
+    return read_command_field(graph, id, &CommandNode::display, StringId::Empty);
+}
+
+template<>
+auto get<SourceDir>(Graph const& graph, NodeId id) -> StringId
+{
+    return read_command_field(graph, id, &CommandNode::source_dir, StringId::Empty);
+}
+
+template<>
+auto get<InstructionPattern>(Graph const& graph, NodeId id) -> StringId
+{
+    return read_command_field(graph, id, &CommandNode::instruction_id, StringId::Empty);
 }
 
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
@@ -783,15 +801,6 @@ auto get_build_root_name(Graph const& graph) -> std::string_view
     return global_pool().get(graph.files[BUILD_ROOT_ID].name);
 }
 
-auto get_name(Graph const& graph, NodeId id) -> std::string_view
-{
-    auto const* node = get_file_node(graph, id);
-    if (!node) {
-        return {};
-    }
-    return global_pool().get(node->name);
-}
-
 namespace {
 
 auto path_basename(std::string_view path) -> std::string_view
@@ -837,7 +846,7 @@ auto expand_instruction_impl(
     auto source_dir = global_pool().get(cmd->source_dir);
 
     auto get_operand_name = [&](NodeId id) -> std::string_view {
-        return get_name(graph, id);
+        return global_pool().get(get<Name>(graph, id));
     };
 
     auto buf = Buf {};
@@ -1050,33 +1059,6 @@ auto build_command_index(Graph& graph, PathCache& cache) -> void
     }
 }
 
-auto get_display_str(Graph const& graph, NodeId id) -> std::string_view
-{
-    auto const* node = get_command_node(graph, id);
-    if (!node) {
-        return {};
-    }
-    return global_pool().get(node->display);
-}
-
-auto get_source_dir(Graph const& graph, NodeId id) -> std::string_view
-{
-    auto const* node = get_command_node(graph, id);
-    if (!node) {
-        return {};
-    }
-    return global_pool().get(node->source_dir);
-}
-
-auto get_instruction_pattern(Graph const& graph, NodeId id) -> std::string_view
-{
-    auto const* node = get_command_node(graph, id);
-    if (!node) {
-        return {};
-    }
-    return global_pool().get(node->instruction_id);
-}
-
 // =============================================================================
 // BuildGraph free functions
 // =============================================================================
@@ -1208,7 +1190,7 @@ auto walk_upstream_from_scope(
             continue;
         }
 
-        auto source_dir_sv = get_source_dir(graph, id);
+        auto source_dir_sv = global_pool().get(get<SourceDir>(graph, id));
         if (!is_path_in_any_scope(source_dir_sv, scopes)) {
             continue;
         }

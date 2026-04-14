@@ -613,7 +613,7 @@ auto Scheduler::build_job_list(
         // Commands run from the Tupfile's SOURCE directory so that relative paths
         // and TUP_VARIANT_OUTPUTDIR work correctly. Output paths are already
         // mapped to the output directory by the builder.
-        auto source_dir = graph::get_source_dir(g, id);
+        auto source_dir = pool.get(graph::get<graph::SourceDir>(g, id));
         auto working_dir_id = StringId::Empty;
         if (!source_dir.empty()) {
             working_dir_id = pup::path::join(source_root_sv, source_dir);
@@ -628,7 +628,7 @@ auto Scheduler::build_job_list(
 
         // Expand command from instruction pattern + operands
         auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
-        auto display_id = graph::get_display_id(g, id);
+        auto display_id = graph::get<graph::Display>(g, id);
 
         auto const& exported_raw = graph::view<graph::ExportedVars>(g, id);
         auto exported_ids = Vec<StringId> {};
