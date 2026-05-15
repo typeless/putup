@@ -1161,6 +1161,18 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
         }
     }
 
+    // InjectImplicitDeps siblings (dep-scan commands) have no graph outputs,
+    // so the cascade above can't reach them. They must run whenever their
+    // parent compile runs — otherwise newly-introduced transitive includes
+    // are never re-discovered. Walk all commands and attach any whose
+    // parent_command was just marked affected.
+    for (auto cmd_id : nodes_of_type(graph, NodeType::Command)) {
+        auto parent = get_parent_command(graph, cmd_id);
+        if (parent != INVALID_NODE_ID && affected.contains(parent)) {
+            affected.set(cmd_id, 1);
+        }
+    }
+
     return affected;
 }
 

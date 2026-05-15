@@ -2105,13 +2105,11 @@ SCENARIO("Pupignore test via shell fixture", "[e2e][shell]")
     }
 }
 
-// Reproducer: when a source's already-tracked header is edited to transitively
-// include a new header, pup recompiles the source but fails to record the new
-// transitive header. Subsequent edits to that new header are then invisible to
-// change detection, and pup reports "Nothing to do" while the .o is stale.
-// See test/e2e/fixtures/header_dep_transitive/ and the parent project's
-// notes/pup-header-detection-bug.md.
-SCENARIO("Transitive implicit-dep header tracking", "[e2e][shell][incremental][!shouldfail]")
+// Regression guard: when a source's already-tracked header is edited to
+// transitively include a new header, pup must record the new transitive
+// header and rebuild on subsequent edits to it. Fixed by binding dep-scan
+// command dirty-status to its parent compile (collect_affected_commands).
+SCENARIO("Transitive implicit-dep header tracking", "[e2e][shell][incremental]")
 {
     WHEN("the header_dep_transitive shell fixture runs")
     {
@@ -2121,9 +2119,7 @@ SCENARIO("Transitive implicit-dep header tracking", "[e2e][shell][incremental][!
         {
             INFO("test.sh stdout:\n" << result.stdout_output);
             INFO("test.sh stderr:\n" << result.stderr_output);
-            // CHECK (not REQUIRE) so !shouldfail can mark the case green
-            // without SIGABRT — the diagnostic output above survives.
-            CHECK(result.success());
+            REQUIRE(result.success());
         }
     }
 }

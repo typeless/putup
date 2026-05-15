@@ -9,34 +9,32 @@
 #   3. newhdr.h is modified. pup reports "Nothing to do." because its
 #      stale dep set says the source only depends on old.h (unchanged).
 #
-# Expected: step 3 rebuilds, .o reflects the new constant.
-# Observed: step 3 is a no-op; .o is stale.
+# Expected: step 3 rebuilds, the linked program reflects the new constant.
+# Observed: step 3 is a no-op; program is stale.
 #
 # Test exits 0 on success (bug fixed), non-zero on failure (bug present).
+#
+# Oracle: link main.c into a tiny program whose main() returns the constant.
+# Running it and reading $? is portable across Linux GNU-binutils and macOS
+# LLVM toolchains. Constants stay < 256 so the exit code carries them
+# unmodified (POSIX masks exit codes to 8 bits).
 
 set -u
 
 PUP="${PUP:-$(command -v pup || echo /home/mural/bin/pup)}"
 BUILD_DIR="build/x86"
 OBJ="${BUILD_DIR}/src/main.o"
+PROG="${BUILD_DIR}/src/program"
 
 die() {
     echo "FAIL: $*" >&2
     exit 1
 }
 
-# Extract the immediate-mode operand of the first mov $0xXX instruction.
-# Returns the hex literal as it appears in objdump output (e.g. "0x1").
-constant_in_obj() {
-    objdump -d "$1" 2>/dev/null \
-        | grep -oE 'mov +\$0x[0-9a-f]+' \
-        | head -1 \
-        | grep -oE '0x[0-9a-f]+'
-}
-
-# Decode a hex literal (with 0x prefix) to a decimal integer for printing.
-hex_to_dec() {
-    printf '%d' "$1" 2>/dev/null
+# Run the program and report its exit code (= the constant baked into main.o).
+constant_in_prog() {
+    "$1"
+    echo $?
 }
 
 # ---------- Step 1: initial build ----------
@@ -44,10 +42,11 @@ echo "=== Step 1: initial build (source includes old.h only) ==="
 "$PUP" configure -B "$BUILD_DIR" >/dev/null || die "configure failed"
 "$PUP" -B "$BUILD_DIR" >/dev/null || die "initial build failed"
 [[ -f "$OBJ" ]] || die "expected $OBJ after initial build"
+[[ -x "$PROG" ]] || die "expected $PROG after initial build"
 
-K1="$(constant_in_obj "$OBJ")"
-echo "  observed constant in $OBJ: $K1 ($(hex_to_dec "$K1"))"
-[[ "$K1" == "0x1" ]] || die "expected 0x1 (ANSWER=1) after step 1, got $K1"
+K1="$("$PROG"; echo $?)"
+echo "  $PROG exits with: $K1"
+[[ "$K1" == "1" ]] || die "expected exit 1 (ANSWER=1) after step 1, got $K1"
 
 # ---------- Step 2: make old.h transitively include newhdr.h ----------
 echo
@@ -60,10 +59,10 @@ EOF
 
 "$PUP" -B "$BUILD_DIR" >/dev/null || die "rebuild after old.h edit failed"
 
-K2="$(constant_in_obj "$OBJ")"
-echo "  observed constant in $OBJ: $K2 ($(hex_to_dec "$K2"))"
-[[ "$K2" == "0x64" ]] \
-    || die "expected 0x64 (EXTRA=100) after step 2, got $K2 — old.h change not picked up"
+K2="$("$PROG"; echo $?)"
+echo "  $PROG exits with: $K2"
+[[ "$K2" == "100" ]] \
+    || die "expected exit 100 (EXTRA=100) after step 2, got $K2 — old.h change not picked up"
 
 # ---------- Forensic between step 2 and 3: did pup record newhdr.h? ----------
 # After step 2 the .d file from gcc lists both old.h AND newhdr.h. If pup's
@@ -87,10 +86,10 @@ fi
 
 # ---------- Step 3: modify newhdr.h (the transitive header) ----------
 echo
-echo "=== Step 3: modify newhdr.h (EXTRA 100 -> 7777) ==="
+echo "=== Step 3: modify newhdr.h (EXTRA 100 -> 77) ==="
 cat > include/newhdr.h << 'EOF'
 #pragma once
-#define EXTRA 7777
+#define EXTRA 77
 EOF
 
 OUT="$("$PUP" -B "$BUILD_DIR" 2>&1)"
@@ -98,8 +97,8 @@ EC=$?
 echo "  pup output: $OUT"
 [[ $EC -eq 0 ]] || die "rebuild returned non-zero: $EC"
 
-K3="$(constant_in_obj "$OBJ")"
-echo "  observed constant in $OBJ: $K3 ($(hex_to_dec "$K3"))"
+K3="$("$PROG"; echo $?)"
+echo "  $PROG exits with: $K3"
 
 if [[ "$OUT" == *"Nothing to do"* ]]; then
     echo
@@ -109,11 +108,11 @@ if [[ "$OUT" == *"Nothing to do"* ]]; then
     echo "             never recorded — confirmed by 'pup show index' above."
 fi
 
-if [[ "$K3" != "0x1e61" ]]; then
+if [[ "$K3" != "77" ]]; then
     echo
     echo "Diagnostic:"
-    echo "  expected $OBJ to contain 0x1e61 (EXTRA=7777)"
-    echo "  actually  contains $K3 ($(hex_to_dec "$K3"))"
+    echo "  expected $PROG to exit 77 (EXTRA=77)"
+    echo "  actually exits $K3"
     echo "  this means main.c was NOT recompiled after newhdr.h changed"
     die "transitive header change was not detected"
 fi
