@@ -2213,6 +2213,62 @@ SCENARIO("Show graph --summary --all-deps shows implicit edge count", "[e2e][sho
     }
 }
 
+SCENARIO("Show index dumps implicit-dep edges from the on-disk index", "[e2e][show]")
+{
+    GIVEN("a built project with a -MD compile rule (implicit deps recorded)")
+    {
+        auto f = E2EFixture { "scoped_implicit_dep" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("src/main.o"));
+
+        WHEN("show index is run")
+        {
+            auto result = f.pup({ "show", "index" });
+
+            THEN("output reports file/command/edge counts and a header.h implicit edge")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Files:") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Commands:") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Implicit=") != std::string::npos);
+                REQUIRE(result.stdout_output.find("implicit:") != std::string::npos);
+                REQUIRE(result.stdout_output.find("header.h") != std::string::npos);
+            }
+        }
+
+        WHEN("show index --summary is run")
+        {
+            auto result = f.pup({ "show", "index", "--summary" });
+
+            THEN("output is a single summary block with no per-command listing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Files:") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Commands with implicit/sticky deps:") != std::string::npos);
+                // No per-command section in summary mode
+                REQUIRE(result.stdout_output.find("Commands (with implicit/sticky edges):") == std::string::npos);
+            }
+        }
+
+        WHEN("show index with a positional filter is run")
+        {
+            auto result = f.pup({ "show", "index", "nonexistent_xyz" });
+
+            THEN("the per-command section is empty (filter matched nothing)")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Commands (with implicit/sticky edges):") != std::string::npos);
+                REQUIRE(result.stdout_output.find("implicit:") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Show script generates shell build script", "[e2e][show]")
 {
     GIVEN("a simple C project")
