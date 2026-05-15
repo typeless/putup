@@ -215,6 +215,8 @@ putup show var CC                         # variable assignment history
 putup show var --json                     # machine-readable variable dump
 putup parse --strict                      # check composability conventions
 putup show instructions                   # command deduplication analysis
+putup show index --summary                # on-disk index counts (forensic)
+putup show index PATTERN                  # per-command implicit/sticky deps
 ```
 
 `parse --strict` checks that component `Tuprules.tup` files use `?=` for

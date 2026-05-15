@@ -194,7 +194,7 @@ Features in putup that extend beyond tup:
 | **Multi-variant parallel** | `putup -B build-debug -B build-release` or `putup build-debug build-release` |
 | **Auto-variant detection** | Running `putup` from project root auto-detects all variants |
 | **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
-| **Show formats** | `putup show graph\|script\|compdb` for different output formats |
+| **Show formats** | `putup show graph\|script\|compdb\|var\|instructions\|index` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
 | **Configure command** | `putup configure` runs config rules and ensures `tup.config` exists |

@@ -393,6 +393,7 @@ Show build information in various formats. Supports path-based variant and scope
 - `graph` - DOT format dependency graph
 - `var` - Variable assignment history
 - `instructions` - Command instruction deduplication analysis
+- `index` - On-disk index dump (forensic / debugging)
 
 **Examples with targets:**
 ```bash
@@ -530,6 +531,67 @@ Estimated savings: 92% (instruction + operands vs full strings)
 - Verify bang macro effectiveness
 - Understand index storage characteristics
 - Identify opportunities for macro consolidation
+
+#### 3.7.6 show index
+
+```
+putup show index [--summary] [PATTERN]
+```
+
+Dump the on-disk `.pup/index` in a grep-friendly form. Unlike other `show` subcommands, this one bypasses Tupfile parsing and reads the index directly — useful for forensics even when the build graph is in a partially-broken state.
+
+**Arguments:**
+- `PATTERN` - Optional substring filter; only commands whose command-string contains `PATTERN` are listed.
+
+**Options:**
+- `--summary` - Print counts only; skip the per-command listing.
+
+**Output (full dump):**
+```
+[build] Index: build/.pup/index
+  Files:    142
+  Commands: 87
+  Edges:    412 (Normal=180, Sticky=21, Group=4, Implicit=203, OrderOnly=4)
+
+Commands (with implicit/sticky edges):
+  c12  [src]
+       cmd: gcc -MD -c -o src/main.o src/main.c
+       implicit: src/header.h
+       implicit: include/config.h
+  c13  [src]
+       cmd: gcc -c -o src/util.o src/util.c
+       (no implicit/sticky deps)
+  ...
+```
+
+**Output (`--summary`):**
+```
+[build] Index: build/.pup/index
+  Files:    142
+  Commands: 87
+  Edges:    412 (Normal=180, Sticky=21, Group=4, Implicit=203, OrderOnly=4)
+  Commands with implicit/sticky deps: 64/87
+```
+
+**Examples:**
+```bash
+# Full per-command dump of implicit/sticky deps
+putup show index
+
+# Counts only — quick health check of the index
+putup show index --summary
+
+# Restrict the per-command listing to commands matching a substring
+putup show index main.c
+putup show index "ar rcs"
+```
+
+**Use cases:**
+- Diagnose whether a header's implicit-dep edge was ever recorded (the core forensic question for transitive-dep tracking bugs).
+- Sanity-check edge counts after schema changes to the index format.
+- Inspect index contents when `putup parse` or `putup build` would otherwise fail.
+
+**Note:** Requires a previously built variant; fails with `No index found` if `.pup/index` is missing.
 
 ## 4. Command-Line Options
 
@@ -2517,6 +2579,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | show compdb | ❌ | ✅ | compile_commands.json |
 | show var | ❌ | ✅ | Variable assignment history |
 | show instructions | ❌ | ✅ | Instruction deduplication analysis |
+| show index | ❌ | ✅ | Forensic dump of .pup/index |
 | Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
 | Instruction-based index | ❌ | ✅ | v8 format with ~90% storage savings |
 

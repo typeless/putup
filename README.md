@@ -28,6 +28,7 @@ Commands:
                       compdb  - compile_commands.json
                       graph   - DOT format (--summary for text)
                       var [NAME] [--json] - Variable tracking
+                      index   - Index dump (--summary for counts only)
 
 Options:
   -j, --jobs N       Run N jobs in parallel
