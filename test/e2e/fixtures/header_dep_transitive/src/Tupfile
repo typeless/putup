@@ -1,0 +1,2 @@
+include_rules
+: main.c |> gcc $(CFLAGS) -c %f -o %o |> %B.o
