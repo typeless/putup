@@ -5389,6 +5389,189 @@ SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental
     }
 }
 
+// Reproducer for the real-world bug noted in CLAUDE.md:
+//   "Header-dep tracking can miss across variants — editing a widely-included
+//    SDK header may re-link with stale .o files and produce a binary newer
+//    than the header but functionally older."
+//
+// Differs from the single-scope test above in two ways:
+//   - multi-arg scoped invocation (mirrors `pup src/fubon ... ios` pattern)
+//   - multiple TUs in different scope dirs all transitively reach the same
+//     out-of-scope header, AND a downstream link rule consumes their .o files
+//
+// The strict assertion checks that ALL three .o files (alpha.o, beta.o,
+// main.o) are present AND the binary's hash changes after the header bump,
+// catching both the "noop" mode and the "rebuild some-but-not-all + relink
+// with stale .o" mode of the bug.
+SCENARIO("Scoped build with multiple scopes detects out-of-scope header changes",
+    "[e2e][incremental][scope][multi-scope]")
+{
+    GIVEN("a project where multiple scoped TUs share one header in include/")
+    {
+        auto f = E2EFixture { "scoped_implicit_dep_multi_scope" };
+        REQUIRE(f.init().success());
+
+        auto first = f.build();
+        INFO("first build stdout: " << first.stdout_output);
+        INFO("first build stderr: " << first.stderr_output);
+        REQUIRE(first.success());
+        REQUIRE(f.exists("src/alpha/alpha.o"));
+        REQUIRE(f.exists("src/beta/beta.o"));
+        REQUIRE(f.exists("app/main.o"));
+        REQUIRE(f.exists("app/app"));
+
+        // Capture the linked binary's content so we can detect stale-link bugs
+        // even if pup claims "rebuilt".
+        auto const binary_before = f.read_file("app/app");
+
+        WHEN("the shared header is modified and the same scoped build re-runs")
+        {
+            f.write_file("include/lib/shared.h", "#define VERSION 2\n");
+
+            // Multi-arg scoped invocation mirroring the real-world reproducer.
+            auto result = f.pup({ "src/alpha", "src/beta", "app" });
+
+            THEN("pup picks up the change and the link reflects the new VERSION")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+
+                // Strict check: the linked binary must differ from the pre-edit
+                // version. If pup recompiled only some .o files and re-linked
+                // with stale others, the binary would be byte-identical or only
+                // partially updated — either way still buggy.
+                auto const binary_after = f.read_file("app/app");
+                REQUIRE(binary_before != binary_after);
+            }
+        }
+    }
+}
+
+// Same shape as above but with the build done out-of-tree under build/<variant>,
+// invoked with -B. Variants share the source tree but have independent indices
+// — a fix in one variant's index must not let the other re-link with stale .o.
+SCENARIO("Out-of-tree variant build picks up out-of-scope header changes",
+    "[e2e][incremental][scope][multi-scope][variant]")
+{
+    GIVEN("the multi-scope project configured under build/v1")
+    {
+        auto f = E2EFixture { "scoped_implicit_dep_multi_scope" };
+        REQUIRE(f.pup({ "configure", "-B", "build/v1" }).success());
+        REQUIRE(f.build({ "-B", "build/v1" }).success());
+        REQUIRE(f.exists("build/v1/src/alpha/alpha.o"));
+        REQUIRE(f.exists("build/v1/src/beta/beta.o"));
+        REQUIRE(f.exists("build/v1/app/app"));
+
+        auto const binary_before = f.read_file("build/v1/app/app");
+
+        WHEN("the shared header is edited and the variant rebuilds")
+        {
+            f.write_file("include/lib/shared.h", "#define VERSION 2\n");
+
+            auto result = f.pup({ "-B", "build/v1",
+                "src/alpha", "src/beta", "app" });
+
+            THEN("the variant's binary reflects the new VERSION")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+
+                auto const binary_after = f.read_file("build/v1/app/app");
+                REQUIRE(binary_before != binary_after);
+            }
+        }
+    }
+}
+
+// Probes the scoped-initial-build axis: when the FIRST build is already
+// scoped (rather than full), is the index populated correctly enough that
+// a subsequent header edit propagates through the linked binary?
+SCENARIO("Scoped rebuild after a SCOPED initial multi-scope build",
+    "[e2e][incremental][scope][multi-scope]")
+{
+    GIVEN("a multi-scope project whose first build was already scoped")
+    {
+        auto f = E2EFixture { "scoped_implicit_dep_multi_scope" };
+        REQUIRE(f.init().success());
+
+        auto scopes = std::vector<std::string> { "src/alpha", "src/beta", "app" };
+        auto first = f.pup(scopes);
+        INFO("first scoped build stdout: " << first.stdout_output);
+        INFO("first scoped build stderr: " << first.stderr_output);
+        REQUIRE(first.success());
+        REQUIRE(f.exists("app/app"));
+
+        auto const binary_before = f.read_file("app/app");
+
+        WHEN("the shared header changes and the same scoped command runs again")
+        {
+            f.write_file("include/lib/shared.h", "#define VERSION 2\n");
+
+            auto result = f.pup(scopes);
+
+            THEN("the linked binary reflects the new VERSION")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+
+                auto const binary_after = f.read_file("app/app");
+                REQUIRE(binary_before != binary_after);
+            }
+        }
+    }
+}
+
+// Probes the repeated-scoped-invocation axis: full build, then a no-op
+// scoped pass, then a real edit + scoped rebuild. Mirrors the production
+// pattern where developers run the same scoped command many times across
+// a session before the edit that exposes the bug.
+SCENARIO("Header edit after a noop scoped pass still propagates to the linked binary",
+    "[e2e][incremental][scope][multi-scope]")
+{
+    GIVEN("a fully-built project that has gone through a noop scoped pass")
+    {
+        auto f = E2EFixture { "scoped_implicit_dep_multi_scope" };
+        REQUIRE(f.init().success());
+
+        auto scopes = std::vector<std::string> { "src/alpha", "src/beta", "app" };
+
+        auto first = f.build();
+        INFO("first build stdout: " << first.stdout_output);
+        REQUIRE(first.success());
+        REQUIRE(f.exists("app/app"));
+
+        auto noop = f.pup(scopes);
+        INFO("noop stdout: " << noop.stdout_output);
+        REQUIRE(noop.success());
+
+        auto const binary_before = f.read_file("app/app");
+
+        WHEN("the shared header changes and the scoped build runs once more")
+        {
+            f.write_file("include/lib/shared.h", "#define VERSION 2\n");
+
+            auto result = f.pup(scopes);
+
+            THEN("the linked binary still reflects the new VERSION")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+
+                auto const binary_after = f.read_file("app/app");
+                REQUIRE(binary_before != binary_after);
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Target Build No-Op Tests
 // =============================================================================
