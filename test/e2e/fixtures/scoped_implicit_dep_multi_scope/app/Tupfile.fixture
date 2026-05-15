@@ -1,0 +1,2 @@
+: main.c |> cc -MD -I../include -c %f -o %o |> main.o
+: main.o ../src/alpha/alpha.o ../src/beta/beta.o |> cc %f -o %o |> app
