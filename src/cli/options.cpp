@@ -134,7 +134,9 @@ auto parse_args(int argc, char** argv) -> Options
                 opts.command = pool.intern(arg);
             } else if (pool.get(opts.command) == "show" && is_empty(opts.show_format)) {
                 opts.show_format = pool.intern(arg);
-            } else if (pool.get(opts.command) == "show" && pool.get(opts.show_format) == "var" && is_empty(opts.show_var_filter)) {
+            } else if (pool.get(opts.command) == "show"
+                       && (pool.get(opts.show_format) == "var" || pool.get(opts.show_format) == "index")
+                       && is_empty(opts.show_var_filter)) {
                 opts.show_var_filter = pool.intern(arg);
             } else {
                 opts.targets.push_back(pool.intern(arg));
@@ -161,6 +163,7 @@ auto print_usage() -> void
            "                      compdb  - compile_commands.json\n"
            "                      graph   - DOT format (--summary for text)\n"
            "                      var [NAME] [--json] - Variable tracking\n"
+           "                      index   - Index dump (--summary for counts only)\n"
            "\nOptions:\n"
            "  -j, --jobs N       Run N jobs in parallel\n"
            "  -k, --keep-going   Continue after failures\n"

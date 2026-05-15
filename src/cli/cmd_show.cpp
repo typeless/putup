@@ -26,6 +26,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -626,6 +627,141 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     return EXIT_SUCCESS;
 }
 
+auto link_type_name(pup::LinkType t) -> char const*
+{
+    switch (t) {
+    case pup::LinkType::Normal:
+        return "Normal";
+    case pup::LinkType::Sticky:
+        return "Sticky";
+    case pup::LinkType::Group:
+        return "Group";
+    case pup::LinkType::Implicit:
+        return "Implicit";
+    case pup::LinkType::OrderOnly:
+        return "OrderOnly";
+    }
+    return "?";
+}
+
+auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
+{
+    auto& pool = global_pool();
+
+    auto layout_result = pup::discover_layout(make_layout_options(opts));
+    if (!layout_result) {
+        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout_result.error().msg().data());
+        return EXIT_FAILURE;
+    }
+    auto& layout = *layout_result;
+
+    auto index_path_sv = pool.get(layout.index_path());
+    if (!pup::platform::exists(index_path_sv)) {
+        fprintf(stderr, "[%.*s] Error: No index found at %.*s — run 'putup' first\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(index_path_sv.size()), index_path_sv.data());
+        return EXIT_FAILURE;
+    }
+
+    auto index_result = pup::index::read_index(index_path_sv);
+    if (!index_result) {
+        fprintf(stderr, "[%.*s] Error reading index: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), index_result.error().msg().data());
+        return EXIT_FAILURE;
+    }
+    auto& index = *index_result;
+
+    auto edges_by_type = std::array<std::size_t, 6> {};
+    for (auto const& e : index.edges()) {
+        auto t = static_cast<std::size_t>(e.type);
+        if (t < edges_by_type.size()) {
+            ++edges_by_type[t];
+        }
+    }
+
+    printf("[%.*s] Index: %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(index_path_sv.size()), index_path_sv.data());
+    printf("  Files:    %zu\n", index.files().size());
+    printf("  Commands: %zu\n", index.commands().size());
+    printf("  Edges:    %zu", index.edge_count());
+    auto first = true;
+    for (auto t : { pup::LinkType::Normal, pup::LinkType::Sticky, pup::LinkType::Group, pup::LinkType::Implicit, pup::LinkType::OrderOnly }) {
+        auto count = edges_by_type[static_cast<std::size_t>(t)];
+        if (count > 0) {
+            printf("%s%s=%zu", first ? " (" : ", ", link_type_name(t), count);
+            first = false;
+        }
+    }
+    if (!first) {
+        printf(")");
+    }
+    printf("\n");
+
+    if (opts.summary) {
+        auto cmds_with_implicit = std::size_t { 0 };
+        for (auto const& cmd : index.commands()) {
+            for (auto const& e : index.edges()) {
+                if (e.to == cmd.id
+                    && (e.type == pup::LinkType::Implicit || e.type == pup::LinkType::Sticky)) {
+                    ++cmds_with_implicit;
+                    break;
+                }
+            }
+        }
+        printf("  Commands with implicit/sticky deps: %zu/%zu\n", cmds_with_implicit, index.commands().size());
+        return EXIT_SUCCESS;
+    }
+
+    printf("\nCommands (with implicit/sticky edges):\n");
+    auto filter_sv = pool.get(opts.show_var_filter);
+    for (auto const& cmd : index.commands()) {
+        auto cmd_str_id = pup::index::get_command_string(index, cmd);
+        auto cmd_sv = pool.get(cmd_str_id);
+
+        if (!filter_sv.empty() && cmd_sv.find(filter_sv) == std::string_view::npos) {
+            continue;
+        }
+
+        auto dir_sv = std::string_view {};
+        if (auto const* dir = index.find_file_by_id(cmd.dir_id)) {
+            dir_sv = pool.get(dir->path);
+        }
+
+        printf("  c%u  [%.*s]\n", static_cast<unsigned>(cmd.id), static_cast<int>(dir_sv.size()), dir_sv.data());
+        printf("       cmd: %.*s\n", static_cast<int>(cmd_sv.size()), cmd_sv.data());
+
+        auto implicit = Vec<StringId> {};
+        auto sticky = Vec<StringId> {};
+        for (auto const& e : index.edges()) {
+            if (e.to != cmd.id) {
+                continue;
+            }
+            if (e.type != pup::LinkType::Implicit && e.type != pup::LinkType::Sticky) {
+                continue;
+            }
+            auto const* from = index.find_file_by_id(e.from);
+            if (!from) {
+                continue;
+            }
+            if (e.type == pup::LinkType::Implicit) {
+                implicit.push_back(from->path);
+            } else {
+                sticky.push_back(from->path);
+            }
+        }
+
+        if (implicit.empty() && sticky.empty()) {
+            printf("       (no implicit/sticky deps)\n");
+        }
+        for (auto p : implicit) {
+            auto p_sv = pool.get(p);
+            printf("       implicit: %.*s\n", static_cast<int>(p_sv.size()), p_sv.data());
+        }
+        for (auto p : sticky) {
+            auto p_sv = pool.get(p);
+            printf("       sticky:   %.*s\n", static_cast<int>(p_sv.size()), p_sv.data());
+        }
+    }
+
+    return EXIT_SUCCESS;
+}
+
 auto show_single_variant(Options const& opts, std::string_view variant_name) -> int
 {
     auto fmt = global_pool().get(opts.show_format);
@@ -644,9 +780,12 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
     if (fmt == "instructions" || fmt == "templates") {
         return cmd_export_instructions(opts, variant_name);
     }
+    if (fmt == "index") {
+        return cmd_export_index(opts, variant_name);
+    }
 
     fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(fmt.size()), fmt.data());
-    fprintf(stderr, "Formats: script, compdb, graph, var, instructions\n");
+    fprintf(stderr, "Formats: script, compdb, graph, var, instructions, index\n");
     return EXIT_FAILURE;
 }
 
@@ -656,7 +795,7 @@ auto cmd_show(Options const& opts) -> int
 {
     if (is_empty(opts.show_format)) {
         fprintf(stderr, "Usage: putup show <format>\n");
-        fprintf(stderr, "Formats: script, compdb, graph, var, instructions\n");
+        fprintf(stderr, "Formats: script, compdb, graph, var, instructions, index\n");
         return EXIT_FAILURE;
     }
 
