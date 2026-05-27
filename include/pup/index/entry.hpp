@@ -56,6 +56,8 @@ struct CommandEntry {
     StringId display = StringId::Empty;             ///< Display text (from ^ ^ markers)
     StringId env = StringId::Empty;                 ///< Environment variables
 
+    Hash256 identity = {}; ///< Structural identity: command text + values of vars it depends on
+
     Vec<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
     Vec<NodeId> outputs = {}; ///< Output file operands (for %o expansion)
 

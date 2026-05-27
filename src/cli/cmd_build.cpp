@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -586,6 +587,7 @@ auto serialize_command_nodes(
             .instruction_pattern = pup::graph::get<pup::graph::InstructionPattern>(g, id),
             .display = pup::graph::get<pup::graph::Display>(g, id),
             .env = pup::StringId::Empty,
+            .identity = pup::graph::compute_command_identity(g, id, state.path_cache),
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
         };
@@ -673,12 +675,39 @@ auto preserve_old_implicit_edges(
         commands_with_new_deps.set(cmd_id, 1);
     }
 
+    // Map a command's structural identity -> its id in the new index. Command ids are
+    // positional and shift across builds (e.g. when an earlier-created command is
+    // removed), so the old edge's `to` id cannot be trusted to mean the same command.
+    // Identity is stable, so we re-resolve each carried edge's command through it.
+    auto hash_less = [](pup::Hash256 const& a, pup::Hash256 const& b) {
+        return std::memcmp(a.data(), b.data(), a.size()) < 0;
+    };
+    auto identity_to_new_id = pup::Vec<std::pair<pup::Hash256, pup::NodeId>> {};
+    identity_to_new_id.reserve(ctx.index.commands().size());
+    for (auto const& cmd : ctx.index.commands()) {
+        identity_to_new_id.emplace_back(cmd.identity, cmd.id);
+    }
+    std::sort(identity_to_new_id.begin(), identity_to_new_id.end(), [&](auto const& a, auto const& b) { return hash_less(a.first, b.first); });
+
     for (auto const& edge : old_index.edges()) {
         if (edge.type != pup::LinkType::Implicit) {
             continue;
         }
 
-        if (commands_with_new_deps.contains(edge.to)) {
+        // Re-resolve the old command to its identity-matched counterpart in the new
+        // index. If it's gone or its definition changed (no identity match), drop the
+        // edge: the command either no longer exists or rebuilt and rediscovered its deps.
+        auto const* old_cmd = old_index.find_command_by_id(edge.to);
+        if (!old_cmd) {
+            continue;
+        }
+        auto match = std::lower_bound(identity_to_new_id.begin(), identity_to_new_id.end(), old_cmd->identity, [&](auto const& p, pup::Hash256 const& key) { return hash_less(p.first, key); });
+        if (match == identity_to_new_id.end() || match->first != old_cmd->identity) {
+            continue;
+        }
+        auto new_to_id = match->second;
+
+        if (commands_with_new_deps.contains(new_to_id)) {
             continue;
         }
 
@@ -694,10 +723,10 @@ auto preserve_old_implicit_edges(
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file_path);
 
-        if (edge_pair_insert(ctx.added_edges, new_from_id, edge.to)) {
+        if (edge_pair_insert(ctx.added_edges, new_from_id, new_to_id)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
                 .from = new_from_id,
-                .to = edge.to,
+                .to = new_to_id,
                 .type = pup::LinkType::Implicit,
             });
         }
@@ -862,13 +891,27 @@ auto detect_new_commands(
 {
     auto const& g = state.graph;
     auto changed = pup::Vec<StringId> {};
+
+    // Identity-keyed membership: a command must (re)build when its structural identity
+    // is absent from the previous index. Identity folds command text together with the
+    // values of the vars it depends on, so a change invisible to the rendered string
+    // (e.g. an exported env var the subprocess reads via $VAR) still flips the identity.
+    auto hash_less = [](pup::Hash256 const& a, pup::Hash256 const& b) {
+        return std::memcmp(a.data(), b.data(), a.size()) < 0;
+    };
+    auto old_identities = pup::Vec<pup::Hash256> {};
+    old_identities.reserve(idx.commands().size());
+    for (auto const& cmd : idx.commands()) {
+        old_identities.push_back(cmd.identity);
+    }
+    std::sort(old_identities.begin(), old_identities.end(), hash_less);
+
     for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
             continue;
         }
-        auto cmd_str_id = pup::graph::expand_instruction(g, id, state.path_cache);
-        auto found = idx.find_command_by_command(pup::global_pool().get(cmd_str_id));
-        if (!found) {
+        auto identity = pup::graph::compute_command_identity(g, id, state.path_cache);
+        if (!std::binary_search(old_identities.begin(), old_identities.end(), identity, hash_less)) {
             for (auto output_id : pup::graph::get_outputs(g, id)) {
                 auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
                 if (!output_path_sv.empty()) {

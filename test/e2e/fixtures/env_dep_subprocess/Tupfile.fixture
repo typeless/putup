@@ -1,0 +1,3 @@
+import MY_GREETING
+export MY_GREETING
+: |> echo $MY_GREETING > %o |> out.txt

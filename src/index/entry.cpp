@@ -66,6 +66,7 @@ auto CommandEntry::to_raw(
     raw.cmd_offset = instruction_offset;
     raw.display_offset = display_offset;
     raw.env_offset = env_offset;
+    raw.identity = identity;
     return raw;
 }
 
@@ -85,6 +86,7 @@ auto CommandEntry::from_raw(
         .instruction_pattern = global_pool().intern(instruction_pattern),
         .display = global_pool().intern(display_str),
         .env = global_pool().intern(env_str),
+        .identity = raw.identity,
         .inputs = std::move(inputs),
         .outputs = std::move(outputs),
     };

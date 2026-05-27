@@ -5,6 +5,7 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/hash.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 
@@ -21,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -1057,6 +1059,42 @@ auto build_command_index(Graph& graph, PathCache& cache) -> void
             graph.command_index.insert(to_underlying(str_id), id);
         }
     }
+}
+
+auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
+{
+    auto& pool = global_pool();
+    auto state = sha256_init();
+
+    // Base: the fully-expanded command text (instruction + operand paths + in-text vars).
+    state = sha256_update(state, pool.get(expand_instruction(graph, cmd_id, cache)));
+
+    // Fold in (name, value-hash) of each Variable node reached via a Sticky edge.
+    // This captures vars that affect output without appearing in the rendered text —
+    // exported env vars the subprocess reads as $VAR, config vars gating an export, etc.
+    // Sorted and deduped by name so identity is independent of edge insertion order and
+    // tolerant of duplicate sticky edges (the graph permits them).
+    auto vars = Vec<std::pair<std::string_view, Hash256>> {};
+    for (auto var_id : edges_where(graph, cmd_id, EdgeDirection::Backward, edge_mask::sticky)) {
+        if (get<NodeType>(graph, var_id) != NodeType::Variable) {
+            continue;
+        }
+        vars.emplace_back(pool.get(get<Name>(graph, var_id)), get<Hash256>(graph, var_id));
+    }
+    std::sort(vars.begin(), vars.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+    vars.erase(
+        std::unique(vars.begin(), vars.end(), [](auto const& a, auto const& b) { return a.first == b.first; }),
+        vars.end()
+    );
+
+    auto constexpr SEP = std::byte { 0 };
+    for (auto const& [name, value_hash] : vars) {
+        state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
+        state = sha256_update(state, name);
+        state = sha256_update(state, std::span<std::byte const> { value_hash.data(), value_hash.size() });
+    }
+
+    return sha256_finalize(state);
 }
 
 // =============================================================================

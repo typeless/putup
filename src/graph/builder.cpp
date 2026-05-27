@@ -522,6 +522,20 @@ auto create_command_node(
         }
     }
 
+    // Add sticky edges from exported env variables. An exported var reaches the
+    // command's subprocess environment (read as bare $VAR) and so affects its output
+    // even when it never appears in the command text. Recording it as a sticky edge
+    // makes that dependency explicit and folds its value into the command identity,
+    // so a change to the var triggers a rebuild. (Only imported vars have a value
+    // node to depend on; export of an untracked env var remains out of the model.)
+    auto const* exv = ctx.exported_vars.data();
+    for (std::size_t i = 0, n = ctx.exported_vars.size(); i < n; ++i) {
+        auto const* node_id = state.imported_env_var_nodes.find(exv[i]);
+        if (node_id) {
+            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
+        }
+    }
+
     return cmd_id;
 }
 

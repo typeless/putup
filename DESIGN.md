@@ -884,11 +884,12 @@ v8 introduces **instruction-based command storage** for significant space saving
 │   content_hash: [u8; 32]            │
 │   (id computed from array index)    │
 ├─────────────────────────────────────┤
-│ CommandEntry[] (16 bytes each)      │
+│ CommandEntry[] (48 bytes each)      │
 │   dir_id: u32                       │
 │   cmd_offset: u32                   │  ← Template string with %f/%o patterns (v8)
 │   display_offset: u32               │
 │   env_offset: u32                   │
+│   identity: [u8; 32]                │  ← Structural identity hash (v11)
 │   (id = index | 0x80000000)         │
 ├─────────────────────────────────────┤
 │ Edge[] (16 bytes each)              │
@@ -929,6 +930,10 @@ Version history:
 - v6: Compact format: 32-bit IDs/offsets, length-prefixed strings
 - v7: Tagged ID spaces (files vs commands), ID computed from array index
 - v8: Instruction-based command storage with operand sections
+- v9: Stat cache — mtime_ns per file, save_time_ns header for racy-clean detection
+- v10: Removed unused group_cmd_id field from edges
+- v11: Per-command structural identity hash (command text + values of vars it depends
+  on); change detection keys on identity, not the rendered command string
 
 Design principles:
 - Fixed-size entries for O(1) random access
@@ -1760,6 +1765,32 @@ Unlike some build systems that filter out system headers:
 - **Simplicity** - No heuristics for deciding "what matters"
 - **Reproducibility** - Same source + same headers = same build
 - **Minimal overhead** - Header paths stored once per command, hash computed only when mtime differs
+
+### Why Structural Command Identity?
+
+A command must re-run when its *effective definition* changes. Earlier, a command's
+identity was its fully-expanded command string, and change detection asked "is this
+exact string in the previous index?" That conflates two distinct questions:
+
+- **Stable key** — "is there still a command that produces this output?" (used to detect
+  stale outputs from removed rules)
+- **Change signal** — "has this command's definition changed, so it must re-run?"
+
+The rendered string answers the first but is a *lossy* proxy for the second: any input
+that affects the output without appearing in the text is invisible. The canonical case
+is an exported environment variable the subprocess reads as `$VAR` — the command line is
+byte-identical across values, so a string-keyed detector never re-runs it (stale output,
+"Nothing to do"). The same hole applies to a config var that gates an `export`.
+
+v11 separates the two. Each command carries a **structural identity** — a SHA-256 over the
+expanded command text *plus* the values (content hashes) of every variable it depends on,
+collected from its `Sticky` edges. Exported vars now contribute a sticky edge, so their
+values fold into the identity even when they never appear in the text. Change detection
+keys on identity (env/config change → identity changes → rebuild); stale-output detection
+keeps using the rendered string (the structural-shape key, correctly env-insensitive so an
+env change rebuilds in place rather than deleting and recreating). Two builds yield the
+same identity iff the command's effective definition is unchanged, which also makes it a
+sound cross-build join key — unlike a positional NodeId or a lossy string.
 
 ### Why Preserve Edges During Ghost→Generated Upgrade?
 

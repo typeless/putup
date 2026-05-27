@@ -25,7 +25,9 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///   8 - Template deduplication: commands store template + operands, reconstruct lazily
 ///   9 - Stat cache: mtime_ns in file entries, save_time_ns in header for racy-clean detection
 ///  10 - Remove unused group_cmd_id field from edges (reserved bytes expanded)
-inline constexpr auto INDEX_VERSION = std::uint32_t { 10 };
+///  11 - Command structural identity: per-command hash folding command text + the values
+///       of vars it depends on (sticky/exported), replacing rendered-string identity
+inline constexpr auto INDEX_VERSION = std::uint32_t { 11 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
@@ -73,9 +75,11 @@ struct alignas(8) RawCommandEntry {
     std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
     std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
+    Hash256 identity = {};            ///< Structural identity (v11): SHA-256 over command text
+                                      ///< plus the values of vars it depends on (sticky/exported)
 };
 
-static_assert(sizeof(RawCommandEntry) == 16, "RawCommandEntry must be 16 bytes");
+static_assert(sizeof(RawCommandEntry) == 48, "RawCommandEntry must be 48 bytes");
 
 /// Raw edge entry (16 bytes)
 /// Represents dependencies between nodes
