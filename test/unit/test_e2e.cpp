@@ -1012,6 +1012,48 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Implicit deps survive command-id shift from a removed source", "[e2e][incremental][idshift]")
+{
+    // Implicit (header→command) edges discovered last build are carried forward for
+    // commands that don't rebuild. If that carry-forward keys on the command's array
+    // position (NodeId), removing a glob-matched source whose command was created
+    // earlier shifts every later command's id down — and the carried edge gets
+    // misattributed to whatever command now occupies the old id. A later edit to the
+    // header then rebuilds the wrong unit and leaves the real output stale. The
+    // carry-forward must key on the command's structural identity, stable across shifts.
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a project where m_a.o has a discovered header dep and m_b.o is a removable unit")
+    {
+        auto f = E2EFixture { "implicit_dep_idshift" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("program").stdout_output == "A1\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the earlier-created unit is removed (shifting m_a's command id down), then m_a.h changes")
+        {
+            // No Tupfile edit: the glob drops m_b.c. m_a.c is not recompiled this build,
+            // so its m_a.h dependency must be carried forward — at the new command id.
+            f.remove_file("m_b.c");
+            REQUIRE(f.build().success());
+            REQUIRE(f.run("program").stdout_output == "A1\n");
+
+            f.write_file("m_a.h", "#define A_VERSION 2\n");
+            auto result = f.build();
+
+            THEN("m_a.o rebuilds from its header dependency (no misattribution)")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.run("program").stdout_output == "A2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("New source file triggers rebuild", "[e2e][incremental]")
 {
     GIVEN("a project with one source file using foreach glob")
@@ -3971,6 +4013,41 @@ SCENARIO("Imported env vars with equals in value", "[e2e][import]")
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(f.read_file("out.txt") == "foo=bar=baz\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Exported env var consumed via subprocess environment triggers rebuild", "[e2e][import][envdep]")
+{
+    // The command consumes MY_GREETING through the inherited environment (bare $VAR
+    // in the shell), NOT via $(VAR) substitution. So the rendered command string is
+    // byte-identical across values: a string-keyed change detector cannot see the
+    // change. Correctness requires the command's identity to fold in the values of
+    // the vars it depends on (here, the exported MY_GREETING).
+    GIVEN("a project already built with an exported env var the shell reads from the environment")
+    {
+        auto f = E2EFixture { "env_dep_subprocess" };
+        {
+            auto env = EnvGuard { "MY_GREETING", "hello" };
+            REQUIRE(f.init().success());
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "hello\n");
+            REQUIRE(f.build().is_noop()); // stable under no change
+        }
+
+        WHEN("the exported env var changes (command text stays byte-identical)")
+        {
+            auto env = EnvGuard { "MY_GREETING", "world" };
+            auto result = f.build();
+
+            THEN("rebuild is triggered and the output reflects the new value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "world\n");
             }
         }
     }

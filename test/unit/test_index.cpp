@@ -68,9 +68,9 @@ TEST_CASE("Index format struct sizes", "[index]")
         REQUIRE(sizeof(RawFileEntry) == 64);
     }
 
-    SECTION("RawCommandEntry is 16 bytes")
+    SECTION("RawCommandEntry is 48 bytes (v11: + identity hash)")
     {
-        REQUIRE(sizeof(RawCommandEntry) == 16);
+        REQUIRE(sizeof(RawCommandEntry) == 48);
     }
 
     SECTION("RawEdge is 16 bytes")
@@ -150,12 +150,17 @@ TEST_CASE("FileEntry conversion", "[index]")
 
 TEST_CASE("CommandEntry conversion", "[index]")
 {
+    auto identity = pup::Hash256 {};
+    identity[0] = std::byte { 0xAB };
+    identity[31] = std::byte { 0xCD };
+
     auto cmd = CommandEntry {
         .id = node_id::make_command(5),
         .dir_id = 5,
         .instruction_pattern = intern("gcc -c %f -o %o"),
         .display = intern("CC main.c"),
         .env = intern("CC=gcc"),
+        .identity = identity,
         .inputs = { 10 },
         .outputs = { 20 },
     };
@@ -166,6 +171,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.cmd_offset == 0);
     REQUIRE(raw.display_offset == 50);
     REQUIRE(raw.env_offset == 100);
+    REQUIRE(raw.identity == identity);
 
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto& pool = global_pool();
@@ -179,6 +185,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(restored.instruction_pattern == cmd.instruction_pattern);
     REQUIRE(restored.display == cmd.display);
     REQUIRE(restored.env == cmd.env);
+    REQUIRE(restored.identity == identity);
     REQUIRE(restored.inputs == cmd.inputs);
     REQUIRE(restored.outputs == cmd.outputs);
 }
@@ -359,13 +366,17 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .size = 8192,
     });
 
-    // Command 1 (v8: template + operands)
+    // Command 1 (v8: template + operands; v11: + identity hash)
+    auto cmd_identity = pup::Hash256 {};
+    cmd_identity[0] = std::byte { 0x11 };
+    cmd_identity[31] = std::byte { 0x99 };
     index.add_command(CommandEntry {
         .id = cmd_id,
         .dir_id = 0,
         .instruction_pattern = intern("g++ -c %f -o %o"),
         .display = intern("CXX main.cpp"),
         .env = {},
+        .identity = cmd_identity,
         .inputs = { 3 },   // main.cpp
         .outputs = { 4 },  // main.o
     });
@@ -433,6 +444,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->instruction_pattern == intern("g++ -c %f -o %o"));
     REQUIRE(cmd->display == intern("CXX main.cpp"));
+    REQUIRE(cmd->identity == cmd_identity);
     REQUIRE(cmd->inputs == pup::Vec<NodeId> { 3 });
     REQUIRE(cmd->outputs == pup::Vec<NodeId> { 4 });
 

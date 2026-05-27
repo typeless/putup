@@ -376,6 +376,16 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
 /// Must be called after all commands have their operands set (post-parsing).
 auto build_command_index(Graph& graph, PathCache& cache) -> void;
 
+/// Compute a command's structural identity: a content hash that determines whether
+/// the command must re-run. It folds the fully-expanded command text together with
+/// the values (content hashes) of every Variable node the command depends on via a
+/// Sticky edge — capturing config/env vars that affect the output without appearing
+/// in the rendered text (e.g. an exported env var the subprocess reads via $VAR).
+/// Two builds yield the same identity iff the command's effective definition is the
+/// same, so it is the correct cross-build join key (unlike the rendered string).
+[[nodiscard]]
+auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256;
+
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".
 auto set_build_root_name(Graph& graph, std::string_view name) -> void;
