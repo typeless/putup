@@ -1192,7 +1192,18 @@ auto process_import(
     if (auto const* env_val = std::getenv(name_buf.c_str())) {
         value_id = intern(env_val);
     }
-    // 2. Fall back to cached value from previous build (passed via options)
+    // 2. If the author wrote `?= default`, that default is the explicit
+    //    revert-target for the env-unset case and wins over the cache.
+    else if (imp.default_value) {
+        auto expanded = parser::expand(*ctx.eval, *imp.default_value);
+        if (!expanded) {
+            return pup::unexpected<Error>(expanded.error());
+        }
+        value_id = *expanded;
+    }
+    // 3. No env, no default — fall back to the cached value from the previous
+    //    build so plain `import VAR` stays stable across shell sessions that
+    //    forget to re-export the variable.
     else if (auto it = std::lower_bound(
                  state.options.cached_env_vars.begin(),
                  state.options.cached_env_vars.end(),
@@ -1201,14 +1212,6 @@ auto process_import(
              );
              it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
         value_id = it->second;
-    }
-    // 3. Fall back to default value
-    else if (imp.default_value) {
-        auto expanded = parser::expand(*ctx.eval, *imp.default_value);
-        if (!expanded) {
-            return pup::unexpected<Error>(expanded.error());
-        }
-        value_id = *expanded;
     }
 
     auto value_sv = str(value_id);
