@@ -513,6 +513,16 @@ auto create_command_node(
         }
     }
 
+    // Add sticky edges from condition env variables (symmetric to condition_config_vars
+    // — so an env-driven guard flip changes every guarded command's identity).
+    auto const* cev = ctx.condition_env_vars.data();
+    for (std::size_t i = 0, n = ctx.condition_env_vars.size(); i < n; ++i) {
+        auto const* node_id = state.imported_env_var_nodes.find(cev[i]);
+        if (node_id) {
+            (void)add_edge(ctx.state->graph, *node_id, cmd_id, LinkType::Sticky);
+        }
+    }
+
     // Add sticky edges from used imported env variables (fine-grained dependency tracking)
     auto const* uev = ctx.used_env_vars.data();
     for (std::size_t i = 0, n = ctx.used_env_vars.size(); i < n; ++i) {
@@ -1114,6 +1124,55 @@ auto process_export(
     return {};
 }
 
+/// Find or create a `NodeType::Variable` node under the env-var directory for the
+/// given env var name and value. Updates the existing node's name and content_hash
+/// if the value changed. Returns the node id, or nullopt if the env-var directory
+/// has not been initialized yet. Used by `process_import` and the `on_env_var_used`
+/// callback so that any env var the build depends on — whether explicitly imported
+/// or auto-resolved like TUP_PLATFORM/TUP_ARCH — gets the same tracking node, and
+/// the existing sticky-edge machinery in create_command_node folds it into command
+/// identity.
+auto ensure_env_var_node(
+    BuilderContext& ctx,
+    Builder& state,
+    std::string_view var_name,
+    std::string_view value
+) -> std::optional<NodeId>
+{
+    if (state.env_var_dir_id == INVALID_NODE_ID) {
+        return std::nullopt;
+    }
+    auto var_name_id = to_underlying(intern(var_name));
+    auto node_name_buf = Buf {};
+    node_name_buf += var_name;
+    node_name_buf += '=';
+    node_name_buf += value;
+    auto const name_id = intern(node_name_buf.view());
+    auto content_hash = sha256(value);
+
+    if (auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id)) {
+        if (auto* existing = get_file_node(ctx.state->graph, *existing_node_id)) {
+            if (existing->name != name_id) {
+                existing->name = name_id;
+                existing->content_hash = content_hash;
+            }
+        }
+        return *existing_node_id;
+    }
+    auto node = FileNode {
+        .type = NodeType::Variable,
+        .name = name_id,
+        .parent_dir = state.env_var_dir_id,
+        .content_hash = content_hash,
+    };
+    auto result = add_file_node(ctx.state->graph, std::move(node));
+    if (!result) {
+        return std::nullopt;
+    }
+    state.imported_env_var_nodes.insert(var_name_id, *result);
+    return *result;
+}
+
 auto process_import(
     BuilderContext& ctx,
     Builder& state,
@@ -1154,41 +1213,14 @@ auto process_import(
 
     auto value_sv = str(value_id);
 
-    auto var_name_id = to_underlying(intern(var_name_sv));
-    if (state.env_var_dir_id != INVALID_NODE_ID) {
-        auto node_name_buf = Buf {};
-        node_name_buf += var_name_sv;
-        node_name_buf += '=';
-        node_name_buf += value_sv;
-        auto content_hash = sha256(value_sv);
-
-        auto const* existing_node_id = state.imported_env_var_nodes.find(var_name_id);
-        auto const name_id = intern(node_name_buf.view());
-        if (existing_node_id) {
-            auto* existing = get_file_node(ctx.state->graph, *existing_node_id);
-            if (existing && existing->name != name_id) {
-                existing->name = name_id;
-                existing->content_hash = content_hash;
-            }
-        } else {
-            auto node = FileNode {
-                .type = NodeType::Variable,
-                .name = name_id,
-                .parent_dir = state.env_var_dir_id,
-                .content_hash = content_hash,
-            };
-            auto result = add_file_node(ctx.state->graph, std::move(node));
-            if (result) {
-                state.imported_env_var_nodes.insert(var_name_id, *result);
-            }
-        }
-    }
+    (void)ensure_env_var_node(ctx, state, var_name_sv, value_sv);
 
     if (ctx.vars) {
         ctx.vars->set(var_name_sv, value_sv);
     }
 
     // Track this as an imported variable for fine-grained dependency tracking
+    auto var_name_id = to_underlying(intern(var_name_sv));
     state.imported_var_names.insert(var_name_id);
 
     return {};
@@ -1348,26 +1380,39 @@ auto process_conditional(
     parser::Conditional const& cond
 ) -> Result<void>
 {
-    // Save and clear used_config_vars to capture which vars the condition uses
+    // Save and clear used_*_vars to capture which vars the condition uses.
+    // Env vars are tracked symmetrically with config vars so that an env-driven
+    // guard flip (e.g. `ifeq ($(TUP_PLATFORM),win32)`) folds into the identity of
+    // every command in the conditional block.
     auto saved_config_vars = std::move(ctx.used_config_vars);
+    auto saved_used_env_vars = std::move(ctx.used_env_vars);
 
-    // Evaluate condition value - this may use config vars like @(MODE)
+    // Evaluate condition value - this may use config vars like @(MODE) or env vars
     auto condition_true = parser::evaluate_condition(*ctx.eval, cond);
 
-    // Capture config vars used in the condition expression
+    // Capture vars used in the condition expression
     auto condition_vars = std::move(ctx.used_config_vars);
+    auto condition_env_vars_used = std::move(ctx.used_env_vars);
     ctx.used_config_vars = std::move(saved_config_vars);
+    ctx.used_env_vars = std::move(saved_used_env_vars);
 
-    // Save condition_config_vars, then merge in condition-specific vars
+    // Save condition_*_vars, then merge in condition-specific vars
     auto saved_condition_vars = std::move(ctx.condition_config_vars);
+    auto saved_condition_env_vars = std::move(ctx.condition_env_vars);
     // Rebuild: copy saved entries + merge condition_vars
     auto const* d = saved_condition_vars.data();
     for (std::size_t i = 0, n = saved_condition_vars.size(); i < n; ++i) {
         ctx.condition_config_vars.insert(d[i]);
     }
     ctx.condition_config_vars.merge_from(condition_vars);
+    auto const* de = saved_condition_env_vars.data();
+    for (std::size_t i = 0, n = saved_condition_env_vars.size(); i < n; ++i) {
+        ctx.condition_env_vars.insert(de[i]);
+    }
+    ctx.condition_env_vars.merge_from(condition_env_vars_used);
     auto restore_condition_vars = ScopeGuard([&] {
         ctx.condition_config_vars = std::move(saved_condition_vars);
+        ctx.condition_env_vars = std::move(saved_condition_env_vars);
     });
 
     // Create condition node for phi-node model
@@ -2136,10 +2181,18 @@ auto add_tupfile(
         ctx.used_config_vars.insert(to_underlying(intern(name)));
     };
 
-    // Set up callback to track which imported env variables are used during expansion
+    // Set up callback to track which imported env variables are used during expansion.
+    // Also ensure an env Variable node exists for any env var that resolves from the
+    // environment, so TUP_PLATFORM/TUP_ARCH (auto-resolved, not via `import`) get the
+    // same tracking node as explicitly imported vars and fold into command identity.
     eval.imported_vars = &state.imported_var_names;
-    eval.on_env_var_used = [&ctx](std::string_view name) {
+    eval.on_env_var_used = [&ctx, &state](std::string_view name) {
         ctx.used_env_vars.insert(to_underlying(intern(name)));
+        auto name_buf = Buf {};
+        name_buf += name;
+        if (auto const* env_val = std::getenv(name_buf.c_str())) {
+            (void)ensure_env_var_node(ctx, state, name, std::string_view { env_val });
+        }
     };
 
     // Wire up transitive dependency trackers for variable tracking

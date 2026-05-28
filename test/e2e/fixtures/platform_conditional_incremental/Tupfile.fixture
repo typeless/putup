@@ -1,0 +1,9 @@
+# Both branches produce the same output file with distinct content. The platform
+# string ("win32"/"linux") does NOT appear in either command's text, so the only
+# way an env-driven branch flip can be detected is via a sticky edge from the
+# env Variable node to the guarded commands (i.e. the condition_env_vars path).
+ifeq ($(TUP_PLATFORM),win32)
+: |> echo WINBUILD > %o |> result.txt
+else
+: |> echo NIXBUILD > %o |> result.txt
+endif

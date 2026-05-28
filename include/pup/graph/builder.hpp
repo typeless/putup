@@ -127,6 +127,12 @@ struct BuilderContext {
     /// Commands inside conditionals need to depend on these vars to rebuild when
     /// the condition's value changes.
     SortedIdVec condition_config_vars = {};
+
+    /// Env variable StringIds used in enclosing conditions (symmetric counterpart of
+    /// condition_config_vars). Without this, a guard flip driven by an env-sourced
+    /// $(TUP_PLATFORM)-style var would not change any command's identity and the
+    /// rebuild would be missed.
+    SortedIdVec condition_env_vars = {};
 };
 
 // ============================================================================
