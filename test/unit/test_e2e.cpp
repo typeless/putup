@@ -4343,6 +4343,39 @@ SCENARIO("import with ?= operator", "[e2e][import]")
     }
 }
 
+SCENARIO("import ?= default reverts when env is unset on warm index", "[e2e][import]")
+{
+    GIVEN("a Tupfile with import VAR ?= default, after a build that captured the env value")
+    {
+        auto f = E2EFixture { "import_soft_set" };
+
+        {
+            auto env = EnvGuard { "MY_VAR", "from_env" };
+            REQUIRE(f.init().success());
+            auto build1 = f.build();
+            REQUIRE(build1.success());
+            REQUIRE(f.read_file("out.txt") == "from_env\n");
+        }
+
+        WHEN("the env var is unset and the project is rebuilt")
+        {
+            auto build2 = f.build();
+
+            THEN("build succeeds")
+            {
+                INFO("stdout: " << build2.stdout_output);
+                INFO("stderr: " << build2.stderr_output);
+                REQUIRE(build2.success());
+            }
+
+            THEN("the default value is restored, not the cached env value")
+            {
+                REQUIRE(f.read_file("out.txt") == "default_value\n");
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Error Handling Tests
 // =============================================================================
