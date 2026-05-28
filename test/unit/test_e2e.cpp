@@ -3930,6 +3930,43 @@ SCENARIO("TUP_PLATFORM env var controls platform conditionals", "[e2e][platform]
     }
 }
 
+SCENARIO("Env var change in a conditional rebuilds the affected branch",
+    "[e2e][platform][incremental][platform-incremental]")
+{
+    // Both branches of `ifeq ($(TUP_PLATFORM),...)` produce the same output file with
+    // distinct content; the platform string does not appear in either command's text.
+    // So the only signal that an env-driven branch flip occurred is a sticky edge from
+    // the env Variable node to the guarded commands (the condition_env_vars path,
+    // symmetric to condition_config_vars). Without it, change detection sees no changed
+    // file and no changed identity, reports "Nothing to do", and the output stays stale.
+    GIVEN("a project whose active branch is selected by an env-sourced $(TUP_PLATFORM) condition")
+    {
+        auto f = E2EFixture { "platform_conditional_incremental" };
+        {
+            auto env = EnvGuard { "TUP_PLATFORM", "win32" };
+            REQUIRE(f.init().success());
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("result.txt") == "WINBUILD\n");
+            REQUIRE(f.build().is_noop()); // stable under no change
+        }
+
+        WHEN("the env var flips, selecting the other branch")
+        {
+            auto env = EnvGuard { "TUP_PLATFORM", "linux" };
+            auto result = f.build();
+
+            THEN("the rebuild runs the now-active branch and the output updates")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("result.txt") == "NIXBUILD\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Imported env vars persist across builds", "[e2e][import]")
 {
     GIVEN("a project with import directive")
