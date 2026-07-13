@@ -77,8 +77,9 @@ jobs:
           CONFIG=xwin ./putup-linux-x86_64 -B build-win
       - name: Test under Wine
         run: |
-          export WINEPREFIX="$HOME/.wine-putup" WINEDEBUG=-all
-          wineboot --init && sleep 2
+          export WINEPREFIX="$HOME/.wine-putup" WINEARCH=win64 WINEDEBUG=-all
+          wineboot --init >/dev/null 2>&1 || true
+          sleep 2
           WINE=$(command -v wine64 || command -v wine)
           "$WINE" build-win/test/unit/putup_test.exe '~[e2e]~[shell]'
       - name: Rename artifact
