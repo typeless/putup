@@ -11,7 +11,7 @@
 
 # Build output (variant directory)
 /build/
-/build-coverage/
+/build-*/
 
 # Tup database
 .tup/

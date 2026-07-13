@@ -1,10 +1,19 @@
 ifeq (@(TESTS),y)
 include_rules
 
+# A dedicated MSVC-style linker (@(LINKER) set) links the real MSVC CRT, which
+# supplies the C++ runtime and math library — and does not understand GCC-style
+# -l flags. The GCC/Clang-driver builds link libstdc++/libc++ and libm explicitly.
+ifeq (@(LINKER),)
+_libm = -lm
 ifeq (@(CXX),clang++)
 _cxxlib = -lc++
 else
 _cxxlib = -lstdc++
+endif
+else
+_cxxlib =
+_libm =
 endif
 
 # Catch2 amalgamated
@@ -59,5 +68,5 @@ test-srcs-y += test_vec.cpp
 : foreach $(test-srcs-y) |> !cxx |> {test_objs}
 
 # Link test runner
-: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> ^ LINK %o^ @(LINK_CMD) $(_cxxlib) -lm |> putup_test$(_exe)
+: {test_objs} {test_support} $(ROOT)/libputup.$(_lib) |> ^ LINK %o^ @(LINK_CMD) $(_cxxlib) $(_libm) |> putup_test$(_exe)
 endif

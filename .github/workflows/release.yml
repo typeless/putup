@@ -45,26 +45,44 @@ jobs:
           name: putup-macos-arm64
           path: putup-macos-arm64
 
+  # Windows x86_64 is cross-compiled from Linux with clang-cl + xwin (MSVC ABI),
+  # driven by the native Linux putup, and smoke-tested under Wine.
   build-windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
+    needs: build-linux
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
+      - name: Download Linux putup (cross-build driver)
+        uses: actions/download-artifact@v4
         with:
-          msystem: UCRT64
-          install: mingw-w64-ucrt-x86_64-gcc make
-      - name: Bootstrap build
-        run: ./bootstrap-mingw.sh
-      - name: Run tests
-        run: ./build/test/unit/putup_test.exe
-      - name: Strip binary
-        run: strip build/putup.exe
+          name: putup-linux-x86_64
+      - name: Fix permissions
+        run: chmod +x putup-linux-x86_64
+      - name: Install clang-cl toolchain + Wine
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm
+          sudo apt-get install -y wine64 || sudo apt-get install -y wine
+          for t in clang-cl lld-link llvm-lib; do
+            sudo ln -sf "$(ls /usr/bin/$t-* | sort -V | tail -1)" /usr/local/bin/$t
+          done
+      - name: Fetch MSVC CRT + Windows SDK (xwin)
+        run: |
+          curl -fsSL https://github.com/Jake-Shadle/xwin/releases/download/0.9.0/xwin-0.9.0-x86_64-unknown-linux-musl.tar.gz | tar -xz
+          ./xwin-*/xwin --accept-license --arch x86_64 splat --output "$HOME/.xwin/splat"
+      - name: Cross-build putup.exe
+        run: |
+          export XWIN_SPLAT="$HOME/.xwin/splat"
+          CONFIG=xwin ./putup-linux-x86_64 configure -B build-win
+          CONFIG=xwin ./putup-linux-x86_64 -B build-win
+      - name: Test under Wine
+        run: |
+          export WINEPREFIX="$HOME/.wine-putup" WINEDEBUG=-all
+          wineboot --init && sleep 2
+          WINE=$(command -v wine64 || command -v wine)
+          "$WINE" build-win/test/unit/putup_test.exe '~[e2e]~[shell]'
       - name: Rename artifact
-        shell: pwsh
-        run: Move-Item build/putup.exe putup-windows-x86_64.exe
+        run: mv build-win/putup.exe putup-windows-x86_64.exe
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
