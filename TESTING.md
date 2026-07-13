@@ -53,6 +53,33 @@ make test                                 # All tests
 | `[target]` | Target parsing tests |
 | `[variant]` | Out-of-tree/variant builds, ghost nodes |
 
+## Code Coverage
+
+```bash
+make coverage                 # build instrumented, run tests, write report
+```
+
+`make coverage` builds a separate gcov-instrumented variant in `build-coverage/`
+(from `configs/coverage.config`), runs the full suite with `PUP` pointed at the
+instrumented binary so E2E subprocess runs count too, then aggregates with
+[gcovr](https://gcovr.com):
+
+- Terminal summary (line / function / branch %)
+- `build-coverage/report/index.html` — browsable HTML, drill down per file
+- `build-coverage/report/coverage.xml` — Cobertura XML
+- `build-coverage/report/summary.json` — machine-readable totals
+
+Coverage is measured over `src/` and `include/pup/` only (third-party and test
+code are excluded). CI runs the same target and uploads the HTML report as the
+`coverage-report` artifact.
+
+**Requirements:** `gcovr` (`pipx install gcovr` or `pip install --user gcovr`)
+and a `gcov` matching your `g++`. The Makefile auto-selects `gcov-<major>` when
+present; override with `make coverage GCOV=gcov-14` if detection is wrong.
+
+The coverage variant uses `-O0 --coverage` and keeps `-nostdlib++`, so it is for
+measurement only — the shipped binary still comes from the optimized build.
+
 ## E2E Fixture Conventions
 
 ### File Naming

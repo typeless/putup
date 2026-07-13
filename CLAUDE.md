@@ -26,6 +26,7 @@ Putup builds itself (self-hosting). Requires `putup` in PATH.
 make              # Configure and build (runs putup configure + putup build)
 make V=1          # Build with verbose output
 make test         # Run unit tests + E2E tests
+make coverage     # Build instrumented, run tests, write gcovr report (needs gcovr)
 make tidy         # Run clang-tidy
 make iwyu         # Detect dead includes via clang-include-cleaner
 make format       # Format with clang-format

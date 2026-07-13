@@ -3,6 +3,7 @@
 # Usage:
 #   make              # Configure and build
 #   make test         # Run unit and E2E tests
+#   make coverage     # Build instrumented, run tests, write gcovr report
 #   make install      # Install to ~/bin (or PREFIX=/usr/local)
 #   make tidy         # Run clang-tidy on all sources
 #   make format       # Format all sources with clang-format
@@ -26,7 +27,19 @@ endif
 
 COMPDB := compile_commands.json
 
-.PHONY: all build configure test install compdb tidy tidy-fix format format-check check clean distclean
+# Coverage: gcov must match the g++ that compiled the objects. Default g++ is
+# unversioned, so prefer gcov-<major> when present (handles hosts where plain
+# gcov lags g++), falling back to gcov.
+COVERAGE_DIR := build-coverage
+COVERAGE_REPORT := $(COVERAGE_DIR)/report
+GCC_MAJOR := $(shell g++ -dumpversion 2>/dev/null | cut -d. -f1)
+GCOV ?= $(shell command -v gcov-$(GCC_MAJOR) >/dev/null 2>&1 && echo gcov-$(GCC_MAJOR) || echo gcov)
+GCOVR ?= gcovr
+GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' \
+	--exclude-throw-branches --exclude-unreachable-branches \
+	--gcov-executable '$(GCOV)'
+
+.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check check clean distclean
 
 all: build
 
@@ -40,6 +53,23 @@ build: configure
 
 test: build
 	./$(BUILD_DIR)/test/unit/putup_test
+
+# Coverage: build a gcov-instrumented variant, run the full test suite (with
+# PUP pointing at the instrumented binary so E2E subprocess runs count too),
+# then aggregate with gcovr into a summary + HTML + Cobertura report.
+coverage:
+	@command -v $(GCOVR) >/dev/null 2>&1 || { echo "gcovr not found. Install it with: pipx install gcovr  (or: pip install --user gcovr)"; exit 1; }
+	CONFIG=coverage $(PUTUP) configure -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
+	CONFIG=coverage $(PUTUP) -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
+	find $(COVERAGE_DIR) -name '*.gcda' -delete 2>/dev/null || true
+	PUP="$(CURDIR)/$(COVERAGE_DIR)/putup" ./$(COVERAGE_DIR)/test/unit/putup_test
+	@mkdir -p $(COVERAGE_REPORT)
+	$(GCOVR) $(GCOVR_FLAGS) --print-summary \
+		--html-details $(COVERAGE_REPORT)/index.html \
+		--cobertura $(COVERAGE_REPORT)/coverage.xml \
+		--json-summary $(COVERAGE_REPORT)/summary.json \
+		$(COVERAGE_DIR)
+	@echo "Coverage report written to $(COVERAGE_REPORT)/index.html"
 
 install: build
 	@mkdir -p $(PREFIX)/bin
@@ -89,3 +119,4 @@ clean:
 
 distclean:
 	$(PUTUP) distclean -B $(BUILD_DIR)
+	rm -rf $(COVERAGE_DIR)
