@@ -338,8 +338,8 @@ Putup uses `putup configure` for its own build. The `configs/Tupfile` generates 
 ```tup
 # configs/Tupfile - Generate tup.config for the variant build
 
-ifeq ($(TUP_PLATFORM),mingw)
-  CONFIG_FILE = mingw.config
+ifeq ($(TUP_PLATFORM),macosx)
+  CONFIG_FILE = macosx.config
 else
   CONFIG_FILE = linux.config
 endif
