@@ -4,8 +4,14 @@
 *.so
 *.dylib
 
+# Coverage artifacts
+*.gcno
+*.gcda
+*.gcov
+
 # Build output (variant directory)
 /build/
+/build-coverage/
 
 # Tup database
 .tup/
