@@ -46,7 +46,7 @@ jobs:
           path: putup-macos-arm64
 
   # Windows x86_64 is cross-compiled from Linux with clang-cl + xwin (MSVC ABI),
-  # driven by the native Linux putup, and smoke-tested under Wine.
+  # driven by the native Linux putup; the tests run natively in the test-windows job.
   build-windows:
     needs: build-linux
     runs-on: ubuntu-latest
@@ -58,11 +58,10 @@ jobs:
           name: putup-linux-x86_64
       - name: Fix permissions
         run: chmod +x putup-linux-x86_64
-      - name: Install clang-cl toolchain + Wine
+      - name: Install clang-cl toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm
-          sudo apt-get install -y wine64 || sudo apt-get install -y wine
           for t in clang-cl lld-link llvm-lib; do
             sudo ln -sf "$(ls /usr/bin/$t-* | sort -V | tail -1)" /usr/local/bin/$t
           done
@@ -75,13 +74,6 @@ jobs:
           export XWIN_SPLAT="$HOME/.xwin/splat"
           CONFIG=xwin ./putup-linux-x86_64 configure -B build-win
           CONFIG=xwin ./putup-linux-x86_64 -B build-win
-      - name: Test under Wine
-        run: |
-          export WINEPREFIX="$HOME/.wine-putup" WINEARCH=win64 WINEDEBUG=-all
-          wineboot --init >/dev/null 2>&1 || true
-          sleep 2
-          WINE=$(command -v wine64 || command -v wine)
-          "$WINE" build-win/test/unit/putup_test.exe '~[e2e]~[shell]'
       - name: Rename artifact
         run: mv build-win/putup.exe putup-windows-x86_64.exe
       - name: Upload artifact
@@ -89,9 +81,33 @@ jobs:
         with:
           name: putup-windows-x86_64.exe
           path: putup-windows-x86_64.exe
+      - name: Upload Windows test binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: putup-test-windows
+          path: build-win/test/unit/putup_test.exe
+
+  # Run the cross-built Windows test binary natively before publishing.
+  test-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download Windows test binary
+        uses: actions/download-artifact@v4
+        with:
+          name: putup-test-windows
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter putup_test.exe | Select-Object -First 1
+          if (-not $exe) { throw "putup_test.exe not found in artifact" }
+          Write-Host "Running $($exe.FullName)"
+          & $exe.FullName "~[e2e]~[shell]"
+          exit $LASTEXITCODE
 
   release:
-    needs: [build-linux, build-macos, build-windows]
+    needs: [build-linux, build-macos, build-windows, test-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
