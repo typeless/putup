@@ -41,7 +41,7 @@ jobs:
           path: build/
 
   # Windows x86_64: cross-compile from Linux (clang-cl + xwin, MSVC ABI) using the
-  # Linux putup as the build driver, then run the unit tests under Wine.
+  # Linux putup as the build driver; the tests run natively in the test-windows job.
   build-windows:
     needs: build-linux
     runs-on: ubuntu-latest
@@ -54,11 +54,10 @@ jobs:
           path: build/
       - name: Fix permissions
         run: chmod +x build/putup
-      - name: Install clang-cl toolchain + Wine
+      - name: Install clang-cl toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld llvm
-          sudo apt-get install -y wine64 || sudo apt-get install -y wine
           for t in clang-cl lld-link llvm-lib; do
             sudo ln -sf "$(ls /usr/bin/$t-* | sort -V | tail -1)" /usr/local/bin/$t
           done
@@ -71,18 +70,30 @@ jobs:
           export XWIN_SPLAT="$HOME/.xwin/splat"
           CONFIG=xwin ./build/putup configure -B build-win
           CONFIG=xwin ./build/putup -B build-win
-      - name: Run tests under Wine
-        run: |
-          export WINEPREFIX="$HOME/.wine-putup" WINEARCH=win64 WINEDEBUG=-all
-          wineboot --init >/dev/null 2>&1 || true
-          sleep 2
-          WINE=$(command -v wine64 || command -v wine)
-          "$WINE" build-win/test/unit/putup_test.exe '~[e2e]~[shell]'
-      - name: Upload build artifacts
+      - name: Upload Windows test binary
         uses: actions/upload-artifact@v4
         with:
-          name: build-windows
-          path: build-win/
+          name: putup-test-windows
+          path: build-win/test/unit/putup_test.exe
+
+  # Run the cross-built Windows test binary natively on a Windows runner.
+  test-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download Windows test binary
+        uses: actions/download-artifact@v4
+        with:
+          name: putup-test-windows
+      - name: Run tests
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Filter putup_test.exe | Select-Object -First 1
+          if (-not $exe) { throw "putup_test.exe not found in artifact" }
+          Write-Host "Running $($exe.FullName)"
+          & $exe.FullName "~[e2e]~[shell]"
+          exit $LASTEXITCODE
 
   test-linux:
     needs: build-linux
