@@ -1,6 +1,6 @@
 ---
 name: cross-compile
-description: Cross-compilation and BSP development with putup. Use when setting up cross-compile toolchains, 3-tree builds, generator programs, config headers, or multi-library BSP projects.
+description: Cross-compilation and BSP development with putup. Use when setting up cross-compile toolchains, 3-tree builds, generator programs, config headers, multi-library BSP projects, or Windows (clang-cl + xwin) targets.
 ---
 
 # Cross-Compilation with Putup
@@ -37,7 +37,7 @@ Commands run with CWD = source directory. The source tree is read-only.
 | Variable                    | Meaning                                            |
 |-----------------------------|----------------------------------------------------|
 | `$(TUP_CWD)`               | Config-relative directory of current Tupfile        |
-| `$(TUP_VARIANT_OUTPUTDIR)` | Absolute path to the build directory root           |
+| `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the Tupfile's source dir to its output dir in the variant tree (e.g. `../../build/src/lib`; `.` in-tree) |
 | `$(S)` (convention)        | Set to `$(TUP_CWD)` in root Tuprules.tup           |
 | `$(B)` (convention)        | Set to `$(TUP_VARIANT_OUTPUTDIR)/$(S)`             |
 | `$(TUP_SRCDIR)`            | Relative path from Tupfile dir to source dir        |
@@ -71,6 +71,18 @@ CROSS_COMPILE=arm-none-eabi- putup -B build-arm
 # Override a single tool
 CROSS_COMPILE=arm-none-eabi- CC=clang putup -B build-arm-clang
 ```
+
+## MSVC-ABI targets (clang-cl + xwin)
+
+The `CROSS_COMPILE`-prefix pattern is for GNU-style toolchains. Windows (MSVC ABI) targets use a different trio and flag style — see `configs/xwin.config` in the putup tree as the worked reference:
+
+- Compiler `clang-cl`, linker `lld-link`, archiver `llvm-lib` (not `gcc`/`ld`/`ar`).
+- `--target=x86_64-pc-windows-msvc` to select the MSVC ABI.
+- The MSVC CRT and Windows SDK come from an xwin-splatted tree injected via the `XWIN_SPLAT` environment variable.
+- `/MT` links the static CRT.
+- Flag syntax differs from GNU: `clang-cl` uses `/Fo` for object output and `/OUT:` for the link target (no `-o`), and has no `-MD` dep-scan flag — so the `CROSS_COMPILE` bang-macro shapes above do not carry over.
+
+The resulting binary is smoke-tested under Wine.
 
 ## Generator Programs
 

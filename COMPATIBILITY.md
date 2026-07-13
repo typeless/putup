@@ -100,19 +100,21 @@ project/
 | Aspect | Tup | Putup |
 |--------|-----|-----|
 | Primary method | FUSE interception | Index comparison |
-| Fallback | mtime | mtime → size → SHA-256 |
-| Implicit deps | Automatic via FUSE | Requires `-MD` flag |
+| Fallback | mtime | size → mtime (hash-skip cache) → SHA-256 |
+| Implicit deps | Automatic via FUSE | Auto-generated `gcc -M` dep-scan (`-MD` optional) |
 
 Putup's change detection algorithm:
-1. If mtime differs from index → rebuild
-2. If mtime matches but size differs → rebuild
-3. If size matches → compute SHA-256, rebuild if different
+1. If the size differs from the index → rebuild
+2. If size **and** mtime both match the index → unchanged (mtime is a stat cache that lets putup skip hashing)
+3. Otherwise compute SHA-256 → rebuild only if the content hash differs
+
+A bare `touch` (mtime changes, content unchanged) does **not** trigger a rebuild.
 
 ### Implicit Dependencies
 
 Tup uses FUSE to intercept file accesses and automatically discover dependencies.
 
-Putup requires explicit `.d` file generation:
+Putup auto-generates `gcc -M` dep-scan rules for recognized C/C++ compile commands by default (`PUP_IMPLICIT_DEPS`, enabled), so header dependencies are discovered without extra flags. Adding `-MD` is a recommended alternative that has the compiler emit `.d` files during compilation:
 
 ```tup
 CFLAGS += -MD  # Generate foo.d alongside foo.o
@@ -145,7 +147,7 @@ Putup tracks **all headers** including system headers (`/usr/include/*`).
 
 1. Most Tupfiles work unchanged
 2. Replace `tup` with `putup` in scripts
-3. Add `-MD` to compiler flags for header tracking
+3. Optionally add `-MD` to compiler flags — putup auto-generates dep-scan rules, so header tracking works without it
 
 ### Feature Workarounds
 

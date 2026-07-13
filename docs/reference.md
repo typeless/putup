@@ -46,7 +46,7 @@ Putup supports the core Tupfile syntax and most tup commands. See [Appendix A](#
 Build from source (requires C++20 compiler):
 
 ```bash
-git clone https://github.com/user/putup
+git clone https://github.com/typeless/putup
 cd putup
 make
 sudo install build/putup /usr/local/bin/
@@ -337,20 +337,22 @@ Putup uses `putup configure` for its own build. The `configs/Tupfile` generates 
 
 ```tup
 # configs/Tupfile - Generate tup.config for the variant build
-
-ifeq ($(TUP_PLATFORM),macosx)
-  CONFIG_FILE = macosx.config
-else
-  CONFIG_FILE = linux.config
-endif
-
-: $(CONFIG_FILE) |> install -D %f %o |> ../tup.config
+import CONFIG=@(TUP_PLATFORM)
+: $(CONFIG).config |> cp %f %o |> ../tup.config
 ```
+
+`import CONFIG=@(TUP_PLATFORM)` imports the `CONFIG` environment variable, defaulting to the platform name (`linux`, `macosx`) when unset. The copy rule then installs `configs/$(CONFIG).config` as `build/tup.config`.
 
 Build workflow:
 ```bash
-putup configure -B build   # Generate build/tup.config from configs/posix.config
+putup configure -B build   # Generate build/tup.config from configs/linux.config (or macosx.config)
 putup -B build             # Build with generated config
+```
+
+**Selecting a config with `CONFIG=<name>`:** Set the `CONFIG` environment variable to pick any `configs/<name>.config`:
+```bash
+CONFIG=coverage putup configure -B build-coverage   # configs/coverage.config
+CONFIG=xwin putup configure -B build-win            # configs/xwin.config (Windows cross-build)
 ```
 
 **Example: Multi-project with per-directory configs**
@@ -379,7 +381,7 @@ include machine/@(MACHINE).tup
 : defconfigs/$(MACHINE)/linux.config |> install -D %f %o |> ../linux/tup.config
 ```
 
-### 3.7 putup show
+### 3.6 putup show
 
 ```
 putup show <format> [OPTIONS] [TARGETS...]
@@ -402,7 +404,7 @@ putup show compdb build-*                 # All matching variants
 putup show graph build-debug/src/lib      # Variant + scope
 ```
 
-#### 3.7.1 show script
+#### 3.6.1 show script
 
 ```
 putup show script > build.sh
@@ -412,7 +414,7 @@ Generate a shell script that runs all build commands in topological order. Usefu
 
 **Output:** Shell script to stdout
 
-#### 3.7.2 show compdb
+#### 3.6.2 show compdb
 
 ```
 putup show compdb > compile_commands.json
@@ -428,7 +430,7 @@ putup show compdb > compile_commands.json
 # IDE now has full code intelligence
 ```
 
-#### 3.7.3 show graph
+#### 3.6.3 show graph
 
 ```
 putup show graph [OPTIONS]
@@ -452,7 +454,7 @@ putup show graph --summary
 putup show graph --all-deps | dot -Tsvg -o full-deps.svg
 ```
 
-#### 3.7.4 show var
+#### 3.6.4 show var
 
 ```
 putup show var [NAME] [--json]
@@ -503,7 +505,7 @@ putup show var CFLAGS --json
 - Track down where a flag was added or overridden
 - Generate variable documentation
 
-#### 3.7.5 show instructions
+#### 3.6.5 show instructions
 
 ```
 putup show instructions
@@ -532,7 +534,7 @@ Estimated savings: 92% (instruction + operands vs full strings)
 - Understand index storage characteristics
 - Identify opportunities for macro consolidation
 
-#### 3.7.6 show index
+#### 3.6.6 show index
 
 ```
 putup show index [--summary] [PATTERN]
@@ -801,7 +803,7 @@ Output paths can use `..` to write files outside the current directory:
 : foo.c |> gcc -c %f -o %o |> ../build/foo.o
 
 # Output to parent directory
-: posix.config |> install -D %f %o |> ../tup.config
+: linux.config |> install -D %f %o |> ../tup.config
 ```
 
 Output paths are relative to the Tupfile's location in the output tree (for variant builds) or the source tree (for in-tree builds).
@@ -872,6 +874,7 @@ $(CC)                 # Regular variable
 | `$(TUP_PLATFORM)` | Platform: `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | Architecture: `x86_64`, `arm`, etc. |
 | `$(TUP_VARIANTDIR)` | Variant output directory (variant builds) |
+| `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the source dir to the variant output dir (e.g. `../../build/src/lib`; `.` in-tree) |
 | `$(TUP_SRCDIR)` | Relative path to source directory (three-tree builds) |
 | `$(TUP_OUTDIR)` | Relative path to output directory (three-tree builds) |
 
@@ -1039,21 +1042,26 @@ export PKG_CONFIG_PATH
 : foo.c |> $(CC) -c %f -o %o |> foo.o
 ```
 
-**`import`** - Import from tup.config:
+**`import`** - Import an environment variable into the Tupfile namespace:
 ```tup
-import CC               # Required, error if not in config
-import OPTIMIZE=O2      # Optional with default
+import CC                 # Read the CC environment variable (empty if unset)
+import OPTIMIZE = O2      # Optional default, used when the env var is unset
+import OPTIMIZE ?= O2     # Same effect — =, ?=, and ??= are equivalent here
 ```
+
+`import` reads from the process **environment**, not from `tup.config`. It never errors when the variable is unset — the optional default (`=`, `?=`, or `??=`, all equivalent) supplies the value instead. Changing an imported variable's value re-runs the commands that depend on it, because the value is folded into command identity. With `import VAR ?= default`, unsetting the environment variable on a later (warm) build reverts the value to `default` and re-runs the affected commands.
 
 **`preload`** - Preload a directory for dependency tracking:
 ```tup
 preload ../include
 ```
+> ⚠️ **Parsed, not enforced.** `preload` is accepted for compatibility but currently ignored (putup emits a warning and continues).
 
 **`.gitignore`** - Generate .gitignore for outputs:
 ```tup
 .gitignore
 ```
+> ⚠️ **Parsed, not enforced.** `.gitignore` is accepted for compatibility but currently ignored (putup emits a warning and continues); no `.gitignore` file is generated.
 
 ### 5.7 Groups
 
@@ -1881,22 +1889,32 @@ This content-based detection eliminates false positives from:
 
 ### 9.2 The Index File
 
-Binary file at `.pup/index` storing the complete build state (v8 format).
+Binary file at `.pup/index` storing the complete build state (v11 format).
 
 **Contents:**
 
 | Section | Description |
 |---------|-------------|
-| Header (48 bytes) | Magic number, version, counts, offsets |
-| File entries (56 bytes each) | Parent, name offset, type, size, SHA-256 hash |
-| Command entries (16 bytes each) | Dir ID, instruction/display/env offsets |
-| Edges (16 bytes each) | From, to, link type, group cmd ID |
+| Header (56 bytes) | Magic number, version, counts, offsets, save time |
+| File entries (64 bytes each) | Parent, name offset, type, size, mtime, SHA-256 hash |
+| Command entries (48 bytes each) | Dir ID, instruction/display/env offsets, structural-identity hash |
+| Edges (16 bytes each) | From, to, link type |
 | Operand table | Per-command offset into operand data |
 | Operand data | Packed input/output NodeIds per command |
 | String table | Length-prefixed packed strings (including instructions) |
 | Footer (32 bytes) | SHA-256 checksum |
 
-**Instruction-based storage (v8):** Commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds instead of fully-expanded command strings. This provides ~90% space savings for projects with many similar commands (e.g., compiling C files with bang macros). Full commands are reconstructed lazily when needed for change detection.
+**Instruction-based storage (v8+):** Commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds instead of fully-expanded command strings. This provides ~90% space savings for projects with many similar commands (e.g., compiling C files with bang macros). Full commands are reconstructed lazily when needed for change detection.
+
+**Stat cache (v9):** Each file entry records its modification time (`mtime_ns`), and the header records the index's `save_time_ns`. On a rebuild, a file whose size and mtime match the index is trusted without re-hashing (with racy-clean detection for files touched in the same second the index was saved). See §9.1.
+
+**Structural command identity (v11):** Each command entry carries a per-command SHA-256 that folds the command text together with the values of the variables the command depends on. Changing an imported or config variable that a command uses changes the command's identity and re-runs it (§5.6).
+
+**Format version history:**
+- v8 — instruction/template dedup (command stores a template + operand NodeIds, reconstructed lazily)
+- v9 — stat cache (`mtime_ns` per file, `save_time_ns` in header, racy-clean detection)
+- v10 — removed `group_cmd_id` from edges
+- v11 — structural command identity hash (current)
 
 **Link types:**
 
@@ -2355,10 +2373,12 @@ CONFIG_OS_API=posix
 CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG -ffunction-sections -fdata-sections
 CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 
-# configs/mingw.config
+# configs/xwin.config (Windows cross-build: clang-cl + xwin, CONFIG=xwin)
 CONFIG_OS_API=win32
-CONFIG_RELEASE_CFLAGS=-O2 -DNDEBUG
-CONFIG_PLATFORM_LDFLAGS=-static
+CONFIG_CC=clang-cl
+CONFIG_LINKER=lld-link
+CONFIG_CFLAGS=--target=x86_64-pc-windows-msvc /std:c11 /W4
+CONFIG_RELEASE_CFLAGS=/O2 /DNDEBUG /MT
 ```
 
 **Benefits:**
@@ -2389,8 +2409,7 @@ pup
 # ARM cross-compile
 CROSS_COMPILE=arm-none-eabi- pup -B build-arm
 
-# MinGW cross-compile
-CROSS_COMPILE=x86_64-w64-mingw32- pup -B build-win32
+# Windows targets use clang-cl + xwin (CONFIG=xwin), not a CROSS_COMPILE prefix (see §11.5)
 
 # Override specific tool
 CROSS_COMPILE=arm-none-eabi- CC=clang pup -B build-arm-clang
@@ -2412,7 +2431,7 @@ project/
 │   ├── default.config    # Default (release, native)
 │   ├── debug.config      # Debug with sanitizers
 │   ├── release.config    # Optimized release
-│   └── mingw.config      # Windows MinGW cross-compile
+│   └── xwin.config       # Windows cross-compile (clang-cl + xwin)
 └── src/
 ```
 
@@ -2420,7 +2439,7 @@ project/
 ```bash
 putup configure -B build-debug --config configs/debug.config
 putup configure -B build-release --config configs/release.config
-putup configure -B build-mingw --config configs/mingw.config
+XWIN_SPLAT=~/.xwin/splat CONFIG=xwin putup configure -B build-win   # Windows cross-build (clang-cl + xwin)
 ```
 
 **Config file template:**
@@ -2551,9 +2570,9 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | include_rules | ✅ | ✅ | |
 | export | ✅ | ✅ | |
 | import | ✅ | ✅ | |
-| preload | ✅ | ✅ | |
+| preload | ✅ | ⚠️ | Parsed, not enforced |
 | run | ✅ | ❌ | Shell execution during parse |
-| .gitignore | ✅ | ✅ | |
+| .gitignore | ✅ | ⚠️ | Parsed, not enforced |
 | **Commands** |
 | build | ✅ | ✅ | |
 | configure | ❌ | ✅ | Two-pass config generation |
@@ -2581,7 +2600,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | show instructions | ❌ | ✅ | Instruction deduplication analysis |
 | show index | ❌ | ✅ | Forensic dump of .pup/index |
 | Content-based hashing | ❌ | ✅ | SHA-256 for change detection |
-| Instruction-based index | ❌ | ✅ | v8 format with ~90% storage savings |
+| Instruction-based index | ❌ | ✅ | v11 format with ~90% storage savings |
 
 **Legend:** ✅ Supported | ⚠️ Partial | ❌ Not supported | ➡️ Different name
 
@@ -2652,6 +2671,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `$(TUP_PLATFORM)` | Platform name | `linux`, `macosx`, `win32` |
 | `$(TUP_ARCH)` | CPU architecture | `x86_64`, `arm`, `aarch64` |
 | `$(TUP_VARIANTDIR)` | Variant output dir | `../build-debug/src` |
+| `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from source dir to variant output dir | `../../build/src/lib` (`.` in-tree) |
 | `$(TUP_SRCDIR)` | Path to source dir (three-tree) | `../../busybox/src` |
 | `$(TUP_OUTDIR)` | Path to output dir (three-tree) | `../../build/src` |
 

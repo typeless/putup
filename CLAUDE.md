@@ -45,6 +45,8 @@ putup -B build             # Build
 
 Build artifacts go to `build/`.
 
+`CONFIG=<name>` selects `configs/<name>.config` at configure time (default `$(TUP_PLATFORM)`), e.g. `CONFIG=debug putup configure -B build`. The Windows binary is cross-compiled from Linux with clang-cl + lld-link against an xwin-splatted MSVC CRT + Windows SDK (`CONFIG=xwin`, requires the `XWIN_SPLAT` env var); its test binary runs under Wine with the `~[e2e]~[shell]` tag filter. See `configs/xwin.config` and `.github/workflows/ci.yml`.
+
 ## Testing
 
 > **Testing Guide**: See [TESTING.md](TESTING.md) for E2E fixture conventions, test tags, and debugging tips.
@@ -156,10 +158,11 @@ pup/
 │   └── test/unit/putup_test
 ├── include/pup/
 │   ├── cli/            # Command-line interface, options, output
-│   ├── core/           # Core types, hash, result, platform
+│   ├── core/           # Core types, hash, result
 │   ├── parser/         # Lexer, parser, AST, evaluator, depfile
 │   ├── graph/          # Dependency DAG, builder, topological sort, rule patterns
 │   ├── index/          # Binary index format, reader/writer
+│   ├── platform/       # OS abstraction: env, file I/O, path, process (POSIX + Win32)
 │   └── exec/           # Scheduler, command runner
 ├── src/                # Implementation files
 ├── test/
@@ -167,7 +170,7 @@ pup/
 │   │   ├── test_*.cpp  # Test files
 │   │   └── e2e_fixture.{hpp,cpp}  # E2E test infrastructure
 │   └── e2e/fixtures/   # Test fixture data (Tupfiles, sources)
-├── third_party/        # expected-lite, fmt, sha256, Catch2
+├── third_party/        # expected-lite, sha256, Catch2
 ├── Makefile            # Workflow wrapper (make test, make tidy, etc.)
 ├── Tupfile             # Build configuration
 └── Tuprules.tup        # Shared build rules
