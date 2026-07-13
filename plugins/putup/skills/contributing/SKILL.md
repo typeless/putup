@@ -22,8 +22,11 @@ Putup requires `putup` in PATH for self-hosting builds.
 | `make iwyu` | Detect dead includes via clang-include-cleaner |
 | `make format` | Format with clang-format |
 | `make check` | Full CI: format-check + tidy + test |
+| `make coverage` | Build gcov-instrumented variant, run tests, write gcovr report to build-coverage/report/ |
 | `make clean` | Clean build artifacts |
 | `make distclean` | Full reset: remove build/ |
+
+`make coverage` selects `configs/coverage.config` via the `CONFIG` env var (`CONFIG=coverage`), not `--config`. It needs `gcovr` and writes an HTML `index.html`, a Cobertura `coverage.xml`, and a JSON `summary.json` to `build-coverage/report/`.
 
 Direct test execution:
 
@@ -41,6 +44,16 @@ Or build and run directly:
 putup configure -B build
 putup -B build
 ./build/putup
+```
+
+## Platform builds
+
+`configs/` holds one config per platform, selected via the `CONFIG` env var (default `$(TUP_PLATFORM)`): `CONFIG=<name> putup configure -B <dir>` picks `configs/<name>.config`. Available configs include `linux`, `macosx`, `xwin`, `coverage`, `debug`, and `default`.
+
+Windows is cross-compiled from Linux with `CONFIG=xwin`: clang-cl + lld-link + llvm-lib against an xwin-splatted MSVC CRT and Windows SDK (needs the `XWIN_SPLAT` env var, `--target=x86_64-pc-windows-msvc`, `/MT` static CRT). The resulting binary is tested under Wine, excluding `[e2e]` and `[shell]` tags:
+
+```bash
+./build/test/unit/putup_test '~[e2e]~[shell]'
 ```
 
 ## TDD Workflow
@@ -202,10 +215,11 @@ pup/
     index/        # Binary index format, reader/writer
     exec/         # Scheduler, command runner
   src/            # Implementation files (mirrors include/ layout)
+  configs/        # Per-platform configs, selected via CONFIG env var
   test/
     unit/         # Catch2 tests (test_*.cpp) + e2e_fixture.{hpp,cpp}
     e2e/fixtures/ # Test fixture data
-  third_party/    # expected-lite, fmt, sha256, Catch2
+  third_party/    # expected-lite, sha256, Catch2
   Makefile        # Workflow wrapper
   Tupfile         # Build configuration
   Tuprules.tup    # Shared build rules

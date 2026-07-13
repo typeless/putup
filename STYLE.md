@@ -27,6 +27,20 @@ A concise style guide for modern C++ projects.
 3. **Early returns** - Reduce nesting, handle errors immediately
 4. **Self-documenting code** - Clear names over comments
 
+## Project Primitives
+
+This project builds without libstdc++ (`-nostdlib++`), so container and string
+storage use in-house primitives instead of the STL equivalents:
+
+| Standard type | Project primitive | Role |
+|---------------|-------------------|------|
+| `std::vector<T>` | `Vec<T>` (`SortedPairVec` for sorted key/value) | Owning sequence |
+| `std::string` | `StringId`/`StringPool` (storage), `Buf`/`HeapBuf` (building) | Owned text |
+| `std::function<Sig>` | `Function<Sig>` | Type-erased callable |
+
+Header-only views and value types from the standard library are used directly:
+`std::string_view` (read-only text), `std::optional`, `std::variant`, `std::span`.
+
 ## Type Declarations
 
 ### AAA (Almost Always Auto)
@@ -46,8 +60,7 @@ auto ptr = std::make_unique<Foo>();
 auto opt = std::make_optional(42);
 
 // Collections with initializers
-auto vec = std::vector<int>{1, 2, 3};
-auto map = std::unordered_map<std::string, int>{};
+auto ids = Vec<int>{ 1, 2, 3 };
 
 // References and pointers
 auto const& ref = container;
@@ -185,7 +198,16 @@ auto get_node(NodeId id) -> Node*
 // Result<T> for fallible operations
 auto parse() -> Result<Config>;
 
-// Propagate errors with early returns
+// Create a new error at the failure site with make_error<T>
+auto load(std::string_view path) -> Result<Config>
+{
+    if (path.empty()) {
+        return make_error<Config>(ErrorCode::InvalidArgument, "path is empty");
+    }
+    return parse();
+}
+
+// Propagate an existing error unchanged: unexpected<Error>(x.error())
 auto process(Path const& path) -> Result<void>
 {
     auto content = read_file(path);
@@ -274,7 +296,7 @@ class Graph {
 public:
     auto add_node(Node n) -> NodeId;
 private:
-    std::vector<Node> nodes_;
+    Vec<Node> nodes_;
 };
 ```
 

@@ -22,7 +22,7 @@ Commands:
   configure         Generate tup.config files (two-stage build)
   clean             Remove generated files
   distclean         Full reset: remove .pup and variant directory
-  parse             Parse and validate Tupfiles
+  parse [--strict]  Parse and validate Tupfiles
   show <format>     Show build info:
                       script  - Shell script
                       compdb  - compile_commands.json
@@ -40,7 +40,7 @@ Options:
   -S DIR             Source directory (where source files live)
   -C DIR             Config directory (where Tupfiles live)
   -B DIR             Build/output directory (can use multiple times)
-  -c, --config FILE  Use FILE as tup.config (skip config rules)
+  -c, --config FILE  Install FILE as root tup.config before config rules
   --summary          Human-readable output (for show graph)
   --stat             Print build statistics
   -A, --all          Full project build (ignore cwd scoping)
@@ -78,6 +78,7 @@ Environment:
 - **[Reference Manual](docs/reference.md)** - Complete user guide: commands, Tupfile syntax, configuration
 - **[Compatibility](COMPATIBILITY.md)** - Tup compatibility matrix and migration guide
 - **[CLAUDE.md](CLAUDE.md)** - Developer guide: building, testing, project structure
+- **[Testing](TESTING.md)** - Test workflow, tags, E2E fixtures, and coverage reports
 - **[STYLE.md](STYLE.md)** - C++ code style guide
 - **[DESIGN.md](DESIGN.md)** - Internal architecture and design rationale
 

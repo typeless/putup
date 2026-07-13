@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 mkdir -p "build"
 mkdir -p "build/test/unit"
 
-(cd "configs" && cp linux.config ../build/tup.config)
+(cd "configs" && cp macosx.config ../build/tup.config)
 (cd "." && clang++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -c src/main.cpp -o build/main.o)
 (cd "." && clang++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -c src/platform/path-posix.cpp -o build/path-posix.o)
 (cd "." && clang++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -c src/platform/env-posix.cpp -o build/env-posix.o)

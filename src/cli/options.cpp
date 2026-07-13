@@ -174,7 +174,7 @@ auto print_usage() -> void
            "  -S DIR             Source directory (where source files live)\n"
            "  -C DIR             Config directory (where Tupfiles live)\n"
            "  -B DIR             Build/output directory (can use multiple times)\n"
-           "  -c, --config FILE  Use FILE as tup.config (skip config rules)\n"
+           "  -c, --config FILE  Install FILE as root tup.config before config rules\n"
            "  --summary          Human-readable output (for show graph)\n"
            "  --stat             Print build statistics\n"
            "  -A, --all          Full project build (ignore cwd scoping)\n"

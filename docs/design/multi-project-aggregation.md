@@ -111,36 +111,32 @@ Dedicated command for the config generation pass:
 
 ## Implementation
 
-### Required: Scoped tup.config Loading
+### Implemented: Scoped tup.config Loading
 
 **Files:**
-- `src/cli/context.cpp` - `get_config_for_dir()` function
+- `src/cli/context.cpp` - `find_config_for_dir()` function
 - `include/pup/parser/eval.hpp` - Directory-specific config in EvalContext
 - `src/graph/builder.cpp` - Variable nodes scoped to config directory
 
-**Current behavior:**
-```cpp
-// src/cli/context.cpp:340
-auto config_path = ctx.impl_->layout.output_root / "tup.config";
-// Single config for ALL Tupfiles
-```
-
-**New behavior:**
-- When parsing Tupfile in `dir/`, walk up from `output_root/dir/`:
-  - Check `output_root/dir/tup.config`
-  - If not found, check `output_root/parent/tup.config`
-  - Continue until found or reach `output_root/tup.config` (root)
-- First tup.config found is used (no merging/inheritance)
+**Shipped behavior** (`find_config_for_dir`, `src/cli/context.cpp`):
+- When parsing a Tupfile in `dir/`, collect every `tup.config` from `output_root/tup.config`
+  down the chain to `output_root/dir/tup.config`
+- Merge them root → leaf into a single config set
+- On a key collision the PARENT config wins over the child (same authority model as
+  Tuprules.tup `?=` defaults: the outer scope sets policy, inner scopes fill gaps)
 - Cache loaded configs per directory
 
 **Complexity:** Medium
 
-### Required: `putup configure` Command
+### Implemented: `putup configure` Command
+
+Shipped: `putup configure` is a real subcommand, exercised by the Makefile, CI, and the
+`[configure]` E2E tests.
 
 **Files:**
-- `src/cli/commands.hpp` - Add `cmd_configure` declaration
-- `src/cli/cmd_configure.cpp` - New file
-- `src/cli/main.cpp` - Register subcommand
+- `include/pup/cli/commands.hpp` - `cmd_configure` declaration
+- `src/cli/cmd_configure.cpp` - Command implementation
+- `src/cli/main.cpp` - Registers the subcommand
 
 **Implementation:**
 1. Scan project for Tupfiles (reuse existing scanner)
@@ -164,7 +160,7 @@ auto config_path = ctx.impl_->layout.output_root / "tup.config";
 
 ## Design Decisions
 
-1. **Scoping: Parent lookup** - Walk up directory tree to find nearest tup.config (no merging)
+1. **Scoping: Root → leaf merge** - `find_config_for_dir` merges every tup.config from the output root down to the Tupfile's directory; parent configs override children on key collision
 2. **Two-stage: Explicit** - User runs `pup configure` then `pup`
 3. **Detection: Output filename** - Rules outputting `*/tup.config` run in configure pass
 4. **Config generation: User's choice** - install, cat, scripts, kconfig, custom tools

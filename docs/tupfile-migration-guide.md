@@ -207,9 +207,10 @@ For projects with code generation (config headers, table generators):
 | `obj-y += subdir/` | (separate Tupfile in subdir) |
 | `EXTRA_CFLAGS += -DFOO` | `CFLAGS += -DFOO` |
 
-### Automated Conversion Script
+### Automated Conversion
 
-See `test-busybox/scripts/kbuild2tupfile.sh` for AWK-based converter that:
+The `putup:migrate-makefile` skill/command (`plugins/putup/commands/migrate-makefile.md`)
+drives Make/Kbuild → Tupfile migration. It:
 - Parses `lib-y +=` and `lib-$(CONFIG_X) +=` patterns
 - Outputs `srcs +=` and `srcs-@(X) +=`
 - Handles backslash line continuations
@@ -274,4 +275,4 @@ putup
 | `libbb/Tupfile` | Core library with assembly files |
 | `modutils/Tupfile` | Example of negative conditional pattern |
 | `archival/libarchive/Tupfile` | Example of shared source groups |
-| `scripts/kbuild2tupfile.sh` | Automated converter |
+| `plugins/putup/commands/migrate-makefile.md` | `putup:migrate-makefile` conversion command |

@@ -53,6 +53,18 @@ make test                                 # All tests
 | `[target]` | Target parsing tests |
 | `[variant]` | Out-of-tree/variant builds, ghost nodes |
 
+## Windows (Wine) Tests
+
+The Windows test binary is cross-compiled from Linux with `CONFIG=xwin`
+(clang-cl + xwin against the MSVC CRT / Windows SDK) and exercised under Wine.
+E2E and shell fixtures are excluded because they rely on a POSIX shell:
+
+```bash
+wine build-win/test/unit/putup_test.exe "~[e2e]~[shell]"
+```
+
+CI runs this in `.github/workflows/ci.yml` (`build-windows` job).
+
 ## Code Coverage
 
 ```bash

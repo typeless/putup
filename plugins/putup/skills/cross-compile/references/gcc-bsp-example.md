@@ -142,7 +142,7 @@ Must include exactly three headers:
 
 ## Self-Contained Libraries
 
-Each library (gmp, mpfr, mpc, libiberty, libcpp, libdecnumber, libbacktrace) has:
+Each library (gmp, mpfr, mpc, libiberty, libcpp, libdecnumber, libbacktrace, libcody) has:
 
 - Its own `Tuprules.tup` with `?=` defaults for standalone builds
 - Its own `defaults.config` for library-specific config

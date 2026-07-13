@@ -56,12 +56,18 @@ pup/
 │   ├── parser/     # Lexer, AST, Parser, Evaluator, Glob
 │   ├── graph/      # DAG, Builder, Topological sort
 │   ├── index/      # Binary format, Reader, Writer
-│   └── exec/       # Scheduler, CommandRunner
-├── src/            # Implementation files
+│   ├── exec/       # Scheduler, CommandRunner
+│   ├── platform/   # OS abstraction: env, file_io, path, process (POSIX + Win32 backends)
+│   └── cli/        # Command-line interface, options, output, subcommands
+├── src/            # Implementation files (incl. *-posix.cpp / *-win32.cpp backends)
 └── third_party/    # sha256, expected-lite, Catch2
 ```
 
-Dependencies flow one direction: `main → exec → graph → parser → core`
+Dependencies flow one direction: `cli → exec → graph → parser → core`, with `platform` under
+everything as the OS-abstraction layer. The `platform/` module isolates OS specifics behind a
+uniform API: POSIX backends (`*-posix.cpp`) use `fork`/`waitpid`/`poll`; Win32 backends
+(`*-win32.cpp`) use `CreateProcessW`. The Windows binary is cross-compiled from Linux with
+clang-cl + lld-link against an xwin-splatted MSVC CRT and tested under Wine.
 
 ---
 
@@ -854,15 +860,15 @@ Commands with existing `-MD` flags are skipped (user handles deps manually).
 
 ## Index Module
 
-### Binary Format (v8)
+### Binary Format (v11)
 
-v8 introduces **instruction-based command storage** for significant space savings. Instead of storing fully-expanded command strings, commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds. Full commands are reconstructed lazily when needed.
+The index uses **instruction-based command storage** for significant space savings (introduced in v8). Instead of storing fully-expanded command strings, commands store an instruction pattern (e.g., `gcc -c %f -o %o`) plus operand NodeIds; full commands are reconstructed lazily when needed. Each file entry also carries an mtime stat-cache (v9) and each command carries a structural identity hash (v11).
 
 ```
 ┌─────────────────────────────────────┐
-│ Header (48 bytes)                   │
+│ Header (56 bytes)                   │
 │   magic: "PUPI" (4 bytes)           │
-│   version: u32 (8)                  │
+│   version: u32 (11)                 │
 │   file_count: u32                   │
 │   command_count: u32                │
 │   edge_count: u32                   │
@@ -870,11 +876,12 @@ v8 introduces **instruction-based command storage** for significant space saving
 │   file_offset: u32                  │
 │   command_offset: u32               │
 │   edge_offset: u32                  │
-│   operand_table_offset: u32         │  ← NEW
-│   operand_data_offset: u32          │  ← NEW
+│   operand_table_offset: u32         │
+│   operand_data_offset: u32          │
 │   string_offset: u32                │
+│   save_time_ns: u64                 │  ← v9 (racy-clean detection)
 ├─────────────────────────────────────┤
-│ FileEntry[] (56 bytes each)         │
+│ FileEntry[] (64 bytes each)         │
 │   parent_id: u32                    │
 │   src_id: u32                       │
 │   name_offset: u32                  │
@@ -882,6 +889,7 @@ v8 introduces **instruction-based command storage** for significant space saving
 │   reserved: 1 byte                  │
 │   size: u64                         │
 │   content_hash: [u8; 32]            │
+│   mtime_ns: u64                     │  ← v9 (stat cache)
 │   (id computed from array index)    │
 ├─────────────────────────────────────┤
 │ CommandEntry[] (48 bytes each)      │
@@ -1125,6 +1133,11 @@ This ensures:
 - Order-only dependencies respected for ordering only
 - No threads, no mutexes, no atomics — deterministic single-threaded control flow
 
+The scheduler drives all process work through the `platform/` process API
+(`spawn_async` / `poll_fds` / `read_nonblocking`) rather than raw syscalls, so it is portable
+across backends: the POSIX backend implements it with `fork`/`waitpid` and `poll`, while the
+Win32 backend uses `CreateProcessW`.
+
 ---
 
 ## Build Pipeline
@@ -1136,18 +1149,18 @@ This ensures:
 auto root = find_project_root();
 
 // 2. Parse Tupfile
-auto parser = Parser { read_file(root / "Tupfile"), resolver };
+auto parser = Parser { read_file(pup::path::join(root, "Tupfile")), resolver };
 auto tupfile = parser.parse();
 
 // 3. Load configuration
-auto config = parse_config(variant_dir / "tup.config");
+auto config = parse_config(pup::path::join(variant_dir, "tup.config"));
 
 // 4. Create evaluation context
 auto vars = VarDb {};
 auto ctx = EvalContext {
     .vars = &vars,
     .config_vars = &config,
-    .tup_cwd = root.string(),
+    .tup_cwd = root,
     .tup_platform = detect_platform(),
     .tup_variantdir = compute_variantdir(root, variant_dir),
 };
@@ -1163,7 +1176,7 @@ scheduler.on_job_complete([](result) { print_result(result); });
 auto stats = scheduler.build(*graph);
 
 // 7. Save index for incremental builds
-IndexWriter::write(root / ".pup" / "index", make_index(*graph));
+IndexWriter::write(pup::path::join(pup::path::join(root, ".pup"), "index"), make_index(*graph));
 ```
 
 ### Incremental Build
@@ -1478,7 +1491,7 @@ Commands execute from their **source directory**, not the variant directory:
 // In scheduler.cpp
 auto working_dir = options_.root_dir;
 if (!node->source_dir.empty())
-    working_dir /= node->source_dir;  // e.g., "src"
+    working_dir = pup::path::join(working_dir, node->source_dir);  // e.g., "src"
 ```
 
 This ensures:
@@ -1960,7 +1973,9 @@ endif
 include path          # Include another Tupfile
 include_rules         # Include Tuprules.tup from ancestor directories
 export VAR            # Export environment variable to subprocesses
-import VAR[=default]  # Import environment variable
+import VAR             # Import environment variable
+import VAR ?= default  # Optional default (=, ?=, ??= equivalent) when env var is unset;
+                       #   reverts to the default when the env var becomes unset on a warm build
 preload path          # Preload directory for dependency tracking
 error message         # Emit error and stop parsing
 run script            # Execute shell script during parse
