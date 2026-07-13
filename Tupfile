@@ -81,5 +81,15 @@ srcs-y += src/platform/path-$(_os_api).cpp
 # Main executable (throw_stubs linked directly, not in library — avoids
 # duplicate symbols when test binary links both libputup.a and libstdc++)
 : src/main.cpp |> !cxx |> main.$(_obj)
+
+# A dedicated MSVC-style linker (@(LINKER) = link/lld-link, set only by the MSVC
+# and clang-cl+xwin configs) links the real MSVC CRT, which already provides
+# operator new/delete and the C++ ABI — so throw_stubs would duplicate them. The
+# GCC/Clang-driver builds (@(LINKER) empty, -nostdlib++) have no libstdc++, so
+# they need throw_stubs to supply those symbols.
+ifeq (@(LINKER),)
 : src/core/throw_stubs.cpp |> !cxx |> throw_stubs.$(_obj)
 : {lib_objs} main.$(_obj) throw_stubs.$(_obj) |> !link |> putup$(_exe)
+else
+: {lib_objs} main.$(_obj) |> !link |> putup$(_exe)
+endif

@@ -45,6 +45,16 @@ LDFLAGS = @(RELEASE_LDFLAGS) @(PLATFORM_LDFLAGS)
 CFLAGS += @(DEBUG_CFLAGS) @(RELEASE_CFLAGS)
 CXXFLAGS += @(DEBUG_CXXFLAGS) @(RELEASE_CXXFLAGS)
 
+# clang-cl + xwin cross-compile: inject the xwin-splatted MSVC CRT + Windows SDK
+# include/lib paths. XWIN_SPLAT is imported from the environment so the splat's
+# host-specific location is not baked into the committed config.
+ifeq (@(XWIN),y)
+import XWIN_SPLAT
+CFLAGS += /imsvc $(XWIN_SPLAT)/crt/include /imsvc $(XWIN_SPLAT)/sdk/include/ucrt /imsvc $(XWIN_SPLAT)/sdk/include/um /imsvc $(XWIN_SPLAT)/sdk/include/shared
+CXXFLAGS += /imsvc $(XWIN_SPLAT)/crt/include /imsvc $(XWIN_SPLAT)/sdk/include/ucrt /imsvc $(XWIN_SPLAT)/sdk/include/um /imsvc $(XWIN_SPLAT)/sdk/include/shared
+LDFLAGS += /libpath:$(XWIN_SPLAT)/crt/lib/x86_64 /libpath:$(XWIN_SPLAT)/sdk/lib/ucrt/x86_64 /libpath:$(XWIN_SPLAT)/sdk/lib/um/x86_64
+endif
+
 # Optional LTO (putup -D LTO or CONFIG_LTO=y in tup.config)
 ifdef LTO
 CFLAGS += -flto
