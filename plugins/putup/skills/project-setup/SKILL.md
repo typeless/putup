@@ -213,14 +213,15 @@ putup show graph | dot -Tpng -o deps.png  # graphviz visualization
 putup show graph --all-deps               # include implicit header deps
 putup show var CC                         # variable assignment history
 putup show var --json                     # machine-readable variable dump
-putup parse --strict                      # check composability conventions
+putup parse --check=error                 # check composability conventions (alias: --strict)
 putup show instructions                   # command deduplication analysis
 putup show index --summary                # on-disk index counts (forensic)
 putup show index PATTERN                  # per-command implicit/sticky deps
 ```
 
-`parse --strict` checks that component `Tuprules.tup` files use `?=` for
-anchor variables (`S`, `B`) and toolchain variables (`CC`, `CXX`, `AR`).
+Plain `parse` reports whether component `Tuprules.tup` files use `?=` for
+anchor variables (`S`, `B`) and toolchain variables (`CC`, `CXX`, `AR`);
+`--check=error` (alias `--strict`) makes those violations fail the exit code.
 
 ## 8. Troubleshooting
 
