@@ -22,7 +22,8 @@ Commands:
   configure         Generate tup.config files (two-stage build)
   clean             Remove generated files
   distclean         Full reset: remove .pup and variant directory
-  parse [--strict]  Parse and validate Tupfiles
+  parse [--check=LEVEL]
+                    Parse and validate Tupfiles
   show <format>     Show build info:
                       script  - Shell script
                       compdb  - compile_commands.json
@@ -41,6 +42,11 @@ Options:
   -C DIR             Config directory (where Tupfiles live)
   -B DIR             Build/output directory (can use multiple times)
   -c, --config FILE  Install FILE as root tup.config before config rules
+  --check=LEVEL      Convention checking for 'parse':
+                       none  - skip checks
+                       warn  - report violations, exit 0 (default)
+                       error - report violations, exit non-zero
+                     (--strict is an alias for --check=error)
   --summary          Human-readable output (for show graph)
   --stat             Print build statistics
   -A, --all          Full project build (ignore cwd scoping)
