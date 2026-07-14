@@ -219,6 +219,8 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
     }
     graph.commands[idx] = std::move(node);
 
+    graph.command_index_built = false;
+
     return id;
 }
 
@@ -516,7 +518,10 @@ auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view na
 
 auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>
 {
-    assert(graph.command_index_built && "find_by_command() requires build_command_index() first");
+    // Stale index (add_command_node clears the flag): miss, never a wrong hit.
+    if (!graph.command_index_built) {
+        return std::nullopt;
+    }
     auto cmd_id = graph.command_strings.find(cmd);
     if (is_empty(cmd_id)) {
         return std::nullopt;
