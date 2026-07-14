@@ -1,12 +1,63 @@
 ---
 name: project-setup
-description: Setting up putup projects. Use when initializing a project, configuring variant builds, choosing build modes, running diagnostics, or using putup commands.
+description: Setting up putup projects. Use when installing putup, initializing a project, configuring variant builds, choosing build modes, running putup in CI, running diagnostics, or using putup commands.
 ---
 
 # Project Setup
 
 Guide for initializing and configuring putup projects. For the full manual, see
 <https://github.com/typeless/putup/blob/main/docs/reference.md>.
+
+## Installing putup
+
+putup ships prebuilt binaries. Install the latest release with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/typeless/putup/main/install.sh | sh
+```
+
+This downloads a prebuilt binary to `~/.local/bin` (plus a `pup` alias). It needs
+`curl` or `wget` — no compiler. Overrides:
+
+- `PUTUP_VERSION=vX.Y.Z` — pin a specific release instead of the latest (also
+  skips the GitHub API lookup). Pick a tag from the
+  [releases page](https://github.com/typeless/putup/releases).
+- `PUTUP_INSTALL_DIR=/usr/local/bin` — install elsewhere (default `~/.local/bin`).
+
+Prebuilt binaries are published for **Linux x86_64**, **macOS arm64**, and
+**Windows x86_64**. On any other platform (e.g. Linux arm64, Intel macOS) the
+script stops — build from source instead (needs a C++20 compiler: GCC 11+ or
+Clang 14+). See [INSTALL.md](https://github.com/typeless/putup/blob/main/INSTALL.md).
+
+### Using putup in CI
+
+Building a putup project in CI is plain shell — install the binary, put it on
+`PATH`, then configure and build. These steps drop into any CI system (a GitHub
+Actions `run:` block, a GitLab `script:` step, CircleCI, Jenkins, a Makefile
+target, …):
+
+```sh
+# 1. Install putup (prebuilt binary; needs curl or wget, no compiler).
+#    Pin PUTUP_VERSION to a release tag so CI is reproducible (also skips the
+#    GitHub API lookup). Tags: https://github.com/typeless/putup/releases
+export PUTUP_VERSION=vX.Y.Z
+curl -fsSL https://raw.githubusercontent.com/typeless/putup/main/install.sh | sh
+
+# 2. Put it on PATH (install.sh installs to ~/.local/bin by default).
+export PATH="$HOME/.local/bin:$PATH"
+
+# 3. Build the project from its root (where Tupfile.ini lives).
+putup --version      # sanity check
+putup configure      # create tup.config (config step; once per checkout)
+putup                # build
+```
+
+- **Variant / out-of-tree builds:** use `putup configure -B build && putup -B build`
+  (see Build Modes).
+- **No prebuilt binary** for the runner (e.g. Linux arm64): install a C++20
+  compiler and build from source per INSTALL.md, or vendor a binary you built.
+- **Offline / locked-down runners:** cache `~/.local/bin` between runs, or commit a
+  pinned binary, to avoid fetching from GitHub on every build.
 
 ## 1. Quick Start
 
