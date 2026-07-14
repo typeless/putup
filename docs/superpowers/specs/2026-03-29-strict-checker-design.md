@@ -1,5 +1,12 @@
 # Strict Convention Checker for Dual-Mode Composability
 
+> **Status: superseded (historical design record).** The shipped interface is
+> `putup parse --check=none|warn|error`, defaulting to `warn` (report violations
+> to stderr, exit 0); `--strict` is kept as an alias for `--check=error`.
+> Component detection also exempts the config-tree root in 3-tree builds, not
+> just the source root. See [reference.md](../../reference.md) §3.2 for current
+> behavior. The design below is preserved as originally written.
+
 ## Goal
 
 Add `putup parse --strict` that verifies Tupfiles follow conventions guaranteeing a project can be built both standalone and as a component of a larger project.

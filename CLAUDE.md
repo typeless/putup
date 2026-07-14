@@ -66,7 +66,7 @@ make test                                 # Run all tests
 ./build/test/unit/putup_test '[target]'     # Target parsing tests
 ./build/test/unit/putup_test '[shell]'      # Shell fixture tests
 ./build/test/unit/putup_test '[configure]'  # Two-pass config generation tests
-./build/test/unit/putup_test '[strict]'     # Convention checker (--strict) tests
+./build/test/unit/putup_test '[strict]'     # Convention checker (--check/--strict) tests
 ```
 
 ### Writing E2E Tests

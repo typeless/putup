@@ -49,7 +49,7 @@ make test                                 # All tests
 | `[scoped-config]` | Scoped configure commands |
 | `[shell]` | Shell fixture tests (`test.sh`) |
 | `[show]` | Show command (script, compdb, graph) |
-| `[strict]` | Convention checker (`--strict` flag) |
+| `[strict]` | Convention checker (`--check` / `--strict`) |
 | `[target]` | Target parsing tests |
 | `[variant]` | Out-of-tree/variant builds, ghost nodes |
 
