@@ -139,7 +139,7 @@ unless `export` is used.
 
 ```bash
 putup parse -v            # check syntax
-putup parse --strict      # check composability conventions
+putup parse --check=error # check composability conventions (alias: --strict)
 putup                     # full build
 putup show instructions   # verify command count matches expectations
 ```

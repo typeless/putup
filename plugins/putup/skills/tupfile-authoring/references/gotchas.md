@@ -9,7 +9,7 @@ and corrected code.
 |---------|---------|-----|
 | `$VAR` instead of `$(VAR)` | Variable not expanded; shell gets literal `$VAR` | Use `$(VAR)` for putup variables |
 | Display text on continuation line | `^` appears in shell command, build error | Put `^ TEXT ^` on same line as `|>` |
-| `=` instead of `?=` in component Tuprules.tup | Overrides integrator's value; `--strict` error | Use `?=` for S, B, CC, AR in components |
+| `=` instead of `?=` in component Tuprules.tup | Overrides integrator's value; `--check=error` fails | Use `?=` for S, B, CC, AR in components |
 | `@(NAME)` with full `CONFIG_` prefix | Variable not found | Use `@(CC)`, not `@(CONFIG_CC)` |
 | Missing `include_rules` | Bang macros and shared variables undefined | Add `include_rules` at top of every Tupfile |
 | Output group `{name}` where order-only `<name>` needed | Unnecessary rebuild triggers | Use `<name>` for ordering-only deps |
@@ -73,7 +73,7 @@ S ?= $(TUP_CWD)
 CC ?= gcc
 ```
 
-Run `putup parse --strict` to catch these automatically.
+Run `putup parse` to see these (reported as warnings), or `putup parse --check=error` (alias `--strict`) to fail on them.
 
 ### Config Variable Access
 

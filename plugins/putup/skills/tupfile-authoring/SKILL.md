@@ -273,8 +273,9 @@ Fix the first one -- later errors often cascade from it.
 **Parse without building** to check syntax:
 
 ```bash
-putup parse -v           # verbose: shows each Tupfile as parsed
-putup parse --strict     # check dual-mode composability conventions
+putup parse -v             # verbose: shows each Tupfile as parsed
+putup parse                # reports composability-convention violations (warnings)
+putup parse --check=error  # fail on those violations -- for CI (alias: --strict)
 ```
 
 **Inspect variables:**
