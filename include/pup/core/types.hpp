@@ -8,8 +8,10 @@
 
 namespace pup {
 
-/// Unique identifier for nodes in the dependency graph
-/// 32-bit is sufficient for ~4 billion nodes (even AOSP has < 10M)
+/// Unique identifier for nodes in the dependency graph. The high 3 bits are a
+/// kind tag (see node_id below), so index() yields a 29-bit slot — ~536M nodes
+/// per kind (even AOSP has < 10M). IDs are minted monotonically and never
+/// reused within a run.
 using NodeId = std::uint32_t;
 
 /// Sentinel for "no node exists" / "no parent" (top-level nodes have parent_dir = 0)

@@ -209,7 +209,8 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
 
 auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
 {
-    auto const id = graph.next_command_id++;
+    auto const id = graph.next_command_id;
+    graph.next_command_id = node_id::make_command(node_id::index(graph.next_command_id) + 1);
     node.id = id;
 
     auto const idx = node_id::index(id);

@@ -121,6 +121,8 @@ struct Graph {
     bool command_index_built = false;
 
     // Structured path algebra
+    // mutable: memoized interning cache, written on the (const) read path.
+    // Single-threaded access only — not safe to share across threads.
     mutable PathPool paths;     ///< Interning trie of (parent PathId, basename StringId) entries
     SortedPairVec path_to_node; ///< Resolve: PathId → NodeId (reverse of FileNode::path_id)
 
@@ -402,6 +404,8 @@ auto get_build_root_name(Graph const& graph) -> std::string_view;
 /// Replaces BuildGraph as a thin data carrier with no methods.
 struct BuildGraph {
     Graph graph;
+    // mutable: memoization written by get_full_path on the (const) read path.
+    // Single-threaded access only — not safe to share across threads.
     mutable PathCache path_cache;
 };
 

@@ -46,7 +46,8 @@ auto env_cache_find(EnvCache const& cache, std::string_view key) -> std::pair<St
 }
 
 /// Build immutable sorted cache of environment variables for exported vars.
-/// Must be called before spawning worker threads (getenv is not thread-safe).
+/// getenv() is not reentrant, so snapshot it once here before the build loop
+/// launches child processes (parallelism is subprocess-level, not threaded).
 auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
 {
     auto& pool = global_pool();
