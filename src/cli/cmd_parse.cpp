@@ -42,10 +42,11 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         .parse_scopes = compute_build_scopes(opts, *layout),
     };
 
-    if (opts.strict) {
+    if (opts.check != CheckLevel::None) {
         auto source_root_sv = pool.get(layout->source_root);
+        auto config_root_sv = pool.get(layout->config_root);
 
-        ctx_opts.on_statement = [&diagnostics, source_root_sv](
+        ctx_opts.on_statement = [&diagnostics, source_root_sv, config_root_sv](
                                     parser::Statement const& stmt,
                                     std::string_view /*dir*/
                                 ) {
@@ -56,7 +57,8 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
             auto file_sv = stmt.location.filename;
             auto file_dir = pup::path::parent(file_sv);
-            auto is_component = !file_dir.empty() && file_dir != "." && file_dir != source_root_sv;
+            auto is_tree_root = file_dir == source_root_sv || file_dir == config_root_sv;
+            auto is_component = !file_dir.empty() && file_dir != "." && !is_tree_root;
             auto diags = check_assignment(*assign, file_sv, is_component);
             for (auto& d : diags) {
                 diagnostics.push_back(std::move(d));
@@ -99,7 +101,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
     printf("[%.*s] Parsed %zu Tupfile(s), %zu commands\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.parsed_dirs().size(), commands.size());
 
-    if (opts.strict) {
+    if (opts.check != CheckLevel::None) {
         auto component_dirs = Vec<std::string_view> {};
         for (auto dir_id : ctx.parsed_dirs()) {
             auto dir_sv = pool.get(dir_id);
@@ -131,7 +133,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
             }
         }
 
-        if (has_errors) {
+        if (has_errors && opts.check == CheckLevel::Error) {
             return EXIT_FAILURE;
         }
     }

@@ -4507,7 +4507,7 @@ SCENARIO("Cross-directory groups in 3-tree builds", "[e2e][out-of-tree-config][g
     {
         // Mirrors the GCC example pattern:
         //   root Tuprules.tup: S = $(TUP_CWD); LIB_DIR = gcc
-        //   gcc/Tuprules.tup:  S ?= ...; LIB_DIR ?= .; macros use $(S)/$(LIB_DIR)/<group>
+        //   gcc/Tuprules.tup:  S ?= $(TUP_CWD); LIB_DIR ?= .; macros use $(S)/$(LIB_DIR)/<group>
         //   gcc/Tupfile:       produces <gen-headers>, consumes via macros
         auto f = E2EFixture { "groups_cross_dir_3tree" };
         auto source_dir = f.workdir() / "source";
@@ -5540,35 +5540,93 @@ SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e]
 // Strict Convention Checker Tests
 // =============================================================================
 
-SCENARIO("Strict checker catches convention violations", "[e2e][strict]")
+SCENARIO("Check level controls convention enforcement", "[e2e][strict]")
 {
     GIVEN("a project with a component violating conventions")
     {
         auto f = E2EFixture { "strict_check" };
         REQUIRE(f.init().success());
 
-        WHEN("parse --strict is run")
+        WHEN("parse --check=error is run")
         {
-            auto result = f.pup({ "parse", "--strict" });
+            auto result = f.pup({ "parse", "--check=error" });
 
             THEN("it fails with error diagnostics")
             {
-                INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("must use") != std::string::npos);
             }
         }
 
-        WHEN("parse without --strict is run")
+        WHEN("parse --strict is run (alias for --check=error)")
+        {
+            auto result = f.pup({ "parse", "--strict" });
+
+            THEN("it fails with error diagnostics")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("must use") != std::string::npos);
+            }
+        }
+
+        WHEN("parse is run at the default check level")
         {
             auto result = f.pup({ "parse" });
 
-            THEN("it succeeds (no strict checking)")
+            THEN("it succeeds but still reports the violation")
             {
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("must use") != std::string::npos);
+            }
+        }
+
+        WHEN("parse --check=none is run")
+        {
+            auto result = f.pup({ "parse", "--check=none" });
+
+            THEN("it succeeds without reporting the violation")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("must use") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Strict checker exempts the config-tree root in 3-tree builds", "[e2e][strict][out-of-tree-config]")
+{
+    GIVEN("a 3-tree project whose config-tree root anchors with '='")
+    {
+        auto f = E2EFixture { "groups_cross_dir_3tree" };
+        auto source_dir = f.workdir() / "source";
+        auto config_dir = f.workdir() / "config";
+        auto build_dir = f.workdir() / "build";
+
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("parse --check=error is run")
+        {
+            auto result = f.pup({
+                "parse",
+                "--check=error",
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+            });
+
+            THEN("the config-tree root is not flagged as a component violation")
+            {
+                INFO("stdout:\n" << result.stdout_output);
+                INFO("stderr:\n" << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("must use") == std::string::npos);
             }
         }
     }

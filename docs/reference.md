@@ -179,30 +179,40 @@ Supports path-based variant and scope selection.
 - Path-based targets: `putup parse build-debug`, `putup parse build-*`
 - Legacy `-B` flag still works for explicit selection
 
-**Convention checking (`--strict`)**
+**Convention checking (`--check`)**
 
-Verify Tupfiles follow dual-mode composability conventions:
-
-```bash
-putup parse --strict
-```
-
-Checks that component libraries (directories with their own `Tuprules.tup`) follow conventions that allow building both standalone and as part of a larger project:
+`parse` verifies that component libraries (directories with their own
+`Tuprules.tup`, reached via `include_rules`) follow the dual-mode composability
+conventions that let a project build both standalone and as part of a larger
+project:
 
 - **Error:** Anchor variables `S` and `B` must use `?=` (not `=`) in component `Tuprules.tup`
 - **Warning:** Toolchain variables (`CC`, `CXX`, `AR`, etc.) should use `?=`
 - **Warning:** Component directories should contain `Tupfile.ini` for standalone builds
 
-Exit code is non-zero if any errors are found. Warnings print but don't fail.
+The tree roots — the source root and, in 3-tree builds, the config-tree root —
+are exempt: they *are* the authority for anchor and toolchain variables.
+
+The `--check=LEVEL` option selects how violations are handled:
+
+| Level | Behavior |
+|-------|----------|
+| `none`  | Skip checks entirely. |
+| `warn`  | Report violations to stderr, exit 0. **(default)** |
+| `error` | Report violations to stderr, exit non-zero if any error. |
+
+`--strict` is an alias for `--check=error` (use it in CI to fail on violations).
 
 **Examples:**
 ```bash
-putup parse                  # Validate all Tupfiles (auto-detects variants)
+putup parse                  # Validate all Tupfiles; report violations, exit 0
 putup parse -v               # Show parsing progress
 putup parse build-debug      # Parse single variant (path-based)
 putup parse build-*          # Parse all matching variants
 putup parse build-debug/lib  # Parse scoped to lib/ directory
-putup parse --strict         # Check convention compliance
+putup parse --check=error    # Fail (exit non-zero) on convention violations
+putup parse --strict         # Same as --check=error
+putup parse --check=none     # Skip convention checks
 ```
 
 ### 3.3 putup clean
@@ -1736,7 +1746,7 @@ S = ..     GMP_DIR = ../gmp → $(S)/$(GMP_DIR) = ../../gmp  ✓
 
 **Scoped `tup.config` defaults:** Components ship default config values in a `defaults.config` file with a Tupfile copy rule (`cp %f %o`) that installs it as `tup.config` during configure. Parent configs override child configs on collision (see §6.1 *Scoped Config Merging*).
 
-Use `putup parse --strict` to verify that component `Tuprules.tup` files follow these conventions (see §3.2 *Convention checking*).
+Use `putup parse --check=error` (or its alias `--strict`) to verify that component `Tuprules.tup` files follow these conventions (see §3.2 *Convention checking*). Plain `putup parse` reports the same violations as warnings without failing.
 
 See `examples/bsp/gcc/` for a complete working example with three interdependent libraries.
 

@@ -125,7 +125,19 @@ auto parse_args(int argc, char** argv) -> Options
         } else if (arg == "--json") {
             opts.show_json = true;
         } else if (arg == "--strict") {
-            opts.strict = true;
+            opts.check = CheckLevel::Error;
+        } else if (arg.starts_with("--check=")) {
+            auto level = arg.substr(std::string_view { "--check=" }.size());
+            if (level == "none") {
+                opts.check = CheckLevel::None;
+            } else if (level == "warn") {
+                opts.check = CheckLevel::Warn;
+            } else if (level == "error") {
+                opts.check = CheckLevel::Error;
+            } else {
+                fprintf(stderr, "Error: invalid --check level '%.*s' (expected none|warn|error)\n", static_cast<int>(level.size()), level.data());
+                std::exit(EXIT_FAILURE);
+            }
         } else if (arg.starts_with("-")) {
             fprintf(stderr, "Error: unknown option '%s'\nRun 'putup --help' for usage.\n", argv[i]);
             std::exit(EXIT_FAILURE);
@@ -157,7 +169,8 @@ auto print_usage() -> void
            "  configure         Generate tup.config files (two-stage build)\n"
            "  clean             Remove generated files\n"
            "  distclean         Full reset: remove .pup and variant directory\n"
-           "  parse [--strict]  Parse and validate Tupfiles\n"
+           "  parse [--check=LEVEL]\n"
+           "                    Parse and validate Tupfiles\n"
            "  show <format>     Show build info:\n"
            "                      script  - Shell script\n"
            "                      compdb  - compile_commands.json\n"
@@ -175,6 +188,11 @@ auto print_usage() -> void
            "  -C DIR             Config directory (where Tupfiles live)\n"
            "  -B DIR             Build/output directory (can use multiple times)\n"
            "  -c, --config FILE  Install FILE as root tup.config before config rules\n"
+           "  --check=LEVEL      Convention checking for 'parse':\n"
+           "                       none  - skip checks\n"
+           "                       warn  - report violations, exit 0 (default)\n"
+           "                       error - report violations, exit non-zero\n"
+           "                     (--strict is an alias for --check=error)\n"
            "  --summary          Human-readable output (for show graph)\n"
            "  --stat             Print build statistics\n"
            "  -A, --all          Full project build (ignore cwd scoping)\n"
