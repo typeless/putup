@@ -11,6 +11,14 @@
 
 namespace pup::cli {
 
+/// Convention-checking level for `parse` (see `--check`).
+///   None  - skip checks entirely
+///   Warn  - run checks, print diagnostics, always exit 0
+///   Error - run checks, print diagnostics, exit non-zero on any error
+enum class CheckLevel : unsigned char { None,
+                                        Warn,
+                                        Error };
+
 /// Command-line options
 struct Options {
     std::size_t jobs = 0;
@@ -35,7 +43,7 @@ struct Options {
     Vec<StringId> targets = {};
     Vec<StringId> output_targets = {};
     bool show_json = false;
-    bool strict = false;
+    CheckLevel check = CheckLevel::Warn;
     StringId config_file = StringId::Empty;
 };
 

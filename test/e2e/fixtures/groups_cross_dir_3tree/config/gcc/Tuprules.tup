@@ -1,4 +1,4 @@
-S ?= ..
+S ?= $(TUP_CWD)
 LIB_DIR ?= .
 include_rules
 
