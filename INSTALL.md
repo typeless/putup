@@ -7,7 +7,7 @@ curl -fsSL https://raw.githubusercontent.com/typeless/putup/main/install.sh | sh
 ```
 
 Options:
-- `PUTUP_VERSION=v1.0.0` — install a specific version
+- `PUTUP_VERSION=v1.1.0` — install a specific version
 - `PUTUP_INSTALL_DIR=/usr/local/bin` — install to a custom directory (default: `~/.local/bin`)
 
 ## Requirements
