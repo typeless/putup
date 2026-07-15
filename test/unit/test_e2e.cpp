@@ -5335,6 +5335,45 @@ endif
     }
 }
 
+SCENARIO("Error directive aborts the build only when its branch is active", "[e2e][error-directive]")
+{
+    GIVEN("a project whose Tupfile guards an error directive behind @(BROKEN)")
+    {
+        auto f = E2EFixture { "error_directive" };
+        f.mkdir("build");
+
+        WHEN("built with the default config")
+        {
+            f.write_file("build/tup.config", "");
+            REQUIRE(f.init().success());
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build succeeds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/out.txt"));
+            }
+        }
+
+        WHEN("built after the config sets BROKEN=y")
+        {
+            f.write_file("build/tup.config", "");
+            REQUIRE(f.init().success());
+            f.write_file("build/tup.config", "CONFIG_BROKEN=y\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("build fails with the expanded message and Tupfile location")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("broken config: set TOOLCHAIN") != std::string::npos);
+                REQUIRE(result.stderr_output.find("Tupfile:3") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Phi-node allows same output from complementary conditional branches", "[e2e][phi][same-output]")
 {
     GIVEN("a project where both ifeq branches produce the same output")

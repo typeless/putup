@@ -1,0 +1,4 @@
+: |> echo hello > %o |> out.txt
+ifeq (@(BROKEN),y)
+error broken config: set TOOLCHAIN
+endif

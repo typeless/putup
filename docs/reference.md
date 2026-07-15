@@ -1071,6 +1071,15 @@ import OPTIMIZE ?= O2     # Same effect — =, ?=, and ??= are equivalent here
 
 `import` reads from the process **environment**, not from `tup.config`. It never errors when the variable is unset — the optional default (`=`, `?=`, or `??=`, all equivalent) supplies the value instead. Changing an imported variable's value re-runs the commands that depend on it, because the value is folded into command identity. With `import VAR ?= default`, unsetting the environment variable on a later (warm) build reverts the value to `default` and re-runs the affected commands.
 
+**`error`** - Abort parsing with a message:
+```tup
+ifeq (@(TOOLCHAIN),)
+error CONFIG_TOOLCHAIN must be set
+endif
+```
+
+The message is variable-expanded and reported as `<file>:<line>: <message>`; parsing stops with a failure. A message-less `error` fails with `Empty error directive`. Guard it with conditionals to validate configuration — an `error` in an inactive branch never fires. A line like `error = x` (any assignment operator) is parsed as an assignment to a variable named `error`, not as a directive; tup would treat the spaced form as a directive with message `= x`.
+
 **`preload`** - Preload a directory for dependency tracking:
 ```tup
 preload ../include

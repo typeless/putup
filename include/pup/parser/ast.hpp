@@ -174,9 +174,14 @@ struct Import final : AstNode {
     std::optional<Expression> default_value;
 };
 
+/// Error directive: error message
+struct ErrorDirective final : AstNode {
+    Expression message;
+};
+
 /// Union of all statement types
 struct Statement final : AstNode {
-    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import>
+    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, ErrorDirective>
         content;
 
     template<typename T>
