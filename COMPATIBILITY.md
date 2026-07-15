@@ -198,6 +198,7 @@ Features in putup that extend beyond tup:
 | **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
 | **Show formats** | `putup show graph\|script\|compdb\|var\|instructions\|index` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |
+| **Tracked tools** | `CONFIG_TRACKED_TOOLS` folds tool binaries' (path, size, mtime) into command identity — toolchain upgrades trigger rebuilds |
 | **Scoped tup.config** | Per-subdirectory configs: nearest `tup.config` in parent chain is used |
 | **Configure command** | `putup configure` runs config rules and ensures `tup.config` exists |
 

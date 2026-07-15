@@ -4090,6 +4090,35 @@ SCENARIO("Exported env var consumed via subprocess environment triggers rebuild"
     }
 }
 
+SCENARIO("Tracked tool binaries fold into command identity", "[e2e][incremental]")
+{
+    GIVEN("a project whose config tracks a tool that is not a rule input")
+    {
+        auto f = E2EFixture { "tracked_tools" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=./tool.sh\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.read_file("build/out.txt") == "v1\n");
+        REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+        WHEN("the tool's contents change (it is not an input of any rule)")
+        {
+            f.write_file("tool.sh", "echo v2\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the command re-runs and the output reflects the new tool")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("build/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Content change with preserved size and mtime", "[e2e][incremental]")
 {
     GIVEN("a built project whose input has an aged mtime")

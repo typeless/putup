@@ -1162,6 +1162,22 @@ CONFIG_VERSION="1.0.0"
 - Values can be quoted (quotes are stripped)
 - Empty lines and comments (`#`) are ignored
 
+**`CONFIG_TRACKED_TOOLS`** (putup extension) — space-separated tool names or
+paths whose binaries the build's outputs depend on:
+
+```ini
+CONFIG_TRACKED_TOOLS=gcc ld ./scripts/codegen.sh
+```
+
+Each entry is resolved (bare names through `PATH` — the same `PATH` build
+commands receive; entries containing `/` against the source root) and its
+`(path, size, mtime)` is folded into every command's identity. An in-place
+toolchain upgrade — same command text, same inputs, different compiler —
+then triggers a rebuild, closing the gap that command text alone cannot see.
+A missing tool records `<missing>`, so it appearing later also rebuilds.
+Unset (the default) disables tracking. The fingerprint trusts size+mtime,
+the same trade-off as the stat cache (§9.1).
+
 **CLI Overrides:**
 
 Config variables can be overridden from the command line using `-D`:

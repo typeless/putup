@@ -1,0 +1,1 @@
+: |> sh tool.sh > %o |> out.txt
