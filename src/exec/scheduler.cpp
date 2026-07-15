@@ -102,6 +102,7 @@ struct PreparedJob {
 auto prepare_job_launch(
     BuildJob const& job,
     EnvCache const& env_cache,
+    Vec<StringId> const& base_env,
     SchedulerOptions const& options,
     std::string_view source_root_sv,
     std::string_view output_root_sv,
@@ -122,6 +123,9 @@ auto prepare_job_launch(
     }
 
     auto env_ids = Vec<StringId> {};
+    for (auto var_id : base_env) {
+        env_ids.push_back(var_id);
+    }
     for (auto var_id : job.exported_vars) {
         auto var_sv = pool.get(var_id);
         if (auto it = env_cache_find(env_cache, var_sv)) {
@@ -705,6 +709,7 @@ auto Scheduler::execute_parallel(
 ) -> Result<void>
 {
     auto const env_cache = build_env_cache(jobs);
+    auto const base_env = pup::platform::base_child_env();
 
     auto& pool = global_pool();
 
@@ -758,7 +763,7 @@ auto Scheduler::execute_parallel(
                 auto job_idx = ready_queue.front();
                 auto const& job = jobs[job_idx];
 
-                auto prepared = prepare_job_launch(job, env_cache, impl_->options, source_root_sv, output_root_sv, output_root_prefix);
+                auto prepared = prepare_job_launch(job, env_cache, base_env, impl_->options, source_root_sv, output_root_sv, output_root_prefix);
 
                 if (impl_->options.dry_run) {
                     // Dry run: don't fork, just report success
@@ -793,7 +798,7 @@ auto Scheduler::execute_parallel(
                     continue;
                 }
 
-                if (!launch_job(slot, job, job_idx, prepared.working_dir, prepared.env_ids, true)) {
+                if (!launch_job(slot, job, job_idx, prepared.working_dir, prepared.env_ids, false)) {
                     // Fork failed -- treat as job failure
                     ready_queue.pop();
 

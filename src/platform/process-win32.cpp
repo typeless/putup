@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cwctype>
 #include <string_view>
 #include <windows.h>
 
@@ -44,6 +45,54 @@ auto build_env_strings(
         result.push_back(var);
     }
 
+    return result;
+}
+
+auto base_child_env() -> Vec<StringId>
+{
+    // Case-insensitive names: Windows children need the system set to run at all.
+    static constexpr std::wstring_view keep[] = {
+        L"SYSTEMROOT", L"COMSPEC", L"PATHEXT", L"PATH", L"TEMP", L"TMP", L"WINDIR"
+    };
+
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
+    auto* env_block = GetEnvironmentStringsW();
+    if (!env_block) {
+        return result;
+    }
+    auto* current = env_block;
+    while (*current) {
+        auto entry = std::wstring_view { current };
+        auto eq = entry.find(L'=');
+        if (eq != std::wstring_view::npos && eq > 0) {
+            auto name = entry.substr(0, eq);
+            for (auto want : keep) {
+                if (name.size() != want.size()) {
+                    continue;
+                }
+                auto matches = true;
+                for (std::size_t i = 0; i < name.size(); ++i) {
+                    if (std::towupper(name[i]) != want[i]) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (matches) {
+                    auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
+                    if (len > 0) {
+                        auto var = HeapBuf {};
+                        var.resize(static_cast<std::size_t>(len - 1));
+                        WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
+                        result.push_back(pool.intern(var.view()));
+                    }
+                    break;
+                }
+            }
+        }
+        current += wcslen(current) + 1;
+    }
+    FreeEnvironmentStringsW(env_block);
     return result;
 }
 

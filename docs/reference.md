@@ -1052,6 +1052,15 @@ export PKG_CONFIG_PATH
 : foo.c |> $(CC) -c %f -o %o |> foo.o
 ```
 
+Commands run with a **minimal environment**: on POSIX only `PATH` is passed
+through (Windows adds the system set: `SystemRoot`, `ComSpec`, `PATHEXT`,
+`TEMP`, `TMP`, `windir`). Every other variable a command reads must be
+`export`ed — an unexported variable is simply absent from the child
+environment. This keeps builds hermetic: ambient shell state can't silently
+change outputs. Exported variables are folded into command identity, so
+changing an exported variable's **value** re-runs the affected commands even
+when the command text is unchanged.
+
 **`import`** - Import an environment variable into the Tupfile namespace:
 ```tup
 import CC                 # Read the CC environment variable (empty if unset)

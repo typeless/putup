@@ -1,0 +1,2 @@
+export PUP_TEST_EXP
+: dump.sh |> sh %f > %o |> out.txt

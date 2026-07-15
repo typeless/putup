@@ -60,6 +60,12 @@ auto build_env_strings(
     bool inherit_env
 ) -> Vec<StringId>;
 
+/// Minimal "VAR=value" environment for build commands: only the variables a
+/// child needs to run tools at all (POSIX: PATH; Windows adds the system set).
+/// Everything else must be passed explicitly via `export`.
+[[nodiscard]]
+auto base_child_env() -> Vec<StringId>;
+
 /// Run tasks in parallel child processes (POSIX) or sequentially (Windows).
 /// Each task is a function returning an exit code (0 = success).
 /// Returns the number of tasks that returned non-zero.

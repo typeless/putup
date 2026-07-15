@@ -6,6 +6,7 @@
 // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 // POSIX APIs (pipe, execv, environ) require C-style arrays and pointer arithmetic
 
+#include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
@@ -48,6 +49,21 @@ auto build_env_strings(
         result.push_back(var);
     }
 
+    return result;
+}
+
+auto base_child_env() -> Vec<StringId>
+{
+    auto& pool = global_pool();
+    auto result = Vec<StringId> {};
+    auto buf = Buf {};
+    buf.append(std::string_view { "PATH=" });
+    if (auto const* path = std::getenv("PATH")) {
+        buf.append(std::string_view { path });
+    } else {
+        buf.append(std::string_view { "/usr/bin:/bin" });
+    }
+    result.push_back(buf.intern(pool));
     return result;
 }
 

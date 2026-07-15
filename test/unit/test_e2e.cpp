@@ -4090,6 +4090,59 @@ SCENARIO("Exported env var consumed via subprocess environment triggers rebuild"
     }
 }
 
+SCENARIO("Untracked env vars do not leak into command environments", "[e2e][envdep]")
+{
+    GIVEN("a rule that reads an env var that is never imported or exported")
+    {
+        auto f = E2EFixture { "env_leak" };
+        auto env = EnvGuard { "PUP_TEST_LEAK", "secret" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project builds")
+        {
+            auto result = f.build();
+
+            THEN("the command's environment does not contain the var")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "leak=unset\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Export-only env var reaches the command and folds into identity", "[e2e][envdep]")
+{
+    GIVEN("a project built with an exported (never imported) env var")
+    {
+        auto f = E2EFixture { "env_export_only" };
+        {
+            auto env = EnvGuard { "PUP_TEST_EXP", "alpha" };
+            REQUIRE(f.init().success());
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "v=alpha\n");
+            REQUIRE(f.build().is_noop());
+        }
+
+        WHEN("the exported var changes (command text is byte-identical)")
+        {
+            auto env = EnvGuard { "PUP_TEST_EXP", "beta" };
+            auto result = f.build();
+
+            THEN("the command re-runs and the output reflects the new value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "v=beta\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Only commands using changed env var rebuild", "[e2e][import]")
 {
     GIVEN("a project already built with two env vars")
