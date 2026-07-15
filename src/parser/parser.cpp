@@ -304,6 +304,58 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
         }
     }
 
+    if (check(s, TokenType::Identifier) && tok.text == "error") {
+        advance(s);
+
+        auto name_expr = Expression {};
+        name_expr.parts.emplace_back(Expression::Literal { global_pool().intern(s.previous.text) });
+
+        auto adjacent = s.current.location.offset
+            == s.previous.location.offset + s.previous.text.size();
+        if (adjacent && !s.current.is_assignment_op() && !s.current.is_end_of_statement()) {
+            auto rest = parse_expression_until(s, [](Token const& t) {
+                return t.is_assignment_op() || t.is_end_of_statement();
+            });
+            if (!rest) {
+                return pup::unexpected<Error>(rest.error());
+            }
+            for (auto& part : rest->parts) {
+                name_expr.parts.emplace_back(std::move(part));
+            }
+        }
+
+        if (s.current.is_assignment_op()) {
+            auto assign = parse_assignment(s, std::move(name_expr));
+            if (!assign) {
+                return pup::unexpected<Error>(assign.error());
+            }
+            auto stmt = std::make_unique<Statement>();
+            stmt->location = start_loc;
+            stmt->content = std::move(*assign);
+            return stmt;
+        }
+
+        if (name_expr.parts.size() > 1) {
+            while (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+                advance(s);
+            }
+            return nullptr;
+        }
+
+        auto directive = ErrorDirective {};
+        directive.location = start_loc;
+        auto message = parse_expression(s);
+        if (!message) {
+            return pup::unexpected<Error>(message.error());
+        }
+        directive.message = std::move(*message);
+
+        auto stmt = std::make_unique<Statement>();
+        stmt->location = start_loc;
+        stmt->content = std::move(directive);
+        return stmt;
+    }
+
     // Assignment: name (= | += | :=) value
     // name can be a complex expression like foo-$(BAR) or simple identifier
     if (check(s, TokenType::Identifier) || check(s, TokenType::Text) || check(s, TokenType::Dollar)) {

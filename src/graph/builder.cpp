@@ -1294,6 +1294,30 @@ auto process_import(
     return {};
 }
 
+auto process_error(
+    BuilderContext& ctx,
+    parser::ErrorDirective const& err
+) -> Result<void>
+{
+    if (!is_context_active(ctx)) {
+        return {};
+    }
+
+    auto expanded = parser::expand(*ctx.eval, err.message);
+    if (!expanded) {
+        return pup::unexpected<Error>(expanded.error());
+    }
+
+    auto message_sv = str(*expanded);
+    if (err.message.empty()) {
+        message_sv = "Empty error directive";
+    }
+
+    auto msg = Buf {};
+    msg.fmt("{}:{}: {}", str(ctx.current_file), err.location.line, message_sv);
+    return make_error<void>(ErrorCode::ParseError, msg.view());
+}
+
 auto process_assignment(
     BuilderContext& ctx,
     Builder& state,
@@ -2131,6 +2155,10 @@ auto process_statement(
 
     if (auto const* exp = stmt.as<parser::Export>()) {
         return process_export(ctx, state, *exp);
+    }
+
+    if (auto const* err = stmt.as<parser::ErrorDirective>()) {
+        return process_error(ctx, *err);
     }
 
     return {};

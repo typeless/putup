@@ -44,7 +44,7 @@ See [docs/reference.md](docs/reference.md#5-tupfile-syntax) for complete syntax 
 | Directives (`include`, `export`, `import`) | ✅ Implemented |
 | `run` directive | ❌ Not implemented |
 | `preload` directive | ⚠️ Parsed, not enforced |
-| `error` directive | ❌ Not implemented |
+| `error` directive | ✅ Implemented |
 
 ### Groups and Bins
 

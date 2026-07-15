@@ -173,6 +173,82 @@ TEST_CASE("Parser export/import", "[parser]")
     }
 }
 
+TEST_CASE("Parser error directive", "[parser]")
+{
+    SECTION("error with message")
+    {
+        auto result = parse_tupfile("error message here", "test.tup");
+
+        REQUIRE(result.success());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        REQUIRE(result.tupfile.statements[0]->is<ErrorDirective>());
+
+        auto const* err = result.tupfile.statements[0]->as<ErrorDirective>();
+        REQUIRE(err->message.as_literal() == "message here");
+    }
+
+    SECTION("bare error")
+    {
+        auto result = parse_tupfile("error", "test.tup");
+
+        REQUIRE(result.success());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        REQUIRE(result.tupfile.statements[0]->is<ErrorDirective>());
+
+        auto const* err = result.tupfile.statements[0]->as<ErrorDirective>();
+        REQUIRE(err->message.empty());
+    }
+
+    SECTION("error followed by assignment operator stays an assignment")
+    {
+        auto result = parse_tupfile("error = value", "test.tup");
+
+        REQUIRE(result.success());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        REQUIRE(result.tupfile.statements[0]->is<Assignment>());
+
+        auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+        REQUIRE(assign->name.as_literal() == "error");
+        REQUIRE(assign->value.as_literal() == "value");
+    }
+
+    SECTION("error message with variable reference")
+    {
+        auto result = parse_tupfile("error $(V) tail", "test.tup");
+
+        REQUIRE(result.success());
+        REQUIRE(result.tupfile.statements[0]->is<ErrorDirective>());
+
+        auto const* err = result.tupfile.statements[0]->as<ErrorDirective>();
+        REQUIRE(err->message.parts.size() == 2);
+        REQUIRE(std::holds_alternative<Expression::Variable>(err->message.parts[0]));
+        auto const& var = std::get<Expression::Variable>(err->message.parts[0]);
+        REQUIRE(var.ref.kind == VarRef::Kind::Regular);
+        REQUIRE(sv(var.ref.name) == "V");
+    }
+
+    SECTION("compound assignment LHS starting with error stays an assignment")
+    {
+        auto result = parse_tupfile("error$(SUF) = value", "test.tup");
+
+        REQUIRE(result.success());
+        REQUIRE(result.tupfile.statements.size() == 1);
+        REQUIRE(result.tupfile.statements[0]->is<Assignment>());
+
+        auto const* assign = result.tupfile.statements[0]->as<Assignment>();
+        REQUIRE(assign->name.parts.size() == 2);
+        REQUIRE(assign->value.as_literal() == "value");
+    }
+
+    SECTION("compound non-assignment line starting with error is skipped")
+    {
+        auto result = parse_tupfile("error$(SUF) tail", "test.tup");
+
+        REQUIRE(result.success());
+        REQUIRE(result.tupfile.statements.empty());
+    }
+}
+
 TEST_CASE("Parser conditionals", "[parser]")
 {
     SECTION("ifdef")

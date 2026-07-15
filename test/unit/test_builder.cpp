@@ -6,6 +6,7 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/builder.hpp"
 #include "pup/parser/eval.hpp"
+#include "pup/parser/parser.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -1558,4 +1559,109 @@ TEST_CASE("GraphBuilder output filename starting with dotdot is not parent refer
     auto full_path = get_full_path(bs.graph, output_id);
     INFO("Full path: " << std::string { sv(full_path) });
     CHECK(sv(full_path) == "build/src/..hidden");
+}
+
+namespace {
+
+auto add_tupfile_from_source(
+    BuilderTestFixture const& fixture,
+    std::string_view source,
+    VarDb const* config_vars = nullptr
+) -> pup::Result<void>
+{
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars, .config_vars = config_vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(source, fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+
+    return add_tupfile(bs, parse_result.tupfile, ctx, builder_state);
+}
+
+} // namespace
+
+TEST_CASE("GraphBuilder error directive fails with file and line", "[builder][error-directive]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "error boom\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("boom") != std::string_view::npos);
+    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder error directive in inactive branch is skipped", "[builder][error-directive]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "ifeq (a,b)\nerror boom\nendif\n");
+
+    REQUIRE(result.has_value());
+}
+
+TEST_CASE("GraphBuilder error directive in active branch fails with expanded message", "[builder][error-directive]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto config = VarDb {};
+    config.set("BROKEN", "y");
+    config.set("TOOLCHAIN", "arm");
+
+    auto result = add_tupfile_from_source(
+        fixture,
+        "V = world\nifeq (@(BROKEN),y)\nerror hello $(V) @(TOOLCHAIN)\nendif\n",
+        &config
+    );
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("hello world arm") != std::string_view::npos);
+    CHECK(msg.find("Tupfile:3") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder error directive in active branch nested inside inactive branch is skipped", "[builder][error-directive]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(
+        fixture,
+        "ifeq (a,b)\nifeq (y,y)\nerror boom\nendif\nendif\n"
+    );
+
+    REQUIRE(result.has_value());
+}
+
+TEST_CASE("GraphBuilder bare error directive reports empty error directive", "[builder][error-directive]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "error\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("Empty error directive") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder error directive expanding to empty keeps the empty message", "[builder][error-directive]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, "error $(UNSET)\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("Empty error directive") == std::string_view::npos);
+    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
 }
