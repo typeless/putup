@@ -203,6 +203,37 @@ Pass `-v` for verbose putup output:
 auto result = f.build({ "-v" });
 ```
 
+## Differential Testing Against Real Tup
+
+For semantic questions ("what should this Tupfile do?"), real tup is the
+reference. Build the same source tree with both and diff the output trees:
+
+```bash
+# Same source dir, two variants — identical commands, comparable bytes
+tup variant configs/board.config && tup
+putup configure --config configs/board.config -B build-putup && putup -B build-putup
+
+cd build-board && find . -type f | grep -v '^./\.tup' | sort > /tmp/a
+cd ../build-putup && find . -type f | grep -v '^./\.pup' | sort > /tmp/b
+diff /tmp/a /tmp/b                  # same file set?
+# then cmp matching pairs for bit-identity
+```
+
+- Run both from the **same source directory**: `-g` embeds the absolute
+  compile dir (`DW_AT_comp_dir`), so separate checkouts differ spuriously.
+- Variant directory names leak into outputs via `%f` paths (e.g.
+  `objdump -S %f` prints the input path) — normalize before diffing.
+- A stale-but-plausible output (wrong bytes, never rebuilt) means putup ran a
+  different command than tup: compare `putup show index PATTERN` against the
+  rule to find the divergence.
+- Neutralize the environment: fix `SOURCE_DATE_EPOCH`, and defeat compiler
+  caches (projects that wrap commands via `import CCACHE_EXEC=` run raw with
+  `CCACHE_EXEC=` set empty).
+
+This found the conditional bang-macro scoping bug: 1830-file trees diffed in
+exactly 3 files, and the index showed putup had executed the other `ifeq`
+branch's `!hex_cat`.
+
 ## Project Structure
 
 ```

@@ -37,11 +37,17 @@ Commands run with CWD = source directory. The source tree is read-only.
 | Variable                    | Meaning                                            |
 |-----------------------------|----------------------------------------------------|
 | `$(TUP_CWD)`               | Config-relative directory of current Tupfile        |
+| `$(TUP_VARIANTDIR)`        | Like `$(TUP_CWD)`, but pointing at the corresponding directory in the variant tree (e.g. `../../build-arm/src/lib`) |
 | `$(TUP_VARIANT_OUTPUTDIR)` | Relative path from the Tupfile's source dir to its output dir in the variant tree (e.g. `../../build/src/lib`; `.` in-tree) |
 | `$(S)` (convention)        | Set to `$(TUP_CWD)` in root Tuprules.tup           |
 | `$(B)` (convention)        | Set to `$(TUP_VARIANT_OUTPUTDIR)/$(S)`             |
 | `$(TUP_SRCDIR)`            | Relative path from Tupfile dir to source dir        |
 | `$(TUP_OUTDIR)`            | Relative path from Tupfile dir to output dir        |
+
+Climb from `$(TUP_VARIANTDIR)` to anchor other directories' variant outputs:
+from an aggregation Tupfile two levels deep, `$(TUP_VARIANTDIR)/../..` is the
+variant root, so `mods-y += $(TUP_VARIANTDIR)/../../modules/kernel/kernel.hex`
+references another directory's generated file.
 
 ## CROSS_COMPILE Convention
 
@@ -153,10 +159,18 @@ Convert `CONFIG_*` variables into a C header:
 !gen-config = |> ^ GEN %o^ awk -F= \
   '/^CONFIG_/{k=substr($1,8);v=substr($0,length($1)+2); \
   if(v!="n")print "#define " k " " (v=="y"?1:v)}' \
-  $(B)/tup.config > %o |>
+  %f > %o |>
 ```
 
 `CONFIG_HAVE_MMAP=1` becomes `#define HAVE_MMAP 1`. Setting `CONFIG_HAVE_UCHAR=n` suppresses the define.
+
+Declare the config as the rule's input so the header rebuilds when it changes
+(`$(B)/tup.config` and a root-relative `../../tup.config` both resolve to the
+variant tree's copy):
+
+```tup
+: $(B)/tup.config |> !gen-config |> config.h <gen-headers>
+```
 
 ### Separate host vs target headers
 
