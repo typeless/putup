@@ -34,6 +34,7 @@ Commands:
 Options:
   -j, --jobs N       Run N jobs in parallel
   -k, --keep-going   Continue after failures
+  --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)
   -n, --dry-run      Print commands without executing
   -v, --verbose      Verbose output
   -D, --define VAR=value

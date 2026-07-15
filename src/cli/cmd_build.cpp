@@ -237,7 +237,8 @@ auto find_changed_files_with_implicit(
     pup::Vec<pup::StringId> const& scopes,
     Vec<std::string_view> const& upstream_files,
     Vec<StringId> const& implicit_dep_files,
-    bool verbose = false
+    bool verbose = false,
+    bool no_stat_cache = false
 ) -> pup::Vec<StringId>
 {
     auto changed = pup::Vec<StringId> {};
@@ -299,7 +300,7 @@ auto find_changed_files_with_implicit(
         auto const is_racy_clean = save_time_ns > 0
             && cached_mtime_ns >= save_time_ns - RACY_CLEAN_THRESHOLD_NS;
 
-        if (cached_mtime_ns != 0 && current_mtime_ns == cached_mtime_ns && !is_racy_clean) {
+        if (!no_stat_cache && cached_mtime_ns != 0 && current_mtime_ns == cached_mtime_ns && !is_racy_clean) {
             // Stat cache hit: size + mtime match, trust cached hash
             ++metrics.hashes_skipped;
             continue;
@@ -1170,7 +1171,8 @@ auto build_single_variant(
             scopes,
             upstream_files,
             implicit_dep_files,
-            opts.verbose
+            opts.verbose,
+            opts.no_stat_cache
         );
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);

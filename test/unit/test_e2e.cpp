@@ -4090,6 +4090,42 @@ SCENARIO("Exported env var consumed via subprocess environment triggers rebuild"
     }
 }
 
+SCENARIO("Content change with preserved size and mtime", "[e2e][incremental]")
+{
+    GIVEN("a built project whose input has an aged mtime")
+    {
+        auto f = E2EFixture { "stat_cache" };
+        f.write_file("in.txt", "AAAA\n");
+        REQUIRE(f.run("/usr/bin/touch", { "-d", "2020-01-01T00:00:00", "in.txt" }).success());
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("out.txt") == "AAAA\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the content changes but size and mtime are restored")
+        {
+            REQUIRE(f.run("/bin/cp", { "-p", "in.txt", "ref" }).success());
+            f.write_file("in.txt", "BBBB\n");
+            REQUIRE(f.run("/usr/bin/touch", { "-r", "ref", "in.txt" }).success());
+
+            THEN("the default stat cache misses the change (documented trade-off)")
+            {
+                REQUIRE(f.build().is_noop());
+            }
+
+            THEN("--no-stat-cache hashes every file and rebuilds")
+            {
+                auto result = f.build({ "--no-stat-cache" });
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "BBBB\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Untracked env vars do not leak into command environments", "[e2e][envdep]")
 {
     GIVEN("a rule that reads an env var that is never imported or exported")

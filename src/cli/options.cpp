@@ -70,6 +70,8 @@ auto parse_args(int argc, char** argv) -> Options
             opts.stat = true;
         } else if (arg == "-k" || arg == "--keep-going") {
             opts.keep_going = true;
+        } else if (arg == "--no-stat-cache") {
+            opts.no_stat_cache = true;
         } else if (arg == "-j" || arg == "--jobs") {
             if (i + 1 < argc) {
                 auto const* str = argv[++i];
@@ -180,6 +182,7 @@ auto print_usage() -> void
            "\nOptions:\n"
            "  -j, --jobs N       Run N jobs in parallel\n"
            "  -k, --keep-going   Continue after failures\n"
+           "  --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)\n"
            "  -n, --dry-run      Print commands without executing\n"
            "  -v, --verbose      Verbose output\n"
            "  -D, --define VAR=value\n"

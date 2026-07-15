@@ -613,6 +613,7 @@ putup show index "ar rcs"
 |--------|-----------|-------------|
 | `-j N` | `--jobs N` | Run N jobs in parallel. Default: number of CPU cores. |
 | `-k` | `--keep-going` | Continue building after a command fails. |
+| | `--no-stat-cache` | Hash every file's contents; skip the size+mtime fast path (see §9.1). |
 | `-n` | `--dry-run` | Print commands without executing them. |
 | `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
 | `-D VAR=val` | `--define` | Override CONFIG_ variable from CLI. |
@@ -1884,13 +1885,22 @@ Putup rebuilds only what's necessary by tracking file changes and dependencies i
 
 1. **Size check** (fast path): If file size differs from index, it changed
 
-2. **Hash check**: If size matches, compute SHA-256 hash and compare
+2. **Stat cache** (fast path): If size *and* mtime both match the index, the
+   cached hash is trusted and the file is not re-read. A racy-clean guard
+   re-hashes files whose mtime falls within 1s of the last index save.
 
-This content-based detection eliminates false positives from:
-- `touch file` (timestamp changes, content unchanged)
-- `git checkout` (restores old timestamp)
-- `rsync` (may preserve timestamps)
-- Editor save without changes
+3. **Hash check** (authoritative): Otherwise, compute SHA-256 and compare.
+
+Content-based detection eliminates false positives from `touch file`, editor
+saves without changes, or `git checkout` restoring identical content — the
+hash matches, so nothing rebuilds.
+
+**Known trade-off:** the stat cache trusts mtime. A change that preserves the
+file's size *and* restores its mtime (e.g. `touch -r`, `cp -p` from a
+same-size variant, `git checkout` of a same-size revision with an older
+timestamp, `rsync --times`) is not detected. Run with `--no-stat-cache` to
+skip the fast path and hash every file — slower, but immune to timestamp
+manipulation.
 
 **Build flow:**
 
