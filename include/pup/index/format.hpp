@@ -30,7 +30,10 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///  12 - NodeId kind moved to a 2-bit tag in bits 30-31 (commands 0x40000001...);
 ///       persisted NodeIds from older versions decode differently, so v11 indexes
 ///       are rejected and rebuilt
-inline constexpr auto INDEX_VERSION = std::uint32_t { 12 };
+///  13 - Ghost entries that exist on disk record path/size/mtime/hash so change
+///       detection tracks foreign inputs (e.g. the variant's tup.config); v12
+///       indexes lack that data and would never notice such changes
+inline constexpr auto INDEX_VERSION = std::uint32_t { 13 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
