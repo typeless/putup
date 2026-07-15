@@ -55,6 +55,10 @@ Use this to capture CWD before `cd`:
 : |> SRCDIR=$PWD && cd $(TUP_VARIANT_OUTPUTDIR) && ./tool $SRCDIR/input |> output
 ```
 
+GNU Make functions are **not** supported: `$(notdir $<)`, `$(wildcard ...)`,
+etc. silently expand to empty (in tup too). Watch for them in Tupfiles ported
+from Make.
+
 ## 4. Assignment Operators
 
 | Operator | Name | Behavior |
@@ -93,6 +97,15 @@ CC = @(CC)
 DEBUG = @(DEBUG:-n)       # default value if unset
 ```
 
+The full-prefix form `$(CONFIG_NAME)` also reads tup.config (variables starting
+with `CONFIG_` cannot be set in Tupfiles). Kernel-style projects use it to
+compose variable names:
+
+```tup
+srcs-$(CONFIG_KERNEL_FS) += fs.c      # appends to srcs-y when CONFIG_KERNEL_FS=y
+: foreach $(srcs-y) |> !cc |> %B.o {objs}
+```
+
 Override from the CLI:
 
 ```bash
@@ -122,6 +135,19 @@ Embed order-only deps in the macro so every consumer waits automatically:
 !cc = | <gen-headers> |> ^ CC %b^ $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 ```
 
+Select a macro implementation per config by defining it inside a conditional —
+rules after `endif` use whichever branch was active:
+
+```tup
+ifeq ($(CONFIG_DEVICE_MH1903),y)
+  !to_bin = | tools/hex2bin |> srec_cat %f -intel -o - -binary | tools/hex2bin > %o |>
+else
+  !to_bin = |> srec_cat %f -intel -o %o -binary |>
+endif
+
+: foreach $(mods-y) |> !to_bin |> %B.bin
+```
+
 ## 7. Groups
 
 **Output group** -- collect outputs for later use as inputs:
@@ -146,6 +172,14 @@ Embed order-only deps in the macro so every consumer waits automatically:
 
 # In app/Tupfile ($(S) is the source root convention)
 : src.c | $(S)/lib/<gen-headers> |> $(CC) -c %f -o %o |> src.o
+```
+
+**Group expansion in commands** -- `%<name>` expands to the group's member
+paths, so a group can be aggregated without listing files:
+
+```tup
+# Modules contribute: ... |> %d.header $(ROOT)/modules/<json-headers>
+: $(ROOT)/modules/<json-headers> |> cat %<json-headers> > %o |> header
 ```
 
 ## 8. Conditionals
@@ -176,7 +210,9 @@ srcs-@(FEATURE_BAR) += bar.c
 : foreach $(srcs) $(srcs-y) |> !cc |> {objs}
 ```
 
-Tup deduplicates inputs, so listing a file under multiple config guards is safe.
+Tup deduplicates inputs, so listing a file under multiple config guards is
+safe. Kernel-style projects write the guard as `srcs-$(CONFIG_FEATURE_FOO)` --
+same effect, see §5.
 
 ## 9. Display Text
 

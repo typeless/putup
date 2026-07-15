@@ -186,6 +186,28 @@ putup clean build-debug            # remove outputs only
 putup distclean build-debug        # remove entire variant directory
 ```
 
+**Adopting an existing tup project:** putup builds unmodified tup projects.
+The `tup variant` workflow maps directly:
+
+```bash
+# tup
+tup variant configs/board.config && tup
+
+# putup equivalent
+putup configure --config configs/board.config -B build-board
+putup -B build-board
+```
+
+- Kconfig-generated configs work verbatim as tup.config (`# CONFIG_X is not
+  set` lines are comments).
+- `configure` printing `No config-generating rules found.` is informational --
+  it just means the project has no two-stage config rules.
+- Start with `putup parse -B build-board` to validate all Tupfiles before the
+  first build.
+- The variant directory name is embedded in outputs by `-g` (debug info paths)
+  and by tools that print `%f` (e.g. `objdump`), so keep the name stable if
+  you compare build trees byte-for-byte.
+
 ## 5. Scoped Builds
 
 Run from a subdirectory to build only that subtree:

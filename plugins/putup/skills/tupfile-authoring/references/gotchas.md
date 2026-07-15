@@ -17,6 +17,7 @@ and corrected code.
 | Cross-dir group without path prefix | Group not found | Use `$(S)/dir/<group>` |
 | `??=` when `?=` intended | Last definition wins instead of first | `?=` = first wins; `??=` = last wins |
 | Empty `ifeq` comparison without quotes | Syntax error | `ifeq (@(VAR),)` -- empty RHS is valid |
+| GNU Make function left in ported Tupfile | Expands to empty, silently | Replace `$(notdir $<)` etc. with `%b`/`%B`/`%d` flags or shell |
 
 ## Detailed Examples
 
@@ -110,6 +111,20 @@ CC = $(CONFIG_CC)
 
 # RIGHT -- prefix with path to the producing directory
 : src.c | $(S)/include/<gen-headers> |> !cc |> src.o
+```
+
+### GNU Make Functions Expand to Empty
+
+Tupfiles ported from Make often carry Make function calls. Neither tup nor
+putup supports them -- they parse as unknown variables and expand to empty
+without any error:
+
+```tup
+# WRONG -- compiles with __PFILENAME__="" on every file
+CFLAGS += -D__PFILENAME__=\"$(notdir $<)\"
+
+# RIGHT -- %b is the input basename, substituted per rule
+!cc = |> $(CC) $(CFLAGS) -D__PFILENAME__=\"%b\" -c %f -o %o |> %B.o
 ```
 
 ### `@(VAR)` vs `$(CONFIG_VAR)` Confusion

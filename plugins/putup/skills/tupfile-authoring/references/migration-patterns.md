@@ -7,12 +7,15 @@ drawn from migrating Busybox (1789 commands).
 
 | Kbuild | Tupfile |
 |--------|---------|
-| `lib-y += foo.o` | `srcs += foo.c` |
-| `lib-$(CONFIG_FOO) += bar.o` | `srcs-@(FOO) += bar.c` |
+| `lib-y += foo.o` | `srcs-y += foo.c` |
+| `lib-$(CONFIG_FOO) += bar.o` | `srcs-$(CONFIG_FOO) += bar.c` (or `srcs-@(FOO)`) |
 | `obj-y += subdir/` | Separate `Tupfile` in subdir |
 | `EXTRA_CFLAGS += -DFOO` | `CFLAGS += -DFOO` |
 
 Note: Kbuild references `.o` files; Tupfiles reference `.c` sources.
+`$(CONFIG_FOO)` reads tup.config directly, so Kbuild guard lines port
+verbatim; Make *functions* (`$(notdir ...)`, `$(wildcard ...)`) do not --
+they expand to empty (see gotchas.md).
 
 ## Tuprules.tup Template
 
