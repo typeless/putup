@@ -1967,9 +1967,9 @@ Paths use a (parent_id, name) model like tup's database:
 
 Files and commands occupy separate ID spaces for O(1) lookup:
 - File IDs: 1, 2, 3, ... (stored in dense array, ID = array_index + 1)
-- Command IDs: 0x80000001, 0x80000002, ... (high bit set)
+- Command IDs: 0x40000001, 0x40000002, ... (2-bit kind tag in bits 30-31)
 - ID field removed from on-disk format (computed from array position)
-- Lookup: `is_command_id(id) ? commands_[id & ~0x80000000 - 1] : files_[id - 1]`
+- Lookup: `is_command(id) ? commands_[index(id) - 1] : files_[id - 1]`
 
 ### 9.3 Stale Output Cleanup
 

@@ -75,11 +75,11 @@ public:
         };
         auto file_relay = Relay { fn, ctx, 0 };
         files_.for_each(cb, &file_relay);
-        auto cmd_relay = Relay { fn, ctx, node_id::COMMAND_FLAG };
+        auto cmd_relay = Relay { fn, ctx, node_id::make_command(0) };
         cmds_.for_each(cb, &cmd_relay);
-        auto cond_relay = Relay { fn, ctx, node_id::CONDITION_FLAG };
+        auto cond_relay = Relay { fn, ctx, node_id::make_condition(0) };
         conds_.for_each(cb, &cond_relay);
-        auto phi_relay = Relay { fn, ctx, node_id::PHI_FLAG };
+        auto phi_relay = Relay { fn, ctx, node_id::make_phi(0) };
         phis_.for_each(cb, &phi_relay);
     }
 

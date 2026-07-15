@@ -518,25 +518,26 @@ struct Edge {
 };
 ```
 
-**ID spaces:** Files and commands occupy separate ID spaces for O(1) type detection:
-- File IDs: 1, 2, 3, ... (low range)
-- Command IDs: 0x80000001, 0x80000002, ... (high bit set)
-- Condition IDs: 0x40000001, ... (condition flag set)
-- Phi IDs: 0x20000001, ... (phi flag set)
+**ID spaces:** The top 2 bits of a NodeId are a kind tag, so each kind gets its
+own dense 30-bit index space (~1.07B ids per kind) and every uint32 decodes to
+exactly one kind — mixed-flag junk states are unrepresentable:
+- File IDs: 1, 2, 3, ... (tag 0)
+- Command IDs: 0x40000001, 0x40000002, ... (tag 1)
+- Condition IDs: 0x80000001, ... (tag 2)
+- Phi IDs: 0xC0000001, ... (tag 3)
 
 The `node_id` namespace provides type detection and ID construction:
 
 ```cpp
 namespace node_id {
-    constexpr auto COMMAND_FLAG   = NodeId { 0x80000000 };
-    constexpr auto CONDITION_FLAG = NodeId { 0x40000000 };
-    constexpr auto PHI_FLAG       = NodeId { 0x20000000 };
+    enum class Tag : NodeId { File = 0, Command = 1, Condition = 2, Phi = 3 };
 
-    constexpr auto is_file(NodeId id) -> bool;       // No flags set (regular file node)
-    constexpr auto is_command(NodeId id) -> bool;    // Checks high bit
-    constexpr auto is_condition(NodeId id) -> bool;  // Checks condition flag
-    constexpr auto is_phi(NodeId id) -> bool;        // Checks phi flag
-    constexpr auto index(NodeId id) -> std::size_t;  // Strips all flags
+    constexpr auto tag(NodeId id) -> Tag;            // Top 2 bits
+    constexpr auto is_file(NodeId id) -> bool;       // tag == File && id != 0
+    constexpr auto is_command(NodeId id) -> bool;    // tag == Command
+    constexpr auto is_condition(NodeId id) -> bool;  // tag == Condition
+    constexpr auto is_phi(NodeId id) -> bool;        // tag == Phi
+    constexpr auto index(NodeId id) -> std::size_t;  // Strips the tag (low 30 bits)
 
     constexpr auto make_command(std::size_t idx) -> NodeId;
     constexpr auto make_condition(std::size_t idx) -> NodeId;
@@ -898,7 +899,7 @@ The index uses **instruction-based command storage** for significant space savin
 │   display_offset: u32               │
 │   env_offset: u32                   │
 │   identity: [u8; 32]                │  ← Structural identity hash (v11)
-│   (id = index | 0x80000000)         │
+│   (id = index | 0x40000000)         │
 ├─────────────────────────────────────┤
 │ Edge[] (16 bytes each)              │
 │   from_id: u32                      │

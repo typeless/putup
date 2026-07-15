@@ -27,7 +27,10 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///  10 - Remove unused group_cmd_id field from edges (reserved bytes expanded)
 ///  11 - Command structural identity: per-command hash folding command text + the values
 ///       of vars it depends on (sticky/exported), replacing rendered-string identity
-inline constexpr auto INDEX_VERSION = std::uint32_t { 11 };
+///  12 - NodeId kind moved to a 2-bit tag in bits 30-31 (commands 0x40000001...);
+///       persisted NodeIds from older versions decode differently, so v11 indexes
+///       are rejected and rebuilt
+inline constexpr auto INDEX_VERSION = std::uint32_t { 12 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {

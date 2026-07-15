@@ -1616,3 +1616,42 @@ TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
         REQUIRE(*resolved == *build_node);
     }
 }
+
+TEST_CASE("node_id encoding: 30-bit index roundtrips and kinds are mutually exclusive", "[graph]")
+{
+    auto const max_index = std::size_t { 0x3FFFFFFF };
+
+    for (auto idx : { std::size_t { 1 }, std::size_t { 12345 }, max_index }) {
+        auto file = pup::NodeId { static_cast<pup::NodeId>(idx) };
+        auto cmd = pup::node_id::make_command(idx);
+        auto cond = pup::node_id::make_condition(idx);
+        auto phi = pup::node_id::make_phi(idx);
+
+        REQUIRE(pup::node_id::index(file) == idx);
+        REQUIRE(pup::node_id::index(cmd) == idx);
+        REQUIRE(pup::node_id::index(cond) == idx);
+        REQUIRE(pup::node_id::index(phi) == idx);
+
+        REQUIRE(pup::node_id::is_file(file));
+        REQUIRE_FALSE(pup::node_id::is_command(file));
+        REQUIRE_FALSE(pup::node_id::is_condition(file));
+        REQUIRE_FALSE(pup::node_id::is_phi(file));
+
+        REQUIRE(pup::node_id::is_command(cmd));
+        REQUIRE_FALSE(pup::node_id::is_file(cmd));
+        REQUIRE_FALSE(pup::node_id::is_condition(cmd));
+        REQUIRE_FALSE(pup::node_id::is_phi(cmd));
+
+        REQUIRE(pup::node_id::is_condition(cond));
+        REQUIRE_FALSE(pup::node_id::is_file(cond));
+        REQUIRE_FALSE(pup::node_id::is_command(cond));
+        REQUIRE_FALSE(pup::node_id::is_phi(cond));
+
+        REQUIRE(pup::node_id::is_phi(phi));
+        REQUIRE_FALSE(pup::node_id::is_file(phi));
+        REQUIRE_FALSE(pup::node_id::is_command(phi));
+        REQUIRE_FALSE(pup::node_id::is_condition(phi));
+    }
+
+    REQUIRE_FALSE(pup::node_id::is_file(pup::INVALID_NODE_ID));
+}
