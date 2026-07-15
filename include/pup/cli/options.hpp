@@ -26,6 +26,7 @@ struct Options {
     /// Key is stripped name (e.g., "CC" not "CONFIG_CC")
     Vec<std::pair<StringId, StringId>> config_defines = {};
     bool keep_going = false;
+    bool no_stat_cache = false;
     bool verbose = false;
     bool dry_run = false;
     bool stat = false;
