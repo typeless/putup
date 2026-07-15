@@ -249,7 +249,10 @@ auto find_changed_files_with_implicit(
     auto constexpr RACY_CLEAN_THRESHOLD_NS = std::int64_t { 1'000'000'000 };
 
     for (auto const& file : old_index.files()) {
-        if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated) {
+        auto const is_tracked_ghost = file.type == pup::NodeType::Ghost
+            && file.content_hash != pup::ZERO_HASH && !pup::is_empty(file.path);
+        if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated
+            && !is_tracked_ghost) {
             continue;
         }
 
@@ -554,9 +557,49 @@ auto serialize_graph_nodes(
             }
             break;
         }
+        case pup::NodeType::Ghost: {
+            // A ghost that exists on disk but is produced by no rule is a
+            // foreign input (e.g. the variant's tup.config): record its content
+            // so change detection can see it.
+            auto& pool = pup::global_pool();
+            auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
+
+            auto path_id = pup::StringId::Empty;
+            auto content_hash = pup::Hash256 {};
+            auto file_size = std::uint64_t { 0 };
+            auto mtime_ns = std::int64_t { 0 };
+
+            if (!node_path.empty()) {
+                auto fs_path = strip_build_root_prefix(node_path, pup::graph::get_build_root_name(g));
+                auto file_path = pool.get(pup::path::join(output_root, fs_path));
+                if (pup::platform::exists(file_path)) {
+                    if (auto hash_result = pup::sha256_file(file_path)) {
+                        content_hash = *hash_result;
+                    }
+                    if (auto stat_result = pup::platform::stat_file(file_path)) {
+                        file_size = stat_result->size;
+                        mtime_ns = stat_result->mtime_ns;
+                    }
+                    path_id = pool.intern(node_path);
+                }
+            }
+
+            index.add_file(pup::index::FileEntry {
+                .id = id,
+                .parent_id = pup::graph::get_parent_dir(g, id),
+                .src_id = 0,
+                .type = type,
+                .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                .name = pup::graph::get<pup::graph::Name>(g, id),
+                .path = path_id,
+                .size = file_size,
+                .mtime_ns = mtime_ns,
+                .content_hash = content_hash,
+            });
+            break;
+        }
         case pup::NodeType::Variable:
         case pup::NodeType::Group:
-        case pup::NodeType::Ghost:
         case pup::NodeType::Root: {
             // These node types must be in index to maintain consecutive ID sequence
             auto entry = pup::index::FileEntry {

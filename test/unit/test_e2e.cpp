@@ -421,6 +421,35 @@ SCENARIO("Groups defined in included files are visible", "[e2e][groups]")
     }
 }
 
+SCENARIO("Variant tup.config as a rule input retriggers on config change", "[e2e][variant][incremental]")
+{
+    GIVEN("a rule that generates a header from the variant's tup.config")
+    {
+        auto f = E2EFixture { "variant_config_input" };
+        f.write_file("inc/Tupfile", R"(
+: ../tup.config |> awk -F= '/^CONFIG_/{print "#define " substr($1,8)}' %f > %o |> config.h
+)");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_FOO=y\n");
+
+        WHEN("built, then tup.config gains a variable")
+        {
+            REQUIRE(f.init().success());
+            REQUIRE(f.build({ "-B", "build", "-j1" }).success());
+            REQUIRE(f.read_file("build/inc/config.h") == "#define FOO\n");
+
+            f.write_file("build/tup.config", "CONFIG_FOO=y\nCONFIG_BAR=y\n");
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("the header is regenerated with the new variable")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/inc/config.h") == "#define FOO\n#define BAR\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
 {
     GIVEN("a Tupfile with group reference in inputs section (before |)")
