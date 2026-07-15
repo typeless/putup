@@ -8,8 +8,8 @@
 
 namespace pup {
 
-/// Unique identifier for nodes in the dependency graph. The high 3 bits are a
-/// kind tag (see node_id below), so index() yields a 29-bit slot — ~536M nodes
+/// Unique identifier for nodes in the dependency graph. The high 2 bits are a
+/// kind tag (see node_id below), so index() yields a 30-bit slot — ~1.07B nodes
 /// per kind (even AOSP has < 10M). IDs are minted monotonically and never
 /// reused within a run.
 using NodeId = std::uint32_t;
@@ -24,65 +24,85 @@ inline constexpr auto BUILD_ROOT_ID = NodeId { 1 };
 /// NodeId encoding namespace - groups all ID type detection and manipulation functions
 namespace node_id {
 
-/// Flag bits for different node types (mutually exclusive in high nibble)
-inline constexpr auto COMMAND_FLAG = NodeId { 0x80000000 };
-inline constexpr auto CONDITION_FLAG = NodeId { 0x40000000 };
-inline constexpr auto PHI_FLAG = NodeId { 0x20000000 };
+/// Node kind, stored in the top 2 bits of a NodeId. Every uint32 decodes to
+/// exactly one kind, so mixed-flag junk states are unrepresentable.
+enum class Tag : NodeId {
+    File = 0,
+    Command = 1,
+    Condition = 2,
+    Phi = 3,
+};
 
-/// Check if ID refers to a file node (no flags set)
+inline constexpr auto TAG_SHIFT = NodeId { 30 };
+
+/// Get the kind tag of any node ID
+[[nodiscard]]
+constexpr auto tag(NodeId id) -> Tag
+{
+    return static_cast<Tag>(id >> TAG_SHIFT);
+}
+
+/// Create an ID of the given kind from an array index
+[[nodiscard]]
+constexpr auto make(Tag t, std::size_t idx) -> NodeId
+{
+    return static_cast<NodeId>(idx) | (static_cast<NodeId>(t) << TAG_SHIFT);
+}
+
+/// Check if ID refers to a file node
 [[nodiscard]]
 constexpr auto is_file(NodeId id) -> bool
 {
-    return id != 0 && (id & (COMMAND_FLAG | CONDITION_FLAG | PHI_FLAG)) == 0;
+    return id != 0 && tag(id) == Tag::File;
 }
 
 /// Check if ID refers to a command node
 [[nodiscard]]
 constexpr auto is_command(NodeId id) -> bool
 {
-    return (id & COMMAND_FLAG) != 0;
+    return tag(id) == Tag::Command;
 }
 
 /// Check if ID refers to a condition node
 [[nodiscard]]
 constexpr auto is_condition(NodeId id) -> bool
 {
-    return (id & CONDITION_FLAG) != 0 && (id & COMMAND_FLAG) == 0;
+    return tag(id) == Tag::Condition;
 }
 
 /// Check if ID refers to a phi node
 [[nodiscard]]
 constexpr auto is_phi(NodeId id) -> bool
 {
-    return (id & PHI_FLAG) != 0 && (id & COMMAND_FLAG) == 0 && (id & CONDITION_FLAG) == 0;
+    return tag(id) == Tag::Phi;
 }
 
-/// Get array index from any node ID (strips flag bits)
+/// Get array index from any node ID (strips the tag)
 [[nodiscard]]
 constexpr auto index(NodeId id) -> std::size_t
 {
-    return static_cast<std::size_t>(id & ~(COMMAND_FLAG | CONDITION_FLAG | PHI_FLAG));
+    return static_cast<std::size_t>(id & ((NodeId { 1 } << TAG_SHIFT) - 1));
 }
 
 /// Create command ID from array index
 [[nodiscard]]
 constexpr auto make_command(std::size_t idx) -> NodeId
 {
-    return static_cast<NodeId>(idx) | COMMAND_FLAG;
+    return make(Tag::Command, idx);
 }
 
 /// Create condition ID from array index
 [[nodiscard]]
 constexpr auto make_condition(std::size_t idx) -> NodeId
 {
-    return static_cast<NodeId>(idx) | CONDITION_FLAG;
+    return make(Tag::Condition, idx);
 }
 
 /// Create phi ID from array index
 [[nodiscard]]
 constexpr auto make_phi(std::size_t idx) -> NodeId
 {
-    return static_cast<NodeId>(idx) | PHI_FLAG;
+    return make(Tag::Phi, idx);
 }
 
 } // namespace node_id
