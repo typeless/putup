@@ -765,10 +765,44 @@ auto preserve_old_implicit_edges(
     }
 }
 
+auto hash_less(pup::Hash256 const& a, pup::Hash256 const& b) -> bool
+{
+    return std::memcmp(a.data(), b.data(), a.size()) < 0;
+}
+
+/// Sorted (identity → graph NodeId) map: the cross-build join key for commands.
+using IdentityMap = Vec<std::pair<pup::Hash256, pup::NodeId>>;
+
+auto build_identity_map(pup::graph::BuildGraph const& state) -> IdentityMap
+{
+    auto map = IdentityMap {};
+    for (auto id : pup::graph::all_nodes(state.graph)) {
+        if (pup::node_id::is_command(id)) {
+            map.emplace_back(
+                pup::graph::compute_command_identity(state.graph, id, state.path_cache), id
+            );
+        }
+    }
+    std::sort(map.begin(), map.end(), [](auto const& a, auto const& b) { return hash_less(a.first, b.first); });
+    return map;
+}
+
+auto find_by_identity(IdentityMap const& map, pup::Hash256 const& identity) -> std::optional<pup::NodeId>
+{
+    auto const* it = std::lower_bound(
+        map.begin(), map.end(), identity, [](auto const& p, auto const& k) { return hash_less(p.first, k); }
+    );
+    if (it == map.end() || std::memcmp(it->first.data(), identity.data(), identity.size()) != 0) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
-    pup::graph::BuildGraph const& state
+    pup::graph::BuildGraph const& state,
+    IdentityMap const& identity_map
 ) -> pup::Vec<StringId>
 {
     auto result = pup::Vec<StringId> { changed };
@@ -817,8 +851,7 @@ auto expand_implicit_deps(
                 continue;
             }
 
-            auto cmd_str_id = pup::index::get_command_string(index, *cmd);
-            auto cmd_node_id = pup::graph::find_by_command(state.graph, pup::global_pool().get(cmd_str_id));
+            auto cmd_node_id = find_by_identity(identity_map, cmd->identity);
             if (!cmd_node_id) {
                 continue;
             }
@@ -928,9 +961,6 @@ auto detect_new_commands(
     // is absent from the previous index. Identity folds command text together with the
     // values of the vars it depends on, so a change invisible to the rendered string
     // (e.g. an exported env var the subprocess reads via $VAR) still flips the identity.
-    auto hash_less = [](pup::Hash256 const& a, pup::Hash256 const& b) {
-        return std::memcmp(a.data(), b.data(), a.size()) < 0;
-    };
     auto old_identities = pup::Vec<pup::Hash256> {};
     old_identities.reserve(idx.commands().size());
     for (auto const& cmd : idx.commands()) {
@@ -961,8 +991,8 @@ auto detect_new_commands(
 
 /// Remove stale outputs from removed commands and report them.
 auto remove_stale_outputs(
-    pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
+    IdentityMap const& identity_map,
     std::string_view source_root,
     std::string_view variant_name,
     bool dry_run,
@@ -970,8 +1000,7 @@ auto remove_stale_outputs(
 ) -> void
 {
     for (auto const& cmd : idx.commands()) {
-        auto cmd_str_id = pup::index::get_command_string(idx, cmd);
-        if (pup::graph::find_by_command(state.graph, pup::global_pool().get(cmd_str_id))) {
+        if (find_by_identity(identity_map, cmd.identity)) {
             continue;
         }
 
@@ -1127,10 +1156,10 @@ auto build_single_variant(
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
 
-        // Build command string index for find_by_command() lookups
-        // Must happen after parsing (operands set) but before incremental logic
+        // Build the identity → NodeId map: the cross-build join key for commands.
+        // Must happen after parsing (operands set) but before incremental logic.
         auto cmd_index_start = pup::SteadyClock::now();
-        pup::graph::build_command_index(bs.graph, bs.path_cache);
+        auto const identity_map = build_identity_map(bs);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
@@ -1178,7 +1207,7 @@ auto build_single_variant(
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
         auto implicit_deps_start = pup::SteadyClock::now();
-        changed_files = expand_implicit_deps(changed_files, idx, bs);
+        changed_files = expand_implicit_deps(changed_files, idx, bs, identity_map);
         auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
@@ -1192,8 +1221,8 @@ auto build_single_variant(
 
         auto stale_start = pup::SteadyClock::now();
         remove_stale_outputs(
-            bs,
             idx,
+            identity_map,
             source_root_str,
             variant_name,
             opts.dry_run,

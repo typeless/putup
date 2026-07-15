@@ -6,7 +6,6 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
-#include "pup/core/metrics.hpp"
 #include "pup/core/path_utils.hpp"
 
 #include "pup/core/path.hpp"
@@ -218,8 +217,6 @@ auto add_command_node(Graph& graph, CommandNode node) -> Result<NodeId>
         graph.commands.resize(idx + 1);
     }
     graph.commands[idx] = std::move(node);
-
-    graph.command_index_built = false;
 
     return id;
 }
@@ -510,23 +507,6 @@ auto find_by_dir_name(Graph const& graph, NodeId parent_dir, std::string_view na
         return std::nullopt;
     }
     auto const* found = graph.dir_children[parent_idx].find(to_underlying(name_id));
-    if (!found) {
-        return std::nullopt;
-    }
-    return *found;
-}
-
-auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>
-{
-    // Stale index (add_command_node clears the flag): miss, never a wrong hit.
-    if (!graph.command_index_built) {
-        return std::nullopt;
-    }
-    auto cmd_id = graph.command_strings.find(cmd);
-    if (is_empty(cmd_id)) {
-        return std::nullopt;
-    }
-    auto const* found = graph.command_index.find(to_underlying(cmd_id));
     if (!found) {
         return std::nullopt;
     }
@@ -1043,28 +1023,6 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId
 {
     auto cache = PathCache {};
     return expand_instruction(graph, cmd_id, cache);
-}
-
-auto build_command_index(Graph& graph, PathCache& cache) -> void
-{
-    graph.command_strings.clear();
-    graph.command_index.clear();
-    graph.command_index_built = true;
-    auto& metrics = thread_metrics();
-    for (auto i = std::size_t { 1 }; i < graph.commands.size(); ++i) {
-        auto const& cmd = graph.commands[i];
-        auto const id = node_id::make_command(i);
-        if (cmd.id != id) {
-            continue;
-        }
-        auto cmd_id_str = expand_instruction(graph, id, cache);
-        ++metrics.command_expansions;
-        if (!is_empty(cmd_id_str)) {
-            auto cmd_sv = global_pool().get(cmd_id_str);
-            auto str_id = graph.command_strings.intern(cmd_sv);
-            graph.command_index.insert(to_underlying(str_id), id);
-        }
-    }
 }
 
 auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
