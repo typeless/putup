@@ -213,6 +213,9 @@ struct Builder {
     /// Virtual $ directory for imported environment variables (like tup's env_dt)
     NodeId env_var_dir_id = INVALID_NODE_ID;
 
+    /// Synthetic Variable node holding the CONFIG_TRACKED_TOOLS fingerprint
+    NodeId toolchain_node_id = INVALID_NODE_ID;
+
     /// Imported environment variable nodes (interned name StringId → NodeId)
     SortedPairVec imported_env_var_nodes;
 

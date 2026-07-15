@@ -29,6 +29,8 @@
 #include <cstdio>
 
 #include <algorithm>
+#include <array>
+#include <charconv>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -1162,6 +1164,58 @@ auto ensure_env_var_node(
     return *result;
 }
 
+/// Append "path:size:mtime" for a tracked tool, or "<missing>" if it cannot be
+/// resolved. Bare names resolve through PATH (the same PATH build commands get);
+/// names containing a separator resolve against the source root.
+auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> void
+{
+    auto stat_and_append = [&out](std::string_view path) -> bool {
+        auto st = pup::platform::stat_file(path);
+        if (!st) {
+            return false;
+        }
+        out += path;
+        auto num = std::array<char, 32> {};
+        auto* size_end = std::to_chars(num.data(), num.data() + num.size(), st->size).ptr;
+        out += ':';
+        out += std::string_view { num.data(), static_cast<std::size_t>(size_end - num.data()) };
+        auto* mtime_end = std::to_chars(num.data(), num.data() + num.size(), st->mtime_ns).ptr;
+        out += ':';
+        out += std::string_view { num.data(), static_cast<std::size_t>(mtime_end - num.data()) };
+        return true;
+    };
+
+#ifdef _WIN32
+    auto constexpr PATH_LIST_SEP = ';';
+#else
+    auto constexpr PATH_LIST_SEP = ':';
+#endif
+
+    if (name.find('/') != std::string_view::npos) {
+        auto path = pup::path::is_absolute(name)
+            ? name
+            : global_pool().get(pup::path::join(source_root, name));
+        if (stat_and_append(path)) {
+            return;
+        }
+    } else if (auto const* path_env = std::getenv("PATH")) {
+        auto dirs = std::string_view { path_env };
+        while (!dirs.empty()) {
+            auto sep = dirs.find(PATH_LIST_SEP);
+            auto dir = (sep == std::string_view::npos) ? dirs : dirs.substr(0, sep);
+            dirs = (sep == std::string_view::npos) ? std::string_view {} : dirs.substr(sep + 1);
+            if (dir.empty()) {
+                continue;
+            }
+            auto candidate = global_pool().get(pup::path::join(dir, name));
+            if (stat_and_append(candidate)) {
+                return;
+            }
+        }
+    }
+    out += "<missing>";
+}
+
 auto process_export(
     BuilderContext& ctx,
     Builder& state,
@@ -2185,6 +2239,35 @@ auto add_tupfile(
                 state.env_var_dir_id = *result;
             }
         }
+    }
+
+    // Toolchain fingerprint: CONFIG_TRACKED_TOOLS lists tools the build's outputs
+    // depend on that appear in no rule's inputs. Their resolved (path, size, mtime)
+    // fold into every command's identity, so an in-place tool upgrade rebuilds.
+    if (state.toolchain_node_id == INVALID_NODE_ID && eval.config_vars) {
+        auto tracked = eval.config_vars->get("TRACKED_TOOLS");
+        if (!tracked.empty()) {
+            auto fingerprint = Buf {};
+            auto rest = tracked;
+            while (!rest.empty()) {
+                auto space = rest.find(' ');
+                auto name = (space == std::string_view::npos) ? rest : rest.substr(0, space);
+                rest = (space == std::string_view::npos) ? std::string_view {} : rest.substr(space + 1);
+                if (name.empty()) {
+                    continue;
+                }
+                fingerprint += name;
+                fingerprint += '=';
+                append_tool_stat(fingerprint, name, str(state.options.source_root));
+                fingerprint += ';';
+            }
+            if (auto node = ensure_env_var_node(ctx, state, "TUP_TOOLCHAIN", fingerprint.view())) {
+                state.toolchain_node_id = *node;
+            }
+        }
+    }
+    if (state.toolchain_node_id != INVALID_NODE_ID) {
+        ctx.sticky_sources.push_back(state.toolchain_node_id);
     }
 
     // Thread string pool into EvalContext for StringId lookups
