@@ -2,18 +2,25 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/cli/index_serialize.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/format.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <random>
+#include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace {
 auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
@@ -1190,4 +1197,196 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 
     reader_result->file.close();
     std::filesystem::remove(temp_path);
+}
+
+namespace {
+
+auto node_label(pup::graph::Graph const& g, pup::NodeId id) -> std::string
+{
+    if (node_id::is_command(id)) {
+        return "C:" + std::string(sv(pup::graph::get<pup::graph::InstructionPattern>(g, id)));
+    }
+    auto type = pup::graph::get<NodeType>(g, id);
+    return "F" + std::to_string(static_cast<int>(type)) + ":"
+        + std::string(sv(pup::graph::get<pup::graph::Name>(g, id)));
+}
+
+auto entry_label(Index const& idx, pup::NodeId id) -> std::string
+{
+    if (node_id::is_command(id)) {
+        auto const* cmd = idx.find_command_by_id(id);
+        return cmd ? "C:" + std::string(sv(cmd->instruction_pattern)) : "C:<missing>";
+    }
+    auto const* file = idx.find_file_by_id(id);
+    return file
+        ? "F" + std::to_string(static_cast<int>(file->type)) + ":" + std::string(sv(file->name))
+        : "F:<missing>";
+}
+
+auto sorted_edge_labels_of_graph(pup::graph::Graph const& g) -> std::vector<std::string>
+{
+    auto labels = std::vector<std::string> {};
+    for (auto const& edge : g.edges) {
+        if (edge.type == LinkType::OrderOnly) {
+            continue;
+        }
+        labels.push_back(
+            node_label(g, edge.from) + "|" + std::to_string(static_cast<int>(edge.type))
+            + "|" + node_label(g, edge.to)
+        );
+    }
+    std::sort(labels.begin(), labels.end());
+    return labels;
+}
+
+auto sorted_edge_labels_of_index(Index const& idx) -> std::vector<std::string>
+{
+    auto labels = std::vector<std::string> {};
+    for (auto const& edge : idx.edges()) {
+        labels.push_back(
+            entry_label(idx, edge.from) + "|" + std::to_string(static_cast<int>(edge.type))
+            + "|" + entry_label(idx, edge.to)
+        );
+    }
+    std::sort(labels.begin(), labels.end());
+    return labels;
+}
+
+auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string_view file_tag) -> void
+{
+    auto [index, path_to_id] = pup::cli::serialize_graph_nodes(bs, ".", ".");
+    pup::cli::serialize_command_nodes(bs, index, path_to_id);
+    pup::cli::serialize_edges(bs, index);
+
+    auto live_file_nodes = std::size_t { 0 };
+    for (auto id : pup::graph::all_nodes(bs.graph)) {
+        if (!node_id::is_command(id)) {
+            ++live_file_nodes;
+        }
+    }
+
+    auto temp_path = (std::filesystem::temp_directory_path() / file_tag).string();
+    auto write_result = write_index(temp_path, index);
+    REQUIRE(write_result.has_value());
+
+    auto loaded = read_index(temp_path);
+    std::filesystem::remove(temp_path);
+    REQUIRE(loaded.has_value());
+
+    REQUIRE(loaded->file_count() == live_file_nodes);
+    REQUIRE(sorted_edge_labels_of_index(*loaded) == sorted_edge_labels_of_graph(bs.graph));
+}
+
+} // namespace
+
+TEST_CASE("serialize_index rejects a non-dense file id sequence", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("a.c") });
+
+    REQUIRE_FALSE(serialize_index(index).has_value());
+}
+
+TEST_CASE("serialize_index rejects a non-dense command id sequence", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("a.c") });
+    index.add_command(CommandEntry {
+        .id = node_id::make_command(2),
+        .dir_id = 0,
+        .instruction_pattern = intern("cc a.c"),
+    });
+
+    REQUIRE_FALSE(serialize_index(index).has_value());
+}
+
+TEST_CASE("graph-to-index roundtrip keeps every node and edge endpoint", "[index]")
+{
+    auto bs = pup::graph::make_build_graph();
+    auto& g = bs.graph;
+
+    auto root = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Root, .name = intern("prj_root") });
+    auto nameless = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::File, .name = pup::StringId::Empty });
+    auto src = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::File, .name = intern("a.c") });
+    auto var = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Variable, .name = intern("CC") });
+    auto group = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Group, .name = intern("objs") });
+    auto ghost = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Ghost, .name = intern("missing.h") });
+    auto out = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
+    auto cmd = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction_id = intern("cc a.c") });
+
+    REQUIRE(root.has_value());
+    REQUIRE(nameless.has_value());
+    REQUIRE(src.has_value());
+    REQUIRE(var.has_value());
+    REQUIRE(group.has_value());
+    REQUIRE(ghost.has_value());
+    REQUIRE(out.has_value());
+    REQUIRE(cmd.has_value());
+
+    REQUIRE(pup::graph::add_edge(g, *src, *cmd).has_value());
+    REQUIRE(pup::graph::add_edge(g, *ghost, *cmd).has_value());
+    REQUIRE(pup::graph::add_edge(g, *var, *cmd, LinkType::Sticky).has_value());
+    REQUIRE(pup::graph::add_edge(g, *cmd, *out).has_value());
+    REQUIRE(pup::graph::add_edge(g, *out, *group, LinkType::Group).has_value());
+
+    require_graph_index_roundtrip(bs, "pup_test_rt_types");
+}
+
+TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
+{
+    auto const types = std::array {
+        NodeType::File,
+        NodeType::Generated,
+        NodeType::Directory,
+        NodeType::Variable,
+        NodeType::Group,
+        NodeType::Ghost,
+        NodeType::GeneratedDir,
+        NodeType::Root,
+    };
+    auto const link_types = std::array {
+        LinkType::Normal,
+        LinkType::Sticky,
+        LinkType::Group,
+        LinkType::Implicit,
+    };
+
+    for (auto seed = std::uint32_t { 0 }; seed < 20; ++seed) {
+        INFO("seed=" << seed);
+        auto rng = std::mt19937 { seed };
+        auto bs = pup::graph::make_build_graph();
+        auto& g = bs.graph;
+
+        auto file_ids = std::vector<pup::NodeId> {};
+        auto node_count = std::size_t { 3 + rng() % 20 };
+        for (auto i = std::size_t { 0 }; i < node_count; ++i) {
+            auto type = types[rng() % types.size()];
+            auto name = (rng() % 8 == 0) ? pup::StringId::Empty : intern("n" + std::to_string(i));
+            auto id = pup::graph::add_file_node(g, pup::graph::FileNode { .type = type, .name = name });
+            REQUIRE(id.has_value());
+            file_ids.push_back(*id);
+        }
+
+        auto cmd_ids = std::vector<pup::NodeId> {};
+        auto cmd_count = std::size_t { 1 + rng() % 4 };
+        for (auto i = std::size_t { 0 }; i < cmd_count; ++i) {
+            auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction_id = intern("cmd" + std::to_string(i)) });
+            REQUIRE(id.has_value());
+            cmd_ids.push_back(*id);
+        }
+
+        auto edge_count = std::size_t { rng() % 30 };
+        for (auto i = std::size_t { 0 }; i < edge_count; ++i) {
+            auto from = file_ids[rng() % file_ids.size()];
+            auto to = cmd_ids[rng() % cmd_ids.size()];
+            if (rng() % 2 == 0) {
+                std::swap(from, to);
+            }
+            auto type = link_types[rng() % link_types.size()];
+            REQUIRE(pup::graph::add_edge(g, from, to, type).has_value());
+        }
+
+        require_graph_index_roundtrip(bs, "pup_test_rt_prop");
+    }
 }

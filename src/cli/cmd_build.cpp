@@ -4,6 +4,7 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/config_commands.hpp"
 #include "pup/cli/context.hpp"
+#include "pup/cli/index_serialize.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/options.hpp"
 #include "pup/core/clock.hpp"
@@ -41,8 +42,6 @@
 namespace pup::cli {
 
 namespace {
-
-using PathIdMap = Vec<std::pair<StringId, pup::NodeId>>;
 using EdgePairVec = Vec<std::pair<pup::NodeId, pup::NodeId>>;
 using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<StringId>>>;
 
@@ -446,6 +445,8 @@ auto create_implicit_file(
     return file_id;
 }
 
+} // namespace
+
 /// Serialize file and directory nodes from the build graph to the index.
 /// Returns the populated index and a path-to-id mapping for later use.
 auto serialize_graph_nodes(
@@ -465,10 +466,25 @@ auto serialize_graph_nodes(
 
         auto type = pup::graph::get<pup::NodeType>(g, id);
 
-        if (type == pup::NodeType::File || type == pup::NodeType::Generated) {
+        switch (type) {
+        case pup::NodeType::File:
+        case pup::NodeType::Generated: {
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             if (node_path.empty()) {
-                continue;
+                // Dropping a slot would shift every later load-derived id (id == position + 1).
+                index.add_file(pup::index::FileEntry {
+                    .id = id,
+                    .parent_id = pup::graph::get_parent_dir(g, id),
+                    .src_id = 0,
+                    .type = type,
+                    .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                    .name = pup::graph::get<pup::graph::Name>(g, id),
+                    .path = pup::StringId::Empty,
+                    .size = 0,
+                    .mtime_ns = 0,
+                    .content_hash = {},
+                });
+                break;
             }
 
             auto fs_path = node_path;
@@ -512,7 +528,10 @@ auto serialize_graph_nodes(
             };
             index.add_file(std::move(entry));
             path_id_insert(path_to_id, pool.intern(node_path), id);
-        } else if (type == pup::NodeType::Directory || type == pup::NodeType::GeneratedDir) {
+            break;
+        }
+        case pup::NodeType::Directory:
+        case pup::NodeType::GeneratedDir: {
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             auto& pool = pup::global_pool();
 
@@ -532,9 +551,12 @@ auto serialize_graph_nodes(
             if (!node_path.empty()) {
                 path_id_insert(path_to_id, pool.intern(node_path), id);
             }
-        } else if (type == pup::NodeType::Variable
-                   || type == pup::NodeType::Group
-                   || type == pup::NodeType::Ghost) {
+            break;
+        }
+        case pup::NodeType::Variable:
+        case pup::NodeType::Group:
+        case pup::NodeType::Ghost:
+        case pup::NodeType::Root: {
             // These node types must be in index to maintain consecutive ID sequence
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -548,6 +570,13 @@ auto serialize_graph_nodes(
                 .content_hash = (type == pup::NodeType::Variable) ? pup::graph::get<pup::Hash256>(g, id) : pup::Hash256 {},
             };
             index.add_file(std::move(entry));
+            break;
+        }
+        case pup::NodeType::Command:
+        case pup::NodeType::Condition:
+        case pup::NodeType::Phi:
+            // Unreachable: all_nodes yields only file-space ids past the is_command filter.
+            break;
         }
     }
 
@@ -613,6 +642,8 @@ auto serialize_edges(
         });
     }
 }
+
+namespace {
 
 /// Compute the next available NodeId after all existing nodes.
 auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
