@@ -1,0 +1,5 @@
+ifeq (a,b)
+include sub.tup
+endif
+include sub.tup
+: |> echo hi > %o |> out.txt

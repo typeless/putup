@@ -99,8 +99,8 @@ struct BuilderContext {
 
     Vec<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
     GroupMemberTable groups = {};
-    SortedIdVec included_files = {};
-    SortedIdVec exported_vars = {}; ///< Interned environment variable names to export
+    SortedIdVec included_contexts = {}; ///< Interned (path, guard stack) keys
+    SortedIdVec exported_vars = {};     ///< Interned environment variable names to export
 
     StringId current_dir = StringId::Empty;
     StringId current_file = StringId::Empty;

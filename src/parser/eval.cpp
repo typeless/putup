@@ -240,13 +240,23 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<StringId>
     auto name_sv = pool.get(ref.name);
     auto [value, bank] = lookup_var_with_bank(var_ctx, name_sv, ref.kind);
 
-    // Dependency tracking based on which bank was used
-    if (bank == VarBank::Config && ctx.on_config_var_used) {
+    // Dependency tracking based on which bank was used. An @() reference is
+    // a config read even when the variable is undefined — defining it later
+    // must count as a change.
+    if ((bank == VarBank::Config || ref.kind == VarRef::Kind::Config) && ctx.on_config_var_used) {
         auto config_name = name_sv;
         if (config_name.starts_with(builtin_vars::CONFIG_)) {
             config_name = config_name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
         }
         ctx.on_config_var_used(config_name);
+    }
+
+    // TUP_PLATFORM/TUP_ARCH fall back to compiled-in defaults when neither
+    // env nor config provides them; setting the env var later must count as
+    // a change, so the fallback still records an env read.
+    if (bank == VarBank::Builtin && ctx.on_env_var_used
+        && (name_sv == builtin_vars::TUP_PLATFORM || name_sv == builtin_vars::TUP_ARCH)) {
+        ctx.on_env_var_used(name_sv);
     }
 
     // Propagate transitive config var dependencies for regular variables

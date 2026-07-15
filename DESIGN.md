@@ -488,6 +488,9 @@ struct CommandNode {
     // ALL guards must be satisfied for command to execute
     // For nested conditionals: ifeq(A,x) { ifeq(B,y) { cmd } }
     //   → guards = [Guard{condA, true}, Guard{condB, true}]
+    // Guards exist only for conditions that can flip without a Tupfile edit
+    // (config or env reads). A static ifeq/ifneq is processed textually like
+    // tup: the losing branch is skipped and no condition node is created.
     Vec<Guard> guards = {};
 };
 

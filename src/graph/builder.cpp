@@ -1025,11 +1025,19 @@ auto include_single_file(
     bool is_rules
 ) -> Result<void>
 {
-    auto include_path_id = to_underlying(intern(include_path));
-    if (ctx.included_files.contains(include_path_id)) {
+    // A file joins each conditional context at most once: the same include in
+    // the same guard stack is redundant, but a later include under different
+    // guards is a distinct contribution (issue #91).
+    auto context_key = Buf {};
+    context_key.fmt("{}", include_path);
+    for (auto const& guard : ctx.condition_stack) {
+        context_key.fmt("|{}:{}", guard.condition, guard.polarity ? 1 : 0);
+    }
+    auto include_key = to_underlying(intern(context_key.view()));
+    if (ctx.included_contexts.contains(include_key)) {
         return {};
     }
-    ctx.included_files.insert(include_path_id);
+    ctx.included_contexts.insert(include_key);
 
     auto inc_rel = global_pool().get(pup::path::relative(include_path, include_root));
     auto inc_path_id = ctx.state->graph.paths.intern_path(inc_rel, global_pool(), PathId::SourceRoot);
@@ -1344,9 +1352,13 @@ auto process_assignment(
         return pup::unexpected<Error>(value.error());
     }
 
-    // Capture the dependencies from RHS expansion
+    // Capture the dependencies from RHS expansion. The value also depends on
+    // every condition guarding this assignment: reaching it required those
+    // config/env reads.
     auto captured_config_deps = std::move(ctx.used_config_vars);
     auto captured_env_deps = std::move(ctx.used_env_vars);
+    captured_config_deps.merge_from(ctx.condition_config_vars);
+    captured_env_deps.merge_from(ctx.condition_env_vars);
 
     // Restore tracking state
     ctx.used_config_vars = std::move(saved_config_vars);
@@ -1506,6 +1518,23 @@ auto process_conditional(
         ctx.condition_config_vars = std::move(saved_condition_vars);
         ctx.condition_env_vars = std::move(saved_condition_env_vars);
     });
+
+    // Guards exist only for conditions that can flip without a Tupfile edit;
+    // a static ifeq/ifneq is textual like tup (ifdef never qualifies — it
+    // reads config vars without recording usage).
+    auto is_static = (cond.kind == parser::Conditional::Kind::Ifeq
+                      || cond.kind == parser::Conditional::Kind::Ifneq)
+        && condition_vars.empty() && condition_env_vars_used.empty();
+    if (is_static) {
+        auto const& body = condition_true ? cond.then_body : cond.else_body;
+        for (auto const& stmt : body) {
+            auto result = process_statement(ctx, state, *stmt);
+            if (!result) {
+                return pup::unexpected<Error>(result.error());
+            }
+        }
+        return {};
+    }
 
     // Create condition node for phi-node model
     auto cond_expr = format_condition_expr(*ctx.eval, cond);
