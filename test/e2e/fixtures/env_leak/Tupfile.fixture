@@ -1,0 +1,1 @@
+: |> echo leak=${PUP_TEST_LEAK:-unset} > %o |> out.txt

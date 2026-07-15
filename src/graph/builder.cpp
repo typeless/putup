@@ -536,8 +536,8 @@ auto create_command_node(
     // command's subprocess environment (read as bare $VAR) and so affects its output
     // even when it never appears in the command text. Recording it as a sticky edge
     // makes that dependency explicit and folds its value into the command identity,
-    // so a change to the var triggers a rebuild. (Only imported vars have a value
-    // node to depend on; export of an untracked env var remains out of the model.)
+    // so a change to the var triggers a rebuild. (process_export guarantees every
+    // exported var has a value node.)
     auto const* exv = ctx.exported_vars.data();
     for (std::size_t i = 0, n = ctx.exported_vars.size(); i < n; ++i) {
         auto const* node_id = state.imported_env_var_nodes.find(exv[i]);
@@ -1113,17 +1113,6 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, Builder& state) -> void
 // §9 — Directive processors
 // ---------------------------------------------------------------------------
 
-auto process_export(
-    BuilderContext& ctx,
-    parser::Export const& exp
-) -> Result<void>
-{
-    // Per tup manual: "adds the environment variable VARIABLE to the export
-    // list for future :-rules"
-    ctx.exported_vars.insert(to_underlying(intern(str(exp.var_name))));
-    return {};
-}
-
 /// Find or create a `NodeType::Variable` node under the env-var directory for the
 /// given env var name and value. Updates the existing node's name and content_hash
 /// if the value changed. Returns the node id, or nullopt if the env-var directory
@@ -1171,6 +1160,28 @@ auto ensure_env_var_node(
     }
     state.imported_env_var_nodes.insert(var_name_id, *result);
     return *result;
+}
+
+auto process_export(
+    BuilderContext& ctx,
+    Builder& state,
+    parser::Export const& exp
+) -> Result<void>
+{
+    // Per tup manual: "adds the environment variable VARIABLE to the export
+    // list for future :-rules"
+    auto var_name_sv = str(exp.var_name);
+    ctx.exported_vars.insert(to_underlying(intern(var_name_sv)));
+
+    // An exported var reaches the command's subprocess environment, so its value
+    // is part of the command's identity even when the Tupfile never reads it.
+    auto name_buf = Buf {};
+    name_buf += var_name_sv;
+    auto const* env_val = std::getenv(name_buf.c_str());
+    (void)ensure_env_var_node(
+        ctx, state, var_name_sv, env_val ? std::string_view { env_val } : std::string_view {}
+    );
+    return {};
 }
 
 auto process_import(
@@ -2056,7 +2067,7 @@ auto process_statement(
     }
 
     if (auto const* exp = stmt.as<parser::Export>()) {
-        return process_export(ctx, *exp);
+        return process_export(ctx, state, *exp);
     }
 
     return {};
