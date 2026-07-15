@@ -289,6 +289,29 @@ inline constexpr auto sticky = link_type_bit(LinkType::Sticky);
 inline constexpr auto order_only = link_type_bit(LinkType::OrderOnly);
 } // namespace edge_mask
 
+/// Visit neighbor ids by direction and type mask without materializing a Vec.
+/// The allocation-free form for hot traversals (topo sort, reachability).
+/// Deliberately a template (measured): an out-of-line fn-ptr core saved only
+/// ~0.5 KB but cost most of the traversal speedup by blocking callback inlining.
+template<typename Fn>
+auto edges_for_each(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask, Fn&& fn) -> void
+{
+    auto const& index = (dir == EdgeDirection::Forward)
+        ? graph.edges_from_index
+        : graph.edges_to_index;
+
+    auto s = index.get_slice(id);
+    if (s.length == 0) {
+        return;
+    }
+    for (auto idx : graph.edge_arena.slice(s)) {
+        auto const& edge = graph.edges[idx];
+        if (link_type_bit(edge.type) & mask) {
+            fn(dir == EdgeDirection::Forward ? edge.to : edge.from);
+        }
+    }
+}
+
 /// Query edges by direction and type mask
 [[nodiscard]]
 auto edges_where(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask) -> Vec<NodeId>;

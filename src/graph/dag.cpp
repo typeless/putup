@@ -571,22 +571,8 @@ auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>
 
 auto edges_where(Graph const& graph, NodeId id, EdgeDirection dir, LinkTypeMask mask) -> Vec<NodeId>
 {
-    auto const& index = (dir == EdgeDirection::Forward)
-        ? graph.edges_from_index
-        : graph.edges_to_index;
-
-    auto s = index.get_slice(id);
-    if (s.length == 0) {
-        return {};
-    }
-    auto span = graph.edge_arena.slice(s);
     auto result = Vec<NodeId> {};
-    for (auto idx : span) {
-        auto const& edge = graph.edges[idx];
-        if (link_type_bit(edge.type) & mask) {
-            result.push_back(dir == EdgeDirection::Forward ? edge.to : edge.from);
-        }
-    }
+    edges_for_each(graph, id, dir, mask, [&](NodeId n) { result.push_back(n); });
     return result;
 }
 
@@ -1102,13 +1088,13 @@ auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids
             commands.set(id, 1);
         }
 
-        for (auto input_id : get_inputs(graph, id)) {
+        edges_for_each(graph, id, EdgeDirection::Backward, edge_mask::inputs, [&](NodeId input_id) {
             stack.push_back(input_id);
-        }
+        });
 
-        for (auto dep_id : get_order_only(graph, id)) {
+        edges_for_each(graph, id, EdgeDirection::Backward, edge_mask::order_only, [&](NodeId dep_id) {
             stack.push_back(dep_id);
-        }
+        });
     }
 
     return commands;
@@ -1135,12 +1121,12 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
 
         auto const* node = get_file_node(graph, id);
         if (node && node->type == NodeType::Generated) {
-            for (auto input_id : get_inputs(graph, id)) {
+            edges_for_each(graph, id, EdgeDirection::Backward, edge_mask::inputs, [&](NodeId input_id) {
                 if (!affected.contains(input_id)) {
                     affected.set(input_id, 1);
                     to_process.push_back(input_id);
                 }
-            }
+            });
         }
     }
 
@@ -1148,19 +1134,19 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
         auto id = NodeId { to_process.back() };
         to_process.pop_back();
 
-        for (auto dep_id : get_outputs(graph, id)) {
+        edges_for_each(graph, id, EdgeDirection::Forward, edge_mask::data_flow, [&](NodeId dep_id) {
             if (!affected.contains(dep_id)) {
                 affected.set(dep_id, 1);
                 to_process.push_back(dep_id);
             }
-        }
+        });
 
-        for (auto dep_id : get_order_only_dependents(graph, id)) {
+        edges_for_each(graph, id, EdgeDirection::Forward, edge_mask::order_only, [&](NodeId dep_id) {
             if (!affected.contains(dep_id)) {
                 affected.set(dep_id, 1);
                 to_process.push_back(dep_id);
             }
-        }
+        });
     }
 
     // InjectImplicitDeps siblings (dep-scan commands) have no graph outputs,
