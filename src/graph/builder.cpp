@@ -1518,6 +1518,15 @@ auto process_conditional(
         ctx.condition_stack.push_back(Guard { .condition = cond_id, .polarity = polarity });
         auto pop_guard = ScopeGuard([&] { ctx.condition_stack.pop_back(); });
 
+        // Macro defs in an inactive branch serve only that branch's guarded
+        // rules; the active world after endif must not see them.
+        auto saved_macros = is_active ? decltype(ctx.macros) {} : ctx.macros;
+        auto restore_macros = ScopeGuard([&] {
+            if (!is_active) {
+                ctx.macros = std::move(saved_macros);
+            }
+        });
+
         for (auto const& stmt : body) {
             if (!is_active && !should_process_in_inactive_branch(*stmt)) {
                 continue;

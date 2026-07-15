@@ -5138,6 +5138,100 @@ endif
     }
 }
 
+SCENARIO("Bang macro definitions respect conditional branches", "[e2e][phi][macro]")
+{
+    GIVEN("a macro redefined in both branches of an ifeq")
+    {
+        auto f = E2EFixture { "phi_conditional" };
+        f.write_file("Tupfile", R"(
+ifeq (@(DEVICE),mh1903)
+!emit = |> echo dev1903 > %o |>
+else
+!emit = |> echo other > %o |>
+endif
+
+: |> !emit |> out.txt
+)");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_DEVICE=mh1903\n");
+
+        WHEN("built with DEVICE=mh1903")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("the active branch's definition is used")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/out.txt") == "dev1903\n");
+            }
+        }
+    }
+
+    GIVEN("a macro selected by a nested conditional in an included file")
+    {
+        auto f = E2EFixture { "phi_conditional" };
+        f.write_file("hexcat.tup", R"(
+ifneq ($(OUTPUT_MODE),binary)
+!emit = |> echo plain > %o |>
+else
+  ifeq (@(DEVICE),mh1903)
+    !emit = |> echo dev1903 > %o |>
+  else
+    !emit = |> echo other > %o |>
+  endif
+endif
+)");
+        f.write_file("Tupfile", R"(
+OUTPUT_MODE = binary
+include hexcat.tup
+: |> !emit |> out.txt
+)");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_DEVICE=mh1903\n");
+
+        WHEN("built with DEVICE=mh1903")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("the definition from the active nested branch is used")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/out.txt") == "dev1903\n");
+            }
+        }
+    }
+
+    GIVEN("a macro defined and invoked inside the same inactive branch")
+    {
+        auto f = E2EFixture { "phi_conditional" };
+        f.write_file("Tupfile", R"(
+ifeq (@(ENCRYPT),y)
+!scramble = |> echo scrambled > %o |>
+: |> !scramble |> scrambled.txt
+endif
+
+: |> echo done > %o |> done.txt
+)");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_ENCRYPT=n\n");
+
+        WHEN("built with the branch inactive")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build({ "-B", "build", "-j1" });
+
+            THEN("the build succeeds and the guarded rule stays inactive")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/scrambled.txt"));
+                REQUIRE(f.exists("build/done.txt"));
+            }
+        }
+    }
+}
+
 SCENARIO("Conditional branches only contribute active outputs to groups", "[e2e][phi][groups]")
 {
     GIVEN("a project with conditional outputs to the same group")
