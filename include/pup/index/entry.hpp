@@ -6,9 +6,7 @@
 #include "format.hpp"
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
-#include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
-#include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
@@ -156,13 +154,6 @@ public:
     [[nodiscard]]
     auto find_command_by_id(NodeId id) const -> CommandEntry const*;
 
-    /// Find command by expanded command string (requires prior build_edge_indices() call)
-    [[nodiscard]]
-    auto find_command_by_command(std::string_view cmd) const -> CommandEntry const*;
-
-    /// Rebuild internal command lookup index (call after modifying commands or after load)
-    auto rebuild_command_index() -> void;
-
     /// Get edges from a node (O(1) after build_edge_indices)
     [[nodiscard]]
     auto edges_from(NodeId id) const -> Vec<EdgeEntry const*>;
@@ -223,10 +214,6 @@ private:
     Arena32 edge_arena_;
     NodeIdArenaIndex edges_from_index_;
     NodeIdArenaIndex edges_to_index_;
-
-    // Command index (command string → index into commands_ vector)
-    StringPool command_strings_;
-    SortedPairVec command_index_;
 
     // Index save time (nanoseconds since epoch) for racy-clean detection
     std::int64_t save_time_ns_ = 0;

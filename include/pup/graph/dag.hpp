@@ -116,9 +116,6 @@ struct Graph {
 
     // Node lookup indices
     Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
-    StringPool command_strings;      ///< Interned expanded command strings (separate pool for find_by_command)
-    SortedPairVec command_index;     ///< StringId(command) → NodeId
-    bool command_index_built = false;
 
     // Structured path algebra
     // mutable: memoized interning cache, written on the (const) read path.
@@ -257,10 +254,6 @@ auto find_by_dir_name(
     std::string_view name
 ) -> std::optional<NodeId>;
 
-/// Find a node by command string
-[[nodiscard]]
-auto find_by_command(Graph const& graph, std::string_view cmd) -> std::optional<NodeId>;
-
 /// Get all nodes of a given type
 [[nodiscard]]
 auto nodes_of_type(Graph const& graph, NodeType type) -> Vec<NodeId>;
@@ -373,10 +366,6 @@ auto expand_instruction(
 /// Expand instruction pattern (convenience overload, creates temporary cache)
 [[nodiscard]]
 auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
-
-/// Build the command string index for find_by_command() lookups.
-/// Must be called after all commands have their operands set (post-parsing).
-auto build_command_index(Graph& graph, PathCache& cache) -> void;
 
 /// Compute a command's structural identity: a content hash that determines whether
 /// the command must re-run. It folds the fully-expanded command text together with

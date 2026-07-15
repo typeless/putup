@@ -26,25 +26,6 @@ auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id
 auto intern(std::string_view s) -> pup::StringId { return pup::global_pool().intern(s); }
 } // namespace
 
-TEST_CASE("command_index is invalidated when a command is added after it is built", "[graph]")
-{
-    auto bs = make_build_graph();
-    auto& g = bs.graph;
-
-    auto cmd1 = add_command_node(g, CommandNode { .instruction_id = intern("cc a.c") });
-    REQUIRE(cmd1.has_value());
-
-    build_command_index(g, bs.path_cache);
-    REQUIRE(g.command_index_built);
-    REQUIRE(find_by_command(g, "cc a.c") == *cmd1);
-
-    auto cmd2 = add_command_node(g, CommandNode { .instruction_id = intern("cc b.c") });
-    REQUIRE(cmd2.has_value());
-
-    REQUIRE_FALSE(g.command_index_built);
-    REQUIRE(find_by_command(g, "cc a.c") == std::nullopt);
-}
-
 TEST_CASE("BuildGraph basic operations", "[graph]")
 {
     auto bs = make_build_graph();

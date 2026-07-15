@@ -152,19 +152,6 @@ auto Index::find_command_by_id(NodeId id) const -> CommandEntry const*
     return commands_[vec_idx].id == id ? &commands_[vec_idx] : nullptr;
 }
 
-auto Index::find_command_by_command(std::string_view cmd) const -> CommandEntry const*
-{
-    auto str_id = command_strings_.find(cmd);
-    if (is_empty(str_id)) {
-        return nullptr;
-    }
-    auto const* idx = command_index_.find(to_underlying(str_id));
-    if (!idx) {
-        return nullptr;
-    }
-    return &commands_[*idx];
-}
-
 auto Index::lookup_edges(NodeIdArenaIndex const& index, NodeId id) const
     -> Vec<EdgeEntry const*>
 {
@@ -204,23 +191,6 @@ auto Index::build_edge_indices() -> void
 
         auto old_to = edges_to_index_.get_slice(edges_[i].to);
         edges_to_index_.set_slice(edges_[i].to, edge_arena_.append_extend(old_to, idx));
-    }
-
-    rebuild_command_index();
-}
-
-auto Index::rebuild_command_index() -> void
-{
-    command_strings_.clear();
-    command_index_.clear();
-
-    for (auto i = std::size_t { 0 }; i < commands_.size(); ++i) {
-        auto cmd_id = get_command_string(*this, commands_[i]);
-        if (!is_empty(cmd_id)) {
-            auto cmd_sv = global_pool().get(cmd_id);
-            auto str_id = command_strings_.intern(cmd_sv);
-            command_index_.insert(to_underlying(str_id), static_cast<std::uint32_t>(i));
-        }
     }
 }
 
@@ -316,8 +286,6 @@ auto Index::clear() -> void
     edge_arena_.clear();
     edges_from_index_.clear();
     edges_to_index_.clear();
-    command_strings_.clear();
-    command_index_.clear();
 }
 
 namespace {
