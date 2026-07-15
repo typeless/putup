@@ -220,7 +220,7 @@ auto add_producer_dependencies(
 {
     auto current_active = jobs[current_job].guard_active;
 
-    for (auto producer_id : graph::get_inputs(graph, node_id)) {
+    graph::edges_for_each(graph, node_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId producer_id) {
         if (node_id::is_command(producer_id) && cmd_to_job.contains(producer_id)) {
             auto dep_idx = static_cast<std::size_t>(cmd_to_job.get(producer_id));
             if (dep_idx != current_job) {
@@ -229,7 +229,7 @@ auto add_producer_dependencies(
                 }
             }
         }
-    }
+    });
 }
 
 /// Build dependency map between jobs using the graph's edge structure.
@@ -261,7 +261,7 @@ auto build_dependency_map(
         auto current_active = jobs[j].guard_active;
 
         // Check regular inputs - traverse graph edges
-        for (auto input_id : graph::get_inputs(graph, cmd_id)) {
+        graph::edges_for_each(graph, cmd_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId input_id) {
             // Case 1: Input itself is a command (e.g., generated dep-scan rule)
             if (node_id::is_command(input_id)) {
                 if (cmd_to_job.contains(input_id)) {
@@ -272,25 +272,25 @@ auto build_dependency_map(
                         }
                     }
                 }
-                continue;
+                return;
             }
 
             // Case 2: Input is a file produced by another command
             add_producer_dependencies(graph, cmd_to_job, jobs, input_id, j, dependencies);
-        }
+        });
 
         // Case 3: Order-only inputs (groups and files)
         // These establish ordering without creating true data dependencies.
-        for (auto oo_id : graph::get_order_only(graph, cmd_id)) {
+        graph::edges_for_each(graph, cmd_id, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](pup::NodeId oo_id) {
             // For Group nodes, get member files and find their producers
             if (graph::get<NodeType>(graph, oo_id) == NodeType::Group) {
-                for (auto member_id : graph::get_inputs(graph, oo_id)) {
+                graph::edges_for_each(graph, oo_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId member_id) {
                     add_producer_dependencies(graph, cmd_to_job, jobs, member_id, j, dependencies);
-                }
+                });
             } else {
                 add_producer_dependencies(graph, cmd_to_job, jobs, oo_id, j, dependencies);
             }
-        }
+        });
 
         in_degree[j] = dependencies.size();
         for (auto dep : dependencies) {
@@ -661,38 +661,38 @@ auto Scheduler::build_job_list(
         };
 
         // Collect input paths
-        for (auto input_id : graph::get_inputs(g, id)) {
+        graph::edges_for_each(g, id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId input_id) {
             auto input_path = graph::get_full_path(g, input_id, cache);
             if (!input_path.empty()) {
                 job.inputs.push_back(pool.intern(input_path));
             }
-        }
+        });
 
         // Collect output paths
-        for (auto output_id : graph::get_outputs(g, id)) {
+        graph::edges_for_each(g, id, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](pup::NodeId output_id) {
             auto output_path = graph::get_full_path(g, output_id, cache);
             if (!output_path.empty()) {
                 job.outputs.push_back(pool.intern(output_path));
             }
-        }
+        });
 
         // Collect order-only input paths
         // For Group nodes, expand to member file paths
-        for (auto oi_id : graph::get_order_only(g, id)) {
+        graph::edges_for_each(g, id, graph::EdgeDirection::Backward, graph::edge_mask::order_only, [&](pup::NodeId oi_id) {
             if (graph::get<NodeType>(g, oi_id) == NodeType::Group) {
-                for (auto member_id : graph::get_inputs(g, oi_id)) {
+                graph::edges_for_each(g, oi_id, graph::EdgeDirection::Backward, graph::edge_mask::inputs, [&](pup::NodeId member_id) {
                     auto member_path = graph::get_full_path(g, member_id, cache);
                     if (!member_path.empty()) {
                         job.order_only_inputs.push_back(pool.intern(member_path));
                     }
-                }
+                });
             } else {
                 auto oi_path = graph::get_full_path(g, oi_id, cache);
                 if (!oi_path.empty()) {
                     job.order_only_inputs.push_back(pool.intern(oi_path));
                 }
             }
-        }
+        });
 
         jobs.push_back(std::move(job));
     }

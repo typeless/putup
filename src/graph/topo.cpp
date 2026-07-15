@@ -35,11 +35,12 @@ auto dfs_visit(Graph const& graph, NodeId u, DfsState& state) -> void;
 auto visit_neighbors(
     Graph const& graph,
     NodeId u,
-    auto const& neighbors,
+    EdgeDirection dir,
+    LinkTypeMask mask,
     DfsState& state
 ) -> void
 {
-    for (auto v : neighbors) {
+    edges_for_each(graph, u, dir, mask, [&](NodeId v) {
         if (state.has_cycle) {
             return;
         }
@@ -58,7 +59,7 @@ auto visit_neighbors(
             state.cycle.push_back(v);
             std::ranges::reverse(state.cycle);
         }
-    }
+    });
 }
 
 auto dfs_visit(Graph const& graph, NodeId u, DfsState& state) -> void
@@ -67,8 +68,8 @@ auto dfs_visit(Graph const& graph, NodeId u, DfsState& state) -> void
         return;
     }
     state.color.set(u, GRAY);
-    visit_neighbors(graph, u, get_outputs(graph, u), state);
-    visit_neighbors(graph, u, get_order_only_dependents(graph, u), state);
+    visit_neighbors(graph, u, EdgeDirection::Forward, edge_mask::data_flow, state);
+    visit_neighbors(graph, u, EdgeDirection::Forward, edge_mask::order_only, state);
     if (!state.has_cycle) {
         state.color.set(u, BLACK);
         state.order.push_back(u);
