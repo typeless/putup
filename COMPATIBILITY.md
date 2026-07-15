@@ -95,6 +95,20 @@ project/
 
 ## Behavioral Differences
 
+### Includes and Conditionals
+
+Conditionals whose condition reads a config (`@()`) or environment value are
+tracked in the graph even when inactive, so config flips stay incremental.
+Static conditionals (`ifeq (a,b)`, values fixed by the Tupfile itself) are
+processed textually like tup: the losing branch does not exist.
+
+`include` processes a file at most once **per conditional context**:
+
+| Case | Tup | Putup |
+|------|-----|-------|
+| Same file included twice in the same context | Parses twice (duplicate rules fail) | Second include deduplicated |
+| Included in an inactive config branch, then unconditionally | Parses the active one | Both contexts processed; a same-output conflict is reported eagerly, even under configs where tup would parse only one copy |
+
 ### Change Detection
 
 | Aspect | Tup | Putup |

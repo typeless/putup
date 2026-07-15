@@ -1665,3 +1665,94 @@ TEST_CASE("GraphBuilder error directive expanding to empty keeps the empty messa
     CHECK(msg.find("Empty error directive") == std::string_view::npos);
     CHECK(msg.find("Tupfile:1") != std::string_view::npos);
 }
+
+TEST_CASE("GraphBuilder statically false branch does not claim outputs", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(
+        fixture,
+        "ifeq (a,b)\n: |> echo gen > %o |> out.txt\nendif\n: |> echo gen > %o |> out.txt\n"
+    );
+
+    REQUIRE(result.has_value());
+}
+
+namespace {
+
+auto count_conditions(
+    BuilderTestFixture const& fixture,
+    std::string_view source,
+    VarDb const* config_vars = nullptr
+) -> std::size_t
+{
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars, .config_vars = config_vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(source, fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+    return bs.graph.conditions.size();
+}
+
+} // namespace
+
+TEST_CASE("GraphBuilder static conditional adds no condition node", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto wrapped = count_conditions(fixture, "ifeq (y,y)\n: |> echo gen > %o |> out.txt\nendif\n");
+    auto plain = count_conditions(fixture, ": |> echo gen > %o |> out.txt\n");
+
+    CHECK(wrapped == plain);
+}
+
+TEST_CASE("GraphBuilder config conditional still creates a condition node", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto wrapped = count_conditions(fixture, "ifeq (@(M),y)\n: |> echo gen > %o |> out.txt\nendif\n");
+    auto plain = count_conditions(fixture, ": |> echo gen > %o |> out.txt\n");
+
+    CHECK(wrapped > plain);
+}
+
+TEST_CASE("GraphBuilder platform conditional is dynamic without env override", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto wrapped = count_conditions(
+        fixture,
+        "ifeq ($(TUP_PLATFORM),__pup_nonexistent__)\n: |> echo gen > %o |> out.txt\nendif\n"
+    );
+    auto plain = count_conditions(fixture, ": |> echo gen > %o |> out.txt\n");
+
+    CHECK(wrapped > plain);
+}
+
+TEST_CASE("GraphBuilder variable assigned under a config branch keeps later conditions dynamic", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto config = VarDb {};
+    config.set("A", "y");
+
+    auto wrapped = count_conditions(
+        fixture,
+        "ifeq (@(A),y)\nV = 1\nendif\nifeq ($(V),1)\n: |> echo gen > %o |> out.txt\nendif\n",
+        &config
+    );
+    auto baseline = count_conditions(fixture, "ifeq (@(A),y)\nV = 1\nendif\n", &config);
+
+    CHECK(wrapped > baseline);
+}

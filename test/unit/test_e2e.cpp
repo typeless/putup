@@ -5374,6 +5374,93 @@ SCENARIO("Error directive aborts the build only when its branch is active", "[e2
     }
 }
 
+SCENARIO("Include first seen in a dead branch still applies when included actively", "[e2e][include-context]")
+{
+    GIVEN("a Tupfile whose statically false branch includes sub.tup before an unconditional include")
+    {
+        auto f = E2EFixture { "include_context" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("rules from the actively included file are built")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/out.txt"));
+                REQUIRE(f.exists("build/subout.txt"));
+            }
+        }
+
+        WHEN("the included file holds an error directive")
+        {
+            f.write_file("sub.tup", "error included boom\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build aborts with the message")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("included boom") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Include first seen in a config-inactive branch is reprocessed when included actively", "[e2e][include-context]")
+{
+    GIVEN("a project whose config branch and top level include the same file")
+    {
+        auto f = E2EFixture { "include_context" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("the included file only assigns variables")
+        {
+            f.write_file("Tupfile", "ifeq (@(M),y)\ninclude flags.tup\nendif\ninclude flags.tup\n: |> echo $(FLAG) > %o |> out.txt\n");
+            f.write_file("flags.tup", "FLAG = hello\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the active include takes effect")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/out.txt").find("hello") != std::string::npos);
+            }
+        }
+
+        WHEN("the included file defines a rule")
+        {
+            f.write_file("Tupfile", "ifeq (@(M),y)\ninclude sub.tup\nendif\ninclude sub.tup\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the latent duplicate-output conflict is reported")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("already owned") != std::string::npos);
+            }
+        }
+
+        WHEN("the same file is included twice in the same context")
+        {
+            f.write_file("Tupfile", "include sub.tup\ninclude sub.tup\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the second include is deduplicated and the build succeeds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/subout.txt"));
+            }
+        }
+    }
+}
+
 SCENARIO("Phi-node allows same output from complementary conditional branches", "[e2e][phi][same-output]")
 {
     GIVEN("a project where both ifeq branches produce the same output")
