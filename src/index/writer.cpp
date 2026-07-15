@@ -158,6 +158,24 @@ auto write_index(
 
 auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
 {
+    // Load derives ids from position, so a gap silently rewires every later edge.
+    for (auto i = std::size_t { 0 }; i < index.files().size(); ++i) {
+        if (index.files()[i].id != static_cast<NodeId>(i + 1)) {
+            return make_error<Vec<std::byte>>(
+                ErrorCode::IndexCorrupted,
+                "file ids must be dense: id == position + 1"
+            );
+        }
+    }
+    for (auto i = std::size_t { 0 }; i < index.commands().size(); ++i) {
+        if (index.commands()[i].id != node_id::make_command(i + 1)) {
+            return make_error<Vec<std::byte>>(
+                ErrorCode::IndexCorrupted,
+                "command ids must be dense: id == make_command(position + 1)"
+            );
+        }
+    }
+
     auto strings = StringTable {};
 
     // Build file entries and collect strings
