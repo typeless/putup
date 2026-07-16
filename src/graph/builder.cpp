@@ -568,6 +568,18 @@ auto is_context_active(BuilderContext const& ctx) -> bool
     return true;
 }
 
+/// Statements processed even in an inactive context: rules and macros register
+/// guarded for the phi model, and assignments run so those registrations
+/// expand with the branch's own values (the branch scope restores them).
+auto should_process_in_inactive_context(parser::Statement const& stmt) -> bool
+{
+    return stmt.is<parser::Rule>()
+        || stmt.is<parser::Conditional>()
+        || stmt.is<parser::Include>()
+        || stmt.is<parser::BangMacro>()
+        || stmt.is<parser::Assignment>();
+}
+
 /// Check if two guard sets are mutually exclusive (cannot both be satisfied)
 /// This allows phi-node conditionals where branches produce the same output
 /// but only one executes based on config values.
@@ -1076,7 +1088,11 @@ auto include_single_file(
     auto old_current_file = ctx.current_file;
     ctx.current_file = intern(include_path);
 
+    auto active = is_context_active(ctx);
     for (auto const& stmt : parse_result.tupfile.statements) {
+        if (!active && !should_process_in_inactive_context(*stmt)) {
+            continue;
+        }
         auto result = process_statement(ctx, state, *stmt);
         if (!result) {
             ctx.current_file = old_current_file;
@@ -1519,15 +1535,16 @@ auto process_conditional(
         ctx.condition_env_vars = std::move(saved_condition_env_vars);
     });
 
-    // Guards exist only for conditions that can flip without a Tupfile edit;
-    // a static ifeq/ifneq is textual like tup (ifdef never qualifies — it
-    // reads config vars without recording usage).
-    auto is_static = (cond.kind == parser::Conditional::Kind::Ifeq
-                      || cond.kind == parser::Conditional::Kind::Ifneq)
-        && condition_vars.empty() && condition_env_vars_used.empty();
+    // Guards exist only for conditions that can flip without a Tupfile edit
+    // (config or env reads recorded): static conditionals are textual like tup.
+    auto is_static = condition_vars.empty() && condition_env_vars_used.empty();
     if (is_static) {
+        auto active = is_context_active(ctx);
         auto const& body = condition_true ? cond.then_body : cond.else_body;
         for (auto const& stmt : body) {
+            if (!active && !should_process_in_inactive_context(*stmt)) {
+                continue;
+            }
             auto result = process_statement(ctx, state, *stmt);
             if (!result) {
                 return pup::unexpected<Error>(result.error());
@@ -1549,19 +1566,6 @@ auto process_conditional(
     }
     auto cond_id = *cond_id_result;
 
-    // Helper to check if a statement should be processed in an inactive branch
-    // These statements are needed even when branch is inactive:
-    // - Rules: get guards attached, kept in graph for phi-node model
-    // - Conditionals: may contain rules that need processing
-    // - Includes: define macros needed by rules
-    // - BangMacros: define macros needed by rules
-    auto should_process_in_inactive_branch = [](parser::Statement const& stmt) {
-        return stmt.is<parser::Rule>()
-            || stmt.is<parser::Conditional>()
-            || stmt.is<parser::Include>()
-            || stmt.is<parser::BangMacro>();
-    };
-
     // Helper to process a branch with given polarity
     auto process_branch = [&](
                               Vec<std::unique_ptr<parser::Statement>> const& body,
@@ -1571,8 +1575,9 @@ auto process_conditional(
         ctx.condition_stack.push_back(Guard { .condition = cond_id, .polarity = polarity });
         auto pop_guard = ScopeGuard([&] { ctx.condition_stack.pop_back(); });
 
-        // Macro defs in an inactive branch serve only that branch's guarded
-        // rules; the active world after endif must not see them.
+        // Macro defs and assignments in an inactive branch serve only that
+        // branch's guarded rules; the active world after endif must not see
+        // them.
         auto saved_macros = is_active ? decltype(ctx.macros) {} : ctx.macros;
         auto restore_macros = ScopeGuard([&] {
             if (!is_active) {
@@ -1580,8 +1585,26 @@ auto process_conditional(
             }
         });
 
+        auto* branch_vars = (!is_active && ctx.eval) ? ctx.eval->vars : nullptr;
+        auto saved_vars = branch_vars ? *branch_vars : parser::VarDb {};
+        auto* branch_node_vars = (!is_active && ctx.eval) ? ctx.eval->node_vars : nullptr;
+        auto saved_node_vars = branch_node_vars ? *branch_node_vars : parser::VarDb {};
+        auto saved_pending_weak = ctx.pending_weak_assignments.size();
+        auto restore_vars = ScopeGuard([&] {
+            if (branch_vars) {
+                *branch_vars = std::move(saved_vars);
+            }
+            if (branch_node_vars) {
+                *branch_node_vars = std::move(saved_node_vars);
+            }
+            if (!is_active) {
+                ctx.pending_weak_assignments.resize(saved_pending_weak);
+            }
+        });
+
+        auto active = is_context_active(ctx);
         for (auto const& stmt : body) {
-            if (!is_active && !should_process_in_inactive_branch(*stmt)) {
+            if (!active && !should_process_in_inactive_context(*stmt)) {
                 continue;
             }
             auto result = process_statement(ctx, state, *stmt);

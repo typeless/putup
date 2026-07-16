@@ -1741,6 +1741,61 @@ TEST_CASE("GraphBuilder platform conditional is dynamic without env override", "
     CHECK(wrapped > plain);
 }
 
+TEST_CASE("GraphBuilder inactive branch rules expand branch-local assignments", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(
+        "ifeq (@(X),y)\nV = branchval\n: |> gen $(V) > %o |> out.txt\nendif\n",
+        fixture.tupfile_path("")
+    );
+    REQUIRE(parse_result.success());
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+
+    auto found = false;
+    for (std::size_t i = 0; i < bs.graph.commands.size(); ++i) {
+        auto instruction = sv(bs.graph.commands[i].instruction_id);
+        if (instruction.find("branchval") != std::string_view::npos) {
+            found = true;
+        }
+    }
+    CHECK(found);
+    CHECK_FALSE(vars.contains("V"));
+}
+
+TEST_CASE("GraphBuilder ifdef on a config var creates a condition node", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto wrapped = count_conditions(fixture, "ifdef M\n: |> echo gen > %o |> out.txt\nendif\n");
+    auto plain = count_conditions(fixture, ": |> echo gen > %o |> out.txt\n");
+
+    CHECK(wrapped > plain);
+}
+
+TEST_CASE("GraphBuilder ifdef on a plain variable is textual", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto wrapped = count_conditions(fixture, "V = 1\nifdef V\n: |> echo gen > %o |> out.txt\nendif\n");
+    auto plain = count_conditions(fixture, "V = 1\n: |> echo gen > %o |> out.txt\n");
+
+    CHECK(wrapped == plain);
+}
+
 TEST_CASE("GraphBuilder variable assigned under a config branch keeps later conditions dynamic", "[builder][conditional]")
 {
     auto fixture = BuilderTestFixture {};

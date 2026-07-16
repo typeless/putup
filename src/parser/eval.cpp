@@ -595,6 +595,21 @@ auto expand_path(
     return result;
 }
 
+namespace {
+
+auto record_config_definedness_read(EvalContext& ctx, std::string_view name) -> void
+{
+    if (!ctx.on_config_var_used) {
+        return;
+    }
+    if (name.starts_with(builtin_vars::CONFIG_)) {
+        name = name.substr(std::string_view { builtin_vars::CONFIG_ }.size());
+    }
+    ctx.on_config_var_used(name);
+}
+
+} // namespace
+
 auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
 {
     auto& pool = global_pool();
@@ -603,6 +618,7 @@ auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
         if (ctx.vars && ctx.vars->contains(pool.get(cond.var_name))) {
             return true;
         }
+        record_config_definedness_read(ctx, pool.get(cond.var_name));
         if (ctx.config_vars && ctx.config_vars->contains(pool.get(cond.var_name))) {
             return true;
         }
@@ -612,6 +628,7 @@ auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
         if (ctx.vars && ctx.vars->contains(pool.get(cond.var_name))) {
             return false;
         }
+        record_config_definedness_read(ctx, pool.get(cond.var_name));
         if (ctx.config_vars && ctx.config_vars->contains(pool.get(cond.var_name))) {
             return false;
         }

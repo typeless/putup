@@ -5461,6 +5461,46 @@ SCENARIO("Include first seen in a config-inactive branch is reprocessed when inc
     }
 }
 
+SCENARIO("Assignments in inactive contexts do not leak into the active world", "[e2e][inactive-leak]")
+{
+    GIVEN("a project with an inactive config branch")
+    {
+        auto f = E2EFixture { "include_context" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+
+        WHEN("an active inner conditional assigns inside the inactive branch")
+        {
+            f.write_file("Tupfile", "ifeq (@(M),y)\nifeq (y,y)\nV = leaked\nendif\nendif\n: |> echo x$(V) > %o |> out.txt\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the assignment does not escape")
+            {
+                REQUIRE(result.success());
+                auto content = f.read_file("build/out.txt");
+                REQUIRE(content.find("leaked") == std::string::npos);
+            }
+        }
+
+        WHEN("a file included from the inactive branch assigns")
+        {
+            f.write_file("Tupfile", "ifeq (@(M),y)\ninclude flags.tup\nendif\n: |> echo x$(FLAG) > %o |> out.txt\n");
+            f.write_file("flags.tup", "FLAG = hello\n");
+
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the assignment does not escape")
+            {
+                REQUIRE(result.success());
+                auto content = f.read_file("build/out.txt");
+                REQUIRE(content.find("hello") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Phi-node allows same output from complementary conditional branches", "[e2e][phi][same-output]")
 {
     GIVEN("a project where both ifeq branches produce the same output")
