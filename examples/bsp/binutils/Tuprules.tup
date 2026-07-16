@@ -6,7 +6,6 @@
 S ?= $(TUP_CWD)
 B ?= $(TUP_VARIANT_OUTPUTDIR)/$(S)
 CC ?= clang
-AR_CMD ?= ar
 LIBIBERTY_DIR ?= libiberty
 BINUTILS_DIR ?= .
 
