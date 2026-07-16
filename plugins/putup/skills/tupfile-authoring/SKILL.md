@@ -200,6 +200,13 @@ ifeq (@(ENABLE_TESTS),y)
 endif
 ```
 
+`ifdef NAME` / `ifndef NAME` take a bare name and test **definedness** (empty
+still counts as defined). Tupfile variables are checked first -- a deliberate
+putup extension; tup checks only `@`-variables -- then config variables:
+`ifdef FOO` matches `CONFIG_FOO=...` in tup.config (`CONFIG_` prefix
+optional), and `putup -D FOO` (shorthand for `FOO=y`) toggles it from the
+CLI.
+
 **Conditional source pattern** -- append sources guarded by config:
 
 ```tup
