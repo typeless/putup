@@ -661,6 +661,68 @@ SCENARIO("Tupfile changes trigger rebuild", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Editing an output-less command re-runs it", "[e2e][incremental]")
+{
+    GIVEN("a built project with an output-less command")
+    {
+        auto f = E2EFixture { "no_output_command" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("ran-v1.stamp"));
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            REQUIRE(f.build().is_noop());
+
+            WHEN("the command text changes")
+            {
+                f.write_file("Tupfile", ": |> touch ran-v2-longer.stamp |>\n");
+                auto result = f.build();
+
+                THEN("the new command runs")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                    REQUIRE(f.exists("ran-v2-longer.stamp"));
+                }
+
+                THEN("the following build is a no-op")
+                {
+                    REQUIRE(f.build().is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("Config-driven identity change re-runs an output-less command", "[e2e][incremental]")
+{
+    GIVEN("a built project with an output-less command reading a config-driven variable")
+    {
+        auto f = E2EFixture { "no_output_command_config" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("ran-plain.stamp"));
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            REQUIRE(f.build().is_noop());
+
+            WHEN("a -D override changes the command's identity")
+            {
+                auto result = f.build({ "-D", "FLAG=y" });
+
+                THEN("the changed command runs")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE_FALSE(result.is_noop());
+                    REQUIRE(f.exists("ran-with-flag.stamp"));
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Config file changes trigger rebuild", "[e2e][incremental]")
 {
     GIVEN("a project with tup.config")

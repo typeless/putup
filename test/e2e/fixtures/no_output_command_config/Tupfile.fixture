@@ -1,0 +1,6 @@
+ifdef FLAG
+MSG = with-flag
+else
+MSG = plain
+endif
+: |> touch ran-$(MSG).stamp |>
