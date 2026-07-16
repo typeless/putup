@@ -1809,6 +1809,22 @@ env change rebuilds in place rather than deleting and recreating). Two builds yi
 same identity iff the command's effective definition is unchanged, which also makes it a
 sound cross-build join key — unlike a positional NodeId or a lossy string.
 
+### Future Work: Constructive Traces (Remote Caching)
+
+In the taxonomy of *Build Systems à la Carte*, putup's index is a **verifying trace**: it
+records identity and content hashes, enough to decide what to re-run on this machine, but
+it does not store the outputs themselves, and its node and edge tables are keyed by
+positional NodeIds that only mean anything relative to this parse's creation order. Both
+properties make the index machine-local by construction — it cannot serve as a shared
+cache between checkouts, developers, or CI (no Bazel/Nix-style "fetch instead of
+rebuild"). Upgrading to a **constructive trace** would require a content-addressed store
+for outputs and trace entries keyed purely by content (command identity → input hashes →
+output hashes) independent of node numbering. Much of the key is already in place —
+structural identity folds in variables, conditionals, the minimal declared environment,
+and tracked tool binaries — so the missing pieces are the output store, a content-keyed
+trace format, and a fetch/publish protocol. Deliberately deferred until shared or remote
+caching becomes a goal.
+
 ### Why Preserve Edges During Ghost→Generated Upgrade?
 
 When a Ghost node is upgraded to Generated (because a rule now declares it as output), putup preserves all existing dependency edges rather than deleting them:
