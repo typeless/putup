@@ -989,16 +989,23 @@ auto validate_output_targets(
     return node_ids;
 }
 
-/// Detect new commands (in graph but not index) and add their outputs to changed files.
+struct NewCommands {
+    pup::Vec<StringId> changed_outputs;
+    pup::Vec<pup::NodeId> forced_cmds;
+};
+
+/// Detect new commands (in graph but not index). Their outputs join the changed-file
+/// set; a command that contributes no output paths cannot be reached through that
+/// currency, so it is returned for direct scheduling instead.
 auto detect_new_commands(
     pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
     std::string_view variant_name,
     bool verbose
-) -> pup::Vec<StringId>
+) -> NewCommands
 {
     auto const& g = state.graph;
-    auto changed = pup::Vec<StringId> {};
+    auto result = NewCommands {};
 
     // Identity-keyed membership: a command must (re)build when its structural identity
     // is absent from the previous index. Identity folds command text together with the
@@ -1017,11 +1024,16 @@ auto detect_new_commands(
         }
         auto identity = pup::graph::compute_command_identity(g, id, state.path_cache);
         if (!std::binary_search(old_identities.begin(), old_identities.end(), identity, hash_less)) {
+            auto pushed_outputs = false;
             for (auto output_id : pup::graph::get_outputs(g, id)) {
                 auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
                 if (!output_path_sv.empty()) {
-                    changed.push_back(pup::global_pool().intern(output_path_sv));
+                    result.changed_outputs.push_back(pup::global_pool().intern(output_path_sv));
+                    pushed_outputs = true;
                 }
+            }
+            if (!pushed_outputs) {
+                result.forced_cmds.push_back(id);
             }
             if (verbose) {
                 auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
@@ -1029,7 +1041,7 @@ auto detect_new_commands(
             }
         }
     }
-    return changed;
+    return result;
 }
 
 /// Remove stale outputs from removed commands and report them.
@@ -1195,6 +1207,7 @@ auto build_single_variant(
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
     auto changed_files = pup::Vec<StringId> {};
+    auto forced_cmds = pup::Vec<pup::NodeId> {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
@@ -1255,12 +1268,13 @@ auto build_single_variant(
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
         auto new_cmds_start = pup::SteadyClock::now();
-        auto new_cmd_outputs = detect_new_commands(bs, idx, variant_name, opts.verbose);
+        auto new_cmds = detect_new_commands(bs, idx, variant_name, opts.verbose);
         auto new_cmds_elapsed = pup::SteadyClock::now() - new_cmds_start;
         pup::thread_metrics().new_commands_time = std::chrono::duration_cast<std::chrono::microseconds>(new_cmds_elapsed);
-        for (auto& f : new_cmd_outputs) {
+        for (auto& f : new_cmds.changed_outputs) {
             changed_files.push_back(std::move(f));
         }
+        forced_cmds = std::move(new_cmds.forced_cmds);
 
         auto stale_start = pup::SteadyClock::now();
         remove_stale_outputs(
@@ -1274,7 +1288,7 @@ auto build_single_variant(
         auto stale_elapsed = pup::SteadyClock::now() - stale_start;
         pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 
-        if (changed_files.empty()) {
+        if (changed_files.empty() && forced_cmds.empty()) {
             vprint(variant_name, "Nothing to do (up to date).\n");
             if (opts.stat) {
                 print_stats(idx, num_commands, 0);
@@ -1397,8 +1411,12 @@ auto build_single_variant(
     // Composable filter: layer independent concerns, intersect when combined
     auto filter = BuildFilter {};
 
-    if (use_incremental && !changed_files.empty()) {
-        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files));
+    if (use_incremental) {
+        auto affected = pup::graph::collect_affected_commands(bs.graph, changed_files);
+        for (auto id : forced_cmds) {
+            affected.set(id, 1);
+        }
+        filter.intersect_with(std::move(affected));
     }
 
     if (!target_node_ids.empty()) {
