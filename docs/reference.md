@@ -28,6 +28,7 @@ Putup supports the core Tupfile syntax and most tup commands. See [Appendix A](#
 - No Lua scripting
 - No `run` directive (shell execution during parse)
 - Binary index format instead of SQLite database
+- `ifdef`/`ifndef` check Tupfile variables before config variables (tup checks only `@`-variables)
 
 ### 1.3 Key Differences from Tup
 
@@ -1006,6 +1007,23 @@ else
   # optional else clause
 endif
 ```
+
+**`ifdef`/`ifndef` semantics:**
+
+`ifdef NAME` takes a bare variable name (no `$()` or `@()`) and tests *definedness*, not emptiness — a variable set to the empty string counts as defined. Two namespaces are checked in order:
+
+1. **Tupfile variables** (`$(NAME)`) — a deliberate putup extension
+2. **Config variables** (`@(NAME)`) — tup-compatible; the `CONFIG_` prefix is optional, so `ifdef FOO` and `ifdef CONFIG_FOO` are equivalent
+
+A Tupfile variable shadows a config variable of the same name. `ifndef` negates the same lookup. Because the fallback reads tup.config definedness, a config-driven conditional can be toggled per invocation without editing any file:
+
+```bash
+putup -D LTO        # shorthand for -D LTO=y — makes `ifdef LTO` true
+```
+
+> ⚠️ **Differs from tup:** tup's `ifdef` checks only `@`-variables. Putup deliberately checks Tupfile variables first, so a condition can test a variable assigned earlier in the parse. Tupfiles written for tup behave identically unless a tested name is also assigned as a Tupfile variable.
+
+> **Note:** Clearing a config variable in a parent config (`CONFIG_FOO=`, §6.1) leaves it *defined* — `ifdef FOO` remains true.
 
 **Examples:**
 
@@ -2616,7 +2634,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Variables | ✅ | ✅ | |
 | Config variables (@) | ✅ | ✅ | |
 | Node variables (&) | ✅ | ⚠️ | Partial |
-| Conditionals | ✅ | ✅ | |
+| Conditionals | ✅ | ✅ | `ifdef`/`ifndef` check Tupfile vars before config vars (tup: config only) |
 | Groups | ✅ | ✅ | |
 | Order-only deps | ✅ | ✅ | |
 | **Directives** |
