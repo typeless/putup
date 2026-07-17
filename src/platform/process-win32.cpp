@@ -5,6 +5,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/vec.hpp"
 #include "pup/platform/process.hpp"
 
 #include <algorithm>
@@ -488,9 +489,16 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
         return 0;
     }
 
-    // Save original fds for restoration on ready
-    std::intptr_t stack_originals[64];                                          // NOLINT(modernize-avoid-c-arrays)
-    auto* originals = count <= 64 ? stack_originals : new std::intptr_t[count]; // NOLINT
+    // Save original fds for restoration on ready. The spill buffer is
+    // persistent: poll_fds runs in the scheduler loop, and a per-call
+    // allocation would accumulate forever under the no-op operator delete.
+    std::intptr_t stack_originals[64]; // NOLINT(modernize-avoid-c-arrays)
+    static auto spill = Vec<std::intptr_t> {};
+    auto* originals = stack_originals;
+    if (count > 64) {
+        spill.resize(count);
+        originals = spill.data();
+    }
     for (std::size_t i = 0; i < count; ++i) {
         originals[i] = fds[i].fd;
     }
@@ -519,16 +527,10 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
         }
 
         if (found > 0) {
-            if (count > 64) {
-                delete[] originals;
-            } // NOLINT
             return found;
         }
 
         if (!infinite && GetTickCount64() >= deadline) {
-            if (count > 64) {
-                delete[] originals;
-            } // NOLINT
             return 0;
         }
 

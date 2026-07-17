@@ -11,6 +11,9 @@
 // come from libstdc++/libc++. We provide minimal implementations.
 // __cxa_atexit comes from libc and does not need a stub.
 
+#include "pup/core/bump_alloc.hpp"
+
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 
@@ -32,28 +35,21 @@ void __cxa_guard_abort(long long*) { } // NOLINT
 
 } // extern "C"
 
-// C++ new/delete operators
+// C++ new/delete: bump region, never reused (batch lifetime — the region
+// dies with the process, so delete has nothing to do).
 void* operator new(std::size_t n) // NOLINT
 {
-    auto* p = std::malloc(n);
-    if (!p) {
-        std::abort();
-    }
-    return p;
+    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
 
 void* operator new[](std::size_t n) // NOLINT
 {
-    auto* p = std::malloc(n);
-    if (!p) {
-        std::abort();
-    }
-    return p;
+    return pup::bump_alloc(n, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
 }
-void operator delete(void* p) noexcept { std::free(p); }                // NOLINT
-void operator delete[](void* p) noexcept { std::free(p); }              // NOLINT
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }   // NOLINT
-void operator delete[](void* p, std::size_t) noexcept { std::free(p); } // NOLINT
+void operator delete(void*) noexcept { }                // NOLINT
+void operator delete[](void*) noexcept { }              // NOLINT
+void operator delete(void*, std::size_t) noexcept { }   // NOLINT
+void operator delete[](void*, std::size_t) noexcept { } // NOLINT
 
 namespace std { // NOLINT(cert-dcl58-cpp)
 

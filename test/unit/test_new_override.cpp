@@ -73,6 +73,33 @@ TEST_CASE("global operator new override is total on the MSVC CRT", "[new_overrid
         delete p;
         REQUIRE(pup_ov_new_nothrow >= before + 1);
     }
+
+    SECTION("delete is a no-op: freed memory is never reused")
+    {
+        auto* p1 = new int { 1 };
+        sink = p1;
+        delete p1;
+        auto* p2 = new int { 2 };
+        sink = p2;
+        REQUIRE(p1 != p2);
+        delete p2;
+    }
+
+    SECTION("plain new stays default-aligned after odd-sized allocations")
+    {
+        // max_align_t is 8 on the MSVC ABI, but plain new must return
+        // __STDCPP_DEFAULT_NEW_ALIGNMENT__ (16) — compiler-emitted aligned
+        // SSE stores into new'd objects fault otherwise.
+        for (int i = 0; i < 8; ++i) {
+            auto* odd = new char[8];
+            sink = odd;
+            auto* p = new char[32];
+            sink = p;
+            REQUIRE(reinterpret_cast<std::uintptr_t>(p) % __STDCPP_DEFAULT_NEW_ALIGNMENT__ == 0);
+            delete[] p;
+            delete[] odd;
+        }
+    }
 }
 
 #endif // _WIN32
