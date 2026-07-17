@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/region.hpp"
+#include "pup/core/robin_hood_index.hpp"
 #include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
 
@@ -57,37 +58,20 @@ public:
     auto reserve(std::size_t count) -> void;
 
 private:
-    struct Meta {
-        std::uint32_t hash = 0;
-        std::uint16_t displacement = 0;
-    };
-
     struct Entry {
         std::uint32_t offset = 0;
         std::uint32_t length = 0;
     };
 
     [[nodiscard]]
-    auto meta() const -> Meta*;
-
-    [[nodiscard]]
-    auto values() const -> StringId*;
-
-    auto key_at(std::size_t slot) const -> std::string_view;
-    auto probe_find(std::uint32_t h, std::string_view key) const -> StringId;
-    auto probe_insert(std::uint32_t h, StringId id) -> void;
-    auto rebuild(std::size_t new_cap) -> void;
+    auto key_of(std::uint32_t value) const -> std::string_view;
 
     // All interned bytes live in one region, each string NUL-terminated
     // so pool strings stay usable as C strings (env callers rely on it).
     Region bytes_;
     std::size_t bytes_size_ = 0;
     StableVec<Entry> entries_;
-    // One region per table generation: [Meta x cap][StringId x cap].
-    // Fresh pages read as zero, which is the empty-slot sentinel.
-    Region index_;
-    std::size_t index_capacity_ = 0;
-    std::size_t index_count_ = 0;
+    RobinHoodIndex index_;
 };
 
 } // namespace pup
