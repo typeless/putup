@@ -14,6 +14,21 @@
 
 namespace pup {
 
+namespace {
+
+auto hash_edge(PathId parent, StringId name) -> std::uint32_t
+{
+    auto x = (static_cast<std::uint64_t>(to_underlying(parent)) << 32) | to_underlying(name);
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return static_cast<std::uint32_t>(x);
+}
+
+} // namespace
+
 PathPool::PathPool()
 {
     // Reserve entries 0-2 for the three roots.
@@ -23,7 +38,6 @@ PathPool::PathPool()
     entries_.push_back(Entry { .parent = PathId::Ungrounded, .name = StringId::Empty });
     entries_.push_back(Entry { .parent = PathId::SourceRoot, .name = StringId::Empty });
     entries_.push_back(Entry { .parent = PathId::BuildRoot, .name = StringId::Empty });
-    children_.resize(3);
 }
 
 PathPool::~PathPool() = default;
@@ -36,11 +50,13 @@ auto PathPool::intern(PathId parent, StringId name) -> PathId
         return parent;
     }
 
-    auto const parent_idx = to_underlying(parent);
-    assert(parent_idx < children_.size());
+    assert(to_underlying(parent) < entries_.size());
 
-    auto const name_key = to_underlying(name);
-    auto const* found = children_[parent_idx].find(name_key);
+    auto const h = hash_edge(parent, name);
+    auto const found = children_.find(h, [&](std::uint32_t child) {
+        auto const& e = entries_[child];
+        return e.parent == parent && e.name == name;
+    });
     if (found) {
         return make_path_id(*found);
     }
@@ -49,8 +65,7 @@ auto PathPool::intern(PathId parent, StringId name) -> PathId
     auto const id = make_path_id(idx);
 
     entries_.push_back(Entry { .parent = parent, .name = name });
-    children_.resize(idx + 1);
-    children_[parent_idx].insert(name_key, idx);
+    children_.insert(h, idx);
 
     return id;
 }
@@ -220,8 +235,10 @@ auto PathPool::find_path(std::string_view path, StringPool const& pool, PathId s
             return std::nullopt;
         }
 
-        auto const parent_idx = to_underlying(current);
-        auto const* found = children_[parent_idx].find(to_underlying(name));
+        auto const found = children_.find(hash_edge(current, name), [&](std::uint32_t child) {
+            auto const& e = entries_[child];
+            return e.parent == current && e.name == name;
+        });
         if (!found) {
             return std::nullopt;
         }
@@ -245,7 +262,6 @@ auto PathPool::clear() -> void
     entries_.push_back(Entry { .parent = PathId::Ungrounded, .name = StringId::Empty });
     entries_.push_back(Entry { .parent = PathId::SourceRoot, .name = StringId::Empty });
     entries_.push_back(Entry { .parent = PathId::BuildRoot, .name = StringId::Empty });
-    children_.resize(3);
 }
 
 } // namespace pup

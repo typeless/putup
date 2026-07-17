@@ -4,8 +4,7 @@
 #pragma once
 
 #include "pup/core/path_id.hpp"
-#include "pup/core/sorted_id_vec.hpp"
-#include "pup/core/stable_vec.hpp"
+#include "pup/core/robin_hood_index.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -93,7 +92,9 @@ private:
     };
 
     Vec<Entry> entries_;
-    StableVec<SortedPairVec> children_;
+    // Central (parent, name) -> child index; a child's key is readable
+    // from its own entry, so the index stores only the child.
+    RobinHoodIndex children_;
 };
 
 } // namespace pup
