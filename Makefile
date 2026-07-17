@@ -39,7 +39,7 @@ GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' \
 	--exclude-throw-branches --exclude-unreachable-branches \
 	--gcov-executable '$(GCOV)'
 
-.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check check clean distclean
+.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check check clean distclean bootstrap
 
 all: build
 
@@ -76,6 +76,15 @@ install: build
 	install -m 755 $(BUILD_DIR)/putup $(PREFIX)/bin/putup
 	ln -sf putup $(PREFIX)/bin/pup
 	@echo "Installed putup to $(PREFIX)/bin/putup (with pup symlink)"
+
+bootstrap: build
+	@echo "Regenerating bootstrap scripts..."
+	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) > bootstrap-linux.sh
+	@CONFIG=macosx ./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
+	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) > bootstrap-macos.sh
+	@./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
+	@chmod +x bootstrap-linux.sh bootstrap-macos.sh
+	@echo "Regenerated bootstrap-linux.sh and bootstrap-macos.sh (commit them with Tupfile changes)"
 
 compdb: configure
 	@echo "Generating compile_commands.json..."
