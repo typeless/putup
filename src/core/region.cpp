@@ -107,4 +107,9 @@ auto Region::committed() const -> std::size_t
     return committed_;
 }
 
+auto Region::reserved() const -> std::size_t
+{
+    return reserved_;
+}
+
 } // namespace pup

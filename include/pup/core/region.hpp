@@ -33,6 +33,9 @@ public:
     [[nodiscard]]
     auto committed() const -> std::size_t;
 
+    [[nodiscard]]
+    auto reserved() const -> std::size_t;
+
 private:
     void* base_ = nullptr;
     std::size_t reserved_ = 0;

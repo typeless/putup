@@ -2,8 +2,12 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/bump_alloc.hpp"
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
+
+#include <cstddef>
+#include <utility>
 
 using pup::HeapBuf;
 
@@ -72,7 +76,46 @@ TEST_CASE("HeapBuf fmt", "[heap_buf]")
     REQUIRE(buf.view() == "error: syntax at line 10");
 }
 
-// HeapBuf is non-movable (YAGNI — no function returns it yet)
+TEST_CASE("HeapBuf stays off the bump region", "[heap_buf]")
+{
+    auto buf = HeapBuf {};
+    auto const before = pup::bump_allocated_bytes();
+    buf.append("first byte allocates");
+    buf.resize(1U << 20);
+    auto const after = pup::bump_allocated_bytes();
+    REQUIRE(buf.size() == (1U << 20));
+    REQUIRE(after == before);
+}
+
+TEST_CASE("HeapBuf resize beyond the spill reservation stays off the bump", "[heap_buf]")
+{
+    auto const target = std::size_t { 20 } << 20;
+    auto buf = HeapBuf {};
+    auto const before = pup::bump_allocated_bytes();
+    buf.resize(target);
+    auto const after = pup::bump_allocated_bytes();
+    REQUIRE(buf.size() == target);
+    buf.data()[0] = 'a';
+    buf.data()[target - 1] = 'z';
+    REQUIRE(after == before);
+}
+
+TEST_CASE("HeapBuf move transfers contents", "[heap_buf]")
+{
+    auto a = HeapBuf {};
+    a.append("payload");
+    auto const* p = a.data();
+
+    auto b = HeapBuf { std::move(a) };
+    REQUIRE(b.view() == "payload");
+    REQUIRE(b.data() == p);
+    REQUIRE(a.empty());
+
+    auto c = HeapBuf {};
+    c.append("other");
+    c = std::move(b);
+    REQUIRE(c.view() == "payload");
+}
 
 TEST_CASE("HeapBuf fmt escaped braces", "[heap_buf]")
 {

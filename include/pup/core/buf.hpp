@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/format_to.hpp"
+#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstddef>
@@ -17,7 +18,6 @@ class StringPool;
 class Buf final {
 public:
     Buf() = default;
-    ~Buf();
 
     Buf(Buf const&) = delete;
     auto operator=(Buf const&) -> Buf& = delete;
@@ -74,12 +74,14 @@ public:
 
 private:
     static constexpr std::uint32_t INLINE_CAP = 4096;
+    static constexpr std::size_t SPILL_RESERVE = std::size_t { 1 } << 24;
     char buf_[INLINE_CAP] = {};
     char* data_ = buf_;
     std::uint32_t size_ = 0;
     std::uint32_t capacity_ = INLINE_CAP;
+    Region region_;
 
-    auto is_heap() const -> bool { return data_ != buf_; }
+    auto is_spilled() const -> bool { return data_ != buf_; }
     auto grow(std::size_t needed) -> void;
 };
 

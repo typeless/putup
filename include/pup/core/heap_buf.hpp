@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/format_to.hpp"
+#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstddef>
@@ -36,12 +37,12 @@ public:
     [[nodiscard]]
     auto data() const -> char const*
     {
-        return data_;
+        return static_cast<char const*>(region_.data());
     }
     [[nodiscard]]
     auto data() -> char*
     {
-        return data_;
+        return static_cast<char*>(region_.data());
     }
     [[nodiscard]]
     auto size() const -> std::size_t
@@ -56,12 +57,12 @@ public:
     [[nodiscard]]
     auto c_str() const -> char const*
     {
-        return data_ ? data_ : "";
+        return data() ? data() : "";
     }
     [[nodiscard]]
     auto view() const -> std::string_view
     {
-        return { data_ ? data_ : "", size_ };
+        return { data() ? data() : "", size_ };
     }
 
     [[nodiscard]]
@@ -77,9 +78,9 @@ public:
     }
 
 private:
-    char* data_ = nullptr;
+    static constexpr std::size_t SPILL_RESERVE = std::size_t { 1 } << 24;
+    Region region_;
     std::uint32_t size_ = 0;
-    std::uint32_t capacity_ = 0;
 
     auto grow(std::size_t needed) -> void;
 };
