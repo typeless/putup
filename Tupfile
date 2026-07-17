@@ -70,6 +70,7 @@ srcs-y += src/platform/process-$(_os_api).cpp
 srcs-y += src/platform/file_io-$(_os_api).cpp
 srcs-y += src/platform/env-$(_os_api).cpp
 srcs-y += src/platform/path-$(_os_api).cpp
+srcs-y += src/platform/vm-$(_os_api).cpp
 
 # Compile (third-party C without -Werror)
 : foreach $(c-srcs-y) |> !cc_thirdparty |> {lib_objs}
@@ -91,5 +92,6 @@ ifeq (@(LINKER),)
 : src/core/throw_stubs.cpp |> !cxx |> throw_stubs.$(_obj)
 : {lib_objs} main.$(_obj) throw_stubs.$(_obj) |> !link |> putup$(_exe)
 else
-: {lib_objs} main.$(_obj) |> !link |> putup$(_exe)
+: src/core/new_delete.cpp |> !cxx |> new_delete.$(_obj)
+: {lib_objs} main.$(_obj) new_delete.$(_obj) |> !link |> putup$(_exe)
 endif

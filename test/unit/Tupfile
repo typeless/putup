@@ -14,6 +14,7 @@ endif
 else
 _cxxlib =
 _libm =
+: $(ROOT)/src/core/new_delete.cpp |> !cxx |> new_delete.$(_obj) {test_support}
 endif
 
 # Catch2 amalgamated
@@ -54,6 +55,8 @@ test-srcs-y += test_path_pool.cpp
 test-srcs-y += test_path_utils.cpp
 test-srcs-y += test_platform_file_io.cpp
 test-srcs-y += test_platform_process.cpp
+test-srcs-y += test_platform_vm.cpp
+test-srcs-y += test_new_override.cpp
 test-srcs-y += test_rule_pattern.cpp
 test-srcs-y += test_sorted_id_vec.cpp
 test-srcs-y += test_strict_checks.cpp
