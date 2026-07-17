@@ -187,6 +187,9 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         if (graph::get<graph::OutputAction>(ctx.graph().graph, id) == graph::OutputAction::InjectImplicitDeps) {
             continue;
         }
+        if (!graph::is_guard_satisfied(ctx.graph().graph, id)) {
+            continue;
+        }
 
         auto source_dir = global_pool().get(graph::get<graph::SourceDir>(ctx.graph().graph, id));
         auto dir = source_dir.empty() ? std::string_view { "." } : source_dir;
@@ -338,6 +341,9 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
     auto first = true;
 
     for (auto id : commands) {
+        if (!graph::is_guard_satisfied(ctx.graph().graph, id)) {
+            continue;
+        }
         auto source_file = std::string_view {};
         for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
             auto input_path_id = graph::get_full_path(ctx.graph().graph, input_id);
