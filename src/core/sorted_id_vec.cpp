@@ -2,9 +2,9 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/bump_alloc.hpp"
 
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <utility>
 
@@ -14,7 +14,7 @@ namespace pup {
 
 SortedIdVec::~SortedIdVec()
 {
-    std::free(data_);
+    bump_try_pop(data_, capacity_ * sizeof(std::uint32_t));
 }
 
 SortedIdVec::SortedIdVec(SortedIdVec&& other) noexcept
@@ -27,7 +27,6 @@ SortedIdVec::SortedIdVec(SortedIdVec&& other) noexcept
 auto SortedIdVec::operator=(SortedIdVec&& other) noexcept -> SortedIdVec&
 {
     if (this != &other) {
-        std::free(data_);
         data_ = std::exchange(other.data_, nullptr);
         size_ = std::exchange(other.size_, 0);
         capacity_ = std::exchange(other.capacity_, 0);
@@ -38,11 +37,11 @@ auto SortedIdVec::operator=(SortedIdVec&& other) noexcept -> SortedIdVec&
 auto SortedIdVec::grow() -> void
 {
     auto const new_cap = capacity_ == 0 ? std::size_t { 8 } : capacity_ * 2;
-    auto* p = static_cast<std::uint32_t*>(std::realloc(data_, new_cap * sizeof(std::uint32_t)));
-    if (!p) {
-        std::abort();
+    if (!data_ || !bump_try_extend(data_, capacity_ * sizeof(std::uint32_t), new_cap * sizeof(std::uint32_t))) {
+        auto* p = static_cast<std::uint32_t*>(bump_alloc(new_cap * sizeof(std::uint32_t), alignof(std::uint32_t)));
+        std::memcpy(p, data_, size_ * sizeof(std::uint32_t));
+        data_ = p;
     }
-    data_ = p;
     capacity_ = new_cap;
 }
 
@@ -131,7 +130,7 @@ auto SortedIdVec::for_each(void (*fn)(std::uint32_t id, void* ctx), void* ctx) c
 
 SortedPairVec::~SortedPairVec()
 {
-    std::free(data_);
+    bump_try_pop(data_, capacity_ * sizeof(Pair));
 }
 
 SortedPairVec::SortedPairVec(SortedPairVec&& other) noexcept
@@ -144,7 +143,6 @@ SortedPairVec::SortedPairVec(SortedPairVec&& other) noexcept
 auto SortedPairVec::operator=(SortedPairVec&& other) noexcept -> SortedPairVec&
 {
     if (this != &other) {
-        std::free(data_);
         data_ = std::exchange(other.data_, nullptr);
         size_ = std::exchange(other.size_, 0);
         capacity_ = std::exchange(other.capacity_, 0);
@@ -155,11 +153,11 @@ auto SortedPairVec::operator=(SortedPairVec&& other) noexcept -> SortedPairVec&
 auto SortedPairVec::grow() -> void
 {
     auto const new_cap = capacity_ == 0 ? std::size_t { 8 } : capacity_ * 2;
-    auto* p = static_cast<Pair*>(std::realloc(data_, new_cap * sizeof(Pair)));
-    if (!p) {
-        std::abort();
+    if (!data_ || !bump_try_extend(data_, capacity_ * sizeof(Pair), new_cap * sizeof(Pair))) {
+        auto* p = static_cast<Pair*>(bump_alloc(new_cap * sizeof(Pair), alignof(Pair)));
+        std::memcpy(p, data_, size_ * sizeof(Pair));
+        data_ = p;
     }
-    data_ = p;
     capacity_ = new_cap;
 }
 
