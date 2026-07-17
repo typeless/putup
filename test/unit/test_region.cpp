@@ -151,6 +151,8 @@ TEST_CASE("Region custom reservation size", "[region]")
 {
     auto const page = pup::platform::vm::page_size();
     auto r = Region { 16 * page };
+    REQUIRE(r.reserved() == 0);
     r.ensure(16 * page);
     REQUIRE(r.committed() == 16 * page);
+    REQUIRE(r.reserved() == 16 * page);
 }

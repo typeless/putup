@@ -2,61 +2,54 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/heap_buf.hpp"
-#include "pup/core/bump_alloc.hpp"
 #include "pup/core/format_to.hpp"
+#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include <utility>
 
 namespace pup {
 
-HeapBuf::~HeapBuf()
-{
-    bump_try_pop(data_, capacity_);
-}
+HeapBuf::~HeapBuf() = default;
 
 HeapBuf::HeapBuf(HeapBuf&& other) noexcept
-    : data_(other.data_)
-    , size_(other.size_)
-    , capacity_(other.capacity_)
+    : region_(std::move(other.region_))
+    , size_(std::exchange(other.size_, 0))
 {
-    other.data_ = nullptr;
-    other.size_ = 0;
-    other.capacity_ = 0;
 }
 
 auto HeapBuf::operator=(HeapBuf&& other) noexcept -> HeapBuf&
 {
     if (this != &other) {
-        bump_try_pop(data_, capacity_);
-        data_ = other.data_;
-        size_ = other.size_;
-        capacity_ = other.capacity_;
-        other.data_ = nullptr;
-        other.size_ = 0;
-        other.capacity_ = 0;
+        region_ = std::move(other.region_);
+        size_ = std::exchange(other.size_, 0);
     }
     return *this;
 }
 
 auto HeapBuf::grow(std::size_t needed) -> void
 {
-    if (needed <= capacity_) {
+    if (needed <= region_.committed()) {
         return;
     }
-    auto new_cap = static_cast<std::size_t>(capacity_) + capacity_ / 2 + 16;
+    auto const cap = region_.committed();
+    auto new_cap = cap + cap / 2 + 16;
     if (new_cap < needed) {
         new_cap = needed;
     }
-    if (!data_ || !bump_try_extend(data_, capacity_, new_cap)) {
-        auto* p = static_cast<char*>(bump_alloc(new_cap, 1));
-        std::memcpy(p, data_, size_);
-        data_ = p;
+    if (!region_.data()) {
+        region_ = Region { new_cap > SPILL_RESERVE ? new_cap : SPILL_RESERVE };
+    } else if (new_cap > region_.reserved()) {
+        auto bigger = Region { new_cap * 2 };
+        bigger.ensure(new_cap);
+        std::memcpy(bigger.data(), region_.data(), size_);
+        region_ = std::move(bigger);
     }
-    capacity_ = static_cast<std::uint32_t>(new_cap);
+    region_.ensure(new_cap);
 }
 
 auto HeapBuf::append(std::string_view sv) -> void
@@ -66,16 +59,16 @@ auto HeapBuf::append(std::string_view sv) -> void
     }
     auto new_size = size_ + sv.size();
     grow(new_size + 1);
-    std::memcpy(data_ + size_, sv.data(), sv.size());
+    std::memcpy(data() + size_, sv.data(), sv.size());
     size_ = static_cast<std::uint32_t>(new_size);
-    data_[size_] = '\0';
+    data()[size_] = '\0';
 }
 
 auto HeapBuf::append(char c) -> void
 {
     grow(size_ + 2);
-    data_[size_++] = c;
-    data_[size_] = '\0';
+    data()[size_++] = c;
+    data()[size_] = '\0';
 }
 
 auto HeapBuf::operator+=(std::string_view sv) -> HeapBuf&
@@ -99,17 +92,17 @@ auto HeapBuf::resize(std::size_t n) -> void
 {
     grow(n + 1);
     if (n > size_) {
-        std::memset(data_ + size_, 0, n - size_);
+        std::memset(data() + size_, 0, n - size_);
     }
     size_ = static_cast<std::uint32_t>(n);
-    data_[size_] = '\0';
+    data()[size_] = '\0';
 }
 
 auto HeapBuf::clear() -> void
 {
     size_ = 0;
-    if (data_) {
-        data_[0] = '\0';
+    if (data()) {
+        data()[0] = '\0';
     }
 }
 

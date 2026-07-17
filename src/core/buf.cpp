@@ -2,23 +2,17 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/buf.hpp"
-#include "pup/core/bump_alloc.hpp"
 #include "pup/core/format_to.hpp"
+#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include <utility>
 
 namespace pup {
-
-Buf::~Buf()
-{
-    if (is_heap()) {
-        bump_try_pop(data_, capacity_);
-    }
-}
 
 auto Buf::grow(std::size_t needed) -> void
 {
@@ -29,12 +23,20 @@ auto Buf::grow(std::size_t needed) -> void
     if (new_cap < needed) {
         new_cap = needed;
     }
-    if (!is_heap() || !bump_try_extend(data_, capacity_, new_cap)) {
-        auto* p = static_cast<char*>(bump_alloc(new_cap, 1));
-        std::memcpy(p, data_, size_);
-        data_ = p;
+    if (!is_spilled()) {
+        region_ = Region { new_cap > SPILL_RESERVE ? new_cap : SPILL_RESERVE };
+        region_.ensure(new_cap);
+        std::memcpy(region_.data(), buf_, size_);
+    } else if (new_cap > region_.reserved()) {
+        auto bigger = Region { new_cap * 2 };
+        bigger.ensure(new_cap);
+        std::memcpy(bigger.data(), data_, size_);
+        region_ = std::move(bigger);
+    } else {
+        region_.ensure(new_cap);
     }
-    capacity_ = static_cast<std::uint32_t>(new_cap);
+    data_ = static_cast<char*>(region_.data());
+    capacity_ = static_cast<std::uint32_t>(region_.committed());
 }
 
 auto Buf::append(std::string_view sv) -> void
