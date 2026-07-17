@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/id_bitset.hpp"
+#include "pup/core/region.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -13,13 +14,13 @@ namespace pup {
 class IdArray32 final {
 public:
     IdArray32() = default;
-    ~IdArray32();
+    ~IdArray32() = default;
 
     IdArray32(IdArray32 const&) = delete;
     auto operator=(IdArray32 const&) -> IdArray32& = delete;
 
-    IdArray32(IdArray32&&) noexcept;
-    auto operator=(IdArray32&&) noexcept -> IdArray32&;
+    IdArray32(IdArray32&&) noexcept = default;
+    auto operator=(IdArray32&&) noexcept -> IdArray32& = default;
 
     auto resize(std::uint32_t max_id) -> void;
     auto set(std::uint32_t id, std::uint32_t value) -> void;
@@ -42,9 +43,14 @@ public:
     auto for_each(void (*fn)(std::uint32_t id, std::uint32_t value, void* ctx), void* ctx) const -> void;
 
 private:
-    std::uint32_t* data_ = nullptr;
-    std::size_t capacity_ = 0;
+    Region region_;
     IdBitSet present_;
+
+    [[nodiscard]]
+    auto data() const -> std::uint32_t*;
+
+    [[nodiscard]]
+    auto capacity() const -> std::size_t;
 };
 
 } // namespace pup

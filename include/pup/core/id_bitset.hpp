@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "pup/core/region.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -11,13 +13,13 @@ namespace pup {
 class IdBitSet final {
 public:
     IdBitSet() = default;
-    ~IdBitSet();
+    ~IdBitSet() = default;
 
     IdBitSet(IdBitSet const&) = delete;
     auto operator=(IdBitSet const&) -> IdBitSet& = delete;
 
-    IdBitSet(IdBitSet&&) noexcept;
-    auto operator=(IdBitSet&&) noexcept -> IdBitSet&;
+    IdBitSet(IdBitSet&&) noexcept = default;
+    auto operator=(IdBitSet&&) noexcept -> IdBitSet& = default;
 
     auto resize(std::uint32_t max_id) -> void;
     auto insert(std::uint32_t id) -> void;
@@ -34,8 +36,17 @@ public:
     auto for_each(void (*fn)(std::uint32_t id, void* ctx), void* ctx) const -> void;
 
 private:
-    std::uint64_t* words_ = nullptr;
-    std::size_t word_count_ = 0;
+    // 32-bit ids bound the words at 512 MiB, so the reservation is the
+    // exact ceiling and growth can never exhaust it.
+    static constexpr auto WORDS_CEILING = (std::size_t { 1 } << 32) / 8;
+
+    Region region_ { WORDS_CEILING };
+
+    [[nodiscard]]
+    auto words() const -> std::uint64_t*;
+
+    [[nodiscard]]
+    auto word_count() const -> std::size_t;
 };
 
 } // namespace pup
