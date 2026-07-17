@@ -2421,6 +2421,43 @@ SCENARIO("Show index dumps implicit-dep edges from the on-disk index", "[e2e][sh
     }
 }
 
+SCENARIO("Depfiles named after the full object path are discovered", "[e2e][incremental]")
+{
+    GIVEN("a built project whose compile rule writes <output>.d (clang-cl style)")
+    {
+        auto f = E2EFixture { "objpath_depfile" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("src/main.o"));
+        REQUIRE(f.exists("src/main.o.d"));
+
+        WHEN("show index is run")
+        {
+            auto result = f.pup({ "show", "index" });
+
+            THEN("the header.h implicit edge was recorded")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("header.h") != std::string::npos);
+            }
+        }
+
+        WHEN("the header changes and the project is rebuilt")
+        {
+            f.write_file("include/header.h", "#define VERSION 2\n");
+            auto rebuild = f.build();
+
+            THEN("the object is recompiled")
+            {
+                INFO("stdout: " << rebuild.stdout_output);
+                REQUIRE(rebuild.success());
+                REQUIRE_FALSE(rebuild.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Show script generates shell build script", "[e2e][show]")
 {
     GIVEN("a simple C project")
