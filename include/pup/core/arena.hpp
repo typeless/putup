@@ -26,11 +26,6 @@ public:
     Arena32(Arena32&&) noexcept;
     auto operator=(Arena32&&) noexcept -> Arena32&;
 
-    auto append(std::uint32_t const* values, std::uint32_t count) -> ArenaSlice;
-
-    [[nodiscard]]
-    auto get(ArenaSlice slice) const -> std::uint32_t const*;
-
     struct Span {
         std::uint32_t const* data;
         std::uint32_t length;
@@ -53,15 +48,10 @@ public:
     auto slice(ArenaSlice s) const -> Span;
 
     [[nodiscard]]
-    auto at(std::uint32_t offset) -> std::uint32_t&;
-
-    [[nodiscard]]
     auto size() const -> std::size_t;
 
     auto append_extend(ArenaSlice old, std::uint32_t new_value) -> ArenaSlice;
 
-    auto reserve(std::size_t total_elements) -> void;
-    auto compact() -> void;
     auto clear() -> void;
 
 private:
