@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/region.hpp"
 #include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
@@ -63,6 +62,11 @@ private:
         std::uint16_t displacement = 0;
     };
 
+    struct Entry {
+        std::uint32_t offset = 0;
+        std::uint32_t length = 0;
+    };
+
     [[nodiscard]]
     auto meta() const -> Meta*;
 
@@ -74,7 +78,11 @@ private:
     auto probe_insert(std::uint32_t h, StringId id) -> void;
     auto rebuild(std::size_t new_cap) -> void;
 
-    StableVec<HeapBuf> storage_;
+    // All interned bytes live in one region, each string NUL-terminated
+    // so pool strings stay usable as C strings (env callers rely on it).
+    Region bytes_;
+    std::size_t bytes_size_ = 0;
+    StableVec<Entry> entries_;
     // One region per table generation: [Meta x cap][StringId x cap].
     // Fresh pages read as zero, which is the empty-slot sentinel.
     Region index_;

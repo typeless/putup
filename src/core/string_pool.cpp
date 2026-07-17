@@ -5,7 +5,7 @@
 #include "pup/core/string_id.hpp"
 
 #include <cstdint>
-#include <cstdlib>
+#include <cstring>
 #include <string_view>
 #include <utility>
 
@@ -47,7 +47,9 @@ StringPool::StringPool() = default;
 StringPool::~StringPool() = default;
 
 StringPool::StringPool(StringPool&& other) noexcept
-    : storage_(std::move(other.storage_))
+    : bytes_(std::move(other.bytes_))
+    , bytes_size_(std::exchange(other.bytes_size_, 0))
+    , entries_(std::move(other.entries_))
     , index_(std::move(other.index_))
     , index_capacity_(std::exchange(other.index_capacity_, 0))
     , index_count_(std::exchange(other.index_count_, 0))
@@ -57,7 +59,9 @@ StringPool::StringPool(StringPool&& other) noexcept
 auto StringPool::operator=(StringPool&& other) noexcept -> StringPool&
 {
     if (this != &other) {
-        storage_ = std::move(other.storage_);
+        bytes_ = std::move(other.bytes_);
+        bytes_size_ = std::exchange(other.bytes_size_, 0);
+        entries_ = std::move(other.entries_);
         index_ = std::move(other.index_);
         index_capacity_ = std::exchange(other.index_capacity_, 0);
         index_count_ = std::exchange(other.index_count_, 0);
@@ -77,7 +81,8 @@ auto StringPool::values() const -> StringId*
 
 auto StringPool::key_at(std::size_t slot) const -> std::string_view
 {
-    return storage_[to_underlying(values()[slot]) - 1].view();
+    auto const& e = entries_[to_underlying(values()[slot]) - 1];
+    return { static_cast<char const*>(bytes_.data()) + e.offset, e.length };
 }
 
 auto StringPool::probe_find(std::uint32_t h, std::string_view key) const -> StringId
@@ -157,9 +162,13 @@ auto StringPool::intern(std::string_view str) -> StringId
         return existing;
     }
 
-    auto const id = make_string_id(static_cast<std::uint32_t>(storage_.size() + 1));
-    auto& slot = storage_.emplace_back();
-    slot.append(str);
+    auto const id = make_string_id(static_cast<std::uint32_t>(entries_.size() + 1));
+    bytes_.ensure(bytes_size_ + str.size() + 1);
+    auto* dst = static_cast<char*>(bytes_.data()) + bytes_size_;
+    std::memcpy(dst, str.data(), str.size());
+    dst[str.size()] = '\0';
+    entries_.emplace_back(Entry { static_cast<std::uint32_t>(bytes_size_), static_cast<std::uint32_t>(str.size()) });
+    bytes_size_ += str.size() + 1;
 
     if (index_count_ >= index_capacity_ * 4 / 5) {
         rebuild(index_capacity_ == 0 ? 16 : index_capacity_ * 2);
@@ -178,11 +187,12 @@ auto StringPool::get(StringId id) const -> std::string_view
     }
 
     auto const idx = to_underlying(id) - 1;
-    if (idx >= storage_.size()) {
+    if (idx >= entries_.size()) {
         return {};
     }
 
-    return storage_[idx].view();
+    auto const& e = entries_[idx];
+    return { static_cast<char const*>(bytes_.data()) + e.offset, e.length };
 }
 
 auto StringPool::find(std::string_view str) const -> StringId
@@ -196,21 +206,19 @@ auto StringPool::find(std::string_view str) const -> StringId
 
 auto StringPool::size() const -> std::size_t
 {
-    return storage_.size();
+    return entries_.size();
 }
 
 auto StringPool::bytes() const -> std::size_t
 {
-    auto total = std::size_t { 0 };
-    for (auto i = std::size_t { 0 }; i < storage_.size(); ++i) {
-        total += storage_[i].size();
-    }
-    return total;
+    return bytes_size_ - entries_.size();
 }
 
 auto StringPool::clear() -> void
 {
-    storage_.clear();
+    entries_.clear();
+    bytes_ = Region {};
+    bytes_size_ = 0;
     index_ = Region {};
     index_capacity_ = 0;
     index_count_ = 0;

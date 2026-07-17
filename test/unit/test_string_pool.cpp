@@ -38,6 +38,24 @@ TEST_CASE("StringPool Robin Hood index", "[string_pool]")
         REQUIRE(pool.get(pup::StringId::Empty) == "");
     }
 
+    SECTION("interned strings are null-terminated")
+    {
+        // env callers pass pool string data() straight to setenv/getenv.
+        auto a = pool.intern("first");
+        auto b = pool.intern("second-longer");
+        auto sv_a = pool.get(a);
+        auto sv_b = pool.get(b);
+        REQUIRE(sv_a.data()[sv_a.size()] == '\0'); // NOLINT(readability-simplify-subscript-expr) — reads past the view on purpose
+        REQUIRE(sv_b.data()[sv_b.size()] == '\0'); // NOLINT(readability-simplify-subscript-expr)
+    }
+
+    SECTION("bytes reports total interned content")
+    {
+        (void)pool.intern("abc");
+        (void)pool.intern("defgh");
+        REQUIRE(pool.bytes() == 8);
+    }
+
     SECTION("stress: 10K unique strings")
     {
         for (auto i = 0; i < 10000; ++i) {
