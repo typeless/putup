@@ -2458,6 +2458,47 @@ SCENARIO("Depfiles named after the full object path are discovered", "[e2e][incr
     }
 }
 
+SCENARIO("Show exporters omit commands from inactive conditional branches", "[e2e][show]")
+{
+    GIVEN("a Tupfile whose ifeq branches both produce main.o")
+    {
+        auto f = E2EFixture { "inactive_branch_show" };
+        REQUIRE(f.init().success());
+
+        f.append_file("tup.config",
+            "CONFIG_SCRIPT_PROLOGUE=#!/bin/sh\\nset -ex\\ncd \"$(dirname \"$0\")\"\n"
+            "CONFIG_SCRIPT_RUN=(cd \"%DIR\" && %CMD)\n"
+            "CONFIG_SCRIPT_MKDIR=mkdir -p \"%DIR\"\n"
+            "CONFIG_SCRIPT_COMMENT=#\n");
+
+        WHEN("show script is run")
+        {
+            auto result = f.pup({ "show", "script" });
+
+            THEN("only the active branch's command is emitted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("cc -c") != std::string::npos);
+                REQUIRE(result.stdout_output.find("-DALT") == std::string::npos);
+            }
+        }
+
+        WHEN("show compdb is run")
+        {
+            auto result = f.pup({ "show", "compdb" });
+
+            THEN("only the active branch's compile entry is emitted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("main.c") != std::string::npos);
+                REQUIRE(result.stdout_output.find("-DALT") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Show script generates shell build script", "[e2e][show]")
 {
     GIVEN("a simple C project")

@@ -1,0 +1,5 @@
+ifeq (@(USE_ALT),y)
+: main.c |> cc -DALT -c %f -o %o |> main.o
+else
+: main.c |> cc -c %f -o %o |> main.o
+endif
