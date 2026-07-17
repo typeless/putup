@@ -185,7 +185,15 @@ auto discover_d_file_deps(
         stem_buf.append(".d");
         auto depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
         if (!pup::platform::exists(depfile_path)) {
-            continue;
+            // clang-cl deps go through /clang:-MF%o.d, naming the depfile
+            // after the full object path (main.obj.d) rather than the stem.
+            stem_buf.clear();
+            stem_buf.append(pup::path::filename(output_sv));
+            stem_buf.append(".d");
+            depfile_path = pool.get(pup::path::join(base_path, stem_buf.view()));
+            if (!pup::platform::exists(depfile_path)) {
+                continue;
+            }
         }
         auto depfile_result = parser::parse_depfile_path(depfile_path);
         if (depfile_result) {

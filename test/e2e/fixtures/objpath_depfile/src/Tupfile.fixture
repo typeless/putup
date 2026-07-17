@@ -1,0 +1,1 @@
+: main.c |> cc -MD -MF%o.d -I../include -c %f -o %o |> main.o
