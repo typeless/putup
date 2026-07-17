@@ -13,10 +13,10 @@
 // (clang-tidy) would otherwise try to compile this MSVC-only TU.
 #ifdef _WIN32
 
-#include <cstdio>
-#include <cstdlib>
-#include <malloc.h>
-#include <new>
+#    include <cstdio>
+#    include <cstdlib>
+#    include <malloc.h>
+#    include <new>
 
 extern "C" {
 unsigned pup_ov_new = 0;
