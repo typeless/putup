@@ -9,11 +9,11 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
-#include "pup/core/paged_vec.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
@@ -159,8 +159,8 @@ struct TupfileParseState {
     // Append-only paged vectors: push_back preserves references to existing
     // elements, which is critical because recursive Tupfile parsing holds
     // VarDb pointers across calls that may insert new entries.
-    PagedVec<std::pair<StringId, parser::VarDb>> parsed_configs;
-    PagedVec<std::pair<StringId, parser::VarDb>> scoped_configs;
+    StableVec<std::pair<StringId, parser::VarDb>> parsed_configs;
+    StableVec<std::pair<StringId, parser::VarDb>> scoped_configs;
     Vec<std::pair<pup::StringId, pup::StringId>> const* config_defines = nullptr; // CLI overrides
 };
 

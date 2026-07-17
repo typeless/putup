@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "pup/core/paged_vec.hpp"
 #include "pup/core/path_id.hpp"
 #include "pup/core/sorted_id_vec.hpp"
+#include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -93,7 +93,7 @@ private:
     };
 
     Vec<Entry> entries_;
-    PagedVec<SortedPairVec> children_;
+    StableVec<SortedPairVec> children_;
 };
 
 } // namespace pup

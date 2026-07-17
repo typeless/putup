@@ -4,8 +4,8 @@
 #pragma once
 
 #include "pup/core/heap_buf.hpp"
-#include "pup/core/paged_vec.hpp"
 #include "pup/core/region.hpp"
+#include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstdint>
@@ -74,7 +74,7 @@ private:
     auto probe_insert(std::uint32_t h, StringId id) -> void;
     auto rebuild(std::size_t new_cap) -> void;
 
-    PagedVec<HeapBuf> storage_;
+    StableVec<HeapBuf> storage_;
     // One region per table generation: [Meta x cap][StringId x cap].
     // Fresh pages read as zero, which is the empty-slot sentinel.
     Region index_;
