@@ -5,6 +5,7 @@
 
 #include "pup/core/heap_buf.hpp"
 #include "pup/core/paged_vec.hpp"
+#include "pup/core/region.hpp"
 #include "pup/core/string_id.hpp"
 
 #include <cstdint>
@@ -62,14 +63,21 @@ private:
         std::uint16_t displacement = 0;
     };
 
+    [[nodiscard]]
+    auto meta() const -> Meta*;
+
+    [[nodiscard]]
+    auto values() const -> StringId*;
+
     auto key_at(std::size_t slot) const -> std::string_view;
     auto probe_find(std::uint32_t h, std::string_view key) const -> StringId;
     auto probe_insert(std::uint32_t h, StringId id) -> void;
-    auto grow() -> void;
+    auto rebuild(std::size_t new_cap) -> void;
 
     PagedVec<HeapBuf> storage_;
-    Meta* meta_ = nullptr;
-    StringId* values_ = nullptr;
+    // One region per table generation: [Meta x cap][StringId x cap].
+    // Fresh pages read as zero, which is the empty-slot sentinel.
+    Region index_;
     std::size_t index_capacity_ = 0;
     std::size_t index_count_ = 0;
 };
