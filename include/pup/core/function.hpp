@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "pup/core/bump_alloc.hpp"
+
 #include <cstddef>
 #include <cstdlib>
 #include <type_traits>
@@ -31,10 +33,7 @@ public:
             new (buf_.data) Fn(std::forward<F>(f));
             heap_ = false;
         } else {
-            buf_.ptr = std::malloc(sizeof(Fn));
-            if (!buf_.ptr) {
-                std::abort();
-            }
+            buf_.ptr = bump_alloc(sizeof(Fn), alignof(Fn));
             new (buf_.ptr) Fn(std::forward<F>(f));
             heap_ = true;
         }
@@ -117,9 +116,6 @@ private:
     {
         if (invoke_) {
             destroy_(data());
-            if (heap_) {
-                std::free(buf_.ptr);
-            }
             invoke_ = nullptr;
             destroy_ = nullptr;
             move_ = nullptr;

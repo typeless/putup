@@ -3,8 +3,9 @@
 
 #pragma once
 
+#include "pup/core/bump_alloc.hpp"
+
 #include <cstddef>
-#include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 #include <iterator>
@@ -33,7 +34,7 @@ public:
     ~Vec()
     {
         destroy_range(data_, size_);
-        std::free(data_);
+        bump_try_pop(data_, capacity_ * sizeof(T));
     }
 
     Vec(Vec const& other)
@@ -49,7 +50,6 @@ public:
         if (this != &other) {
             destroy_range(data_, size_);
             if (capacity_ < other.size_) {
-                std::free(data_);
                 data_ = alloc(other.size_);
                 capacity_ = other.size_;
             }
@@ -73,7 +73,7 @@ public:
     {
         if (this != &other) {
             destroy_range(data_, size_);
-            std::free(data_);
+            bump_try_pop(data_, capacity_ * sizeof(T));
             data_ = other.data_;
             size_ = other.size_;
             capacity_ = other.capacity_;
@@ -341,11 +341,7 @@ private:
         if (n == 0) {
             return nullptr;
         }
-        auto* p = static_cast<T*>(std::malloc(n * sizeof(T)));
-        if (!p) {
-            std::abort();
-        }
-        return p;
+        return static_cast<T*>(bump_alloc(n * sizeof(T), alignof(T)));
     }
 
     auto ensure_capacity(std::size_t needed) -> void
@@ -362,21 +358,20 @@ private:
 
     auto grow_to(std::size_t new_cap) -> void
     {
+        if (data_ && bump_try_extend(data_, capacity_ * sizeof(T), new_cap * sizeof(T))) {
+            capacity_ = new_cap;
+            return;
+        }
+        auto* new_data = alloc(new_cap);
         if constexpr (std::is_trivially_copyable_v<T>) {
-            auto* p = static_cast<T*>(std::realloc(data_, new_cap * sizeof(T)));
-            if (!p) {
-                std::abort();
-            }
-            data_ = p;
+            std::memcpy(new_data, data_, size_ * sizeof(T));
         } else {
-            auto* new_data = alloc(new_cap);
             for (std::size_t i = 0; i < size_; ++i) {
                 new (new_data + i) T(std::move(data_[i]));
                 data_[i].~T();
             }
-            std::free(data_);
-            data_ = new_data;
         }
+        data_ = new_data;
         capacity_ = new_cap;
     }
 

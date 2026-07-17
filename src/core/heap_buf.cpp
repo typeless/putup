@@ -2,12 +2,12 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/heap_buf.hpp"
+#include "pup/core/bump_alloc.hpp"
 #include "pup/core/format_to.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <string_view>
 
@@ -15,7 +15,7 @@ namespace pup {
 
 HeapBuf::~HeapBuf()
 {
-    std::free(data_);
+    bump_try_pop(data_, capacity_);
 }
 
 HeapBuf::HeapBuf(HeapBuf&& other) noexcept
@@ -31,7 +31,7 @@ HeapBuf::HeapBuf(HeapBuf&& other) noexcept
 auto HeapBuf::operator=(HeapBuf&& other) noexcept -> HeapBuf&
 {
     if (this != &other) {
-        std::free(data_);
+        bump_try_pop(data_, capacity_);
         data_ = other.data_;
         size_ = other.size_;
         capacity_ = other.capacity_;
@@ -51,11 +51,11 @@ auto HeapBuf::grow(std::size_t needed) -> void
     if (new_cap < needed) {
         new_cap = needed;
     }
-    auto* p = static_cast<char*>(std::realloc(data_, new_cap));
-    if (!p) {
-        std::abort();
+    if (!data_ || !bump_try_extend(data_, capacity_, new_cap)) {
+        auto* p = static_cast<char*>(bump_alloc(new_cap, 1));
+        std::memcpy(p, data_, size_);
+        data_ = p;
     }
-    data_ = p;
     capacity_ = static_cast<std::uint32_t>(new_cap);
 }
 
