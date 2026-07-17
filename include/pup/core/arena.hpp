@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "pup/core/region.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -16,7 +18,7 @@ struct ArenaSlice {
 class Arena32 final {
 public:
     Arena32() = default;
-    ~Arena32();
+    ~Arena32() = default;
 
     Arena32(Arena32 const&) = delete;
     auto operator=(Arena32 const&) -> Arena32& = delete;
@@ -63,10 +65,11 @@ public:
     auto clear() -> void;
 
 private:
-    std::uint32_t* data_ = nullptr;
+    Region region_;
     std::size_t size_ = 0;
-    std::size_t capacity_ = 0;
 
+    [[nodiscard]]
+    auto data() const -> std::uint32_t*;
     auto grow(std::size_t needed) -> void;
 };
 

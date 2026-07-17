@@ -17,6 +17,7 @@ srcs-y += src/core/global_pool.cpp
 srcs-y += src/core/buf.cpp
 srcs-y += src/core/heap_buf.cpp
 srcs-y += src/core/path_utils.cpp
+srcs-y += src/core/region.cpp
 srcs-y += src/core/sorted_id_vec.cpp
 srcs-y += src/core/string_pool.cpp
 srcs-y += src/core/string_utils.cpp

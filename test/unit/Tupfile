@@ -56,6 +56,7 @@ test-srcs-y += test_path_utils.cpp
 test-srcs-y += test_platform_file_io.cpp
 test-srcs-y += test_platform_process.cpp
 test-srcs-y += test_platform_vm.cpp
+test-srcs-y += test_region.cpp
 test-srcs-y += test_new_override.cpp
 test-srcs-y += test_rule_pattern.cpp
 test-srcs-y += test_sorted_id_vec.cpp
