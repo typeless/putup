@@ -4,68 +4,42 @@
 #include "pup/core/id_array.hpp"
 
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
-#include <utility>
 
 namespace pup {
 
-// --- IdArray32 ---
-
-IdArray32::~IdArray32()
+auto IdArray32::data() const -> std::uint32_t*
 {
-    std::free(data_);
+    return static_cast<std::uint32_t*>(region_.data());
 }
 
-IdArray32::IdArray32(IdArray32&& other) noexcept
-    : data_(std::exchange(other.data_, nullptr))
-    , capacity_(std::exchange(other.capacity_, 0))
-    , present_(std::move(other.present_))
+auto IdArray32::capacity() const -> std::size_t
 {
-}
-
-auto IdArray32::operator=(IdArray32&& other) noexcept -> IdArray32&
-{
-    if (this != &other) {
-        std::free(data_);
-        data_ = std::exchange(other.data_, nullptr);
-        capacity_ = std::exchange(other.capacity_, 0);
-        present_ = std::move(other.present_);
-    }
-    return *this;
+    return region_.committed() / sizeof(std::uint32_t);
 }
 
 auto IdArray32::resize(std::uint32_t max_id) -> void
 {
     auto const needed = static_cast<std::size_t>(max_id) + 1;
-    if (needed <= capacity_) {
-        return;
-    }
-    auto* p = static_cast<std::uint32_t*>(std::realloc(data_, needed * sizeof(std::uint32_t)));
-    if (!p) {
-        std::abort();
-    }
-    std::memset(p + capacity_, 0, (needed - capacity_) * sizeof(std::uint32_t));
-    data_ = p;
-    capacity_ = needed;
+    region_.ensure(needed * sizeof(std::uint32_t));
     present_.resize(max_id);
 }
 
 auto IdArray32::set(std::uint32_t id, std::uint32_t value) -> void
 {
-    if (static_cast<std::size_t>(id) >= capacity_) {
+    if (static_cast<std::size_t>(id) >= capacity()) {
         resize(id);
     }
-    data_[id] = value;
+    data()[id] = value;
     present_.insert(id);
 }
 
 auto IdArray32::get(std::uint32_t id) const -> std::uint32_t
 {
-    if (static_cast<std::size_t>(id) >= capacity_) {
+    if (static_cast<std::size_t>(id) >= capacity()) {
         return 0;
     }
-    return data_[id];
+    return data()[id];
 }
 
 auto IdArray32::contains(std::uint32_t id) const -> bool
@@ -80,8 +54,8 @@ auto IdArray32::remove(std::uint32_t id) -> void
 
 auto IdArray32::clear() -> void
 {
-    if (data_) {
-        std::memset(data_, 0, capacity_ * sizeof(std::uint32_t));
+    if (data()) {
+        std::memset(data(), 0, region_.committed());
     }
     present_.clear();
 }
@@ -94,7 +68,7 @@ auto IdArray32::for_each(void (*fn)(std::uint32_t id, std::uint32_t value, void*
         void* ctx;
     };
 
-    auto inner = Context { data_, fn, ctx };
+    auto inner = Context { data(), fn, ctx };
     present_.for_each(
         [](std::uint32_t id, void* raw) {
             auto const* c = static_cast<Context const*>(raw);
