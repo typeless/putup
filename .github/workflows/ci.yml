@@ -156,11 +156,20 @@ jobs:
         run: pipx install gcovr
       - name: Build instrumented variant and generate report
         run: make coverage PUTUP=./build/putup
+      - name: Coverage stats
+        run: |
+          python3 .github/scripts/coverage_stats.py build-coverage/report/summary.json > coverage-metrics.md
+          cat coverage-metrics.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: build-coverage/report/
+      - name: Upload coverage metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-coverage-metrics
+          path: coverage-metrics.md
 
   build-gcc-bsp:
     needs: build-linux
@@ -194,3 +203,57 @@ jobs:
           echo 'int main() { return 0; }' > /tmp/test.c
           build-gcc/gcc/gcc/cc1 /tmp/test.c -quiet -o /tmp/test.s
           grep 'GCC.*15.2.0' /tmp/test.s
+      - name: Benchmark (perf)
+        run: |
+          sudo sysctl -w kernel.perf_event_paranoid=1
+          sudo apt-get install -y linux-tools-$(uname -r) || sudo apt-get install -y linux-tools-generic
+          command -v perf >/dev/null || export PERF="$(ls /usr/lib/linux-tools/*/perf | sort -V | tail -1)"
+          .github/scripts/bench_metrics.sh build/putup examples/bsp source-root build-gcc > perf-metrics.md
+          cat perf-metrics.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload perf metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-perf-metrics
+          path: perf-metrics.md
+
+  pr-metrics-comment:
+    if: github.event_name == 'pull_request'
+    needs: [coverage, build-gcc-bsp]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download perf metrics
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-perf-metrics
+      - name: Download coverage metrics
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-coverage-metrics
+      - name: Upsert sticky comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker='<!-- pr-metrics -->'
+          {
+            echo "$marker"
+            echo "## PR metrics"
+            echo
+            cat perf-metrics.md
+            echo
+            cat coverage-metrics.md
+            echo
+            echo "_Updated for ${SHA}_"
+          } > body.md
+          cid=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq "map(select(.body | startswith(\"$marker\"))) | .[0].id // empty")
+          if [ -n "$cid" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$cid" -F body=@body.md
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -F body=@body.md
+          fi
