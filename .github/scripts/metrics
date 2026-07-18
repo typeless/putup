@@ -20,6 +20,14 @@ PERF_COLUMNS = [
     "rss_mb",
 ]
 
+SIZE_COLUMNS = [
+    "binary",
+    "text_kb",
+    "data_kb",
+    "bss_kb",
+    "file_kb",
+]
+
 COVERAGE_COLUMNS = [
     "overall",
     "median",
@@ -159,6 +167,33 @@ def cmd_bench(args):
     return 0
 
 
+def parse_size_output(text):
+    for line in text.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 3 and parts[0].isdigit():
+            return int(parts[0]), int(parts[1]), int(parts[2])
+    return None, None, None
+
+
+def cmd_size(args):
+    print("\t".join(SIZE_COLUMNS))
+    for path in args.binaries:
+        run = subprocess.run(
+            ["size", "-B", path], capture_output=True, text=True, check=False
+        )
+        text_b, data_b, bss_b = parse_size_output(run.stdout)
+        try:
+            file_b = os.path.getsize(path)
+        except OSError:
+            file_b = None
+        cells = [os.path.basename(path)] + [
+            "n/a" if v is None else f"{v / 1024:.1f}"
+            for v in (text_b, data_b, bss_b, file_b)
+        ]
+        print("\t".join(cells))
+    return 0
+
+
 def cmd_coverage(args):
     with open(args.summary_json, encoding="utf-8") as f:
         summary = json.load(f)
@@ -245,6 +280,24 @@ def perf_section(cur_rows, base_rows):
     return lines
 
 
+def size_section(cur_rows, base_rows):
+    base_by_name = {r.get("binary"): r for r in base_rows}
+    lines = [
+        "### Binary size (Linux)",
+        "",
+        "| Binary | .text | .data | .bss | File |",
+        "|---|---|---|---|---|",
+    ]
+    for row in cur_rows:
+        base = base_by_name.get(row["binary"], {})
+        cells = [f"`{row['binary']}`"] + [
+            annotate(num(row[col]), num(base.get(col)), "pct_change", " KB")
+            for col in ("text_kb", "data_kb", "bss_kb", "file_kb")
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    return lines
+
+
 def coverage_section(cur, base):
     lines = [
         "### Test coverage (lines)",
@@ -280,6 +333,12 @@ def cmd_render(args):
         base = read_tsv(args.baseline_perf)
         baseline_used |= bool(base)
         sections.append(perf_section(perf, base))
+
+    size = read_tsv(args.size)
+    if size:
+        base = read_tsv(args.baseline_size)
+        baseline_used |= bool(base)
+        sections.append(size_section(size, base))
 
     cov = read_tsv(args.coverage)
     if cov:
@@ -318,10 +377,16 @@ def main() -> int:
     coverage.add_argument("summary_json")
     coverage.set_defaults(func=cmd_coverage)
 
+    size = sub.add_parser("size")
+    size.add_argument("binaries", nargs="+")
+    size.set_defaults(func=cmd_size)
+
     render = sub.add_parser("render")
     render.add_argument("--perf")
+    render.add_argument("--size")
     render.add_argument("--coverage")
     render.add_argument("--baseline-perf")
+    render.add_argument("--baseline-size")
     render.add_argument("--baseline-coverage")
     render.add_argument("--baseline-label")
     render.set_defaults(func=cmd_render)
