@@ -1,5 +1,6 @@
 #!/bin/sh
 # usage: bench_metrics.sh <putup> <config-dir> <source-dir> <build-dir>
+# Emits TSV; .github/scripts/compose_metrics.py renders it.
 set -eu
 PUTUP=$1
 CDIR=$2
@@ -23,7 +24,7 @@ miss_rate() {
     awk -v ev="$1" '
         $0 ~ ev {
             for (i = 1; i <= NF; i++)
-                if ($i == "rate:") { print $(i + 1); exit }
+                if ($i == "rate:") { sub("%", "", $(i + 1)); print $(i + 1); exit }
         }' "$cg"
 }
 
@@ -48,23 +49,18 @@ run_row() {
         rm -f "$cg" "$cgout"
     fi
 
-    printf '| %s | %s | %s | %s | %s | %s | %s | %s MB |\n' \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$name" \
-        "$(metric instructions:u 1e6 '%.0f M')" \
-        "$(metric task-clock 1000 '%.2f s')" \
-        "$(metric page-faults 1000 '%.1f k')" \
+        "$(metric instructions:u 1e6 '%.0f')" \
+        "$(metric task-clock 1000 '%.2f')" \
+        "$(metric page-faults 1000 '%.1f')" \
         "${d1:-n/a}" \
         "${ll:-n/a}" \
-        "$(metric 'time elapsed' 1 '%.3f s')" \
+        "$(metric 'time elapsed' 1 '%.3f')" \
         "$rss_mb"
     rm -f "$tf" "$pf"
 }
 
-echo "### Performance (gcc example, Linux)"
-echo
-echo "| Workload | Instructions | CPU time | Page faults | D1 miss | LL miss | Wall | Peak RSS |"
-echo "|---|---|---|---|---|---|---|---|"
+printf 'workload\tinstructions_m\tcpu_s\tfaults_k\td1_pct\tll_pct\twall_s\trss_mb\n'
 run_row "parse" "$PUTUP" parse -C "$CDIR" -S "$SDIR" -B "$BDIR"
-run_row "dry-run (graph load + schedule)" "$PUTUP" -n -C "$CDIR" -S "$SDIR" -B "$BDIR" -j"$(nproc)"
-echo
-echo "Deterministic signals: page faults, peak RSS, and the cachegrind D1/LL miss rates (simulated cache, exact across runs). CPU time is the stable compute signal on shared runners; instructions read n/a on GitHub-hosted runners (virtualized, no PMU). perf stat -r ${REPEAT}, user-space only."
+run_row "dry-run" "$PUTUP" -n -C "$CDIR" -S "$SDIR" -B "$BDIR" -j"$(nproc)"

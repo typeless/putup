@@ -158,8 +158,8 @@ jobs:
         run: make coverage PUTUP=./build/putup
       - name: Coverage stats
         run: |
-          python3 .github/scripts/coverage_stats.py build-coverage/report/summary.json > coverage-metrics.md
-          cat coverage-metrics.md >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/scripts/coverage_stats.py build-coverage/report/summary.json > coverage-metrics.tsv
+          python3 .github/scripts/compose_metrics.py --coverage coverage-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -169,7 +169,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pr-coverage-metrics
-          path: coverage-metrics.md
+          path: coverage-metrics.tsv
 
   build-gcc-bsp:
     needs: build-linux
@@ -209,13 +209,13 @@ jobs:
           sudo apt-get install -y valgrind
           sudo apt-get install -y linux-tools-$(uname -r) || sudo apt-get install -y linux-tools-generic
           command -v perf >/dev/null || export PERF="$(ls /usr/lib/linux-tools/*/perf | sort -V | tail -1)"
-          .github/scripts/bench_metrics.sh build/putup examples/bsp source-root build-gcc > perf-metrics.md
-          cat perf-metrics.md >> "$GITHUB_STEP_SUMMARY"
+          .github/scripts/bench_metrics.sh build/putup examples/bsp source-root build-gcc > perf-metrics.tsv
+          python3 .github/scripts/compose_metrics.py --perf perf-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Upload perf metrics
         uses: actions/upload-artifact@v4
         with:
           name: pr-perf-metrics
-          path: perf-metrics.md
+          path: perf-metrics.tsv
 
   pr-metrics-comment:
     if: github.event_name == 'pull_request'
@@ -224,7 +224,9 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      actions: read
     steps:
+      - uses: actions/checkout@v7
       - name: Download perf metrics
         uses: actions/download-artifact@v4
         with:
@@ -233,6 +235,20 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pr-coverage-metrics
+      - name: Fetch baseline metrics from the last main run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          run=$(gh run list -R "$REPO" --workflow ci.yml --branch main --event push \
+            --status success --json databaseId,headSha --jq '.[0] // empty' -L 1)
+          if [ -n "$run" ]; then
+            gh run download "$(echo "$run" | jq -r .databaseId)" -R "$REPO" \
+              -n pr-perf-metrics -D baseline/perf || true
+            gh run download "$(echo "$run" | jq -r .databaseId)" -R "$REPO" \
+              -n pr-coverage-metrics -D baseline/cov || true
+            echo "BASE_SHA=$(echo "$run" | jq -r .headSha)" >> "$GITHUB_ENV"
+          fi
       - name: Upsert sticky comment
         env:
           GH_TOKEN: ${{ github.token }}
@@ -240,14 +256,17 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          python3 .github/scripts/compose_metrics.py \
+            --perf perf-metrics.tsv --coverage coverage-metrics.tsv \
+            --baseline-perf baseline/perf/perf-metrics.tsv \
+            --baseline-coverage baseline/cov/coverage-metrics.tsv \
+            --baseline-label "main@${BASE_SHA:0:9}" > metrics.md
           marker='<!-- pr-metrics -->'
           {
             echo "$marker"
             echo "## PR metrics"
             echo
-            cat perf-metrics.md
-            echo
-            cat coverage-metrics.md
+            cat metrics.md
             echo
             echo "_Updated for ${SHA}_"
           } > body.md
