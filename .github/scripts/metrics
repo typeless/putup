@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+import argparse
+import csv
+import json
+import os
+import re
+import statistics
+import subprocess
+import sys
+import tempfile
+
+PERF_COLUMNS = [
+    "workload",
+    "instructions_m",
+    "cpu_s",
+    "faults_k",
+    "d1_pct",
+    "ll_pct",
+    "wall_s",
+    "rss_mb",
+]
+
+COVERAGE_COLUMNS = [
+    "overall",
+    "median",
+    "min_pct",
+    "min_file",
+    "max_pct",
+    "max_file",
+    "files",
+    "covered",
+    "total",
+]
+
+PERF_NOTE = (
+    "Deterministic signals: page faults, peak RSS, and the cachegrind D1/LL miss"
+    " rates (simulated cache, exact across runs). CPU time is user+sys from"
+    " time(1); instructions read n/a on GitHub-hosted runners (virtualized,"
+    " no PMU)."
+)
+
+def first_number(line):
+    token = line.split()[0].replace(",", "")
+    try:
+        return float(token)
+    except ValueError:
+        return None
+
+
+def parse_perf_output(text):
+    result = {"instructions_m": None, "faults_k": None, "wall_s": None}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "instructions" in stripped:
+            value = first_number(stripped)
+            result["instructions_m"] = None if value is None else value / 1e6
+        elif "page-faults" in stripped:
+            value = first_number(stripped)
+            result["faults_k"] = None if value is None else value / 1e3
+        elif "time elapsed" in stripped:
+            result["wall_s"] = first_number(stripped)
+    return result
+
+
+def parse_cachegrind_output(text):
+    rates = {}
+    for line in text.splitlines():
+        match = re.search(r"(D1|LL)\s+miss rate:\s+([0-9.]+)%", line)
+        if match:
+            rates[match.group(1)] = float(match.group(2))
+    return rates.get("D1"), rates.get("LL")
+
+
+def parse_time_output(text):
+    result = {"rss_mb": None, "cpu_s": None}
+    user_s = sys_s = None
+    for line in text.splitlines():
+        if "Maximum resident set size" in line:
+            value = first_number(line.rsplit(":", 1)[1])
+            result["rss_mb"] = None if value is None else value / 1024
+        elif "User time (seconds)" in line:
+            user_s = first_number(line.rsplit(":", 1)[1])
+        elif "System time (seconds)" in line:
+            sys_s = first_number(line.rsplit(":", 1)[1])
+    if user_s is not None and sys_s is not None:
+        result["cpu_s"] = user_s + sys_s
+    return result
+
+
+def measure(cmd):
+    time_run = subprocess.run(
+        ["/usr/bin/time", "-v", *cmd],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    time_metrics = parse_time_output(time_run.stderr)
+
+    perf = os.environ.get("PERF", "perf")
+    repeat = os.environ.get("BENCH_REPEAT", "3")
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".perf") as out:
+        subprocess.run(
+            [perf, "stat", "-r", repeat,
+             "-e", "page-faults:u,cycles:u,instructions:u",
+             "-o", out.name, "--", *cmd],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        row = parse_perf_output(out.read())
+    row.update(time_metrics)
+
+    row["d1_pct"] = row["ll_pct"] = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="r") as log, \
+             tempfile.NamedTemporaryFile() as cgout:
+            subprocess.run(
+                ["valgrind", "--tool=cachegrind", "--cache-sim=yes",
+                 f"--cachegrind-out-file={cgout.name}",
+                 f"--log-file={log.name}", *cmd],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            row["d1_pct"], row["ll_pct"] = parse_cachegrind_output(log.read())
+    except FileNotFoundError:
+        pass
+    return row
+
+
+def fmt(value, spec):
+    return "n/a" if value is None else format(value, spec)
+
+
+def cmd_bench(args):
+    workloads = [
+        ("parse", [args.putup, "parse", "-C", args.config_dir,
+                   "-S", args.source_dir, "-B", args.build_dir]),
+        ("dry-run", [args.putup, "-n", "-C", args.config_dir,
+                     "-S", args.source_dir, "-B", args.build_dir,
+                     f"-j{os.cpu_count()}"]),
+    ]
+    print("\t".join(PERF_COLUMNS))
+    for name, cmd in workloads:
+        row = measure(cmd)
+        print("\t".join([
+            name,
+            fmt(row["instructions_m"], ".0f"),
+            fmt(row["cpu_s"], ".2f"),
+            fmt(row["faults_k"], ".1f"),
+            fmt(row["d1_pct"], "g"),
+            fmt(row["ll_pct"], "g"),
+            fmt(row["wall_s"], ".3f"),
+            fmt(row["rss_mb"], ".1f"),
+        ]))
+    return 0
+
+
+def cmd_coverage(args):
+    with open(args.summary_json, encoding="utf-8") as f:
+        summary = json.load(f)
+    files = [e for e in summary["files"] if e.get("line_total", 0) > 0]
+    if not files:
+        print("no coverage data", file=sys.stderr)
+        return 1
+    worst = min(files, key=lambda e: e["line_percent"])
+    best = max(files, key=lambda e: e["line_percent"])
+    print("\t".join(COVERAGE_COLUMNS))
+    print("\t".join(str(v) for v in (
+        summary["line_percent"],
+        statistics.median(e["line_percent"] for e in files),
+        worst["line_percent"],
+        worst["filename"],
+        best["line_percent"],
+        best["filename"],
+        len(files),
+        summary["line_covered"],
+        summary["line_total"],
+    )))
+    return 0
+
+
+def read_tsv(path):
+    if not path:
+        return []
+    try:
+        with open(path, encoding="utf-8", newline="") as f:
+            return list(csv.DictReader(f, delimiter="\t"))
+    except OSError:
+        return []
+
+
+def num(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def annotate(cur, base, kind, unit=""):
+    if cur is None:
+        return "n/a"
+    shown = f"{cur:g}{unit}"
+    if base is None:
+        return shown
+    if kind == "pct_change":
+        if base == 0:
+            return shown
+        change = (cur - base) / base * 100
+        if abs(change) < 0.05:
+            return shown
+        return f"{shown} ({change:+.1f}%)"
+    diff = cur - base
+    if abs(diff) < 0.05:
+        return shown
+    suffix = "pp" if kind == "pp" else unit.strip()
+    return f"{shown} ({diff:+.1f}{suffix})"
+
+
+def perf_section(cur_rows, base_rows):
+    base_by_name = {r.get("workload"): r for r in base_rows}
+    lines = [
+        "### Performance (gcc example, Linux)",
+        "",
+        "| Workload | Instructions | CPU time | Page faults | D1 miss | LL miss | Wall | Peak RSS |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for row in cur_rows:
+        base = base_by_name.get(row["workload"], {})
+        cells = [
+            row["workload"],
+            annotate(num(row["instructions_m"]), num(base.get("instructions_m")), "pct_change", " M"),
+            fmt(num(row["cpu_s"]), "g") + " s" if num(row["cpu_s"]) is not None else "n/a",
+            annotate(num(row["faults_k"]), num(base.get("faults_k")), "pct_change", " k"),
+            annotate(num(row["d1_pct"]), num(base.get("d1_pct")), "pp", "%"),
+            annotate(num(row["ll_pct"]), num(base.get("ll_pct")), "pp", "%"),
+            fmt(num(row["wall_s"]), "g") + " s" if num(row["wall_s"]) is not None else "n/a",
+            annotate(num(row["rss_mb"]), num(base.get("rss_mb")), "abs", " MB"),
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", PERF_NOTE]
+    return lines
+
+
+def coverage_section(cur, base):
+    lines = [
+        "### Test coverage (lines)",
+        "",
+        "| Overall | Median file | Min file | Max file |",
+        "|---|---|---|---|",
+    ]
+    lines.append(
+        "| {} | {} | {:.1f}% `{}` | {:.1f}% `{}` |".format(
+            annotate(num(cur["overall"]), num(base.get("overall")), "pp", "%"),
+            annotate(num(cur["median"]), num(base.get("median")), "pp", "%"),
+            num(cur["min_pct"]),
+            cur["min_file"],
+            num(cur["max_pct"]),
+            cur["max_file"],
+        )
+    )
+    lines += [
+        "",
+        "{} files · {}/{} lines covered".format(
+            cur["files"], cur["covered"], cur["total"]
+        ),
+    ]
+    return lines
+
+
+def cmd_render(args):
+    sections = []
+    baseline_used = False
+
+    perf = read_tsv(args.perf)
+    if perf:
+        base = read_tsv(args.baseline_perf)
+        baseline_used |= bool(base)
+        sections.append(perf_section(perf, base))
+
+    cov = read_tsv(args.coverage)
+    if cov:
+        base_rows = read_tsv(args.baseline_coverage)
+        base = base_rows[0] if base_rows else {}
+        baseline_used |= bool(base)
+        sections.append(coverage_section(cov[0], base))
+
+    if not sections:
+        print("no metrics inputs", file=sys.stderr)
+        return 1
+
+    out = []
+    for i, section in enumerate(sections):
+        if i:
+            out.append("")
+        out.extend(section)
+    if baseline_used and args.baseline_label:
+        out += ["", f"Deltas vs {args.baseline_label}."]
+    print("\n".join(out))
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="command", required=True)
+
+    bench = sub.add_parser("bench")
+    bench.add_argument("putup")
+    bench.add_argument("config_dir")
+    bench.add_argument("source_dir")
+    bench.add_argument("build_dir")
+    bench.set_defaults(func=cmd_bench)
+
+    coverage = sub.add_parser("coverage")
+    coverage.add_argument("summary_json")
+    coverage.set_defaults(func=cmd_coverage)
+
+    render = sub.add_parser("render")
+    render.add_argument("--perf")
+    render.add_argument("--coverage")
+    render.add_argument("--baseline-perf")
+    render.add_argument("--baseline-coverage")
+    render.add_argument("--baseline-label")
+    render.set_defaults(func=cmd_render)
+
+    args = ap.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -30,3 +30,7 @@
 .DS_Store
 Thumbs.db
 test-spos
+
+# Python bytecode
+__pycache__/
+*.pyc
