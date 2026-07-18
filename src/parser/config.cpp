@@ -114,13 +114,13 @@ auto parse_config_string(std::string_view content) -> Result<VarDb>
 
 auto parse_config(std::string_view path) -> Result<VarDb>
 {
-    auto content = pup::platform::read_file(path);
-    if (!content) {
+    auto content = Buf {};
+    if (!pup::platform::read_file(path, content)) {
         auto err = Buf {};
         err.fmt("Cannot open config file: {}", path);
         return make_error<VarDb>(ErrorCode::NotFound, err.view());
     }
-    return parse_config_string(content->view());
+    return parse_config_string(content.view());
 }
 
 } // namespace pup::parser

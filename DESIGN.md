@@ -38,7 +38,7 @@ With libstdc++ eliminated, putup provides its own runtime primitives:
 |-----------|----------|---------|
 | `StringId` (4B) | `std::string` | Interned string handle (storage) |
 | `string_view` | `std::string const&` | Non-owning string reference (reading) |
-| `Buf` / `HeapBuf` | `std::string` (building) | Stack/heap string builders |
+| `Buf` | `std::string` (building) | String builder: 4 KiB inline, spills to a private region |
 | `Vec<T>` | `std::vector<T>` | Dynamic array |
 | `Function<Sig>` | `std::function<Sig>` | Move-only type-erased callable (32-byte SBO) |
 | `SteadyClock` / `SystemClock` | `std::chrono` clocks | Platform-implemented clocks |

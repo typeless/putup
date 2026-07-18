@@ -30,6 +30,7 @@ public:
     auto operator+=(char c) -> Buf&;
 
     auto reserve(std::size_t n) -> void;
+    auto resize(std::size_t n) -> void;
     auto clear() -> void;
 
     [[nodiscard]]

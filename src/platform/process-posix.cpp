@@ -9,7 +9,6 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
@@ -213,8 +212,8 @@ auto run_process_with_callback(
 
     auto result = ProcessResult {};
     auto timed_out = false;
-    auto stdout_buf = HeapBuf {};
-    auto stderr_buf = HeapBuf {};
+    auto stdout_buf = Buf {};
+    auto stderr_buf = Buf {};
 
     auto deadline = opts.timeout
         ? std::optional { pup::SteadyClock::now() + *opts.timeout }

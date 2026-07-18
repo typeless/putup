@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2024 Putup authors
 
+#include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/platform/process.hpp"
@@ -31,7 +31,7 @@ auto build_env_strings(
             while (*current) {
                 auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                 if (len > 0) {
-                    auto var = HeapBuf {};
+                    auto var = Buf {};
                     var.resize(static_cast<std::size_t>(len - 1));
                     WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
                     result.push_back(pool.intern(var.view()));
@@ -82,7 +82,7 @@ auto base_child_env() -> Vec<StringId>
                 if (matches) {
                     auto len = WideCharToMultiByte(CP_UTF8, 0, current, -1, nullptr, 0, nullptr, nullptr);
                     if (len > 0) {
-                        auto var = HeapBuf {};
+                        auto var = Buf {};
                         var.resize(static_cast<std::size_t>(len - 1));
                         WideCharToMultiByte(CP_UTF8, 0, current, -1, var.data(), len, nullptr, nullptr);
                         result.push_back(pool.intern(var.view()));
@@ -267,8 +267,8 @@ auto run_process_with_callback(
 
     auto result = ProcessResult {};
     auto timed_out = false;
-    auto stdout_buf = HeapBuf {};
-    auto stderr_buf = HeapBuf {};
+    auto stdout_buf = Buf {};
+    auto stderr_buf = Buf {};
 
     // Read stdout/stderr
     auto deadline = opts.timeout

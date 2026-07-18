@@ -4,7 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/cli/index_serialize.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/heap_buf.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
@@ -770,7 +770,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         auto index = Index {};
 
         // Create a string larger than 64KB (0xFFFF = 65535 bytes max)
-        auto huge_name = HeapBuf {};
+        auto huge_name = Buf {};
         huge_name.resize(65536);
         std::memset(huge_name.data(), 'x', 65536);
 
@@ -787,7 +787,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         auto index = Index {};
 
         // Create a string exactly at the 64KB limit (65535 bytes)
-        auto max_name = HeapBuf {};
+        auto max_name = Buf {};
         max_name.resize(65535);
         std::memset(max_name.data(), 'y', 65535);
 

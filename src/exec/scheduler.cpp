@@ -6,7 +6,6 @@
 #include "pup/core/clock.hpp"
 #include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
@@ -339,8 +338,8 @@ auto validate_guard_dependencies(
 
 struct JobSlot {
     pup::platform::AsyncProcess process = {};
-    HeapBuf stdout_buf = {};
-    HeapBuf stderr_buf = {};
+    Buf stdout_buf = {};
+    Buf stderr_buf = {};
     std::size_t job_index = 0;
     pup::SteadyClock::time_point start_time = {};
 
@@ -409,7 +408,7 @@ auto reap_slot(JobSlot& slot, pup::platform::ProcessStatus const& status) -> Job
         pup::SteadyClock::now() - slot.start_time
     );
 
-    auto output_buf = HeapBuf {};
+    auto output_buf = Buf {};
     if (!slot.stdout_buf.empty()) {
         output_buf.append(slot.stdout_buf.view());
     }
@@ -745,7 +744,7 @@ auto Scheduler::execute_parallel(
     }
 
     // Job slots -- one per concurrent child process.
-    // JobSlot is non-copyable/non-movable (HeapBuf), so allocate via new[].
+    // JobSlot is non-copyable/non-movable (Buf), so allocate via new[].
     auto max_jobs = std::min(impl_->options.jobs, active_count);
     auto slots_storage = std::unique_ptr<JobSlot[]>(new JobSlot[max_jobs]); // NOLINT
     auto* slots = slots_storage.get();

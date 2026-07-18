@@ -20,15 +20,15 @@ namespace pup::parser {
 
 auto IgnoreList::load(std::string_view path) -> Result<IgnoreList>
 {
-    auto content = pup::platform::read_file(path);
-    if (!content) {
+    auto content = Buf {};
+    if (!pup::platform::read_file(path, content)) {
         auto err = Buf {};
         err.fmt("Failed to open ignore file: {}", path);
         return make_error<IgnoreList>(ErrorCode::IoError, err.view());
     }
 
     auto list = IgnoreList::with_defaults();
-    auto sv = content->view();
+    auto sv = content.view();
 
     while (!sv.empty()) {
         auto nl = sv.find('\n');

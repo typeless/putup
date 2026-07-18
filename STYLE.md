@@ -35,7 +35,7 @@ storage use in-house primitives instead of the STL equivalents:
 | Standard type | Project primitive | Role |
 |---------------|-------------------|------|
 | `std::vector<T>` | `Vec<T>` (`SortedPairVec` for sorted key/value) | Owning sequence |
-| `std::string` | `StringId`/`StringPool` (storage), `Buf`/`HeapBuf` (building) | Owned text |
+| `std::string` | `StringId`/`StringPool` (storage), `Buf` (building) | Owned text |
 | `std::function<Sig>` | `Function<Sig>` | Type-erased callable |
 
 Header-only views and value types from the standard library are used directly:
