@@ -158,8 +158,8 @@ jobs:
         run: make coverage PUTUP=./build/putup
       - name: Coverage stats
         run: |
-          python3 .github/scripts/coverage_stats.py build-coverage/report/summary.json > coverage-metrics.tsv
-          python3 .github/scripts/compose_metrics.py --coverage coverage-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
+          .github/scripts/metrics coverage build-coverage/report/summary.json > coverage-metrics.tsv
+          .github/scripts/metrics render --coverage coverage-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -209,8 +209,8 @@ jobs:
           sudo apt-get install -y valgrind
           sudo apt-get install -y linux-tools-$(uname -r) || sudo apt-get install -y linux-tools-generic
           command -v perf >/dev/null || export PERF="$(ls /usr/lib/linux-tools/*/perf | sort -V | tail -1)"
-          .github/scripts/bench_metrics.sh build/putup examples/bsp source-root build-gcc > perf-metrics.tsv
-          python3 .github/scripts/compose_metrics.py --perf perf-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
+          .github/scripts/metrics bench build/putup examples/bsp source-root build-gcc > perf-metrics.tsv
+          .github/scripts/metrics render --perf perf-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Upload perf metrics
         uses: actions/upload-artifact@v4
         with:
@@ -256,7 +256,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          python3 .github/scripts/compose_metrics.py \
+          .github/scripts/metrics render \
             --perf perf-metrics.tsv --coverage coverage-metrics.tsv \
             --baseline-perf baseline/perf/perf-metrics.tsv \
             --baseline-coverage baseline/cov/coverage-metrics.tsv \
