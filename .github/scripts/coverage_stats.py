@@ -10,31 +10,30 @@ def main() -> int:
 
     files = [e for e in summary["files"] if e.get("line_total", 0) > 0]
     if not files:
-        print("No coverage data.")
+        print("no coverage data", file=sys.stderr)
         return 1
 
     worst = min(files, key=lambda e: e["line_percent"])
     best = max(files, key=lambda e: e["line_percent"])
     median = statistics.median(e["line_percent"] for e in files)
 
-    print("### Test coverage (lines)")
-    print()
-    print("| Overall | Median file | Min file | Max file |")
-    print("|---|---|---|---|")
     print(
-        "| {:.1f}% | {:.1f}% | {:.1f}% `{}` | {:.1f}% `{}` |".format(
-            summary["line_percent"],
-            median,
-            worst["line_percent"],
-            worst["filename"],
-            best["line_percent"],
-            best["filename"],
-        )
+        "overall\tmedian\tmin_pct\tmin_file\tmax_pct\tmax_file\tfiles\tcovered\ttotal"
     )
-    print()
     print(
-        "{} files · {}/{} lines covered".format(
-            len(files), summary["line_covered"], summary["line_total"]
+        "\t".join(
+            str(v)
+            for v in (
+                summary["line_percent"],
+                median,
+                worst["line_percent"],
+                worst["filename"],
+                best["line_percent"],
+                best["filename"],
+                len(files),
+                summary["line_covered"],
+                summary["line_total"],
+            )
         )
     )
     return 0
