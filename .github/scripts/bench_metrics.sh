@@ -19,6 +19,14 @@ metric() {
         }' "$pf"
 }
 
+miss_rate() {
+    awk -v ev="$1" '
+        $0 ~ ev {
+            for (i = 1; i <= NF; i++)
+                if ($i == "rate:") { print $(i + 1); exit }
+        }' "$cg"
+}
+
 run_row() {
     name=$1
     shift
@@ -27,12 +35,26 @@ run_row() {
     /usr/bin/time -v "$@" >/dev/null 2>"$tf"
     rss_mb=$(awk '/Maximum resident set size/{printf "%.1f", $NF/1024}' "$tf")
     "$PERF" stat -r "$REPEAT" -e task-clock:u,page-faults:u,cycles:u,instructions:u -o "$pf" -- "$@" >/dev/null 2>&1
-    printf '| %s | %s | %s | %s | %s | %s | %s MB |\n' \
+
+    d1="n/a"
+    ll="n/a"
+    if command -v valgrind >/dev/null; then
+        cg=$(mktemp)
+        cgout=$(mktemp)
+        valgrind --tool=cachegrind --cache-sim=yes \
+            --cachegrind-out-file="$cgout" --log-file="$cg" "$@" >/dev/null 2>&1 || true
+        d1=$(miss_rate 'D1 +miss rate:')
+        ll=$(miss_rate 'LL miss rate:')
+        rm -f "$cg" "$cgout"
+    fi
+
+    printf '| %s | %s | %s | %s | %s | %s | %s | %s MB |\n' \
         "$name" \
         "$(metric instructions:u 1e6 '%.0f M')" \
-        "$(metric cycles:u 1e6 '%.0f M')" \
         "$(metric task-clock 1000 '%.2f s')" \
         "$(metric page-faults 1000 '%.1f k')" \
+        "${d1:-n/a}" \
+        "${ll:-n/a}" \
         "$(metric 'time elapsed' 1 '%.3f s')" \
         "$rss_mb"
     rm -f "$tf" "$pf"
@@ -40,9 +62,9 @@ run_row() {
 
 echo "### Performance (gcc example, Linux)"
 echo
-echo "| Workload | Instructions | Cycles | CPU time | Page faults | Wall | Peak RSS |"
-echo "|---|---|---|---|---|---|---|"
+echo "| Workload | Instructions | CPU time | Page faults | D1 miss | LL miss | Wall | Peak RSS |"
+echo "|---|---|---|---|---|---|---|---|"
 run_row "parse" "$PUTUP" parse -C "$CDIR" -S "$SDIR" -B "$BDIR"
 run_row "dry-run (graph load + schedule)" "$PUTUP" -n -C "$CDIR" -S "$SDIR" -B "$BDIR" -j"$(nproc)"
 echo
-echo "Page faults and peak RSS are the stable memory signals; CPU time is the stable compute signal on shared runners. Instructions and cycles read n/a on GitHub-hosted runners (virtualized, no PMU) but populate on machines with hardware counters. perf stat -r ${REPEAT}, user-space only."
+echo "Deterministic signals: page faults, peak RSS, and the cachegrind D1/LL miss rates (simulated cache, exact across runs). CPU time is the stable compute signal on shared runners; instructions read n/a on GitHub-hosted runners (virtualized, no PMU). perf stat -r ${REPEAT}, user-space only."
