@@ -7,15 +7,16 @@ A reimplementation of the [Tup build system](https://gittup.org/tup/).
 1. [Overview](#overview)
 2. [Architecture](#architecture)
 3. [Core Types](#core-types)
-4. [Parser Module](#parser-module)
-5. [Graph Module](#graph-module)
-6. [Rule Generation Module](#rule-generation-module)
-7. [Index Module](#index-module)
-8. [Execution Module](#execution-module)
-9. [Build Pipeline](#build-pipeline)
-10. [Multi-Directory Builds](#multi-directory-builds)
-11. [Variant Builds](#variant-builds)
-12. [Design Decisions](#design-decisions)
+4. [Memory Management](#memory-management)
+5. [Parser Module](#parser-module)
+6. [Graph Module](#graph-module)
+7. [Rule Generation Module](#rule-generation-module)
+8. [Index Module](#index-module)
+9. [Execution Module](#execution-module)
+10. [Build Pipeline](#build-pipeline)
+11. [Multi-Directory Builds](#multi-directory-builds)
+12. [Variant Builds](#variant-builds)
+13. [Design Decisions](#design-decisions)
 
 ---
 
@@ -203,6 +204,74 @@ Error codes are categorized:
 | Parser | ParseError, UnterminatedString, CircularInclude |
 | Graph | CyclicDependency, UnknownMacro |
 | Exec | CommandFailed, MissingInput |
+
+---
+
+## Memory Management
+
+All working memory is OS virtual memory owned by containers — libc `malloc`/`free` do not
+appear in production code (the only `mmap`/`VirtualAlloc` calls live in `platform/vm-*.cpp`).
+The design follows the container-as-allocator model (Racordon, *"Who Owns the Contents of a
+Doubly-Linked List?"*, OASIcs.Programming.2025.25): a container reserves address space once,
+commits pages lazily as it grows, and never moves. Allocation failure aborts with a message;
+no null pointer ever propagates.
+
+### Layer stack
+
+Each layer obtains memory only from the layer below it:
+
+| Layer | Where | Role |
+|-------|-------|------|
+| Handles | application code | 4-byte values (`StringId`, `NodeId`, `ArenaSlice`) — no owning pointers |
+| Owners | `StringPool`, `Arena32`, `StableVec`, `IdArray32`/`IdBitSet`, `RobinHoodIndex`, `Buf` | one container per entity kind; each owns its Region(s) |
+| `operator new` | `core/bump_alloc`, `core/new_delete` | process-wide bump region for everything else; all `delete`s are no-ops |
+| `Region` | `core/region` | reserve big (default 1 GiB), commit incrementally, base never moves |
+| vm primitive | `platform/vm-posix.cpp`, `vm-win32.cpp` | reserve / commit / decommit / release; no `mremap` (macOS/Windows lack it) |
+
+### Region
+
+```cpp
+Region r { reserve_bytes };   // reserves address space, commits nothing
+r.ensure(n);                  // commits pages so n bytes are usable; aborts past the reservation
+r.data();                     // base pointer — stable for the Region's lifetime
+r.shrink(0);                  // releases committed pages wholesale
+```
+
+Because the base never moves, both integer handles and raw pointers into a Region survive
+growth. (Both memory-corruption incidents in the project's history were
+stored-pointer-across-`vector`-growth bugs; this class is now unrepresentable.)
+
+### Bump region (`operator new`)
+
+`operator new` allocates from a single process-wide bump region (probes a 4 GiB reservation
+and halves until the OS accepts). It has obstack semantics: `bump_try_extend` grows the
+*top* allocation in place, `bump_try_pop` reclaims the top allocation LIFO. Every `delete`
+is a no-op — there is no free list. `Vec<T>` and the other growable primitives lean on the
+extend/pop fast paths; churn that is not top-of-stack stays resident until process exit,
+which is acceptable for a batch tool (build, use, exit). `PUP_BUMP_STATS=1` prints per-site
+gross/net allocation attribution.
+
+On Windows every CRT `new`/`delete` variant must be overridden (static CRT, `lld-link`
+without `/FORCE`) — a single CRT `delete` on a bump pointer would corrupt the heap. Plain
+`operator new` aligns to `__STDCPP_DEFAULT_NEW_ALIGNMENT__` (16), not
+`alignof(max_align_t)`, which is 8 on the MSVC ABI.
+
+### Structural contracts
+
+- **Zero-page**: freshly committed pages are always zero; decommit maps fresh anonymous
+  memory rather than recycling dirty pages. Containers rely on this (e.g. zero slot = empty
+  in `RobinHoodIndex`).
+- **Arena32 amortization**: edge-slice blocks are sized to the next power of two of the
+  slice length, so a non-power-of-two length proves a spare slot exists and the append is
+  in-place. Slices are born only in `append_extend`; total space is ≤ 4k slots for k
+  elements.
+- **Buf spill**: `Buf` builds strings in a 4 KiB inline buffer and spills to a private
+  per-buffer Region (16 MiB reservation, replacement-doubling beyond it). Spilled bytes are
+  released when the Buf dies, unconditionally — a local property, unlike bump reclaim which
+  would depend on what allocated in between.
+- **Batch lifetime**: no per-entity teardown, no refcounts, zero `shared_ptr`. Reclamation
+  within a run is limited to the bump top and whole-Region `shrink(0)`; process exit frees
+  everything.
 
 ---
 
