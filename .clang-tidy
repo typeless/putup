@@ -6,13 +6,30 @@
 # in CI). See https://github.com/duckdb/duckdb and
 # https://github.com/LadybirdBrowser/ladybird for reference.
 #
-# Families enabled in full: bugprone, cert, concurrency, misc, performance,
+# Families enabled in full: bugprone, concurrency, misc, performance,
 #   portability, readability (with selective exclusions below).
-# Families cherry-picked: modernize (6 checks), cppcoreguidelines (7 checks).
-# Families omitted:
-#   clang-analyzer-* — path-sensitive symbolic execution; 10x slower than all
-#     other checks combined. DuckDB omits it; Ladybird only uses it locally.
-#   google-* — style rules for Google's C++ guidelines, not our style.
+# Families cherry-picked: cert (14 non-alias checks), modernize (6 checks),
+#   cppcoreguidelines (7 checks).
+# Families disabled:
+#   clang-analyzer-* — path-sensitive symbolic execution. DuckDB omits it;
+#     Ladybird only uses it locally. Must be disabled EXPLICITLY: clang-tidy
+#     prepends its builtin default 'clang-diagnostic-*,clang-analyzer-*' to
+#     any Checks list, so merely not listing the family still runs it (this
+#     config silently ran it for months — verify with clang-tidy
+#     --dump-config). Measured on 4 representative TUs: 64s -> 25s wall
+#     (-61%) once actually off.
+#   google-* — style rules for Google's C++ guidelines, not our style
+#     (not in the builtin default, so omission suffices).
+# clang-diagnostic-* (the compiler-warning passthrough from the same builtin
+# default) stays enabled: it is computed during parsing anyway, so it is
+# free, and it keeps tidy findings aligned with -Wall -Werror builds.
+#
+# cert-* is cherry-picked rather than enabled as a family because most of the
+# family consists of aliases to bugprone/misc/readability/performance checks
+# already enabled above — an enabled alias RUNS THE CHECK AGAIN (profiled:
+# cert-dcl51-cpp + cert-dcl37-c tripled bugprone-reserved-identifier, ~9% of
+# total check time). The list below is every LLVM-18 cert check with its own
+# implementation; re-derive it when bumping the toolchain.
 #
 # =============================================================================
 # DISABLED CHECKS RATIONALE
@@ -20,7 +37,12 @@
 #
 # bugprone-easily-swappable-parameters: too noisy, fix adds complexity
 # bugprone-macro-parentheses: variadic macros can't parenthesize args
-# cert-err33-c: fprintf return values in logging are intentionally ignored
+# bugprone-unchecked-optional-access: dataflow-framework check; profiled at
+#   38% of total check wall time on representative TUs (24s of 63s) — the
+#   clang-analyzer cost class in disguise. Run locally when touching
+#   optional-heavy code: clang-tidy --checks=bugprone-unchecked-optional-access
+# cert-err33-c (not picked): fprintf return values in logging are
+#   intentionally ignored
 # concurrency-mt-unsafe: single-threaded project, standard C idioms fine
 # misc-const-correctness: hundreds of warnings, marginal benefit
 # misc-include-cleaner: noisy false positives, breaks transitive includes
@@ -44,11 +66,25 @@
 # =============================================================================
 
 Checks: >
+  -clang-analyzer-*,
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-macro-parentheses,
-  cert-*,
-  -cert-err33-c,
+  -bugprone-unchecked-optional-access,
+  cert-dcl50-cpp,
+  cert-dcl58-cpp,
+  cert-dcl59-cpp,
+  cert-env33-c,
+  cert-err34-c,
+  cert-err52-cpp,
+  cert-err58-cpp,
+  cert-err60-cpp,
+  cert-flp30-c,
+  cert-mem57-cpp,
+  cert-msc50-cpp,
+  cert-msc51-cpp,
+  cert-oop57-cpp,
+  cert-oop58-cpp,
   concurrency-*,
   -concurrency-mt-unsafe,
   cppcoreguidelines-avoid-non-const-global-variables,
