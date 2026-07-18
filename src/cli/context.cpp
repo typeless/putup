@@ -219,11 +219,11 @@ auto find_build_subdir(
 
 auto read_file(std::string_view path) -> std::optional<StringId>
 {
-    auto result = pup::platform::read_file(path);
-    if (!result) {
+    auto content = Buf {};
+    if (!pup::platform::read_file(path, content)) {
         return std::nullopt;
     }
-    return result->intern(global_pool());
+    return content.intern(global_pool());
 }
 
 auto discover_tupfile_dirs(

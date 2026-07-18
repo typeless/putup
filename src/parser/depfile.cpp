@@ -100,11 +100,11 @@ auto parse_path(std::string_view& sv, bool stop_at_colon = false) -> StringId
 
 auto parse_depfile_path(std::string_view path) -> Result<Depfile>
 {
-    auto content = pup::platform::read_file(path);
-    if (!content) {
+    auto content = Buf {};
+    if (!pup::platform::read_file(path, content)) {
         return make_error<Depfile>(ErrorCode::IoError, "Failed to open depfile");
     }
-    return parse_depfile(content->view());
+    return parse_depfile(content.view());
 }
 
 auto parse_depfile(std::string_view content) -> Result<Depfile>

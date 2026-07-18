@@ -15,7 +15,6 @@ srcs-y += src/core/path_pool.cpp
 srcs-y += src/core/result.cpp
 srcs-y += src/core/global_pool.cpp
 srcs-y += src/core/buf.cpp
-srcs-y += src/core/heap_buf.cpp
 srcs-y += src/core/path_utils.cpp
 srcs-y += src/core/bump_alloc.cpp
 srcs-y += src/core/region.cpp

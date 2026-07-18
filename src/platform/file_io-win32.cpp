@@ -3,7 +3,6 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
@@ -28,7 +27,7 @@ auto to_wide(std::string_view s) -> std::wstring
     return result;
 }
 
-auto from_wide(std::wstring const& w, HeapBuf& out) -> void
+auto from_wide(std::wstring const& w, Buf& out) -> void
 {
     out.clear();
     if (w.empty()) {
@@ -42,7 +41,7 @@ auto from_wide(std::wstring const& w, HeapBuf& out) -> void
     WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), out.data(), len, nullptr, nullptr);
 }
 
-auto backslash_to_forward(std::string_view sv, HeapBuf& out) -> void
+auto backslash_to_forward(std::string_view sv, Buf& out) -> void
 {
     out.clear();
     out.reserve(sv.size());
@@ -444,9 +443,9 @@ auto current_directory() -> Result<StringId>
     auto wbuf = std::wstring(len, L'\0');
     GetCurrentDirectoryW(len, wbuf.data());
     wbuf.resize(len - 1);
-    auto raw = HeapBuf {};
+    auto raw = Buf {};
     from_wide(wbuf, raw);
-    auto fixed = HeapBuf {};
+    auto fixed = Buf {};
     backslash_to_forward(raw.view(), fixed);
     return global_pool().intern(fixed.view());
 }
@@ -466,14 +465,14 @@ auto canonical(std::string_view path) -> Result<StringId>
             GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
             CloseHandle(h);
             wbuf.resize(len - 1);
-            auto raw = HeapBuf {};
+            auto raw = Buf {};
             from_wide(wbuf, raw);
             auto sv = raw.view();
             // Strip \\?\ prefix
             if (sv.size() > 4 && sv[0] == '\\' && sv[1] == '\\' && sv[2] == '?' && sv[3] == '\\') {
                 sv = sv.substr(4);
             }
-            auto fixed = HeapBuf {};
+            auto fixed = Buf {};
             backslash_to_forward(sv, fixed);
             return global_pool().intern(fixed.view());
         }
@@ -488,9 +487,9 @@ auto canonical(std::string_view path) -> Result<StringId>
     auto wbuf = std::wstring(len, L'\0');
     GetFullPathNameW(wpath.c_str(), len, wbuf.data(), nullptr);
     wbuf.resize(len - 1);
-    auto raw = HeapBuf {};
+    auto raw = Buf {};
     from_wide(wbuf, raw);
-    auto fixed = HeapBuf {};
+    auto fixed = Buf {};
     backslash_to_forward(raw.view(), fixed);
     return global_pool().intern(fixed.view());
 }
@@ -524,16 +523,16 @@ auto read_symlink(std::string_view path) -> Result<StringId>
     GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
     CloseHandle(h);
     wbuf.resize(len - 1);
-    auto raw = HeapBuf {};
+    auto raw = Buf {};
     from_wide(wbuf, raw);
-    auto fixed = HeapBuf {};
+    auto fixed = Buf {};
     backslash_to_forward(raw.view(), fixed);
     return global_pool().intern(fixed.view());
 }
 
 // File I/O
 
-auto read_file(std::string_view path) -> Result<HeapBuf>
+auto read_file(std::string_view path, Buf& out) -> Result<void>
 {
     auto wpath = to_wide(path);
     auto h = CreateFileW(
@@ -546,17 +545,17 @@ auto read_file(std::string_view path) -> Result<HeapBuf>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<HeapBuf>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
     }
     auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(h, &file_size)) {
         CloseHandle(h);
-        return make_error<HeapBuf>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path));
     }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
-    auto content = HeapBuf {};
-    content.resize(size);
-    auto* buf = content.data();
+    out.clear();
+    out.resize(size);
+    auto* buf = out.data();
     auto total = std::size_t { 0 };
     while (total < size) {
         auto chunk = static_cast<DWORD>(std::min(size - total, std::size_t { 0x7FFF'FFFFu }));
@@ -567,8 +566,8 @@ auto read_file(std::string_view path) -> Result<HeapBuf>
         total += bytes_read;
     }
     CloseHandle(h);
-    content.resize(total);
-    return content;
+    out.resize(total);
+    return {};
 }
 
 auto write_file(std::string_view path, std::string_view data) -> Result<void>
@@ -613,7 +612,7 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
         return make_error<Vec<DirEntry>>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
     }
     auto entries = Vec<DirEntry> {};
-    auto name_buf = HeapBuf {};
+    auto name_buf = Buf {};
     do {
         if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) {
             continue;

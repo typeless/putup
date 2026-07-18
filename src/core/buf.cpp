@@ -75,6 +75,16 @@ auto Buf::reserve(std::size_t n) -> void
     grow(n + 1);
 }
 
+auto Buf::resize(std::size_t n) -> void
+{
+    grow(n + 1);
+    if (n > size_) {
+        std::memset(data_ + size_, 0, n - size_);
+    }
+    size_ = static_cast<std::uint32_t>(n);
+    data_[size_] = '\0';
+}
+
 auto Buf::clear() -> void
 {
     size_ = 0;

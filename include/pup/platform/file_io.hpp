@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "pup/core/buf.hpp"
 #include "pup/core/function.hpp"
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
@@ -96,7 +96,7 @@ auto read_symlink(std::string_view path) -> Result<StringId>;
 
 // File I/O
 [[nodiscard]]
-auto read_file(std::string_view path) -> Result<HeapBuf>;
+auto read_file(std::string_view path, Buf& out) -> Result<void>;
 [[nodiscard]]
 auto write_file(std::string_view path, std::string_view data) -> Result<void>;
 

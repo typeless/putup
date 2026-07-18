@@ -1058,13 +1058,12 @@ auto include_single_file(
         ctx.sticky_sources.push_back(*inc_node_result);
     }
 
-    auto source_result = pup::platform::read_file(include_path);
-    if (!source_result) {
+    auto source = Buf {};
+    if (!pup::platform::read_file(include_path, source)) {
         auto err = Buf {};
         err.fmt("Cannot open include file: {}", include_path);
         return make_error<void>(ErrorCode::IoError, err.view());
     }
-    auto source = std::move(*source_result);
 
     auto parse_result = parser::parse_tupfile(source.view(), include_path);
     if (!parse_result.success()) {

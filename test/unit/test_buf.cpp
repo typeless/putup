@@ -56,6 +56,32 @@ TEST_CASE("Buf basic operations", "[buf]")
         buf.clear();
         REQUIRE(buf.empty());
     }
+
+    SECTION("resize extends zero-filled and exposes mutable data")
+    {
+        buf.append("ab");
+        buf.resize(5);
+        REQUIRE(buf.size() == 5);
+        REQUIRE(buf.view() == std::string_view("ab\0\0\0", 5));
+        buf.data()[2] = 'c';
+        REQUIRE(buf.view() == std::string_view("ab" "c" "\0\0", 5));
+    }
+
+    SECTION("resize shrinks and re-terminates")
+    {
+        buf.append("hello");
+        buf.resize(2);
+        REQUIRE(buf.view() == "he");
+        REQUIRE(buf.c_str()[2] == '\0');
+    }
+
+    SECTION("resize past the inline capacity spills")
+    {
+        buf.resize(1U << 20);
+        REQUIRE(buf.size() == (1U << 20));
+        buf.data()[(1U << 20) - 1] = 'z';
+        REQUIRE(buf.view().back() == 'z');
+    }
 }
 
 TEST_CASE("Buf fmt", "[buf]")

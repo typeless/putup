@@ -3,7 +3,6 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/heap_buf.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
@@ -538,22 +537,22 @@ auto read_symlink(std::string_view path) -> Result<StringId>
 
 // File I/O
 
-auto read_file(std::string_view path) -> Result<HeapBuf>
+auto read_file(std::string_view path, Buf& out) -> Result<void>
 {
     auto p = CPath { path };
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     auto fd = ::open(p.c_str(), O_RDONLY);
     if (fd < 0) {
-        return make_error<HeapBuf>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
     }
 
     struct stat st { };
     ::fstat(fd, &st);
     auto size = static_cast<std::size_t>(st.st_size);
 
-    auto content = HeapBuf {};
-    content.resize(size);
-    auto* dest = content.data();
+    out.clear();
+    out.resize(size);
+    auto* dest = out.data();
     auto total = std::size_t { 0 };
     while (total < size) {
         auto n = ::read(fd, dest + total, size - total);
@@ -570,8 +569,8 @@ auto read_file(std::string_view path) -> Result<HeapBuf>
     }
     ::close(fd);
 
-    content.resize(total);
-    return content;
+    out.resize(total);
+    return {};
 }
 
 auto write_file(std::string_view path, std::string_view data) -> Result<void>
