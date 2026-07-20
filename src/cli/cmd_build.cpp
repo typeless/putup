@@ -460,13 +460,18 @@ auto serialize_graph_nodes(
 
     // Both branches of a config-driven conditional are in the graph; only the
     // satisfied one produces files. Marking the other branch's outputs keeps
-    // change detection from stat'ing files nothing will ever create.
-    auto inactive_outputs = pup::NodeIdMap32 {};
+    // change detection from stat'ing files nothing will ever create. Branches
+    // that declare the same output share one node, so the test is "no active
+    // producer" — one inactive declarer does not make a file unproduced.
+    auto produced_by_active = pup::NodeIdMap32 {};
+    auto declared_by_inactive = pup::NodeIdMap32 {};
     for (auto id : pup::graph::all_nodes(g)) {
-        if (pup::node_id::is_command(id) && !pup::graph::is_guard_satisfied(g, id)) {
-            for (auto output_id : pup::graph::get_outputs(g, id)) {
-                inactive_outputs.set(output_id, 1);
-            }
+        if (!pup::node_id::is_command(id)) {
+            continue;
+        }
+        auto& outputs = pup::graph::is_guard_satisfied(g, id) ? produced_by_active : declared_by_inactive;
+        for (auto output_id : pup::graph::get_outputs(g, id)) {
+            outputs.set(output_id, 1);
         }
     }
 
@@ -477,7 +482,7 @@ auto serialize_graph_nodes(
 
         auto type = pup::graph::get<pup::NodeType>(g, id);
         auto node_flags = pup::graph::get<pup::NodeFlags>(g, id);
-        if (inactive_outputs.contains(id)) {
+        if (declared_by_inactive.contains(id) && !produced_by_active.contains(id)) {
             node_flags = node_flags | pup::NodeFlags::Inactive;
         }
 

@@ -6716,3 +6716,38 @@ endif
         }
     }
 }
+
+SCENARIO("An output declared by both conditional branches stays tracked", "[e2e][phi][incremental]")
+{
+    GIVEN("a built project where both branches declare the same output")
+    {
+        auto f = E2EFixture { "conditional_groups" };
+        f.write_file("Tupfile", R"(
+ifeq (@(USE_PLATFORM),ios)
+: ios_impl.c |> gcc -c %f -o %o |> platform.o
+else
+: linux_impl.c |> gcc -c %f -o %o |> platform.o
+endif
+)");
+        f.write_file("ios_impl.c", "int platform_init(void) { return 1; }\n");
+        f.write_file("linux_impl.c", "int platform_init(void) { return 2; }\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=linux\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/platform.o"));
+
+        WHEN("the output is deleted")
+        {
+            f.remove_file("build/platform.o");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the active branch rebuilds it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/platform.o"));
+            }
+        }
+    }
+}
