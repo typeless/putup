@@ -9,5 +9,6 @@ namespace pup::platform {
 
 auto set_env(std::string_view name, std::string_view value) -> void;
 auto unset_env(std::string_view name) -> void;
+auto get_env(char const* name) -> char const*;
 
 } // namespace pup::platform

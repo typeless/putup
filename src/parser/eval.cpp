@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/eval.hpp"
+#include "pup/platform/env.hpp"
 
 #include "pup/core/buf.hpp"
 #include "pup/core/expected.hpp"
@@ -138,7 +139,7 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
     // TUP_PLATFORM and TUP_ARCH: env > config > context > default
     // For Config kind, env still takes priority, then config is checked.
     if (name == builtin_vars::TUP_PLATFORM) {
-        if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+        if (auto const* env = pup::platform::get_env("TUP_PLATFORM"); env && *env) {
             return { std::string_view { env }, VarBank::Env };
         }
         // For Config kind or if config has the value, use config
@@ -152,7 +153,7 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
         return { std::string_view { pup::PLATFORM }, VarBank::Builtin };
     }
     if (name == builtin_vars::TUP_ARCH) {
-        if (auto const* env = std::getenv("TUP_ARCH"); env && *env) {
+        if (auto const* env = pup::platform::get_env("TUP_ARCH"); env && *env) {
             return { std::string_view { env }, VarBank::Env };
         }
         // For Config kind or if config has the value, use config

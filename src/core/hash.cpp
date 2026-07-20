@@ -8,6 +8,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
+#include "pup/platform/sys.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -22,9 +23,6 @@ extern "C" {
 
 #ifdef _WIN32
 #    include <windows.h>
-#else
-#    include <fcntl.h>
-#    include <unistd.h>
 #endif
 
 namespace pup {
@@ -125,10 +123,9 @@ auto sha256_file(std::string_view path) -> Result<Hash256>
 
     CloseHandle(file);
 #else
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     auto path_buf = Buf {};
     path_buf += path;
-    auto fd = ::open(path_buf.c_str(), O_RDONLY);
+    auto fd = platform::sys::open_ro(path_buf.c_str());
     if (fd < 0) {
         auto err = Buf {};
         err.fmt("Failed to open file: {}", path);
@@ -139,9 +136,9 @@ auto sha256_file(std::string_view path) -> Result<Hash256>
     char buffer[8192];
 
     while (true) {
-        auto n = ::read(fd, buffer, sizeof(buffer));
+        auto n = platform::sys::read(fd, buffer, sizeof(buffer));
         if (n < 0) {
-            if (errno == EINTR) {
+            if (n == -EINTR) {
                 continue;
             }
             break;
@@ -152,7 +149,7 @@ auto sha256_file(std::string_view path) -> Result<Hash256>
         state = sha256_update(state, std::string_view { buffer, static_cast<std::size_t>(n) });
     }
 
-    ::close(fd);
+    platform::sys::close(fd);
 #endif
 
     return sha256_finalize(state);

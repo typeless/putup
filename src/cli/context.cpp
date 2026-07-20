@@ -28,6 +28,7 @@
 #include "pup/parser/config.hpp"
 #include "pup/parser/ignore.hpp"
 #include "pup/parser/parser.hpp"
+#include "pup/platform/env.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
@@ -45,7 +46,7 @@ namespace pup::cli {
 
 auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
 {
-    if (auto const* env = std::getenv("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
+    if (auto const* env = pup::platform::get_env("PUP_IMPLICIT_DEPS"); env && std::string_view { env } == "0") {
         return std::nullopt;
     }
     auto registry = graph::DepScannerRegistry {};

@@ -11,21 +11,19 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
+#include "pup/platform/sys.hpp"
 
 #include <array>
 #include <cassert>
 #include <cerrno>
 #include <csignal>
-#include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
-#include <poll.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include <cstdio>
 
 #ifdef __APPLE__
 #    include <crt_externs.h>
 #    define environ (*_NSGetEnviron())
+#else
+extern char** environ; // NOLINT
 #endif
 
 namespace pup::platform {
@@ -57,7 +55,7 @@ auto base_child_env() -> Vec<StringId>
     auto result = Vec<StringId> {};
     auto buf = Buf {};
     buf.append(std::string_view { "PATH=" });
-    if (auto const* path = std::getenv("PATH")) {
+    if (auto const* path = sys::getenv("PATH")) {
         buf.append(std::string_view { path });
     } else {
         buf.append(std::string_view { "/usr/bin:/bin" });
@@ -71,11 +69,11 @@ namespace {
 auto close_pipe(int pipe_fd[2]) -> void
 {
     if (pipe_fd[0] >= 0) {
-        ::close(pipe_fd[0]);
+        sys::close(pipe_fd[0]);
         pipe_fd[0] = -1;
     }
     if (pipe_fd[1] >= 0) {
-        ::close(pipe_fd[1]);
+        sys::close(pipe_fd[1]);
         pipe_fd[1] = -1;
     }
 }
@@ -100,22 +98,22 @@ auto run_process_with_callback(
     int stderr_pipe[2] = { -1, -1 };
     int stdin_pipe[2] = { -1, -1 };
 
-    if (opts.capture_stdout && ::pipe(stdout_pipe) < 0) {
+    if (opts.capture_stdout && sys::pipe(stdout_pipe) < 0) {
         return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stdout pipe");
     }
 
-    if (opts.capture_stderr && ::pipe(stderr_pipe) < 0) {
+    if (opts.capture_stderr && sys::pipe(stderr_pipe) < 0) {
         close_pipe(stdout_pipe);
         return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stderr pipe");
     }
 
-    if (opts.stdin_data && ::pipe(stdin_pipe) < 0) {
+    if (opts.stdin_data && sys::pipe(stdin_pipe) < 0) {
         close_pipe(stdout_pipe);
         close_pipe(stderr_pipe);
         return make_error<ProcessResult>(ErrorCode::IoError, "Failed to create stdin pipe");
     }
 
-    auto pid = pid_t { ::fork() };
+    auto pid = sys::fork();
     if (pid < 0) {
         close_pipe(stdout_pipe);
         close_pipe(stderr_pipe);
@@ -126,27 +124,27 @@ auto run_process_with_callback(
     if (pid == 0) {
         // Child process
         if (stdout_pipe[1] >= 0) {
-            ::dup2(stdout_pipe[1], STDOUT_FILENO);
-            ::close(stdout_pipe[0]);
-            ::close(stdout_pipe[1]);
+            sys::dup2(stdout_pipe[1], 1);
+            sys::close(stdout_pipe[0]);
+            sys::close(stdout_pipe[1]);
         }
 
         if (stderr_pipe[1] >= 0) {
-            ::dup2(stderr_pipe[1], STDERR_FILENO);
-            ::close(stderr_pipe[0]);
-            ::close(stderr_pipe[1]);
+            sys::dup2(stderr_pipe[1], 2);
+            sys::close(stderr_pipe[0]);
+            sys::close(stderr_pipe[1]);
         }
 
         if (stdin_pipe[0] >= 0) {
-            ::dup2(stdin_pipe[0], STDIN_FILENO);
-            ::close(stdin_pipe[0]);
-            ::close(stdin_pipe[1]);
+            sys::dup2(stdin_pipe[0], 0);
+            sys::close(stdin_pipe[0]);
+            sys::close(stdin_pipe[1]);
         }
 
         auto working_dir = pool.get(opts.working_dir);
         if (!working_dir.empty()) {
-            if (::chdir(working_dir.data()) < 0) {
-                ::_exit(127);
+            if (sys::chdir(working_dir.data()) < 0) {
+                sys::exit_process(127);
             }
         }
 
@@ -168,46 +166,44 @@ auto run_process_with_callback(
         };
 
         if (opts.inherit_env && opts.env.empty()) {
-            ::execv("/bin/sh", argv);
+            sys::execv("/bin/sh", argv);
         } else {
-            ::execve("/bin/sh", argv, env_ptrs.data());
+            sys::execve("/bin/sh", argv, env_ptrs.data());
         }
 
-        ::_exit(127);
+        sys::exit_process(127);
     }
 
     // Parent process
     if (stdout_pipe[1] >= 0) {
-        ::close(stdout_pipe[1]);
+        sys::close(stdout_pipe[1]);
         stdout_pipe[1] = -1;
     }
     if (stderr_pipe[1] >= 0) {
-        ::close(stderr_pipe[1]);
+        sys::close(stderr_pipe[1]);
         stderr_pipe[1] = -1;
     }
     if (stdin_pipe[0] >= 0) {
-        ::close(stdin_pipe[0]);
+        sys::close(stdin_pipe[0]);
         stdin_pipe[0] = -1;
     }
 
     if (opts.stdin_data && stdin_pipe[1] >= 0) {
         auto data = global_pool().get(*opts.stdin_data);
-        auto written = ::write(stdin_pipe[1], data.data(), data.size());
+        auto written = sys::write(stdin_pipe[1], data.data(), data.size());
         (void)written;
-        ::close(stdin_pipe[1]);
+        sys::close(stdin_pipe[1]);
         stdin_pipe[1] = -1;
     } else if (stdin_pipe[1] >= 0) {
-        ::close(stdin_pipe[1]);
+        sys::close(stdin_pipe[1]);
         stdin_pipe[1] = -1;
     }
 
     if (stdout_pipe[0] >= 0) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-        ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK);
+        sys::set_nonblocking(stdout_pipe[0]);
     }
     if (stderr_pipe[0] >= 0) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-        ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK);
+        sys::set_nonblocking(stderr_pipe[0]);
     }
 
     auto result = ProcessResult {};
@@ -224,17 +220,17 @@ auto run_process_with_callback(
     auto stderr_open = stderr_pipe[0] >= 0;
 
     while (stdout_open || stderr_open) {
-        auto fds = std::array<pollfd, 2> {};
+        auto fds = std::array<sys::PollFd, 2> {};
         auto nfds = 0;
 
         if (stdout_open) {
             fds[nfds].fd = stdout_pipe[0];
-            fds[nfds].events = POLLIN;
+            fds[nfds].events = sys::poll_in;
             ++nfds;
         }
         if (stderr_open) {
             fds[nfds].fd = stderr_pipe[0];
-            fds[nfds].events = POLLIN;
+            fds[nfds].events = sys::poll_in;
             ++nfds;
         }
 
@@ -250,9 +246,9 @@ auto run_process_with_callback(
             );
         }
 
-        auto poll_result = ::poll(fds.data(), static_cast<nfds_t>(nfds), timeout_ms);
+        auto poll_result = sys::poll(fds.data(), static_cast<unsigned>(nfds), timeout_ms);
         if (poll_result < 0) {
-            if (errno == EINTR) {
+            if (poll_result == -EINTR) {
                 continue;
             }
             break;
@@ -264,8 +260,8 @@ auto run_process_with_callback(
         }
 
         for (auto i = 0; i < nfds; ++i) {
-            if (fds[i].revents & (POLLIN | POLLHUP)) {
-                auto n = ::read(fds[i].fd, buffer.data(), buffer.size());
+            if (fds[i].revents & (sys::poll_in | sys::poll_hup)) {
+                auto n = sys::read(fds[i].fd, buffer.data(), buffer.size());
                 if (n > 0) {
                     auto data = std::string_view { buffer.data(), static_cast<std::size_t>(n) };
                     auto is_stderr = (fds[i].fd == stderr_pipe[0]);
@@ -279,7 +275,7 @@ auto run_process_with_callback(
                     } else {
                         stdout_buf.append(data);
                     }
-                } else if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+                } else if (n == 0 || (n < 0 && n != -EAGAIN && n != -EWOULDBLOCK)) {
                     if (fds[i].fd == stdout_pipe[0]) {
                         stdout_open = false;
                     } else {
@@ -287,7 +283,7 @@ auto run_process_with_callback(
                     }
                 }
             }
-            if (fds[i].revents & (POLLERR | POLLNVAL)) {
+            if (fds[i].revents & (sys::poll_err | sys::poll_nval)) {
                 if (fds[i].fd == stdout_pipe[0]) {
                     stdout_open = false;
                 } else {
@@ -298,25 +294,25 @@ auto run_process_with_callback(
     }
 
     if (stdout_pipe[0] >= 0) {
-        ::close(stdout_pipe[0]);
+        sys::close(stdout_pipe[0]);
     }
     if (stderr_pipe[0] >= 0) {
-        ::close(stderr_pipe[0]);
+        sys::close(stderr_pipe[0]);
     }
 
     if (timed_out) {
-        ::kill(pid, SIGKILL);
+        sys::kill(pid, SIGKILL);
         result.timed_out = true;
     }
 
     auto status = 0;
-    ::waitpid(pid, &status, 0);
+    sys::wait_pid(pid, status, false);
 
-    if (WIFEXITED(status)) {
-        result.exit_code = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
+    if (sys::exited(status)) {
+        result.exit_code = sys::exit_code(status);
+    } else if (sys::signaled(status)) {
         result.signaled = true;
-        result.signal = WTERMSIG(status);
+        result.signal = sys::term_signal(status);
         result.exit_code = 128 + result.signal;
     }
 
@@ -342,11 +338,11 @@ auto run_parallel_tasks(
     }
 
     // Fork one child per task
-    auto pids = Vec<pid_t> {};
+    auto pids = Vec<std::int64_t> {};
     pids.reserve(count);
 
     for (std::size_t i = 0; i < count; ++i) {
-        auto pid = ::fork();
+        auto pid = sys::fork();
         if (pid < 0) {
             // Fork failed — run remaining tasks sequentially in parent
             auto failed = 0;
@@ -358,8 +354,8 @@ auto run_parallel_tasks(
             // Reap already-forked children
             for (auto child : pids) {
                 auto status = 0;
-                ::waitpid(child, &status, 0);
-                if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+                sys::wait_pid(child, status, false);
+                if (!sys::exited(status) || sys::exit_code(status) != 0) {
                     ++failed;
                 }
             }
@@ -370,7 +366,7 @@ auto run_parallel_tasks(
             // Child: run task and exit with its return code
             auto rc = task(contexts[i]);
             std::fflush(nullptr); // flush all stdio before exit
-            ::_exit(rc);
+            sys::exit_process(rc);
         }
 
         pids.push_back(pid);
@@ -380,8 +376,8 @@ auto run_parallel_tasks(
     auto failed = 0;
     for (auto pid : pids) {
         auto status = 0;
-        ::waitpid(pid, &status, 0);
-        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        sys::wait_pid(pid, status, false);
+        if (!sys::exited(status) || sys::exit_code(status) != 0) {
             ++failed;
         }
     }
@@ -393,36 +389,36 @@ auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>
     int stdout_pipe[2] = { -1, -1 };
     int stderr_pipe[2] = { -1, -1 };
 
-    if (::pipe(stdout_pipe) < 0) {
+    if (sys::pipe(stdout_pipe) < 0) {
         return make_error<AsyncProcess>(ErrorCode::IoError, "Failed to create stdout pipe");
     }
-    if (::pipe(stderr_pipe) < 0) {
-        ::close(stdout_pipe[0]);
-        ::close(stdout_pipe[1]);
+    if (sys::pipe(stderr_pipe) < 0) {
+        sys::close(stdout_pipe[0]);
+        sys::close(stdout_pipe[1]);
         return make_error<AsyncProcess>(ErrorCode::IoError, "Failed to create stderr pipe");
     }
 
-    auto pid = ::fork();
+    auto pid = sys::fork();
     if (pid < 0) {
-        ::close(stdout_pipe[0]);
-        ::close(stdout_pipe[1]);
-        ::close(stderr_pipe[0]);
-        ::close(stderr_pipe[1]);
+        sys::close(stdout_pipe[0]);
+        sys::close(stdout_pipe[1]);
+        sys::close(stderr_pipe[0]);
+        sys::close(stderr_pipe[1]);
         return make_error<AsyncProcess>(ErrorCode::IoError, "Failed to fork");
     }
 
     if (pid == 0) {
-        ::dup2(stdout_pipe[1], STDOUT_FILENO);
-        ::close(stdout_pipe[0]);
-        ::close(stdout_pipe[1]);
+        sys::dup2(stdout_pipe[1], 1);
+        sys::close(stdout_pipe[0]);
+        sys::close(stdout_pipe[1]);
 
-        ::dup2(stderr_pipe[1], STDERR_FILENO);
-        ::close(stderr_pipe[0]);
-        ::close(stderr_pipe[1]);
+        sys::dup2(stderr_pipe[1], 2);
+        sys::close(stderr_pipe[0]);
+        sys::close(stderr_pipe[1]);
 
         if (!opts.working_dir.empty()) {
-            if (::chdir(opts.working_dir.data()) < 0) {
-                ::_exit(127);
+            if (sys::chdir(opts.working_dir.data()) < 0) {
+                sys::exit_process(127);
             }
         }
 
@@ -436,20 +432,20 @@ auto spawn_async(SpawnOptions const& opts) -> Result<AsyncProcess>
         // NOLINTEND(cppcoreguidelines-pro-type-const-cast)
 
         if (opts.env) {
-            ::execve("/bin/sh", argv, opts.env);
+            sys::execve("/bin/sh", argv, opts.env);
         } else {
-            ::execv("/bin/sh", argv);
+            sys::execv("/bin/sh", argv);
         }
 
-        ::_exit(127);
+        sys::exit_process(127);
     }
 
     // Parent: close write ends, keep read ends
-    ::close(stdout_pipe[1]);
-    ::close(stderr_pipe[1]);
+    sys::close(stdout_pipe[1]);
+    sys::close(stderr_pipe[1]);
 
-    ::fcntl(stdout_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
-    ::fcntl(stderr_pipe[0], F_SETFL, O_NONBLOCK); // NOLINT(cppcoreguidelines-pro-type-vararg)
+    sys::set_nonblocking(stdout_pipe[0]);
+    sys::set_nonblocking(stderr_pipe[0]);
 
     return AsyncProcess {
         .pid = static_cast<std::intptr_t>(pid),
@@ -464,25 +460,25 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
         return 0;
     }
 
-    // Build pollfd array on stack for typical sizes, heap for large
+    // Build poll array on stack for typical sizes, heap for large
     constexpr auto stack_limit = std::size_t { 64 };
-    pollfd stack_buf[stack_limit];                                     // NOLINT(modernize-avoid-c-arrays)
-    auto* pfds = count <= stack_limit ? stack_buf : new pollfd[count]; // NOLINT
+    sys::PollFd stack_buf[stack_limit];                                     // NOLINT(modernize-avoid-c-arrays)
+    auto* pfds = count <= stack_limit ? stack_buf : new sys::PollFd[count]; // NOLINT
 
     for (auto i = std::size_t { 0 }; i < count; ++i) {
         pfds[i].fd = static_cast<int>(fds[i].fd);
-        pfds[i].events = POLLIN;
+        pfds[i].events = sys::poll_in;
         pfds[i].revents = 0;
     }
 
     int result;
     do {
-        result = ::poll(pfds, static_cast<nfds_t>(count), timeout_ms);
-    } while (result < 0 && errno == EINTR);
+        result = sys::poll(pfds, static_cast<unsigned>(count), timeout_ms);
+    } while (result == -EINTR);
 
     if (result > 0) {
         for (auto i = std::size_t { 0 }; i < count; ++i) {
-            if (!(pfds[i].revents & (POLLIN | POLLHUP))) {
+            if (!(pfds[i].revents & (sys::poll_in | sys::poll_hup))) {
                 fds[i].fd = -1; // mark not ready
             }
         }
@@ -497,8 +493,8 @@ auto poll_fds(PollableFd* fds, std::size_t count, int timeout_ms) -> int
 
 auto read_nonblocking(std::intptr_t fd, char* buf, std::size_t size) -> int
 {
-    auto n = ::read(static_cast<int>(fd), buf, size);
-    if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    auto n = sys::read(static_cast<int>(fd), buf, size);
+    if (n == -EAGAIN || n == -EWOULDBLOCK) {
         return -1;
     }
     return static_cast<int>(n);
@@ -506,22 +502,22 @@ auto read_nonblocking(std::intptr_t fd, char* buf, std::size_t size) -> int
 
 auto close_fd(std::intptr_t fd) -> void
 {
-    ::close(static_cast<int>(fd));
+    sys::close(static_cast<int>(fd));
 }
 
 auto try_reap(std::intptr_t pid, ProcessStatus& out) -> bool
 {
     auto status = 0;
-    auto wpid = ::waitpid(static_cast<pid_t>(pid), &status, WNOHANG);
+    auto wpid = sys::wait_pid(pid, status, true);
     if (wpid <= 0) {
         return false;
     }
 
     out.exited = true;
-    if (WIFEXITED(status)) {
-        out.exit_code = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        out.exit_code = 128 + WTERMSIG(status);
+    if (sys::exited(status)) {
+        out.exit_code = sys::exit_code(status);
+    } else if (sys::signaled(status)) {
+        out.exit_code = 128 + sys::term_signal(status);
     }
     return true;
 }
@@ -529,20 +525,20 @@ auto try_reap(std::intptr_t pid, ProcessStatus& out) -> bool
 auto reap(std::intptr_t pid, ProcessStatus& out) -> void
 {
     auto status = 0;
-    ::waitpid(static_cast<pid_t>(pid), &status, 0);
+    sys::wait_pid(pid, status, false);
 
     out.exited = true;
-    if (WIFEXITED(status)) {
-        out.exit_code = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        out.exit_code = 128 + WTERMSIG(status);
+    if (sys::exited(status)) {
+        out.exit_code = sys::exit_code(status);
+    } else if (sys::signaled(status)) {
+        out.exit_code = 128 + sys::term_signal(status);
     }
 }
 
 auto send_signal(std::intptr_t pid, Signal sig) -> void
 {
     assert(pid > 0 && "send_signal called with invalid pid");
-    ::kill(static_cast<pid_t>(pid), sig == Signal::Kill ? SIGKILL : SIGTERM);
+    sys::kill(pid, sig == Signal::Kill ? SIGKILL : SIGTERM);
 }
 
 } // namespace pup::platform

@@ -23,6 +23,11 @@ auto unset_env(std::string_view name) -> void
     _putenv_s(name.data(), "");
 }
 
+auto get_env(char const* name) -> char const*
+{
+    return std::getenv(name);
+}
+
 } // namespace pup::platform
 
 namespace pup {

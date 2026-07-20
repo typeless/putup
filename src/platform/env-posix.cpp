@@ -6,10 +6,9 @@
 #include "pup/core/platform.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/env.hpp"
+#include "pup/platform/sys.hpp"
 
 #include <cstdlib>
-#include <ctime>
-#include <unistd.h>
 
 namespace pup::platform {
 
@@ -24,13 +23,18 @@ auto unset_env(std::string_view name) -> void
     unsetenv(name.data());
 }
 
+auto get_env(char const* name) -> char const*
+{
+    return platform::sys::getenv(name);
+}
+
 } // namespace pup::platform
 
 namespace pup {
 
 auto get_platform() -> StringId
 {
-    if (auto const* env = std::getenv("TUP_PLATFORM"); env && *env) {
+    if (auto const* env = platform::sys::getenv("TUP_PLATFORM"); env && *env) {
         return global_pool().intern(env);
     }
     return global_pool().intern(PLATFORM);
@@ -38,24 +42,17 @@ auto get_platform() -> StringId
 
 auto cpu_count() -> std::size_t
 {
-    auto n = ::sysconf(_SC_NPROCESSORS_ONLN);
-    return n > 0 ? static_cast<std::size_t>(n) : 1;
+    return static_cast<std::size_t>(platform::sys::cpu_count());
 }
 
 auto SteadyClock::now() noexcept -> time_point
 {
-    struct timespec ts { };
-    ::clock_gettime(CLOCK_MONOTONIC, &ts);
-    auto ns = static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
-    return time_point { duration { ns } };
+    return time_point { duration { platform::sys::clock_monotonic_ns() } };
 }
 
 auto SystemClock::now() noexcept -> time_point
 {
-    struct timespec ts { };
-    ::clock_gettime(CLOCK_REALTIME, &ts);
-    auto ns = static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000 + ts.tv_nsec;
-    return time_point { duration { ns } };
+    return time_point { duration { platform::sys::clock_realtime_ns() } };
 }
 
 } // namespace pup
