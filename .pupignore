@@ -8,3 +8,7 @@ test/e2e/fixtures/
 # Example projects - require external dependencies
 examples/
 .claude/
+
+# 2GB of downloaded toolchain sources for examples/bsp (see scripts/download-source.sh);
+# the BSP build reaches them through its own -S, not through this project tree
+source-root/
