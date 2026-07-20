@@ -90,10 +90,12 @@ auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> Vec<StringId>&
 auto print_stats(
     pup::index::Index const& index,
     std::size_t num_commands,
-    std::size_t commands_executed
+    std::size_t commands_executed,
+    pup::SteadyClock::time_point variant_start
 ) -> void
 {
     auto metrics = pup::collect_metrics();
+    metrics.total_time = std::chrono::duration_cast<std::chrono::microseconds>(pup::SteadyClock::now() - variant_start);
 
     auto implicit_deps_count = std::size_t { 0 };
     for (auto const& edge : index.edges()) {
@@ -113,40 +115,35 @@ auto print_stats(
     print("  Hashes skipped:     {} (stat cache)\n", Pad { metrics.hashes_skipped, 6 });
     print("  Stat calls:         {}\n", Pad { metrics.stat_calls, 6 });
     print("  String pool:        {} strings, {} bytes\n", Pad { metrics.pool_strings, 6 }, metrics.pool_bytes);
-    if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
-        print("  Index I/O:          {}ms load, {}ms save\n", Pad { metrics.index_load_time.count(), 6 }, metrics.index_save_time.count());
-    }
 
-    // Phase timing breakdown (shown if any phase was timed)
-    auto total_phase_us = metrics.command_index_time.count()
-        + metrics.change_detection_time.count()
-        + metrics.implicit_deps_time.count()
-        + metrics.new_commands_time.count()
-        + metrics.stale_outputs_time.count()
-        + metrics.job_list_time.count();
+    auto as_ms = [](std::chrono::microseconds us) { return Fixed { static_cast<double>(us.count()) / 1000.0, 1, 8 }; };
 
-    if (total_phase_us > 0) {
-        print("\n  Phase timing:\n");
-        if (metrics.command_index_time.count() > 0) {
-            print("    Command index:    {}ms ({} expansions)\n", Fixed { static_cast<double>(metrics.command_index_time.count()) / 1000.0, 1, 6 }, metrics.command_expansions);
-        }
-        if (metrics.change_detection_time.count() > 0) {
-            print("    Change detection: {}ms ({} stats, {} hashes, {} skipped)\n", Fixed { static_cast<double>(metrics.change_detection_time.count()) / 1000.0, 1, 6 }, metrics.stat_calls, metrics.hash_computations, metrics.hashes_skipped);
-        }
-        if (metrics.implicit_deps_time.count() > 0) {
-            print("    Implicit deps:    {}ms\n", Fixed { static_cast<double>(metrics.implicit_deps_time.count()) / 1000.0, 1, 6 });
-        }
-        if (metrics.new_commands_time.count() > 0) {
-            print("    New commands:     {}ms\n", Fixed { static_cast<double>(metrics.new_commands_time.count()) / 1000.0, 1, 6 });
-        }
-        if (metrics.stale_outputs_time.count() > 0) {
-            print("    Stale outputs:    {}ms\n", Fixed { static_cast<double>(metrics.stale_outputs_time.count()) / 1000.0, 1, 6 });
-        }
-        if (metrics.job_list_time.count() > 0) {
-            print("    Job list:         {}ms\n", Fixed { static_cast<double>(metrics.job_list_time.count()) / 1000.0, 1, 6 });
-        }
-        print("  Total overhead:     {}ms\n", Fixed { static_cast<double>(total_phase_us) / 1000.0, 1, 6 });
-    }
+    auto accounted = metrics.parse_time
+        + metrics.index_load_time
+        + metrics.command_index_time
+        + metrics.change_detection_time
+        + metrics.implicit_deps_time
+        + metrics.new_commands_time
+        + metrics.stale_outputs_time
+        + metrics.job_list_time
+        + metrics.exec_time
+        + metrics.index_rebuild_time
+        + metrics.index_save_time;
+
+    print("\n  Phase timing:\n");
+    print("    Parse:            {}ms ({} Tupfiles)\n", as_ms(metrics.parse_time), metrics.tupfiles_parsed);
+    print("    Index load:       {}ms\n", as_ms(metrics.index_load_time));
+    print("    Command index:    {}ms ({} expansions)\n", as_ms(metrics.command_index_time), metrics.command_expansions);
+    print("    Change detection: {}ms ({} stats, {} hashes, {} skipped)\n", as_ms(metrics.change_detection_time), metrics.stat_calls, metrics.hash_computations, metrics.hashes_skipped);
+    print("    Implicit deps:    {}ms\n", as_ms(metrics.implicit_deps_time));
+    print("    New commands:     {}ms\n", as_ms(metrics.new_commands_time));
+    print("    Stale outputs:    {}ms\n", as_ms(metrics.stale_outputs_time));
+    print("    Job list:         {}ms\n", as_ms(metrics.job_list_time));
+    print("    Command execution:{}ms\n", as_ms(metrics.exec_time));
+    print("    Index rebuild:    {}ms\n", as_ms(metrics.index_rebuild_time));
+    print("    Index save:       {}ms\n", as_ms(metrics.index_save_time));
+    print("    Unaccounted:      {}ms\n", as_ms(metrics.total_time - accounted));
+    print("  Total:              {}ms\n", as_ms(metrics.total_time));
 }
 
 auto strip_build_root_prefix(std::string_view path, std::string_view build_root_name) -> std::string_view
@@ -1135,6 +1132,7 @@ auto build_single_variant(
     std::string_view variant_name
 ) -> int
 {
+    auto variant_start = pup::SteadyClock::now();
     auto scanner_registry = make_scanner_registry();
     auto* const scanner_ptr = scanner_registry ? &*scanner_registry : nullptr;
     if (scanner_ptr && opts.verbose) {
@@ -1168,6 +1166,10 @@ auto build_single_variant(
     };
 
     auto result = build_context(opts, ctx_opts);
+    // build_context loads the old index as part of its work; that span is timed
+    // separately, so discount it here to keep the phases disjoint.
+    pup::thread_metrics().parse_time = std::chrono::duration_cast<std::chrono::microseconds>(pup::SteadyClock::now() - variant_start)
+        - pup::thread_metrics().index_load_time;
     if (!result) {
         veprint(variant_name, "Error: {}\n", result.error().msg());
         return EXIT_FAILURE;
@@ -1284,7 +1286,7 @@ auto build_single_variant(
         if (changed_files.empty() && forced_cmds.empty()) {
             vprint(variant_name, "Nothing to do (up to date).\n");
             if (opts.stat) {
-                print_stats(idx, num_commands, 0);
+                print_stats(idx, num_commands, 0, variant_start);
             }
             return EXIT_SUCCESS;
         }
@@ -1438,6 +1440,9 @@ auto build_single_variant(
     auto build_result = scheduler.build(bs, filter.ptr());
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
+    // The scheduler times its own job-list construction; the rest of the span is execution.
+    pup::thread_metrics().exec_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start)
+        - pup::thread_metrics().job_list_time;
 
     if (use_tty_progress) {
         pup::exec::finalize_progress(prev_lines);
@@ -1465,6 +1470,7 @@ auto build_single_variant(
         // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
         // and they'll be detected as changed on next build.
         auto output_root_str = pup::global_pool().get(ctx.layout().output_root);
+        auto index_rebuild_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         auto index = pup::index::Index { build_index(
             bs,
             discovered_deps,
@@ -1474,9 +1480,10 @@ auto build_single_variant(
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
+        pup::thread_metrics().index_rebuild_time = std::chrono::duration_cast<std::chrono::microseconds>(index_save_start - index_rebuild_start);
         auto write_result = pup::Result<void> { pup::index::write_index(index_path, index) };
         auto index_save_end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
-        pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
+        pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::microseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
             veprint(variant_name, "Warning: Failed to save index: {}\n", write_result.error().msg());
@@ -1488,9 +1495,9 @@ auto build_single_variant(
 
     if (opts.stat) {
         if (final_index) {
-            print_stats(*final_index, num_commands, stats.completed_jobs);
+            print_stats(*final_index, num_commands, stats.completed_jobs, variant_start);
         } else if (old_idx_ptr) {
-            print_stats(*old_idx_ptr, num_commands, stats.completed_jobs);
+            print_stats(*old_idx_ptr, num_commands, stats.completed_jobs, variant_start);
         }
     }
 
