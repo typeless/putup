@@ -12,6 +12,7 @@
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
@@ -294,7 +295,7 @@ auto get_or_parse_config(
     if (!result) {
         auto cp = Buf {};
         cp.append(path);
-        fprintf(stderr, "Warning: Failed to parse %s: %s\n", cp.c_str(), result.error().msg().data());
+        eprint("Warning: Failed to parse {}: {}\n", cp.c_str(), result.error().msg());
         return nullptr;
     }
 
@@ -430,7 +431,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     if (ctx.verbose) {
         auto tp = Buf {};
         tp.append(tupfile_path_sv);
-        printf("Parsing: %s\n", tp.c_str());
+        print("Parsing: {}\n", tp.c_str());
     }
 
     auto source = read_file(tupfile_path_sv);
@@ -446,7 +447,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         auto tp = Buf {};
         tp.append(tupfile_path_sv);
         for (auto const& err : parse_result.errors) {
-            fprintf(stderr, "%s:%u:%u: error: %s\n", tp.c_str(), err.location.line, err.location.column, global_pool().get(err.message).data());
+            eprint("{}:{}:{}: error: {}\n", tp.c_str(), err.location.line, err.location.column, global_pool().get(err.message));
         }
         return pup::make_error<void>(pup::ErrorCode::ParseError, "Parse failed");
     }
@@ -548,7 +549,7 @@ auto try_auto_init(ProjectLayout const& layout) -> void
         return;
     }
     (void)pup::platform::create_directories(pup_dir_sv);
-    printf("Initialized pup in \"%.*s\"\n", static_cast<int>(pup_dir_sv.size()), pup_dir_sv.data());
+    print("Initialized pup in \"{}\"\n", pup_dir_sv);
 }
 
 struct IndexLoadResult {
@@ -598,7 +599,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
     std::sort(result.cached_env_vars.begin(), result.cached_env_vars.end());
 
     if (verbose && !result.cached_env_vars.empty()) {
-        printf("Loaded %zu cached env vars from index\n", result.cached_env_vars.size());
+        print("Loaded {} cached env vars from index\n", result.cached_env_vars.size());
     }
 
     return result;
@@ -644,7 +645,7 @@ auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser:
         if (verbose) {
             auto ip = Buf {};
             ip.append(ignore_path_sv);
-            printf("Loaded %zu ignore patterns from %s\n", ignore.size(), ip.c_str());
+            print("Loaded {} ignore patterns from {}\n", ignore.size(), ip.c_str());
         }
         break;
     }
@@ -773,7 +774,7 @@ auto build_context(
     }
 
     if (ctx_opts.verbose) {
-        printf("Found %zu directories with Tupfiles\n", ctx.impl_->state.available.size());
+        print("Found {} directories with Tupfiles\n", ctx.impl_->state.available.size());
     }
 
     // 4. Load config (seeds the per-file parse cache for find_config_for_dir)
@@ -785,7 +786,7 @@ auto build_context(
             if (ctx_opts.verbose) {
                 auto cpbuf = Buf {};
                 cpbuf.append(config_path_sv);
-                printf("Loaded %zu config variables from %s\n", ctx.impl_->config_vars.names().size(), cpbuf.c_str());
+                print("Loaded {} config variables from {}\n", ctx.impl_->config_vars.names().size(), cpbuf.c_str());
             }
         }
     }
@@ -800,7 +801,7 @@ auto build_context(
         cbuf.append(name_sv);
         ctx.impl_->config_vars.set(cbuf.view(), value_sv);
         if (ctx_opts.verbose) {
-            printf("-D %s=%s\n", name_sv.data(), value_sv.data());
+            print("-D {}={}\n", name_sv, value_sv);
         }
     }
 
@@ -859,11 +860,11 @@ auto build_context(
     (void)graph::finalize_graph(ctx.impl_->graph, builder_state);
 
     for (auto warning_id : builder_state.warnings) {
-        fprintf(stderr, "warning: %s\n", pool.get(warning_id).data());
+        eprint("warning: {}\n", pool.get(warning_id));
     }
 
     if (ctx_opts.verbose) {
-        printf("Parsed %zu Tupfiles\n", ctx.impl_->state.parsed.size());
+        print("Parsed {} Tupfiles\n", ctx.impl_->state.parsed.size());
     }
 
     return ctx;

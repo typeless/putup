@@ -38,6 +38,7 @@ test-srcs-y += test_graph.cpp
 test-srcs-y += test_arena.cpp
 test-srcs-y += test_hash.cpp
 test-srcs-y += test_buf.cpp
+test-srcs-y += test_format.cpp
 test-srcs-y += test_function.cpp
 test-srcs-y += test_id_array.cpp
 test-srcs-y += test_id_bitset.cpp

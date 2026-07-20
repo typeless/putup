@@ -9,6 +9,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
@@ -31,7 +32,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
     auto& pool = global_pool();
     auto layout = discover_layout(make_layout_options(opts));
     if (!layout) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, layout.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -68,38 +69,38 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
     auto& ctx = *result;
 
     if (opts.verbose) {
-        printf("[%.*s] Project root: \"%s\"\n", static_cast<int>(variant_name.size()), variant_name.data(), pool.get(ctx.layout().source_root).data());
-        printf("[%.*s] Tupfiles:\n", static_cast<int>(variant_name.size()), variant_name.data());
+        print("[{}] Project root: \"{}\"\n", variant_name, pool.get(ctx.layout().source_root));
+        print("[{}] Tupfiles:\n", variant_name);
         for (auto dir_id : ctx.parsed_dirs()) {
             auto dir_sv = pool.get(dir_id);
             auto tupfile_path = (dir_sv == "." || dir_sv.empty())
                 ? pool.get(pup::path::join(pool.get(ctx.layout().source_root), "Tupfile"))
                 : pool.get(pup::path::join(pool.get(pup::path::join(pool.get(ctx.layout().source_root), dir_sv)), "Tupfile"));
-            printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(tupfile_path.size()), tupfile_path.data());
+            print("[{}]   {}\n", variant_name, tupfile_path);
         }
     }
 
     auto commands = pup::graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
 
     if (opts.verbose && !commands.empty()) {
-        printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
+        print("[{}] Commands:\n", variant_name);
         auto cache = pup::graph::PathCache {};
         for (auto id : commands) {
             auto display_sv = pool.get(pup::graph::get<pup::graph::Display>(ctx.graph().graph, id));
             auto cmd_str_id = pup::graph::expand_instruction(ctx.graph().graph, id, cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root));
             auto label = display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
-            printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(label.size()), label.data());
+            print("[{}]   {}\n", variant_name, label);
         }
     }
 
-    printf("[%.*s] Parsed %zu Tupfile(s), %zu commands\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.parsed_dirs().size(), commands.size());
+    print("[{}] Parsed {} Tupfile(s), {} commands\n", variant_name, ctx.parsed_dirs().size(), commands.size());
 
     if (opts.check != CheckLevel::None) {
         auto component_dirs = Vec<std::string_view> {};
@@ -127,7 +128,7 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         auto has_errors = false;
         for (auto const& d : diagnostics) {
             auto severity_str = d.severity == Diagnostic::Error ? "error" : "warning";
-            fprintf(stderr, "%.*s:%zu: %s: %.*s\n", static_cast<int>(pool.get(d.file).size()), pool.get(d.file).data(), d.line, severity_str, static_cast<int>(pool.get(d.message).size()), pool.get(d.message).data());
+            eprint("{}:{}: {}: {}\n", pool.get(d.file), d.line, severity_str, pool.get(d.message));
             if (d.severity == Diagnostic::Error) {
                 has_errors = true;
             }

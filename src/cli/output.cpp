@@ -5,6 +5,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
@@ -57,12 +58,12 @@ auto remove_empty_directories(
         }
 
         if (mode.dry_run) {
-            printf("Would remove empty dir: %.*s\n", static_cast<int>(dir.size()), dir.data());
+            print("Would remove empty dir: {}\n", dir);
         } else {
             (void)pup::platform::remove_file(dir);
             ++removed;
             if (mode.verbose) {
-                printf("Removed empty dir: %.*s\n", static_cast<int>(dir.size()), dir.data());
+                print("Removed empty dir: {}\n", dir);
             }
         }
     }

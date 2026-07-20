@@ -9,6 +9,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/types.hpp"
@@ -33,23 +34,15 @@ auto pool_get(StringId id) -> std::string_view
 template<typename... Args>
 auto vprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
 {
-    printf("[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
-    if constexpr (sizeof...(args) == 0) {
-        printf("%s", fmt);
-    } else {
-        printf(fmt, std::forward<Args>(args)...);
-    }
+    print("[{}] ", variant_name);
+    print(fmt, std::forward<Args>(args)...);
 }
 
 template<typename... Args>
 auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
 {
-    fprintf(stderr, "[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
-    if constexpr (sizeof...(args) == 0) {
-        fprintf(stderr, "%s", fmt);
-    } else {
-        fprintf(stderr, fmt, std::forward<Args>(args)...);
-    }
+    eprint("[{}] ", variant_name);
+    eprint(fmt, std::forward<Args>(args)...);
 }
 
 auto remove_indexed_outputs(
@@ -63,7 +56,7 @@ auto remove_indexed_outputs(
 
     auto index_result = pup::index::read_index(index_path);
     if (!index_result) {
-        fprintf(stderr, "Warning: Could not load index: %s\n", index_result.error().msg().data());
+        eprint("Warning: Could not load index: {}\n", index_result.error().msg());
         return result;
     }
 
@@ -87,7 +80,7 @@ auto remove_indexed_outputs(
         }
 
         if (mode.dry_run) {
-            vprint(variant_name, "Would remove: %s\n", file_path_sv.data());
+            vprint(variant_name, "Would remove: {}\n", file_path_sv);
             ++result.removed_count;
             continue;
         }
@@ -96,10 +89,10 @@ auto remove_indexed_outputs(
         if (r) {
             ++result.removed_count;
             if (mode.verbose) {
-                vprint(variant_name, "Removed: %s\n", file_path_sv.data());
+                vprint(variant_name, "Removed: {}\n", file_path_sv);
             }
         } else {
-            veprint(variant_name, "Error removing %s: %s\n", file_path_sv.data(), r.error().msg().data());
+            veprint(variant_name, "Error removing {}: {}\n", file_path_sv, r.error().msg());
             ++result.error_count;
         }
     }
@@ -131,9 +124,9 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     );
 
     if (opts.dry_run) {
-        vprint(variant_name, "Would remove %zu files, %zu directories\n", result.removed_count, dirs_removed);
+        vprint(variant_name, "Would remove {} files, {} directories\n", result.removed_count, dirs_removed);
     } else {
-        vprint(variant_name, "Removed %zu files, %zu directories\n", result.removed_count, dirs_removed);
+        vprint(variant_name, "Removed {} files, {} directories\n", result.removed_count, dirs_removed);
     }
 
     return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
@@ -165,10 +158,10 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto pup_dir_sv = pool.get(pup::path::join(build_dir_sv, ".pup"));
     if (pup::platform::exists(pup_dir_sv)) {
         if (opts.dry_run) {
-            vprint(variant_name, "Would remove: %.*s\n", static_cast<int>(pup_dir_sv.size()), pup_dir_sv.data());
+            vprint(variant_name, "Would remove: {}\n", pup_dir_sv);
         } else {
             if (opts.verbose) {
-                vprint(variant_name, "Removing: %.*s\n", static_cast<int>(pup_dir_sv.size()), pup_dir_sv.data());
+                vprint(variant_name, "Removing: {}\n", pup_dir_sv);
             }
             (void)pup::platform::remove_all(pup_dir_sv);
         }
@@ -177,10 +170,10 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto config_path_sv = pool.get(pup::path::join(build_dir_sv, "tup.config"));
     if (pup::platform::exists(config_path_sv)) {
         if (opts.dry_run) {
-            vprint(variant_name, "Would remove: %.*s\n", static_cast<int>(config_path_sv.size()), config_path_sv.data());
+            vprint(variant_name, "Would remove: {}\n", config_path_sv);
         } else {
             if (opts.verbose) {
-                vprint(variant_name, "Removing: %.*s\n", static_cast<int>(config_path_sv.size()), config_path_sv.data());
+                vprint(variant_name, "Removing: {}\n", config_path_sv);
             }
             (void)pup::platform::remove_file(config_path_sv);
         }

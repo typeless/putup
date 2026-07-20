@@ -5196,6 +5196,11 @@ SCENARIO("show var displays variable assignments", "[e2e][show][var]")
                 REQUIRE(result.stdout_output.find("{") != std::string::npos);
                 REQUIRE(result.stdout_output.find("\"variables\":") != std::string::npos);
             }
+
+            THEN("each variable opens a JSON object")
+            {
+                REQUIRE(result.stdout_output.find("\"CC\": {\n") != std::string::npos);
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
 #include "pup/cli/commands.hpp"
 #include "pup/cli/options.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cstdio>
@@ -35,7 +36,7 @@ auto dispatch(Options const& opts) -> int
         return cmd_configure(opts);
     }
 
-    fprintf(stderr, "Unknown command: %s\n", cmd.data());
+    eprint("Unknown command: {}\n", cmd);
     print_usage();
     return EXIT_FAILURE;
 }
