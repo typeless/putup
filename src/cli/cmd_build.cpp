@@ -221,12 +221,50 @@ auto collect_implicit_dep_files(
     return result;
 }
 
+/// Collect paths declared only by commands whose conditional guard is unsatisfied.
+/// Both branches of a config-driven conditional are in the graph; only the satisfied
+/// one produces files, so the other branch's outputs will never exist on disk. A path
+/// declared by both branches shares one node and has an active producer, so the test
+/// is "no active producer" rather than "some inactive declarer".
+auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<StringId>
+{
+    auto const& g = state.graph;
+    auto produced_by_active = pup::NodeIdMap32 {};
+    auto declared_by_inactive = pup::NodeIdMap32 {};
+
+    for (auto id : pup::graph::all_nodes(g)) {
+        if (!pup::node_id::is_command(id)) {
+            continue;
+        }
+        auto& outputs = pup::graph::is_guard_satisfied(g, id) ? produced_by_active : declared_by_inactive;
+        for (auto output_id : pup::graph::get_outputs(g, id)) {
+            outputs.set(output_id, 1);
+        }
+    }
+
+    auto result = Vec<StringId> {};
+    for (auto id : pup::graph::all_nodes(g)) {
+        if (!declared_by_inactive.contains(id) || produced_by_active.contains(id)) {
+            continue;
+        }
+        auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
+        if (!node_path.empty()) {
+            result.push_back(pup::global_pool().intern(node_path));
+        }
+    }
+
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
 auto find_changed_files_with_implicit(
     std::string_view source_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& scopes,
     Vec<std::string_view> const& upstream_files,
     Vec<StringId> const& implicit_dep_files,
+    Vec<StringId> const& inactive_outputs,
     bool verbose = false,
     bool no_stat_cache = false
 ) -> pup::Vec<StringId>
@@ -247,7 +285,7 @@ auto find_changed_files_with_implicit(
         }
 
         // No active rule produces this, so its absence is not a change.
-        if ((file.flags & pup::NodeFlags::Inactive) != pup::NodeFlags::None) {
+        if (std::binary_search(inactive_outputs.begin(), inactive_outputs.end(), file.path)) {
             continue;
         }
 
@@ -458,23 +496,6 @@ auto serialize_graph_nodes(
     auto index = pup::index::Index {};
     auto path_to_id = PathIdMap {};
 
-    // Both branches of a config-driven conditional are in the graph; only the
-    // satisfied one produces files. Marking the other branch's outputs keeps
-    // change detection from stat'ing files nothing will ever create. Branches
-    // that declare the same output share one node, so the test is "no active
-    // producer" — one inactive declarer does not make a file unproduced.
-    auto produced_by_active = pup::NodeIdMap32 {};
-    auto declared_by_inactive = pup::NodeIdMap32 {};
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(id)) {
-            continue;
-        }
-        auto& outputs = pup::graph::is_guard_satisfied(g, id) ? produced_by_active : declared_by_inactive;
-        for (auto output_id : pup::graph::get_outputs(g, id)) {
-            outputs.set(output_id, 1);
-        }
-    }
-
     for (auto id : pup::graph::all_nodes(g)) {
         if (pup::node_id::is_command(id)) {
             continue;
@@ -482,9 +503,6 @@ auto serialize_graph_nodes(
 
         auto type = pup::graph::get<pup::NodeType>(g, id);
         auto node_flags = pup::graph::get<pup::NodeFlags>(g, id);
-        if (declared_by_inactive.contains(id) && !produced_by_active.contains(id)) {
-            node_flags = node_flags | pup::NodeFlags::Inactive;
-        }
 
         switch (type) {
         case pup::NodeType::File:
@@ -1280,6 +1298,7 @@ auto build_single_variant(
             scopes,
             upstream_files,
             implicit_dep_files,
+            collect_inactive_output_paths(bs),
             opts.verbose,
             opts.no_stat_cache
         );
