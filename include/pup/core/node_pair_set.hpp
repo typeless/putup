@@ -40,12 +40,6 @@ public:
         return pairs_.size();
     }
 
-    auto reserve(std::size_t count) -> void
-    {
-        pairs_.reserve(count);
-        index_.reserve(count);
-    }
-
 private:
     static auto hash_pair(NodeId from, NodeId to) -> std::uint32_t
     {
