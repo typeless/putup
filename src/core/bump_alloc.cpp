@@ -2,10 +2,11 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/bump_alloc.hpp"
+#include "pup/core/print.hpp"
 #include "pup/platform/env.hpp"
 #include "pup/platform/vm.hpp"
 
-#include <cstdio>
+#include <charconv>
 #include <cstdlib>
 
 namespace pup {
@@ -35,7 +36,7 @@ auto reserve_backing() -> void
             return;
         }
     }
-    std::fputs("fatal: cannot reserve bump region\n", stderr);
+    write_to(Stream::Err, "fatal: cannot reserve bump region\n");
     std::abort();
 }
 
@@ -50,6 +51,20 @@ struct SiteStat {
 };
 SiteStat site_stats[4096];    // NOLINT
 bool dump_registered = false; // NOLINT
+
+auto write_uint(std::size_t n) -> void
+{
+    char buf[20];
+    auto [end, ec] = std::to_chars(buf, buf + sizeof(buf), n);
+    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+}
+
+auto write_ptr(void const* p) -> void
+{
+    char buf[18] = { '0', 'x' };
+    auto [end, ec] = std::to_chars(buf + 2, buf + sizeof(buf), reinterpret_cast<std::uintptr_t>(p), 16);
+    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+}
 
 auto record_site(void* ra, std::size_t size) -> void
 {
@@ -67,10 +82,20 @@ auto record_site(void* ra, std::size_t size) -> void
             for (auto const& s : site_stats) {
                 gross += s.bytes;
                 if (s.bytes > 1U << 20) {
-                    std::fprintf(stderr, "bumpsite %p %zu bytes %zu calls\n", s.ra, s.bytes, s.calls);
+                    write_to(Stream::Err, "bumpsite ");
+                    write_ptr(s.ra);
+                    write_to(Stream::Err, " ");
+                    write_uint(s.bytes);
+                    write_to(Stream::Err, " bytes ");
+                    write_uint(s.calls);
+                    write_to(Stream::Err, " calls\n");
                 }
             }
-            std::fprintf(stderr, "bumptotal gross %zu net %zu\n", gross, used);
+            write_to(Stream::Err, "bumptotal gross ");
+            write_uint(gross);
+            write_to(Stream::Err, " net ");
+            write_uint(used);
+            write_to(Stream::Err, "\n");
         });
     }
 }
@@ -91,7 +116,7 @@ auto bump_alloc(std::size_t size, std::size_t align) -> void*
     auto const offset = (used + align - 1) & ~(align - 1);
     auto const end = offset + size;
     if (end > reserved) {
-        std::fputs("fatal: bump region exhausted\n", stderr);
+        write_to(Stream::Err, "fatal: bump region exhausted\n");
         std::abort();
     }
     if (end > committed) {

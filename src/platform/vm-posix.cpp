@@ -3,10 +3,10 @@
 
 #include "pup/platform/vm.hpp"
 
+#include "pup/core/print.hpp"
 #include "pup/platform/sys.hpp"
 
-#include <cerrno>
-#include <cstdio>
+#include <charconv>
 #include <cstdlib>
 
 namespace pup::platform::vm {
@@ -22,8 +22,12 @@ auto round_up_to_page(std::size_t bytes) -> std::size_t
 [[noreturn]]
 auto die(char const* what, int rc) -> void
 {
-    errno = -rc;
-    std::perror(what);
+    char buf[20];
+    auto [end, ec] = std::to_chars(buf, buf + sizeof(buf), -rc);
+    write_to(Stream::Err, std::string_view { what });
+    write_to(Stream::Err, ": errno ");
+    write_to(Stream::Err, { buf, static_cast<std::size_t>(end - buf) });
+    write_to(Stream::Err, "\n");
     std::abort();
 }
 

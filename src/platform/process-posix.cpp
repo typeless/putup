@@ -17,7 +17,6 @@
 #include <cassert>
 #include <cerrno>
 #include <csignal>
-#include <cstdio>
 
 #ifdef __APPLE__
 #    include <crt_externs.h>
@@ -363,9 +362,9 @@ auto run_parallel_tasks(
         }
 
         if (pid == 0) {
-            // Child: run task and exit with its return code
+            // Child: run task and exit with its return code. No stdio to flush —
+            // pup::print writes are unbuffered raw syscalls.
             auto rc = task(contexts[i]);
-            std::fflush(nullptr); // flush all stdio before exit
             sys::exit_process(rc);
         }
 

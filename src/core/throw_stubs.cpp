@@ -9,13 +9,23 @@
 //
 // The C++ ABI symbols (__cxa_guard_*, operator new/delete) normally
 // come from libstdc++/libc++. We provide minimal implementations.
-// __cxa_atexit comes from libc and does not need a stub.
 
 #include "pup/core/bump_alloc.hpp"
+#include "pup/platform/sys.hpp"
 
 #include <cstddef>
-#include <cstdio>
 #include <cstdlib>
+
+namespace {
+// Keep this TU free of heavy STL headers: they forward-declare the same
+// std::__throw_* functions we define below, and the [[noreturn]] on those
+// forward decls would clash with ours.
+template<std::size_t N>
+auto fatal(char const (&msg)[N]) -> void
+{
+    pup::platform::sys::write(2, msg, N - 1);
+}
+} // namespace
 
 // C++ ABI: thread-safe static local initialization guards.
 // Since we are single-threaded, a simple flag suffices.
@@ -56,28 +66,28 @@ namespace std { // NOLINT(cert-dcl58-cpp)
 [[noreturn]]
 void __throw_bad_alloc()
 {
-    fputs("fatal: bad_alloc\n", stderr);
+    fatal("fatal: bad_alloc\n");
     abort();
 }
 
 [[noreturn]]
 void __throw_bad_array_new_length()
 {
-    fputs("fatal: bad_array_new_length\n", stderr);
+    fatal("fatal: bad_array_new_length\n");
     abort();
 }
 
 [[noreturn]]
-void __throw_length_error(char const* msg)
+void __throw_length_error(char const* /* msg */)
 {
-    fprintf(stderr, "fatal: length_error: %s\n", msg);
+    fatal("fatal: length_error\n");
     abort();
 }
 
 [[noreturn]]
 void __throw_out_of_range_fmt(char const* /* fmt */, ...)
 {
-    fputs("fatal: out_of_range\n", stderr);
+    fatal("fatal: out_of_range\n");
     abort();
 }
 
@@ -91,7 +101,7 @@ inline namespace __1 {
 [[noreturn]]
 void __libcpp_verbose_abort(char const* /* fmt */, ...)
 {
-    fputs("fatal: libc++ abort\n", stderr);
+    fatal("fatal: libc++ abort\n");
     abort();
 }
 } // namespace __1
