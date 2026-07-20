@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/core/bump_alloc.hpp"
+#include "pup/platform/env.hpp"
 #include "pup/platform/vm.hpp"
 
 #include <cstdio>
@@ -77,7 +78,7 @@ auto record_site(void* ra, std::size_t size) -> void
 
 auto bump_alloc(std::size_t size, std::size_t align) -> void*
 {
-    static bool const stats_enabled = std::getenv("PUP_BUMP_STATS") != nullptr;
+    static bool const stats_enabled = pup::platform::get_env("PUP_BUMP_STATS") != nullptr;
     if (stats_enabled) {
         record_site(__builtin_return_address(0), size);
     }

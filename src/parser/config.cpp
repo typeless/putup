@@ -7,6 +7,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/string_utils.hpp"
 #include "pup/parser/eval.hpp"
 #include "pup/platform/file_io.hpp"
 #include <cctype>
@@ -19,10 +20,10 @@ namespace {
 
 auto trim(std::string_view s) -> std::string_view
 {
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+    while (!s.empty() && pup::core::is_space(s.front())) {
         s.remove_prefix(1);
     }
-    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+    while (!s.empty() && pup::core::is_space(s.back())) {
         s.remove_suffix(1);
     }
     return s;

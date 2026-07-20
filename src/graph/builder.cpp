@@ -22,6 +22,7 @@
 #include "pup/parser/eval.hpp"
 #include "pup/parser/glob.hpp"
 #include "pup/parser/parser.hpp"
+#include "pup/platform/env.hpp"
 
 #include "pup/core/path.hpp"
 #include "pup/platform/file_io.hpp"
@@ -1222,7 +1223,7 @@ auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_r
         if (stat_and_append(path)) {
             return;
         }
-    } else if (auto const* path_env = std::getenv("PATH")) {
+    } else if (auto const* path_env = pup::platform::get_env("PATH")) {
         auto dirs = std::string_view { path_env };
         while (!dirs.empty()) {
             auto sep = dirs.find(PATH_LIST_SEP);
@@ -1255,7 +1256,7 @@ auto process_export(
     // is part of the command's identity even when the Tupfile never reads it.
     auto name_buf = Buf {};
     name_buf += var_name_sv;
-    auto const* env_val = std::getenv(name_buf.c_str());
+    auto const* env_val = pup::platform::get_env(name_buf.c_str());
     (void)ensure_env_var_node(
         ctx, state, var_name_sv, env_val ? std::string_view { env_val } : std::string_view {}
     );
@@ -1278,7 +1279,7 @@ auto process_import(
     name_buf += var_name_sv;
 
     // 1. Try environment first
-    if (auto const* env_val = std::getenv(name_buf.c_str())) {
+    if (auto const* env_val = pup::platform::get_env(name_buf.c_str())) {
         value_id = intern(env_val);
     }
     // 2. If the author wrote `?= default`, that default is the explicit
@@ -2376,7 +2377,7 @@ auto add_tupfile(
         ctx.used_env_vars.insert(to_underlying(intern(name)));
         auto name_buf = Buf {};
         name_buf += name;
-        if (auto const* env_val = std::getenv(name_buf.c_str())) {
+        if (auto const* env_val = pup::platform::get_env(name_buf.c_str())) {
             (void)ensure_env_var_node(ctx, state, name, std::string_view { env_val });
         }
     };

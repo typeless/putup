@@ -9,6 +9,13 @@ else
 _os_api = @(OS_API)
 endif
 
+# Syscall backend for the posix platform layer (linux = raw syscalls, posix = libc)
+ifeq (@(SYS_BACKEND),)
+_sys_backend = posix
+else
+_sys_backend = @(SYS_BACKEND)
+endif
+
 # Object extension from config (default: o)
 ifeq (@(OBJ_EXT),)
 _obj = o

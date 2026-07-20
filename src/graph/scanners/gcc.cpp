@@ -227,7 +227,7 @@ auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
 {
     auto pos = std::string_view::size_type { 0 };
     while ((pos = cmd.find("-M", pos)) != std::string_view::npos) {
-        if (pos > 0 && std::isspace(static_cast<unsigned char>(cmd[pos - 1])) == 0) {
+        if (pos > 0 && !pup::core::is_space(cmd[pos - 1])) {
             ++pos;
             continue;
         }
@@ -237,7 +237,7 @@ auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
         }
         auto c = cmd[next_pos];
         if (c == 'D' || c == 'M' || c == 'F' || c == 'G' || c == 'P' || c == 'T' || c == 'Q' || c == 'V'
-            || std::isspace(static_cast<unsigned char>(c)) != 0) {
+            || pup::core::is_space(c)) {
             return true;
         }
         ++pos;

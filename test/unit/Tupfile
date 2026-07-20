@@ -64,6 +64,7 @@ test-srcs-y += test_sorted_id_vec.cpp
 test-srcs-y += test_strict_checks.cpp
 test-srcs-y += test_string_pool.cpp
 test-srcs-y += test_string_utils.cpp
+test-srcs-y += test_sys.cpp
 test-srcs-y += test_target.cpp
 test-srcs-y += test_types.cpp
 test-srcs-y += test_var_tracking.cpp

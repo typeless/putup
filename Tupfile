@@ -69,6 +69,10 @@ srcs-y += src/cli/strict_checks.cpp
 srcs-y += src/cli/target.cpp
 
 # Platform
+ifeq ($(_os_api),posix)
+srcs-y += src/platform/sys-$(_sys_backend).cpp
+srcs-y += src/platform/sys-common.cpp
+endif
 srcs-y += src/platform/process-$(_os_api).cpp
 srcs-y += src/platform/file_io-$(_os_api).cpp
 srcs-y += src/platform/env-$(_os_api).cpp

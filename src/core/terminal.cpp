@@ -3,14 +3,12 @@
 
 #include "pup/core/terminal.hpp"
 
-#include <cstdio>
-
 #if defined(_WIN32)
+#    include <cstdio>
 #    include <io.h>
 #    include <windows.h>
 #else
-#    include <sys/ioctl.h>
-#    include <unistd.h>
+#    include "pup/platform/sys.hpp"
 #endif
 
 namespace pup {
@@ -20,7 +18,7 @@ auto is_tty(int fd) -> bool
 #if defined(_WIN32)
     return _isatty(fd) != 0;
 #else
-    return isatty(fd) != 0;
+    return platform::sys::isatty(fd);
 #endif
 }
 
@@ -31,7 +29,7 @@ auto stdout_is_tty() -> bool
 #elif defined(_WIN32)
     return is_tty(fileno(stdout));
 #else
-    return is_tty(STDOUT_FILENO);
+    return is_tty(1);
 #endif
 }
 
@@ -42,7 +40,7 @@ auto stderr_is_tty() -> bool
 #elif defined(_WIN32)
     return is_tty(fileno(stderr));
 #else
-    return is_tty(STDERR_FILENO);
+    return is_tty(2);
 #endif
 }
 
@@ -58,11 +56,8 @@ auto terminal_width() -> int
     }
     return default_width;
 #else
-    auto ws = winsize {};
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-        return ws.ws_col;
-    }
-    return default_width;
+    auto cols = platform::sys::terminal_width(1);
+    return cols > 0 ? cols : default_width;
 #endif
 }
 

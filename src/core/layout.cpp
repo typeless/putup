@@ -9,6 +9,7 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
+#include "pup/platform/env.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <algorithm>
@@ -51,7 +52,7 @@ auto const PUP_BUILD_DIR_ENV = "PUP_BUILD_DIR";
 
 auto get_env(char const* name) -> std::optional<std::string_view>
 {
-    if (auto const* value = std::getenv(name)) {
+    if (auto const* value = pup::platform::get_env(name)) {
         if (*value != '\0') {
             return std::string_view { value };
         }

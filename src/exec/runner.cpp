@@ -7,6 +7,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/string_utils.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/platform/process.hpp"
 
@@ -144,7 +145,7 @@ auto parse_command(std::string_view command) -> Vec<StringId>
             continue;
         }
 
-        if (std::isspace(static_cast<unsigned char>(c)) && !in_single_quote && !in_double_quote) {
+        if (pup::core::is_space(c) && !in_single_quote && !in_double_quote) {
             if (!current.empty()) {
                 result.push_back(current.intern(pool));
                 current.clear();

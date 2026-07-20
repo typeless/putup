@@ -19,6 +19,7 @@
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/topo.hpp"
 #include "pup/parser/depfile.hpp"
+#include "pup/platform/env.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/platform/process.hpp"
 
@@ -68,7 +69,7 @@ auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
     for (auto name_id : names) {
         namebuf.clear();
         namebuf.append(pool.get(name_id));
-        if (auto const* env_val = std::getenv(namebuf.c_str())) {
+        if (auto const* env_val = pup::platform::get_env(namebuf.c_str())) {
             cache.emplace_back(name_id, pool.intern(env_val));
         }
     }
