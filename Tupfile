@@ -97,7 +97,12 @@ srcs-y += src/platform/vm-$(_os_api).cpp
 # they need throw_stubs to supply those symbols.
 ifeq (@(LINKER),)
 : src/core/throw_stubs.cpp |> !cxx |> throw_stubs.$(_obj)
+ifeq (@(FREESTANDING),y)
+: src/platform/crt0-linux.cpp |> ^ CXX %f^ @(CXX_CRT0_CMD) |> crt0-linux.$(_obj)
+: {lib_objs} main.$(_obj) throw_stubs.$(_obj) crt0-linux.$(_obj) |> ^ LINK %o^ @(FREESTANDING_LINK_CMD) |> putup$(_exe)
+else
 : {lib_objs} main.$(_obj) throw_stubs.$(_obj) |> !link |> putup$(_exe)
+endif
 else
 : src/core/new_delete.cpp |> !cxx |> new_delete.$(_obj)
 : {lib_objs} main.$(_obj) new_delete.$(_obj) |> !link |> putup$(_exe)
