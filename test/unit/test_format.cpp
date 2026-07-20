@@ -5,6 +5,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/format_to.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -44,7 +45,7 @@ auto ref_fixed(double v, int precision) -> std::string
     return { out, static_cast<std::size_t>(n) };
 }
 
-constexpr long long POW10_TABLE[] = { 1, 10, 100, 1000, 10000, 100000, 1000000 };
+constexpr auto POW10_TABLE = std::array<long long, 7> { 1, 10, 100, 1000, 10000, 100000, 1000000 };
 
 } // namespace
 

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cassert>
 #include <charconv>
 #include <cmath>
@@ -119,6 +120,7 @@ auto append_int(Buffer& out, long long v, int width, char fill) -> void
 }
 
 // Nearest with exact ties away from zero (not printf's ties-to-even); domain finite |v| < 9e15, larger saturates.
+[[nodiscard]]
 inline auto render_fixed(char (&buf)[32], double v, int precision) -> std::string_view
 {
     auto* p = buf;
@@ -134,7 +136,7 @@ inline auto render_fixed(char (&buf)[32], double v, int precision) -> std::strin
         v = 9.0e15;
     }
 
-    constexpr long long pow10[] = { 1, 10, 100, 1000, 10000, 100000, 1000000 };
+    constexpr auto pow10 = std::array<long long, 7> { 1, 10, 100, 1000, 10000, 100000, 1000000 };
     auto const scale = pow10[precision];
     auto whole = static_cast<unsigned long long>(v);
     auto const frac_scaled = (v - static_cast<double>(whole)) * static_cast<double>(scale);
