@@ -85,8 +85,8 @@ SCENARIO("NodeIdPairSet agrees with a reference set", "[node_pair_set]")
 {
     GIVEN("a randomized sequence of pairs with many repeats")
     {
-        auto const seed = GENERATE(1u, 2u, 3u, 12345u, 999983u);
-        auto const bound = GENERATE(4u, 37u, 512u);
+        auto const seed = GENERATE(1U, 2U, 3U, 12345U, 999983U);
+        auto const bound = GENERATE(4U, 37U, 512U);
 
         auto rng = Lcg { seed };
         auto subject = NodeIdPairSet {};
@@ -131,8 +131,8 @@ SCENARIO("NodeIdPairSet handles sparse ids without collisions", "[node_pair_set]
         {
             auto agreed = true;
             for (auto i = 0; i < 20000; ++i) {
-                auto const from = rng.next(1u << 20);
-                auto const to = rng.next(1u << 20);
+                auto const from = rng.next(1U << 20);
+                auto const to = rng.next(1U << 20);
                 agreed = agreed
                     && subject.insert(NodeId { from }, NodeId { to }) == reference.insert({ from, to }).second;
             }
@@ -141,6 +141,58 @@ SCENARIO("NodeIdPairSet handles sparse ids without collisions", "[node_pair_set]
             {
                 REQUIRE(agreed);
                 REQUIRE(subject.size() == reference.size());
+            }
+        }
+    }
+}
+
+SCENARIO("NodeIdPairSet separates pairs whose hashes collide", "[node_pair_set]")
+{
+    // Pairs below are chosen so the 32-bit hash matches while one component
+    // differs: only comparing the stored pair in full can tell them apart, and
+    // random inputs reach that branch far too rarely to rely on.
+    GIVEN("colliding pairs that differ only in the second component")
+    {
+        auto set = NodeIdPairSet {};
+        REQUIRE(set.insert(NodeId { 1 }, NodeId { 34202 }));
+
+        WHEN("the colliding pair is inserted")
+        {
+            THEN("it counts as a distinct member")
+            {
+                REQUIRE(set.insert(NodeId { 1 }, NodeId { 55298 }));
+                REQUIRE(set.size() == 2);
+            }
+
+            THEN("both are recognised when reinserted")
+            {
+                REQUIRE(set.insert(NodeId { 1 }, NodeId { 55298 }));
+                REQUIRE_FALSE(set.insert(NodeId { 1 }, NodeId { 34202 }));
+                REQUIRE_FALSE(set.insert(NodeId { 1 }, NodeId { 55298 }));
+                REQUIRE(set.size() == 2);
+            }
+        }
+    }
+
+    GIVEN("colliding pairs that differ only in the first component")
+    {
+        auto set = NodeIdPairSet {};
+        REQUIRE(set.insert(NodeId { 1070 }, NodeId { 1 }));
+
+        WHEN("the colliding pair is inserted")
+        {
+            THEN("it counts as a distinct member")
+            {
+                REQUIRE(set.insert(NodeId { 47696 }, NodeId { 1 }));
+                REQUIRE(set.size() == 2);
+            }
+
+            THEN("both are recognised when reinserted")
+            {
+                REQUIRE(set.insert(NodeId { 47696 }, NodeId { 1 }));
+                REQUIRE_FALSE(set.insert(NodeId { 1070 }, NodeId { 1 }));
+                REQUIRE_FALSE(set.insert(NodeId { 47696 }, NodeId { 1 }));
+                REQUIRE(set.size() == 2);
             }
         }
     }
