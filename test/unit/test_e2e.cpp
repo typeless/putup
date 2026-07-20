@@ -6652,3 +6652,67 @@ SCENARIO("Build statistics account for the whole build", "[e2e][stat]")
         }
     }
 }
+
+SCENARIO("An inactive conditional branch does not dirty later builds", "[e2e][phi][incremental]")
+{
+    GIVEN("a built project whose inactive branch declares an output")
+    {
+        auto f = E2EFixture { "conditional_groups" };
+        f.write_file("Tupfile", R"(
+ifeq (@(USE_PLATFORM),ios)
+: ios_impl.c |> gcc -c %f -o %o |> ios_impl.o {objs}
+else
+: linux_impl.c |> gcc -c %f -o %o |> linux_impl.o {objs}
+endif
+
+: {objs} |> ar rcs %o %f |> libplatform.a
+)");
+        f.write_file("ios_impl.c", "int platform_init(void) { return 1; }\n");
+        f.write_file("linux_impl.c", "int platform_init(void) { return 2; }\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=linux\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        WHEN("the project is rebuilt with nothing changed")
+        {
+            auto result = f.build({ "-B", "build", "-v" });
+
+            THEN("the inactive branch's output is not reported as changed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("ios_impl.o") == std::string::npos);
+            }
+
+            THEN("no file is reported as changed at all")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("Changed (") == std::string::npos);
+            }
+
+            THEN("the build takes the up-to-date fast path")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("up to date") != std::string::npos);
+            }
+        }
+
+        WHEN("the config flips to the other branch")
+        {
+            f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=ios\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the newly active branch's output is built")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/ios_impl.o"));
+            }
+
+            THEN("the newly inactive branch's output is gone")
+            {
+                REQUIRE_FALSE(f.exists("build/linux_impl.o"));
+            }
+        }
+    }
+}

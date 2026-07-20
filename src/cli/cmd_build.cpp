@@ -246,6 +246,11 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
+        // No active rule produces this, so its absence is not a change.
+        if ((file.flags & pup::NodeFlags::Inactive) != pup::NodeFlags::None) {
+            continue;
+        }
+
         auto& pool = pup::global_pool();
         auto file_path_sv = pool.get(file.path);
 
@@ -453,12 +458,28 @@ auto serialize_graph_nodes(
     auto index = pup::index::Index {};
     auto path_to_id = PathIdMap {};
 
+    // Both branches of a config-driven conditional are in the graph; only the
+    // satisfied one produces files. Marking the other branch's outputs keeps
+    // change detection from stat'ing files nothing will ever create.
+    auto inactive_outputs = pup::NodeIdMap32 {};
+    for (auto id : pup::graph::all_nodes(g)) {
+        if (pup::node_id::is_command(id) && !pup::graph::is_guard_satisfied(g, id)) {
+            for (auto output_id : pup::graph::get_outputs(g, id)) {
+                inactive_outputs.set(output_id, 1);
+            }
+        }
+    }
+
     for (auto id : pup::graph::all_nodes(g)) {
         if (pup::node_id::is_command(id)) {
             continue;
         }
 
         auto type = pup::graph::get<pup::NodeType>(g, id);
+        auto node_flags = pup::graph::get<pup::NodeFlags>(g, id);
+        if (inactive_outputs.contains(id)) {
+            node_flags = node_flags | pup::NodeFlags::Inactive;
+        }
 
         switch (type) {
         case pup::NodeType::File:
@@ -471,7 +492,7 @@ auto serialize_graph_nodes(
                     .parent_id = pup::graph::get_parent_dir(g, id),
                     .src_id = 0,
                     .type = type,
-                    .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                    .flags = node_flags,
                     .name = pup::graph::get<pup::graph::Name>(g, id),
                     .path = pup::StringId::Empty,
                     .size = 0,
@@ -513,7 +534,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                .flags = node_flags,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pool.intern(node_path),
                 .size = file_size,
@@ -534,7 +555,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                .flags = node_flags,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pool.intern(node_path),
                 .size = 0,
@@ -579,7 +600,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                .flags = node_flags,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = path_id,
                 .size = file_size,
@@ -597,7 +618,7 @@ auto serialize_graph_nodes(
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = pup::graph::get<pup::NodeFlags>(g, id),
+                .flags = node_flags,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pup::StringId::Empty,
                 .size = 0,
@@ -1010,6 +1031,9 @@ auto detect_new_commands(
 
     for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
+            continue;
+        }
+        if (!pup::graph::is_guard_satisfied(g, id)) {
             continue;
         }
         auto identity = pup::graph::compute_command_identity(g, id, state.path_cache);

@@ -142,6 +142,7 @@ enum class NodeFlags : std::uint16_t {
     Deleted = 1 << 2,   ///< Marked for deletion
     ConfigDep = 1 << 3, ///< Depends on configuration
     Transient = 1 << 4, ///< Temporary file
+    Inactive = 1 << 5,  ///< Declared by a rule whose conditional guard is unsatisfied
 };
 
 /// Bitwise OR for NodeFlags
