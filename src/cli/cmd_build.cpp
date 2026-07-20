@@ -13,6 +13,7 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/metrics.hpp"
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/node_pair_set.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/print.hpp"
@@ -43,7 +44,6 @@
 namespace pup::cli {
 
 namespace {
-using EdgePairVec = Vec<std::pair<pup::NodeId, pup::NodeId>>;
 using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<StringId>>>;
 
 auto path_id_find(PathIdMap const& m, std::string_view key) -> std::pair<StringId, pup::NodeId> const*
@@ -63,17 +63,6 @@ auto path_id_insert(PathIdMap& m, StringId key, pup::NodeId id) -> void
     } else {
         m.insert(pos, std::pair<StringId, pup::NodeId> { key, id });
     }
-}
-
-auto edge_pair_insert(EdgePairVec& v, pup::NodeId from, pup::NodeId to) -> bool
-{
-    auto key = std::pair { from, to };
-    auto pos = std::lower_bound(v.begin(), v.end(), key);
-    if (pos != v.end() && *pos == key) {
-        return false;
-    }
-    v.insert(pos, key);
-    return true;
 }
 
 auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> Vec<StringId>&
@@ -371,7 +360,7 @@ struct ImplicitDepContext {
     pup::index::Index& index;
     PathIdMap& path_to_id;
     pup::NodeId& next_id;
-    EdgePairVec& added_edges;
+    pup::NodeIdPairSet& added_edges;
     std::string_view source_root;
 };
 
@@ -760,7 +749,7 @@ auto process_implicit_deps(
                 ? it->second
                 : create_implicit_file(ctx, abs_path, rel_path);
 
-            if (edge_pair_insert(ctx.added_edges, dep_id, cmd_id)) {
+            if (ctx.added_edges.insert(dep_id, cmd_id)) {
                 ctx.index.add_edge(pup::index::EdgeEntry {
                     .from = dep_id,
                     .to = cmd_id,
@@ -832,7 +821,7 @@ auto preserve_old_implicit_edges(
             ? new_file_it->second
             : create_implicit_file(ctx, abs_path, old_file_path);
 
-        if (edge_pair_insert(ctx.added_edges, new_from_id, new_to_id)) {
+        if (ctx.added_edges.insert(new_from_id, new_to_id)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
                 .from = new_from_id,
                 .to = new_to_id,
@@ -968,7 +957,7 @@ auto build_index(
     serialize_edges(state, index);
 
     auto next_id = compute_next_id(state);
-    auto added_edges = EdgePairVec {};
+    auto added_edges = pup::NodeIdPairSet {};
     auto ctx = ImplicitDepContext {
         .index = index,
         .path_to_id = path_to_id,
