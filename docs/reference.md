@@ -2210,44 +2210,58 @@ Shows:
 - Files, edges, and implicit deps in index
 - Hash computations and stat calls
 - String pool size (interned strings count and bytes)
-- Index I/O time (load/save)
 
 **Phase timing breakdown** (for diagnosing slow incremental builds):
 
 ```
 Stats:
   Tupfiles parsed:         3
-  Commands:              146 total, 0 executed
-  Files checked:         657 (0 changed)
-  Files in index:        722
-  Edges in graph:      22842
-  Implicit deps:       21718
-  Hash computations:     657
-  Stat calls:            657
-  String pool:        161076 strings, 2353924 bytes
-  Index I/O:               2ms load, 0ms save
+  Commands:              117 total, 0 executed
+  Files checked:         772 (2 changed)
+  Files in index:        856
+  Edges in graph:      33962
+  Implicit deps:       32227
+  Hash computations:     771
+  Hashes skipped:        769 (stat cache)
+  Stat calls:            772
+  String pool:        366156 strings, 14861508 bytes
 
   Phase timing:
-    Command index:       0.1ms (146 expansions)
-    Change detection:   92.9ms (657 stats, 657 hashes)
-    Implicit deps:       0.6ms
-    New commands:        0.1ms
-    Stale outputs:       0.0ms
-  Total overhead:       93.7ms
+    Parse:               148.2ms (3 Tupfiles)
+    Index load:            2.6ms
+    Command index:         0.5ms (0 expansions)
+    Change detection:     11.9ms (772 stats, 771 hashes, 769 skipped)
+    Implicit deps:         1.1ms
+    New commands:          0.5ms
+    Stale outputs:         0.0ms
+    Job list:              0.8ms
+    Command execution:     0.1ms
+    Index rebuild:       636.6ms
+    Index save:           18.1ms
+    Unaccounted:           0.0ms
+  Total:                 820.6ms
 ```
 
 **Phase descriptions:**
 
 | Phase | Description |
 |-------|-------------|
+| Parse | Discover the project layout and parse Tupfiles into the build graph |
+| Index load | Read the previous build's index from disk |
 | Command index | Build command string index for lookup |
 | Change detection | Stat and hash files to find changes |
 | Implicit deps | Expand implicit dependency edges |
 | New commands | Detect commands added since last build |
 | Stale outputs | Remove outputs from deleted commands |
-| Job list | Build topologically-sorted job list (only shown when commands execute) |
+| Job list | Build topologically-sorted job list |
+| Command execution | Run the build commands themselves |
+| Index rebuild | Rebuild the in-memory index, carrying implicit edges forward |
+| Index save | Write the new index to disk |
+| Unaccounted | Total minus the phases above |
 
-This breakdown helps identify bottlenecks in no-op builds. For most projects, change detection (stat + hash) dominates the overhead
+The phases are disjoint spans of `Total`, so `Unaccounted` shows at a glance whether
+the breakdown explains the run. A large `Unaccounted` means work is happening in a
+phase that isn't timed — read it before trusting the rest of the table.
 
 **Graph visualization**
 

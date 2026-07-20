@@ -577,7 +577,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
     result.index = std::move(*index_result);
 
     auto index_load_end = pup::SteadyClock::now();
-    pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+    pup::thread_metrics().index_load_time = std::chrono::duration_cast<std::chrono::microseconds>(
         index_load_end - index_load_start
     );
 

@@ -4,6 +4,11 @@
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
 
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
 using namespace pup::test;
 
 // =============================================================================
@@ -6522,6 +6527,127 @@ SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-o
                 REQUIRE(result.success());
                 REQUIRE(f.exists("build/zzz_lib/libmath.a"));
                 REQUIRE_FALSE(f.exists("source/zzz_lib/libmath.a"));
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Build Statistics Report
+// =============================================================================
+
+namespace {
+
+struct PhaseReport {
+    std::vector<std::pair<std::string, double>> phases;
+    double total_ms = -1.0;
+
+    [[nodiscard]] auto phase_sum() const -> double
+    {
+        auto sum = 0.0;
+        for (auto const& [name, ms] : phases) {
+            sum += ms;
+        }
+        return sum;
+    }
+
+    [[nodiscard]] auto has(std::string_view name) const -> bool
+    {
+        for (auto const& [phase, ms] : phases) {
+            if (phase == name) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] auto value_of(std::string_view name) const -> double
+    {
+        for (auto const& [phase, ms] : phases) {
+            if (phase == name) {
+                return ms;
+            }
+        }
+        return -1.0;
+    }
+};
+
+auto parse_phase_report(std::string const& output) -> PhaseReport
+{
+    auto report = PhaseReport {};
+    auto in_phases = false;
+    auto stream = std::istringstream { output };
+    auto line = std::string {};
+
+    while (std::getline(stream, line)) {
+        if (line.find("Phase timing:") != std::string::npos) {
+            in_phases = true;
+            continue;
+        }
+        auto colon = line.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+        auto ms_pos = line.find("ms", colon);
+        if (ms_pos == std::string::npos) {
+            continue;
+        }
+
+        auto first = line.find_first_not_of(" ");
+        auto label = line.substr(first, colon - first);
+        auto value = std::stod(line.substr(colon + 1, ms_pos - colon - 1));
+
+        if (label == "Total") {
+            report.total_ms = value;
+            in_phases = false;
+        } else if (in_phases) {
+            report.phases.emplace_back(label, value);
+        }
+    }
+    return report;
+}
+
+} // namespace
+
+SCENARIO("Build statistics account for the whole build", "[e2e][stat]")
+{
+    GIVEN("a project that has already been built")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("an up-to-date build is run with --stat")
+        {
+            auto result = f.build({ "--stat" });
+            REQUIRE(result.success());
+            auto report = parse_phase_report(result.stdout_output);
+
+            THEN("a total build time is reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(report.total_ms >= 0.0);
+            }
+
+            THEN("the phases that dominate an up-to-date build are reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(report.has("Parse"));
+                REQUIRE(report.has("Index rebuild"));
+                REQUIRE(report.has("Unaccounted"));
+            }
+
+            THEN("the reported phases sum to the reported total")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("phase sum: " << report.phase_sum() << " total: " << report.total_ms);
+                REQUIRE(report.phase_sum() == Catch::Approx(report.total_ms).margin(1.0));
+            }
+
+            THEN("no phase is counted twice")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(report.value_of("Unaccounted") >= -0.5);
             }
         }
     }
