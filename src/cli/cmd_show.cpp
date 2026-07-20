@@ -11,6 +11,7 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_utils.hpp"
@@ -49,7 +50,7 @@ auto load_index_for_all_deps(
 
     auto index_path_sv = pup::global_pool().get(layout.index_path());
     if (!pup::platform::exists(index_path_sv)) {
-        fprintf(stderr, "Warning: No index found - run 'putup' first\n");
+        eprint("Warning: No index found - run 'putup' first\n");
         return std::nullopt;
     }
 
@@ -108,7 +109,7 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -118,29 +119,29 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
     auto script_prologue = cfg.get("SCRIPT_PROLOGUE");
     if (script_prologue.empty()) {
-        fprintf(stderr, "[%.*s] Error: SCRIPT_PROLOGUE not set in config\n", static_cast<int>(variant_name.size()), variant_name.data());
+        eprint("[{}] Error: SCRIPT_PROLOGUE not set in config\n", variant_name);
         return EXIT_FAILURE;
     }
 
     auto script_run = cfg.get("SCRIPT_RUN");
     if (script_run.empty()) {
-        fprintf(stderr, "[%.*s] Error: SCRIPT_RUN not set in config\n", static_cast<int>(variant_name.size()), variant_name.data());
+        eprint("[{}] Error: SCRIPT_RUN not set in config\n", variant_name);
         return EXIT_FAILURE;
     }
 
     auto script_mkdir = cfg.get("SCRIPT_MKDIR");
     if (script_mkdir.empty()) {
-        fprintf(stderr, "[%.*s] Error: SCRIPT_MKDIR not set in config\n", static_cast<int>(variant_name.size()), variant_name.data());
+        eprint("[{}] Error: SCRIPT_MKDIR not set in config\n", variant_name);
         return EXIT_FAILURE;
     }
 
     auto script_comment = cfg.get("SCRIPT_COMMENT");
     if (script_comment.empty()) {
-        fprintf(stderr, "[%.*s] Error: SCRIPT_COMMENT not set in config\n", static_cast<int>(variant_name.size()), variant_name.data());
+        eprint("[{}] Error: SCRIPT_COMMENT not set in config\n", variant_name);
         return EXIT_FAILURE;
     }
 
-    printf("%.*s\n\n", static_cast<int>(script_prologue.size()), script_prologue.data());
+    print("{}\n\n", script_prologue);
 
     auto output_dirs = Vec<StringId> {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
@@ -171,13 +172,13 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
     output_dirs.erase(std::unique(output_dirs.begin(), output_dirs.end()), output_dirs.end());
 
     if (!output_dirs.empty()) {
-        printf("%.*s Create output directories\n", static_cast<int>(script_comment.size()), script_comment.data());
+        print("{} Create output directories\n", script_comment);
         for (auto dir_id : output_dirs) {
             auto line = expand_script_run(script_mkdir, global_pool().get(dir_id), "");
             auto line_sv = global_pool().get(line);
-            printf("%.*s\n", static_cast<int>(line_sv.size()), line_sv.data());
+            print("{}\n", line_sv);
         }
-        printf("\n");
+        print("\n");
     }
 
     for (auto id : topo.order) {
@@ -197,12 +198,12 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
 
         auto line = expand_script_run(script_run, dir, global_pool().get(cmd_id));
         auto line_sv = global_pool().get(line);
-        printf("%.*s\n", static_cast<int>(line_sv.size()), line_sv.data());
+        print("{}\n", line_sv);
     }
 
     auto script_epilogue = cfg.get("SCRIPT_EPILOGUE");
     if (!script_epilogue.empty()) {
-        printf("\n%.*s\n", static_cast<int>(script_epilogue.size()), script_epilogue.data());
+        print("\n{}\n", script_epilogue);
     }
 
     return EXIT_SUCCESS;
@@ -220,7 +221,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -229,10 +230,10 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
     if (opts.summary) {
         auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
-        printf("[%.*s] Tupfiles: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), ctx.parsed_dirs().size());
-        printf("[%.*s] Nodes: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), graph::node_count(ctx.graph().graph));
-        printf("[%.*s] Edges: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), graph::edge_count(ctx.graph().graph));
-        printf("[%.*s] Commands: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), commands.size());
+        print("[{}] Tupfiles: {}\n", variant_name, ctx.parsed_dirs().size());
+        print("[{}] Nodes: {}\n", variant_name, graph::node_count(ctx.graph().graph));
+        print("[{}] Edges: {}\n", variant_name, graph::edge_count(ctx.graph().graph));
+        print("[{}] Commands: {}\n", variant_name, commands.size());
 
         if (index) {
             auto implicit_count = std::size_t { 0 };
@@ -241,23 +242,23 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                     ++implicit_count;
                 }
             }
-            printf("[%.*s] Implicit edges: %zu\n", static_cast<int>(variant_name.size()), variant_name.data(), implicit_count);
+            print("[{}] Implicit edges: {}\n", variant_name, implicit_count);
         }
 
         if (opts.verbose) {
-            printf("[%.*s] Commands:\n", static_cast<int>(variant_name.size()), variant_name.data());
+            print("[{}] Commands:\n", variant_name);
             for (auto id : commands) {
                 auto display_sv = global_pool().get(graph::get<graph::Display>(ctx.graph().graph, id));
                 auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
                 auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
-                printf("[%.*s]   %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display.size()), display.data());
+                print("[{}]   {}\n", variant_name, display);
             }
         }
         return EXIT_SUCCESS;
     }
 
-    printf("digraph G {\n");
-    printf("  rankdir=LR;\n");
+    print("digraph G {\n");
+    print("  rankdir=LR;\n");
 
     auto declared_nodes = pup::NodeIdMap32 {};
     for (auto id : graph::all_nodes(ctx.graph().graph)) {
@@ -273,15 +274,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         };
         auto label = escape_dot_label(get_label());
 
-        printf("  %s [label=\"%s\"];\n", format_node_id(id).data(), pool.get(label).data());
+        print("  {} [label=\"{}\"];\n", format_node_id(id), pool.get(label));
 
         for (auto input_id : graph::get_inputs(ctx.graph().graph, id)) {
-            printf("  %s -> %s;\n", format_node_id(input_id).data(), format_node_id(id).data());
+            print("  {} -> {};\n", format_node_id(input_id), format_node_id(id));
         }
 
         // Output order-only edges (dotted)
         for (auto oo_id : graph::get_order_only(ctx.graph().graph, id)) {
-            printf("  %s -> %s [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id).data(), format_node_id(id).data());
+            print("  {} -> {} [style=dotted color=\"#0088ff\"];\n", format_node_id(oo_id), format_node_id(id));
         }
     }
 
@@ -306,15 +307,15 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
                     auto const* file = index->find_file_by_id(from_id);
                     auto label_id = file ? escape_dot_label(pool.get(file->path))
                                          : pool.intern(format_node_id(from_id));
-                    printf("  %s [label=\"%s\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id).data(), pool.get(label_id).data());
+                    print("  {} [label=\"{}\" style=filled fillcolor=\"#f0f0f0\"];\n", format_node_id(from_id), pool.get(label_id));
                 }
             }
 
-            printf("  %s -> %s [style=dashed color=\"#888888\"];\n", format_node_id(from_id).data(), format_node_id(to_id).data());
+            print("  {} -> {} [style=dashed color=\"#888888\"];\n", format_node_id(from_id), format_node_id(to_id));
         }
     }
 
-    printf("}\n");
+    print("}\n");
     return EXIT_SUCCESS;
 }
 
@@ -330,13 +331,13 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
     auto& ctx = *result;
 
-    printf("[\n");
+    print("[\n");
     auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);
     auto first = true;
 
@@ -397,30 +398,30 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
         }
 
         if (!first) {
-            printf(",\n");
+            print(",\n");
         }
         first = false;
 
-        printf("  {\n");
-        printf("    \"directory\": \"%s\",\n", pool.get(escape_json(working_dir)).data());
+        print("  {\n");
+        print("    \"directory\": \"{}\",\n", pool.get(escape_json(working_dir)));
 
-        printf("    \"arguments\": [");
+        print("    \"arguments\": [");
         for (std::size_t i = 0; i < args.size(); ++i) {
             if (i > 0) {
-                printf(", ");
+                print(", ");
             }
-            printf("\"%s\"", pool.get(escape_json(pool.get(args[i]))).data());
+            print("\"{}\"", pool.get(escape_json(pool.get(args[i]))));
         }
-        printf("],\n");
+        print("],\n");
 
-        printf("    \"file\": \"%s\"", pool.get(escape_json(source_rel)).data());
+        print("    \"file\": \"{}\"", pool.get(escape_json(source_rel)));
         if (!output_rel.empty()) {
-            printf(",\n    \"output\": \"%s\"", pool.get(escape_json(output_rel)).data());
+            print(",\n    \"output\": \"{}\"", pool.get(escape_json(output_rel)));
         }
-        printf("\n  }");
+        print("\n  }");
     }
 
-    printf("\n]\n");
+    print("\n]\n");
     return EXIT_SUCCESS;
 }
 
@@ -429,18 +430,18 @@ auto output_var_text(
 ) -> int
 {
     for (auto const& history : histories) {
-        printf("%s = %s\n", global_pool().get(history.name).data(), global_pool().get(history.final_value).data());
-        printf("  History:\n");
+        print("{} = {}\n", global_pool().get(history.name), global_pool().get(history.final_value));
+        print("  History:\n");
         for (auto const* assign : history.assignments) {
             auto const* prefix = assign->is_effective ? "  " : "# ";
             auto op_str = parser::op_to_string(assign->op);
-            printf("  %s%s:%u\t%s %.*s %s", prefix, global_pool().get(assign->filename).data(), assign->line, global_pool().get(assign->name).data(), static_cast<int>(op_str.size()), op_str.data(), global_pool().get(assign->value_after).data());
+            print("  {}{}:{}\t{} {} {}", prefix, global_pool().get(assign->filename), assign->line, global_pool().get(assign->name), op_str, global_pool().get(assign->value_after));
             if (!assign->is_effective) {
-                printf("   (ineffective)");
+                print("   (ineffective)");
             }
-            printf("\n");
+            print("\n");
         }
-        printf("\n");
+        print("\n");
     }
     return EXIT_SUCCESS;
 }
@@ -451,44 +452,44 @@ auto output_var_json(
 ) -> int
 {
     auto& pool = global_pool();
-    printf("{\n");
-    printf("  \"variant\": \"%.*s\",\n", static_cast<int>(variant_name.size()), variant_name.data());
-    printf("  \"variables\": {\n");
+    print("{\n");
+    print("  \"variant\": \"{}\",\n", variant_name);
+    print("  \"variables\": {\n");
 
     auto first_var = true;
     for (auto const& history : histories) {
         if (!first_var) {
-            printf(",\n");
+            print(",\n");
         }
         first_var = false;
 
-        printf("    \"%s\": {\n", pool.get(escape_json(global_pool().get(history.name))).data());
-        printf("      \"value\": \"%s\",\n", pool.get(escape_json(global_pool().get(history.final_value))).data());
-        printf("      \"history\": [\n");
+        print("    \"{}\": {{\n", pool.get(escape_json(global_pool().get(history.name))));
+        print("      \"value\": \"{}\",\n", pool.get(escape_json(global_pool().get(history.final_value))));
+        print("      \"history\": [\n");
 
         auto first_assign = true;
         for (auto const* assign : history.assignments) {
             if (!first_assign) {
-                printf(",\n");
+                print(",\n");
             }
             first_assign = false;
 
             auto op_str = parser::op_to_string(assign->op);
-            printf("        {\n");
-            printf("          \"file\": \"%s\",\n", pool.get(escape_json(global_pool().get(assign->filename))).data());
-            printf("          \"line\": %u,\n", assign->line);
-            printf("          \"op\": \"%.*s\",\n", static_cast<int>(op_str.size()), op_str.data());
-            printf("          \"value\": \"%s\",\n", pool.get(escape_json(global_pool().get(assign->value_after))).data());
-            printf("          \"effective\": %s\n", assign->is_effective ? "true" : "false");
-            printf("        }");
+            print("        {\n");
+            print("          \"file\": \"{}\",\n", pool.get(escape_json(global_pool().get(assign->filename))));
+            print("          \"line\": {},\n", assign->line);
+            print("          \"op\": \"{}\",\n", op_str);
+            print("          \"value\": \"{}\",\n", pool.get(escape_json(global_pool().get(assign->value_after))));
+            print("          \"effective\": {}\n", assign->is_effective ? "true" : "false");
+            print("        }");
         }
 
-        printf("\n      ]\n");
-        printf("    }");
+        print("\n      ]\n");
+        print("    }");
     }
 
-    printf("\n  }\n");
-    printf("}\n");
+    print("\n  }\n");
+    print("}\n");
     return EXIT_SUCCESS;
 }
 
@@ -529,7 +530,7 @@ auto cmd_export_var(Options const& opts, std::string_view variant_name) -> int
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -555,7 +556,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -579,11 +580,11 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     auto total_commands = graph.commands.size();
     auto unique_instructions = instruction_usage.size();
 
-    printf("Instruction Analysis:\n");
-    printf("  Commands: %zu\n", total_commands);
-    printf("  Unique instructions: %zu\n", unique_instructions);
+    print("Instruction Analysis:\n");
+    print("  Commands: {}\n", total_commands);
+    print("  Unique instructions: {}\n", unique_instructions);
     if (unique_instructions > 0) {
-        printf("  Deduplication ratio: %.1fx\n", double(total_commands) / double(unique_instructions));
+        print("  Deduplication ratio: {}x\n", Fixed { double(total_commands) / double(unique_instructions), 1 });
     }
 
     // Sort instructions by usage count (descending)
@@ -597,7 +598,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     });
 
     // Show top 10 instructions
-    printf("\nTop instructions:\n");
+    print("\nTop instructions:\n");
     auto shown = std::size_t { 0 };
     for (auto const& [iid, count] : sorted_instructions) {
         if (shown >= 10) {
@@ -610,11 +611,11 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
             auto tb = Buf {};
             tb.append(display_sv);
             tb.append("...");
-            printf("  #%zu (%zu uses): \"%s\"\n", shown + 1, count, tb.c_str());
+            print("  #{} ({} uses): \"{}\"\n", shown + 1, count, tb.c_str());
         } else {
             auto tb = Buf {};
             tb.append(display_sv);
-            printf("  #%zu (%zu uses): \"%s\"\n", shown + 1, count, tb.c_str());
+            print("  #{} ({} uses): \"{}\"\n", shown + 1, count, tb.c_str());
         }
         ++shown;
     }
@@ -625,10 +626,10 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     }
 
     auto per_command_overhead = total_commands * 8; // instruction_id + operand offset
-    printf("\nStorage:\n");
-    printf("  Unique instruction strings: %zu bytes\n", unique_instruction_bytes);
-    printf("  Per-command overhead: %zu bytes (%zu commands x 8)\n", per_command_overhead, total_commands);
-    printf("  Total: %zu bytes\n", unique_instruction_bytes + per_command_overhead);
+    print("\nStorage:\n");
+    print("  Unique instruction strings: {} bytes\n", unique_instruction_bytes);
+    print("  Per-command overhead: {} bytes ({} commands x 8)\n", per_command_overhead, total_commands);
+    print("  Total: {} bytes\n", unique_instruction_bytes + per_command_overhead);
 
     return EXIT_SUCCESS;
 }
@@ -656,20 +657,20 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
 
     auto layout_result = pup::discover_layout(make_layout_options(opts));
     if (!layout_result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout_result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, layout_result.error().msg());
         return EXIT_FAILURE;
     }
     auto& layout = *layout_result;
 
     auto index_path_sv = pool.get(layout.index_path());
     if (!pup::platform::exists(index_path_sv)) {
-        fprintf(stderr, "[%.*s] Error: No index found at %.*s — run 'putup' first\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(index_path_sv.size()), index_path_sv.data());
+        eprint("[{}] Error: No index found at {} — run 'putup' first\n", variant_name, index_path_sv);
         return EXIT_FAILURE;
     }
 
     auto index_result = pup::index::read_index(index_path_sv);
     if (!index_result) {
-        fprintf(stderr, "[%.*s] Error reading index: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), index_result.error().msg().data());
+        eprint("[{}] Error reading index: {}\n", variant_name, index_result.error().msg());
         return EXIT_FAILURE;
     }
     auto& index = *index_result;
@@ -682,22 +683,22 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
         }
     }
 
-    printf("[%.*s] Index: %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(index_path_sv.size()), index_path_sv.data());
-    printf("  Files:    %zu\n", index.files().size());
-    printf("  Commands: %zu\n", index.commands().size());
-    printf("  Edges:    %zu", index.edge_count());
+    print("[{}] Index: {}\n", variant_name, index_path_sv);
+    print("  Files:    {}\n", index.files().size());
+    print("  Commands: {}\n", index.commands().size());
+    print("  Edges:    {}", index.edge_count());
     auto first = true;
     for (auto t : { pup::LinkType::Normal, pup::LinkType::Sticky, pup::LinkType::Group, pup::LinkType::Implicit, pup::LinkType::OrderOnly }) {
         auto count = edges_by_type[static_cast<std::size_t>(t)];
         if (count > 0) {
-            printf("%s%s=%zu", first ? " (" : ", ", link_type_name(t), count);
+            print("{}{}={}", first ? " (" : ", ", link_type_name(t), count);
             first = false;
         }
     }
     if (!first) {
-        printf(")");
+        print(")");
     }
-    printf("\n");
+    print("\n");
 
     if (opts.summary) {
         auto cmds_with_implicit = std::size_t { 0 };
@@ -710,11 +711,11 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
                 }
             }
         }
-        printf("  Commands with implicit/sticky deps: %zu/%zu\n", cmds_with_implicit, index.commands().size());
+        print("  Commands with implicit/sticky deps: {}/{}\n", cmds_with_implicit, index.commands().size());
         return EXIT_SUCCESS;
     }
 
-    printf("\nCommands (with implicit/sticky edges):\n");
+    print("\nCommands (with implicit/sticky edges):\n");
     auto filter_sv = pool.get(opts.show_var_filter);
     for (auto const& cmd : index.commands()) {
         auto cmd_str_id = pup::index::get_command_string(index, cmd);
@@ -729,8 +730,8 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
             dir_sv = pool.get(dir->path);
         }
 
-        printf("  c%u  [%.*s]\n", static_cast<unsigned>(cmd.id), static_cast<int>(dir_sv.size()), dir_sv.data());
-        printf("       cmd: %.*s\n", static_cast<int>(cmd_sv.size()), cmd_sv.data());
+        print("  c{}  [{}]\n", cmd.id, dir_sv);
+        print("       cmd: {}\n", cmd_sv);
 
         auto implicit = Vec<StringId> {};
         auto sticky = Vec<StringId> {};
@@ -753,15 +754,15 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
         }
 
         if (implicit.empty() && sticky.empty()) {
-            printf("       (no implicit/sticky deps)\n");
+            print("       (no implicit/sticky deps)\n");
         }
         for (auto p : implicit) {
             auto p_sv = pool.get(p);
-            printf("       implicit: %.*s\n", static_cast<int>(p_sv.size()), p_sv.data());
+            print("       implicit: {}\n", p_sv);
         }
         for (auto p : sticky) {
             auto p_sv = pool.get(p);
-            printf("       sticky:   %.*s\n", static_cast<int>(p_sv.size()), p_sv.data());
+            print("       sticky:   {}\n", p_sv);
         }
     }
 
@@ -790,8 +791,8 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
         return cmd_export_index(opts, variant_name);
     }
 
-    fprintf(stderr, "Unknown show format: %.*s\n", static_cast<int>(fmt.size()), fmt.data());
-    fprintf(stderr, "Formats: script, compdb, graph, var, instructions, index\n");
+    eprint("Unknown show format: {}\n", fmt);
+    eprint("Formats: script, compdb, graph, var, instructions, index\n");
     return EXIT_FAILURE;
 }
 
@@ -800,8 +801,8 @@ auto show_single_variant(Options const& opts, std::string_view variant_name) -> 
 auto cmd_show(Options const& opts) -> int
 {
     if (is_empty(opts.show_format)) {
-        fprintf(stderr, "Usage: putup show <format>\n");
-        fprintf(stderr, "Formats: script, compdb, graph, var, instructions, index\n");
+        eprint("Usage: putup show <format>\n");
+        eprint("Formats: script, compdb, graph, var, instructions, index\n");
         return EXIT_FAILURE;
     }
 

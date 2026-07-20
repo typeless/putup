@@ -10,6 +10,7 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
@@ -92,7 +93,7 @@ auto for_each_variant(
     auto& pool = global_pool();
     auto layout_result = Result<ProjectLayout> { discover_layout(make_layout_options(opts)) };
     if (!layout_result) {
-        fprintf(stderr, "Error: %s\n", layout_result.error().msg().data());
+        eprint("Error: {}\n", layout_result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -101,7 +102,7 @@ auto for_each_variant(
 
     auto parsed_targets = parse_targets_for_variants(source_root_sv, opts.targets);
     if (!parsed_targets.has_value()) {
-        fprintf(stderr, "Error: %s\n", parsed_targets.error().msg().data());
+        eprint("Error: {}\n", parsed_targets.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -159,9 +160,9 @@ auto for_each_variant(
     }
 
     if (opts.verbose) {
-        printf("%.*s %zu variants in parallel:\n", static_cast<int>(command_name.size()), command_name.data(), variants.size());
+        print("{} {} variants in parallel:\n", command_name, variants.size());
         for (auto v : variants) {
-            printf("  %s\n", pool.get(v).data());
+            print("  {}\n", pool.get(v));
         }
     }
 
@@ -205,7 +206,7 @@ auto for_each_variant(
     auto failed = pup::platform::run_parallel_tasks(task_fn, context_ptrs.data(), context_ptrs.size());
 
     if (failed > 0) {
-        fprintf(stderr, "%d of %zu variants failed\n", failed, variants.size());
+        eprint("{} of {} variants failed\n", failed, variants.size());
         return EXIT_FAILURE;
     }
 

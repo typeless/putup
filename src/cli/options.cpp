@@ -4,6 +4,7 @@
 #include "pup/cli/options.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
@@ -78,7 +79,7 @@ auto parse_args(int argc, char** argv) -> Options
                 auto value = int {};
                 auto [ptr, ec] = std::from_chars(str, str + std::strlen(str), value);
                 if (ec != std::errc {} || *ptr != '\0' || value <= 0) {
-                    fprintf(stderr, "Error: Invalid job count '%s'\n", str);
+                    eprint("Error: Invalid job count '{}'\n", str);
                     std::exit(EXIT_FAILURE);
                 }
                 opts.jobs = static_cast<std::size_t>(value);
@@ -88,7 +89,7 @@ auto parse_args(int argc, char** argv) -> Options
             auto value = int {};
             auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), value);
             if (ec != std::errc {} || ptr != str.data() + str.size() || value <= 0) {
-                fprintf(stderr, "Error: Invalid job count '%.*s'\n", static_cast<int>(str.size()), str.data());
+                eprint("Error: Invalid job count '{}'\n", str);
                 std::exit(EXIT_FAILURE);
             }
             opts.jobs = static_cast<std::size_t>(value);
@@ -137,11 +138,11 @@ auto parse_args(int argc, char** argv) -> Options
             } else if (level == "error") {
                 opts.check = CheckLevel::Error;
             } else {
-                fprintf(stderr, "Error: invalid --check level '%.*s' (expected none|warn|error)\n", static_cast<int>(level.size()), level.data());
+                eprint("Error: invalid --check level '{}' (expected none|warn|error)\n", level);
                 std::exit(EXIT_FAILURE);
             }
         } else if (arg.starts_with("-")) {
-            fprintf(stderr, "Error: unknown option '%s'\nRun 'putup --help' for usage.\n", argv[i]);
+            eprint("Error: unknown option '{}'\nRun 'putup --help' for usage.\n", argv[i]);
             std::exit(EXIT_FAILURE);
         } else if (!arg.starts_with("-")) {
             if (is_empty(opts.command) && is_command(arg)) {
@@ -163,71 +164,71 @@ auto parse_args(int argc, char** argv) -> Options
 
 auto print_usage() -> void
 {
-    printf("putup - build system using Tupfile format\n\n"
-           "Usage: putup [OPTIONS] [TARGETS]\n"
-           "       putup [OPTIONS] <command>\n\n"
-           "Running 'putup' executes the build. Use a command for other operations.\n\n"
-           "Commands:\n"
-           "  configure         Generate tup.config files (two-stage build)\n"
-           "  clean             Remove generated files\n"
-           "  distclean         Full reset: remove .pup and variant directory\n"
-           "  parse [--check=LEVEL]\n"
-           "                    Parse and validate Tupfiles\n"
-           "  show <format>     Show build info:\n"
-           "                      script  - Shell script\n"
-           "                      compdb  - compile_commands.json\n"
-           "                      graph   - DOT format (--summary for text)\n"
-           "                      var [NAME] [--json] - Variable tracking\n"
-           "                      index   - Index dump (--summary for counts only)\n"
-           "\nOptions:\n"
-           "  -j, --jobs N       Run N jobs in parallel\n"
-           "  -k, --keep-going   Continue after failures\n"
-           "  --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)\n"
-           "  -n, --dry-run      Print commands without executing\n"
-           "  -v, --verbose      Verbose output\n"
-           "  -D, --define VAR=value\n"
-           "                     Override config variable (-D VAR is shorthand for -D VAR=y)\n"
-           "  -S DIR             Source directory (where source files live)\n"
-           "  -C DIR             Config directory (where Tupfiles live)\n"
-           "  -B DIR             Build/output directory (can use multiple times)\n"
-           "  -c, --config FILE  Install FILE as root tup.config before config rules\n"
-           "  --check=LEVEL      Convention checking for 'parse':\n"
-           "                       none  - skip checks\n"
-           "                       warn  - report violations, exit 0 (default)\n"
-           "                       error - report violations, exit non-zero\n"
-           "                     (--strict is an alias for --check=error)\n"
-           "  --summary          Human-readable output (for show graph)\n"
-           "  --stat             Print build statistics\n"
-           "  -A, --all          Full project build (ignore cwd scoping)\n"
-           "  -a, --all-deps     Include upstream deps in scoped builds\n"
-           "  --                 End of options; remaining args are targets\n"
-           "  --version          Print version\n"
-           "  -h, --help         Print this help\n"
-           "\nTargets:\n"
-           "  A variant is a directory containing tup.config. Anything else is a scope.\n\n"
-           "  TARGET              VARIANT       SCOPE\n"
-           "  build               build         (all)       # if build/tup.config exists\n"
-           "  build/src/lib       build         src/lib\n"
-           "  src/lib             (none)        src/lib     # no tup.config in src/\n"
-           "  build/foo.o         build         foo.o       # single output rebuild\n"
-           "  build-*             (glob)        (all)       # multiple variants\n"
-           "\nExamples:\n"
-           "  putup                Build all variants\n"
-           "  putup build-debug    Build single variant\n"
-           "  putup build-*        Build all matching variants\n"
-           "  putup src/lib        Scoped build across all variants\n"
-           "\nEnvironment:\n"
-           "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
-           "  PUP_CONFIG_DIR     Config directory (overridden by -C)\n"
-           "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
-           "  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)\n");
+    print("putup - build system using Tupfile format\n\n"
+          "Usage: putup [OPTIONS] [TARGETS]\n"
+          "       putup [OPTIONS] <command>\n\n"
+          "Running 'putup' executes the build. Use a command for other operations.\n\n"
+          "Commands:\n"
+          "  configure         Generate tup.config files (two-stage build)\n"
+          "  clean             Remove generated files\n"
+          "  distclean         Full reset: remove .pup and variant directory\n"
+          "  parse [--check=LEVEL]\n"
+          "                    Parse and validate Tupfiles\n"
+          "  show <format>     Show build info:\n"
+          "                      script  - Shell script\n"
+          "                      compdb  - compile_commands.json\n"
+          "                      graph   - DOT format (--summary for text)\n"
+          "                      var [NAME] [--json] - Variable tracking\n"
+          "                      index   - Index dump (--summary for counts only)\n"
+          "\nOptions:\n"
+          "  -j, --jobs N       Run N jobs in parallel\n"
+          "  -k, --keep-going   Continue after failures\n"
+          "  --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)\n"
+          "  -n, --dry-run      Print commands without executing\n"
+          "  -v, --verbose      Verbose output\n"
+          "  -D, --define VAR=value\n"
+          "                     Override config variable (-D VAR is shorthand for -D VAR=y)\n"
+          "  -S DIR             Source directory (where source files live)\n"
+          "  -C DIR             Config directory (where Tupfiles live)\n"
+          "  -B DIR             Build/output directory (can use multiple times)\n"
+          "  -c, --config FILE  Install FILE as root tup.config before config rules\n"
+          "  --check=LEVEL      Convention checking for 'parse':\n"
+          "                       none  - skip checks\n"
+          "                       warn  - report violations, exit 0 (default)\n"
+          "                       error - report violations, exit non-zero\n"
+          "                     (--strict is an alias for --check=error)\n"
+          "  --summary          Human-readable output (for show graph)\n"
+          "  --stat             Print build statistics\n"
+          "  -A, --all          Full project build (ignore cwd scoping)\n"
+          "  -a, --all-deps     Include upstream deps in scoped builds\n"
+          "  --                 End of options; remaining args are targets\n"
+          "  --version          Print version\n"
+          "  -h, --help         Print this help\n"
+          "\nTargets:\n"
+          "  A variant is a directory containing tup.config. Anything else is a scope.\n\n"
+          "  TARGET              VARIANT       SCOPE\n"
+          "  build               build         (all)       # if build/tup.config exists\n"
+          "  build/src/lib       build         src/lib\n"
+          "  src/lib             (none)        src/lib     # no tup.config in src/\n"
+          "  build/foo.o         build         foo.o       # single output rebuild\n"
+          "  build-*             (glob)        (all)       # multiple variants\n"
+          "\nExamples:\n"
+          "  putup                Build all variants\n"
+          "  putup build-debug    Build single variant\n"
+          "  putup build-*        Build all matching variants\n"
+          "  putup src/lib        Scoped build across all variants\n"
+          "\nEnvironment:\n"
+          "  PUP_SOURCE_DIR     Source directory (overridden by -S)\n"
+          "  PUP_CONFIG_DIR     Config directory (overridden by -C)\n"
+          "  PUP_BUILD_DIR      Build directory (overridden by -B)\n"
+          "  PUP_IMPLICIT_DEPS  Set to 0 to disable auto-generated dep rules (default: enabled)\n");
 }
 
 auto print_version() -> void
 {
-    printf("putup %s\n", VERSION);
-    printf("Platform: %.*s\n", static_cast<int>(pup::PLATFORM.size()), pup::PLATFORM.data());
-    printf("Architecture: %.*s\n", static_cast<int>(pup::ARCH.size()), pup::ARCH.data());
+    print("putup {}\n", VERSION);
+    print("Platform: {}\n", pup::PLATFORM);
+    print("Architecture: {}\n", pup::ARCH);
 }
 
 } // namespace pup::cli

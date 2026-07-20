@@ -12,6 +12,7 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
@@ -41,7 +42,7 @@ auto install_config_file(
     if (!pup::platform::exists(config_path_sv)) {
         auto cp = Buf {};
         cp.append(config_path_sv);
-        fprintf(stderr, "[%.*s] Error: Config file not found: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cp.c_str());
+        eprint("[{}] Error: Config file not found: {}\n", variant_name, cp.c_str());
         return EXIT_FAILURE;
     }
 
@@ -53,7 +54,7 @@ auto install_config_file(
     cp.append(config_path_sv);
     auto dp = Buf {};
     dp.append(dest_sv);
-    printf("[%.*s] Installed %s -> %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cp.c_str(), dp.c_str());
+    print("[{}] Installed {} -> {}\n", variant_name, cp.c_str(), dp.c_str());
     return EXIT_SUCCESS;
 }
 
@@ -64,7 +65,7 @@ auto configure_single_variant(
 {
     auto layout = discover_layout(make_layout_options(opts));
     if (!layout) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), layout.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, layout.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -91,7 +92,7 @@ auto configure_single_variant(
 
     auto result = pup::Result<BuildContext> { build_context(opts, ctx_opts) };
     if (!result) {
-        fprintf(stderr, "[%.*s] Error: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), result.error().msg().data());
+        eprint("[{}] Error: {}\n", variant_name, result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -105,13 +106,13 @@ auto configure_single_variant(
             (void)pup::platform::write_file(config_path_sv, "");
             auto cp = Buf {};
             cp.append(config_path_sv);
-            printf("[%.*s] Created %s\n", static_cast<int>(variant_name.size()), variant_name.data(), cp.c_str());
+            print("[{}] Created {}\n", variant_name, cp.c_str());
         }
     };
 
     auto configs = find_config_commands(ctx.graph(), pool.get(ctx.layout().source_root));
     if (configs.empty()) {
-        printf("[%.*s] No config-generating rules found.\n", static_cast<int>(variant_name.size()), variant_name.data());
+        print("[{}] No config-generating rules found.\n", variant_name);
         ensure_config();
         return EXIT_SUCCESS;
     }
@@ -130,12 +131,12 @@ auto configure_single_variant(
                 display_sv = "<unknown>";
             }
             auto output_path_sv = pool.get(cfg.output_path);
-            printf("[%.*s] Config rule: %.*s -> %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data(), static_cast<int>(output_path_sv.size()), output_path_sv.data());
+            print("[{}] Config rule: {} -> {}\n", variant_name, display_sv, output_path_sv);
         }
     }
 
     if (config_commands.empty()) {
-        printf("[%.*s] No config-generating rules in scope.\n", static_cast<int>(variant_name.size()), variant_name.data());
+        print("[{}] No config-generating rules in scope.\n", variant_name);
         ensure_config();
         return EXIT_SUCCESS;
     }
@@ -143,9 +144,9 @@ auto configure_single_variant(
     auto all_commands = collect_command_dependencies(ctx.graph(), config_commands);
     auto dep_count = all_commands.size() - config_commands.size();
     if (dep_count > 0 && opts.verbose) {
-        printf("[%.*s] Config rules depend on %zu additional command(s)\n", static_cast<int>(variant_name.size()), variant_name.data(), dep_count);
+        print("[{}] Config rules depend on {} additional command(s)\n", variant_name, dep_count);
     }
-    printf("[%.*s] Found %zu config-generating rule(s)\n", static_cast<int>(variant_name.size()), variant_name.data(), config_commands.size());
+    print("[{}] Found {} config-generating rule(s)\n", variant_name, config_commands.size());
 
     auto sched_opts = pup::exec::SchedulerOptions {
         .jobs = opts.jobs,
@@ -162,46 +163,46 @@ auto configure_single_variant(
     scheduler.on_job_start([&](pup::exec::BuildJob const& job) {
         if (opts.verbose || opts.dry_run) {
             auto display_sv = pool.get(job.display);
-            printf("[%.*s] %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data());
+            print("[{}] {}\n", variant_name, display_sv);
         }
     });
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
             auto display_sv = pool.get(job.display);
-            fprintf(stderr, "[%.*s] FAILED: %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(display_sv.size()), display_sv.data());
+            eprint("[{}] FAILED: {}\n", variant_name, display_sv);
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
-                fprintf(stderr, "[%.*s] %.*s\n", static_cast<int>(variant_name.size()), variant_name.data(), static_cast<int>(output_sv.size()), output_sv.data());
+                eprint("[{}] {}\n", variant_name, output_sv);
             }
         }
     });
 
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
         if (!opts.verbose) {
-            printf("\r[%.*s] [%zu/%zu] ", static_cast<int>(variant_name.size()), variant_name.data(), done, total);
-            std::fflush(stdout);
+            print("\r[{}] [{}/{}] ", variant_name, done, total);
+            flush(Stream::Out);
         }
     });
 
     auto build_result = scheduler.build(ctx.graph(), &all_commands);
 
     if (!opts.verbose) {
-        printf("\n");
+        print("\n");
     }
 
     if (!build_result) {
-        fprintf(stderr, "[%.*s] Configure failed: %s\n", static_cast<int>(variant_name.size()), variant_name.data(), build_result.error().msg().data());
+        eprint("[{}] Configure failed: {}\n", variant_name, build_result.error().msg());
         return EXIT_FAILURE;
     }
 
     auto const& stats = *build_result;
     if (stats.failed_jobs > 0) {
-        printf("[%.*s] Configure completed: %zu commands (%zu failed)\n", static_cast<int>(variant_name.size()), variant_name.data(), stats.completed_jobs, stats.failed_jobs);
+        print("[{}] Configure completed: {} commands ({} failed)\n", variant_name, stats.completed_jobs, stats.failed_jobs);
         return EXIT_FAILURE;
     }
 
-    printf("[%.*s] Configure completed: %zu commands\n", static_cast<int>(variant_name.size()), variant_name.data(), stats.completed_jobs);
+    print("[{}] Configure completed: {} commands\n", variant_name, stats.completed_jobs);
     ensure_config();
     return EXIT_SUCCESS;
 }

@@ -8,6 +8,7 @@
 #include "pup/core/hash.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
@@ -1069,7 +1070,7 @@ auto include_single_file(
     if (!parse_result.success()) {
         for (auto const& err : parse_result.errors) {
             auto err_msg = str(err.message);
-            fprintf(stderr, "%.*s:%d:%d: error: %.*s\n", static_cast<int>(include_path.size()), include_path.data(), err.location.line, err.location.column, static_cast<int>(err_msg.size()), err_msg.data());
+            eprint("{}:{}:{}: error: {}\n", include_path, err.location.line, err.location.column, err_msg);
         }
         auto err = Buf {};
         err.fmt("Parse error in include file: {}", include_path);

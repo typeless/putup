@@ -4,12 +4,12 @@
 #pragma once
 
 #include "pup/core/clock.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
 #include <chrono>
-#include <cstdio>
 #include <string_view>
 
 namespace pup::exec {
@@ -68,12 +68,12 @@ auto format_duration(std::chrono::milliseconds ms) -> StringId;
 // ============================================================================
 
 /// Clear N lines above cursor and return to line start
-auto clear_lines(std::size_t count, std::FILE* out = stdout) -> void;
+auto clear_lines(std::size_t count, Stream stream = Stream::Out) -> void;
 
 /// Print progress output, clearing previous if needed
-auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, std::FILE* out = stdout) -> void;
+auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, Stream stream = Stream::Out) -> void;
 
 /// Clear the progress display and print final newline
-auto finalize_progress(std::size_t& prev_lines, std::FILE* out = stdout) -> void;
+auto finalize_progress(std::size_t& prev_lines, Stream stream = Stream::Out) -> void;
 
 } // namespace pup::exec

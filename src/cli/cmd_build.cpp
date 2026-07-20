@@ -15,6 +15,7 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
+#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
@@ -101,19 +102,19 @@ auto print_stats(
         }
     }
 
-    printf("\nStats:\n");
-    printf("  Tupfiles parsed:    %6zu\n", metrics.tupfiles_parsed);
-    printf("  Commands:           %6zu total, %zu executed\n", num_commands, commands_executed);
-    printf("  Files checked:      %6zu (%zu changed)\n", metrics.files_checked, metrics.files_changed);
-    printf("  Files in index:     %6zu\n", index.file_count());
-    printf("  Edges in graph:     %6zu\n", index.edge_count());
-    printf("  Implicit deps:      %6zu\n", implicit_deps_count);
-    printf("  Hash computations:  %6zu\n", metrics.hash_computations);
-    printf("  Hashes skipped:     %6zu (stat cache)\n", metrics.hashes_skipped);
-    printf("  Stat calls:         %6zu\n", metrics.stat_calls);
-    printf("  String pool:        %6zu strings, %zu bytes\n", metrics.pool_strings, metrics.pool_bytes);
+    print("\nStats:\n");
+    print("  Tupfiles parsed:    {}\n", Pad { metrics.tupfiles_parsed, 6 });
+    print("  Commands:           {} total, {} executed\n", Pad { num_commands, 6 }, commands_executed);
+    print("  Files checked:      {} ({} changed)\n", Pad { metrics.files_checked, 6 }, metrics.files_changed);
+    print("  Files in index:     {}\n", Pad { index.file_count(), 6 });
+    print("  Edges in graph:     {}\n", Pad { index.edge_count(), 6 });
+    print("  Implicit deps:      {}\n", Pad { implicit_deps_count, 6 });
+    print("  Hash computations:  {}\n", Pad { metrics.hash_computations, 6 });
+    print("  Hashes skipped:     {} (stat cache)\n", Pad { metrics.hashes_skipped, 6 });
+    print("  Stat calls:         {}\n", Pad { metrics.stat_calls, 6 });
+    print("  String pool:        {} strings, {} bytes\n", Pad { metrics.pool_strings, 6 }, metrics.pool_bytes);
     if (metrics.index_load_time.count() > 0 || metrics.index_save_time.count() > 0) {
-        printf("  Index I/O:          %6ldms load, %ldms save\n", static_cast<long>(metrics.index_load_time.count()), static_cast<long>(metrics.index_save_time.count()));
+        print("  Index I/O:          {}ms load, {}ms save\n", Pad { metrics.index_load_time.count(), 6 }, metrics.index_save_time.count());
     }
 
     // Phase timing breakdown (shown if any phase was timed)
@@ -125,26 +126,26 @@ auto print_stats(
         + metrics.job_list_time.count();
 
     if (total_phase_us > 0) {
-        printf("\n  Phase timing:\n");
+        print("\n  Phase timing:\n");
         if (metrics.command_index_time.count() > 0) {
-            printf("    Command index:    %6.1fms (%zu expansions)\n", metrics.command_index_time.count() / 1000.0, metrics.command_expansions);
+            print("    Command index:    {}ms ({} expansions)\n", Fixed { static_cast<double>(metrics.command_index_time.count()) / 1000.0, 1, 6 }, metrics.command_expansions);
         }
         if (metrics.change_detection_time.count() > 0) {
-            printf("    Change detection: %6.1fms (%zu stats, %zu hashes, %zu skipped)\n", metrics.change_detection_time.count() / 1000.0, metrics.stat_calls, metrics.hash_computations, metrics.hashes_skipped);
+            print("    Change detection: {}ms ({} stats, {} hashes, {} skipped)\n", Fixed { static_cast<double>(metrics.change_detection_time.count()) / 1000.0, 1, 6 }, metrics.stat_calls, metrics.hash_computations, metrics.hashes_skipped);
         }
         if (metrics.implicit_deps_time.count() > 0) {
-            printf("    Implicit deps:    %6.1fms\n", metrics.implicit_deps_time.count() / 1000.0);
+            print("    Implicit deps:    {}ms\n", Fixed { static_cast<double>(metrics.implicit_deps_time.count()) / 1000.0, 1, 6 });
         }
         if (metrics.new_commands_time.count() > 0) {
-            printf("    New commands:     %6.1fms\n", metrics.new_commands_time.count() / 1000.0);
+            print("    New commands:     {}ms\n", Fixed { static_cast<double>(metrics.new_commands_time.count()) / 1000.0, 1, 6 });
         }
         if (metrics.stale_outputs_time.count() > 0) {
-            printf("    Stale outputs:    %6.1fms\n", metrics.stale_outputs_time.count() / 1000.0);
+            print("    Stale outputs:    {}ms\n", Fixed { static_cast<double>(metrics.stale_outputs_time.count()) / 1000.0, 1, 6 });
         }
         if (metrics.job_list_time.count() > 0) {
-            printf("    Job list:         %6.1fms\n", metrics.job_list_time.count() / 1000.0);
+            print("    Job list:         {}ms\n", Fixed { static_cast<double>(metrics.job_list_time.count()) / 1000.0, 1, 6 });
         }
-        printf("  Total overhead:     %6.1fms\n", total_phase_us / 1000.0);
+        print("  Total overhead:     {}ms\n", Fixed { static_cast<double>(total_phase_us) / 1000.0, 1, 6 });
     }
 }
 
@@ -160,25 +161,17 @@ auto strip_build_root_prefix(std::string_view path, std::string_view build_root_
 }
 
 template<typename... Args>
-auto vprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
+auto vprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
 {
-    printf("[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
-    if constexpr (sizeof...(args) == 0) {
-        printf("%s", fmt);
-    } else {
-        printf(fmt, std::forward<Args>(args)...);
-    }
+    print("[{}] ", variant_name);
+    print(pattern, args...);
 }
 
 template<typename... Args>
-auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> void
+auto veprint(std::string_view variant_name, std::string_view pattern, Args const&... args) -> void
 {
-    fprintf(stderr, "[%.*s] ", static_cast<int>(variant_name.size()), variant_name.data());
-    if constexpr (sizeof...(args) == 0) {
-        fprintf(stderr, "%s", fmt);
-    } else {
-        fprintf(stderr, fmt, std::forward<Args>(args)...);
-    }
+    eprint("[{}] ", variant_name);
+    eprint(pattern, args...);
 }
 
 auto is_tupfile(std::string_view path) -> bool
@@ -279,7 +272,7 @@ auto find_changed_files_with_implicit(
 
         if (!stat_result) {
             if (verbose) {
-                printf("  Changed (stat failed): %s\n", file_path_sv.data());
+                print("  Changed (stat failed): {}\n", file_path_sv);
             }
             ++metrics.files_changed;
             changed.push_back(pool.intern(file_path_sv));
@@ -290,7 +283,7 @@ auto find_changed_files_with_implicit(
         auto current_size = stat_result->size;
         if (current_size != file.size) {
             if (verbose) {
-                printf("  Changed (size): %s\n", file_path_sv.data());
+                print("  Changed (size): {}\n", file_path_sv);
             }
             ++metrics.files_changed;
             changed.push_back(pool.intern(file_path_sv));
@@ -314,7 +307,7 @@ auto find_changed_files_with_implicit(
             auto hash_result = pup::sha256_file(path);
             if (!hash_result || *hash_result != file.content_hash) {
                 if (verbose) {
-                    printf("  Changed (hash): %s\n", file_path_sv.data());
+                    print("  Changed (hash): {}\n", file_path_sv);
                 }
                 ++metrics.files_changed;
                 changed.push_back(pool.intern(file_path_sv));
@@ -322,7 +315,7 @@ auto find_changed_files_with_implicit(
         } else {
             // ZERO_HASH indicates hash wasn't computed - treat as changed to be safe
             if (verbose) {
-                printf("  Changed (no hash): %s\n", file_path_sv.data());
+                print("  Changed (no hash): {}\n", file_path_sv);
             }
             ++metrics.files_changed;
             changed.push_back(pool.intern(file_path_sv));
@@ -416,7 +409,7 @@ auto create_implicit_file(
         if (hash_result) {
             content_hash = *hash_result;
         } else {
-            fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::global_pool().get(pup::platform::to_utf8(abs_path)).data());
+            eprint("Warning: Failed to hash file: {}\n", pup::global_pool().get(pup::platform::to_utf8(abs_path)));
         }
 
         auto stat_result = pup::platform::stat_file(abs_path);
@@ -507,7 +500,7 @@ auto serialize_graph_nodes(
                 if (hash_result) {
                     content_hash = *hash_result;
                 } else {
-                    fprintf(stderr, "Warning: Failed to hash file: %s\n", pup::global_pool().get(pup::platform::to_utf8(file_path)).data());
+                    eprint("Warning: Failed to hash file: {}\n", pup::global_pool().get(pup::platform::to_utf8(file_path)));
                 }
 
                 auto stat_result = pup::platform::stat_file(file_path);
@@ -974,16 +967,16 @@ auto validate_output_targets(
             }
         }
         if (!node_id) {
-            veprint(variant_name, "Error: %.*s is not in build graph\n", static_cast<int>(target_sv.size()), target_sv.data());
+            veprint(variant_name, "Error: {} is not in build graph\n", target_sv);
             return std::nullopt;
         }
         if (pup::graph::get<pup::NodeType>(state.graph, *node_id) != pup::NodeType::Generated) {
-            veprint(variant_name, "Error: %.*s is not a build output\n", static_cast<int>(target_sv.size()), target_sv.data());
+            veprint(variant_name, "Error: {} is not a build output\n", target_sv);
             return std::nullopt;
         }
         node_ids.push_back(*node_id);
         if (verbose) {
-            vprint(variant_name, "Output target: %.*s\n", static_cast<int>(target_sv.size()), target_sv.data());
+            vprint(variant_name, "Output target: {}\n", target_sv);
         }
     }
     return node_ids;
@@ -1037,7 +1030,7 @@ auto detect_new_commands(
             }
             if (verbose) {
                 auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
-                vprint(variant_name, "  New command: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
+                vprint(variant_name, "  New command: {}\n", display_sv);
             }
         }
     }
@@ -1070,11 +1063,11 @@ auto remove_stale_outputs(
             auto abs_path = pup::global_pool().get(pup::path::join(source_root, file_path_sv));
             if (pup::platform::exists(abs_path)) {
                 if (dry_run) {
-                    vprint(variant_name, "Would remove stale: %s\n", file_path_sv.data());
+                    vprint(variant_name, "Would remove stale: {}\n", file_path_sv);
                 } else {
                     if (pup::platform::remove_file(abs_path)) {
                         if (verbose) {
-                            vprint(variant_name, "  Removed stale: %s\n", file_path_sv.data());
+                            vprint(variant_name, "  Removed stale: {}\n", file_path_sv);
                         }
                     }
                 }
@@ -1082,7 +1075,7 @@ auto remove_stale_outputs(
         }
 
         if (verbose) {
-            vprint(variant_name, "  Removed command: %s\n", pup::global_pool().get(cmd.display).data());
+            vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(cmd.display));
         }
     }
 }
@@ -1150,7 +1143,7 @@ auto build_single_variant(
 
     auto layout = discover_layout(make_layout_options(opts));
     if (!layout) {
-        veprint(variant_name, "Error: %s\n", layout.error().msg().data());
+        veprint(variant_name, "Error: {}\n", layout.error().msg());
         return EXIT_FAILURE;
     }
     auto scopes = compute_build_scopes(opts, *layout);
@@ -1176,7 +1169,7 @@ auto build_single_variant(
 
     auto result = build_context(opts, ctx_opts);
     if (!result) {
-        veprint(variant_name, "Error: %s\n", result.error().msg().data());
+        veprint(variant_name, "Error: {}\n", result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -1237,15 +1230,15 @@ auto build_single_variant(
                 vprint(variant_name, "Scoped build:");
                 for (auto scope_id : scopes) {
                     auto scope_sv = pup::global_pool().get(scope_id);
-                    printf(" %.*s", static_cast<int>(scope_sv.size()), scope_sv.data());
+                    print(" {}", scope_sv);
                 }
                 if (opts.include_all_deps) {
-                    printf(" (+%zu upstream deps)", upstream_files.size());
+                    print(" (+{} upstream deps)", upstream_files.size());
                 }
                 if (!implicit_dep_files.empty()) {
-                    printf(" (+%zu implicit deps)", implicit_dep_files.size());
+                    print(" (+{} implicit deps)", implicit_dep_files.size());
                 }
-                printf("\n");
+                print("\n");
             }
         }
 
@@ -1298,7 +1291,7 @@ auto build_single_variant(
 
         use_incremental = true;
         if (opts.verbose) {
-            vprint(variant_name, "Incremental build: %zu changed files\n", changed_files.size());
+            vprint(variant_name, "Incremental build: {} changed files\n", changed_files.size());
         }
     }
 
@@ -1323,7 +1316,7 @@ auto build_single_variant(
         auto& pool = pup::global_pool();
         if (opts.verbose || opts.dry_run) {
             auto display_sv = pool.get(job.display);
-            vprint(variant_name, "%.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
+            vprint(variant_name, "{}\n", display_sv);
         } else if (use_tty_progress) {
             auto target = job.outputs.empty() ? job.display : job.outputs.front();
             progress = pup::exec::job_started(std::move(progress), job.id, target);
@@ -1339,10 +1332,10 @@ auto build_single_variant(
                 pup::exec::finalize_progress(prev_lines);
             }
             auto display_sv = pool.get(job.display);
-            veprint(variant_name, "FAILED: %.*s\n", static_cast<int>(display_sv.size()), display_sv.data());
+            veprint(variant_name, "FAILED: {}\n", display_sv);
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
-                fprintf(stderr, "%.*s\n", static_cast<int>(output_sv.size()), output_sv.data());
+                eprint("{}\n", output_sv);
             }
         }
 
@@ -1362,7 +1355,7 @@ auto build_single_variant(
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
                     if (opts.verbose) {
-                        fprintf(stderr, "Warning: Skipping dependency '%.*s': %s\n", static_cast<int>(dep_sv.size()), dep_sv.data(), resolved_result.error().msg().data());
+                        eprint("Warning: Skipping dependency '{}': {}\n", dep_sv, resolved_result.error().msg());
                     }
                     continue;
                 }
@@ -1372,7 +1365,7 @@ auto build_single_variant(
                     auto rel_sv = pool.get(pup::path::relative(resolved_sv, source_root_sv));
                     if (rel_sv.starts_with("..")) {
                         if (opts.verbose) {
-                            fprintf(stderr, "Warning: Cannot relativize '%.*s'\n", static_cast<int>(resolved_sv.size()), resolved_sv.data());
+                            eprint("Warning: Cannot relativize '{}'\n", resolved_sv);
                         }
                         continue;
                     }
@@ -1389,8 +1382,8 @@ auto build_single_variant(
             pup::exec::display_progress(output, prev_lines);
         } else if (!opts.verbose && !opts.dry_run) {
             progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
-            printf("\r%s ", pup::global_pool().get(pup::exec::render_simple(progress, variant_name)).data());
-            std::fflush(stdout);
+            print("\r{} ", pup::global_pool().get(pup::exec::render_simple(progress, variant_name)));
+            flush(Stream::Out);
         }
     });
 
@@ -1449,11 +1442,11 @@ auto build_single_variant(
     if (use_tty_progress) {
         pup::exec::finalize_progress(prev_lines);
     } else if (!opts.verbose && !opts.dry_run) {
-        printf("\n");
+        print("\n");
     }
 
     if (!build_result) {
-        veprint(variant_name, "Build failed: %s\n", build_result.error().msg().data());
+        veprint(variant_name, "Build failed: {}\n", build_result.error().msg());
         return EXIT_FAILURE;
     }
 
@@ -1461,9 +1454,9 @@ auto build_single_variant(
     if (stats.completed_jobs == 0 && stats.failed_jobs == 0) {
         vprint(variant_name, "Nothing to do.\n");
     } else if (stats.failed_jobs > 0) {
-        vprint(variant_name, "Build completed: %zu commands (%zu failed) in %ldms\n", stats.completed_jobs, stats.failed_jobs, static_cast<long>(duration.count()));
+        vprint(variant_name, "Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
     } else {
-        vprint(variant_name, "Build completed: %zu commands in %ldms\n", stats.completed_jobs, static_cast<long>(duration.count()));
+        vprint(variant_name, "Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
     }
 
     auto final_index = std::optional<pup::index::Index> {};
@@ -1486,9 +1479,9 @@ auto build_single_variant(
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::milliseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
-            veprint(variant_name, "Warning: Failed to save index: %s\n", write_result.error().msg().data());
+            veprint(variant_name, "Warning: Failed to save index: {}\n", write_result.error().msg());
         } else if (opts.verbose) {
-            vprint(variant_name, "Saved index: %zu files, %zu commands, %zu edges\n", index.file_count(), index.command_count(), index.edge_count());
+            vprint(variant_name, "Saved index: {} files, {} commands, {} edges\n", index.file_count(), index.command_count(), index.edge_count());
         }
         final_index = std::move(index);
     }

@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/exec/progress_display.hpp"
 #include "pup/exec/runner.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
@@ -524,3 +525,26 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 }
 
 #endif // !_WIN32
+
+TEST_CASE("format_duration renders M:SS with zero-padded seconds", "[exec][progress]")
+{
+    REQUIRE(sv(format_duration(std::chrono::milliseconds { 7 * 1000 })) == "0:07");
+    REQUIRE(sv(format_duration(std::chrono::milliseconds { 59 * 1000 })) == "0:59");
+    REQUIRE(sv(format_duration(std::chrono::milliseconds { 60 * 1000 })) == "1:00");
+    REQUIRE(sv(format_duration(std::chrono::milliseconds { 754 * 1000 })) == "12:34");
+}
+
+TEST_CASE("render_simple counts done over total", "[exec][progress]")
+{
+    auto state = ProgressState { .total = 10, .completed = 3, .failed = 1 };
+    REQUIRE(sv(render_simple(state)) == "[4/10]");
+    REQUIRE(sv(render_simple(state, "host")) == "[host] [4/10]");
+}
+
+TEST_CASE("render_tty prefixes percent and counts", "[exec][progress]")
+{
+    auto state = ProgressState { .total = 4, .completed = 2 };
+    auto out = render_tty(state);
+    REQUIRE(sv(out.text).starts_with("[ 50% 2/4] "));
+    REQUIRE(out.line_count == 1);
+}

@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <string_view>
 
 namespace pup::exec {
@@ -94,9 +93,7 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
         prefix += variant;
         prefix += "] ";
     }
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "[%3zu%% %zu/%zu] ", pct, done, state.total);
-    prefix += buf;
+    prefix.fmt("[{}% {}/{}] ", Pad { pct, 3 }, done, state.total);
     auto path_width = term_width > prefix.size() ? term_width - prefix.size() : std::size_t { 20 };
 
     out += prefix.view();
@@ -136,9 +133,7 @@ auto render_simple(ProgressState const& state, std::string_view variant) -> Stri
         out += variant;
         out += "] ";
     }
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "[%zu/%zu]", done, state.total);
-    out += buf;
+    out.fmt("[{}/{}]", done, state.total);
 
     return out.intern(global_pool());
 }
@@ -149,38 +144,38 @@ auto format_duration(std::chrono::milliseconds ms) -> StringId
     auto mins = secs / 60;
     secs = secs % 60;
 
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "%zu:%02zu", mins, secs);
-    return global_pool().intern(buf);
+    auto out = Buf {};
+    out.fmt("{}:{}", mins, Pad { secs, 2, '0' });
+    return out.intern(global_pool());
 }
 
-auto clear_lines(std::size_t count, std::FILE* out) -> void
+auto clear_lines(std::size_t count, Stream stream) -> void
 {
     if (count == 0) {
         return;
     }
 
-    std::fputs(pup::ansi::carriage_return.data(), out);
-    std::fputs(pup::ansi::clear_line.data(), out);
+    write_to(stream, pup::ansi::carriage_return);
+    write_to(stream, pup::ansi::clear_line);
 
     for (std::size_t i = 1; i < count; ++i) {
-        std::fputs(pup::ansi::move_up.data(), out);
-        std::fputs(pup::ansi::clear_line.data(), out);
+        write_to(stream, pup::ansi::move_up);
+        write_to(stream, pup::ansi::clear_line);
     }
-    std::fflush(out);
+    flush(stream);
 }
 
-auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, std::FILE* out) -> void
+auto display_progress(ProgressOutput const& output, std::size_t& prev_lines, Stream stream) -> void
 {
-    clear_lines(prev_lines, out);
-    std::fputs(global_pool().get(output.text).data(), out);
-    std::fflush(out);
+    clear_lines(prev_lines, stream);
+    write_to(stream, global_pool().get(output.text));
+    flush(stream);
     prev_lines = output.line_count;
 }
 
-auto finalize_progress(std::size_t& prev_lines, std::FILE* out) -> void
+auto finalize_progress(std::size_t& prev_lines, Stream stream) -> void
 {
-    clear_lines(prev_lines, out);
+    clear_lines(prev_lines, stream);
     prev_lines = 0;
 }
 
