@@ -399,6 +399,14 @@ auto make_read_error(std::string_view path) -> pup::Error
     };
 }
 
+auto make_eval_failed_error(std::string_view dir) -> pup::Error
+{
+    return pup::Error {
+        pup::ErrorCode::ParseError,
+        make_err("Tupfile evaluation failed in ", dir)
+    };
+}
+
 struct ParseContext {
     TupfileParseState& state;
     pup::graph::Builder& builder_state;
@@ -423,9 +431,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     }
 
     if (sorted_contains(ctx.state.failed, normalized_dir)) {
-        return pup::unexpected<pup::Error>(pup::Error {
-            pup::ErrorCode::ParseError,
-            make_err("Tupfile evaluation failed in ", normalized_dir) });
+        return pup::unexpected<pup::Error>(make_eval_failed_error(normalized_dir));
     }
 
     if (sorted_contains(ctx.state.parsing, normalized_dir)) {
@@ -546,9 +552,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         }
         ctx.state.errors_printed = ctx.builder_state.errors.size();
         sorted_insert(ctx.state.failed, normalized_dir);
-        return pup::unexpected<pup::Error>(pup::Error {
-            pup::ErrorCode::ParseError,
-            make_err("Tupfile evaluation failed in ", normalized_dir) });
+        return pup::unexpected<pup::Error>(make_eval_failed_error(normalized_dir));
     }
 
     sorted_insert(ctx.state.parsed, normalized_dir);
