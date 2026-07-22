@@ -197,7 +197,7 @@ def cmd_bench(args):
 
 def cmd_stat(args):
     outputs = []
-    for _ in range(args.runs):
+    for _ in range(max(1, args.runs)):
         run = subprocess.run(
             [args.putup, "-n", "--stat", "-C", args.config_dir,
              "-S", args.source_dir, "-B", args.build_dir],
@@ -221,7 +221,11 @@ def cmd_stat(args):
         else:
             # Counters are deterministic; disagreement across runs is an
             # anomaly worth surfacing, not averaging away.
-            value = values[0] if all(v == values[0] for v in values) else "n/a"
+            if all(v == values[0] for v in values):
+                value = values[0]
+            else:
+                sys.stderr.write(f"{key} disagrees across runs: {values}\n")
+                value = "n/a"
         print(f"{key}\t{value}")
     return 0
 
