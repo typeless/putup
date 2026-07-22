@@ -3,10 +3,15 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
 #include <cstring>
 #include <fstream>
+#include <set>
+#include <string>
+#include <utility>
 
 using namespace pup::platform;
 using namespace pup::test;
@@ -157,5 +162,165 @@ TEST_CASE("atomic_write creates file atomically", "[e2e][platform][file_io]")
         REQUIRE(result.has_value());
 
         REQUIRE(std::filesystem::exists(path));
+    }
+}
+
+namespace {
+
+// Build a fixed tree under <workdir>/<root> for the discovery tests.
+//   <root>/a.txt      <root>/.hidden
+//   <root>/sub/b.txt  <root>/sub/deep/c.txt
+//   <root>/skip/d.txt   (skip/ is pruned by the visitor)
+auto make_discovery_tree(pup::test::E2EFixture& f, std::string_view root) -> std::string
+{
+    auto p = [&](std::string_view rel) { return std::string { root } + "/" + std::string { rel }; };
+    f.write_file(p("a.txt"), "a");
+    f.write_file(p(".hidden"), "h");
+    f.write_file(p("sub/b.txt"), "b");
+    f.write_file(p("sub/deep/c.txt"), "c");
+    f.write_file(p("skip/d.txt"), "d");
+    return (f.workdir() / std::string { root }).string();
+}
+
+} // namespace
+
+SCENARIO("walk_directory reports every entry once with its relative path", "[platform][file_io][walk]")
+{
+    GIVEN("a nested directory tree with a pruned subtree")
+    {
+        auto f = pup::test::E2EFixture { "simple_c" };
+        auto root = make_discovery_tree(f, "tree");
+
+        WHEN("the tree is walked, pruning the 'skip' directory")
+        {
+            auto seen = std::set<std::pair<std::string, bool>> {};
+            auto r = pup::platform::walk_directory(
+                root,
+                [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
+                    seen.insert({ std::string { rel_path }, entry.is_dir });
+                    return !(entry.is_dir && rel_path == "skip");
+                });
+
+            THEN("the walk succeeds")
+            {
+                REQUIRE(r.has_value());
+            }
+
+            THEN("exactly the expected entries are visited")
+            {
+                auto expected = std::set<std::pair<std::string, bool>> {
+                    { "a.txt", false },
+                    { ".hidden", false },
+                    { "sub", true },
+                    { "sub/b.txt", false },
+                    { "sub/deep", true },
+                    { "sub/deep/c.txt", false },
+                    { "skip", true },
+                };
+                REQUIRE(seen == expected);
+            }
+
+            THEN("the pruned subtree is not descended")
+            {
+                REQUIRE(seen.find({ "skip/d.txt", false }) == seen.end());
+            }
+        }
+    }
+}
+
+TEST_CASE("walk_directory interns no per-entry strings", "[platform][file_io][walk]")
+{
+    // Names carry a prefix unique to this test so the walk sees a cold string
+    // pool: every basename and relative path is genuinely new, so any per-entry
+    // interning shows up as pool growth. Run once (TEST_CASE, no sections) —
+    // Catch re-runs a SCENARIO's WHEN per THEN, which would warm the pool.
+    auto f = pup::test::E2EFixture { "simple_c" };
+    auto entry_count = 0;
+    for (auto d = 0; d < 8; ++d) {
+        for (auto i = 0; i < 8; ++i) {
+            f.write_file("pool/pgzwalk_" + std::to_string(d) + "/pgzwalk_" + std::to_string(d) + "_" + std::to_string(i) + ".txt", "x");
+            ++entry_count;
+        }
+        ++entry_count;
+    }
+    auto root = (f.workdir() / "pool").string();
+
+    auto& pool = pup::global_pool();
+    auto before = pool.size();
+    auto count = 0;
+    (void)pup::platform::walk_directory(
+        root,
+        [&](pup::platform::DirEntry const& /*entry*/, std::string_view /*rel_path*/) -> bool {
+            ++count;
+            return true;
+        });
+    auto after = pool.size();
+
+    INFO("before=" << before << " after=" << after << " entries=" << entry_count);
+    REQUIRE(count == entry_count);
+    REQUIRE(after == before);
+}
+
+#ifndef _WIN32
+SCENARIO("walk_directory does not descend symlinked directories on POSIX", "[platform][file_io][walk]")
+{
+    GIVEN("a directory containing a symlink to another directory")
+    {
+        auto f = pup::test::E2EFixture { "simple_c" };
+        f.write_file("slink/real/inside.txt", "x");
+        f.create_symlink("real", "slink/link");
+        auto root = (f.workdir() / "slink").string();
+
+        WHEN("the tree is walked")
+        {
+            auto seen = std::set<std::pair<std::string, bool>> {};
+            (void)pup::platform::walk_directory(
+                root,
+                [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
+                    seen.insert({ std::string { rel_path }, entry.is_dir });
+                    return true;
+                });
+
+            THEN("the symlink is reported as a non-directory and not descended")
+            {
+                REQUIRE(seen.find({ "link", false }) != seen.end());
+                REQUIRE(seen.find({ "link", true }) == seen.end());
+                REQUIRE(seen.find({ "link/inside.txt", false }) == seen.end());
+            }
+        }
+    }
+}
+#endif
+
+SCENARIO("read_directory lists a directory's immediate entries", "[platform][file_io][walk]")
+{
+    GIVEN("a directory with files and subdirectories")
+    {
+        auto f = pup::test::E2EFixture { "simple_c" };
+        make_discovery_tree(f, "flat");
+        auto root = (f.workdir() / "flat").string();
+
+        WHEN("the directory is read")
+        {
+            auto listing = pup::platform::DirEntries {};
+            auto r = pup::platform::read_directory(root, listing);
+            REQUIRE(r.has_value());
+
+            auto seen = std::set<std::pair<std::string, bool>> {};
+            for (auto const& e : listing.entries) {
+                seen.insert({ std::string { e.name }, e.is_dir });
+            }
+
+            THEN("exactly the immediate children are returned")
+            {
+                auto expected = std::set<std::pair<std::string, bool>> {
+                    { "a.txt", false },
+                    { ".hidden", false },
+                    { "sub", true },
+                    { "skip", true },
+                };
+                REQUIRE(seen == expected);
+            }
+        }
     }
 }

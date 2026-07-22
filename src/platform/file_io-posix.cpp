@@ -583,15 +583,21 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 // Directory traversal
 
-auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
+auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
 {
+    out.names.clear();
+    out.entries.clear();
+
     auto p = CPath { path };
     auto d = sys::Dir {};
     if (sys::open_dir(p.c_str(), d) != 0) {
-        return make_error<Vec<DirEntry>>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
     }
 
-    auto entries = Vec<DirEntry> {};
+    // Names concatenate into out.names, which may relocate as it grows, so views
+    // are bound only after the fill completes. Offsets carry a trailing sentinel.
+    auto offsets = Vec<std::uint32_t> {};
+    auto stat_path = Buf {};
     auto entry = sys::DirEntry {};
     while (sys::read_dir(d, entry) == 1) {
         if (is_dot_or_dotdot(entry.name)) {
@@ -600,44 +606,58 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
         auto is_dir = entry.type == sys::FileType::Directory;
         if (entry.type == sys::FileType::Unknown) {
             auto st = sys::Stat {};
-            auto full_sv = global_pool().get(pup::path::join(path, entry.name));
-            auto full_cp = CPath { full_sv };
-            if (sys::stat(full_cp.c_str(), st) == 0) {
+            stat_path.clear();
+            stat_path.append(path);
+            if (!path.empty() && path.back() != '/') {
+                stat_path.append('/');
+            }
+            stat_path.append(std::string_view { entry.name });
+            if (sys::stat(stat_path.c_str(), st) == 0) {
                 is_dir = sys::is_dir(st.mode);
             }
         }
-        entries.push_back(DirEntry { global_pool().intern(entry.name), is_dir });
+        offsets.push_back(static_cast<std::uint32_t>(out.names.size()));
+        out.names.append(std::string_view { entry.name });
+        out.entries.push_back(DirEntry { {}, is_dir });
     }
     sys::close_dir(d);
-    return entries;
+    offsets.push_back(static_cast<std::uint32_t>(out.names.size()));
+
+    auto const base = out.names.view();
+    for (auto i = std::size_t { 0 }; i < out.entries.size(); ++i) {
+        out.entries[i].name = base.substr(offsets[i], offsets[i + 1U] - offsets[i]);
+    }
+    return {};
 }
 
 namespace {
 
 auto walk_recursive(
-    std::string_view base,
-    std::string_view rel,
+    Buf& path,
+    std::size_t rel_start,
     WalkVisitor const& visitor
 ) -> Result<void>
 {
-    auto full_sv = rel.empty() ? base : global_pool().get(pup::path::join(base, rel));
-    auto entries = read_directory(full_sv);
-    if (!entries) {
-        return pup::unexpected<Error>(entries.error());
+    auto listing = DirEntries {};
+    auto r = read_directory(path.view(), listing);
+    if (!r) {
+        return r;
     }
 
-    for (auto const& e : *entries) {
-        auto name_sv = global_pool().get(e.name);
-        auto child_rel_sv = rel.empty()
-            ? name_sv
-            : global_pool().get(pup::path::join(rel, name_sv));
-        auto should_recurse = visitor(e, child_rel_sv);
+    auto const mark = path.size();
+    for (auto const& e : listing.entries) {
+        if (!path.view().empty() && path.view().back() != '/') {
+            path.append('/');
+        }
+        path.append(e.name);
+        auto should_recurse = visitor(e, path.view().substr(rel_start));
         if (e.is_dir && should_recurse) {
-            auto r = walk_recursive(base, child_rel_sv, visitor);
-            if (!r) {
-                return r;
+            auto rr = walk_recursive(path, rel_start, visitor);
+            if (!rr) {
+                return rr;
             }
         }
+        path.resize(mark);
     }
     return {};
 }
@@ -646,7 +666,10 @@ auto walk_recursive(
 
 auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result<void>
 {
-    return walk_recursive(path, "", visitor);
+    auto buf = Buf {};
+    buf.append(path);
+    auto const rel_start = (path.empty() || path.back() == '/') ? path.size() : path.size() + 1;
+    return walk_recursive(buf, rel_start, visitor);
 }
 
 } // namespace pup::platform

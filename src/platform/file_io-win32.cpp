@@ -396,10 +396,10 @@ auto remove_all(std::string_view path) -> Result<void>
         }
         return {};
     }
-    auto entries = read_directory(path);
-    if (entries) {
-        for (auto const& e : *entries) {
-            auto child_sv = global_pool().get(pup::path::join(path, global_pool().get(e.name)));
+    auto listing = DirEntries {};
+    if (read_directory(path, listing)) {
+        for (auto const& e : listing.entries) {
+            auto child_sv = global_pool().get(pup::path::join(path, e.name));
             auto r = remove_all(child_sv);
             if (!r) {
                 return r;
@@ -603,15 +603,20 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 // Directory traversal
 
-auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
+auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
 {
+    out.names.clear();
+    out.entries.clear();
+
     auto wpath = to_wide(path) + L"\\*";
     auto fd = WIN32_FIND_DATAW {};
     auto h = FindFirstFileW(wpath.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<Vec<DirEntry>>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
     }
-    auto entries = Vec<DirEntry> {};
+    // Names concatenate into out.names, which may relocate as it grows, so views
+    // are bound only after the fill completes. Offsets carry a trailing sentinel.
+    auto offsets = Vec<std::uint32_t> {};
     auto name_buf = Buf {};
     do {
         if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) {
@@ -621,36 +626,49 @@ auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>
         auto wstr = std::wstring { wname };
         from_wide(wstr, name_buf);
         auto is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        entries.push_back(DirEntry { global_pool().intern(name_buf.view()), is_dir });
+        offsets.push_back(static_cast<std::uint32_t>(out.names.size()));
+        out.names.append(name_buf.view());
+        out.entries.push_back(DirEntry { {}, is_dir });
     } while (FindNextFileW(h, &fd));
     FindClose(h);
-    return entries;
+    offsets.push_back(static_cast<std::uint32_t>(out.names.size()));
+
+    auto const base = out.names.view();
+    for (auto i = std::size_t { 0 }; i < out.entries.size(); ++i) {
+        out.entries[i].name = base.substr(offsets[i], offsets[i + 1] - offsets[i]);
+    }
+    return {};
 }
 
 auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result<void>
 {
-    auto walk_impl = [&](auto& self, std::string_view base, std::string_view rel) -> Result<void> {
-        auto full_sv = rel.empty() ? base : global_pool().get(pup::path::join(base, rel));
-        auto entries = read_directory(full_sv);
-        if (!entries) {
-            return pup::unexpected<Error>(entries.error());
+    auto walk_impl = [&](auto& self, Buf& full, std::size_t rel_start) -> Result<void> {
+        auto listing = DirEntries {};
+        auto r = read_directory(full.view(), listing);
+        if (!r) {
+            return r;
         }
-        for (auto const& e : *entries) {
-            auto name_sv = global_pool().get(e.name);
-            auto child_rel_sv = rel.empty()
-                ? name_sv
-                : global_pool().get(pup::path::join(rel, name_sv));
-            auto should_recurse = visitor(e, child_rel_sv);
+        auto const mark = full.size();
+        for (auto const& e : listing.entries) {
+            if (!full.view().empty() && full.view().back() != '/') {
+                full.append('/');
+            }
+            full.append(e.name);
+            auto should_recurse = visitor(e, full.view().substr(rel_start));
             if (e.is_dir && should_recurse) {
-                auto r = self(self, base, child_rel_sv);
-                if (!r) {
-                    return r;
+                auto rr = self(self, full, rel_start);
+                if (!rr) {
+                    return rr;
                 }
             }
+            full.resize(mark);
         }
         return {};
     };
-    return walk_impl(walk_impl, path, std::string_view {});
+    auto buf = Buf {};
+    buf.append(path);
+    auto const rel_start = (path.empty() || path.back() == '/') ? path.size() : path.size() + 1;
+    return walk_impl(walk_impl, buf, rel_start);
 }
 
 } // namespace pup::platform

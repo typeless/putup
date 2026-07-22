@@ -201,13 +201,13 @@ auto find_build_subdir(
     }
 
     if (pup::platform::is_directory(root)) {
-        auto entries = pup::platform::read_directory(root);
-        if (entries) {
-            for (auto const& entry : *entries) {
+        auto listing = pup::platform::DirEntries {};
+        if (pup::platform::read_directory(root, listing)) {
+            for (auto const& entry : listing.entries) {
                 if (!entry.is_dir) {
                     continue;
                 }
-                auto entry_path = pool.get(pup::path::join(root, pool.get(entry.name)));
+                auto entry_path = pool.get(pup::path::join(root, entry.name));
                 if (pup::platform::exists(pool.get(pup::path::join(entry_path, "tup.config")))
                     || pup::platform::is_directory(pool.get(pup::path::join(entry_path, ".pup")))) {
                     return pool.intern(entry_path);
@@ -245,7 +245,7 @@ auto discover_tupfile_dirs(
             return false;
         }
 
-        if (!entry.is_dir && pool.get(entry.name) == "Tupfile") {
+        if (!entry.is_dir && entry.name == "Tupfile") {
             auto dir_rel = pup::path::parent(rel_path);
             dirs.push_back(pool.intern(normalize_to_dot(dir_rel)));
         }
