@@ -1,4 +1,5 @@
 include_rules
+include cflags.tup
 
 : foreach *.c |> !cc |> %B.o
 : main.o lib/add.o |> !link |> prog
