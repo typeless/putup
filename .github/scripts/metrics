@@ -40,6 +40,32 @@ COVERAGE_COLUMNS = [
     "total",
 ]
 
+STAT_COLUMNS = ["metric", "value"]
+
+# (tsv key, regex over `putup -n --stat` output, display label)
+STAT_FIELDS = [
+    ("tupfiles_parsed", r"Tupfiles parsed:\s+([\d,]+)", "Tupfiles parsed"),
+    ("commands_total", r"Commands:\s+([\d,]+) total", "Commands"),
+    ("commands_executed", r"Commands:\s+[\d,]+ total, ([\d,]+) executed", "Commands scheduled"),
+    ("files_checked", r"Files checked:\s+([\d,]+)", "Files checked"),
+    ("files_changed", r"Files checked:\s+[\d,]+ \(([\d,]+) changed\)", "Files changed"),
+    ("files_in_index", r"Files in index:\s+([\d,]+)", "Files in index"),
+    ("graph_edges", r"Edges in graph:\s+([\d,]+)", "Graph edges"),
+    ("implicit_deps", r"Implicit deps:\s+([\d,]+)", "Implicit deps"),
+    ("hash_computations", r"Hash computations:\s+([\d,]+)", "Hash computations"),
+    ("hashes_skipped", r"Hashes skipped:\s+([\d,]+)", "Hashes skipped (stat cache)"),
+    ("stat_calls", r"Stat calls:\s+([\d,]+)", "Stat calls"),
+    ("parse_ms", r"^\s+Parse:\s+([0-9.]+)ms", "Parse time (ms)"),
+    ("total_ms", r"^\s+Total:\s+([0-9.]+)ms", "Total time (ms)"),
+]
+
+STAT_NOTE = (
+    "Counters from `putup -n --stat` on the fully-built gcc example (up-to-date"
+    " dry run): deterministic work measures — a jump in commands scheduled,"
+    " hash computations, or stat calls is a real behavior change, not noise."
+    " Timings are single-sample and indicative only."
+)
+
 PERF_NOTE = (
     "Deterministic signals: page faults, peak RSS, and the cachegrind D1/LL miss"
     " rates (simulated cache, exact across runs). CPU time is user+sys from"
@@ -167,6 +193,25 @@ def cmd_bench(args):
     return 0
 
 
+def cmd_stat(args):
+    run = subprocess.run(
+        [args.putup, "-n", "--stat", "-C", args.config_dir,
+         "-S", args.source_dir, "-B", args.build_dir],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if run.returncode != 0:
+        sys.stderr.write(run.stderr)
+        return 1
+    print("\t".join(STAT_COLUMNS))
+    for key, pattern, _ in STAT_FIELDS:
+        match = re.search(pattern, run.stdout, re.MULTILINE)
+        value = match.group(1).replace(",", "") if match else "n/a"
+        print(f"{key}\t{value}")
+    return 0
+
+
 def parse_size_output(text):
     for line in text.splitlines()[1:]:
         parts = line.split()
@@ -243,7 +288,7 @@ def annotate(cur, base, kind, unit=""):
         return shown
     if kind == "pct_change":
         if base == 0:
-            return shown
+            return shown if cur == 0 else f"{shown} (was 0)"
         change = (cur - base) / base * 100
         if abs(change) < 0.05:
             return shown
@@ -277,6 +322,24 @@ def perf_section(cur_rows, base_rows):
         ]
         lines.append("| " + " | ".join(cells) + " |")
     lines += ["", PERF_NOTE]
+    return lines
+
+
+def stat_section(cur_rows, base_rows):
+    cur_by_key = {r.get("metric"): r.get("value") for r in cur_rows}
+    base_by_key = {r.get("metric"): r.get("value") for r in base_rows}
+    lines = [
+        "### Internal statistics (gcc example, up-to-date dry run)",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+    ]
+    for key, _, label in STAT_FIELDS:
+        if key not in cur_by_key:
+            continue
+        cell = annotate(num(cur_by_key[key]), num(base_by_key.get(key)), "pct_change")
+        lines.append(f"| {label} | {cell} |")
+    lines += ["", STAT_NOTE]
     return lines
 
 
@@ -334,6 +397,12 @@ def cmd_render(args):
         baseline_used |= bool(base)
         sections.append(perf_section(perf, base))
 
+    stat = read_tsv(args.stat)
+    if stat:
+        base = read_tsv(args.baseline_stat)
+        baseline_used |= bool(base)
+        sections.append(stat_section(stat, base))
+
     size = read_tsv(args.size)
     if size:
         base = read_tsv(args.baseline_size)
@@ -373,6 +442,13 @@ def main() -> int:
     bench.add_argument("build_dir")
     bench.set_defaults(func=cmd_bench)
 
+    stat = sub.add_parser("stat")
+    stat.add_argument("putup")
+    stat.add_argument("config_dir")
+    stat.add_argument("source_dir")
+    stat.add_argument("build_dir")
+    stat.set_defaults(func=cmd_stat)
+
     coverage = sub.add_parser("coverage")
     coverage.add_argument("summary_json")
     coverage.set_defaults(func=cmd_coverage)
@@ -383,9 +459,11 @@ def main() -> int:
 
     render = sub.add_parser("render")
     render.add_argument("--perf")
+    render.add_argument("--stat")
     render.add_argument("--size")
     render.add_argument("--coverage")
     render.add_argument("--baseline-perf")
+    render.add_argument("--baseline-stat")
     render.add_argument("--baseline-size")
     render.add_argument("--baseline-coverage")
     render.add_argument("--baseline-label")
