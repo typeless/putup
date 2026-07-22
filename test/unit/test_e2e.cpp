@@ -6906,3 +6906,188 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to parse", 
         }
     }
 }
+
+SCENARIO("keep-going build preserves outputs of a Tupfile that fails to evaluate", "[e2e][incremental]")
+{
+    GIVEN("a fully-built two-directory project")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+        f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/alpha/a.out"));
+        REQUIRE(f.exists("build/beta/b.out"));
+
+        WHEN("beta's Tupfile hits an error directive and a keep-going build runs")
+        {
+            f.write_file("beta/Tupfile", "error broken\n: b.c |> cp %f %o |> b.out\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("beta's output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("the evaluation error is reported")
+            {
+                REQUIRE(result.stderr_output.find("broken") != std::string::npos);
+            }
+        }
+
+        WHEN("beta's Tupfile uses an unknown bang macro and a keep-going build runs")
+        {
+            f.write_file("beta/Tupfile", ": b.c |> !nope |> b.out\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("beta's output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("the evaluation error is reported")
+            {
+                REQUIRE(result.stderr_output.find("nope") != std::string::npos);
+            }
+        }
+
+        WHEN("beta's Tupfile includes a missing file and a keep-going build runs")
+        {
+            f.write_file("beta/Tupfile", "include missing.tup\n: b.c |> cp %f %o |> b.out\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("beta's output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("the evaluation error is reported")
+            {
+                REQUIRE(result.stderr_output.find("missing.tup") != std::string::npos);
+            }
+        }
+
+        WHEN("beta's Tupfile uses an unknown bang macro and a verbose keep-going build runs")
+        {
+            f.write_file("beta/Tupfile", ": b.c |> !nope |> b.out\n");
+            auto result = f.build({ "-B", "build", "-k", "-v" });
+
+            THEN("beta's output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("the evaluation error is reported")
+            {
+                REQUIRE(result.stderr_output.find("nope") != std::string::npos);
+            }
+        }
+    }
+}
+
+namespace {
+
+auto count_occurrences(std::string const& haystack, std::string const& needle) -> std::size_t
+{
+    auto n = std::size_t { 0 };
+    for (auto pos = haystack.find(needle); pos != std::string::npos; pos = haystack.find(needle, pos + needle.size())) {
+        ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+SCENARIO("Evaluation failure in a directory parsed on demand is reported once", "[e2e][incremental]")
+{
+    GIVEN("alpha depending on a group provided by beta, fully built")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c | ../beta/<grp> |> cp %f %o |> a.out\n");
+        f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+        f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out <grp>\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/alpha/a.out"));
+        REQUIRE(f.exists("build/beta/b.out"));
+
+        WHEN("beta's Tupfile hits an error directive and a build runs")
+        {
+            f.write_file("beta/Tupfile", "error broken\n: b.c |> cp %f %o |> b.out <grp>\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build fails with the evaluation error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(count_occurrences(result.stderr_output, "broken") == 1);
+            }
+
+            THEN("no phantom already-owned error is reported")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("already owned") == std::string::npos);
+            }
+        }
+
+        WHEN("beta's Tupfile hits an error directive and a keep-going build runs")
+        {
+            f.write_file("beta/Tupfile", "error broken\n: b.c |> cp %f %o |> b.out <grp>\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("beta's output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("the error is reported once, without phantom already-owned errors")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(count_occurrences(result.stderr_output, "broken") == 1);
+                REQUIRE(result.stderr_output.find("already owned") == std::string::npos);
+            }
+        }
+
+        WHEN("a rule is removed from alpha while beta fails to evaluate")
+        {
+            f.write_file("alpha/Tupfile", ": a.c | ../beta/<grp> |> cp %f %o |> a.out\n: a.c |> cp %f %o |> a2.out\n");
+            REQUIRE(f.build({ "-B", "build" }).success());
+            REQUIRE(f.exists("build/alpha/a2.out"));
+
+            f.write_file("alpha/Tupfile", ": a.c | ../beta/<grp> |> cp %f %o |> a.out\n");
+            f.write_file("beta/Tupfile", "error broken\n: b.c |> cp %f %o |> b.out <grp>\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("alpha stays authoritative and its stale output is deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists("build/alpha/a2.out"));
+                REQUIRE(f.exists("build/alpha/a.out"));
+            }
+
+            THEN("beta's output is preserved and its error reported once")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+                REQUIRE(count_occurrences(result.stderr_output, "broken") == 1);
+            }
+        }
+    }
+}

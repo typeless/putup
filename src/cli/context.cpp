@@ -158,6 +158,8 @@ struct TupfileParseState {
     Vec<StringId> available;
     Vec<StringId> parsed;
     Vec<StringId> parsing;
+    Vec<StringId> failed;
+    std::size_t errors_printed = 0;
     // Append-only paged vectors: push_back preserves references to existing
     // elements, which is critical because recursive Tupfile parsing holds
     // VarDb pointers across calls that may insert new entries.
@@ -420,6 +422,12 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         return {};
     }
 
+    if (sorted_contains(ctx.state.failed, normalized_dir)) {
+        return pup::unexpected<pup::Error>(pup::Error {
+            pup::ErrorCode::ParseError,
+            make_err("Tupfile evaluation failed in ", normalized_dir) });
+    }
+
     if (sorted_contains(ctx.state.parsing, normalized_dir)) {
         return pup::unexpected<pup::Error>(make_circular_dep_error(normalized_dir));
     }
@@ -530,11 +538,21 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     auto result = pup::Result<void> { pup::graph::add_tupfile(ctx.graph, parse_result.tupfile, eval_ctx, ctx.builder_state) };
 
     sorted_erase(ctx.state.parsing, normalized_dir);
-    sorted_insert(ctx.state.parsed, normalized_dir);
 
-    if (result) {
-        ++pup::thread_metrics().tupfiles_parsed;
+    if (!result) {
+        // Nested demand-driven parses print their own errors; the watermark keeps each printed once.
+        for (auto i = ctx.state.errors_printed; i < ctx.builder_state.errors.size(); ++i) {
+            eprint("error: {}\n", global_pool().get(ctx.builder_state.errors[i]));
+        }
+        ctx.state.errors_printed = ctx.builder_state.errors.size();
+        sorted_insert(ctx.state.failed, normalized_dir);
+        return pup::unexpected<pup::Error>(pup::Error {
+            pup::ErrorCode::ParseError,
+            make_err("Tupfile evaluation failed in ", normalized_dir) });
     }
+
+    sorted_insert(ctx.state.parsed, normalized_dir);
+    ++pup::thread_metrics().tupfiles_parsed;
 
     return result;
 }
