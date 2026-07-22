@@ -4,6 +4,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/stable_vec.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -605,10 +606,12 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
 {
+    // Convert the path before clearing out: `path` may be a view into out.names
+    // (e.g. an entry name from this same DirEntries), which clear() would wipe.
+    auto wpath = to_wide(path) + L"\\*";
     out.names.clear();
     out.entries.clear();
 
-    auto wpath = to_wide(path) + L"\\*";
     auto fd = WIN32_FIND_DATAW {};
     auto h = FindFirstFileW(wpath.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) {
@@ -642,8 +645,15 @@ auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
 
 auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result<void>
 {
-    auto walk_impl = [&](auto& self, Buf& full, std::size_t rel_start) -> Result<void> {
-        auto listing = DirEntries {};
+    // One DirEntries per depth level, reused across sibling directories, so a deep
+    // tree does not overflow the stack with per-frame Buf inline buffers. Safe
+    // because the walk is strictly LIFO: one directory per level at a time.
+    auto pool = StableVec<DirEntries> {};
+    auto walk_impl = [&](auto& self, Buf& full, std::size_t rel_start, std::size_t depth) -> Result<void> {
+        while (depth >= pool.size()) {
+            pool.emplace_back();
+        }
+        auto& listing = pool[depth];
         auto r = read_directory(full.view(), listing);
         if (!r) {
             return r;
@@ -656,7 +666,7 @@ auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result
             full.append(e.name);
             auto should_recurse = visitor(e, full.view().substr(rel_start));
             if (e.is_dir && should_recurse) {
-                auto rr = self(self, full, rel_start);
+                auto rr = self(self, full, rel_start, depth + 1);
                 if (!rr) {
                     return rr;
                 }
@@ -668,7 +678,7 @@ auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result
     auto buf = Buf {};
     buf.append(path);
     auto const rel_start = (path.empty() || path.back() == '/') ? path.size() : path.size() + 1;
-    return walk_impl(walk_impl, buf, rel_start);
+    return walk_impl(walk_impl, buf, rel_start, 0);
 }
 
 } // namespace pup::platform

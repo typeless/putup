@@ -13,6 +13,10 @@
 #include <string>
 #include <utility>
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
 using namespace pup::platform;
 using namespace pup::test;
 
@@ -324,3 +328,57 @@ SCENARIO("read_directory lists a directory's immediate entries", "[platform][fil
         }
     }
 }
+
+#ifndef _WIN32
+namespace {
+
+struct DeepWalkArgs {
+    std::string root;
+    bool completed = false;
+    bool saw_leaf = false;
+};
+
+// Runs the walk on a thread whose stack is too small to survive a frame that
+// embeds the directory listing (Buf's 4 KB inline buffer) once per level. An
+// O(1) frame reaches the leaf; a per-frame listing overflows and crashes.
+auto deep_walk_thread(void* p) -> void*
+{
+    auto* args = static_cast<DeepWalkArgs*>(p);
+    (void)pup::platform::walk_directory(
+        args->root,
+        [&](pup::platform::DirEntry const& /*entry*/, std::string_view rel_path) -> bool {
+            if (rel_path.size() >= 8 && rel_path.substr(rel_path.size() - 8) == "leaf.txt") {
+                args->saw_leaf = true;
+            }
+            return true;
+        });
+    args->completed = true;
+    return nullptr;
+}
+
+} // namespace
+
+TEST_CASE("walk_directory descends deep trees without a per-frame stack blowup", "[platform][file_io][walk]")
+{
+    auto f = pup::test::E2EFixture { "simple_c" };
+    constexpr auto depth = 200;
+    auto rel = std::string { "deep" };
+    for (auto i = 0; i < depth; ++i) {
+        rel += "/d";
+    }
+    f.write_file(rel + "/leaf.txt", "x");
+    auto root = (f.workdir() / "deep").string();
+
+    auto args = DeepWalkArgs { root, false, false };
+    auto attr = pthread_attr_t {};
+    REQUIRE(pthread_attr_init(&attr) == 0);
+    REQUIRE(pthread_attr_setstacksize(&attr, std::size_t { 256 } * 1024) == 0);
+    auto tid = pthread_t {};
+    REQUIRE(pthread_create(&tid, &attr, deep_walk_thread, &args) == 0);
+    pthread_join(tid, nullptr);
+    pthread_attr_destroy(&attr);
+
+    REQUIRE(args.completed);
+    REQUIRE(args.saw_leaf);
+}
+#endif
