@@ -51,6 +51,7 @@ STAT_FIELDS = [
     ("files_changed", r"Files checked:\s+[\d,]+ \(([\d,]+) changed\)", "Files changed"),
     ("files_in_index", r"Files in index:\s+([\d,]+)", "Files in index"),
     ("graph_edges", r"Edges in graph:\s+([\d,]+)", "Graph edges"),
+    ("index_bytes", r"Index size:\s+([\d,]+) bytes", "Index size (bytes)"),
     ("implicit_deps", r"Implicit deps:\s+([\d,]+)", "Implicit deps"),
     ("hash_computations", r"Hash computations:\s+([\d,]+)", "Hash computations"),
     ("hashes_skipped", r"Hashes skipped:\s+([\d,]+)", "Hashes skipped (stat cache)"),

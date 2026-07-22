@@ -78,6 +78,7 @@ auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> Vec<StringId>&
 
 auto print_stats(
     pup::index::Index const& index,
+    std::string_view index_path,
     std::size_t num_commands,
     std::size_t commands_executed,
     pup::SteadyClock::time_point variant_start
@@ -99,6 +100,8 @@ auto print_stats(
     print("  Files checked:      {} ({} changed)\n", Pad { metrics.files_checked, 6 }, metrics.files_changed);
     print("  Files in index:     {}\n", Pad { index.file_count(), 6 });
     print("  Edges in graph:     {}\n", Pad { index.edge_count(), 6 });
+    auto index_stat = pup::platform::stat_file(index_path);
+    print("  Index size:         {} bytes\n", Pad { index_stat ? index_stat->size : 0, 6 });
     print("  Implicit deps:      {}\n", Pad { implicit_deps_count, 6 });
     print("  Hash computations:  {}\n", Pad { metrics.hash_computations, 6 });
     print("  Hashes skipped:     {} (stat cache)\n", Pad { metrics.hashes_skipped, 6 });
@@ -1416,7 +1419,7 @@ auto build_single_variant(
         if (changed_files.empty() && forced_cmds.empty()) {
             vprint(variant_name, "Nothing to do (up to date).\n");
             if (opts.stat) {
-                print_stats(idx, num_commands, 0, variant_start);
+                print_stats(idx, index_path, num_commands, 0, variant_start);
             }
             return EXIT_SUCCESS;
         }
@@ -1626,9 +1629,9 @@ auto build_single_variant(
 
     if (opts.stat) {
         if (final_index) {
-            print_stats(*final_index, num_commands, stats.completed_jobs, variant_start);
+            print_stats(*final_index, index_path, num_commands, stats.completed_jobs, variant_start);
         } else if (old_idx_ptr) {
-            print_stats(*old_idx_ptr, num_commands, stats.completed_jobs, variant_start);
+            print_stats(*old_idx_ptr, index_path, num_commands, stats.completed_jobs, variant_start);
         }
     }
 

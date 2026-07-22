@@ -6691,6 +6691,17 @@ SCENARIO("Build statistics account for the whole build", "[e2e][stat]")
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(report.value_of("Unaccounted") >= -0.5);
             }
+
+            THEN("the on-disk index size is reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                auto label = std::string_view { "Index size:" };
+                auto pos = result.stdout_output.find(label);
+                REQUIRE(pos != std::string::npos);
+                auto reported = std::stoull(result.stdout_output.substr(pos + label.size()));
+                auto actual = std::filesystem::file_size(f.workdir() / ".pup" / "index");
+                REQUIRE(reported == actual);
+            }
         }
     }
 }
