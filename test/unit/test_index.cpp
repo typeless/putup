@@ -1265,7 +1265,7 @@ auto sorted_edge_labels_of_index(Index const& idx) -> std::vector<std::string>
 
 auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string_view file_tag) -> void
 {
-    auto [index, path_to_id] = pup::cli::serialize_graph_nodes(bs, ".", ".");
+    auto [index, path_to_id] = pup::cli::serialize_graph_nodes(bs, ".", ".", ".");
     auto cmd_remap = pup::cli::serialize_command_nodes(bs, index, path_to_id);
     pup::cli::serialize_edges(bs, index, cmd_remap);
 
