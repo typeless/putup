@@ -325,6 +325,52 @@ TEST_CASE("Index in-memory operations", "[index]")
     }
 }
 
+TEST_CASE("Serialized edge section is independent of edge insertion order", "[index][determinism]")
+{
+    auto const cmd_id = node_id::make_command(1);
+
+    auto serialize_with_edges = [&](std::vector<EdgeEntry> const& edges) {
+        auto index = Index {};
+        index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = NodeType::File, .name = intern("a.c") });
+        index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::Generated, .name = intern("a.o") });
+        index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("a.h") });
+        index.add_command(CommandEntry {
+            .id = cmd_id,
+            .dir_id = 1,
+            .instruction_pattern = intern("cc -c %f -o %o"),
+            .inputs = { 2 },
+            .outputs = { 3 },
+        });
+        for (auto const& e : edges) {
+            index.add_edge(e);
+        }
+        auto data = serialize_index(index);
+        REQUIRE(data.has_value());
+        return std::move(*data);
+    };
+
+    auto edge_section = [](Vec<std::byte> const& data) {
+        auto hdr = RawHeader {};
+        std::memcpy(&hdr, data.data(), sizeof(hdr));
+        auto const* begin = data.data() + hdr.edge_offset;
+        return std::vector<std::byte> { begin, begin + hdr.edge_count * sizeof(RawEdge) };
+    };
+
+    auto edges = std::vector<EdgeEntry> {
+        EdgeEntry { .from = 2, .to = cmd_id, .type = LinkType::Normal },
+        EdgeEntry { .from = cmd_id, .to = 3, .type = LinkType::Normal },
+        EdgeEntry { .from = 4, .to = cmd_id, .type = LinkType::Implicit },
+    };
+    auto shuffled = edges;
+    std::reverse(shuffled.begin(), shuffled.end());
+
+    auto data_a = serialize_with_edges(edges);
+    auto data_b = serialize_with_edges(shuffled);
+
+    REQUIRE(edge_section(data_a) == edge_section(data_b));
+}
+
 TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 {
     // IDs must be consecutive and match array position (id = array_index + 1)
