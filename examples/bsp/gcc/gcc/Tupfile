@@ -519,36 +519,35 @@ gtyp_cp += cp/semantics.cc cp/tree.cc cp/typeck2.cc cp/vtable-class-hierarchy.cc
   } > %o |> gtyp-input.list
 
 # gengtype outputs: gtype-desc.cc/h, gtype-c.h, gt-*.h
+# Only headers gengtype actually emits for this config: a declared-but-unwritten
+# output stat-fails forever and permanently dirties every consumer (issue #132).
 GT_H  = gtype-desc.h gtype-c.h
 GT_H += gt-alias.h gt-asan.h gt-attribs.h gt-bitmap.h gt-btfout.h
-GT_H += gt-caller-save.h gt-calls.h gt-cfgrtl.h gt-cgraph.h gt-cgraphclones.h
+GT_H += gt-caller-save.h gt-cfgrtl.h gt-cgraph.h gt-cgraphclones.h
 GT_H += gt-coverage.h gt-cselib.h gt-ctfout.h
-GT_H += gt-diagnostic-spec.h gt-dojump.h
-GT_H += gt-dwarf2asm.h gt-dwarf2cfi.h gt-dwarf2codeview.h gt-dwarf2ctf.h gt-dwarf2out.h
-GT_H += gt-emit-rtl.h gt-except.h gt-explow.h gt-expr.h
+GT_H += gt-dojump.h
+GT_H += gt-dwarf2asm.h gt-dwarf2cfi.h gt-dwarf2ctf.h gt-dwarf2out.h
+GT_H += gt-emit-rtl.h gt-except.h gt-explow.h
 GT_H += gt-function.h
-GT_H += gt-gcse.h gt-ggc-tests.h gt-gimple-expr.h gt-gimple-isel.h gt-godump.h
-GT_H += gt-ipa-cp.h gt-ipa-devirt.h gt-ipa-locality-cloning.h
+GT_H += gt-gcse.h gt-ggc-tests.h gt-gimple-expr.h gt-godump.h
+GT_H += gt-ipa-devirt.h
 GT_H += gt-ipa-modref.h gt-ipa-prop.h gt-ipa-sra.h gt-ipa-strub.h
 GT_H += gt-lists.h
-GT_H += gt-mcf.h
-GT_H += gt-omp-general.h gt-omp-low.h gt-optabs-libfuncs.h
-GT_H += gt-passes.h gt-path-coverage.h gt-prime-paths.h gt-profile.h
-GT_H += gt-reg-stack.h
-GT_H += gt-sancov.h gt-sanopt.h gt-stor-layout.h gt-stringpool.h
-GT_H += gt-symtab.h gt-symtab-thunks.h
+GT_H += gt-omp-low.h gt-optabs-libfuncs.h
+GT_H += gt-stor-layout.h gt-stringpool.h
+GT_H += gt-symtab-thunks.h
 GT_H += gt-targhooks.h gt-trans-mem.h gt-tree.h
-GT_H += gt-tree-cfg.h gt-tree-dfa.h gt-tree-eh.h gt-tree-iterator.h
+GT_H += gt-tree-iterator.h
 GT_H += gt-tree-nested.h gt-tree-phinodes.h gt-tree-profile.h
 GT_H += gt-tree-scalar-evolution.h gt-tree-ssa-address.h
-GT_H += gt-tree-ssa-loop-ivopts.h gt-tree-ssanames.h
-GT_H += gt-tree-vect-generic.h gt-tsan.h gt-ubsan.h
+GT_H += gt-tree-ssa-loop-ivopts.h
+GT_H += gt-tree-vect-generic.h gt-ubsan.h
 GT_H += gt-varasm.h gt-vtable-verify.h
 GT_H += $(target_GT_H)
 GT_H += gt-analyzer-language.h
-GT_H += gt-c-c-decl.h gt-c-c-lang.h gt-c-c-objc-common.h gt-c-c-parser.h
+GT_H += gt-c-c-decl.h gt-c-c-parser.h
 GT_H += gt-c-family-c-common.h gt-c-family-c-cppbuiltin.h
-GT_H += gt-c-family-c-format.h gt-c-family-c-objc.h gt-c-family-c-pragma.h
+GT_H += gt-c-family-c-format.h gt-c-family-c-pragma.h
 GT_H += gtype-cp.h
 GT_H += gt-cp-call.h gt-cp-class.h gt-cp-constexpr.h gt-cp-constraint.h
 GT_H += gt-cp-contracts.h gt-cp-coroutines.h gt-cp-cp-gimplify.h
@@ -556,7 +555,7 @@ GT_H += gt-cp-cp-lang.h gt-cp-cp-objcp-common.h gt-cp-decl.h gt-cp-decl2.h
 GT_H += gt-cp-except.h gt-cp-friend.h gt-cp-init.h gt-cp-lambda.h
 GT_H += gt-cp-lex.h gt-cp-logic.h gt-cp-mangle.h gt-cp-method.h
 GT_H += gt-cp-module.h gt-cp-name-lookup.h gt-cp-parser.h gt-cp-pt.h
-GT_H += gt-cp-rtti.h gt-cp-semantics.h gt-cp-tree.h gt-cp-typeck2.h
+GT_H += gt-cp-rtti.h gt-cp-semantics.h gt-cp-tree.h
 GT_H += gt-cp-vtable-class-hierarchy.h
 
 : gtyp-input.list | gengtype |> ^ GEN gtype-desc^ \
