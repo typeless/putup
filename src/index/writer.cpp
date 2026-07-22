@@ -24,6 +24,7 @@
 #include <limits>
 #include <span>
 #include <string_view>
+#include <tuple>
 
 namespace pup::index {
 
@@ -254,6 +255,11 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     for (auto const& edge : index.edges()) {
         edge_entries.push_back(edge.to_raw());
     }
+
+    // Canonical order: edge bytes must not depend on job-completion order (#120).
+    std::sort(edge_entries.begin(), edge_entries.end(), [](RawEdge const& a, RawEdge const& b) {
+        return std::tie(a.from_id, a.to_id, a.type) < std::tie(b.from_id, b.to_id, b.type);
+    });
 
     // Calculate offsets (all u32, check for overflow)
     auto const file_size_64 = file_entries.size() * sizeof(RawFileEntry);
