@@ -4,6 +4,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
+#include "pup/core/stable_vec.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/platform/sys.hpp"
@@ -585,10 +586,12 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
 
 auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
 {
+    // Copy the path before clearing out: `path` may be a view into out.names
+    // (e.g. an entry name from this same DirEntries), which clear() would wipe.
+    auto p = CPath { path };
     out.names.clear();
     out.entries.clear();
 
-    auto p = CPath { path };
     auto d = sys::Dir {};
     if (sys::open_dir(p.c_str(), d) != 0) {
         return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
@@ -632,13 +635,25 @@ auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
 
 namespace {
 
+// One DirEntries per depth level, reused across sibling directories. A frame
+// holding its own DirEntries (with Buf's 4 KB inline buffer) overflows the stack
+// on deep trees; the pool keeps each frame small and bounds allocations to the
+// max depth reached. Safe because the walk is strictly LIFO: only one directory
+// per level is being iterated at any moment.
+using ListingPool = StableVec<DirEntries>;
+
 auto walk_recursive(
     Buf& path,
     std::size_t rel_start,
+    std::size_t depth,
+    ListingPool& pool,
     WalkVisitor const& visitor
 ) -> Result<void>
 {
-    auto listing = DirEntries {};
+    while (depth >= pool.size()) {
+        pool.emplace_back();
+    }
+    auto& listing = pool[depth];
     auto r = read_directory(path.view(), listing);
     if (!r) {
         return r;
@@ -652,7 +667,7 @@ auto walk_recursive(
         path.append(e.name);
         auto should_recurse = visitor(e, path.view().substr(rel_start));
         if (e.is_dir && should_recurse) {
-            auto rr = walk_recursive(path, rel_start, visitor);
+            auto rr = walk_recursive(path, rel_start, depth + 1, pool, visitor);
             if (!rr) {
                 return rr;
             }
@@ -669,7 +684,8 @@ auto walk_directory(std::string_view path, WalkVisitor const& visitor) -> Result
     auto buf = Buf {};
     buf.append(path);
     auto const rel_start = (path.empty() || path.back() == '/') ? path.size() : path.size() + 1;
-    return walk_recursive(buf, rel_start, visitor);
+    auto pool = ListingPool {};
+    return walk_recursive(buf, rel_start, 0, pool, visitor);
 }
 
 } // namespace pup::platform
