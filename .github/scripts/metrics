@@ -284,7 +284,7 @@ def num(value):
 def annotate(cur, base, kind, unit=""):
     if cur is None:
         return "n/a"
-    shown = f"{cur:g}{unit}"
+    shown = f"{int(cur)}{unit}" if cur.is_integer() else f"{cur:g}{unit}"
     if base is None:
         return shown
     if kind == "pct_change":

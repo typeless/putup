@@ -100,8 +100,9 @@ auto print_stats(
     print("  Files checked:      {} ({} changed)\n", Pad { metrics.files_checked, 6 }, metrics.files_changed);
     print("  Files in index:     {}\n", Pad { index.file_count(), 6 });
     print("  Edges in graph:     {}\n", Pad { index.edge_count(), 6 });
-    auto index_stat = pup::platform::stat_file(index_path);
-    print("  Index size:         {} bytes\n", Pad { index_stat ? index_stat->size : 0, 6 });
+    if (auto index_stat = pup::platform::stat_file(index_path)) {
+        print("  Index size:         {} bytes\n", Pad { index_stat->size, 6 });
+    }
     print("  Implicit deps:      {}\n", Pad { implicit_deps_count, 6 });
     print("  Hash computations:  {}\n", Pad { metrics.hash_computations, 6 });
     print("  Hashes skipped:     {} (stat cache)\n", Pad { metrics.hashes_skipped, 6 });

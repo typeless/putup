@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
 
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <utility>
