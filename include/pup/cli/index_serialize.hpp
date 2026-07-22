@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -26,17 +27,23 @@ auto serialize_graph_nodes(
     std::string_view output_root
 ) -> std::pair<index::Index, PathIdMap>;
 
-/// Serialize command nodes to the index (instruction pattern + operands).
+/// Serialize guard-satisfied command nodes to the index with dense ids.
+/// Returns the graph-id -> index-position remap; guard-unsatisfied commands
+/// are absent from it.
+[[nodiscard]]
 auto serialize_command_nodes(
     graph::BuildGraph const& state,
     index::Index& index,
     PathIdMap const& path_to_id
-) -> void;
+) -> NodeIdMap32;
 
-/// Serialize graph edges to the index (order-only edges are ephemeral).
+/// Serialize graph edges to the index (order-only edges are ephemeral),
+/// rewriting command endpoints through the remap and dropping edges whose
+/// command endpoint is absent from it.
 auto serialize_edges(
     graph::BuildGraph const& state,
-    index::Index& index
+    index::Index& index,
+    NodeIdMap32 const& cmd_remap
 ) -> void;
 
 } // namespace pup::cli
