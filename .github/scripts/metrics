@@ -64,7 +64,8 @@ STAT_NOTE = (
     "Counters from `putup -n --stat` on the fully-built gcc example (up-to-date"
     " dry run): deterministic work measures — a jump in commands scheduled,"
     " hash computations, or stat calls is a real behavior change, not noise."
-    " Timings are single-sample and indicative only."
+    " Timings are the minimum over repeated runs (least-noise sample);"
+    " treat them as indicative, the counters as the regression signal."
 )
 
 PERF_NOTE = (
@@ -195,20 +196,32 @@ def cmd_bench(args):
 
 
 def cmd_stat(args):
-    run = subprocess.run(
-        [args.putup, "-n", "--stat", "-C", args.config_dir,
-         "-S", args.source_dir, "-B", args.build_dir],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if run.returncode != 0:
-        sys.stderr.write(run.stderr)
-        return 1
+    outputs = []
+    for _ in range(args.runs):
+        run = subprocess.run(
+            [args.putup, "-n", "--stat", "-C", args.config_dir,
+             "-S", args.source_dir, "-B", args.build_dir],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if run.returncode != 0:
+            sys.stderr.write(run.stderr)
+            return 1
+        outputs.append(run.stdout)
     print("\t".join(STAT_COLUMNS))
     for key, pattern, _ in STAT_FIELDS:
-        match = re.search(pattern, run.stdout, re.MULTILINE)
-        value = match.group(1).replace(",", "") if match else "n/a"
+        values = []
+        for out in outputs:
+            match = re.search(pattern, out, re.MULTILINE)
+            values.append(match.group(1).replace(",", "") if match else "n/a")
+        if key.endswith("_ms"):
+            timings = [v for v in values if v != "n/a"]
+            value = min(timings, key=float) if timings else "n/a"
+        else:
+            # Counters are deterministic; disagreement across runs is an
+            # anomaly worth surfacing, not averaging away.
+            value = values[0] if all(v == values[0] for v in values) else "n/a"
         print(f"{key}\t{value}")
     return 0
 
@@ -448,6 +461,7 @@ def main() -> int:
     stat.add_argument("config_dir")
     stat.add_argument("source_dir")
     stat.add_argument("build_dir")
+    stat.add_argument("--runs", type=int, default=5)
     stat.set_defaults(func=cmd_stat)
 
     coverage = sub.add_parser("coverage")
