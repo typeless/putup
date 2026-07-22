@@ -301,7 +301,8 @@ auto find_changed_files_with_implicit(
         auto stat_result = pup::platform::stat_file(path);
 
         // Overlay: parse-time inputs live under config_root but are indexed source-relative.
-        if (!stat_result && !config_root.empty() && config_root != source_root
+        if (!stat_result && file.type == pup::NodeType::File
+            && !config_root.empty() && config_root != source_root
             && !pup::path::is_absolute(file_path)) {
             auto config_path = pool.get(pup::path::join(config_root, file_path));
             ++metrics.stat_calls;
@@ -536,8 +537,8 @@ auto serialize_graph_nodes(
             auto file_path = pup::global_pool().get((type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
 
             // Overlay: parse-time inputs live under config_root but are indexed source-relative.
-            if (type == pup::NodeType::File && !pup::platform::exists(file_path)
-                && !config_root.empty() && config_root != source_root) {
+            if (type == pup::NodeType::File && !config_root.empty()
+                && config_root != source_root && !pup::platform::exists(file_path)) {
                 auto config_path = pup::global_pool().get(pup::path::join(config_root, node_path));
                 if (pup::platform::exists(config_path)) {
                     file_path = config_path;
