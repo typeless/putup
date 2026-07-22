@@ -1074,6 +1074,7 @@ auto detect_new_commands(
 auto remove_stale_outputs(
     pup::index::Index const& idx,
     IdentityMap const& identity_map,
+    pup::Vec<pup::StringId> const& parse_scopes,
     std::string_view source_root,
     std::string_view variant_name,
     bool dry_run,
@@ -1081,6 +1082,20 @@ auto remove_stale_outputs(
 ) -> void
 {
     for (auto const& cmd : idx.commands()) {
+        // A scoped parse only visited the in-scope directories, so a command
+        // outside the scope is absent from the identity map because we never
+        // looked at it — not because it was removed. Deleting its outputs would
+        // be data loss. On a full build parse_scopes is empty and every command
+        // qualifies. A command with no resolvable directory (e.g. the root, whose
+        // dir_id is 0) has an empty path, which is in no non-empty scope.
+        if (!parse_scopes.empty()) {
+            auto const* dir_file = idx.find_file_by_id(cmd.dir_id);
+            auto dir_path = dir_file ? pup::global_pool().get(dir_file->path) : std::string_view {};
+            if (!pup::is_path_in_any_scope(dir_path, parse_scopes)) {
+                continue;
+            }
+        }
+
         if (find_by_identity(identity_map, cmd.identity)) {
             continue;
         }
@@ -1312,6 +1327,7 @@ auto build_single_variant(
         remove_stale_outputs(
             idx,
             identity_map,
+            parse_scopes,
             source_root_str,
             variant_name,
             opts.dry_run,
