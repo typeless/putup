@@ -2430,12 +2430,16 @@ auto add_tupfile(
         return paths;
     };
 
+    auto first_error = std::optional<Error> {};
     for (auto const& stmt : tupfile.statements) {
         auto result = process_statement(ctx, state, *stmt);
         if (!result) {
             state.errors.push_back(result.error().message);
             if (!state.options.verbose) {
                 return pup::unexpected<Error>(result.error());
+            }
+            if (!first_error) {
+                first_error = result.error();
             }
         }
     }
@@ -2449,6 +2453,10 @@ auto add_tupfile(
     }
     for (auto& warn : ctx.warnings) {
         state.warnings.push_back(std::move(warn));
+    }
+
+    if (first_error) {
+        return pup::unexpected<Error>(*first_error);
     }
 
     return {};
