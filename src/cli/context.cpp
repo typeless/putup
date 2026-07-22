@@ -720,6 +720,11 @@ auto BuildContext::parsed_dirs() const -> Vec<StringId> const&
     return impl_->state.parsed;
 }
 
+auto BuildContext::available_dirs() const -> Vec<StringId> const&
+{
+    return impl_->state.available;
+}
+
 auto BuildContext::old_index() const -> index::Index const*
 {
     return impl_->old_index ? &*impl_->old_index : nullptr;
