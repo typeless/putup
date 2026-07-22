@@ -6833,3 +6833,41 @@ SCENARIO("Scoped build still removes genuinely stale outputs within the scope", 
         }
     }
 }
+
+SCENARIO("Scoped build removes stale outputs in a nested in-scope directory", "[e2e][incremental][scope]")
+{
+    GIVEN("a project with a rule in a nested subdirectory, fully built")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("alpha/sub/s.c", "int s(void) { return 3; }\n");
+        f.write_file("alpha/sub/Tupfile", ": s.c |> cp %f %o |> s.out\n: s.c |> cp %f %o |> s2.out\n");
+        f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+        f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/alpha/sub/s2.out"));
+        REQUIRE(f.exists("build/beta/b.out"));
+
+        WHEN("a rule in alpha/sub is removed and the build is scoped to alpha")
+        {
+            f.write_file("alpha/sub/Tupfile", ": s.c |> cp %f %o |> s.out\n");
+            auto result = f.build({ "-B", "build", "alpha" });
+
+            THEN("the nested in-scope stale output is deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/alpha/sub/s2.out"));
+                REQUIRE(f.exists("build/alpha/sub/s.out"));
+            }
+
+            THEN("beta outside the scope is still preserved")
+            {
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+        }
+    }
+}
