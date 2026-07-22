@@ -8,6 +8,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <set>
 #include <string>
@@ -171,19 +172,54 @@ TEST_CASE("atomic_write creates file atomically", "[e2e][platform][file_io]")
 
 namespace {
 
-// Build a fixed tree under <workdir>/<root> for the discovery tests.
-//   <root>/a.txt      <root>/.hidden
-//   <root>/sub/b.txt  <root>/sub/deep/c.txt
-//   <root>/skip/d.txt   (skip/ is pruned by the visitor)
-auto make_discovery_tree(pup::test::E2EFixture& f, std::string_view root) -> std::string
+// A throwaway temp directory. These tests exercise the platform filesystem
+// layer directly, so they must not pull in the E2E fixture (which resolves the
+// putup binary and aborts when it is absent, e.g. on the Windows test runner).
+class TempDir {
+public:
+    explicit TempDir(std::string_view name)
+        : m_path { std::filesystem::temp_directory_path() / (std::string { "pup_walk_" } + std::string { name }) }
+    {
+        auto ec = std::error_code {};
+        std::filesystem::remove_all(m_path, ec);
+        std::filesystem::create_directories(m_path);
+    }
+
+    ~TempDir()
+    {
+        auto ec = std::error_code {};
+        std::filesystem::remove_all(m_path, ec);
+    }
+
+    TempDir(TempDir const&) = delete;
+    auto operator=(TempDir const&) -> TempDir& = delete;
+
+    [[nodiscard]] auto path() const -> std::filesystem::path const& { return m_path; }
+
+    auto write(std::string_view rel, std::string_view content) const -> void
+    {
+        auto p = m_path / rel;
+        std::filesystem::create_directories(p.parent_path());
+        auto ofs = std::ofstream { p };
+        ofs << content;
+    }
+
+private:
+    std::filesystem::path m_path;
+};
+
+// Build a fixed tree for the discovery tests:
+//   a.txt      .hidden
+//   sub/b.txt  sub/deep/c.txt
+//   skip/d.txt   (skip/ is pruned by the walk visitor)
+auto make_discovery_tree(TempDir const& dir) -> std::string
 {
-    auto p = [&](std::string_view rel) { return std::string { root } + "/" + std::string { rel }; };
-    f.write_file(p("a.txt"), "a");
-    f.write_file(p(".hidden"), "h");
-    f.write_file(p("sub/b.txt"), "b");
-    f.write_file(p("sub/deep/c.txt"), "c");
-    f.write_file(p("skip/d.txt"), "d");
-    return (f.workdir() / std::string { root }).string();
+    dir.write("a.txt", "a");
+    dir.write(".hidden", "h");
+    dir.write("sub/b.txt", "b");
+    dir.write("sub/deep/c.txt", "c");
+    dir.write("skip/d.txt", "d");
+    return dir.path().string();
 }
 
 } // namespace
@@ -192,8 +228,8 @@ SCENARIO("walk_directory reports every entry once with its relative path", "[pla
 {
     GIVEN("a nested directory tree with a pruned subtree")
     {
-        auto f = pup::test::E2EFixture { "simple_c" };
-        auto root = make_discovery_tree(f, "tree");
+        auto dir = TempDir { "reports" };
+        auto root = make_discovery_tree(dir);
 
         WHEN("the tree is walked, pruning the 'skip' directory")
         {
@@ -238,16 +274,16 @@ TEST_CASE("walk_directory interns no per-entry strings", "[platform][file_io][wa
     // pool: every basename and relative path is genuinely new, so any per-entry
     // interning shows up as pool growth. Run once (TEST_CASE, no sections) —
     // Catch re-runs a SCENARIO's WHEN per THEN, which would warm the pool.
-    auto f = pup::test::E2EFixture { "simple_c" };
+    auto dir = TempDir { "intern" };
     auto entry_count = 0;
     for (auto d = 0; d < 8; ++d) {
         for (auto i = 0; i < 8; ++i) {
-            f.write_file("pool/pgzwalk_" + std::to_string(d) + "/pgzwalk_" + std::to_string(d) + "_" + std::to_string(i) + ".txt", "x");
+            dir.write("pgzwalk_" + std::to_string(d) + "/pgzwalk_" + std::to_string(d) + "_" + std::to_string(i) + ".txt", "x");
             ++entry_count;
         }
         ++entry_count;
     }
-    auto root = (f.workdir() / "pool").string();
+    auto root = dir.path().string();
 
     auto& pool = pup::global_pool();
     auto before = pool.size();
@@ -270,10 +306,10 @@ SCENARIO("walk_directory does not descend symlinked directories on POSIX", "[pla
 {
     GIVEN("a directory containing a symlink to another directory")
     {
-        auto f = pup::test::E2EFixture { "simple_c" };
-        f.write_file("slink/real/inside.txt", "x");
-        f.create_symlink("real", "slink/link");
-        auto root = (f.workdir() / "slink").string();
+        auto dir = TempDir { "symlink" };
+        dir.write("real/inside.txt", "x");
+        std::filesystem::create_symlink("real", dir.path() / "link");
+        auto root = dir.path().string();
 
         WHEN("the tree is walked")
         {
@@ -300,9 +336,8 @@ SCENARIO("read_directory lists a directory's immediate entries", "[platform][fil
 {
     GIVEN("a directory with files and subdirectories")
     {
-        auto f = pup::test::E2EFixture { "simple_c" };
-        make_discovery_tree(f, "flat");
-        auto root = (f.workdir() / "flat").string();
+        auto dir = TempDir { "readdir" };
+        auto root = make_discovery_tree(dir);
 
         WHEN("the directory is read")
         {
@@ -360,14 +395,14 @@ auto deep_walk_thread(void* p) -> void*
 
 TEST_CASE("walk_directory descends deep trees without a per-frame stack blowup", "[platform][file_io][walk]")
 {
-    auto f = pup::test::E2EFixture { "simple_c" };
+    auto dir = TempDir { "deep" };
     constexpr auto depth = 200;
-    auto rel = std::string { "deep" };
+    auto rel = std::string {};
     for (auto i = 0; i < depth; ++i) {
-        rel += "/d";
+        rel += "d/";
     }
-    f.write_file(rel + "/leaf.txt", "x");
-    auto root = (f.workdir() / "deep").string();
+    dir.write(rel + "leaf.txt", "x");
+    auto root = dir.path().string();
 
     auto args = DeepWalkArgs { root, false, false };
     auto attr = pthread_attr_t {};
