@@ -6751,3 +6751,85 @@ endif
         }
     }
 }
+
+// =============================================================================
+// Scoped build must not delete out-of-scope outputs (issue #122)
+// =============================================================================
+
+namespace {
+
+// A two-directory project (alpha, beta) plus a root-level rule, fully built in
+// build/. Each rule just copies its source, so outputs are trivially checkable.
+auto build_scoped_stale_project(E2EFixture& f) -> void
+{
+    f.write_file("r.c", "int r(void) { return 0; }\n");
+    f.write_file("Tupfile", ": r.c |> cp %f %o |> r.out\n");
+    f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+    f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+    f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+    f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+    f.write_file("build/tup.config", "");
+    REQUIRE(f.init().success());
+    REQUIRE(f.build({ "-B", "build" }).success());
+    REQUIRE(f.exists("build/r.out"));
+    REQUIRE(f.exists("build/alpha/a.out"));
+    REQUIRE(f.exists("build/beta/b.out"));
+}
+
+} // namespace
+
+SCENARIO("Scoped build preserves outputs of directories outside the scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a fully-built two-directory project")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        build_scoped_stale_project(f);
+
+        WHEN("a build is scoped to alpha")
+        {
+            auto result = f.build({ "-B", "build", "alpha" });
+
+            THEN("the build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+            }
+
+            THEN("beta's output is not deleted")
+            {
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("the root command's output is not deleted")
+            {
+                REQUIRE(f.exists("build/r.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Scoped build still removes genuinely stale outputs within the scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a project whose scoped directory has two rules, fully built")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        build_scoped_stale_project(f);
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n: a.c |> cp %f %o |> a2.out\n");
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/alpha/a2.out"));
+
+        WHEN("the second rule is removed and alpha is rebuilt in scope")
+        {
+            f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+            auto result = f.build({ "-B", "build", "alpha" });
+
+            THEN("the now-stale in-scope output is deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/alpha/a2.out"));
+                REQUIRE(f.exists("build/alpha/a.out"));
+            }
+        }
+    }
+}
