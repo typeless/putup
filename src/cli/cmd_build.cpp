@@ -1071,29 +1071,41 @@ auto detect_new_commands(
 }
 
 /// Remove stale outputs from removed commands and report them.
+auto contains_id(pup::Vec<pup::StringId> const& v, pup::StringId id) -> bool
+{
+    return !pup::is_empty(id) && std::find(v.begin(), v.end(), id) != v.end();
+}
+
 auto remove_stale_outputs(
     pup::index::Index const& idx,
     IdentityMap const& identity_map,
     pup::Vec<pup::StringId> const& parse_scopes,
+    pup::Vec<pup::StringId> const& parsed_dirs,
+    pup::Vec<pup::StringId> const& available_dirs,
     std::string_view source_root,
     std::string_view variant_name,
     bool dry_run,
     bool verbose
 ) -> void
 {
+    auto& pool = pup::global_pool();
     for (auto const& cmd : idx.commands()) {
-        // A scoped parse only visited the in-scope directories, so a command
-        // outside the scope is absent from the identity map because we never
-        // looked at it — not because it was removed. Deleting its outputs would
-        // be data loss. On a full build parse_scopes is empty and every command
-        // qualifies. A command with no resolvable directory (e.g. the root, whose
-        // dir_id is 0) has an empty path, which is in no non-empty scope.
-        if (!parse_scopes.empty()) {
-            auto const* dir_file = idx.find_file_by_id(cmd.dir_id);
-            auto dir_path = dir_file ? pup::global_pool().get(dir_file->path) : std::string_view {};
-            if (!pup::is_path_in_any_scope(dir_path, parse_scopes)) {
-                continue;
-            }
+        // Only delete outputs of a command whose directory we have authoritative
+        // knowledge of this run. A dir is authoritative if we successfully parsed
+        // its Tupfile (so the graph is the source of truth for it), or if it has
+        // no Tupfile at all (deleted) and lies within the build scope (so its rules
+        // are genuinely gone). A dir we merely discovered but did not parse — out
+        // of scope, or a parse failure under --keep-going — tells us nothing about
+        // whether its commands were removed, so we preserve. The root's dir_id is 0
+        // (empty path); it keys as "." to match how parsing records it.
+        auto const* dir_file = idx.find_file_by_id(cmd.dir_id);
+        auto dir_path = (dir_file && !pup::is_empty(dir_file->path)) ? pool.get(dir_file->path) : std::string_view { "." };
+        auto dir_id = (dir_file && !pup::is_empty(dir_file->path)) ? dir_file->path : pool.find(".");
+        auto const in_scope = parse_scopes.empty() || pup::is_path_in_any_scope(dir_path, parse_scopes);
+        auto const authoritative = contains_id(parsed_dirs, dir_id)
+            || (!contains_id(available_dirs, dir_id) && in_scope);
+        if (!authoritative) {
+            continue;
         }
 
         if (find_by_identity(identity_map, cmd.identity)) {
@@ -1328,6 +1340,8 @@ auto build_single_variant(
             idx,
             identity_map,
             parse_scopes,
+            ctx.parsed_dirs(),
+            ctx.available_dirs(),
             source_root_str,
             variant_name,
             opts.dry_run,

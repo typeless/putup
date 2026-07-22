@@ -6871,3 +6871,38 @@ SCENARIO("Scoped build removes stale outputs in a nested in-scope directory", "[
         }
     }
 }
+
+SCENARIO("keep-going build preserves outputs of a Tupfile that fails to parse", "[e2e][incremental]")
+{
+    GIVEN("a fully-built two-directory project")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+        f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/alpha/a.out"));
+        REQUIRE(f.exists("build/beta/b.out"));
+
+        WHEN("beta's Tupfile is made unparseable and a keep-going build runs")
+        {
+            f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n:::: not valid tup syntax\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("beta's output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("alpha's output is untouched")
+            {
+                REQUIRE(f.exists("build/alpha/a.out"));
+            }
+        }
+    }
+}

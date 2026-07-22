@@ -91,6 +91,11 @@ public:
     auto vars() const -> parser::VarDb const&;
     [[nodiscard]]
     auto parsed_dirs() const -> Vec<StringId> const&;
+    /// Directories discovered to contain a Tupfile this run, whether or not the
+    /// parse of that Tupfile succeeded. A dir in this set but not parsed_dirs()
+    /// failed to parse or was skipped by the scope filter.
+    [[nodiscard]]
+    auto available_dirs() const -> Vec<StringId> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load
