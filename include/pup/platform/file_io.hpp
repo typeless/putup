@@ -100,13 +100,22 @@ auto read_file(std::string_view path, Buf& out) -> Result<void>;
 [[nodiscard]]
 auto write_file(std::string_view path, std::string_view data) -> Result<void>;
 
-// Directory traversal
+// Directory traversal.
+//
+// A DirEntry's `name` is a view into the `names` arena of the DirEntries that
+// produced it — valid until the next read_directory on that DirEntries, or its
+// destruction. In a walk, the `rel_path` handed to the visitor is likewise a
+// view valid only for the duration of the call. Copy or intern to keep either.
 struct DirEntry {
-    StringId name = StringId::Empty;
+    std::string_view name;
     bool is_dir = false;
 };
+struct DirEntries {
+    Buf names;
+    Vec<DirEntry> entries;
+};
 [[nodiscard]]
-auto read_directory(std::string_view path) -> Result<Vec<DirEntry>>;
+auto read_directory(std::string_view path, DirEntries& out) -> Result<void>;
 
 using WalkVisitor = Function<bool(DirEntry const&, std::string_view rel_path)>;
 [[nodiscard]]

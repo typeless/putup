@@ -74,13 +74,13 @@ auto find_build_subdir(
     }
 
     if (platform::is_directory(root)) {
-        auto entries = platform::read_directory(root);
-        if (entries) {
-            for (auto const& entry : *entries) {
+        auto listing = platform::DirEntries {};
+        if (platform::read_directory(root, listing)) {
+            for (auto const& entry : listing.entries) {
                 if (!entry.is_dir) {
                     continue;
                 }
-                auto entry_path = pool.get(path::join(root, pool.get(entry.name)));
+                auto entry_path = pool.get(path::join(root, entry.name));
                 if (platform::exists(pool.get(path::join(entry_path, "tup.config")))
                     || platform::is_directory(pool.get(path::join(entry_path, ".pup")))) {
                     return pool.intern(entry_path);
@@ -231,20 +231,19 @@ auto discover_variants(
         return result;
     }
 
-    auto entries = platform::read_directory(source_root);
-    if (!entries) {
+    auto listing = platform::DirEntries {};
+    if (!platform::read_directory(source_root, listing)) {
         return result;
     }
 
-    for (auto const& entry : *entries) {
+    for (auto const& entry : listing.entries) {
         if (!entry.is_dir) {
             continue;
         }
-        auto name_sv = pool.get(entry.name);
-        auto entry_path = pool.get(path::join(source_root, name_sv));
+        auto entry_path = pool.get(path::join(source_root, entry.name));
         if (platform::exists(pool.get(path::join(entry_path, "tup.config")))
             || platform::is_directory(pool.get(path::join(entry_path, ".pup")))) {
-            result.push_back(entry.name);
+            result.push_back(pool.intern(entry.name));
         }
     }
 

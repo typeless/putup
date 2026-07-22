@@ -228,7 +228,7 @@ auto glob_expand(
 
     if (is_recursive) {
         (void)pup::platform::walk_directory(search_dir_sv, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
-            auto name_sv = pool.get(entry.name);
+            auto name_sv = entry.name;
             if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                 return false;
             }
@@ -239,10 +239,10 @@ auto glob_expand(
             return true;
         });
     } else {
-        auto entries = pup::platform::read_directory(search_dir_sv);
-        if (entries) {
-            for (auto const& entry : *entries) {
-                auto name_sv = pool.get(entry.name);
+        auto listing = pup::platform::DirEntries {};
+        if (pup::platform::read_directory(search_dir_sv, listing)) {
+            for (auto const& entry : listing.entries) {
+                auto name_sv = entry.name;
                 if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                     continue;
                 }

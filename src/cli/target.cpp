@@ -158,17 +158,17 @@ auto expand_glob_target(
         return result;
     }
 
-    auto entries = pup::platform::read_directory(project_root);
-    if (!entries) {
+    auto listing = pup::platform::DirEntries {};
+    if (!pup::platform::read_directory(project_root, listing)) {
         return result;
     }
 
-    for (auto const& entry : *entries) {
+    for (auto const& entry : listing.entries) {
         if (!entry.is_dir) {
             continue;
         }
 
-        auto name_sv = pool.get(entry.name);
+        auto name_sv = entry.name;
         if (!fnmatch_simple(first_component, name_sv)) {
             continue;
         }
@@ -179,7 +179,7 @@ auto expand_glob_target(
         }
 
         auto target = Target {};
-        target.variant = entry.name;
+        target.variant = pool.intern(entry.name);
 
         if (!remainder.empty()) {
             auto full_path_sv = pool.get(pup::path::join(entry_path_sv, remainder));
