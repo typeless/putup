@@ -220,11 +220,20 @@ jobs:
           command -v perf >/dev/null || export PERF="$(ls /usr/lib/linux-tools/*/perf | sort -V | tail -1)"
           .github/scripts/metrics bench build/putup examples/bsp source-root build-gcc > perf-metrics.tsv
           .github/scripts/metrics render --perf perf-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
+      - name: Internal stats (--stat)
+        run: |
+          .github/scripts/metrics stat build/putup examples/bsp source-root build-gcc > stat-metrics.tsv
+          .github/scripts/metrics render --stat stat-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Upload perf metrics
         uses: actions/upload-artifact@v4
         with:
           name: pr-perf-metrics
           path: perf-metrics.tsv
+      - name: Upload stat metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-stat-metrics
+          path: stat-metrics.tsv
 
   pr-metrics-comment:
     if: github.event_name == 'pull_request'
@@ -240,6 +249,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pr-perf-metrics
+      - name: Download stat metrics
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-stat-metrics
       - name: Download size metrics
         uses: actions/download-artifact@v4
         with:
@@ -259,6 +272,8 @@ jobs:
             gh run download "$(echo "$run" | jq -r .databaseId)" -R "$REPO" \
               -n pr-perf-metrics -D baseline/perf || true
             gh run download "$(echo "$run" | jq -r .databaseId)" -R "$REPO" \
+              -n pr-stat-metrics -D baseline/stat || true
+            gh run download "$(echo "$run" | jq -r .databaseId)" -R "$REPO" \
               -n pr-size-metrics -D baseline/size || true
             gh run download "$(echo "$run" | jq -r .databaseId)" -R "$REPO" \
               -n pr-coverage-metrics -D baseline/cov || true
@@ -272,9 +287,11 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           .github/scripts/metrics render \
-            --perf perf-metrics.tsv --size size-metrics.tsv \
+            --perf perf-metrics.tsv --stat stat-metrics.tsv \
+            --size size-metrics.tsv \
             --coverage coverage-metrics.tsv \
             --baseline-perf baseline/perf/perf-metrics.tsv \
+            --baseline-stat baseline/stat/stat-metrics.tsv \
             --baseline-size baseline/size/size-metrics.tsv \
             --baseline-coverage baseline/cov/coverage-metrics.tsv \
             --baseline-label "main@${BASE_SHA:0:9}" > metrics.md
