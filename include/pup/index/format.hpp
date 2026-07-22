@@ -33,7 +33,10 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///  13 - Ghost entries that exist on disk record path/size/mtime/hash so change
 ///       detection tracks foreign inputs (e.g. the variant's tup.config); v12
 ///       indexes lack that data and would never notice such changes
-inline constexpr auto INDEX_VERSION = std::uint32_t { 13 };
+///  14 - Guard-unsatisfied commands are no longer serialized; v13 indexes carry
+///       their identities and would mask reactivated output-less commands as
+///       already known, so they never run (issue #118)
+inline constexpr auto INDEX_VERSION = std::uint32_t { 14 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {

@@ -362,6 +362,7 @@ struct ImplicitDepContext {
     pup::NodeId& next_id;
     pup::NodeIdPairSet& added_edges;
     std::string_view source_root;
+    pup::NodeIdMap32 const& cmd_remap;
 };
 
 /// Recursively get or create directory entries in the index.
@@ -652,15 +653,24 @@ auto serialize_graph_nodes(
 
 /// Serialize command nodes from the build graph to the index.
 /// v8: Store template + operands instead of fully-expanded command.
+/// Serialize commands whose guard is satisfied, assigning dense index ids.
+/// Returns the graph-id -> index-position remap; guard-unsatisfied commands are
+/// absent from it. A guard-unsatisfied command never ran; recording its identity
+/// would mask it as known on reactivation.
 auto serialize_command_nodes(
     pup::graph::BuildGraph const& state,
     pup::index::Index& index,
     PathIdMap const& path_to_id
-) -> void
+) -> pup::NodeIdMap32
 {
     auto const& g = state.graph;
+    auto remap = pup::NodeIdMap32 {};
+    auto next_position = std::uint32_t { 1 };
     for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
+            continue;
+        }
+        if (!pup::graph::is_guard_satisfied(g, id)) {
             continue;
         }
 
@@ -678,7 +688,7 @@ auto serialize_command_nodes(
         }
 
         auto entry = pup::index::CommandEntry {
-            .id = id,
+            .id = pup::node_id::make_command(next_position),
             .dir_id = dir_id,
             .instruction_pattern = pup::graph::get<pup::graph::InstructionPattern>(g, id),
             .display = pup::graph::get<pup::graph::Display>(g, id),
@@ -688,23 +698,43 @@ auto serialize_command_nodes(
             .outputs = std::move(outputs),
         };
         index.add_command(std::move(entry));
+        remap.set(id, next_position);
+        ++next_position;
     }
+    return remap;
 }
 
-/// Serialize edges from the build graph to the index.
+/// Serialize edges from the build graph to the index, rewriting command
+/// endpoints through the dense-id remap. Edges touching a command absent from
+/// the remap (guard-unsatisfied) are dropped with it.
 auto serialize_edges(
     pup::graph::BuildGraph const& state,
-    pup::index::Index& index
+    pup::index::Index& index,
+    pup::NodeIdMap32 const& cmd_remap
 ) -> void
 {
+    auto remap_endpoint = [&cmd_remap](pup::NodeId id) -> pup::NodeId {
+        if (!pup::node_id::is_command(id)) {
+            return id;
+        }
+        if (!cmd_remap.contains(id)) {
+            return pup::NodeId { 0 };
+        }
+        return pup::node_id::make_command(cmd_remap.get(id));
+    };
     for (auto const& edge : state.graph.edges) {
         // Order-only edges are ephemeral — rebuilt from Tupfiles on each parse
         if (edge.type == pup::LinkType::OrderOnly) {
             continue;
         }
+        auto from = remap_endpoint(edge.from);
+        auto to = remap_endpoint(edge.to);
+        if (from == pup::NodeId { 0 } || to == pup::NodeId { 0 }) {
+            continue;
+        }
         index.add_edge(pup::index::EdgeEntry {
-            .from = edge.from,
-            .to = edge.to,
+            .from = from,
+            .to = to,
             .type = edge.type,
         });
     }
@@ -732,7 +762,11 @@ auto process_implicit_deps(
 ) -> void
 {
     auto& pool = pup::global_pool();
-    for (auto const& [cmd_id, deps] : discovered_deps) {
+    for (auto const& [graph_cmd_id, deps] : discovered_deps) {
+        if (!ctx.cmd_remap.contains(graph_cmd_id)) {
+            continue;
+        }
+        auto cmd_id = pup::node_id::make_command(ctx.cmd_remap.get(graph_cmd_id));
         for (auto dep_id_val : deps) {
             auto dep_path = pool.get(dep_id_val);
             auto abs_path = pup::path::is_absolute(dep_path) ? dep_path : pool.get(pup::path::join(ctx.source_root, dep_path));
@@ -769,8 +803,10 @@ auto preserve_old_implicit_edges(
 {
     auto& pool = pup::global_pool();
     auto commands_with_new_deps = pup::NodeIdMap32 {};
-    for (auto const& [cmd_id, _] : discovered_deps) {
-        commands_with_new_deps.set(cmd_id, 1);
+    for (auto const& [graph_cmd_id, _] : discovered_deps) {
+        if (ctx.cmd_remap.contains(graph_cmd_id)) {
+            commands_with_new_deps.set(pup::node_id::make_command(ctx.cmd_remap.get(graph_cmd_id)), 1);
+        }
     }
 
     // Map a command's structural identity -> its id in the new index. Command ids are
@@ -952,9 +988,9 @@ auto build_index(
     // Serialize file/directory nodes from the build graph
     auto [index, path_to_id] = serialize_graph_nodes(state, source_root, output_root);
 
-    serialize_command_nodes(state, index, path_to_id);
+    auto cmd_remap = serialize_command_nodes(state, index, path_to_id);
 
-    serialize_edges(state, index);
+    serialize_edges(state, index, cmd_remap);
 
     auto next_id = compute_next_id(state);
     auto added_edges = pup::NodeIdPairSet {};
@@ -964,6 +1000,7 @@ auto build_index(
         .next_id = next_id,
         .added_edges = added_edges,
         .source_root = source_root,
+        .cmd_remap = cmd_remap,
     };
 
     // Process discovered implicit dependencies from compiler output

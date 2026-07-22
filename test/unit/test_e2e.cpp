@@ -7091,3 +7091,85 @@ SCENARIO("Evaluation failure in a directory parsed on demand is reported once", 
         }
     }
 }
+
+SCENARIO("Output-less rule reactivated from an inactive conditional runs", "[e2e][incremental]")
+{
+    GIVEN("a built project with output-less rule gated by config inside an inactive conditional")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("Tupfile", "ifeq (@(FOO),yes)\n: |> touch marker_@(FOO) |>\nendif\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_FOO=no\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE_FALSE(f.exists("marker_no"));
+
+        WHEN("the conditional is removed so the rule becomes unconditional")
+        {
+            f.write_file("Tupfile", ": |> touch marker_@(FOO) |>\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the rule runs and the marker file is created")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("marker_no"));
+            }
+
+            THEN("a second rebuild is a noop")
+            {
+                auto result2 = f.build({ "-B", "build" });
+                INFO("stdout: " << result2.stdout_output);
+                REQUIRE(result2.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Config-gated rule follows guard flips", "[e2e][incremental]")
+{
+    GIVEN("a built project with a config-gated output rule inside a conditional")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("Tupfile", "ifeq (@(FOO),yes)\n: |> touch %o |> out.txt\nendif\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_FOO=yes\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/out.txt"));
+
+        WHEN("the config changes to deactivate the rule")
+        {
+            f.write_file("build/tup.config", "CONFIG_FOO=no\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the output is deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("build/out.txt"));
+            }
+        }
+
+        WHEN("config is changed to deactivate then reactivate the rule")
+        {
+            f.write_file("build/tup.config", "CONFIG_FOO=no\n");
+            auto deactivate_result = f.build({ "-B", "build" });
+            REQUIRE(deactivate_result.success());
+            REQUIRE_FALSE(f.exists("build/out.txt"));
+
+            f.write_file("build/tup.config", "CONFIG_FOO=yes\n");
+            auto reactivate_result = f.build({ "-B", "build" });
+
+            THEN("the output is recreated")
+            {
+                INFO("stdout: " << reactivate_result.stdout_output);
+                INFO("stderr: " << reactivate_result.stderr_output);
+                REQUIRE(reactivate_result.success());
+                REQUIRE(f.exists("build/out.txt"));
+            }
+        }
+    }
+}
