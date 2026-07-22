@@ -24,6 +24,7 @@ using PathIdMap = Vec<std::pair<StringId, NodeId>>;
 auto serialize_graph_nodes(
     graph::BuildGraph const& state,
     std::string_view source_root,
+    std::string_view config_root,
     std::string_view output_root
 ) -> std::pair<index::Index, PathIdMap>;
 

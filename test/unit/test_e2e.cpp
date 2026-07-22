@@ -4791,6 +4791,48 @@ SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[
     }
 }
 
+SCENARIO("Three-tree build reaches up-to-date on rebuild", "[e2e][out-of-tree-config][incremental]")
+{
+    GIVEN("a fully-built project with separate source, config, and build trees")
+    {
+        auto f = E2EFixture { "out_of_tree_config_3tree" };
+        auto source_dir = f.workdir() / "source";
+        auto config_dir = f.workdir() / "config";
+        auto build_dir = f.workdir() / "build";
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({
+                     "-S", source_dir.string(),
+                     "-C", config_dir.string(),
+                     "-B", build_dir.string(),
+                     "-j1" })
+                    .success());
+        REQUIRE(f.is_executable("build/prog"));
+
+        WHEN("the project is rebuilt with nothing changed")
+        {
+            auto result = f.pup({
+                "-S", source_dir.string(),
+                "-C", config_dir.string(),
+                "-B", build_dir.string(),
+                "-j1", "-v" });
+
+            THEN("no file is reported as changed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stdout_output.find("Changed (") == std::string::npos);
+            }
+
+            THEN("the build is a no-op")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Cross-directory groups in 3-tree builds", "[e2e][out-of-tree-config][groups]")
 {
     GIVEN("a 3-tree project with cross-directory group references via variables")

@@ -249,6 +249,7 @@ auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<S
 
 auto find_changed_files_with_implicit(
     std::string_view source_root,
+    std::string_view config_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& scopes,
     Vec<std::string_view> const& upstream_files,
@@ -298,6 +299,17 @@ auto find_changed_files_with_implicit(
         auto path = pup::path::is_absolute(file_path) ? file_path : pool.get(pup::path::join(source_root, file_path));
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
+
+        // Overlay: parse-time inputs live under config_root but are indexed source-relative.
+        if (!stat_result && !config_root.empty() && config_root != source_root
+            && !pup::path::is_absolute(file_path)) {
+            auto config_path = pool.get(pup::path::join(config_root, file_path));
+            ++metrics.stat_calls;
+            if (auto config_stat = pup::platform::stat_file(config_path)) {
+                stat_result = config_stat;
+                path = config_path;
+            }
+        }
 
         if (!stat_result) {
             if (verbose) {
@@ -479,6 +491,7 @@ auto create_implicit_file(
 auto serialize_graph_nodes(
     pup::graph::BuildGraph const& state,
     std::string_view source_root,
+    std::string_view config_root,
     std::string_view output_root
 ) -> std::pair<pup::index::Index, PathIdMap>
 {
@@ -521,6 +534,15 @@ auto serialize_graph_nodes(
             }
 
             auto file_path = pup::global_pool().get((type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
+
+            // Overlay: parse-time inputs live under config_root but are indexed source-relative.
+            if (type == pup::NodeType::File && !pup::platform::exists(file_path)
+                && !config_root.empty() && config_root != source_root) {
+                auto config_path = pup::global_pool().get(pup::path::join(config_root, node_path));
+                if (pup::platform::exists(config_path)) {
+                    file_path = config_path;
+                }
+            }
 
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
@@ -718,7 +740,7 @@ auto serialize_edges(
             return id;
         }
         if (!cmd_remap.contains(id)) {
-            return pup::NodeId { 0 };
+            return pup::INVALID_NODE_ID;
         }
         return pup::node_id::make_command(cmd_remap.get(id));
     };
@@ -729,7 +751,7 @@ auto serialize_edges(
         }
         auto from = remap_endpoint(edge.from);
         auto to = remap_endpoint(edge.to);
-        if (from == pup::NodeId { 0 } || to == pup::NodeId { 0 }) {
+        if (from == pup::INVALID_NODE_ID || to == pup::INVALID_NODE_ID) {
             continue;
         }
         index.add_edge(pup::index::EdgeEntry {
@@ -981,12 +1003,13 @@ auto build_index(
     pup::graph::BuildGraph const& state,
     DiscoveredDeps const& discovered_deps,
     std::string_view source_root,
+    std::string_view config_root,
     std::string_view output_root,
     pup::index::Index const* old_index = nullptr
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
-    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, output_root);
+    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root);
 
     auto cmd_remap = serialize_command_nodes(state, index, path_to_id);
 
@@ -1297,6 +1320,7 @@ auto build_single_variant(
 
     auto& pool = pup::global_pool();
     auto source_root_str = pool.get(ctx.layout().source_root);
+    auto config_root_str = pool.get(ctx.layout().config_root);
 
     auto index_path = pup::global_pool().get(ctx.layout().index_path());
     auto const* old_idx_ptr = ctx.old_index();
@@ -1347,6 +1371,7 @@ auto build_single_variant(
         auto change_detect_start = pup::SteadyClock::now();
         changed_files = find_changed_files_with_implicit(
             source_root_str,
+            config_root_str,
             idx,
             scopes,
             upstream_files,
@@ -1579,6 +1604,7 @@ auto build_single_variant(
             bs,
             discovered_deps,
             source_root_str,
+            config_root_str,
             output_root_str,
             old_idx_ptr
         ) };
