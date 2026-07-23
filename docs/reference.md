@@ -1323,11 +1323,11 @@ In `gmp/`, `@(CC)` resolves to `clang` (parent wins) and `@(CFLAGS)` resolves to
 
 **Empty config files:** An empty `tup.config` is transparent — parent variables merge through it. This differs from the walk-up model where an empty config would block inheritance.
 
-### 6.2 .pupignore / .tupignore
+### 6.2 .pupignore
 
 Ignore files specify directories and files that putup should skip during scanning.
 
-**Location:** Project root (`.pupignore` or `.tupignore`)
+**Location:** Project root (`.pupignore`)
 
 **Default ignores** (always applied):
 - `.git/`
