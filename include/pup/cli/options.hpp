@@ -43,7 +43,7 @@ struct Options {
     Vec<StringId> build_dirs = {};
     Vec<StringId> targets = {};
     Vec<StringId> output_targets = {};
-    /// Exclude patterns from -x flags (.pupignore syntax, applied to directories)
+    /// Exclude patterns from -x flags (gitignore syntax, applied to directories)
     Vec<StringId> excludes = {};
     bool show_json = false;
     CheckLevel check = CheckLevel::Warn;

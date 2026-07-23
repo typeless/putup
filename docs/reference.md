@@ -722,9 +722,9 @@ putup -a lib     # also check explicit upstream deps (libraries). Like AOSP's mm
 
 **`-x, --exclude PATTERN` (Directory Exclusion)**
 
-Skip building directories matching PATTERN. Patterns use `.pupignore` syntax
-(§6.2) and match a directory or any of its ancestors, so `tests/` excludes
-every `tests` directory in the tree.
+Skip building directories matching PATTERN. Patterns use gitignore-style
+syntax (§6.2) and match a directory or any of its ancestors, so `tests/`
+excludes every `tests` directory in the tree.
 
 ```bash
 putup -x tests/                 # build all, skip every tests/ dir
@@ -736,8 +736,7 @@ Exclusion is per-invocation and schedule-level, not discovery-level: excluded
 directories are treated like out-of-scope directories in a scoped build. Their
 commands keep their index state, so toggling `-x` on and off never causes
 spurious rebuilds, and changes under an excluded directory are simply deferred
-until a build without `-x`. Use `.pupignore` instead when a directory should
-never be part of the project.
+until a build without `-x`.
 
 `show script`, `show compdb`, and `show graph` respect `-x`; `parse` ignores
 it (validation always covers the whole tree).
@@ -1323,35 +1322,31 @@ In `gmp/`, `@(CC)` resolves to `clang` (parent wins) and `@(CFLAGS)` resolves to
 
 **Empty config files:** An empty `tup.config` is transparent — parent variables merge through it. This differs from the walk-up model where an empty config would block inheritance.
 
-### 6.2 .pupignore
+### 6.2 Ignore Patterns
 
-Ignore files specify directories and files that putup should skip during scanning.
+Directory scanning always skips these built-in defaults:
 
-**Location:** Project root (`.pupignore`)
-
-**Default ignores** (always applied):
 - `.git/`
 - `.pup/`
 - `node_modules/`
 
-**Syntax:**
+The `-x, --exclude` flag (see Section 4.1) accepts gitignore-style patterns
+with the following syntax:
 
 ```gitignore
-# Comment
-pattern          # Ignore matching files/directories
+pattern          # Match files/directories
 pattern/         # Directory only (trailing slash)
-!pattern         # Negation (un-ignore)
-path/to/file     # Anchored pattern (contains /)
+!pattern         # Negation (un-match)
+path/to/dir      # Anchored pattern (contains /)
 ```
 
 **Pattern matching:**
 | Pattern | Matches |
 |---------|---------|
-| `*.o` | Any `.o` file in any directory |
-| `build/` | Directory named `build` |
-| `src/*.o` | `.o` files directly in `src/` (anchored) |
-| `**/test` | `test` in any subdirectory |
-| `!important.o` | Keep `important.o` even if `*.o` ignored |
+| `tests/` | Directory named `tests`, at any depth |
+| `bench*/` | Directories starting with `bench` |
+| `src/tests/` | Only `src/tests` (anchored) |
+| `**/fixtures` | `fixtures` in any subdirectory |
 
 **Wildcards:**
 - `*` - Any characters except `/`
@@ -1359,28 +1354,6 @@ path/to/file     # Anchored pattern (contains /)
 - `?` - Any single character except `/`
 - `[abc]` - Character class
 - `[a-z]` - Character range
-
-**Example .pupignore:**
-
-```gitignore
-# Build artifacts
-*.o
-*.a
-*.so
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-
-# Specific directories
-build/
-out/
-third_party/
-
-# Keep this one
-!third_party/catch.hpp
-```
 
 ### 6.3 Tupfile.ini
 
@@ -1401,8 +1374,32 @@ The `Tupfile.ini` file marks the project root. It's the authoritative root marke
 1. **Root detection** - Putup walks up from cwd looking for `Tupfile.ini`
 2. **Boundary marker** - Prevents accidental builds in parent directories
 3. **Required for out-of-tree builds** - Variant directories reference the source root
+4. **Nested project boundary** - A subdirectory with its own `Tupfile.ini` is a
+   separate project: discovery prunes it, so its Tupfiles are neither parsed
+   nor built as part of the outer project
 
 **Simple projects** can omit `Tupfile.ini` if they have a `Tupfile` at the root, but it's recommended for clarity.
+
+**Composing nested projects:**
+
+A nested project joins the outer build when the outer project *depends* on it —
+a rule input referencing a group (or generated file) under the nested root
+composes that entire project into the build:
+
+```tup
+# gcc/ has its own Tupfile.ini (buildable standalone).
+# This reference pulls the whole gcc project into this build:
+: gcc/gcc/<xgcc-objs> |> ^ toolchain composed^ touch %o |> .toolchain-composed
+```
+
+Composition is at project granularity: one reference anywhere under the nested
+root brings in its full subtree (which then builds normally). This is plain tup
+syntax — under tup, which parses everything, the same Tupfile behaves
+identically. Explicitly targeting a path inside a nested project
+(`putup build/gcc/gmp`) also overrides the pruning for that subtree.
+
+See `examples/bsp/` for a working layout: `bsp/` composes the standalone
+`gcc/` project while both remain independently buildable.
 
 ## 7. Build Modes
 

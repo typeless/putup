@@ -4,10 +4,6 @@
 #include "catch_amalgamated.hpp"
 #include "pup/parser/ignore.hpp"
 
-#include <filesystem>
-#include <fstream>
-
-namespace fs = std::filesystem;
 using namespace pup::parser;
 
 TEST_CASE("IgnoreList default patterns", "[ignore]")
@@ -161,42 +157,6 @@ TEST_CASE("IgnoreList path matching", "[ignore]")
     }
 }
 
-TEST_CASE("IgnoreList file loading", "[ignore]")
-{
-    auto test_dir = fs::path { "/tmp/claude/test_ignore" };
-    fs::create_directories(test_dir);
-
-    SECTION("loads patterns from file")
-    {
-        auto ignore_file = test_dir / ".pupignore";
-        {
-            auto out = std::ofstream { ignore_file };
-            out << "# Comment line\n";
-            out << "build/\n";
-            out << "\n";
-            out << "*.tmp\n";
-            out << "!keep.tmp\n";
-        }
-
-        auto result = IgnoreList::load(ignore_file.string());
-        REQUIRE(result);
-
-        auto& ignore = *result;
-        // Includes defaults + 3 patterns (comment and empty line skipped)
-        REQUIRE(ignore.size() >= 5);
-        REQUIRE(ignore.is_ignored("build"));
-        REQUIRE(ignore.is_ignored("foo.tmp"));
-        REQUIRE_FALSE(ignore.is_ignored("keep.tmp"));
-    }
-
-    SECTION("handles missing file")
-    {
-        auto result = IgnoreList::load((test_dir / "nonexistent").string());
-        REQUIRE_FALSE(result);
-    }
-
-    fs::remove_all(test_dir);
-}
 
 TEST_CASE("IgnoreList edge cases", "[ignore]")
 {

@@ -1,0 +1,1 @@
+: sub/<out> |> echo outer > %o |> outer.out

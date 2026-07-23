@@ -1,6 +1,9 @@
 include_rules
 
-# Root Tupfile - nothing to do here
+# gcc/ is a nested project root (own Tupfile.ini, buildable standalone).
+# Referencing one of its groups composes the whole gcc project into this build.
+: gcc/gcc/<xgcc-objs> |> ^ toolchain composed^ touch %o |> .toolchain-composed
+
 # Packages are built by their respective Tupfiles:
 #
 # GCC tarball (gcc/):

@@ -181,11 +181,19 @@ auto request_demand_driven_parse(
     std::string_view dir_path
 ) -> void
 {
-    if (eval.request_directory && eval.available_tupfile_dirs) {
+    if (!eval.request_directory || !eval.available_tupfile_dirs) {
+        return;
+    }
+    auto in_available = [&] {
         auto dir_id = global_pool().find(dir_path);
-        if (dir_id != StringId::Empty && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id)) {
-            (void)eval.request_directory(dir_path);
-        }
+        return dir_id != StringId::Empty
+            && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id);
+    };
+    if (!in_available() && eval.compose_nested_project) {
+        (void)eval.compose_nested_project(dir_path);
+    }
+    if (in_available()) {
+        (void)eval.request_directory(dir_path);
     }
 }
 

@@ -1,0 +1,1 @@
+: |> echo inner > %o |> inner.out <out>

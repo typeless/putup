@@ -2261,18 +2261,6 @@ SCENARIO("Self-host test via shell fixture", "[e2e][shell]")
     }
 }
 
-SCENARIO("Pupignore test via shell fixture", "[e2e][shell]")
-{
-    WHEN("the pupignore shell fixture runs")
-    {
-        auto result = run_shell_fixture("pupignore");
-
-        THEN("ignored directories are skipped")
-        {
-            REQUIRE(result.success());
-        }
-    }
-}
 
 // Regression guard: when a source's already-tracked header is edited to
 // transitively include a new header, pup must record the new transitive
@@ -7612,6 +7600,77 @@ SCENARIO("Invalid -x patterns are rejected", "[e2e][exclude]")
             {
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A .pupignore file has no effect", "[e2e][exclude]")
+{
+    GIVEN("a project with a .pupignore excluding tests/")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        f.write_file(".pupignore", "tests/\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("every directory is built; only -x excludes")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("lib/foo.out"));
+                REQUIRE(f.exists("tests/t.out"));
+                REQUIRE(f.exists("lib/tests/n.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Nested project roots are skipped by discovery", "[e2e][exclude][layout]")
+{
+    GIVEN("a project containing a subdirectory with its own Tupfile.ini")
+    {
+        auto f = E2EFixture { "nested_project" };
+        REQUIRE(f.init().success());
+
+        WHEN("the outer project is built")
+        {
+            auto result = f.build();
+
+            THEN("the nested project is not built")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("outer.out"));
+                REQUIRE_FALSE(f.exists("sub/inner.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("A group reference composes a nested project into the build", "[e2e][exclude][layout]")
+{
+    GIVEN("an outer Tupfile with a rule consuming sub/<out>")
+    {
+        auto f = E2EFixture { "group_composition" };
+        REQUIRE(f.init().success());
+
+        WHEN("the outer project is built")
+        {
+            auto result = f.build();
+
+            THEN("the nested project is built too")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("outer.out"));
+                REQUIRE(f.exists("sub/inner.out"));
             }
         }
     }

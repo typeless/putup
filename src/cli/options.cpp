@@ -216,7 +216,7 @@ auto print_usage() -> void
           "  -A, --all          Full project build (ignore cwd scoping)\n"
           "  -a, --all-deps     Include upstream deps in scoped builds\n"
           "  -x, --exclude PATTERN\n"
-          "                     Skip building directories matching PATTERN (.pupignore\n"
+          "                     Skip building directories matching PATTERN (gitignore\n"
           "                     syntax); their index state is preserved, not discarded\n"
           "  --                 End of options; remaining args are targets\n"
           "  --version          Print version\n"
