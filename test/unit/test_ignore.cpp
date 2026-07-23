@@ -72,29 +72,12 @@ TEST_CASE("IgnoreList pattern parsing", "[ignore]")
     }
 }
 
-TEST_CASE("IgnoreList negation", "[ignore]")
+TEST_CASE("IgnoreList rejects negation patterns", "[ignore]")
 {
     auto ignore = IgnoreList {};
-
-    SECTION("negation overrides previous match")
-    {
-        ignore.add("*.o");
-        ignore.add("!important.o");
-        REQUIRE(ignore.is_ignored("foo.o"));
-        REQUIRE(ignore.is_ignored("bar.o"));
-        REQUIRE_FALSE(ignore.is_ignored("important.o"));
-    }
-
-    SECTION("later pattern can override negation")
-    {
-        ignore.add("build/");
-        ignore.add("!build/keep/");
-        ignore.add("build/keep/temp/");
-
-        REQUIRE(ignore.is_ignored("build"));
-        // Note: directory-only patterns don't affect subdirs this way
-        // This is simplified behavior
-    }
+    ignore.add("!important.o");
+    REQUIRE(ignore.empty());
+    REQUIRE_FALSE(ignore.is_ignored("important.o"));
 }
 
 TEST_CASE("IgnoreList glob matching", "[ignore]")

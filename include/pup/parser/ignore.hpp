@@ -11,15 +11,8 @@
 
 namespace pup::parser {
 
-/// Gitignore-style pattern for filtering paths
-struct IgnorePattern {
-    StringId pattern = StringId::Empty;
-    bool negated = false;  ///< Pattern starts with !
-    bool dir_only = false; ///< Pattern ends with /
-    bool anchored = false; ///< Pattern contains / (not at end)
-};
-
-/// List of ignore patterns for filtering paths during Tupfile discovery
+/// Gitignore-style directory patterns: built-in discovery defaults and -x excludes.
+/// All callers filter directories, so a trailing '/' is accepted and stripped.
 class IgnoreList final {
 public:
     IgnoreList() = default;
@@ -27,7 +20,8 @@ public:
     /// Create an IgnoreList with default patterns (.git/, .pup/, node_modules/)
     static auto with_defaults() -> IgnoreList;
 
-    /// Add a pattern string (gitignore syntax)
+    /// Add a pattern string (gitignore glob syntax; negation is not supported,
+    /// a '!' pattern is rejected)
     auto add(std::string_view pattern) -> void;
 
     /// Check if a relative path should be ignored
@@ -46,22 +40,20 @@ public:
         return patterns_.empty();
     }
 
-    /// Get number of patterns
-    [[nodiscard]]
-    auto size() const -> std::size_t
-    {
-        return patterns_.size();
-    }
-
 private:
-    pup::Vec<IgnorePattern> patterns_;
+    struct Pattern {
+        StringId pattern = StringId::Empty;
+        bool anchored = false; ///< Pattern contains / (not at end)
+    };
+
+    pup::Vec<Pattern> patterns_;
 
     /// Parse a single pattern line
-    static auto parse_pattern(std::string_view line) -> std::optional<IgnorePattern>;
+    static auto parse_pattern(std::string_view line) -> std::optional<Pattern>;
 
     /// Check if a path matches a pattern
     [[nodiscard]]
-    auto match_pattern(IgnorePattern const& p, std::string_view path) const -> bool;
+    auto match_pattern(Pattern const& p, std::string_view path) const -> bool;
 
     /// Match a glob pattern against a string
     [[nodiscard]]

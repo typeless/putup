@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <optional>
 #include <string_view>
-#include <utility>
 
 namespace pup::parser {
 
@@ -27,59 +26,38 @@ auto IgnoreList::with_defaults() -> IgnoreList
 auto IgnoreList::add(std::string_view pattern) -> void
 {
     if (auto p = parse_pattern(pattern)) {
-        patterns_.push_back(std::move(*p));
+        patterns_.push_back(*p);
     }
 }
 
-auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<IgnorePattern>
+auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<Pattern>
 {
-    if (line.empty()) {
+    if (line.empty() || line[0] == '!') {
         return std::nullopt;
     }
 
-    auto p = IgnorePattern {};
+    auto p = Pattern {};
 
-    // Check for negation
-    if (line[0] == '!') {
-        p.negated = true;
-        line = line.substr(1);
-        if (line.empty()) {
-            return std::nullopt;
-        }
-    }
-
-    // Check for directory-only (trailing /)
-    if (!line.empty() && line.back() == '/') {
-        p.dir_only = true;
+    if (line.back() == '/') {
         line = line.substr(0, line.size() - 1);
         if (line.empty()) {
             return std::nullopt;
         }
     }
 
-    // Check if anchored (contains / not at end)
-    // A pattern is anchored if it contains a / in the middle
-    auto slash_pos = line.find('/');
-    if (slash_pos != std::string_view::npos) {
-        p.anchored = true;
-    }
-
+    p.anchored = line.find('/') != std::string_view::npos;
     p.pattern = global_pool().intern(line);
     return p;
 }
 
 auto IgnoreList::is_ignored(std::string_view rel_path) const -> bool
 {
-    auto ignored = false;
-
-    // Apply patterns in order, later patterns can override earlier ones
     for (auto const& p : patterns_) {
         if (match_pattern(p, rel_path)) {
-            ignored = !p.negated;
+            return true;
         }
     }
-
-    return ignored;
+    return false;
 }
 
 auto IgnoreList::is_ignored_dir(std::string_view rel_path) const -> bool
@@ -96,7 +74,7 @@ auto IgnoreList::is_ignored_dir(std::string_view rel_path) const -> bool
     return is_ignored(rel_path);
 }
 
-auto IgnoreList::match_pattern(IgnorePattern const& p, std::string_view path_str) const -> bool
+auto IgnoreList::match_pattern(Pattern const& p, std::string_view path_str) const -> bool
 {
     auto pattern_sv = global_pool().get(p.pattern);
     if (p.anchored) {
