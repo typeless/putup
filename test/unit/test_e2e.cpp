@@ -7371,3 +7371,248 @@ SCENARIO("Config-gated rule follows guard flips", "[e2e][incremental]")
         }
     }
 }
+
+SCENARIO("-x excludes matching directories from the build", "[e2e][exclude]")
+{
+    GIVEN("a project with tests directories at two levels")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+
+        WHEN("built with -x tests/")
+        {
+            auto result = f.build({ "-x", "tests/" });
+
+            THEN("only non-excluded outputs are produced")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("lib/foo.out"));
+                REQUIRE_FALSE(f.exists("tests/t.out"));
+                REQUIRE_FALSE(f.exists("lib/tests/n.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Excluded directories keep their index state across toggles", "[e2e][exclude][incremental]")
+{
+    GIVEN("a fully built project")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("rebuilt with and then without -x tests/")
+        {
+            auto excluded = f.build({ "-x", "tests/" });
+            auto full = f.build();
+
+            THEN("both runs are no-ops")
+            {
+                INFO("excluded stdout: " << excluded.stdout_output);
+                INFO("full stdout: " << full.stdout_output);
+                REQUIRE(excluded.success());
+                REQUIRE(excluded.is_noop());
+                REQUIRE(full.success());
+                REQUIRE(full.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Changes in excluded directories are deferred until re-inclusion", "[e2e][exclude][incremental]")
+{
+    GIVEN("a fully built project with a modified input under tests/")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.append_file("tests/t.txt", "modified\n");
+
+        WHEN("built with -x tests/")
+        {
+            auto excluded = f.build({ "-x", "tests/" });
+
+            THEN("the excluded change is ignored")
+            {
+                INFO("stdout: " << excluded.stdout_output);
+                INFO("stderr: " << excluded.stderr_output);
+                REQUIRE(excluded.success());
+                REQUIRE(excluded.is_noop());
+
+                AND_WHEN("built again without -x")
+                {
+                    auto full = f.build();
+
+                    THEN("only the excluded directory's command reruns")
+                    {
+                        INFO("stdout: " << full.stdout_output);
+                        INFO("stderr: " << full.stderr_output);
+                        REQUIRE(full.success());
+                        REQUIRE(full.stdout_output.find("1 commands") != std::string::npos);
+                        REQUIRE(f.read_file("tests/t.out") == "t\nmodified\n");
+                    }
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("Fresh exclusion then full build runs only the excluded commands", "[e2e][exclude][incremental]")
+{
+    GIVEN("a fresh project first built with -x tests/")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-x", "tests/" }).success());
+
+        WHEN("built again without -x")
+        {
+            auto full = f.build();
+
+            THEN("excluded commands run and prior work is not repeated")
+            {
+                INFO("stdout: " << full.stdout_output);
+                INFO("stderr: " << full.stderr_output);
+                REQUIRE(full.success());
+                REQUIRE(f.exists("tests/t.out"));
+                REQUIRE(f.exists("lib/tests/n.out"));
+                REQUIRE(full.stdout_output.find("2 commands") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("-x removes exactly the excluded commands from the build set", "[e2e][exclude]")
+{
+    GIVEN("a configured project")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+
+        WHEN("dry runs list commands with and without -x tests/")
+        {
+            auto full = f.build({ "-n" });
+            auto excluded = f.build({ "-n", "-x", "tests/" });
+
+            THEN("the excluded listing is the full listing minus excluded commands")
+            {
+                INFO("full stdout: " << full.stdout_output);
+                INFO("excluded stdout: " << excluded.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE(excluded.success());
+                REQUIRE(full.stdout_output.find("foo.out") != std::string::npos);
+                REQUIRE(full.stdout_output.find("t.out") != std::string::npos);
+                REQUIRE(full.stdout_output.find("n.out") != std::string::npos);
+                REQUIRE(excluded.stdout_output.find("foo.out") != std::string::npos);
+                REQUIRE(excluded.stdout_output.find("t.out") == std::string::npos);
+                REQUIRE(excluded.stdout_output.find("n.out") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("show graph respects -x", "[e2e][exclude][show]")
+{
+    GIVEN("a configured project")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+
+        WHEN("show graph --summary runs with -x tests/")
+        {
+            auto excluded = f.pup({ "show", "graph", "--summary", "-x", "tests/" });
+
+            THEN("only the non-excluded command is counted")
+            {
+                INFO("stdout: " << excluded.stdout_output);
+                INFO("stderr: " << excluded.stderr_output);
+                REQUIRE(excluded.success());
+                REQUIRE(excluded.stdout_output.find("Commands: 1") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Exclusion composes with cwd scoping", "[e2e][exclude][scope]")
+{
+    GIVEN("a fresh project")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+
+        WHEN("built from lib/ with -x tests/")
+        {
+            auto result = f.run_pup_in_dir("lib", { "-x", "tests/" });
+
+            THEN("lib builds but lib/tests does not")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("lib/foo.out"));
+                REQUIRE_FALSE(f.exists("lib/tests/n.out"));
+                REQUIRE_FALSE(f.exists("tests/t.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Multiple -x flags exclude every match", "[e2e][exclude]")
+{
+    GIVEN("a fresh project")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+
+        WHEN("built with every directory excluded")
+        {
+            auto result = f.build({ "-x", "tests/", "-x", "lib/" });
+
+            THEN("nothing is built")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+                REQUIRE_FALSE(f.exists("lib/foo.out"));
+                REQUIRE_FALSE(f.exists("tests/t.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Invalid -x patterns are rejected", "[e2e][exclude]")
+{
+    GIVEN("a configured project")
+    {
+        auto f = E2EFixture { "exclude_build" };
+        REQUIRE(f.init().success());
+
+        WHEN("built with an empty exclude pattern")
+        {
+            auto result = f.build({ "-x", "" });
+
+            THEN("the build fails with a pattern error")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("exclude") != std::string::npos);
+            }
+        }
+
+        WHEN("built with -x as the last argument")
+        {
+            auto result = f.build({ "-x" });
+
+            THEN("the build fails")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}

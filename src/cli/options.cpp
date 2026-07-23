@@ -7,6 +7,7 @@
 #include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/parser/ignore.hpp"
 
 #include <charconv>
 #include <cstdio>
@@ -115,6 +116,19 @@ auto parse_args(int argc, char** argv) -> Options
             opts.include_all_deps = true;
         } else if (arg == "-A" || arg == "--all") {
             opts.all = true;
+        } else if (arg == "-x" || arg == "--exclude") {
+            if (i + 1 >= argc) {
+                eprint("Error: {} requires an exclude pattern\n", arg);
+                std::exit(EXIT_FAILURE);
+            }
+            auto pattern = std::string_view { argv[++i] };
+            auto probe = pup::parser::IgnoreList {};
+            probe.add(pattern);
+            if (probe.empty()) {
+                eprint("Error: invalid exclude pattern '{}'\n", pattern);
+                std::exit(EXIT_FAILURE);
+            }
+            opts.excludes.push_back(pool.intern(pattern));
         } else if (arg == "-D" || arg == "--define") {
             if (i + 1 < argc) {
                 opts.config_defines.push_back(parse_define(argv[++i]));
@@ -201,6 +215,9 @@ auto print_usage() -> void
           "  --stat             Print build statistics\n"
           "  -A, --all          Full project build (ignore cwd scoping)\n"
           "  -a, --all-deps     Include upstream deps in scoped builds\n"
+          "  -x, --exclude PATTERN\n"
+          "                     Skip building directories matching PATTERN (.pupignore\n"
+          "                     syntax); their index state is preserved, not discarded\n"
           "  --                 End of options; remaining args are targets\n"
           "  --version          Print version\n"
           "  -h, --help         Print this help\n"

@@ -38,6 +38,11 @@ public:
     [[nodiscard]]
     auto is_ignored(std::string_view rel_path) const -> bool;
 
+    /// Check if a directory or any of its ancestors is ignored.
+    /// Flat-list equivalent of pruning the walk at an ignored directory.
+    [[nodiscard]]
+    auto is_ignored_dir(std::string_view rel_path) const -> bool;
+
     /// Check if the list has no patterns
     [[nodiscard]]
     auto empty() const -> bool

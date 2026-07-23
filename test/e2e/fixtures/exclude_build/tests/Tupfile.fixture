@@ -1,0 +1,1 @@
+: t.txt |> cat %f > %o |> t.out
