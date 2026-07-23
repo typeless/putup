@@ -979,6 +979,25 @@ auto merge_out_of_scope_commands(
     }
     std::sort(new_identities.begin(), new_identities.end(), hash_less);
 
+    // serialize_graph_nodes registers File/Generated/Directory paths but not
+    // Ghosts; without this the merge would duplicate a ghost's entry by path.
+    auto ghost_paths = PathIdMap {};
+    for (auto const& file : ctx.index.files()) {
+        if (!pup::is_empty(file.path) && path_id_find(ctx.path_to_id, pool.get(file.path)) == nullptr) {
+            path_id_insert(ghost_paths, file.path, file.id);
+        }
+    }
+
+    auto find_new_id_by_path = [&](std::string_view path_sv) -> pup::NodeId {
+        if (auto const* it = path_id_find(ctx.path_to_id, path_sv); it != nullptr) {
+            return it->second;
+        }
+        if (auto const* it = path_id_find(ghost_paths, path_sv); it != nullptr) {
+            return it->second;
+        }
+        return pup::INVALID_NODE_ID;
+    };
+
     auto old_to_new_file = pup::NodeIdMap32 {};
     auto resolve_file = [&](pup::NodeId old_id) -> pup::NodeId {
         if (old_to_new_file.contains(old_id)) {
@@ -990,8 +1009,8 @@ auto merge_out_of_scope_commands(
         }
         auto path_sv = pool.get(old_file->path);
         auto new_id = pup::NodeId {};
-        if (auto const* it = path_id_find(ctx.path_to_id, path_sv); it != nullptr) {
-            new_id = it->second;
+        if (auto existing = find_new_id_by_path(path_sv); existing != pup::INVALID_NODE_ID) {
+            new_id = existing;
         } else {
             auto parent_id = get_or_create_dir(ctx, pup::path::parent(path_sv));
             new_id = ctx.next_id++;
@@ -1013,12 +1032,51 @@ auto merge_out_of_scope_commands(
         return new_id;
     };
 
+    // A merged command's identity asserts "ran against these dep states". If a
+    // dep resolves to a new-index entry whose content moved since the old save
+    // (e.g. an in-scope input rebuilt this very build), merging would record the
+    // command as current against content it never consumed — and nothing would
+    // ever re-run it. Leaving it out re-runs it as a new command instead.
+    auto dep_state_changed = [&](pup::NodeId old_id) -> bool {
+        auto const* old_file = old_index.find_file_by_id(old_id);
+        if (!old_file || pup::is_empty(old_file->path)) {
+            return false;
+        }
+        auto new_id = find_new_id_by_path(pool.get(old_file->path));
+        if (new_id == pup::INVALID_NODE_ID) {
+            return false;
+        }
+        auto const* new_file = ctx.index.find_file_by_id(new_id);
+        return new_file && new_file->content_hash != old_file->content_hash;
+    };
+    auto any_dep_changed = [&](pup::index::CommandEntry const& cmd) -> bool {
+        for (auto id : cmd.inputs) {
+            if (dep_state_changed(id)) {
+                return true;
+            }
+        }
+        for (auto id : cmd.outputs) {
+            if (dep_state_changed(id)) {
+                return true;
+            }
+        }
+        for (auto const* edge : old_index.edges_to(cmd.id)) {
+            if (dep_state_changed(edge->from)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     auto old_to_new_cmd = pup::NodeIdMap32 {};
     for (auto const& cmd : old_index.commands()) {
         if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, parsed_dirs, available_dirs)) {
             continue;
         }
         if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, hash_less)) {
+            continue;
+        }
+        if (any_dep_changed(cmd)) {
             continue;
         }
 

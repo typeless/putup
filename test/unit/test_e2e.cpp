@@ -6971,6 +6971,38 @@ SCENARIO("Scoped build preserves out-of-scope commands in the saved index", "[e2
     }
 }
 
+SCENARIO("Scoped rebuild of a producer keeps the out-of-scope consumer scheduled", "[e2e][incremental][scope]")
+{
+    GIVEN("a fully-built project where app links lib's object")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("app/app").exit_code == 42);
+
+        WHEN("lib's source changes and only lib is rebuilt in scope")
+        {
+            auto original = f.read_file("lib/foo.c");
+            auto pos = original.find("42");
+            REQUIRE(pos != std::string::npos);
+            f.write_file("lib/foo.c", original.substr(0, pos) + "99" + original.substr(pos + 2));
+            auto scoped = f.build({ "lib" });
+            REQUIRE(scoped.success());
+            REQUIRE_FALSE(scoped.is_noop());
+
+            auto full = f.build({ "-v" });
+
+            THEN("the full build relinks the app against the new object")
+            {
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE_FALSE(full.is_noop());
+                REQUIRE(f.run("app/app").exit_code == 99);
+            }
+        }
+    }
+}
+
 SCENARIO("Scoped build preserves out-of-scope implicit dependencies", "[e2e][incremental][scope]")
 {
     GIVEN("a project whose out-of-scope directory has a discovered header dependency")
