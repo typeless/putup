@@ -6926,6 +6926,86 @@ SCENARIO("Scoped build removes stale outputs in a nested in-scope directory", "[
     }
 }
 
+SCENARIO("Scoped build preserves out-of-scope commands in the saved index", "[e2e][incremental][scope]")
+{
+    GIVEN("a fully-built two-directory project")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        build_scoped_stale_project(f);
+
+        WHEN("alpha is modified and a job-running scoped build saves the index")
+        {
+            f.write_file("alpha/a.c", "int a(void) { return 42; }\n");
+            auto scoped = f.build({ "-B", "build", "alpha" });
+            REQUIRE(scoped.success());
+            REQUIRE_FALSE(scoped.is_noop());
+
+            auto full = f.build({ "-B", "build", "-v" });
+
+            THEN("the following full build is a no-op")
+            {
+                INFO("stdout: " << full.stdout_output);
+                INFO("stderr: " << full.stderr_output);
+                REQUIRE(full.success());
+                REQUIRE(full.stdout_output.find("New command") == std::string::npos);
+                REQUIRE(full.is_noop());
+            }
+        }
+
+        WHEN("a scoped build runs, then an out-of-scope rule is deleted")
+        {
+            f.write_file("alpha/a.c", "int a(void) { return 42; }\n");
+            REQUIRE(f.build({ "-B", "build", "alpha" }).success());
+
+            f.write_file("beta/Tupfile", "");
+            auto full = f.build({ "-B", "build" });
+
+            THEN("the full build still knows beta's output and cleans the orphan")
+            {
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE_FALSE(f.exists("build/beta/b.out"));
+                REQUIRE(f.exists("build/alpha/a.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Scoped build preserves out-of-scope implicit dependencies", "[e2e][incremental][scope]")
+{
+    GIVEN("a project whose out-of-scope directory has a discovered header dependency")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("beta/b.h", "#define B 2\n");
+        f.write_file("beta/b.c", "#include \"b.h\"\nint b(void) { return B; }\n");
+        f.write_file("beta/Tupfile", ": b.c |> gcc -c %f -o %o |> b.o\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/beta/b.o"));
+
+        WHEN("a scoped build saves the index, then beta's header changes")
+        {
+            f.write_file("alpha/a.c", "int a(void) { return 42; }\n");
+            REQUIRE(f.build({ "-B", "build", "alpha" }).success());
+
+            f.write_file("beta/b.h", "#define B 3\n");
+            auto full = f.build({ "-B", "build", "-v" });
+
+            THEN("beta is rebuilt through the preserved implicit edge, not as a new command")
+            {
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE_FALSE(full.is_noop());
+                REQUIRE(full.stdout_output.find("b.o") != std::string::npos);
+                REQUIRE(full.stdout_output.find("New command") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("keep-going build preserves outputs of a Tupfile that fails to parse", "[e2e][incremental]")
 {
     GIVEN("a fully-built two-directory project")

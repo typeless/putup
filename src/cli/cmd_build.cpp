@@ -927,6 +927,171 @@ auto find_by_identity(IdentityMap const& map, pup::Hash256 const& identity) -> s
     return it->second;
 }
 
+auto contains_id(pup::Vec<pup::StringId> const& v, pup::StringId id) -> bool
+{
+    return !pup::is_empty(id) && std::find(v.begin(), v.end(), id) != v.end();
+}
+
+/// Whether this run has authoritative knowledge of a directory's rules: its
+/// Tupfile was successfully parsed (the graph is the source of truth for it),
+/// or it has no Tupfile at all (deleted) and lies within the build scope (so
+/// its rules are genuinely gone). A dir merely discovered but not parsed — out
+/// of scope, or a parse failure under --keep-going — tells us nothing about
+/// whether its commands were removed. The root's dir_id is 0 (empty path); it
+/// keys as "." to match how parsing records it.
+auto is_dir_authoritative(
+    pup::index::Index const& idx,
+    pup::NodeId dir_id,
+    pup::Vec<pup::StringId> const& parse_scopes,
+    pup::Vec<pup::StringId> const& parsed_dirs,
+    pup::Vec<pup::StringId> const& available_dirs
+) -> bool
+{
+    auto& pool = pup::global_pool();
+    auto const* dir_file = idx.find_file_by_id(dir_id);
+    auto dir_path = (dir_file && !pup::is_empty(dir_file->path)) ? pool.get(dir_file->path) : std::string_view { "." };
+    auto dir_str_id = (dir_file && !pup::is_empty(dir_file->path)) ? dir_file->path : pool.find(".");
+    auto const in_scope = parse_scopes.empty() || pup::is_path_in_any_scope(dir_path, parse_scopes);
+    return contains_id(parsed_dirs, dir_str_id)
+        || (!contains_id(available_dirs, dir_str_id) && in_scope);
+}
+
+/// Carry forward old-index commands from directories this run has no
+/// authoritative knowledge of, so a scoped build's saved index still describes
+/// the whole project (issue #125). Copies each command with its operand files
+/// (stat data preserved) and Normal/Sticky edges, remapping ids to the new
+/// index's dense sequences; implicit edges are re-attached afterwards by
+/// preserve_old_implicit_edges through the identity match.
+auto merge_out_of_scope_commands(
+    pup::index::Index const& old_index,
+    pup::Vec<pup::StringId> const& parse_scopes,
+    pup::Vec<pup::StringId> const& parsed_dirs,
+    pup::Vec<pup::StringId> const& available_dirs,
+    ImplicitDepContext& ctx
+) -> void
+{
+    auto& pool = pup::global_pool();
+
+    auto new_identities = pup::Vec<pup::Hash256> {};
+    new_identities.reserve(ctx.index.commands().size());
+    for (auto const& cmd : ctx.index.commands()) {
+        new_identities.push_back(cmd.identity);
+    }
+    std::sort(new_identities.begin(), new_identities.end(), hash_less);
+
+    auto old_to_new_file = pup::NodeIdMap32 {};
+    auto resolve_file = [&](pup::NodeId old_id) -> pup::NodeId {
+        if (old_to_new_file.contains(old_id)) {
+            return pup::NodeId { old_to_new_file.get(old_id) };
+        }
+        auto const* old_file = old_index.find_file_by_id(old_id);
+        if (!old_file || pup::is_empty(old_file->path)) {
+            return pup::INVALID_NODE_ID;
+        }
+        auto path_sv = pool.get(old_file->path);
+        auto new_id = pup::NodeId {};
+        if (auto const* it = path_id_find(ctx.path_to_id, path_sv); it != nullptr) {
+            new_id = it->second;
+        } else {
+            auto parent_id = get_or_create_dir(ctx, pup::path::parent(path_sv));
+            new_id = ctx.next_id++;
+            ctx.index.add_file(pup::index::FileEntry {
+                .id = new_id,
+                .parent_id = parent_id,
+                .src_id = 0,
+                .type = old_file->type,
+                .flags = old_file->flags,
+                .name = old_file->name,
+                .path = old_file->path,
+                .size = old_file->size,
+                .mtime_ns = old_file->mtime_ns,
+                .content_hash = old_file->content_hash,
+            });
+            path_id_insert(ctx.path_to_id, old_file->path, new_id);
+        }
+        old_to_new_file.set(old_id, new_id);
+        return new_id;
+    };
+
+    auto old_to_new_cmd = pup::NodeIdMap32 {};
+    for (auto const& cmd : old_index.commands()) {
+        if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, parsed_dirs, available_dirs)) {
+            continue;
+        }
+        if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, hash_less)) {
+            continue;
+        }
+
+        auto new_dir_id = pup::NodeId { 0 };
+        if (cmd.dir_id != pup::NodeId { 0 }) {
+            new_dir_id = resolve_file(cmd.dir_id);
+            if (new_dir_id == pup::INVALID_NODE_ID) {
+                continue;
+            }
+        }
+
+        auto resolve_operands = [&](pup::Vec<pup::NodeId> const& old_ids, pup::Vec<pup::NodeId>& out) -> bool {
+            for (auto old_id : old_ids) {
+                auto id = resolve_file(old_id);
+                if (id == pup::INVALID_NODE_ID) {
+                    return false;
+                }
+                out.push_back(id);
+            }
+            return true;
+        };
+        // An unresolvable operand (e.g. a pathless group node) would corrupt %f/%o
+        // expansion; leaving the command out just re-runs it on the next full build.
+        auto new_inputs = pup::Vec<pup::NodeId> {};
+        auto new_outputs = pup::Vec<pup::NodeId> {};
+        if (!resolve_operands(cmd.inputs, new_inputs) || !resolve_operands(cmd.outputs, new_outputs)) {
+            continue;
+        }
+
+        auto new_cmd_id = pup::node_id::make_command(static_cast<std::uint32_t>(ctx.index.commands().size()) + 1);
+        ctx.index.add_command(pup::index::CommandEntry {
+            .id = new_cmd_id,
+            .dir_id = new_dir_id,
+            .instruction_pattern = cmd.instruction_pattern,
+            .display = cmd.display,
+            .env = cmd.env,
+            .identity = cmd.identity,
+            .inputs = std::move(new_inputs),
+            .outputs = std::move(new_outputs),
+        });
+        old_to_new_cmd.set(cmd.id, new_cmd_id);
+    }
+
+    for (auto const& edge : old_index.edges()) {
+        if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::OrderOnly) {
+            continue;
+        }
+        auto from_is_merged = pup::node_id::is_command(edge.from) && old_to_new_cmd.contains(edge.from);
+        auto to_is_merged = pup::node_id::is_command(edge.to) && old_to_new_cmd.contains(edge.to);
+        if (!from_is_merged && !to_is_merged) {
+            continue;
+        }
+        auto remap_endpoint = [&](pup::NodeId id) -> pup::NodeId {
+            if (pup::node_id::is_command(id)) {
+                return old_to_new_cmd.contains(id) ? pup::NodeId { old_to_new_cmd.get(id) } : pup::INVALID_NODE_ID;
+            }
+            return resolve_file(id);
+        };
+        auto from = remap_endpoint(edge.from);
+        auto to = remap_endpoint(edge.to);
+        if (from == pup::INVALID_NODE_ID || to == pup::INVALID_NODE_ID) {
+            continue;
+        }
+        if (ctx.added_edges.insert(from, to)) {
+            ctx.index.add_edge(pup::index::EdgeEntry {
+                .from = from,
+                .to = to,
+                .type = edge.type,
+            });
+        }
+    }
+}
+
 auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
@@ -1010,7 +1175,10 @@ auto build_index(
     std::string_view source_root,
     std::string_view config_root,
     std::string_view output_root,
-    pup::index::Index const* old_index = nullptr
+    pup::index::Index const* old_index = nullptr,
+    pup::Vec<pup::StringId> const& parse_scopes = {},
+    pup::Vec<pup::StringId> const& parsed_dirs = {},
+    pup::Vec<pup::StringId> const& available_dirs = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
@@ -1030,6 +1198,12 @@ auto build_index(
         .source_root = source_root,
         .cmd_remap = cmd_remap,
     };
+
+    // Merge out-of-scope commands forward before the implicit-edge passes so
+    // preserve_old_implicit_edges can re-attach their edges by identity.
+    if (old_index) {
+        merge_out_of_scope_commands(*old_index, parse_scopes, parsed_dirs, available_dirs, ctx);
+    }
 
     // Process discovered implicit dependencies from compiler output
     process_implicit_deps(discovered_deps, ctx);
@@ -1136,11 +1310,6 @@ auto detect_new_commands(
 }
 
 /// Remove stale outputs from removed commands and report them.
-auto contains_id(pup::Vec<pup::StringId> const& v, pup::StringId id) -> bool
-{
-    return !pup::is_empty(id) && std::find(v.begin(), v.end(), id) != v.end();
-}
-
 auto remove_stale_outputs(
     pup::index::Index const& idx,
     IdentityMap const& identity_map,
@@ -1153,23 +1322,10 @@ auto remove_stale_outputs(
     bool verbose
 ) -> void
 {
-    auto& pool = pup::global_pool();
     for (auto const& cmd : idx.commands()) {
         // Only delete outputs of a command whose directory we have authoritative
-        // knowledge of this run. A dir is authoritative if we successfully parsed
-        // its Tupfile (so the graph is the source of truth for it), or if it has
-        // no Tupfile at all (deleted) and lies within the build scope (so its rules
-        // are genuinely gone). A dir we merely discovered but did not parse — out
-        // of scope, or a parse failure under --keep-going — tells us nothing about
-        // whether its commands were removed, so we preserve. The root's dir_id is 0
-        // (empty path); it keys as "." to match how parsing records it.
-        auto const* dir_file = idx.find_file_by_id(cmd.dir_id);
-        auto dir_path = (dir_file && !pup::is_empty(dir_file->path)) ? pool.get(dir_file->path) : std::string_view { "." };
-        auto dir_id = (dir_file && !pup::is_empty(dir_file->path)) ? dir_file->path : pool.find(".");
-        auto const in_scope = parse_scopes.empty() || pup::is_path_in_any_scope(dir_path, parse_scopes);
-        auto const authoritative = contains_id(parsed_dirs, dir_id)
-            || (!contains_id(available_dirs, dir_id) && in_scope);
-        if (!authoritative) {
+        // knowledge of this run; anything else is preserved.
+        if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, parsed_dirs, available_dirs)) {
             continue;
         }
 
@@ -1611,7 +1767,10 @@ auto build_single_variant(
             source_root_str,
             config_root_str,
             output_root_str,
-            old_idx_ptr
+            old_idx_ptr,
+            parse_scopes,
+            ctx.parsed_dirs(),
+            ctx.available_dirs()
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
