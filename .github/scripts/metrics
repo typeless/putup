@@ -368,7 +368,7 @@ def stat_section(cur_rows, base_rows):
     base_by_key = {r.get("metric"): r.get("value") for r in base_rows}
     cur_cpu = cur_by_key.get("runner_cpu")
     base_cpu = base_by_key.get("runner_cpu")
-    same_hw = cur_cpu is not None and cur_cpu == base_cpu
+    same_hw = cur_cpu not in (None, "", "unknown") and cur_cpu == base_cpu
     lines = [
         "### Internal statistics (gcc example, up-to-date dry run)",
         "",
