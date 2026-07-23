@@ -139,6 +139,20 @@ auto IgnoreList::is_ignored(std::string_view rel_path) const -> bool
     return ignored;
 }
 
+auto IgnoreList::is_ignored_dir(std::string_view rel_path) const -> bool
+{
+    if (rel_path == ".") {
+        return is_ignored(rel_path);
+    }
+    for (auto sep = rel_path.find('/'); sep != std::string_view::npos;
+         sep = rel_path.find('/', sep + 1)) {
+        if (is_ignored(rel_path.substr(0, sep))) {
+            return true;
+        }
+    }
+    return is_ignored(rel_path);
+}
+
 auto IgnoreList::match_pattern(IgnorePattern const& p, std::string_view path_str) const -> bool
 {
     auto pattern_sv = global_pool().get(p.pattern);

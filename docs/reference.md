@@ -624,6 +624,7 @@ putup show index "ar rcs"
 | `-c FILE` | `--config` | Install FILE as root tup.config (configure command only). |
 | `-A` | `--all` | Full project build, ignoring cwd scoping. |
 | `-a` | `--all-deps` | Include upstream deps in scoped builds. |
+| `-x PATTERN` | `--exclude` | Skip building directories matching PATTERN (repeatable). |
 | | `--stat` | Print build statistics after completion. |
 | | `--summary` | Human-readable output (for `show graph`). |
 | | `--version` | Print version information. |
@@ -718,6 +719,28 @@ Scoped builds always check implicit dependencies (headers discovered from `.d` f
 putup lib        # check lib/ + implicit deps (headers). Like AOSP's mm
 putup -a lib     # also check explicit upstream deps (libraries). Like AOSP's mma
 ```
+
+**`-x, --exclude PATTERN` (Directory Exclusion)**
+
+Skip building directories matching PATTERN. Patterns use `.pupignore` syntax
+(§6.2) and match a directory or any of its ancestors, so `tests/` excludes
+every `tests` directory in the tree.
+
+```bash
+putup -x tests/                 # build all, skip every tests/ dir
+putup src -x 'src/tests/'       # composes with scoping
+putup -x tests/ -x 'bench*/'    # repeatable
+```
+
+Exclusion is per-invocation and schedule-level, not discovery-level: excluded
+directories are treated like out-of-scope directories in a scoped build. Their
+commands keep their index state, so toggling `-x` on and off never causes
+spurious rebuilds, and changes under an excluded directory are simply deferred
+until a build without `-x`. Use `.pupignore` instead when a directory should
+never be part of the project.
+
+`show script`, `show compdb`, and `show graph` respect `-x`; `parse` ignores
+it (validation always covers the whole tree).
 
 Example: If `lib/foo.c` includes `../include/header.h` and links `../deps/libutil.a`:
 - `putup lib` — changes to `header.h` trigger rebuild (implicit dep, always checked)

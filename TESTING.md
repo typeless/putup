@@ -38,6 +38,7 @@ make test                                 # All tests
 | `[clean]` | Clean/distclean tests |
 | `[configure]` | Two-pass config generation |
 | `[duplicate]` | Duplicate node detection |
+| `[exclude]` | `-x` directory exclusion |
 | `[groups]` | Group semantics (`{group}`, `<group>`) |
 | `[import]` | Import directive and environment variables |
 | `[incremental]` | Incremental rebuild tests |

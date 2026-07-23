@@ -1,0 +1,1 @@
+: n.txt |> cat %f > %o |> n.out

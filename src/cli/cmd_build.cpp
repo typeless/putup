@@ -28,6 +28,7 @@
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
 #include "pup/index/writer.hpp"
+#include "pup/parser/ignore.hpp"
 #include "pup/platform/file_io.hpp"
 #include "pup/platform/path.hpp"
 
@@ -256,6 +257,7 @@ auto find_changed_files_with_implicit(
     std::string_view config_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& scopes,
+    pup::parser::IgnoreList const& excludes,
     Vec<std::string_view> const& upstream_files,
     Vec<StringId> const& implicit_dep_files,
     Vec<StringId> const& inactive_outputs,
@@ -292,6 +294,12 @@ auto find_changed_files_with_implicit(
             && !pup::is_path_in_any_scope(file_path_sv, scopes)
             && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)
             && !std::binary_search(implicit_dep_files.begin(), implicit_dep_files.end(), file.path)) {
+            continue;
+        }
+
+        // Excluded dirs are not parsed this run, so nothing can consume their
+        // changes; observing them would record state we have no authority over.
+        if (excludes.is_ignored_dir(pup::path::parent(file_path_sv))) {
             continue;
         }
 
@@ -943,6 +951,7 @@ auto is_dir_authoritative(
     pup::index::Index const& idx,
     pup::NodeId dir_id,
     pup::Vec<pup::StringId> const& parse_scopes,
+    pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
     pup::Vec<pup::StringId> const& available_dirs
 ) -> bool
@@ -951,7 +960,8 @@ auto is_dir_authoritative(
     auto const* dir_file = idx.find_file_by_id(dir_id);
     auto dir_path = (dir_file && !pup::is_empty(dir_file->path)) ? pool.get(dir_file->path) : std::string_view { "." };
     auto dir_str_id = (dir_file && !pup::is_empty(dir_file->path)) ? dir_file->path : pool.find(".");
-    auto const in_scope = parse_scopes.empty() || pup::is_path_in_any_scope(dir_path, parse_scopes);
+    auto const in_scope = (parse_scopes.empty() || pup::is_path_in_any_scope(dir_path, parse_scopes))
+        && !excludes.is_ignored_dir(dir_path);
     return contains_id(parsed_dirs, dir_str_id)
         || (!contains_id(available_dirs, dir_str_id) && in_scope);
 }
@@ -965,6 +975,7 @@ auto is_dir_authoritative(
 auto merge_out_of_scope_commands(
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& parse_scopes,
+    pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
     pup::Vec<pup::StringId> const& available_dirs,
     ImplicitDepContext& ctx
@@ -1070,7 +1081,7 @@ auto merge_out_of_scope_commands(
 
     auto old_to_new_cmd = pup::NodeIdMap32 {};
     for (auto const& cmd : old_index.commands()) {
-        if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, parsed_dirs, available_dirs)) {
+        if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs)) {
             continue;
         }
         if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, hash_less)) {
@@ -1235,6 +1246,7 @@ auto build_index(
     std::string_view output_root,
     pup::index::Index const* old_index = nullptr,
     pup::Vec<pup::StringId> const& parse_scopes = {},
+    pup::parser::IgnoreList const& excludes = {},
     pup::Vec<pup::StringId> const& parsed_dirs = {},
     pup::Vec<pup::StringId> const& available_dirs = {}
 ) -> pup::index::Index
@@ -1260,7 +1272,7 @@ auto build_index(
     // Merge out-of-scope commands forward before the implicit-edge passes so
     // preserve_old_implicit_edges can re-attach their edges by identity.
     if (old_index) {
-        merge_out_of_scope_commands(*old_index, parse_scopes, parsed_dirs, available_dirs, ctx);
+        merge_out_of_scope_commands(*old_index, parse_scopes, excludes, parsed_dirs, available_dirs, ctx);
     }
 
     // Process discovered implicit dependencies from compiler output
@@ -1372,6 +1384,7 @@ auto remove_stale_outputs(
     pup::index::Index const& idx,
     IdentityMap const& identity_map,
     pup::Vec<pup::StringId> const& parse_scopes,
+    pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
     pup::Vec<pup::StringId> const& available_dirs,
     std::string_view source_root,
@@ -1383,7 +1396,7 @@ auto remove_stale_outputs(
     for (auto const& cmd : idx.commands()) {
         // Only delete outputs of a command whose directory we have authoritative
         // knowledge of this run; anything else is preserved.
-        if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, parsed_dirs, available_dirs)) {
+        if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs)) {
             continue;
         }
 
@@ -1496,6 +1509,7 @@ auto build_single_variant(
     auto parse_scopes = (opts.targets.empty() || opts.include_all_deps)
         ? pup::Vec<pup::StringId> {}
         : scopes;
+    auto excludes = make_exclude_list(opts);
 
     auto ctx_opts = BuildContextOptions {
         .verbose = opts.verbose,
@@ -1504,6 +1518,7 @@ auto build_single_variant(
         .root_config_only = false,
         .require_config = true,
         .parse_scopes = parse_scopes,
+        .excludes = excludes,
         .scanner_registry = scanner_ptr,
     };
 
@@ -1593,6 +1608,7 @@ auto build_single_variant(
             config_root_str,
             idx,
             scopes,
+            excludes,
             upstream_files,
             implicit_dep_files,
             collect_inactive_output_paths(bs),
@@ -1621,6 +1637,7 @@ auto build_single_variant(
             idx,
             identity_map,
             parse_scopes,
+            excludes,
             ctx.parsed_dirs(),
             ctx.available_dirs(),
             source_root_str,
@@ -1827,6 +1844,7 @@ auto build_single_variant(
             output_root_str,
             old_idx_ptr,
             parse_scopes,
+            excludes,
             ctx.parsed_dirs(),
             ctx.available_dirs()
         ) };

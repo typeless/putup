@@ -224,3 +224,39 @@ TEST_CASE("IgnoreList edge cases", "[ignore]")
         REQUIRE(ignore.is_ignored("build"));
     }
 }
+
+TEST_CASE("IgnoreList subtree matching", "[ignore]")
+{
+    auto ignore = IgnoreList {};
+
+    SECTION("a dir matching a basename pattern is ignored with its descendants")
+    {
+        ignore.add("tests/");
+        REQUIRE(ignore.is_ignored_dir("tests"));
+        REQUIRE(ignore.is_ignored_dir("lib/tests"));
+        REQUIRE(ignore.is_ignored_dir("lib/tests/nested"));
+        REQUIRE_FALSE(ignore.is_ignored_dir("lib"));
+        REQUIRE_FALSE(ignore.is_ignored_dir("lib/testsuite"));
+    }
+
+    SECTION("anchored patterns ignore only the matching subtree")
+    {
+        ignore.add("lib/tests/");
+        REQUIRE(ignore.is_ignored_dir("lib/tests"));
+        REQUIRE(ignore.is_ignored_dir("lib/tests/nested"));
+        REQUIRE_FALSE(ignore.is_ignored_dir("tests"));
+        REQUIRE_FALSE(ignore.is_ignored_dir("lib"));
+    }
+
+    SECTION("the root dir is only ignored by an explicit match")
+    {
+        ignore.add("tests/");
+        REQUIRE_FALSE(ignore.is_ignored_dir("."));
+    }
+
+    SECTION("empty list ignores nothing")
+    {
+        REQUIRE_FALSE(ignore.is_ignored_dir("tests"));
+        REQUIRE_FALSE(ignore.is_ignored_dir("."));
+    }
+}

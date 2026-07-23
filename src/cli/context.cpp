@@ -677,6 +677,15 @@ auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser:
 
 } // namespace
 
+auto make_exclude_list(Options const& opts) -> parser::IgnoreList
+{
+    auto excludes = parser::IgnoreList {};
+    for (auto pattern_id : opts.excludes) {
+        excludes.add(global_pool().get(pattern_id));
+    }
+    return excludes;
+}
+
 auto make_layout_options(Options const& opts) -> LayoutOptions
 {
     auto layout_opts = LayoutOptions {};
@@ -877,6 +886,9 @@ auto build_context(
         }
         if (!ctx_opts.parse_scopes.empty()
             && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
+            continue;
+        }
+        if (ctx_opts.excludes.is_ignored_dir(dir_sv)) {
             continue;
         }
         auto result = parse_directory(dir_sv, parse_ctx);

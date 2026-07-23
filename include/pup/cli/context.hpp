@@ -9,6 +9,7 @@
 #include "pup/core/vec.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/parser/ast.hpp"
+#include "pup/parser/ignore.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -54,6 +55,7 @@ struct BuildContextOptions {
     bool root_config_only = false;
     bool require_config = false;
     Vec<StringId> parse_scopes = {};
+    parser::IgnoreList excludes = {};
     graph::DepScannerRegistry* scanner_registry = nullptr;
     graph::RulePatternRegistry* pattern_registry = nullptr;
     VarAssignedCallback on_var_assigned = {};
@@ -127,6 +129,10 @@ auto compute_build_scopes(
     Options const& opts,
     ProjectLayout const& layout
 ) -> Vec<StringId>;
+
+/// Build the -x exclude patterns into an IgnoreList
+[[nodiscard]]
+auto make_exclude_list(Options const& opts) -> parser::IgnoreList;
 
 /// Convert CLI options to layout discovery options
 [[nodiscard]]
