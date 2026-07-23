@@ -41,19 +41,15 @@ public:
     }
 
 private:
-    struct Pattern {
-        StringId pattern = StringId::Empty;
-        bool anchored = false; ///< Pattern contains / (not at end)
-    };
+    pup::Vec<StringId> patterns_;
 
-    pup::Vec<Pattern> patterns_;
+    /// Parse a single pattern line (trailing '/' stripped, '!' rejected)
+    static auto parse_pattern(std::string_view line) -> std::optional<StringId>;
 
-    /// Parse a single pattern line
-    static auto parse_pattern(std::string_view line) -> std::optional<Pattern>;
-
-    /// Check if a path matches a pattern
+    /// Check if a path matches a pattern; a pattern containing '/' is anchored
+    /// (matched against the full path), otherwise it matches the basename
     [[nodiscard]]
-    auto match_pattern(Pattern const& p, std::string_view path) const -> bool;
+    static auto match_pattern(std::string_view pattern, std::string_view path) -> bool;
 
     /// Match a glob pattern against a string
     [[nodiscard]]
