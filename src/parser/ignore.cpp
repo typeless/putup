@@ -30,13 +30,11 @@ auto IgnoreList::add(std::string_view pattern) -> void
     }
 }
 
-auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<Pattern>
+auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<StringId>
 {
     if (line.empty() || line[0] == '!') {
         return std::nullopt;
     }
-
-    auto p = Pattern {};
 
     if (line.back() == '/') {
         line = line.substr(0, line.size() - 1);
@@ -45,15 +43,13 @@ auto IgnoreList::parse_pattern(std::string_view line) -> std::optional<Pattern>
         }
     }
 
-    p.anchored = line.find('/') != std::string_view::npos;
-    p.pattern = global_pool().intern(line);
-    return p;
+    return global_pool().intern(line);
 }
 
 auto IgnoreList::is_ignored(std::string_view rel_path) const -> bool
 {
-    for (auto const& p : patterns_) {
-        if (match_pattern(p, rel_path)) {
+    for (auto pattern_id : patterns_) {
+        if (match_pattern(global_pool().get(pattern_id), rel_path)) {
             return true;
         }
     }
@@ -74,21 +70,21 @@ auto IgnoreList::is_ignored_dir(std::string_view rel_path) const -> bool
     return is_ignored(rel_path);
 }
 
-auto IgnoreList::match_pattern(Pattern const& p, std::string_view path_str) const -> bool
+auto IgnoreList::match_pattern(std::string_view pattern, std::string_view path_str) -> bool
 {
-    auto pattern_sv = global_pool().get(p.pattern);
-    if (p.anchored) {
-        return glob_match(pattern_sv, path_str);
+    auto const anchored = pattern.find('/') != std::string_view::npos;
+    if (anchored) {
+        return glob_match(pattern, path_str);
     }
 
     auto slash_pos = path_str.rfind('/');
     auto basename = (slash_pos == std::string_view::npos) ? path_str : path_str.substr(slash_pos + 1);
-    if (glob_match(pattern_sv, basename)) {
+    if (glob_match(pattern, basename)) {
         return true;
     }
 
-    if (pattern_sv.starts_with("**")) {
-        return glob_match(pattern_sv, path_str);
+    if (pattern.starts_with("**")) {
+        return glob_match(pattern, path_str);
     }
 
     return false;
