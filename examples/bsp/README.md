@@ -86,7 +86,11 @@ putup -C . -S ../../source-root -B ../../build-gcc gcc/gmp/
 ## Standalone Mode
 
 Each package group is independently buildable. The `?=` defaults in each
-package's `Tuprules.tup` provide flat paths when there's no BSP root above:
+package's `Tuprules.tup` provide flat paths when there's no BSP root above.
+Because `gcc/` carries its own `Tupfile.ini` (a nested project root), the BSP
+root Tupfile composes it into the combined build with a group reference
+(`: gcc/gcc/<xgcc-objs> |> ... |>`); without such a reference a nested project
+is skipped entirely.
 
 ```bash
 # Build just the GCC group (standalone)

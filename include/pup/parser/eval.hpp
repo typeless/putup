@@ -145,6 +145,12 @@ struct EvalContext {
     /// Used to determine when to invoke request_directory callback
     Vec<StringId> const* available_tupfile_dirs = nullptr;
 
+    /// Callback for composing a nested project (subdir with its own Tupfile.ini)
+    /// into the build when a cross-directory reference lands under one.
+    /// Extends available_tupfile_dirs with the project's subtree; returns true
+    /// if anything was added so the reference can be retried.
+    Function<bool(std::string_view)> compose_nested_project = {};
+
     /// Callback for tracking config variable usage (for fine-grained dependency tracking)
     /// Called with the stripped variable name (e.g., "OPT" not "CONFIG_OPT") when
     /// a config variable is accessed via @(VAR) or $(CONFIG_VAR).

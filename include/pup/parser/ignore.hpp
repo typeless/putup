@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -24,9 +23,6 @@ struct IgnorePattern {
 class IgnoreList final {
 public:
     IgnoreList() = default;
-
-    /// Load patterns from a .pupignore file
-    static auto load(std::string_view path) -> Result<IgnoreList>;
 
     /// Create an IgnoreList with default patterns (.git/, .pup/, node_modules/)
     static auto with_defaults() -> IgnoreList;

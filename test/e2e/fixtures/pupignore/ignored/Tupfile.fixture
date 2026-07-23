@@ -1,2 +1,0 @@
-# This Tupfile should NOT be discovered
-: |> echo "ignored" > %o |> ignored.txt

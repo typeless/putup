@@ -230,9 +230,29 @@ auto read_file(std::string_view path) -> std::optional<StringId>
     return content.intern(global_pool());
 }
 
+auto is_ancestor_of_any(std::string_view dir, Vec<StringId> const& paths) -> bool
+{
+    auto& pool = global_pool();
+    for (auto path_id : paths) {
+        auto path_sv = pool.get(path_id);
+        if (path_sv == dir
+            || (path_sv.size() > dir.size() && path_sv.starts_with(dir) && path_sv[dir.size()] == '/')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Discover Tupfile-containing dirs under `root`, pruning nested project roots
+/// (subdirs with their own Tupfile.ini). An explicitly scoped path overrides
+/// the pruning for its subtree — targeting a nested project asserts membership.
+/// `prefix` is root's project-relative path ("" for the project root itself),
+/// used to compare walk-relative paths against project-relative scopes.
 auto discover_tupfile_dirs(
     std::string_view root,
-    pup::parser::IgnoreList const& ignore = {}
+    pup::parser::IgnoreList const& ignore = {},
+    Vec<StringId> const& keep_scopes = {},
+    std::string_view prefix = {}
 ) -> Vec<StringId>
 {
     auto& pool = global_pool();
@@ -245,6 +265,13 @@ auto discover_tupfile_dirs(
     (void)pup::platform::walk_directory(root, [&](pup::platform::DirEntry const& entry, std::string_view rel_path) -> bool {
         if (entry.is_dir && ignore.is_ignored(rel_path)) {
             return false;
+        }
+        if (entry.is_dir
+            && pup::platform::exists(pool.get(pup::path::join(pool.get(pup::path::join(root, rel_path)), "Tupfile.ini")))) {
+            auto project_rel = prefix.empty() ? rel_path : pool.get(pup::path::join(prefix, rel_path));
+            if (!is_ancestor_of_any(project_rel, keep_scopes)) {
+                return false;
+            }
         }
 
         if (!entry.is_dir && entry.name == "Tupfile") {
@@ -421,6 +448,48 @@ struct ParseContext {
     StatementCallback const* on_statement;
 };
 
+/// Compose the nested project containing `dir` into the build: the outermost
+/// ancestor of `dir` carrying its own Tupfile.ini has its subtree discovered
+/// and appended to the available set. Returns true if new dirs were added.
+auto compose_nested_project_subtree(std::string_view dir, ParseContext& ctx) -> bool
+{
+    if (dir.empty() || dir == "." || pup::path::is_absolute(dir)) {
+        return false;
+    }
+    auto& pool = global_pool();
+
+    auto marker_prefix = std::string_view {};
+    for (auto sep = dir.find('/');; sep = dir.find('/', sep + 1)) {
+        auto prefix = (sep == std::string_view::npos) ? dir : dir.substr(0, sep);
+        auto prefix_abs = pool.get(pup::path::join(ctx.config_root, prefix));
+        if (pup::platform::exists(pool.get(pup::path::join(prefix_abs, "Tupfile.ini")))) {
+            marker_prefix = prefix;
+            break;
+        }
+        if (sep == std::string_view::npos) {
+            return false;
+        }
+    }
+
+    auto subtree_root = pool.get(pup::path::join(ctx.config_root, marker_prefix));
+    auto sub_dirs = discover_tupfile_dirs(subtree_root, pup::parser::IgnoreList::with_defaults(), {}, marker_prefix);
+
+    auto& available = ctx.state.available;
+    auto const before = available.size();
+    for (auto sub_id : sub_dirs) {
+        auto sub_sv = pool.get(sub_id);
+        auto rel_id = (sub_sv == ".") ? pool.intern(marker_prefix) : pup::path::join(marker_prefix, sub_sv);
+        if (!std::binary_search(available.begin(), available.end(), rel_id)) {
+            available.push_back(rel_id);
+        }
+    }
+    if (available.size() == before) {
+        return false;
+    }
+    std::sort(available.begin(), available.end());
+    return true;
+}
+
 auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result<void>
 {
     auto vars = pup::parser::VarDb { ctx.base_vars };
@@ -503,6 +572,10 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         return parse_directory(dir, ctx);
     };
 
+    auto compose_nested_project = [&](std::string_view dir) -> bool {
+        return compose_nested_project_subtree(dir, ctx);
+    };
+
     auto& pool = global_pool();
     auto eval_ctx = pup::parser::EvalContext {
         .vars = &vars,
@@ -516,6 +589,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
         .tup_outdir = pool.intern(tup_outdir),
         .request_directory = request_directory,
         .available_tupfile_dirs = &ctx.state.available,
+        .compose_nested_project = compose_nested_project,
     };
 
     if (ctx.on_var_assigned && *ctx.on_var_assigned) {
@@ -651,30 +725,6 @@ auto sort_dirs_by_depth(Vec<StringId> const& available) -> Vec<StringId>
     return dirs;
 }
 
-auto load_ignore_list(ProjectLayout const& layout, bool verbose) -> pup::parser::IgnoreList
-{
-    auto ignore = pup::parser::IgnoreList::with_defaults();
-    auto& ipool = global_pool();
-    for (auto root_id : { layout.config_root, layout.source_root }) {
-        auto ignore_path_sv = ipool.get(pup::path::join(ipool.get(root_id), ".pupignore"));
-        if (!pup::platform::exists(ignore_path_sv)) {
-            continue;
-        }
-        auto ignore_result = pup::parser::IgnoreList::load(ignore_path_sv);
-        if (!ignore_result) {
-            continue;
-        }
-        ignore = std::move(*ignore_result);
-        if (verbose) {
-            auto ip = Buf {};
-            ip.append(ignore_path_sv);
-            print("Loaded {} ignore patterns from {}\n", ignore.size(), ip.c_str());
-        }
-        break;
-    }
-    return ignore;
-}
-
 } // namespace
 
 auto make_exclude_list(Options const& opts) -> parser::IgnoreList
@@ -803,8 +853,11 @@ auto build_context(
     }
 
     // 3. Discover Tupfiles
-    auto ignore = load_ignore_list(ctx.impl_->layout, ctx_opts.verbose);
-    ctx.impl_->state.available = discover_tupfile_dirs(pool.get(ctx.impl_->layout.config_root), ignore);
+    ctx.impl_->state.available = discover_tupfile_dirs(
+        pool.get(ctx.impl_->layout.config_root),
+        pup::parser::IgnoreList::with_defaults(),
+        ctx_opts.parse_scopes
+    );
 
     if (ctx.impl_->state.available.empty()) {
         return make_error<BuildContext>(ErrorCode::IoError, "No Tupfiles found in project");
@@ -879,21 +932,30 @@ auto build_context(
         .on_statement = &ctx_opts.on_statement,
     };
 
-    for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {
-        auto dir_sv = pool.get(dir_id);
-        if (sorted_contains(ctx.impl_->state.parsed, dir_sv)) {
-            continue;
+    // Parse to a fixpoint: a group reference under a nested project root
+    // composes that subtree into the available set mid-pass, and the new
+    // dirs need a pass of their own.
+    while (true) {
+        auto const available_before = ctx.impl_->state.available.size();
+        for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {
+            auto dir_sv = pool.get(dir_id);
+            if (sorted_contains(ctx.impl_->state.parsed, dir_sv)) {
+                continue;
+            }
+            if (!ctx_opts.parse_scopes.empty()
+                && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
+                continue;
+            }
+            if (ctx_opts.excludes.is_ignored_dir(dir_sv)) {
+                continue;
+            }
+            auto result = parse_directory(dir_sv, parse_ctx);
+            if (!result && !ctx_opts.keep_going) {
+                return unexpected<Error>(result.error());
+            }
         }
-        if (!ctx_opts.parse_scopes.empty()
-            && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
-            continue;
-        }
-        if (ctx_opts.excludes.is_ignored_dir(dir_sv)) {
-            continue;
-        }
-        auto result = parse_directory(dir_sv, parse_ctx);
-        if (!result && !ctx_opts.keep_going) {
-            return unexpected<Error>(result.error());
+        if (ctx.impl_->state.available.size() == available_before) {
+            break;
         }
     }
 

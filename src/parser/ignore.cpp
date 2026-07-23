@@ -2,11 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/parser/ignore.hpp"
-#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/result.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/platform/file_io.hpp"
 #include <cstddef>
 #include <optional>
 #include <string_view>
@@ -17,60 +14,6 @@ namespace pup::parser {
 // =============================================================================
 // IgnoreList
 // =============================================================================
-
-auto IgnoreList::load(std::string_view path) -> Result<IgnoreList>
-{
-    auto content = Buf {};
-    if (!pup::platform::read_file(path, content)) {
-        auto err = Buf {};
-        err.fmt("Failed to open ignore file: {}", path);
-        return make_error<IgnoreList>(ErrorCode::IoError, err.view());
-    }
-
-    auto list = IgnoreList::with_defaults();
-    auto sv = content.view();
-
-    while (!sv.empty()) {
-        auto nl = sv.find('\n');
-        auto raw = (nl == std::string_view::npos) ? sv : sv.substr(0, nl);
-        sv = (nl == std::string_view::npos) ? std::string_view {} : sv.substr(nl + 1);
-
-        // Strip \r
-        if (!raw.empty() && raw.back() == '\r') {
-            raw.remove_suffix(1);
-        }
-
-        if (raw.empty()) {
-            continue;
-        }
-
-        auto start = raw.find_first_not_of(" \t");
-        if (start == std::string_view::npos) {
-            continue;
-        }
-        raw = raw.substr(start);
-
-        if (raw[0] == '#') {
-            continue;
-        }
-
-        auto line = raw;
-        while (!line.empty() && (line.back() == ' ' || line.back() == '\t')) {
-            if (line.size() >= 2 && line[line.size() - 2] == '\\') {
-                break;
-            }
-            line.remove_suffix(1);
-        }
-
-        if (line.empty()) {
-            continue;
-        }
-
-        list.add(line);
-    }
-
-    return list;
-}
 
 auto IgnoreList::with_defaults() -> IgnoreList
 {
