@@ -121,13 +121,17 @@ auto IgnoreList::glob_match_recursive(std::string_view pattern, std::string_view
                 return true;
             }
 
-            // Try matching remainder at every position
-            for (auto i = ti; i <= text.size(); ++i) {
+            // Try matching remainder after zero or more whole segments
+            for (auto i = ti;;) {
                 if (glob_match_recursive(pattern.substr(pi), text.substr(i))) {
                     return true;
                 }
+                auto slash = text.find('/', i);
+                if (slash == std::string_view::npos) {
+                    return false;
+                }
+                i = slash + 1;
             }
-            return false;
         }
 
         // * matches any characters except /

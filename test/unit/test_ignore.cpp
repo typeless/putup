@@ -63,6 +63,24 @@ TEST_CASE("IgnoreList pattern parsing", "[ignore]")
         REQUIRE(ignore.is_ignored("src/foo/test"));
     }
 
+    SECTION("leading ** matches whole segments only")
+    {
+        ignore.add("**/tests");
+        REQUIRE(ignore.is_ignored("tests"));
+        REQUIRE(ignore.is_ignored("lib/tests"));
+        REQUIRE_FALSE(ignore.is_ignored("xtests"));
+        REQUIRE_FALSE(ignore.is_ignored("lib/xtests"));
+    }
+
+    SECTION("mid-pattern ** spans whole segments only")
+    {
+        ignore.add("src/**/gen");
+        REQUIRE(ignore.is_ignored("src/gen"));
+        REQUIRE(ignore.is_ignored("src/a/b/gen"));
+        REQUIRE_FALSE(ignore.is_ignored("src/xgen"));
+        REQUIRE_FALSE(ignore.is_ignored("src/a/xgen"));
+    }
+
     SECTION("anchored pattern with slash")
     {
         ignore.add("src/temp");
