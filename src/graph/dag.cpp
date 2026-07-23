@@ -146,6 +146,26 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         return *existing;
     }
 
+    // In-tree builds share one physical tree: a BuildRoot-grounded path may
+    // already have a SourceRoot node (consumer parsed before producer sees
+    // the on-disk output as a source file). Alias instead of splitting.
+    if (graph.paths.root(path_id) == PathId::BuildRoot && get_build_root_name(graph).empty()) {
+        auto& pool = global_pool();
+        auto rel = pool.get(graph.paths.to_string(path_id, pool));
+        if (auto src_pid = graph.paths.find_path(rel, pool, PathId::SourceRoot)) {
+            if (auto const* hit = graph.path_to_node.find(to_underlying(*src_pid))) {
+                auto* node = get_file_node(graph, *hit);
+                if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
+                    graph.path_to_node.insert(to_underlying(path_id), *hit);
+                    if (type == NodeType::Generated) {
+                        node->type = NodeType::Generated;
+                    }
+                    return *hit;
+                }
+            }
+        }
+    }
+
     // Lazy resolution: ungrounded PathIds are grounded before creation.
     // Try BuildRoot first (outputs are more common), then SourceRoot.
     if (!graph.paths.is_grounded(path_id)) {
