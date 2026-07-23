@@ -1334,9 +1334,8 @@ The `-x, --exclude` flag (see Section 4.1) accepts gitignore-style patterns
 with the following syntax:
 
 ```gitignore
-pattern          # Match files/directories
-pattern/         # Directory only (trailing slash)
-!pattern         # Negation (un-match)
+pattern          # Match directories named 'pattern'
+pattern/         # Same (trailing slash accepted; all patterns match directories)
 path/to/dir      # Anchored pattern (contains /)
 ```
 
