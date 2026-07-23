@@ -64,15 +64,14 @@ STAT_NOTE = (
     "Counters from `putup -n --stat` on the fully-built gcc example (up-to-date"
     " dry run): deterministic work measures — a jump in commands scheduled,"
     " hash computations, or stat calls is a real behavior change, not noise."
-    " Timings are the minimum over repeated runs (least-noise sample);"
-    " treat them as indicative, the counters as the regression signal."
+    " Timings are the minimum over repeated runs, compared only against a"
+    " baseline from the same CPU model; the counters are the regression signal."
 )
 
 PERF_NOTE = (
-    "Deterministic signals: page faults, peak RSS, and the cachegrind D1/LL miss"
-    " rates (simulated cache, exact across runs). CPU time is user+sys from"
-    " time(1); instructions read n/a on GitHub-hosted runners (virtualized,"
-    " no PMU)."
+    "Deterministic signals: instructions (cachegrind-simulated instruction"
+    " reads — exact across runs, no PMU needed), page faults, peak RSS, and the"
+    " cachegrind D1/LL miss rates. CPU time is user+sys from time(1)."
 )
 
 def first_number(line):
@@ -102,11 +101,15 @@ def parse_perf_output(text):
 
 def parse_cachegrind_output(text):
     rates = {}
+    i_refs = None
     for line in text.splitlines():
         match = re.search(r"(D1|LL)\s+miss rate:\s+([0-9.]+)%", line)
         if match:
             rates[match.group(1)] = float(match.group(2))
-    return rates.get("D1"), rates.get("LL")
+        match = re.search(r"I\s+refs:\s+([\d,]+)", line)
+        if match:
+            i_refs = int(match.group(1).replace(",", ""))
+    return rates.get("D1"), rates.get("LL"), i_refs
 
 
 def parse_time_output(text):
@@ -161,7 +164,12 @@ def measure(cmd):
                 stderr=subprocess.DEVNULL,
                 check=False,
             )
-            row["d1_pct"], row["ll_pct"] = parse_cachegrind_output(log.read())
+            d1, ll, i_refs = parse_cachegrind_output(log.read())
+            row["d1_pct"], row["ll_pct"] = d1, ll
+            # Simulated instruction count: exact across runs, no PMU needed —
+            # preferred over perf's counter, which reads n/a on virtualized runners.
+            if i_refs is not None:
+                row["instructions_m"] = i_refs / 1e6
     except FileNotFoundError:
         pass
     return row
@@ -193,6 +201,17 @@ def cmd_bench(args):
             fmt(row["rss_mb"], ".1f"),
         ]))
     return 0
+
+
+def runner_cpu_model():
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return "unknown"
 
 
 def cmd_stat(args):
@@ -227,6 +246,7 @@ def cmd_stat(args):
                 sys.stderr.write(f"{key} disagrees across runs: {values}\n")
                 value = "n/a"
         print(f"{key}\t{value}")
+    print(f"runner_cpu\t{runner_cpu_model()}")
     return 0
 
 
@@ -346,6 +366,9 @@ def perf_section(cur_rows, base_rows):
 def stat_section(cur_rows, base_rows):
     cur_by_key = {r.get("metric"): r.get("value") for r in cur_rows}
     base_by_key = {r.get("metric"): r.get("value") for r in base_rows}
+    cur_cpu = cur_by_key.get("runner_cpu")
+    base_cpu = base_by_key.get("runner_cpu")
+    same_hw = cur_cpu is not None and cur_cpu == base_cpu
     lines = [
         "### Internal statistics (gcc example, up-to-date dry run)",
         "",
@@ -355,9 +378,20 @@ def stat_section(cur_rows, base_rows):
     for key, _, label in STAT_FIELDS:
         if key not in cur_by_key:
             continue
-        cell = annotate(num(cur_by_key[key]), num(base_by_key.get(key)), "pct_change")
+        base_val = base_by_key.get(key)
+        # Wall-clock is only comparable across runs on identical hardware;
+        # GitHub runners span CPU classes ~1.7x apart on this workload.
+        if key.endswith("_ms") and not same_hw:
+            base_val = None
+        cell = annotate(num(cur_by_key[key]), num(base_val), "pct_change")
         lines.append(f"| {label} | {cell} |")
+    if cur_cpu:
+        lines.append(f"| Runner CPU | {cur_cpu} |")
     lines += ["", STAT_NOTE]
+    if cur_cpu and base_cpu and not same_hw:
+        lines.append(
+            f" Timing deltas suppressed: baseline ran on different hardware ({base_cpu})."
+        )
     return lines
 
 
