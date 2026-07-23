@@ -1342,17 +1342,49 @@ SCENARIO("Scoped build propagates downstream", "[e2e][incremental][scope]")
         auto f = E2EFixture { "scoped_build" };
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
+        REQUIRE(f.run("app/app").exit_code == 42);
 
         WHEN("a library file is modified and build runs from lib/")
         {
-            f.append_file("lib/foo.c", "// modified\n");
+            auto original = f.read_file("lib/foo.c");
+            auto pos = original.find("42");
+            REQUIRE(pos != std::string::npos);
+            f.write_file("lib/foo.c", original.substr(0, pos) + "99" + original.substr(pos + 2));
+
             auto result = f.run_pup_in_dir("lib", { "-v" });
 
             THEN("both the library and dependent app are rebuilt")
             {
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("foo.o") != std::string::npos);
-                REQUIRE(result.stdout_output.find("app") != std::string::npos);
+                REQUIRE(f.run("app/app").exit_code == 99);
+            }
+        }
+    }
+}
+
+SCENARIO("In-tree incremental rebuild relinks cross-directory consumers", "[e2e][incremental]")
+{
+    GIVEN("a built in-tree project with a cross-directory dependency")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("app/app").exit_code == 42);
+
+        WHEN("the library source changes and a full build runs")
+        {
+            auto original = f.read_file("lib/foo.c");
+            auto pos = original.find("42");
+            REQUIRE(pos != std::string::npos);
+            f.write_file("lib/foo.c", original.substr(0, pos) + "99" + original.substr(pos + 2));
+
+            auto result = f.build();
+
+            THEN("the consumer relinks against the rebuilt object")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.run("app/app").exit_code == 99);
             }
         }
     }
