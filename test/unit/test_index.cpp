@@ -327,7 +327,8 @@ TEST_CASE("Index in-memory operations", "[index]")
 
 TEST_CASE("Serialized edge section is independent of edge insertion order", "[index][determinism]")
 {
-    auto const cmd_id = node_id::make_command(1);
+    auto const cmd1 = node_id::make_command(1);
+    auto const cmd2 = node_id::make_command(2);
 
     auto serialize_with_edges = [&](std::vector<EdgeEntry> const& edges) {
         auto index = Index {};
@@ -335,12 +336,20 @@ TEST_CASE("Serialized edge section is independent of edge insertion order", "[in
         index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = NodeType::File, .name = intern("a.c") });
         index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::Generated, .name = intern("a.o") });
         index.add_file(FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("a.h") });
+        index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::Generated, .name = intern("b.o") });
         index.add_command(CommandEntry {
-            .id = cmd_id,
+            .id = cmd1,
             .dir_id = 1,
             .instruction_pattern = intern("cc -c %f -o %o"),
             .inputs = { 2 },
             .outputs = { 3 },
+        });
+        index.add_command(CommandEntry {
+            .id = cmd2,
+            .dir_id = 1,
+            .instruction_pattern = intern("cc -S %f -o %o"),
+            .inputs = { 2 },
+            .outputs = { 5 },
         });
         for (auto const& e : edges) {
             index.add_edge(e);
@@ -357,18 +366,25 @@ TEST_CASE("Serialized edge section is independent of edge insertion order", "[in
         return std::vector<std::byte> { begin, begin + hdr.edge_count * sizeof(RawEdge) };
     };
 
+    // Ties on from (edges 4->cmd1 / 4->cmd2) and on (from, to) (Implicit vs
+    // Sticky 4->cmd1) exercise every leg of the canonical-order comparator.
     auto edges = std::vector<EdgeEntry> {
-        EdgeEntry { .from = 2, .to = cmd_id, .type = LinkType::Normal },
-        EdgeEntry { .from = cmd_id, .to = 3, .type = LinkType::Normal },
-        EdgeEntry { .from = 4, .to = cmd_id, .type = LinkType::Implicit },
+        EdgeEntry { .from = 2, .to = cmd1, .type = LinkType::Normal },
+        EdgeEntry { .from = cmd1, .to = 3, .type = LinkType::Normal },
+        EdgeEntry { .from = 4, .to = cmd1, .type = LinkType::Implicit },
+        EdgeEntry { .from = 4, .to = cmd1, .type = LinkType::Sticky },
+        EdgeEntry { .from = 4, .to = cmd2, .type = LinkType::Implicit },
+        EdgeEntry { .from = 2, .to = cmd2, .type = LinkType::Normal },
+        EdgeEntry { .from = cmd2, .to = 5, .type = LinkType::Normal },
     };
-    auto shuffled = edges;
-    std::reverse(shuffled.begin(), shuffled.end());
 
-    auto data_a = serialize_with_edges(edges);
-    auto data_b = serialize_with_edges(shuffled);
+    auto reference = edge_section(serialize_with_edges(edges));
+    auto permuted = edges;
+    std::reverse(permuted.begin(), permuted.end());
+    REQUIRE(edge_section(serialize_with_edges(permuted)) == reference);
 
-    REQUIRE(edge_section(data_a) == edge_section(data_b));
+    std::rotate(permuted.begin(), permuted.begin() + 3, permuted.end());
+    REQUIRE(edge_section(serialize_with_edges(permuted)) == reference);
 }
 
 TEST_CASE("Index serialization roundtrip", "[e2e][index]")
