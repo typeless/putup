@@ -76,7 +76,7 @@ Required files:
 
 | File | Purpose |
 |------|---------|
-| `Tupfile.ini` | Marks project root (can be empty) |
+| `Tupfile.ini` | Marks project root (can be empty). A subdirectory with its own `Tupfile.ini` is a separate project — pruned from this build unless a rule references a group/file under it |
 | `Tupfile` | Build rules |
 | `tup.config` | Config variables (created by `putup configure`) |
 
@@ -231,6 +231,17 @@ Include upstream dependencies with `-a`:
 putup lib                          # fast: only check files in lib/
 putup -a lib                       # also check lib/'s upstream deps
 ```
+
+Exclude directories with `-x` (gitignore-style pattern, repeatable):
+
+```bash
+putup -x tests/                    # build all, skip every tests/ dir
+putup src -x 'src/tests/'          # composes with scoping
+```
+
+Exclusion is per-invocation and schedule-level: excluded directories keep
+their index state, so toggling `-x` never causes spurious rebuilds; their
+changes are deferred until a build without `-x`.
 
 ## 6. Configuration
 

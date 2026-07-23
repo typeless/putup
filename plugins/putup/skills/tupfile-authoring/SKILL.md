@@ -182,6 +182,11 @@ paths, so a group can be aggregated without listing files:
 : $(ROOT)/modules/<json-headers> |> cat %<json-headers> > %o |> header
 ```
 
+**Composing nested projects** -- a subdirectory with its own `Tupfile.ini` is
+a separate project and is pruned from this build; a group (or generated-file)
+reference under it composes the whole nested project back in, at project
+granularity. See the composable-libraries skill for the full pattern.
+
 ## 8. Conditionals
 
 ```tup
