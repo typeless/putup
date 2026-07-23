@@ -21,7 +21,7 @@ namespace pup::cli {
 
 namespace {
 
-auto const VERSION = "2.4.0";
+auto const VERSION = "3.0.0";
 
 auto is_command(std::string_view arg) -> bool
 {

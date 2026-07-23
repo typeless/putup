@@ -52,6 +52,9 @@ Options:
   --stat             Print build statistics
   -A, --all          Full project build (ignore cwd scoping)
   -a, --all-deps     Include upstream deps in scoped builds
+  -x, --exclude PATTERN
+                     Skip building directories matching PATTERN (gitignore
+                     syntax); their index state is preserved, not discarded
   --                 End of options; remaining args are targets
   --version          Print version
   -h, --help         Print this help
