@@ -4,6 +4,9 @@
 *.so
 *.dylib
 
+# GCC temp debris from interrupted builds (ccXXXXXX.s; .ltrans*.o covered by *.o)
+cc*.s
+
 # Coverage artifacts
 *.gcno
 *.gcda
