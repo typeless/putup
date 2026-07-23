@@ -61,7 +61,21 @@ auto find_project_root(
 
 [[nodiscard]]
 auto discover_variants(
-    std::string_view source_root
+    std::string_view source_root,
+    std::string_view project_root
 ) -> Vec<StringId>;
+
+[[nodiscard]]
+auto find_build_subdir(
+    std::string_view root
+) -> std::optional<StringId>;
+
+auto record_build_dir_owner(ProjectLayout const& layout) -> void;
+
+[[nodiscard]]
+auto foreign_build_dir_owner(
+    std::string_view build_dir,
+    std::string_view project_root
+) -> std::optional<StringId>;
 
 } // namespace pup
