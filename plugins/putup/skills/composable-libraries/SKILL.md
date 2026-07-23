@@ -128,6 +128,30 @@ exit code stays 0; `--check=error` makes error-severity findings fail.
 The tree roots are exempt -- they ARE the authority for anchor and toolchain
 variables. This covers the source root and, in 3-tree builds, the config-tree root.
 
+## Nested Project Boundaries and Composition
+
+A subdirectory carrying its own `Tupfile.ini` is a **separate project**: the
+outer build's discovery prunes it, so its Tupfiles are neither parsed nor
+built. Adding the standalone marker (W2) therefore takes the component OUT of
+the composed build until the outer project *depends* on it — a rule input
+referencing a group (or generated file) under the nested root composes the
+whole nested project back in:
+
+```tup
+# Outer Tupfile: one group reference pulls the entire gmp/ project in
+: gmp/<libgmp> |> ^ gmp composed^ touch %o |> .gmp-composed
+```
+
+Composition is at project granularity — one reference anywhere under the
+nested root brings its full subtree, which then builds normally. When the
+outer build already consumes the component's outputs via groups (the usual
+case for libraries), no extra rule is needed: the existing dependency IS the
+composition. Only components nothing references (e.g. a toolchain whose final
+binaries are the build's goal) need an explicit composing rule.
+
+Explicitly targeting a path inside a nested project (`putup build/gmp`)
+overrides the pruning for that subtree.
+
 ## Complete Example
 
 ### Project layout
@@ -187,6 +211,7 @@ project/tup.config         # CC=gcc, AR=ar
 - [ ] Component Tuprules.tup uses `?=` for `S`, `B`, toolchain, and `*_DIR` variables
 - [ ] `*_DIR` defaults resolve correctly for standalone builds (e.g., `GMP_DIR ?= ../gmp`)
 - [ ] Each component has `Tupfile.ini` for standalone mode
+- [ ] Each marker-bearing component is composed by a group/file reference from the outer build (nested project roots are otherwise pruned)
 - [ ] `CFLAGS` and `!cc` are unprefixed (subtree-scoped, no collision risk)
 - [ ] `putup parse --check=error` reports no errors (alias: `--strict`)
 - [ ] Component builds standalone: `cd gmp && putup -B build && ls build/`
