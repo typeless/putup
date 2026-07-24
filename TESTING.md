@@ -5,12 +5,17 @@ Quick reference for testing workflows and conventions.
 ## Running Tests
 
 ```bash
-make test                                 # All tests
-./build/test/unit/putup_test                # Direct execution
+make test                                 # All tests (E2E sharded in parallel)
+test/run-tests.sh build/test/unit/putup_test [N]  # Same runner; N overrides shard count (also PUTUP_TEST_SHARDS)
+./build/test/unit/putup_test                # Direct execution (serial)
 ./build/test/unit/putup_test -s             # Verbose output
 ./build/test/unit/putup_test '[e2e]'        # E2E tests only
 ./build/test/unit/putup_test '[tag]'        # Specific tag
 ```
+
+`make test` runs the fast (non-E2E) suite serially first, then splits `[e2e]`
+across 2×cores parallel shards via Catch2 `--shard-count`/`--shard-index`
+(~2.5× faster wall time). Shard logs are shown only on failure.
 
 ### Unit Test Tags
 

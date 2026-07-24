@@ -117,7 +117,7 @@ jobs:
       - name: Fix permissions
         run: chmod +x build/putup build/test/unit/putup_test
       - name: Run tests
-        run: ./build/test/unit/putup_test
+        run: test/run-tests.sh build/test/unit/putup_test
 
   test-macos:
     needs: build-macos
@@ -132,7 +132,7 @@ jobs:
       - name: Fix permissions
         run: chmod +x build/putup build/test/unit/putup_test
       - name: Run tests
-        run: ./build/test/unit/putup_test
+        run: test/run-tests.sh build/test/unit/putup_test
 
   tidy:
     needs: build-linux
