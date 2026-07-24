@@ -912,6 +912,7 @@ auto build_context(
         .config_path = pool.intern(config_path_sv),
         .expand_globs = true,
         .verbose = ctx_opts.verbose,
+        .reject_empty_commands = !ctx_opts.root_config_only,
         .scanner_registry = ctx_opts.scanner_registry,
         .pattern_registry = ctx_opts.pattern_registry,
         .cached_env_vars = std::move(cached_env_vars),

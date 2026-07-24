@@ -1,0 +1,1 @@
+: src.c |> @(CC_CMD) |> out.o
