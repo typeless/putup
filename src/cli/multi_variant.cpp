@@ -9,7 +9,6 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/path.hpp"
-#include "pup/core/path_utils.hpp"
 #include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
@@ -107,23 +106,35 @@ auto for_each_variant(
     }
 
     auto variants = Vec<StringId> {};
-    auto scopes = Vec<StringId> {};
-    auto output_targets = Vec<StringId> {};
+    auto scopes = parsed_targets->scopes;
+    auto output_targets = parsed_targets->output_targets;
 
     if (parsed_targets->has_variant_targets) {
         variants = parsed_targets->variants;
-        scopes = parsed_targets->scopes;
-        output_targets = parsed_targets->output_targets;
     } else if (!opts.build_dirs.empty()) {
         for (auto dir : opts.build_dirs) {
             variants.push_back(dir);
         }
-        scopes = parsed_targets->scopes;
-        output_targets = parsed_targets->output_targets;
     } else {
-        variants = discover_variants(source_root_sv);
-        scopes = parsed_targets->scopes;
-        output_targets = parsed_targets->output_targets;
+        auto cwd = pool.get(*pup::platform::current_directory());
+        auto enclosing = find_enclosing_build_dir(cwd, source_root_sv);
+        if (enclosing) {
+            variants.push_back(*enclosing);
+        } else if (!pup::platform::exists(pool.get(pup::path::join(source_root_sv, "tup.config")))) {
+            auto candidates = discover_variants(source_root_sv);
+            if (!candidates.empty()) {
+                auto names = Buf {};
+                for (auto c : candidates) {
+                    if (!names.empty()) {
+                        names += ", ";
+                    }
+                    names += pool.get(c);
+                }
+                eprint("Error: no build directory specified; found: {}\n", names.c_str());
+                eprint("Specify the build directory explicitly: one or more path targets, a glob like 'build-*', or -B DIR\n");
+                return EXIT_FAILURE;
+            }
+        }
     }
 
     if (variants.empty()) {
@@ -131,24 +142,6 @@ auto for_each_variant(
         modified_opts.targets = scopes;
         modified_opts.output_targets = output_targets;
         return handler(modified_opts, ".");
-    }
-
-    auto cwd_id = *pup::platform::current_directory();
-    auto cwd = pool.get(cwd_id);
-    auto cwd_variant = std::optional<StringId> {};
-    for (auto variant : variants) {
-        auto variant_abs = pool.get(pup::path::join(source_root_sv, pool.get(variant)));
-        if (pup::is_path_under(cwd, variant_abs)) {
-            cwd_variant = variant;
-            break;
-        }
-    }
-
-    if (cwd_variant) {
-        auto single_opts = Options { opts };
-        single_opts.targets = scopes;
-        single_opts.output_targets = output_targets;
-        return handler(single_opts, pup::path::filename(pool.get(*cwd_variant)));
     }
 
     if (variants.size() == 1) {

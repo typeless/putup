@@ -438,7 +438,7 @@ SCENARIO("Variant tup.config as a rule input retriggers on config change", "[e2e
 
         WHEN("built, then tup.config gains a variable")
         {
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             REQUIRE(f.build({ "-B", "build", "-j1" }).success());
             REQUIRE(f.read_file("build/inc/config.h") == "#define FOO\n");
 
@@ -734,7 +734,7 @@ SCENARIO("Config file changes trigger rebuild", "[e2e][incremental]")
         auto f = E2EFixture { "config_change" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_OPT=1\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
 
@@ -769,7 +769,7 @@ SCENARIO("Fine-grained config variable tracking", "[e2e][incremental][config]")
         auto f = E2EFixture { "config_var_tracking" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=x\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
 
@@ -816,7 +816,7 @@ SCENARIO("Fine-grained config variable tracking with $(CONFIG_VAR) syntax", "[e2
         auto f = E2EFixture { "config_var_dollar_syntax" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=x\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
 
@@ -863,7 +863,7 @@ SCENARIO("Fine-grained config variable tracking with indirect usage", "[e2e][inc
         auto f = E2EFixture { "config_var_indirect" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_UNUSED=x\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.run("build/program").stdout_output == "Optimization: 1\n");
 
@@ -911,7 +911,7 @@ SCENARIO("SoftSet with config var only records deps when effective", "[e2e][incr
         auto f = E2EFixture { "config_var_softset" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_OTHER=x\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.run("build/program").stdout_output == "Level: 1\n");
         REQUIRE(f.build({ "-B", "build" }).is_noop());
@@ -937,7 +937,7 @@ SCENARIO("SoftSet with config var only records deps when effective", "[e2e][incr
         // Pre-set MYFLAGS so ?= is ineffective
         f.write_file("Tuprules.tup", "MYFLAGS = -DLEVEL=99\n");
         f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_OTHER=x\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.run("build/program").stdout_output == "Level: 99\n");
         REQUIRE(f.build({ "-B", "build" }).is_noop());
@@ -964,7 +964,7 @@ SCENARIO("WeakSet with config var records deps only for winning assignment", "[e
         f.mkdir("build");
         // OPT2=5 wins (last ??= assignment), OPT1=1 is ignored
         f.write_file("build/tup.config", "CONFIG_OPT1=1\nCONFIG_OPT2=5\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         // Should use OPT2 (last wins)
         REQUIRE(f.run("build/program").stdout_output == "Level: 5\n");
@@ -1252,7 +1252,7 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
         auto f = E2EFixture { "scoped_build" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.is_executable("build/app/app"));
 
@@ -2104,7 +2104,7 @@ SCENARIO("Variant builds with tup.config", "[e2e][variant]")
         auto f = E2EFixture { "variant" };
         f.mkdir("build");
         f.write_file("build/tup.config", "# Variant config\nCONFIG_VARIANT=build\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("built with -B build")
         {
@@ -2134,7 +2134,7 @@ SCENARIO("Variant builds with symlinked config", "[e2e][variant]")
         f.write_file("configs/build.config", "# Symlinked variant config\nCONFIG_VARIANT=build\n");
         f.create_symlink("../configs/build.config", "build/tup.config");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("built with -B build")
         {
@@ -2209,7 +2209,7 @@ SCENARIO("Variant-only files are found via generalized path resolution", "[e2e][
         f.write_file("build/tup.config", "# Variant config\n");
         // Create config.txt ONLY in the variant directory, not in source
         f.write_file("build/config.txt", "variant-only-content\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("built with -B build")
         {
@@ -2596,7 +2596,7 @@ SCENARIO("Show with unified variant target", "[e2e][show][target]")
         auto f = E2EFixture { "multi_variant" };
         f.mkdir("build-debug");
         f.write_file("build-debug/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build-debug" }).success());
         REQUIRE(f.build({ "-B", "build-debug" }).success());
 
         WHEN("show graph --summary is run with variant target")
@@ -2653,7 +2653,18 @@ SCENARIO("Layout detection finds build directory via tup.config", "[e2e][layout]
         {
             auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
 
-            THEN("build directory is auto-detected via tup.config")
+            THEN("it refuses and names the candidate")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("build") != std::string::npos);
+            }
+        }
+
+        WHEN("show graph --all-deps is run with the build dir as target")
+        {
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps", "build" });
+
+            THEN("the build directory's index is used")
             {
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
@@ -2681,11 +2692,11 @@ SCENARIO("Layout detection prefers tup.config over .pup", "[e2e][layout]")
         REQUIRE(f.exists("build/.pup"));
         REQUIRE(f.exists("build/tup.config"));
 
-        WHEN("show graph --all-deps is run without -B")
+        WHEN("show graph --all-deps is run with the build dir as target")
         {
-            auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps", "build" });
 
-            THEN("build directory is detected")
+            THEN("build directory is used")
             {
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("Implicit edges:") != std::string::npos);
@@ -2711,9 +2722,9 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/.pup/index"));
 
-        WHEN("clean is run without -B")
+        WHEN("clean is run with the build dir as target")
         {
-            auto result = f.clean();
+            auto result = f.clean({ "build" });
 
             THEN("it finds build/.pup and cleans successfully")
             {
@@ -2722,9 +2733,9 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
             }
         }
 
-        WHEN("show graph --all-deps is run without -B")
+        WHEN("show graph --all-deps is run with the build dir as target")
         {
-            auto result = f.pup({ "show", "graph", "--summary", "--all-deps" });
+            auto result = f.pup({ "show", "graph", "--summary", "--all-deps", "build" });
 
             THEN("it finds build/.pup/index")
             {
@@ -2739,7 +2750,7 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
 // Multi-Variant Build Tests
 // =============================================================================
 
-SCENARIO("Multi-variant auto-detection", "[e2e][multi-variant]")
+SCENARIO("Multi-variant glob selection builds all matching variants", "[e2e][multi-variant]")
 {
     GIVEN("a project with multiple variant directories")
     {
@@ -2751,11 +2762,11 @@ SCENARIO("Multi-variant auto-detection", "[e2e][multi-variant]")
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
-        WHEN("pup is run from project root without -B")
+        WHEN("pup build-* is run from project root")
         {
-            auto result = f.build();
+            auto result = f.pup({ "build-*" });
 
             THEN("all variants are built")
             {
@@ -2777,12 +2788,153 @@ SCENARIO("Multi-variant auto-detection", "[e2e][multi-variant]")
 
         WHEN("rebuilt without changes")
         {
-            (void)f.build();
-            auto result = f.build();
+            (void)f.pup({ "build-*" });
+            auto result = f.pup({ "build-*" });
 
             THEN("nothing is rebuilt")
             {
                 REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("Ambiguous build directories require explicit selection", "[e2e][multi-variant][ambiguous]")
+{
+    GIVEN("a project with two variant directories")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
+
+        WHEN("pup is run bare from the project root")
+        {
+            auto result = f.build();
+
+            THEN("it fails listing the candidates")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("build-debug") != std::string::npos);
+                REQUIRE(result.stderr_output.find("build-release") != std::string::npos);
+                REQUIRE(result.stderr_output.find("-B") != std::string::npos);
+            }
+
+            THEN("nothing is built")
+            {
+                REQUIRE_FALSE(f.exists("build-debug/hello"));
+                REQUIRE_FALSE(f.exists("build-release/hello"));
+            }
+        }
+
+        WHEN("a glob target selects all variants")
+        {
+            auto result = f.pup({ "build-*" });
+
+            THEN("all variants build")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+        }
+
+        WHEN("plural path targets select both variants")
+        {
+            auto result = f.pup({ "build-debug", "build-release" });
+
+            THEN("both variants build")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE(f.is_executable("build-release/hello"));
+            }
+        }
+
+        WHEN("pup runs from inside one variant")
+        {
+            auto result = f.run_pup_in_dir("build-debug", {});
+
+            THEN("only that variant builds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE_FALSE(f.exists("build-release/hello"));
+            }
+        }
+
+        WHEN("bare clean and parse also refuse the ambiguity")
+        {
+            THEN("clean fails")
+            {
+                REQUIRE_FALSE(f.clean().success());
+            }
+
+            THEN("parse fails")
+            {
+                REQUIRE_FALSE(f.parse().success());
+            }
+        }
+
+        WHEN("pup runs from a subdirectory deep inside one variant")
+        {
+            f.mkdir("build-debug/nested");
+            auto result = f.run_pup_in_dir("build-debug/nested", {});
+
+            THEN("the enclosing variant is selected")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+                REQUIRE_FALSE(f.exists("build-release/hello"));
+            }
+        }
+    }
+}
+
+SCENARIO("A single discovered build directory is not adopted implicitly", "[e2e][multi-variant][ambiguous]")
+{
+    GIVEN("a project with exactly one variant directory")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+
+        WHEN("pup is run bare from the project root")
+        {
+            auto result = f.build();
+
+            THEN("it fails naming the candidate")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("build-debug") != std::string::npos);
+                REQUIRE_FALSE(f.exists("build-debug/hello"));
+            }
+        }
+
+        WHEN("the candidate is passed explicitly")
+        {
+            auto result = f.pup({ "build-debug" });
+
+            THEN("it builds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
+            }
+        }
+
+        WHEN("pup runs from inside the variant")
+        {
+            auto result = f.run_pup_in_dir("build-debug", {});
+
+            THEN("it builds that variant")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.is_executable("build-debug/hello"));
             }
         }
     }
@@ -2801,7 +2953,7 @@ SCENARIO("Explicit multi-variant with -B flags", "[e2e][multi-variant]")
         f.write_file("build-release/tup.config", "");
         f.write_file("build-custom/tup.config", "CONFIG_DEBUG=y\n");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
         WHEN("pup -B build-debug -B build-release is run")
         {
@@ -2833,7 +2985,7 @@ SCENARIO("Single -B flag still works", "[e2e][multi-variant]")
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
         WHEN("pup -B build-debug is run")
         {
@@ -2860,11 +3012,11 @@ SCENARIO("Multi-variant verbose output prefixes lines", "[e2e][multi-variant]")
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
-        WHEN("pup -v is run with multiple variants")
+        WHEN("pup -v build-* is run with multiple variants")
         {
-            auto result = f.build({ "-v" });
+            auto result = f.build({ "-v", "build-*" });
 
             THEN("output lines are prefixed with variant names")
             {
@@ -2906,15 +3058,15 @@ SCENARIO("Multi-variant clean", "[e2e][multi-variant][clean]")
         f.mkdir("build-release");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
-        REQUIRE(f.build().success());
+        REQUIRE(f.pup({ "build-*" }).success());
         REQUIRE(f.exists("build-debug/hello"));
         REQUIRE(f.exists("build-release/hello"));
 
-        WHEN("pup clean is run from project root")
+        WHEN("pup clean build-* is run from project root")
         {
-            auto result = f.clean();
+            auto result = f.clean({ "build-*" });
 
             THEN("all variants are cleaned")
             {
@@ -2936,9 +3088,9 @@ SCENARIO("Multi-variant clean with explicit -B flags", "[e2e][multi-variant][cle
         f.mkdir("build-release");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
-        REQUIRE(f.build().success());
+        REQUIRE(f.pup({ "build-*" }).success());
         REQUIRE(f.exists("build-debug/hello"));
         REQUIRE(f.exists("build-release/hello"));
 
@@ -2966,11 +3118,11 @@ SCENARIO("Multi-variant parse", "[e2e][multi-variant]")
         f.mkdir("build-release");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
-        WHEN("pup parse is run from project root")
+        WHEN("pup parse build-* is run from project root")
         {
-            auto result = f.parse();
+            auto result = f.parse({ "build-*" });
 
             THEN("all variants are parsed")
             {
@@ -2996,7 +3148,7 @@ SCENARIO("Unified targets - path-based variant selection", "[e2e][target]")
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
         WHEN("pup build-debug is run (path-based variant)")
         {
@@ -3035,7 +3187,7 @@ SCENARIO("Unified targets - glob pattern variant selection", "[e2e][target]")
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
         f.write_file("build-release/tup.config", "");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
         WHEN("pup 'build-*' is run (glob pattern)")
         {
@@ -3064,7 +3216,7 @@ SCENARIO("Unified targets - explicit multiple variants", "[e2e][target]")
         f.write_file("build-release/tup.config", "");
         f.write_file("build-custom/tup.config", "CONFIG_DEBUG=y\n");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
 
         WHEN("pup build-debug build-release is run (explicit multiple)")
         {
@@ -3134,7 +3286,7 @@ SCENARIO("Unified targets - error on mixed variant/non-variant targets", "[e2e][
         f.mkdir("build-debug");
         f.write_file("build-debug/tup.config", "");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build-debug" }).success());
 
         WHEN("pup build-debug lib is run (mixed targets)")
         {
@@ -3158,7 +3310,7 @@ SCENARIO("Unified targets - single output file target", "[e2e][target]")
         f.mkdir("build-debug");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build-debug" }).success());
 
         WHEN("pup build-debug/hello is run after full build")
         {
@@ -3191,7 +3343,7 @@ SCENARIO("Unified targets - error on nonexistent output in graph", "[e2e][target
         f.mkdir("build-debug");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build-debug" }).success());
 
         WHEN("pup build-debug/nonexistent.o is run")
         {
@@ -3215,7 +3367,7 @@ SCENARIO("Unified targets - B flag with output target", "[e2e][target]")
         f.mkdir("build-debug");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
 
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build-debug" }).success());
 
         WHEN("pup -B build-debug build-debug/hello rebuilds deleted output")
         {
@@ -3321,7 +3473,7 @@ SCENARIO("Subdir merges parent and local config", "[e2e][scoped-config]")
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3350,7 +3502,7 @@ SCENARIO("Subdir inherits from parent when no local config", "[e2e][scoped-confi
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
         // NO build/sub/deep/tup.config
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3373,7 +3525,7 @@ SCENARIO("Root config used when no intermediate configs", "[e2e][scoped-config]"
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
         // NO build/sub/tup.config - should inherit from root
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3396,7 +3548,7 @@ SCENARIO("Empty subdir config does not block parent merge", "[e2e][scoped-config
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
         f.write_file("build/sub/tup.config", ""); // Empty — parent vars merge through
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3419,7 +3571,7 @@ SCENARIO("Parent config overrides child on collision", "[e2e][scoped-config]")
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_SUB_VAR=from_root_override\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3448,7 +3600,7 @@ SCENARIO("Multi-level config merge", "[e2e][scoped-config]")
             ": |> echo \"@(ROOT_VAR)\" > %o |> root_from_deep.txt\n"
             ": |> echo \"@(SUB_VAR)\" > %o |> sub_from_deep.txt\n"
             ": |> echo \"@(DEEP_VAR)\" > %o |> deep.txt\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3473,7 +3625,7 @@ SCENARIO("Parent can explicitly clear a child config var", "[e2e][scoped-config]
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_SUB_VAR=\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=default_value\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
         {
@@ -3496,7 +3648,7 @@ SCENARIO("-D config overrides win over all config files", "[e2e][scoped-config]"
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_SUB_VAR=from_root\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds with -D SUB_VAR=from_cli")
         {
@@ -3522,7 +3674,7 @@ SCENARIO("Configure executes config-generating rules only", "[e2e][configure]")
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup configure runs")
         {
@@ -3595,7 +3747,7 @@ SCENARIO("Configure uses root tup.config only", "[e2e][configure]")
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
         // NO build/configs/tup.config
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup configure runs")
         {
@@ -3619,7 +3771,7 @@ SCENARIO("Configure does not write index", "[e2e][configure]")
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         // Remove index if it was created by init
         f.remove_file("build/.pup/index");
         REQUIRE_FALSE(f.exists("build/.pup/index"));
@@ -3669,7 +3821,7 @@ SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=hello-world\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup configure runs, then pup runs")
         {
@@ -3702,7 +3854,7 @@ SCENARIO("Configure handles config rule depending on non-config rule", "[e2e][co
         auto f = E2EFixture { "configure_deps" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup configure runs")
         {
@@ -4068,7 +4220,7 @@ SCENARIO("configure handles mixed copy-rule + auto-gen configs", "[e2e][configur
         f.mkdir("sub");
         f.write_file("sub/defaults.config", "CONFIG_STATIC_VAR=static_value\n");
         f.write_file("sub/Tupfile", ": defaults.config |> cp %f %o |> tup.config\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("configure is run with -B")
         {
@@ -4335,7 +4487,7 @@ SCENARIO("Tracked tool binaries fold into command identity", "[e2e][incremental]
         auto f = E2EFixture { "tracked_tools" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=./tool.sh\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.read_file("build/out.txt") == "v1\n");
         REQUIRE(f.build({ "-B", "build" }).is_noop());
@@ -5348,7 +5500,7 @@ int main(void) { printf("Hello\n"); return 0; }
         WHEN("built with MODE=debug")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build", "-j1" });
 
             THEN("build succeeds")
@@ -5382,7 +5534,7 @@ endif
 
         WHEN("built with BUILD=debug")
         {
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build", "-j1" });
 
             THEN("build succeeds")
@@ -5403,7 +5555,7 @@ endif
 
         WHEN("toggled to BUILD=release")
         {
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             (void)f.build({ "-B", "build", "-j1" }); // First build with debug
 
             // Toggle to release
@@ -5442,7 +5594,7 @@ endif
 
         WHEN("built with DEVICE=mh1903")
         {
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build", "-j1" });
 
             THEN("the active branch's definition is used")
@@ -5477,7 +5629,7 @@ include hexcat.tup
 
         WHEN("built with DEVICE=mh1903")
         {
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build", "-j1" });
 
             THEN("the definition from the active nested branch is used")
@@ -5504,7 +5656,7 @@ endif
 
         WHEN("built with the branch inactive")
         {
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build", "-j1" });
 
             THEN("the build succeeds and the guarded rule stays inactive")
@@ -5538,7 +5690,7 @@ endif
         WHEN("built with USE_PLATFORM=linux (default/else branch)")
         {
             f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=linux\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5565,7 +5717,7 @@ endif
         WHEN("built with USE_PLATFORM=ios (then branch)")
         {
             f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=ios\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5601,7 +5753,7 @@ SCENARIO("Error directive aborts the build only when its branch is active", "[e2
         WHEN("built with the default config")
         {
             f.write_file("build/tup.config", "");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5615,7 +5767,7 @@ SCENARIO("Error directive aborts the build only when its branch is active", "[e2
         WHEN("built after the config sets BROKEN=y")
         {
             f.write_file("build/tup.config", "");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             f.write_file("build/tup.config", "CONFIG_BROKEN=y\n");
 
             auto result = f.build({ "-B", "build" });
@@ -5637,7 +5789,7 @@ SCENARIO("Include first seen in a dead branch still applies when included active
         auto f = E2EFixture { "include_context" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("the project is built")
         {
@@ -5673,7 +5825,7 @@ SCENARIO("Include first seen in a config-inactive branch is reprocessed when inc
         auto f = E2EFixture { "include_context" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("the included file only assigns variables")
         {
@@ -5724,7 +5876,7 @@ SCENARIO("Assignments in inactive contexts do not leak into the active world", "
         auto f = E2EFixture { "include_context" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("an active inner conditional assigns inside the inactive branch")
         {
@@ -5775,7 +5927,7 @@ endif
         WHEN("built with MODE=debug (else branch)")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5796,7 +5948,7 @@ endif
         WHEN("built with MODE=release (then branch)")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=release\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5836,7 +5988,7 @@ endif
         WHEN("built with PLATFORM=linux and ARCH=x86")
         {
             f.write_file("build/tup.config", "CONFIG_PLATFORM=linux\nCONFIG_ARCH=x86\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5857,7 +6009,7 @@ endif
         WHEN("built with PLATFORM=linux and ARCH=arm")
         {
             f.write_file("build/tup.config", "CONFIG_PLATFORM=linux\nCONFIG_ARCH=arm\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -5899,7 +6051,7 @@ endif
         WHEN("built with MODE=debug")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds and output contains debug marker")
@@ -5913,7 +6065,7 @@ endif
         WHEN("built with MODE=release")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=release\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds and output contains release marker")
@@ -5927,7 +6079,7 @@ endif
         WHEN("built with MODE=other (default branch)")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=other\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds and output contains default marker")
@@ -5959,7 +6111,7 @@ endif
         WHEN("built with MODE=normal (else branch active)")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=normal\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds")
@@ -5972,7 +6124,7 @@ endif
         WHEN("built with MODE=special (if branch active)")
         {
             f.write_file("build/tup.config", "CONFIG_MODE=special\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds with if-branch output")
@@ -6003,7 +6155,7 @@ endif
         WHEN("built with ENCRYPT=n (else branch active, {elf} group active)")
         {
             f.write_file("build/tup.config", "CONFIG_ENCRYPT=n\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
             auto result = f.build({ "-B", "build" });
 
             THEN("build succeeds - consumer depends on active producer only")
@@ -6040,7 +6192,7 @@ endif
         WHEN("built with GEN_PARSER=0 (else branch active)")
         {
             f.write_file("build/tup.config", "CONFIG_GEN_PARSER=0\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -6057,7 +6209,7 @@ endif
         WHEN("built with GEN_PARSER=1 (if branch active)")
         {
             f.write_file("build/tup.config", "CONFIG_GEN_PARSER=1\n");
-            REQUIRE(f.init().success());
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
             auto result = f.build({ "-B", "build" });
 
@@ -6085,7 +6237,7 @@ SCENARIO("Percent-d expands to Tupfile directory name", "[e2e][percent]")
         f.write_file("input.txt", "test\n");
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("built")
         {
@@ -6114,7 +6266,7 @@ SCENARIO("Rules with empty input patterns are skipped", "[e2e][empty-input]")
 )");
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("built")
         {
@@ -6176,7 +6328,7 @@ SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e]
         auto f = E2EFixture { "sibling_dir_inputs" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         auto first_build = f.build({ "-B", "build" });
         INFO("first build stdout: " << first_build.stdout_output);
@@ -6790,7 +6942,7 @@ endif
         f.write_file("linux_impl.c", "int platform_init(void) { return 2; }\n");
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=linux\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
 
         WHEN("the project is rebuilt with nothing changed")
@@ -6852,7 +7004,7 @@ endif
         f.write_file("linux_impl.c", "int platform_init(void) { return 2; }\n");
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_USE_PLATFORM=linux\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/platform.o"));
 
@@ -6888,7 +7040,7 @@ auto build_scoped_stale_project(E2EFixture& f) -> void
     f.write_file("beta/b.c", "int b(void) { return 2; }\n");
     f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
     f.write_file("build/tup.config", "");
-    REQUIRE(f.init().success());
+    REQUIRE(f.pup({ "configure", "-B", "build" }).success());
     REQUIRE(f.build({ "-B", "build" }).success());
     REQUIRE(f.exists("build/r.out"));
     REQUIRE(f.exists("build/alpha/a.out"));
@@ -6965,7 +7117,7 @@ SCENARIO("Scoped build removes stale outputs in a nested in-scope directory", "[
         f.write_file("beta/b.c", "int b(void) { return 2; }\n");
         f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/alpha/sub/s2.out"));
         REQUIRE(f.exists("build/beta/b.out"));
@@ -7079,7 +7231,7 @@ SCENARIO("Scoped build preserves out-of-scope implicit dependencies", "[e2e][inc
         f.write_file("beta/b.c", "#include \"b.h\"\nint b(void) { return B; }\n");
         f.write_file("beta/Tupfile", ": b.c |> gcc -c %f -o %o |> b.o\n");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/beta/b.o"));
 
@@ -7113,7 +7265,7 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to parse", 
         f.write_file("beta/b.c", "int b(void) { return 2; }\n");
         f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/alpha/a.out"));
         REQUIRE(f.exists("build/beta/b.out"));
@@ -7148,7 +7300,7 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to evaluate
         f.write_file("beta/b.c", "int b(void) { return 2; }\n");
         f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/alpha/a.out"));
         REQUIRE(f.exists("build/beta/b.out"));
@@ -7250,7 +7402,7 @@ SCENARIO("Evaluation failure in a directory parsed on demand is reported once", 
         f.write_file("beta/b.c", "int b(void) { return 2; }\n");
         f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out <grp>\n");
         f.write_file("build/tup.config", "");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/alpha/a.out"));
         REQUIRE(f.exists("build/beta/b.out"));
@@ -7331,7 +7483,7 @@ SCENARIO("Output-less rule reactivated from an inactive conditional runs", "[e2e
         f.write_file("Tupfile", "ifeq (@(FOO),yes)\n: |> touch marker_@(FOO) |>\nendif\n");
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_FOO=no\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE_FALSE(f.exists("marker_no"));
 
@@ -7366,7 +7518,7 @@ SCENARIO("Config-gated rule follows guard flips", "[e2e][incremental]")
         f.write_file("Tupfile", "ifeq (@(FOO),yes)\n: |> touch %o |> out.txt\nendif\n");
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_FOO=yes\n");
-        REQUIRE(f.init().success());
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/out.txt"));
 

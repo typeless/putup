@@ -163,11 +163,16 @@ putup -S vendor/busybox -C config -B build
 putup configure -B build-arm --config configs/arm-cross.config
 ```
 
-**Auto-detection:** Without `-B`, putup discovers all subdirectories
-containing `tup.config` or `.pup/` and builds them in parallel:
+**Selection is always explicit:** putup never adopts a build directory by
+scanning. Without `-B` or a variant target, only unambiguous context counts —
+running from inside a build directory (any depth) selects it, and a
+`tup.config` at the source root means an in-tree build. If variant
+directories exist but none was selected, putup errors and lists them:
 
 ```bash
-putup                              # builds every discovered variant
+putup                              # error: no build directory specified;
+                                   # found: build-debug, build-release
+cd build-debug && putup            # builds this variant
 ```
 
 **Select by path or glob:**
@@ -330,7 +335,7 @@ putup -B build                 # 2. build
 ```bash
 putup configure -B build-debug --config configs/debug.config
 putup configure -B build-release --config configs/release.config
-putup                          # auto-detects and builds both
+putup build-*                  # builds both
 ```
 
 For the full reference, see <https://github.com/typeless/putup/blob/main/docs/reference.md>.

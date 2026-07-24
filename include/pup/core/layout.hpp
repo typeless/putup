@@ -64,4 +64,10 @@ auto discover_variants(
     std::string_view source_root
 ) -> Vec<StringId>;
 
+[[nodiscard]]
+auto find_enclosing_build_dir(
+    std::string_view cwd,
+    std::string_view source_root
+) -> std::optional<StringId>;
+
 } // namespace pup

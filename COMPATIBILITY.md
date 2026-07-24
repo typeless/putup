@@ -208,7 +208,7 @@ Features in putup that extend beyond tup:
 | **Single output targets** | `putup build-debug/src/lib/foo.o` rebuilds one specific output |
 | **Glob patterns** | `putup 'build-*'` matches multiple variants |
 | **Multi-variant parallel** | `putup -B build-debug -B build-release` or `putup build-debug build-release` |
-| **Auto-variant detection** | Running `putup` from project root auto-detects all variants |
+| **Explicit variant selection** | Build directories are never adopted by scanning; running `putup` from inside a build dir selects it, otherwise selection is explicit (candidates are listed as hints on error) |
 | **Variant output prefix** | Output lines are prefixed with `[variant-name]` for clarity |
 | **Show formats** | `putup show graph\|script\|compdb\|var\|instructions\|index` for different output formats |
 | **Content-based hashing** | SHA-256 for precise change detection beyond mtime |

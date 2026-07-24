@@ -189,38 +189,6 @@ auto compute_tup_variantdir(
     return ".";
 }
 
-auto find_build_subdir(
-    std::string_view root
-) -> std::optional<StringId>
-{
-    auto& pool = global_pool();
-    for (auto const& name : { "build", "out", "variant" }) {
-        auto dir = pool.get(pup::path::join(root, name));
-        if (pup::platform::exists(pool.get(pup::path::join(dir, "tup.config")))
-            || pup::platform::is_directory(pool.get(pup::path::join(dir, ".pup")))) {
-            return pool.intern(dir);
-        }
-    }
-
-    if (pup::platform::is_directory(root)) {
-        auto listing = pup::platform::DirEntries {};
-        if (pup::platform::read_directory(root, listing)) {
-            for (auto const& entry : listing.entries) {
-                if (!entry.is_dir) {
-                    continue;
-                }
-                auto entry_path = pool.get(pup::path::join(root, entry.name));
-                if (pup::platform::exists(pool.get(pup::path::join(entry_path, "tup.config")))
-                    || pup::platform::is_directory(pool.get(pup::path::join(entry_path, ".pup")))) {
-                    return pool.intern(entry_path);
-                }
-            }
-        }
-    }
-
-    return std::nullopt;
-}
-
 auto read_file(std::string_view path) -> std::optional<StringId>
 {
     auto content = Buf {};
@@ -993,9 +961,6 @@ auto resolve_clean_context(Options const& opts) -> std::optional<CleanContext>
         is_in_tree = (pool.get(build_dir_id) == root_sv);
     } else if (pup::platform::exists(pool.get(pup::path::join(cwd, ".pup"))) && cwd != root_sv) {
         build_dir_id = cwd_id;
-        is_in_tree = false;
-    } else if (auto detected = find_build_subdir(root_sv)) {
-        build_dir_id = *detected;
         is_in_tree = false;
     } else if (pup::platform::exists(pool.get(pup::path::join(root_sv, "tup.config")))
                || pup::platform::exists(pool.get(pup::path::join(root_sv, ".pup")))) {

@@ -60,36 +60,11 @@ auto get_env(char const* name) -> std::optional<std::string_view>
     return std::nullopt;
 }
 
-auto find_build_subdir(
-    std::string_view root
-) -> std::optional<StringId>
+auto has_build_markers(std::string_view dir) -> bool
 {
     auto& pool = global_pool();
-    for (auto const& name : { "build", "out", "variant" }) {
-        auto dir = pool.get(path::join(root, name));
-        if (platform::exists(pool.get(path::join(dir, "tup.config")))
-            || platform::is_directory(pool.get(path::join(dir, ".pup")))) {
-            return pool.intern(dir);
-        }
-    }
-
-    if (platform::is_directory(root)) {
-        auto listing = platform::DirEntries {};
-        if (platform::read_directory(root, listing)) {
-            for (auto const& entry : listing.entries) {
-                if (!entry.is_dir) {
-                    continue;
-                }
-                auto entry_path = pool.get(path::join(root, entry.name));
-                if (platform::exists(pool.get(path::join(entry_path, "tup.config")))
-                    || platform::is_directory(pool.get(path::join(entry_path, ".pup")))) {
-                    return pool.intern(entry_path);
-                }
-            }
-        }
-    }
-
-    return std::nullopt;
+    return platform::exists(pool.get(path::join(dir, "tup.config")))
+        || platform::is_directory(pool.get(path::join(dir, ".pup")));
 }
 
 } // namespace
@@ -178,8 +153,6 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
         layout.output_root = intern_path(*env_build);
     } else if (platform::exists(pool.get(path::join(cwd, "tup.config"))) && pool.intern(cwd) != layout.source_root) {
         layout.output_root = intern_path(cwd);
-    } else if (auto build_subdir = find_build_subdir(pool.get(layout.source_root))) {
-        layout.output_root = intern_path(pool.get(*build_subdir));
     } else {
         layout.output_root = layout.source_root;
     }
@@ -240,15 +213,37 @@ auto discover_variants(
         if (!entry.is_dir) {
             continue;
         }
-        auto entry_path = pool.get(path::join(source_root, entry.name));
-        if (platform::exists(pool.get(path::join(entry_path, "tup.config")))
-            || platform::is_directory(pool.get(path::join(entry_path, ".pup")))) {
+        if (has_build_markers(pool.get(path::join(source_root, entry.name)))) {
             result.push_back(pool.intern(entry.name));
         }
     }
 
     std::sort(result.begin(), result.end());
     return result;
+}
+
+auto find_enclosing_build_dir(
+    std::string_view cwd,
+    std::string_view source_root
+) -> std::optional<StringId>
+{
+    auto& pool = global_pool();
+    auto root = normalize_path(source_root);
+    auto current = normalize_path(cwd);
+    auto best = std::optional<StringId> {};
+
+    while (current != root) {
+        auto current_sv = pool.get(current);
+        if (has_build_markers(current_sv)) {
+            best = current;
+        }
+        auto parent_sv = path::parent(current_sv);
+        if (parent_sv == current_sv || parent_sv.empty()) {
+            return std::nullopt;
+        }
+        current = pool.intern(parent_sv);
+    }
+    return best;
 }
 
 } // namespace pup

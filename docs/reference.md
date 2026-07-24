@@ -103,7 +103,7 @@ putup [OPTIONS] [TARGETS...]
 
 The default command. Executes the build by parsing Tupfiles, computing the dependency graph, and running commands for changed files.
 
-**Multi-variant auto-detection:** When run from the project root without `-B` flags, putup automatically discovers all variant directories (subdirectories containing `tup.config` or `.pup/`) and builds them in parallel.
+**Build directory selection is always explicit.** Without `-B` flags or variant targets, putup uses only unambiguous context: running from inside a build directory (any depth) selects it, and a `tup.config` at the source root means an in-tree build. Putup never adopts a build directory by scanning — if candidates exist (subdirectories with `tup.config` or `.pup/`) and none was specified, it errors and lists them as hints. This makes adopting a build directory that belongs to another project or configuration impossible.
 
 **Arguments:**
 - `TARGETS` - Optional paths to scope the build. Can be:
@@ -142,7 +142,8 @@ For non-TTY output (pipes, files), a simpler `[done/total]` format is used.
 
 **Examples:**
 ```bash
-putup                    # Build from current directory (auto-detects variants)
+putup                    # In-tree build, or the enclosing build dir when run
+                         # from inside one; otherwise errors listing candidates
 putup -j8                # Build with 8 parallel jobs
 putup -v                 # Verbose build
 putup lib app            # Build only lib/ and app/ directories
@@ -176,7 +177,7 @@ Supports path-based variant and scope selection.
 - `-B DIR` - Specify build directory (can use multiple times)
 
 **Multi-Variant Support:**
-- Running from project root auto-detects and parses all variants
+- Running from project root requires an explicit variant (path target or -B); candidates are listed as hints
 - Path-based targets: `putup parse build-debug`, `putup parse build-*`
 - Legacy `-B` flag still works for explicit selection
 
@@ -231,13 +232,13 @@ Supports path-based variant and scope selection.
 - `-B DIR` - Clean a variant build directory (can use multiple times)
 
 **Multi-Variant Support:**
-- Running from project root auto-detects and cleans all variants
+- Running from project root requires an explicit variant (path target or -B); candidates are listed as hints
 - Path-based targets: `putup clean build-debug`, `putup clean build-*`
 - Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-putup clean                     # Remove generated files (auto-detects variants)
+putup clean                     # In-tree / from inside a build dir; else errors
 putup clean -n                  # Show what would be removed
 putup clean build-debug         # Clean single variant (path-based)
 putup clean build-*             # Clean all matching variants
@@ -258,13 +259,13 @@ Supports path-based variant selection.
 - `-B DIR` - Distclean a variant build directory (can use multiple times)
 
 **Multi-Variant Support:**
-- Running from project root auto-detects and distcleans all variants
+- Running from project root requires an explicit variant (path target or -B); candidates are listed as hints
 - Path-based targets: `putup distclean build-debug`, `putup distclean build-*`
 - Legacy `-B` flag still works for explicit selection
 
 **Examples:**
 ```bash
-putup distclean             # Full reset (auto-detects variants)
+putup distclean             # In-tree / from inside a build dir; else errors
 putup distclean build-debug # Reset single variant (path-based)
 putup distclean build-*     # Reset all matching variants
 ```
@@ -703,7 +704,7 @@ putup clean -B build-release  # Clean that variant
 putup -B build-debug -B build-release
 ```
 
-**Auto-detection:** Without `-B` flags, putup auto-detects variant directories (subdirs with `tup.config` or `.pup/`) and builds them all in parallel.
+**No implicit adoption:** Without `-B` flags or targets, putup never selects a variant by scanning. Existing variant directories (subdirs with `tup.config` or `.pup/`) are only listed as hints in the error. Run from inside the variant, or select it explicitly (path targets, a glob, or `-B`).
 
 **`-A, --all` vs `-a, --all-deps`**
 
@@ -769,7 +770,7 @@ putup -v -- lib     # Verbose build of 'lib' directory
 For source/build directories:
 1. Command-line options (`-S`, `-B`) - highest priority
 2. Environment variables (`PUP_SOURCE_DIR`, `PUP_BUILD_DIR`)
-3. Auto-detection from current working directory
+3. Enclosing build directory of the current working directory
 
 **`PUP_IMPLICIT_DEPS`**
 
@@ -1494,11 +1495,13 @@ putup build-*/src/lib              # Multiple variants + scope
 
 **Auto-detection:**
 
-When no targets are specified, putup auto-detects variant directories:
+When no targets are specified, putup uses only unambiguous context:
 
 ```bash
-putup                              # Builds all discovered variants in parallel
-cd build-debug && putup            # Builds only this variant
+putup                              # Errors if variant dirs exist but none was
+                                   # selected (candidates listed as hints)
+putup build-*                      # Builds all matching variants in parallel
+cd build-debug && putup            # Builds this variant (any depth inside it)
 ```
 
 **Legacy -B flag:**
@@ -2785,7 +2788,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 For source/build directories:
 1. Command-line (`-S`, `-B`) — highest
 2. Environment (`PUP_SOURCE_DIR`, `PUP_BUILD_DIR`)
-3. Auto-detection from cwd — lowest
+3. Enclosing build directory of cwd — lowest
 
 **Example Usage:**
 

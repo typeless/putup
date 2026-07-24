@@ -9,7 +9,7 @@ PUP_ROOT="$(cd "$(dirname "$PUP")/.." && pwd)"
 cd "$PUP_ROOT"
 
 echo "Parsing putup's Tupfile..."
-$PUP parse -v
+$PUP parse -v build
 
 # Note: Building the graph requires include_rules support (for Tuprules.tup)
 # which is not yet implemented. The parse test is sufficient for now.
