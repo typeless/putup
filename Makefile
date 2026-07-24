@@ -52,7 +52,7 @@ build: configure
 	$(PUTUP) -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
 test: build
-	./$(BUILD_DIR)/test/unit/putup_test
+	test/run-tests.sh ./$(BUILD_DIR)/test/unit/putup_test
 
 # Coverage: build a gcov-instrumented variant, run the full test suite (with
 # PUP pointing at the instrumented binary so E2E subprocess runs count too),
@@ -62,7 +62,7 @@ coverage:
 	CONFIG=coverage $(PUTUP) configure -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
 	CONFIG=coverage $(PUTUP) -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
 	find $(COVERAGE_DIR) -name '*.gcda' -delete 2>/dev/null || true
-	PUP="$(CURDIR)/$(COVERAGE_DIR)/putup" ./$(COVERAGE_DIR)/test/unit/putup_test
+	PUP="$(CURDIR)/$(COVERAGE_DIR)/putup" test/run-tests.sh ./$(COVERAGE_DIR)/test/unit/putup_test
 	@mkdir -p $(COVERAGE_REPORT)
 	$(GCOVR) $(GCOVR_FLAGS) --print-summary \
 		--html-details $(COVERAGE_REPORT)/index.html \
