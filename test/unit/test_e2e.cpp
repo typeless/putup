@@ -3586,6 +3586,51 @@ SCENARIO("Configure executes config-generating rules only", "[e2e][configure]")
     }
 }
 
+SCENARIO("Empty-rendered commands are rejected at graph-build time", "[e2e][configure][empty-command]")
+{
+    GIVEN("a project whose rule command is a single unset config var")
+    {
+        auto f = E2EFixture { "empty_command" };
+
+        WHEN("pup configure runs with no config")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+
+            THEN("the bootstrap pass tolerates the empty render")
+            {
+                REQUIRE(result.success());
+            }
+        }
+
+        WHEN("the project builds with the var unset")
+        {
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build fails with a pointed diagnostic")
+            {
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stderr_output + result.stdout_output;
+                REQUIRE(combined.find("Tupfile:1") != std::string::npos);
+                REQUIRE(combined.find("@(CC_CMD)") != std::string::npos);
+            }
+        }
+
+        WHEN("the project builds with the var set")
+        {
+            f.mkdir("build");
+            f.write_file("build/tup.config", "CONFIG_CC_CMD=cp %f %o\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the command renders and runs")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/out.o"));
+            }
+        }
+    }
+}
+
 SCENARIO("Configure uses root tup.config only", "[e2e][configure]")
 {
     GIVEN("a project with configs/Tupfile using @(MACHINE)")

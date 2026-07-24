@@ -1957,6 +1957,25 @@ auto expand_rule(
     }
     cmd_text = *cmd_result;
 
+    if (ctx.options.reject_empty_commands && is_context_active(ctx)
+        && str(cmd_text).find_first_not_of(" \t") == std::string_view::npos) {
+        auto msg = Buf {};
+        msg.fmt("{}:{}: command expands to empty string", str(ctx.current_file), rule.location.line);
+        if (!ctx.used_config_vars.empty()) {
+            msg += "; check tup.config for unset config variables (";
+            auto first = true;
+            for (auto raw : ctx.used_config_vars) {
+                if (!first) {
+                    msg += ", ";
+                }
+                first = false;
+                msg.fmt("@({})", str(static_cast<StringId>(raw)));
+            }
+            msg += ")";
+        }
+        return make_error<void>(ErrorCode::ParseError, msg.view());
+    }
+
     if (eff_display) {
         auto disp_result = expand_command(ctx, *eff_display, flags, *outputs);
         if (disp_result) {

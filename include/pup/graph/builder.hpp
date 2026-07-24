@@ -32,6 +32,7 @@ struct BuilderOptions {
     bool expand_globs = true;                                ///< Expand glob patterns
     bool validate_inputs = true;                             ///< Check that input files exist
     bool verbose = false;                                    ///< Print verbose output
+    bool reject_empty_commands = true;                       ///< Fail on empty-rendered commands (off for the configure pass, which evaluates before tup.config exists)
     DepScannerRegistry const* scanner_registry = nullptr;    ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr;   ///< Optional pattern registry for auto-generated rules
     Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)

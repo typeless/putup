@@ -1666,6 +1666,86 @@ TEST_CASE("GraphBuilder error directive expanding to empty keeps the empty messa
     CHECK(msg.find("Tupfile:1") != std::string_view::npos);
 }
 
+TEST_CASE("GraphBuilder rejects command expanding to empty and names the config vars read", "[builder][empty-command]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> @(CC) |> out.o\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(msg.find("empty") != std::string_view::npos);
+    CHECK(msg.find("@(CC)") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder rejects command expanding to whitespace only", "[builder][empty-command]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> @(CC) @(CFLAGS) |> out.o\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(msg.find("@(CC)") != std::string_view::npos);
+    CHECK(msg.find("@(CFLAGS)") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder rejects empty command without config hint when no config vars read", "[builder][empty-command]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> $(UNSET) |> out.o\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("Tupfile:1") != std::string_view::npos);
+    CHECK(msg.find("empty") != std::string_view::npos);
+    CHECK(msg.find("tup.config") == std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder accepts empty-rendered command in inactive config branch", "[builder][empty-command]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(
+        fixture,
+        "ifeq (@(TESTS),y)\n: |> @(CC) |> out.o\nendif\n"
+    );
+
+    REQUIRE(result.has_value());
+}
+
+TEST_CASE("GraphBuilder rejects empty-rendered command in active config branch", "[builder][empty-command]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto config = VarDb {};
+    config.set("TESTS", "y");
+
+    auto result = add_tupfile_from_source(
+        fixture,
+        "ifeq (@(TESTS),y)\n: |> @(CC) |> out.o\nendif\n",
+        &config
+    );
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("Tupfile:2") != std::string_view::npos);
+    CHECK(msg.find("@(CC)") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder accepts command that renders nonempty from config var", "[builder][empty-command]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto config = VarDb {};
+    config.set("CC", "gcc");
+
+    auto result = add_tupfile_from_source(fixture, ": |> @(CC) |> out.o\n", &config);
+
+    REQUIRE(result.has_value());
+}
+
 TEST_CASE("GraphBuilder statically false branch does not claim outputs", "[builder][conditional]")
 {
     auto fixture = BuilderTestFixture {};
