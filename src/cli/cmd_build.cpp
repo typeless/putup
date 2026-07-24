@@ -255,6 +255,7 @@ auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<S
 auto find_changed_files_with_implicit(
     std::string_view source_root,
     std::string_view config_root,
+    std::string_view build_root,
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& scopes,
     pup::parser::IgnoreList const& excludes,
@@ -288,10 +289,15 @@ auto find_changed_files_with_implicit(
         auto& pool = pup::global_pool();
         auto file_path_sv = pool.get(file.path);
 
+        // Generated paths carry the build-root prefix; scopes are source-relative
+        auto scope_path_sv = file.type == pup::NodeType::Generated
+            ? pool.get(pup::strip_path_prefix(file_path_sv, build_root))
+            : file_path_sv;
+
         // Skip files outside scopes (but always check Tupfiles, upstream deps,
         // and implicit dependencies like headers from .d files)
         if (!scopes.empty() && !is_tupfile(file_path_sv)
-            && !pup::is_path_in_any_scope(file_path_sv, scopes)
+            && !pup::is_path_in_any_scope(scope_path_sv, scopes)
             && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)
             && !std::binary_search(implicit_dep_files.begin(), implicit_dep_files.end(), file.path)) {
             continue;
@@ -953,17 +959,25 @@ auto is_dir_authoritative(
     pup::Vec<pup::StringId> const& parse_scopes,
     pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
-    pup::Vec<pup::StringId> const& available_dirs
+    pup::Vec<pup::StringId> const& available_dirs,
+    pup::Vec<pup::StringId> const& pruned_dirs
 ) -> bool
 {
     auto& pool = pup::global_pool();
     auto const* dir_file = idx.find_file_by_id(dir_id);
     auto dir_path = (dir_file && !pup::is_empty(dir_file->path)) ? pool.get(dir_file->path) : std::string_view { "." };
     auto dir_str_id = (dir_file && !pup::is_empty(dir_file->path)) ? dir_file->path : pool.find(".");
+    if (contains_id(parsed_dirs, dir_str_id)) {
+        return true;
+    }
+    // A dir under a pruned nested-project root has a Tupfile this run never
+    // saw; its absence from available_dirs does not mean it was deleted.
+    if (pup::is_path_in_any_scope(dir_path, pruned_dirs)) {
+        return false;
+    }
     auto const in_scope = (parse_scopes.empty() || pup::is_path_in_any_scope(dir_path, parse_scopes))
         && !excludes.is_ignored_dir(dir_path);
-    return contains_id(parsed_dirs, dir_str_id)
-        || (!contains_id(available_dirs, dir_str_id) && in_scope);
+    return !contains_id(available_dirs, dir_str_id) && in_scope;
 }
 
 /// Carry forward old-index commands from directories this run has no
@@ -978,6 +992,7 @@ auto merge_out_of_scope_commands(
     pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
     pup::Vec<pup::StringId> const& available_dirs,
+    pup::Vec<pup::StringId> const& pruned_dirs,
     ImplicitDepContext& ctx
 ) -> void
 {
@@ -1081,7 +1096,7 @@ auto merge_out_of_scope_commands(
 
     auto old_to_new_cmd = pup::NodeIdMap32 {};
     for (auto const& cmd : old_index.commands()) {
-        if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs)) {
+        if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
         if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, hash_less)) {
@@ -1248,7 +1263,8 @@ auto build_index(
     pup::Vec<pup::StringId> const& parse_scopes = {},
     pup::parser::IgnoreList const& excludes = {},
     pup::Vec<pup::StringId> const& parsed_dirs = {},
-    pup::Vec<pup::StringId> const& available_dirs = {}
+    pup::Vec<pup::StringId> const& available_dirs = {},
+    pup::Vec<pup::StringId> const& pruned_dirs = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
@@ -1272,7 +1288,7 @@ auto build_index(
     // Merge out-of-scope commands forward before the implicit-edge passes so
     // preserve_old_implicit_edges can re-attach their edges by identity.
     if (old_index) {
-        merge_out_of_scope_commands(*old_index, parse_scopes, excludes, parsed_dirs, available_dirs, ctx);
+        merge_out_of_scope_commands(*old_index, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs, ctx);
     }
 
     // Process discovered implicit dependencies from compiler output
@@ -1387,6 +1403,7 @@ auto remove_stale_outputs(
     pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
     pup::Vec<pup::StringId> const& available_dirs,
+    pup::Vec<pup::StringId> const& pruned_dirs,
     std::string_view source_root,
     std::string_view variant_name,
     bool dry_run,
@@ -1396,7 +1413,7 @@ auto remove_stale_outputs(
     for (auto const& cmd : idx.commands()) {
         // Only delete outputs of a command whose directory we have authoritative
         // knowledge of this run; anything else is preserved.
-        if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs)) {
+        if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
 
@@ -1606,6 +1623,7 @@ auto build_single_variant(
         changed_files = find_changed_files_with_implicit(
             source_root_str,
             config_root_str,
+            pup::graph::get_build_root_name(bs.graph),
             idx,
             scopes,
             excludes,
@@ -1640,6 +1658,7 @@ auto build_single_variant(
             excludes,
             ctx.parsed_dirs(),
             ctx.available_dirs(),
+            ctx.pruned_dirs(),
             source_root_str,
             variant_name,
             opts.dry_run,
@@ -1846,7 +1865,8 @@ auto build_single_variant(
             parse_scopes,
             excludes,
             ctx.parsed_dirs(),
-            ctx.available_dirs()
+            ctx.available_dirs(),
+            ctx.pruned_dirs()
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };

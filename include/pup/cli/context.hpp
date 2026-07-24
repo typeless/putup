@@ -98,6 +98,10 @@ public:
     /// failed to parse or was skipped by the scope filter.
     [[nodiscard]]
     auto available_dirs() const -> Vec<StringId> const&;
+    /// Nested-project roots pruned from discovery this run: subtrees this build
+    /// has no authority over, so their commands and outputs must be preserved.
+    [[nodiscard]]
+    auto pruned_dirs() const -> Vec<StringId> const&;
 
     /// Get the old index loaded from disk (if any)
     /// Returns nullptr if no index exists or failed to load
