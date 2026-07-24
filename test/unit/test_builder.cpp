@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <random>
 
 using namespace pup;
 using namespace pup::graph;
@@ -79,8 +80,8 @@ class BuilderTestFixture {
 public:
     BuilderTestFixture()
     {
-        test_root_ = fs::temp_directory_path() / "pup_test_builder";
-        fs::remove_all(test_root_);
+        test_root_ = fs::temp_directory_path()
+            / ("pup_test_builder_" + std::to_string(std::random_device {}()));
         fs::create_directories(test_root_);
         fs::create_directories(test_root_ / "src");
         fs::create_directories(test_root_ / "include");
