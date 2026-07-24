@@ -106,6 +106,65 @@ TEST_CASE("find_project_root", "[e2e][layout]")
     }
 }
 
+TEST_CASE("find_enclosing_build_dir", "[layout]")
+{
+    auto tmp = TempDir {};
+    tmp.create_file("Tupfile.ini");
+    auto root = tmp.path().string();
+
+    SECTION("cwd at the build dir root")
+    {
+        tmp.create_file("build/tup.config");
+
+        auto result = pup::find_enclosing_build_dir((tmp.path() / "build").string(), root);
+        REQUIRE(result.has_value());
+        REQUIRE(fs::canonical(std::string(global_pool().get(*result))) == fs::canonical(tmp.path() / "build"));
+    }
+
+    SECTION("cwd deep inside the build dir")
+    {
+        tmp.create_file("build/tup.config");
+        tmp.create_dir("build/sub/nested");
+
+        auto result = pup::find_enclosing_build_dir((tmp.path() / "build" / "sub" / "nested").string(), root);
+        REQUIRE(result.has_value());
+        REQUIRE(fs::canonical(std::string(global_pool().get(*result))) == fs::canonical(tmp.path() / "build"));
+    }
+
+    SECTION("scoped tup.config below the build root does not win over it")
+    {
+        tmp.create_file("build/tup.config");
+        tmp.create_file("build/configs/tup.config");
+
+        auto result = pup::find_enclosing_build_dir((tmp.path() / "build" / "configs").string(), root);
+        REQUIRE(result.has_value());
+        REQUIRE(fs::canonical(std::string(global_pool().get(*result))) == fs::canonical(tmp.path() / "build"));
+    }
+
+    SECTION("cwd at the source root finds nothing")
+    {
+        tmp.create_file("build/tup.config");
+
+        REQUIRE_FALSE(pup::find_enclosing_build_dir(root, root).has_value());
+    }
+
+    SECTION("cwd in an unmarked source subdirectory finds nothing")
+    {
+        tmp.create_file("build/tup.config");
+        tmp.create_dir("src/lib");
+
+        REQUIRE_FALSE(pup::find_enclosing_build_dir((tmp.path() / "src" / "lib").string(), root).has_value());
+    }
+
+    SECTION("cwd outside the source root finds nothing")
+    {
+        auto other = TempDir {};
+        other.create_file("tup.config");
+
+        REQUIRE_FALSE(pup::find_enclosing_build_dir(other.path().string(), root).has_value());
+    }
+}
+
 TEST_CASE("discover_layout from build directory", "[e2e][layout]")
 {
     SECTION("discovers source root when cwd is build directory")
