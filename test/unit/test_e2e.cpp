@@ -7143,6 +7143,33 @@ SCENARIO("Scoped build removes stale outputs in a nested in-scope directory", "[
     }
 }
 
+SCENARIO("Scoped build restores a deleted output inside scope", "[e2e][incremental][scope]")
+{
+    GIVEN("a fully-built variant of a multi-directory project")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/lib/foo.o"));
+
+        WHEN("an in-scope output is deleted and the build is scoped to its directory")
+        {
+            f.remove_file("build/lib/foo.o");
+            auto result = f.build({ "-B", "build", "lib" });
+
+            THEN("the missing output is rebuilt")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.exists("build/lib/foo.o"));
+            }
+        }
+    }
+}
+
 SCENARIO("Scoped build preserves out-of-scope commands in the saved index", "[e2e][incremental][scope]")
 {
     GIVEN("a fully-built two-directory project")
@@ -7845,6 +7872,38 @@ SCENARIO("Nested project roots are skipped by discovery", "[e2e][exclude][layout
                 REQUIRE(result.success());
                 REQUIRE(f.exists("outer.out"));
                 REQUIRE_FALSE(f.exists("sub/inner.out"));
+            }
+        }
+    }
+}
+
+SCENARIO("Pruning a nested project preserves its composed outputs", "[e2e][exclude][layout][incremental]")
+{
+    GIVEN("a nested project built via target selection into a variant dir")
+    {
+        auto f = E2EFixture { "nested_project" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "-B", "build", "sub/" }).success());
+        REQUIRE(f.exists("build/sub/inner.out"));
+
+        WHEN("a plain build runs without composing the nested project")
+        {
+            auto plain = f.build({ "-B", "build" });
+            REQUIRE(plain.success());
+
+            THEN("the nested project's outputs survive")
+            {
+                REQUIRE(f.exists("build/sub/inner.out"));
+            }
+
+            THEN("re-running the composed target is a no-op with outputs intact")
+            {
+                auto again = f.pup({ "-B", "build", "sub/" });
+                INFO("stdout: " << again.stdout_output);
+                REQUIRE(again.success());
+                REQUIRE(again.is_noop());
+                REQUIRE(f.exists("build/sub/inner.out"));
             }
         }
     }

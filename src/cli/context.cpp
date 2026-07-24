@@ -156,6 +156,7 @@ auto sorted_erase(Vec<StringId>& v, std::string_view key) -> void
 /// State for tracking Tupfile parsing across multiple directories
 struct TupfileParseState {
     Vec<StringId> available;
+    Vec<StringId> pruned;
     Vec<StringId> parsed;
     Vec<StringId> parsing;
     Vec<StringId> failed;
@@ -220,7 +221,8 @@ auto discover_tupfile_dirs(
     std::string_view root,
     pup::parser::IgnoreList const& ignore = {},
     Vec<StringId> const& keep_scopes = {},
-    std::string_view prefix = {}
+    std::string_view prefix = {},
+    Vec<StringId>* pruned_roots = nullptr
 ) -> Vec<StringId>
 {
     auto& pool = global_pool();
@@ -238,6 +240,9 @@ auto discover_tupfile_dirs(
             && pup::platform::exists(pool.get(pup::path::join(pool.get(pup::path::join(root, rel_path)), "Tupfile.ini")))) {
             auto project_rel = prefix.empty() ? rel_path : pool.get(pup::path::join(prefix, rel_path));
             if (!is_ancestor_of_any(project_rel, keep_scopes)) {
+                if (pruned_roots) {
+                    pruned_roots->push_back(pool.intern(project_rel));
+                }
                 return false;
             }
         }
@@ -440,7 +445,13 @@ auto compose_nested_project_subtree(std::string_view dir, ParseContext& ctx) -> 
     }
 
     auto subtree_root = pool.get(pup::path::join(ctx.config_root, marker_prefix));
-    auto sub_dirs = discover_tupfile_dirs(subtree_root, pup::parser::IgnoreList::with_defaults(), {}, marker_prefix);
+    auto sub_dirs = discover_tupfile_dirs(
+        subtree_root, pup::parser::IgnoreList::with_defaults(), {}, marker_prefix, &ctx.state.pruned
+    );
+
+    auto marker_id = pool.intern(marker_prefix);
+    auto& pruned = ctx.state.pruned;
+    pruned.erase(std::remove(pruned.begin(), pruned.end(), marker_id), pruned.end());
 
     auto& available = ctx.state.available;
     auto const before = available.size();
@@ -774,6 +785,11 @@ auto BuildContext::available_dirs() const -> Vec<StringId> const&
     return impl_->state.available;
 }
 
+auto BuildContext::pruned_dirs() const -> Vec<StringId> const&
+{
+    return impl_->state.pruned;
+}
+
 auto BuildContext::old_index() const -> index::Index const*
 {
     return impl_->old_index ? &*impl_->old_index : nullptr;
@@ -824,7 +840,9 @@ auto build_context(
     ctx.impl_->state.available = discover_tupfile_dirs(
         pool.get(ctx.impl_->layout.config_root),
         pup::parser::IgnoreList::with_defaults(),
-        ctx_opts.parse_scopes
+        ctx_opts.parse_scopes,
+        {},
+        &ctx.impl_->state.pruned
     );
 
     if (ctx.impl_->state.available.empty()) {
