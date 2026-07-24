@@ -189,6 +189,38 @@ auto compute_tup_variantdir(
     return ".";
 }
 
+auto find_build_subdir(
+    std::string_view root
+) -> std::optional<StringId>
+{
+    auto& pool = global_pool();
+    for (auto const& name : { "build", "out", "variant" }) {
+        auto dir = pool.get(pup::path::join(root, name));
+        if (pup::platform::exists(pool.get(pup::path::join(dir, "tup.config")))
+            || pup::platform::is_directory(pool.get(pup::path::join(dir, ".pup")))) {
+            return pool.intern(dir);
+        }
+    }
+
+    if (pup::platform::is_directory(root)) {
+        auto listing = pup::platform::DirEntries {};
+        if (pup::platform::read_directory(root, listing)) {
+            for (auto const& entry : listing.entries) {
+                if (!entry.is_dir) {
+                    continue;
+                }
+                auto entry_path = pool.get(pup::path::join(root, entry.name));
+                if (pup::platform::exists(pool.get(pup::path::join(entry_path, "tup.config")))
+                    || pup::platform::is_directory(pool.get(pup::path::join(entry_path, ".pup")))) {
+                    return pool.intern(entry_path);
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 auto read_file(std::string_view path) -> std::optional<StringId>
 {
     auto content = Buf {};
@@ -608,9 +640,6 @@ auto try_auto_init(ProjectLayout const& layout) -> void
     auto& pool = global_pool();
     auto pup_dir_sv = pool.get(layout.pup_dir());
     if (pup::platform::exists(pup_dir_sv)) {
-        if (!pup::platform::exists(pool.get(pup::path::join(pool.get(layout.output_root), ".pup-project")))) {
-            pup::record_build_dir_owner(layout);
-        }
         return;
     }
     if (!pup::platform::exists(pool.get(pup::path::join(pool.get(layout.source_root), "Tupfile.ini")))) {
@@ -618,7 +647,6 @@ auto try_auto_init(ProjectLayout const& layout) -> void
     }
     (void)pup::platform::create_directories(pup_dir_sv);
     print("Initialized pup in \"{}\"\n", pup_dir_sv);
-    pup::record_build_dir_owner(layout);
 }
 
 struct IndexLoadResult {

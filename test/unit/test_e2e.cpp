@@ -2788,50 +2788,6 @@ SCENARIO("Multi-variant auto-detection", "[e2e][multi-variant]")
     }
 }
 
-SCENARIO("Variant discovery skips build dirs owned by another project", "[e2e][multi-variant]")
-{
-    GIVEN("a project root holding another project's configured build directory")
-    {
-        auto f = E2EFixture { "multi_variant" };
-
-        f.write_file("sub/Tupfile.ini", "");
-        f.write_file("sub/Tupfile", ": |> echo inner > %o |> inner.txt\n");
-        REQUIRE(f.pup({ "configure", "-C", "sub", "-S", "sub", "-B", "build-foreign" }).success());
-
-        f.mkdir("build-debug");
-        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
-        REQUIRE(f.init().success());
-
-        WHEN("pup is run bare from the project root")
-        {
-            auto result = f.build();
-
-            THEN("only the project's own variant is built")
-            {
-                REQUIRE(result.success());
-                REQUIRE(f.is_executable("build-debug/hello"));
-                REQUIRE_FALSE(f.exists("build-foreign/hello"));
-            }
-
-            THEN("a notice names the foreign build dir")
-            {
-                REQUIRE(result.stderr_output.find("owned by another project") != std::string::npos);
-            }
-        }
-
-        WHEN("the owning project builds it explicitly")
-        {
-            auto result = f.pup({ "-C", "sub", "-S", "sub", "-B", "build-foreign" });
-
-            THEN("the foreign build dir builds its own project")
-            {
-                REQUIRE(result.success());
-                REQUIRE(f.exists("build-foreign/inner.txt"));
-            }
-        }
-    }
-}
-
 SCENARIO("Explicit multi-variant with -B flags", "[e2e][multi-variant]")
 {
     GIVEN("a project with multiple variant directories")

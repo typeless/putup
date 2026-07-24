@@ -167,17 +167,15 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
         }
     }
 
-    for (auto const& name : { "tup.config", ".pup-project" }) {
-        auto file_path_sv = pool.get(pup::path::join(build_dir_sv, name));
-        if (pup::platform::exists(file_path_sv)) {
-            if (opts.dry_run) {
-                vprint(variant_name, "Would remove: {}\n", file_path_sv);
-            } else {
-                if (opts.verbose) {
-                    vprint(variant_name, "Removing: {}\n", file_path_sv);
-                }
-                (void)pup::platform::remove_file(file_path_sv);
+    auto config_path_sv = pool.get(pup::path::join(build_dir_sv, "tup.config"));
+    if (pup::platform::exists(config_path_sv)) {
+        if (opts.dry_run) {
+            vprint(variant_name, "Would remove: {}\n", config_path_sv);
+        } else {
+            if (opts.verbose) {
+                vprint(variant_name, "Removing: {}\n", config_path_sv);
             }
+            (void)pup::platform::remove_file(config_path_sv);
         }
     }
 

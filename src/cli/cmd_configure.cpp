@@ -49,7 +49,6 @@ auto install_config_file(
     auto dest_sv = pool.get(pup::path::join(pool.get(layout.output_root), "tup.config"));
     (void)pup::platform::create_directories(pup::path::parent(dest_sv));
     (void)pup::platform::copy_file(config_path_sv, dest_sv);
-    pup::record_build_dir_owner(layout);
 
     auto cp = Buf {};
     cp.append(config_path_sv);
@@ -109,7 +108,6 @@ auto configure_single_variant(
             cp.append(config_path_sv);
             print("[{}] Created {}\n", variant_name, cp.c_str());
         }
-        pup::record_build_dir_owner(ctx.layout());
     };
 
     auto configs = find_config_commands(ctx.graph(), pool.get(ctx.layout().source_root));

@@ -5,7 +5,6 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
-#include "pup/core/print.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
@@ -61,15 +60,6 @@ auto get_env(char const* name) -> std::optional<std::string_view>
     return std::nullopt;
 }
 
-auto is_build_dir(std::string_view dir) -> bool
-{
-    auto& pool = global_pool();
-    return platform::exists(pool.get(path::join(dir, "tup.config")))
-        || platform::is_directory(pool.get(path::join(dir, ".pup")));
-}
-
-} // namespace
-
 auto find_build_subdir(
     std::string_view root
 ) -> std::optional<StringId>
@@ -77,7 +67,8 @@ auto find_build_subdir(
     auto& pool = global_pool();
     for (auto const& name : { "build", "out", "variant" }) {
         auto dir = pool.get(path::join(root, name));
-        if (is_build_dir(dir) && !foreign_build_dir_owner(dir, root)) {
+        if (platform::exists(pool.get(path::join(dir, "tup.config")))
+            || platform::is_directory(pool.get(path::join(dir, ".pup")))) {
             return pool.intern(dir);
         }
     }
@@ -90,7 +81,8 @@ auto find_build_subdir(
                     continue;
                 }
                 auto entry_path = pool.get(path::join(root, entry.name));
-                if (is_build_dir(entry_path) && !foreign_build_dir_owner(entry_path, root)) {
+                if (platform::exists(pool.get(path::join(entry_path, "tup.config")))
+                    || platform::is_directory(pool.get(path::join(entry_path, ".pup")))) {
                     return pool.intern(entry_path);
                 }
             }
@@ -99,6 +91,8 @@ auto find_build_subdir(
 
     return std::nullopt;
 }
+
+} // namespace
 
 auto find_project_root(
     std::string_view start_dir
@@ -226,45 +220,8 @@ auto discover_layout(LayoutOptions const& opts) -> Result<ProjectLayout>
     return layout;
 }
 
-auto record_build_dir_owner(ProjectLayout const& layout) -> void
-{
-    auto& pool = global_pool();
-    auto output_root_sv = pool.get(layout.output_root);
-    (void)platform::create_directories(output_root_sv);
-    auto content = Buf {};
-    content.fmt("{}\n", pool.get(path::relative(pool.get(layout.config_root), output_root_sv)));
-    (void)platform::write_file(pool.get(path::join(output_root_sv, ".pup-project")), content.view());
-}
-
-auto foreign_build_dir_owner(
-    std::string_view build_dir,
-    std::string_view project_root
-) -> std::optional<StringId>
-{
-    auto& pool = global_pool();
-    auto stamp = Buf {};
-    if (!platform::read_file(pool.get(path::join(build_dir, ".pup-project")), stamp)) {
-        return std::nullopt;
-    }
-    auto rel = stamp.view();
-    while (!rel.empty() && (rel.back() == '\n' || rel.back() == '\r')) {
-        rel.remove_suffix(1);
-    }
-    if (rel.empty()) {
-        return std::nullopt;
-    }
-    auto owner = path::is_absolute(rel)
-        ? normalize_path(rel)
-        : normalize_path(pool.get(path::join(build_dir, rel)));
-    if (pool.get(owner) == pool.get(normalize_path(project_root))) {
-        return std::nullopt;
-    }
-    return owner;
-}
-
 auto discover_variants(
-    std::string_view source_root,
-    std::string_view project_root
+    std::string_view source_root
 ) -> Vec<StringId>
 {
     auto& pool = global_pool();
@@ -284,14 +241,10 @@ auto discover_variants(
             continue;
         }
         auto entry_path = pool.get(path::join(source_root, entry.name));
-        if (!is_build_dir(entry_path)) {
-            continue;
+        if (platform::exists(pool.get(path::join(entry_path, "tup.config")))
+            || platform::is_directory(pool.get(path::join(entry_path, ".pup")))) {
+            result.push_back(pool.intern(entry.name));
         }
-        if (auto owner = foreign_build_dir_owner(entry_path, project_root)) {
-            eprint("Skipping {}: owned by another project ({})\n", entry.name, pool.get(*owner));
-            continue;
-        }
-        result.push_back(pool.intern(entry.name));
     }
 
     std::sort(result.begin(), result.end());
