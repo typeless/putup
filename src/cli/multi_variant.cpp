@@ -121,7 +121,7 @@ auto for_each_variant(
         scopes = parsed_targets->scopes;
         output_targets = parsed_targets->output_targets;
     } else {
-        variants = discover_variants(source_root_sv, pool.get(layout_result->config_root));
+        variants = discover_variants(source_root_sv);
         scopes = parsed_targets->scopes;
         output_targets = parsed_targets->output_targets;
     }

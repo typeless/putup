@@ -88,10 +88,9 @@ project/
 ├── Tupfile
 ├── src/
 └── build/          # Variant directory
-    ├── tup.config    # Variant-specific config
-    ├── .pup-project  # Owning project root (written by configure/build)
-    ├── .pup/         # Variant's index
-    └── hello         # Build output
+    ├── tup.config  # Variant-specific config
+    ├── .pup/       # Variant's index
+    └── hello       # Build output
 ```
 
 ## 3. Command Reference
@@ -105,8 +104,6 @@ putup [OPTIONS] [TARGETS...]
 The default command. Executes the build by parsing Tupfiles, computing the dependency graph, and running commands for changed files.
 
 **Multi-variant auto-detection:** When run from the project root without `-B` flags, putup automatically discovers all variant directories (subdirectories containing `tup.config` or `.pup/`) and builds them in parallel.
-
-Each build directory records its owning project root in a `.pup-project` file (written by `putup configure` and on first build). Auto-detection skips — with a notice — any build directory owned by a different project root, so a nested project's build directory placed at the outer root (e.g. `putup configure -C examples/bsp -B build-gcc`) is never adopted by the outer project's bare `putup` run. Explicit `-B` targeting is unaffected.
 
 **Arguments:**
 - `TARGETS` - Optional paths to scope the build. Can be:

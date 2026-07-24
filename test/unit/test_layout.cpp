@@ -6,11 +6,8 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/string_pool.hpp"
 
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <string>
-#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -106,66 +103,6 @@ TEST_CASE("find_project_root", "[e2e][layout]")
         // Should walk up to tmp.path() but not find anything, then continue up
         // Eventually returns nullopt when reaching filesystem root
         // (This test may find a project root in parent dirs in dev environment)
-    }
-}
-
-namespace {
-
-auto write_file_at(fs::path const& full, std::string_view content) -> void
-{
-    fs::create_directories(full.parent_path());
-    std::ofstream { full } << content;
-}
-
-} // namespace
-
-TEST_CASE("discover_variants respects build dir ownership", "[e2e][layout]")
-{
-    auto tmp = TempDir {};
-    tmp.create_file("Tupfile.ini");
-    tmp.create_dir("other");
-    tmp.create_file("build-own/tup.config");
-    write_file_at(tmp.path() / "build-own/.pup-project", "..\n");
-    tmp.create_file("build-plain/tup.config");
-    tmp.create_file("build-foreign/tup.config");
-    write_file_at(tmp.path() / "build-foreign/.pup-project", "../other\n");
-
-    auto variants = pup::discover_variants(tmp.path().string(), tmp.path().string());
-
-    auto names = std::vector<std::string> {};
-    for (auto v : variants) {
-        names.emplace_back(global_pool().get(v));
-    }
-    std::sort(names.begin(), names.end());
-    REQUIRE(names == std::vector<std::string> { "build-own", "build-plain" });
-}
-
-TEST_CASE("find_build_subdir skips foreign-owned build dir", "[e2e][layout]")
-{
-    auto tmp = TempDir {};
-    tmp.create_file("Tupfile.ini");
-    tmp.create_dir("other");
-    tmp.create_file("build/tup.config");
-
-    SECTION("foreign stamp is skipped")
-    {
-        write_file_at(tmp.path() / "build/.pup-project", "../other\n");
-        REQUIRE_FALSE(pup::find_build_subdir(tmp.path().string()).has_value());
-    }
-
-    SECTION("matching stamp is adopted")
-    {
-        write_file_at(tmp.path() / "build/.pup-project", "..\n");
-        auto result = pup::find_build_subdir(tmp.path().string());
-        REQUIRE(result.has_value());
-        REQUIRE(global_pool().get(*result) == (tmp.path() / "build").string());
-    }
-
-    SECTION("missing stamp is adopted")
-    {
-        auto result = pup::find_build_subdir(tmp.path().string());
-        REQUIRE(result.has_value());
-        REQUIRE(global_pool().get(*result) == (tmp.path() / "build").string());
     }
 }
 
