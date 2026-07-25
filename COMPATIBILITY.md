@@ -128,12 +128,15 @@ A bare `touch` (mtime changes, content unchanged) does **not** trigger a rebuild
 
 Tup uses FUSE to intercept file accesses and automatically discover dependencies.
 
-Putup auto-generates `gcc -M` dep-scan rules for recognized C/C++ compile commands by default (`PUP_IMPLICIT_DEPS`, enabled), so header dependencies are discovered without extra flags. Adding `-MD` is a recommended alternative that has the compiler emit `.d` files during compilation:
+Putup auto-generates dep-scan rules for recognized C/C++ compile commands by default (`PUP_IMPLICIT_DEPS`, enabled) — `gcc -M` for GNU-driver compilers, `clang-cl /clang:-M` for the MSVC driver — so header dependencies are discovered without extra flags. Adding `-MD` is a recommended alternative that has the compiler emit `.d` files during compilation:
 
 ```tup
 CFLAGS += -MD  # Generate foo.d alongside foo.o
 : foreach *.c |> $(CC) $(CFLAGS) -c %f -o %o |> %B.o
 ```
+
+Under `clang-cl`, `-MD`/`/MD` select the CRT rather than depfiles; the depfile
+spelling is `/clang:-MD /clang:-MF%o.d`.
 
 Putup tracks **all headers** including system headers (`/usr/include/*`).
 

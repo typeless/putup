@@ -31,7 +31,8 @@ across 2×cores parallel shards via Catch2 `--shard-count`/`--shard-index`
 | `[glob]` | Glob pattern matching |
 | `[hash]` | SHA-256 hashing |
 | `[path_utils]` | Path manipulation |
-| `[dep_scanner]` | Dependency scanning (gcc -M) |
+| `[dep_scanner]` | Dependency scanning (gcc `-M`, clang-cl `/clang:-M`) |
+| `[clang_cl]` | clang-cl (MSVC driver) dependency scanning |
 
 ### E2E Test Tags
 

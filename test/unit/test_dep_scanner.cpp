@@ -7,6 +7,7 @@
 #include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/dep_scanner.hpp"
+#include "pup/graph/scanners/clang_cl.hpp"
 #include "pup/graph/scanners/gcc.hpp"
 
 using namespace pup::graph;
@@ -479,4 +480,174 @@ TEST_CASE("make_gcc_scanner factory", "[dep_scanner][gcc]")
     auto scanner = scanners::make_gcc_scanner();
     REQUIRE(scanner != nullptr);
     REQUIRE(scanner->name() == "gcc");
+}
+
+namespace {
+auto clang_cl_compile(pup::NodeId id, std::string_view command) -> CommandInfo
+{
+    return CommandInfo {
+        .node_id = id,
+        .command = intern(command),
+        .display = intern("CXX foo.obj"),
+        .inputs = { intern("foo.cpp") },
+        .order_only_inputs = {},
+        .outputs = { path("foo.obj") },
+        .working_dir = intern("."),
+    };
+}
+} // namespace
+
+TEST_CASE("ClangClScanner matching", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+
+    SECTION("name returns clang-cl")
+    {
+        REQUIRE(scanner.name() == "clang-cl");
+    }
+
+    SECTION("matches clang-cl compile with GNU-spelled -c")
+    {
+        REQUIRE(scanner.matches(clang_cl_compile(1, "clang-cl /std:c++latest -c foo.cpp -o foo.obj")));
+    }
+
+    SECTION("matches clang-cl compile with cl-spelled /c")
+    {
+        REQUIRE(scanner.matches(clang_cl_compile(2, "clang-cl /std:c++latest /c foo.cpp /Fofoo.obj")));
+    }
+
+    SECTION("matches versioned and .exe driver names")
+    {
+        REQUIRE(scanner.matches(clang_cl_compile(3, "clang-cl-20 -c foo.cpp -o foo.obj")));
+        REQUIRE(scanner.matches(clang_cl_compile(4, "/usr/bin/clang-cl.exe -c foo.cpp -o foo.obj")));
+    }
+
+    SECTION("does not match a link command")
+    {
+        REQUIRE(!scanner.matches(clang_cl_compile(5, "clang-cl foo.obj -o foo.exe")));
+    }
+
+    SECTION("gcc scanner does not claim clang-cl commands")
+    {
+        auto gcc = scanners::GccScanner {};
+        REQUIRE(!gcc.matches(clang_cl_compile(6, "clang-cl -c foo.cpp -o foo.obj")));
+    }
+}
+
+TEST_CASE("ClangClScanner dep-flag detection", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+
+    SECTION("detects depfile flags passed through /clang:")
+    {
+        REQUIRE(scanner.has_dep_flags("clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj"));
+        REQUIRE(scanner.has_dep_flags("clang-cl /clang:-MMD -c foo.cpp -o foo.obj"));
+    }
+
+    SECTION("CRT-selection flags are not dep flags")
+    {
+        REQUIRE(!scanner.has_dep_flags("clang-cl /MT -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags("clang-cl /MDd -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags("clang-cl -MD -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags("clang-cl -MT -c foo.cpp -o foo.obj"));
+    }
+
+    SECTION("plain compile has no dep flags")
+    {
+        REQUIRE(!scanner.has_dep_flags("clang-cl /W3 -c foo.cpp -o foo.obj"));
+    }
+}
+
+TEST_CASE("ClangClScanner dep command construction", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+
+    SECTION("dep_spec returns stdout mode")
+    {
+        REQUIRE(scanner.dep_spec().output_mode == DepOutputMode::Stdout);
+    }
+
+    SECTION("drops compile-only flags and output paths")
+    {
+        auto dep_cmd = scanner.build_dep_command(
+            clang_cl_compile(1, "clang-cl /W3 /WX /O2 /GR- /utf-8 /MT -c foo.cpp -o foo.obj")
+        );
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == intern("clang-cl /clang:-M foo.cpp"));
+    }
+
+    SECTION("drops cl-spelled /c and /Fo")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(2, "clang-cl /c foo.cpp /Fofoo.obj"));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == intern("clang-cl /clang:-M foo.cpp"));
+    }
+
+    SECTION("preserves include, define and standard flags in both spellings")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(
+            3, "clang-cl /std:c++latest -Isrc /I../include -DUNICODE /DFOO=bar -c foo.cpp -o foo.obj"
+        ));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(
+            *dep_cmd == intern("clang-cl /clang:-M /std:c++latest -Isrc /I../include -DUNICODE /DFOO=bar foo.cpp")
+        );
+    }
+
+    SECTION("preserves separate-argument system include paths")
+    {
+        auto dep_cmd = scanner.build_dep_command(
+            clang_cl_compile(4, "clang-cl /imsvc /sdk/crt/include /imsvc /sdk/um -c foo.cpp -o foo.obj")
+        );
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == intern("clang-cl /clang:-M /imsvc /sdk/crt/include /imsvc /sdk/um foo.cpp"));
+    }
+
+    SECTION("preserves target triple and force-includes")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(
+            5, "clang-cl --target=x86_64-pc-windows-msvc /FI build/version.h -c foo.cpp -o foo.obj"
+        ));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(
+            *dep_cmd == intern("clang-cl /clang:-M --target=x86_64-pc-windows-msvc /FI build/version.h foo.cpp")
+        );
+    }
+
+    SECTION("returns nullopt for a compound shell command")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(6, "cd build && clang-cl -c foo.cpp -o foo.obj"));
+        REQUIRE(!dep_cmd.has_value());
+    }
+}
+
+TEST_CASE("make_clang_cl_scanner factory", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::make_clang_cl_scanner();
+    REQUIRE(scanner != nullptr);
+    REQUIRE(scanner->name() == "clang-cl");
+}
+
+TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]")
+{
+    auto registry = DepScannerRegistry {};
+    registry.register_scanner(scanners::make_gcc_scanner());
+    registry.register_scanner(scanners::make_clang_cl_scanner());
+
+    SECTION("clang-cl compile gets one dep rule")
+    {
+        auto rules = registry.match_and_generate(clang_cl_compile(1, "clang-cl -Isrc -c foo.cpp -o foo.obj"));
+        REQUIRE(rules.size() == 1);
+        REQUIRE(rules[0].command == intern("clang-cl /clang:-M -Isrc foo.cpp"));
+        REQUIRE(rules[0].action == OutputAction::InjectImplicitDeps);
+        REQUIRE(rules[0].parent_command == 1);
+    }
+
+    SECTION("clang-cl compile that already emits a depfile gets none")
+    {
+        auto rules = registry.match_and_generate(
+            clang_cl_compile(2, "clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj")
+        );
+        REQUIRE(rules.empty());
+    }
 }
