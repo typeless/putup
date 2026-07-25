@@ -88,7 +88,7 @@ The `CROSS_COMPILE`-prefix pattern is for GNU-style toolchains. Windows (MSVC AB
 - `/MT` links the static CRT.
 - Flag syntax differs from GNU: `clang-cl` uses `/Fo` for object output and `/OUT:` for the link target (no `-o`), and has no `-MD` dep-scan flag — so the `CROSS_COMPILE` bang-macro shapes above do not carry over.
 
-The resulting binary is smoke-tested under Wine.
+CI runs the resulting test binary natively on a `windows-latest` runner; Wine runs it locally when no Windows host is at hand.
 
 ## Generator Programs
 

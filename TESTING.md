@@ -60,17 +60,34 @@ across 2×cores parallel shards via Catch2 `--shard-count`/`--shard-index`
 | `[target]` | Target parsing tests |
 | `[variant]` | Out-of-tree/variant builds, ghost nodes |
 
-## Windows (Wine) Tests
+## Windows Tests
 
 The Windows test binary is cross-compiled from Linux with `CONFIG=xwin`
-(clang-cl + xwin against the MSVC CRT / Windows SDK) and exercised under Wine.
-E2E and shell fixtures are excluded because they rely on a POSIX shell:
+(clang-cl + xwin against the MSVC CRT / Windows SDK):
+
+```bash
+XWIN_SPLAT="$HOME/.xwin/splat" CONFIG=xwin putup configure -B build-win
+XWIN_SPLAT="$HOME/.xwin/splat" CONFIG=xwin putup -B build-win
+```
+
+CI splits that across two jobs in `.github/workflows/ci.yml`: `build-windows`
+cross-compiles on Linux and uploads `putup_test.exe`, then `test-windows`
+downloads it and runs it **natively on a `windows-latest` runner**. E2E and
+shell fixtures are excluded because they rely on a POSIX shell:
+
+```bash
+putup_test.exe "~[e2e]~[shell]"
+```
+
+Locally, Wine runs the same binary without a Windows host:
 
 ```bash
 wine build-win/test/unit/putup_test.exe "~[e2e]~[shell]"
 ```
 
-CI runs this in `.github/workflows/ci.yml` (`build-windows` job).
+Treat a Wine pass as corroboration, not proof — Wine reimplements the Win32 API
+and the CRT, so behaviour can diverge. Moving CI off Wine (commit `27d142ea`)
+immediately exposed an `abort()` fault the Wine job had masked.
 
 ## Code Coverage
 

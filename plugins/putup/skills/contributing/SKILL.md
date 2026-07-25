@@ -50,7 +50,7 @@ putup -B build
 
 `configs/` holds one config per platform, selected via the `CONFIG` env var (default `$(TUP_PLATFORM)`): `CONFIG=<name> putup configure -B <dir>` picks `configs/<name>.config`. Available configs include `linux`, `macosx`, `xwin`, `coverage`, `debug`, and `default`.
 
-Windows is cross-compiled from Linux with `CONFIG=xwin`: clang-cl + lld-link + llvm-lib against an xwin-splatted MSVC CRT and Windows SDK (needs the `XWIN_SPLAT` env var, `--target=x86_64-pc-windows-msvc`, `/MT` static CRT). The resulting binary is tested under Wine, excluding `[e2e]` and `[shell]` tags:
+Windows is cross-compiled from Linux with `CONFIG=xwin`: clang-cl + lld-link + llvm-lib against an xwin-splatted MSVC CRT and Windows SDK (needs the `XWIN_SPLAT` env var, `--target=x86_64-pc-windows-msvc`, `/MT` static CRT). CI runs the resulting test binary natively on a `windows-latest` runner, excluding `[e2e]` and `[shell]` tags (Wine runs the same binary locally):
 
 ```bash
 ./build/test/unit/putup_test '~[e2e]~[shell]'
