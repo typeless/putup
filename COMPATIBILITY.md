@@ -136,7 +136,9 @@ CFLAGS += -MD  # Generate foo.d alongside foo.o
 ```
 
 Under `clang-cl`, `-MD`/`/MD` select the CRT rather than depfiles; the depfile
-spelling is `/clang:-MD /clang:-MF%o.d`.
+spelling is `/clang:-MD /clang:-MF%o.d`. The `-MF` part is required — a bare
+`/clang:-MD` writes the depfile to the working directory instead of beside the
+object, so putup keeps scanning that command itself.
 
 Putup tracks **all headers** including system headers (`/usr/include/*`).
 

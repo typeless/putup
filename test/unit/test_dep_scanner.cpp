@@ -6,6 +6,8 @@
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
+#include "e2e_fixture.hpp"
+#include "pup/cli/context.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/clang_cl.hpp"
 #include "pup/graph/scanners/gcc.hpp"
@@ -475,6 +477,27 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
     }
 }
 
+TEST_CASE("GccScanner skips commands with no visible source", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("sources hidden in a response file yield no dep command")
+    {
+        auto cmd = CommandInfo {
+            .node_id = 30,
+            .command = intern("gcc @srcs.rsp -c -o foo.o"),
+            .display = intern("CC foo.o"),
+            .inputs = { intern("srcs.rsp") },
+            .order_only_inputs = {},
+            .outputs = { path("foo.o") },
+            .working_dir = intern("."),
+        };
+
+        REQUIRE(scanner.matches(cmd));
+        REQUIRE(!scanner.build_dep_command(cmd).has_value());
+    }
+}
+
 TEST_CASE("make_gcc_scanner factory", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::make_gcc_scanner();
@@ -538,10 +561,15 @@ TEST_CASE("ClangClScanner dep-flag detection", "[dep_scanner][clang_cl]")
 {
     auto scanner = scanners::ClangClScanner {};
 
-    SECTION("detects depfile flags passed through /clang:")
+    SECTION("detects a depfile whose path is pinned with -MF")
     {
         REQUIRE(scanner.has_dep_flags("clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj"));
-        REQUIRE(scanner.has_dep_flags("clang-cl /clang:-MMD -c foo.cpp -o foo.obj"));
+    }
+
+    SECTION("bare -MD does not count: the depfile lands in the cwd, not beside the object")
+    {
+        REQUIRE(!scanner.has_dep_flags("clang-cl /clang:-MD -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags("clang-cl /clang:-MMD -c foo.cpp -o foo.obj"));
     }
 
     SECTION("CRT-selection flags are not dep flags")
@@ -619,6 +647,21 @@ TEST_CASE("ClangClScanner dep command construction", "[dep_scanner][clang_cl]")
         auto dep_cmd = scanner.build_dep_command(clang_cl_compile(6, "cd build && clang-cl -c foo.cpp -o foo.obj"));
         REQUIRE(!dep_cmd.has_value());
     }
+
+    SECTION("drops a smuggled -MD that would redirect the depfile")
+    {
+        auto dep_cmd = scanner.build_dep_command(
+            clang_cl_compile(8, "clang-cl /clang:-MD -Isrc -c foo.cpp -o foo.obj")
+        );
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(*dep_cmd == intern("clang-cl /clang:-M -Isrc foo.cpp"));
+    }
+
+    SECTION("returns nullopt when no source word is visible")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(7, "clang-cl @srcs.rsp -c -o foo.obj"));
+        REQUIRE(!dep_cmd.has_value());
+    }
 }
 
 TEST_CASE("make_clang_cl_scanner factory", "[dep_scanner][clang_cl]")
@@ -643,11 +686,40 @@ TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]"
         REQUIRE(rules[0].parent_command == 1);
     }
 
-    SECTION("clang-cl compile that already emits a depfile gets none")
+    SECTION("clang-cl compile that already emits a depfile putup can find gets none")
     {
         auto rules = registry.match_and_generate(
             clang_cl_compile(2, "clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj")
         );
         REQUIRE(rules.empty());
+    }
+
+    SECTION("a source-less clang-cl compile gets no rule rather than a failing one")
+    {
+        auto rules = registry.match_and_generate(clang_cl_compile(3, "clang-cl @srcs.rsp -c -o foo.obj"));
+        REQUIRE(rules.empty());
+    }
+}
+
+TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner][clang_cl]")
+{
+    auto env = pup::test::EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+    auto registry = pup::cli::make_scanner_registry();
+    REQUIRE(registry.has_value());
+
+    SECTION("a gcc compile finds the gcc scanner")
+    {
+        auto cmd = clang_cl_compile(1, "g++ -c foo.cpp -o foo.o");
+        auto const* scanner = registry->find_match(cmd);
+        REQUIRE(scanner != nullptr);
+        REQUIRE(scanner->name() == "gcc");
+    }
+
+    SECTION("a clang-cl compile finds the clang-cl scanner")
+    {
+        auto cmd = clang_cl_compile(2, "clang-cl -c foo.cpp -o foo.obj");
+        auto const* scanner = registry->find_match(cmd);
+        REQUIRE(scanner != nullptr);
+        REQUIRE(scanner->name() == "clang-cl");
     }
 }

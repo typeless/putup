@@ -151,12 +151,12 @@ auto ClangClScanner::matches(CommandInfo const& cmd) const -> bool
 
 auto ClangClScanner::has_dep_flags(std::string_view cmd) const -> bool
 {
-    // In this driver /MD and /MT select the CRT, not depfiles; only the GNU
-    // depfile flags smuggled through /clang: produce a .d putup can read.
+    // Only a pinned -MF counts: /MD and /MT select the CRT here, and a bare
+    // -MD writes the depfile to the cwd instead of beside the object.
     auto& pool = global_pool();
     for (auto id : core::tokenize_shell_command(cmd)) {
         auto word = pool.get(id);
-        if (word.starts_with("/clang:-M") || word.starts_with("-clang:-M")) {
+        if (word.starts_with("/clang:-MF") || word.starts_with("-clang:-MF")) {
             return true;
         }
     }
@@ -211,6 +211,12 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
             continue;
         }
 
+        // A smuggled -MD would redirect the depfile and leave preprocessed
+        // source on the stdout this scan parses.
+        if (w.starts_with("/clang:-M") || w.starts_with("-clang:-M")) {
+            continue;
+        }
+
         if (w == "-o") {
             ++i;
             continue;
@@ -228,6 +234,10 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
         if (is_source_file(w)) {
             source_files.push_back(w);
         }
+    }
+
+    if (source_files.empty()) {
+        return std::nullopt;
     }
 
     for (auto src : source_files) {
