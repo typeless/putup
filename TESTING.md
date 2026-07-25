@@ -5,17 +5,25 @@ Quick reference for testing workflows and conventions.
 ## Running Tests
 
 ```bash
-make test                                 # All tests (E2E sharded in parallel)
-test/run-tests.sh build/test/unit/putup_test [N]  # Same runner; N overrides shard count (also PUTUP_TEST_SHARDS)
+make test                                 # Build anything stale, then run tests (cached)
+./build/putup -B build -j16 test/runner/    # Same thing, directly
+./build/putup --rerun -B build -j16 test/runner/  # Force rerun without changes (flake check)
 ./build/test/unit/putup_test                # Direct execution (serial)
 ./build/test/unit/putup_test -s             # Verbose output
 ./build/test/unit/putup_test '[e2e]'        # E2E tests only
 ./build/test/unit/putup_test '[tag]'        # Specific tag
 ```
 
-`make test` runs the fast (non-E2E) suite serially first, then splits `[e2e]`
-across 2×cores parallel shards via Catch2 `--shard-count`/`--shard-index`
-(~2.5× faster wall time). Shard logs are shown only on failure.
+Tests run as build rules in the `test/runner/` nested project (pruned from
+plain builds; composed by targeting it): one rule for the fast `~[e2e]` suite,
+32 Catch2 `--shard-count` shards for `[e2e]`, and a summary join. Results are
+cached — unchanged inputs (test binary, putup binary, `test/e2e/fixtures/**`)
+mean "Nothing to do"; `--rerun` overrides. Shard logs live in
+`build/test/runner/` and a failed shard's log prints with the failure.
+The E2E shards are subprocess-bound, so `-j` above core count pays off.
+CI uses `test/run-tests.sh` (a shard-parallel script) instead: CI test jobs
+run from bootstrap-built artifacts, which have no `.pup` index for the graph
+runner to build on.
 
 ### Unit Test Tags
 

@@ -54,8 +54,14 @@ configure:
 build: configure
 	$(PUTUP) -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
+# Tests run as graph rules in the test/runner nested project, driven by the
+# freshly built putup (the PATH driver may predate runner syntax). -j16: the
+# E2E shards are subprocess-bound, so jobs above core count pay off.
+# Force a rerun without changes (e.g. flake check):
+#   ./build/putup --rerun -B build -j16 test/runner/
 test: build
-	test/run-tests.sh ./$(BUILD_DIR)/test/unit/putup_test
+	./$(BUILD_DIR)/putup -B $(BUILD_DIR) -j16 test/runner/
+	@cat $(BUILD_DIR)/test/runner/summary.txt
 
 # Coverage: build a gcov-instrumented variant, run the full test suite (with
 # PUP pointing at the instrumented binary so E2E subprocess runs count too),
@@ -65,7 +71,8 @@ coverage:
 	CONFIG=coverage $(PUTUP) configure -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
 	CONFIG=coverage $(PUTUP) -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
 	find $(COVERAGE_DIR) -name '*.gcda' -delete 2>/dev/null || true
-	PUP="$(CURDIR)/$(COVERAGE_DIR)/putup" test/run-tests.sh ./$(COVERAGE_DIR)/test/unit/putup_test
+	./$(COVERAGE_DIR)/putup -B $(COVERAGE_DIR) -j16 test/runner/
+	@cat $(COVERAGE_DIR)/test/runner/summary.txt
 	@mkdir -p $(COVERAGE_REPORT)
 	$(GCOVR) $(GCOVR_FLAGS) --print-summary \
 		--html-details $(COVERAGE_REPORT)/index.html \
