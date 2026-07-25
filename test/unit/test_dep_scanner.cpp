@@ -13,9 +13,12 @@
 #include "pup/graph/scanners/clang_cl.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
 #include "pup/graph/scanners/gcc.hpp"
+#include "pup/platform/process.hpp"
 #include "shell_words.hpp"
 
+#include <array>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -718,6 +721,74 @@ auto quote(std::string_view word, scanners::QuoteStyle style) -> std::string
     return std::string { out.view() };
 }
 
+struct ShellRoundTrip {
+    std::string command;
+    std::string output;
+    int exit_code = 0;
+    std::vector<std::string> argv;
+};
+
+/// Quotes `words`, spawns them through the same path a build job takes, and
+/// reports the argv the child actually received.
+auto round_trip_through_shell(std::vector<std::string> const& words) -> std::optional<ShellRoundTrip>
+{
+    auto command = pup::Buf {};
+    scanners::shell_quote_into(command, pup::test::test_executable());
+    command += " --dump-argv";
+    for (auto const& word : words) {
+        command += ' ';
+        scanners::shell_quote_into(command, word);
+    }
+
+    auto proc = pup::platform::spawn_async(
+        pup::platform::SpawnOptions { .command = command.view(), .working_dir = {} }
+    );
+    if (!proc) {
+        return std::nullopt;
+    }
+
+    auto out = std::string {};
+    auto buf = std::array<char, 1024> {};
+    auto pollable = pup::platform::PollableFd { .fd = proc->stdout_fd, .is_stderr = false, .slot_index = 0 };
+    for (auto spins = 0; spins < 2000; ++spins) {
+        auto n = pup::platform::read_nonblocking(proc->stdout_fd, buf.data(), buf.size());
+        if (n > 0) {
+            out.append(buf.data(), static_cast<std::size_t>(n));
+            continue;
+        }
+        if (n == 0) {
+            break;
+        }
+        static_cast<void>(pup::platform::poll_fds(&pollable, 1, 10));
+    }
+    pup::platform::close_fd(proc->stdout_fd);
+    pup::platform::close_fd(proc->stderr_fd);
+
+    auto status = pup::platform::ProcessStatus {};
+    pup::platform::reap(proc->pid, status);
+
+    auto result = ShellRoundTrip {
+        .command = std::string { command.view() },
+        .output = out,
+        .exit_code = status.exit_code,
+        .argv = {},
+    };
+    auto start = std::size_t { 0 };
+    while (start < out.size()) {
+        auto end = out.find('\n', start);
+        if (end == std::string::npos) {
+            end = out.size();
+        }
+        auto line = out.substr(start, end - start);
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        result.argv.push_back(line);
+        start = end + 1;
+    }
+    return result;
+}
+
 } // namespace
 
 TEST_CASE("shell_quote_into quotes for the shell that will run the command", "[dep_scanner][quoting]")
@@ -829,6 +900,24 @@ TEST_CASE("ClangClScanner keeps a spaced include path in one argument", "[dep_sc
             "foo.cpp",
         }
     );
+}
+
+TEST_CASE("quoted words reach the child intact through the real shell", "[dep_scanner][quoting]")
+{
+    auto words = std::vector<std::string> {
+        "C:/Program Files/LLVM/lib/clang/20/include",
+        R"(-DGREETING="hello world")",
+        "-Ia^b&c",
+        R"(C:\Program Files\LLVM\)",
+        "-I$SOMEDIR/include",
+    };
+
+    auto result = round_trip_through_shell(words);
+    REQUIRE(result.has_value());
+
+    INFO("command: " << result->command << "\nexit: " << result->exit_code << "\noutput: " << result->output);
+    REQUIRE(result->exit_code == 0);
+    REQUIRE(result->argv == words);
 }
 
 TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner][clang_cl]")
