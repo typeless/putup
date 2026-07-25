@@ -75,6 +75,78 @@ TEST_CASE("Depfile: parse real gcc output", "[depfile]")
     CHECK(sv(result->dependencies[5]) == "/usr/include/c++/13/string");
 }
 
+TEST_CASE("Depfile: collect dependencies from every rule", "[depfile]")
+{
+    auto content = std::string_view {
+        "a.o: a.c a.h\n"
+        "b.o: b.c b.h\n"
+    };
+    auto result = parse_depfile(content);
+
+    REQUIRE(result.has_value());
+    CHECK(sv(result->target) == "a.o");
+    REQUIRE(result->dependencies.size() == 4);
+    CHECK(sv(result->dependencies[0]) == "a.c");
+    CHECK(sv(result->dependencies[1]) == "a.h");
+    CHECK(sv(result->dependencies[2]) == "b.c");
+    CHECK(sv(result->dependencies[3]) == "b.h");
+}
+
+TEST_CASE("Depfile: parse real multi-source gcc output", "[depfile]")
+{
+    auto content = std::string_view {
+        "a.o: a.c /usr/include/stdc-predef.h \\\n"
+        " a.h\n"
+        "b.o: b.c /usr/include/stdc-predef.h \\\n"
+        " b.h\n"
+    };
+    auto result = parse_depfile(content);
+
+    REQUIRE(result.has_value());
+    CHECK(sv(result->target) == "a.o");
+    REQUIRE(result->dependencies.size() == 6);
+    CHECK(sv(result->dependencies[2]) == "a.h");
+    CHECK(sv(result->dependencies[3]) == "b.c");
+    CHECK(sv(result->dependencies[5]) == "b.h");
+}
+
+TEST_CASE("Depfile: keep a dependency repeated across rules", "[depfile]")
+{
+    // Implicit edges are deduped at insertion, so repeats stay in the parse result.
+    auto content = std::string_view {
+        "a.o: a.c shared.h\n"
+        "b.o: b.c shared.h\n"
+    };
+    auto result = parse_depfile(content);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->dependencies.size() == 4);
+    CHECK(sv(result->dependencies[1]) == "shared.h");
+    CHECK(sv(result->dependencies[3]) == "shared.h");
+}
+
+TEST_CASE("Depfile: skip -MP phony rules", "[depfile]")
+{
+    auto content = std::string_view {
+        "a.o: a.c a.h\n"
+        "\n"
+        "a.h:\n"
+        "\n"
+        "b.o: b.c b.h\n"
+        "\n"
+        "b.h:\n"
+    };
+    auto result = parse_depfile(content);
+
+    REQUIRE(result.has_value());
+    CHECK(sv(result->target) == "a.o");
+    REQUIRE(result->dependencies.size() == 4);
+    CHECK(sv(result->dependencies[0]) == "a.c");
+    CHECK(sv(result->dependencies[1]) == "a.h");
+    CHECK(sv(result->dependencies[2]) == "b.c");
+    CHECK(sv(result->dependencies[3]) == "b.h");
+}
+
 TEST_CASE("Depfile: handle no dependencies", "[depfile]")
 {
     auto content = std::string_view { "foo.o:\n" };

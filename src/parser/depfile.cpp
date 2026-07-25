@@ -120,41 +120,55 @@ auto parse_depfile(std::string_view content) -> Result<Depfile>
         return make_error<Depfile>(ErrorCode::ParseError, "Empty depfile");
     }
 
-    result.target = parse_path(sv, true);
+    // gcc -M over several sources emits one rule per source, all for the same command
+    while (!sv.empty()) {
+        auto target = parse_path(sv, true);
+        if (is_empty(target)) {
+            break;
+        }
+        if (is_empty(result.target)) {
+            result.target = target;
+        }
+
+        // Skip whitespace after target
+        skip_whitespace(sv);
+
+        // Expect colon separator (might have been consumed with target)
+        if (!sv.empty() && sv[0] == ':') {
+            sv.remove_prefix(1);
+        }
+
+        // Parse dependencies
+        while (!sv.empty()) {
+            // Skip whitespace and line continuations
+            skip_whitespace(sv);
+            while (skip_line_continuation(sv)) {
+                skip_whitespace(sv);
+            }
+
+            // Check for end of content or newline without continuation
+            if (sv.empty()) {
+                break;
+            }
+            if (sv[0] == '\n' || sv[0] == '\r') {
+                break;
+            }
+
+            // Parse next dependency path
+            auto dep = parse_path(sv);
+            if (!is_empty(dep)) {
+                result.dependencies.push_back(dep);
+            }
+        }
+
+        // Advance to the next rule, skipping blank lines
+        while (!sv.empty() && (sv[0] == '\n' || sv[0] == '\r' || sv[0] == ' ' || sv[0] == '\t')) {
+            sv.remove_prefix(1);
+        }
+    }
 
     if (is_empty(result.target)) {
         return make_error<Depfile>(ErrorCode::ParseError, "Missing target in depfile");
-    }
-
-    // Skip whitespace after target
-    skip_whitespace(sv);
-
-    // Expect colon separator (might have been consumed with target)
-    if (!sv.empty() && sv[0] == ':') {
-        sv.remove_prefix(1);
-    }
-
-    // Parse dependencies
-    while (!sv.empty()) {
-        // Skip whitespace and line continuations
-        skip_whitespace(sv);
-        while (skip_line_continuation(sv)) {
-            skip_whitespace(sv);
-        }
-
-        // Check for end of content or newline without continuation
-        if (sv.empty()) {
-            break;
-        }
-        if (sv[0] == '\n' || sv[0] == '\r') {
-            break;
-        }
-
-        // Parse next dependency path
-        auto dep = parse_path(sv);
-        if (!is_empty(dep)) {
-            result.dependencies.push_back(dep);
-        }
     }
 
     return result;

@@ -1107,6 +1107,41 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Implicit deps cover every source of a multi-source command", "[e2e][incremental]")
+{
+    // gcc -M emits one rule per source; stopping at the first leaves b.h untracked and the program silently stale
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a command compiling two sources with a header each")
+    {
+        auto f = E2EFixture { "implicit_deps_multi_source" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("program").stdout_output == "1 1\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the header included only by the second source changes")
+        {
+            f.write_file("b.h", "#ifndef B_H\n"
+                                "#define B_H\n"
+                                "#define B_VALUE 2\n"
+                                "#endif\n");
+            auto result = f.build();
+
+            THEN("the command rebuilds")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+
+            THEN("the program reflects the change")
+            {
+                REQUIRE(f.run("program").stdout_output == "1 2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit deps survive command-id shift from a removed source", "[e2e][incremental][idshift]")
 {
     // Implicit (header→command) edges discovered last build are carried forward for
