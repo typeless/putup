@@ -616,6 +616,7 @@ putup show index "ar rcs"
 | `-j N` | `--jobs N` | Run N jobs in parallel. Default: number of CPU cores. |
 | `-k` | `--keep-going` | Continue building after a command fails. |
 | | `--no-stat-cache` | Hash every file's contents; skip the size+mtime fast path (see §9.1). |
+| | `--rerun` | Re-execute commands even if up to date, scoped by path targets if given (e.g. re-running tests to check for flakes). Results are recorded normally. |
 | `-n` | `--dry-run` | Print commands without executing them. |
 | `-v` | `--verbose` | Verbose output: show parsing, change detection, etc. |
 | `-D VAR=val` | `--define` | Override CONFIG_ variable from CLI. |

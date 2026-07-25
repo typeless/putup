@@ -7210,6 +7210,53 @@ SCENARIO("Scoped build removes stale outputs in a nested in-scope directory", "[
     }
 }
 
+SCENARIO("Rerun forces up-to-date commands to execute", "[e2e][incremental][rerun]")
+{
+    GIVEN("a fully built project that no-ops on rebuild")
+    {
+        auto f = E2EFixture { "scoped_build" };
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).is_noop());
+
+        WHEN("the build runs with --rerun")
+        {
+            auto result = f.build({ "-B", "build", "--rerun" });
+
+            THEN("every command executes again, including the dep scan")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("3 commands") != std::string::npos);
+            }
+        }
+
+        WHEN("--rerun is scoped to one directory")
+        {
+            auto result = f.build({ "-B", "build", "--rerun", "lib" });
+
+            THEN("only that directory's commands execute")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("2 commands") != std::string::npos);
+            }
+        }
+
+        WHEN("a rerun completes")
+        {
+            REQUIRE(f.build({ "-B", "build", "--rerun" }).success());
+
+            THEN("the next plain build is a no-op again")
+            {
+                REQUIRE(f.build({ "-B", "build" }).is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Scoped build restores a deleted output inside scope", "[e2e][incremental][scope]")
 {
     GIVEN("a fully-built variant of a multi-directory project")

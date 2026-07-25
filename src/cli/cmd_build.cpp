@@ -1650,6 +1650,21 @@ auto build_single_variant(
         }
         forced_cmds = std::move(new_cmds.forced_cmds);
 
+        if (opts.rerun) {
+            for (auto id : pup::graph::all_nodes(bs.graph)) {
+                if (!pup::node_id::is_command(id) || !pup::graph::is_guard_satisfied(bs.graph, id)) {
+                    continue;
+                }
+                if (!scopes.empty()) {
+                    auto dir_sv = pup::global_pool().get(pup::graph::get<pup::graph::SourceDir>(bs.graph, id));
+                    if (!pup::is_path_in_any_scope(dir_sv.empty() ? "." : dir_sv, scopes)) {
+                        continue;
+                    }
+                }
+                forced_cmds.push_back(id);
+            }
+        }
+
         auto stale_start = pup::SteadyClock::now();
         remove_stale_outputs(
             idx,
