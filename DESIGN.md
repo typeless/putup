@@ -68,7 +68,7 @@ Dependencies flow one direction: `cli → exec → graph → parser → core`, w
 everything as the OS-abstraction layer. The `platform/` module isolates OS specifics behind a
 uniform API: POSIX backends (`*-posix.cpp`) use `fork`/`waitpid`/`poll`; Win32 backends
 (`*-win32.cpp`) use `CreateProcessW`. The Windows binary is cross-compiled from Linux with
-clang-cl + lld-link against an xwin-splatted MSVC CRT and tested under Wine.
+clang-cl + lld-link against an xwin-splatted MSVC CRT, and its tests run natively on a Windows CI runner.
 
 ---
 

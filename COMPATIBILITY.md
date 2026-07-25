@@ -227,7 +227,7 @@ Features in putup that extend beyond tup:
 
 **Affected**: MSVC 19.38+ (Visual Studio 2022 17.8) with `/Zc:nrvo /std:c++20 /O2`
 
-**Status**: Fixed. The root cause was `DirNameKeyHash`/`DirNameKeyEqual` functors holding raw `StringPool*` pointers into the same `Graph` object. When MSVC failed to apply NRVO on `make_graph()`, the move left dangling pointers. The `DirNameKey` hash map has been replaced with `std::vector<SortedPairVec> dir_children` (per-directory sorted arrays), eliminating the pointer coupling entirely. The Windows target is now built as an MSVC-ABI binary via clang-cl + xwin (cross-compiled from Linux, tested under Wine); the native `cl.exe` build path has been removed since clang-cl covers the MSVC ABI without a Windows runner.
+**Status**: Fixed. The root cause was `DirNameKeyHash`/`DirNameKeyEqual` functors holding raw `StringPool*` pointers into the same `Graph` object. When MSVC failed to apply NRVO on `make_graph()`, the move left dangling pointers. The `DirNameKey` hash map has been replaced with `std::vector<SortedPairVec> dir_children` (per-directory sorted arrays), eliminating the pointer coupling entirely. The Windows target is now built as an MSVC-ABI binary via clang-cl + xwin, cross-compiled from Linux and tested natively on a Windows CI runner; the native `cl.exe` build path has been removed since clang-cl covers the MSVC ABI without needing a Windows host to build on.
 
 ## Reporting Issues
 
