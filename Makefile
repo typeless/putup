@@ -77,11 +77,13 @@ install: build
 	ln -sf putup $(PREFIX)/bin/pup
 	@echo "Installed putup to $(PREFIX)/bin/putup (with pup symlink)"
 
+# -D LTO: the bootstrap is a one-shot full build, so it keeps the LTO that the
+# development default drops for incremental-rebuild speed (see 6ce999f10).
 bootstrap: build
 	@echo "Regenerating bootstrap scripts..."
-	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) > bootstrap-linux.sh
+	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-linux.sh
 	@CONFIG=macosx ./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
-	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) > bootstrap-macos.sh
+	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-macos.sh
 	@./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
 	@chmod +x bootstrap-linux.sh bootstrap-macos.sh
 	@echo "Regenerated bootstrap-linux.sh and bootstrap-macos.sh (commit them with Tupfile changes)"
