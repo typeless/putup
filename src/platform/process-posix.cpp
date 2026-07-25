@@ -326,6 +326,29 @@ auto run_process_with_callback(
     return result;
 }
 
+auto exec_and_exit(std::string_view exe, Vec<StringId> const& args) -> Error
+{
+    auto& pool = global_pool();
+    auto exe_path = Buf {};
+    exe_path.append(exe);
+
+    auto argv = Vec<char*> {};
+    argv.reserve(args.size() + 2);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
+    argv.push_back(const_cast<char*>(exe_path.c_str()));
+    for (auto arg : args) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) - POSIX exec requires char*
+        argv.push_back(const_cast<char*>(pool.get(arg).data()));
+    }
+    argv.push_back(nullptr);
+
+    auto rc = sys::execv(exe_path.c_str(), argv.data());
+
+    auto msg = Buf {};
+    msg.fmt("cannot execute '{}' (errno {})", exe, -rc);
+    return make_err_msg(ErrorCode::CommandFailed, msg.view());
+}
+
 auto run_parallel_tasks(
     int (*task)(void* ctx),
     void** contexts,

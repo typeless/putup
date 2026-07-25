@@ -66,6 +66,12 @@ auto build_env_strings(
 [[nodiscard]]
 auto base_child_env() -> Vec<StringId>;
 
+/// Run `exe` with `args` following it in argv, inheriting stdio and the current
+/// environment. POSIX replaces this process; Windows waits and then exits with
+/// the child's status. Returns only when the program could not be started.
+[[nodiscard]]
+auto exec_and_exit(std::string_view exe, Vec<StringId> const& args) -> Error;
+
 /// Run tasks in parallel child processes (POSIX) or sequentially (Windows).
 /// Each task is a function returning an exit code (0 = success).
 /// Returns the number of tasks that returned non-zero.

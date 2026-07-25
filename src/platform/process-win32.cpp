@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cwctype>
+#include <string>
 #include <string_view>
 #include <windows.h>
 
@@ -367,6 +369,84 @@ auto run_process_with_callback(
     result.stderr_output = pool.intern(stderr_buf.view());
 
     return result;
+}
+
+namespace {
+
+auto widen(std::string_view utf8) -> std::wstring
+{
+    if (utf8.empty()) {
+        return {};
+    }
+    auto len = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+    if (len <= 0) {
+        return {};
+    }
+    auto wide = std::wstring(static_cast<std::size_t>(len), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), wide.data(), len);
+    return wide;
+}
+
+/// Quote per the MSVC runtime's argv rules, so the child recovers `arg` intact.
+auto append_argv_word(std::wstring& out, std::wstring_view arg) -> void
+{
+    if (!arg.empty() && arg.find_first_of(L" \t\n\v\"") == std::wstring_view::npos) {
+        out += arg;
+        return;
+    }
+
+    out += L'"';
+    for (auto i = std::size_t { 0 }; i < arg.size(); ++i) {
+        auto slashes = std::size_t { 0 };
+        while (i < arg.size() && arg[i] == L'\\') {
+            ++i;
+            ++slashes;
+        }
+        if (i == arg.size()) {
+            out.append(slashes * 2, L'\\');
+            break;
+        }
+        out.append(arg[i] == L'"' ? slashes * 2 + 1 : slashes, L'\\');
+        out += arg[i];
+    }
+    out += L'"';
+}
+
+} // namespace
+
+auto exec_and_exit(std::string_view exe, Vec<StringId> const& args) -> Error
+{
+    auto& pool = global_pool();
+    auto app = widen(exe);
+
+    auto cmdline = std::wstring {};
+    append_argv_word(cmdline, app);
+    for (auto arg : args) {
+        cmdline += L' ';
+        append_argv_word(cmdline, widen(pool.get(arg)));
+    }
+
+    auto si = STARTUPINFOW {};
+    si.cb = sizeof(STARTUPINFOW);
+    auto pi = PROCESS_INFORMATION {};
+
+    // Naming the resolved path keeps Windows from searching the current
+    // directory ahead of PATH the way a bare application name would.
+    auto created = CreateProcessW(
+        app.c_str(), cmdline.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi
+    );
+    if (!created) {
+        auto msg = Buf {};
+        msg.fmt("cannot execute '{}' (error {})", exe, static_cast<std::uint64_t>(GetLastError()));
+        return make_err_msg(ErrorCode::CommandFailed, msg.view());
+    }
+
+    CloseHandle(pi.hThread);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    auto code = DWORD { 0 };
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    ExitProcess(code);
 }
 
 auto run_parallel_tasks(

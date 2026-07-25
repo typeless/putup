@@ -2,12 +2,14 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/options.hpp"
+#include "pup/cli/subcommand.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/ignore.hpp"
+#include "pup/platform/env.hpp"
 
 #include <charconv>
 #include <cstdio>
@@ -56,6 +58,7 @@ auto parse_args(int argc, char** argv) -> Options
 {
     auto opts = Options {};
     auto& pool = global_pool();
+    auto saw_positional = false;
 
     for (auto i = 1; i < argc; ++i) {
         auto arg = std::string_view { argv[i] };
@@ -159,8 +162,22 @@ auto parse_args(int argc, char** argv) -> Options
             eprint("Error: unknown option '{}'\nRun 'putup --help' for usage.\n", argv[i]);
             std::exit(EXIT_FAILURE);
         } else if (!arg.starts_with("-")) {
-            if (is_empty(opts.command) && is_command(arg)) {
+            auto const first_positional = !std::exchange(saw_positional, true);
+            auto const builtin = is_empty(opts.command) && is_command(arg);
+            auto external = StringId::Empty;
+            if (first_positional && !builtin) {
+                auto const* search_path = platform::get_env("PATH");
+                external = search_path ? find_subcommand(arg, search_path) : StringId::Empty;
+            }
+
+            if (builtin) {
                 opts.command = pool.intern(arg);
+            } else if (!is_empty(external)) {
+                auto tail = Vec<StringId> {};
+                for (++i; i < argc; ++i) {
+                    tail.push_back(pool.intern(argv[i]));
+                }
+                opts.external = ExternalCommand { external, std::move(tail) };
             } else if (pool.get(opts.command) == "show" && is_empty(opts.show_format)) {
                 opts.show_format = pool.intern(arg);
             } else if (pool.get(opts.command) == "show"
@@ -194,6 +211,11 @@ auto print_usage() -> void
           "                      graph   - DOT format (--summary for text)\n"
           "                      var [NAME] [--json] - Variable tracking\n"
           "                      index   - Index dump (--summary for counts only)\n"
+          "\nExternal subcommands:\n"
+          "  'putup NAME ARGS...' runs the executable 'putup-NAME' from PATH when NAME is\n"
+          "  the first non-option argument, is not a builtin command, and such an\n"
+          "  executable exists. Everything after NAME is passed on untouched; options\n"
+          "  before it stay putup's own. Use 'putup -- NAME' to build a target instead.\n"
           "\nOptions:\n"
           "  -j, --jobs N       Run N jobs in parallel\n"
           "  -k, --keep-going   Continue after failures\n"

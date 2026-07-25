@@ -607,6 +607,36 @@ putup show index "ar rcs"
 
 **Note:** Requires a previously built variant; fails with `No index found` if `.pup/index` is missing.
 
+### 3.7 External subcommands (`putup-<name>`)
+
+Putup extends itself the way Git does: `putup NAME ARGS...` runs an executable called `putup-NAME` found on `PATH`.
+
+```bash
+# ~/bin/putup-deploy (executable)
+putup deploy --target staging     # runs: putup-deploy --target staging
+```
+
+The external program replaces putup entirely — it inherits stdin, stdout, and stderr, and its exit status becomes putup's.
+
+**When a bare word is treated as a subcommand.** All of the following must hold, otherwise the word keeps its usual meaning as a build target:
+
+1. It is the **first** non-option argument. A word in any later position is a target, so `putup src clean` still runs the builtin `clean` scoped to `src`.
+2. It is **not a builtin command**. Builtins always win, so a `putup-parse` on `PATH` cannot shadow `putup parse`.
+3. It is a **bare executable name** — only letters, digits, `_`, `-`, and `.`. Anything holding a path separator or a glob (`build-*`, `build/src`) is a target, never a lookup.
+4. An executable named `putup-<name>` **exists** in some `PATH` entry. If none does, the word falls through to the normal target rules and you get the usual `is not in build graph` error.
+
+**Argument handling.** Everything after `NAME` is forwarded byte-for-byte and is never parsed by putup — so `putup deploy --check=bogus` reaches `putup-deploy` intact, even though `--check=bogus` would be an error for putup itself. Options *before* `NAME` are putup's own and are not forwarded.
+
+**Escape hatch.** `--` restores target meaning for a name that collides with an installed subcommand:
+
+```bash
+putup -- deploy     # build the target 'deploy', never run putup-deploy
+```
+
+**Precedence, in order:** builtin command → external `putup-<name>` → build target.
+
+**Lookup details.** Entries are scanned left to right and the first hit wins; empty entries are skipped. On Windows the lookup is for `putup-<name>.exe` — script subcommands (`.bat`, `.cmd`) are not resolved. The resolved absolute path is executed directly, so the current directory is never searched ahead of `PATH`.
+
 ## 4. Command-Line Options
 
 ### 4.1 Global Options
@@ -749,11 +779,12 @@ Example: If `lib/foo.c` includes `../include/header.h` and links `../deps/libuti
 
 **`--` (End of Options)**
 
-Signals that all remaining arguments are targets, not options or commands. Useful for building directories whose names conflict with commands.
+Signals that all remaining arguments are targets, not options, commands, or [external subcommands](#37-external-subcommands-putup-name). Useful for building directories whose names conflict with either.
 
 ```bash
 putup -- build      # Build the 'build' directory as a target
 putup -v -- lib     # Verbose build of 'lib' directory
+putup -- deploy     # Build 'deploy' even if putup-deploy is on PATH
 ```
 
 ### 4.2 Environment Variables

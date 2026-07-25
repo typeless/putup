@@ -31,6 +31,12 @@ Commands:
                       var [NAME] [--json] - Variable tracking
                       index   - Index dump (--summary for counts only)
 
+External subcommands:
+  'putup NAME ARGS...' runs the executable 'putup-NAME' from PATH when NAME is
+  the first non-option argument, is not a builtin command, and such an
+  executable exists. Everything after NAME is passed on untouched; options
+  before it stay putup's own. Use 'putup -- NAME' to build a target instead.
+
 Options:
   -j, --jobs N       Run N jobs in parallel
   -k, --keep-going   Continue after failures

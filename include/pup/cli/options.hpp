@@ -7,6 +7,7 @@
 #include "pup/core/vec.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 
 namespace pup::cli {
@@ -18,6 +19,12 @@ namespace pup::cli {
 enum class CheckLevel : unsigned char { None,
                                         Warn,
                                         Error };
+
+/// A resolved `putup-<name>` executable and the argv tail handed to it verbatim.
+struct ExternalCommand {
+    StringId exe = StringId::Empty;
+    Vec<StringId> args = {};
+};
 
 /// Command-line options
 struct Options {
@@ -48,6 +55,8 @@ struct Options {
     bool show_json = false;
     CheckLevel check = CheckLevel::Warn;
     StringId config_file = StringId::Empty;
+    /// Set when the first positional named an external subcommand on PATH
+    std::optional<ExternalCommand> external = {};
 };
 
 /// Parse command-line arguments

@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -7962,6 +7963,177 @@ SCENARIO("A group reference composes a nested project into the build", "[e2e][ex
                 REQUIRE(result.success());
                 REQUIRE(f.exists("outer.out"));
                 REQUIRE(f.exists("sub/inner.out"));
+            }
+        }
+    }
+}
+
+// =============================================================================
+// External Subcommand Dispatch (Git-style putup-<name>)
+// =============================================================================
+
+namespace {
+
+/// A `putup-<name>` on PATH, backed by the test binary's own argv/env probes.
+class ProbeOnPath {
+public:
+    ProbeOnPath(E2EFixture& f, std::string_view name)
+        : m_path { (f.workdir() / "probe_bin").string()
+                   + ":" + (std::getenv("PATH") ? std::getenv("PATH") : "") }
+        , m_guard { "PATH", m_path }
+    {
+        f.mkdir("probe_bin");
+        f.create_symlink(test_executable(), std::string { "probe_bin/putup-" } + std::string { name });
+    }
+
+private:
+    std::string m_path;
+    EnvGuard m_guard;
+};
+
+} // namespace
+
+SCENARIO("An external putup-<name> on PATH runs as a subcommand", "[e2e][subcommand]")
+{
+    GIVEN("a putup-e2eprobe executable on PATH")
+    {
+        auto f = E2EFixture { "simple_c" };
+        auto probe = ProbeOnPath { f, "e2eprobe" };
+
+        WHEN("putup is invoked with that name and trailing arguments")
+        {
+            auto result = f.pup({ "e2eprobe", "--dump-argv", "alpha", "--beta", "-j9" });
+
+            THEN("the external program runs with every argument forwarded verbatim")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output == "alpha\n--beta\n-j9\n");
+            }
+        }
+
+        WHEN("the external program exits non-zero")
+        {
+            auto result = f.pup({ "e2eprobe", "--exit-code", "42" });
+
+            THEN("putup exits with the same status")
+            {
+                REQUIRE(result.exit_code == 42);
+            }
+        }
+
+        WHEN("a builtin command shares the trailing arguments")
+        {
+            auto result = f.pup({ "e2eprobe", "--dump-argv", "parse" });
+
+            THEN("the builtin is not run; the word is forwarded")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output == "parse\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Builtin commands and targets outrank external subcommands", "[e2e][subcommand]")
+{
+    GIVEN("a putup-parse executable shadowing the builtin name")
+    {
+        auto f = E2EFixture { "simple_c" };
+        auto probe = ProbeOnPath { f, "parse" };
+        REQUIRE(f.init().success());
+
+        WHEN("putup parse is invoked")
+        {
+            auto result = f.parse();
+
+            THEN("the builtin wins")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Tupfile(s)") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a putup-e2eprobe executable on PATH")
+    {
+        auto f = E2EFixture { "simple_c" };
+        auto probe = ProbeOnPath { f, "e2eprobe" };
+        REQUIRE(f.init().success());
+
+        WHEN("the name is placed after -- ")
+        {
+            auto result = f.pup({ "--", "e2eprobe" });
+
+            THEN("it is a build target again, not a subcommand")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("is not in build graph") != std::string::npos);
+            }
+        }
+
+        WHEN("the name appears after another positional")
+        {
+            auto result = f.pup({ "src", "e2eprobe" });
+
+            THEN("only the first positional is considered a subcommand")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("is not in build graph") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Names with no matching executable keep their target meaning", "[e2e][subcommand]")
+{
+    GIVEN("an initialized project and nothing named putup-nosuchthing on PATH")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+
+        WHEN("putup is invoked with an unknown bare word")
+        {
+            auto result = f.pup({ "nosuchthing" });
+
+            THEN("it is still resolved as a build target")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("is not in build graph") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Options are split at the subcommand name", "[e2e][subcommand]")
+{
+    GIVEN("a putup-e2eprobe executable on PATH")
+    {
+        auto f = E2EFixture { "simple_c" };
+        auto probe = ProbeOnPath { f, "e2eprobe" };
+
+        WHEN("options precede the subcommand name")
+        {
+            auto result = f.pup({ "-v", "-B", "somewhere", "e2eprobe", "--dump-argv", "x" });
+
+            THEN("they are putup's own and are not forwarded")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output == "x\n");
+            }
+        }
+
+        WHEN("an option putup would reject follows the subcommand name")
+        {
+            auto result = f.pup({ "e2eprobe", "--dump-argv", "--check=bogus" });
+
+            THEN("putup does not parse it")
+            {
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output == "--check=bogus\n");
             }
         }
     }

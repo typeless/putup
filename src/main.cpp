@@ -6,6 +6,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/print.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/platform/process.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -55,6 +56,13 @@ auto main(int argc, char** argv) -> int
     if (opts.version) {
         pup::cli::print_version();
         return EXIT_SUCCESS;
+    }
+
+    if (opts.external) {
+        auto const& pool = pup::global_pool();
+        auto err = pup::platform::exec_and_exit(pool.get(opts.external->exe), opts.external->args);
+        pup::eprint("Error: {}\n", err.msg());
+        return EXIT_FAILURE;
     }
 
     return pup::cli::dispatch(opts);

@@ -90,6 +90,7 @@ Required files:
 | `putup distclean` | Full reset: remove outputs, `.pup/`, and `tup.config` |
 | `putup configure` | Run config-generating rules; create `tup.config` |
 | `putup show <fmt>` | Show build info (`script`, `compdb`, `graph`, `var`, `instructions`) |
+| `putup <name>` | Run `putup-<name>` from PATH, Git-style, if such an executable exists |
 
 **Key flags:**
 

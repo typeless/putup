@@ -9,6 +9,7 @@
 #include "pup/platform/file_io.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <string_view>
 
@@ -45,6 +46,11 @@ auto main(int argc, char** argv) -> int
         }
         return 0;
     }
+
+    if (argc >= 3 && std::string_view { argv[1] } == "--exit-code") {
+        return static_cast<int>(std::strtol(argv[2], nullptr, 10));
+    }
+
 
     // Resolved before any test can change the working directory.
     exe_path = absolute_path_of(argv[0]);
