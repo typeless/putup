@@ -217,6 +217,10 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         }
     }
 
+    if (source_files.empty()) {
+        return std::nullopt;
+    }
+
     for (auto src : source_files) {
         dep_cmd += ' ';
         shell_quote_into(dep_cmd, src);
