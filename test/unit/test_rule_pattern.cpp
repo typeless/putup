@@ -7,6 +7,11 @@
 #include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/rule_pattern.hpp"
+#include "shell_words.hpp"
+
+#include <string>
+#include <string_view>
+#include <vector>
 
 using namespace pup::graph;
 
@@ -460,7 +465,17 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // The -D flag with inner double quotes should be preserved and re-quoted
-        REQUIRE(generated[0].command == intern(R"(gcc -M '-DMBEDTLS_CONFIG_FILE="../include/mbedtls_config.h"' foo.c)"));
+        auto words = pup::test::split_for_host(pup::global_pool().get(generated[0].command));
+        REQUIRE(words.has_value());
+        REQUIRE(
+            *words
+            == std::vector<std::string> {
+                "gcc",
+                "-M",
+                R"(-DMBEDTLS_CONFIG_FILE="../include/mbedtls_config.h")",
+                "foo.c",
+            }
+        );
     }
 
     SECTION("preserves -D with escaped double quotes")
@@ -481,7 +496,9 @@ TEST_CASE("GCC depfile pattern edge cases", "[rule_pattern]")
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
         // The escaped quotes should be preserved and re-quoted
-        REQUIRE(generated[0].command == intern(R"(gcc -M '-D__PFILENAME__=""' foo.c)"));
+        auto words = pup::test::split_for_host(pup::global_pool().get(generated[0].command));
+        REQUIRE(words.has_value());
+        REQUIRE(*words == std::vector<std::string> { "gcc", "-M", R"(-D__PFILENAME__="")", "foo.c" });
     }
 
     SECTION("handles sccache wrapper")

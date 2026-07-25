@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
@@ -10,7 +11,14 @@
 #include "pup/cli/context.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/clang_cl.hpp"
+#include "pup/graph/scanners/dep_words.hpp"
 #include "pup/graph/scanners/gcc.hpp"
+#include "shell_words.hpp"
+
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <vector>
 
 using namespace pup::graph;
 
@@ -699,6 +707,128 @@ TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]"
         auto rules = registry.match_and_generate(clang_cl_compile(3, "clang-cl @srcs.rsp -c -o foo.obj"));
         REQUIRE(rules.empty());
     }
+}
+
+namespace {
+
+auto quote(std::string_view word, scanners::QuoteStyle style) -> std::string
+{
+    auto out = pup::Buf {};
+    scanners::shell_quote_into(out, word, style);
+    return std::string { out.view() };
+}
+
+} // namespace
+
+TEST_CASE("shell_quote_into quotes for the shell that will run the command", "[dep_scanner][quoting]")
+{
+    SECTION("a word with nothing special stays bare in both shells")
+    {
+        REQUIRE(quote("-Isrc/include", scanners::QuoteStyle::Posix) == "-Isrc/include");
+        REQUIRE(quote("-Isrc/include", scanners::QuoteStyle::Windows) == "-Isrc/include");
+    }
+
+    SECTION("cmd.exe has no single-quote syntax, so a spaced path gets double quotes")
+    {
+        REQUIRE(
+            quote("C:/Program Files/LLVM/lib/clang/20/include", scanners::QuoteStyle::Windows)
+            == "\"C:/Program Files/LLVM/lib/clang/20/include\""
+        );
+        REQUIRE(
+            quote("C:/Program Files/LLVM/lib/clang/20/include", scanners::QuoteStyle::Posix)
+            == "'C:/Program Files/LLVM/lib/clang/20/include'"
+        );
+    }
+
+    SECTION("a trailing backslash is doubled so it cannot escape the closing quote")
+    {
+        REQUIRE(quote("C:\\Program Files\\LLVM\\", scanners::QuoteStyle::Windows) == "\"C:\\Program Files\\LLVM\\\\\"");
+    }
+
+    SECTION("interior backslashes are not doubled")
+    {
+        REQUIRE(
+            quote("C:\\Program Files\\LLVM\\include", scanners::QuoteStyle::Windows)
+            == "\"C:\\Program Files\\LLVM\\include\""
+        );
+    }
+
+    SECTION("an embedded quote is escaped the way its own shell expects")
+    {
+        REQUIRE(quote("a\"b c", scanners::QuoteStyle::Windows) == "\"a\\\"b c\"");
+        REQUIRE(quote("a'b c", scanners::QuoteStyle::Posix) == "'a'\\''b c'");
+    }
+
+    SECTION("caret is cmd.exe's escape character, so it forces quoting")
+    {
+        REQUIRE(quote("-Ia^b", scanners::QuoteStyle::Windows) == "\"-Ia^b\"");
+        REQUIRE(quote("-Ia^b", scanners::QuoteStyle::Posix) == "'-Ia^b'");
+    }
+
+    SECTION("an empty word stays one empty argument instead of vanishing")
+    {
+        REQUIRE(quote("", scanners::QuoteStyle::Posix) == "''");
+        REQUIRE(quote("", scanners::QuoteStyle::Windows) == "\"\"");
+    }
+}
+
+TEST_CASE("shell_quote_into round-trips through its target shell", "[dep_scanner][quoting]")
+{
+    static constexpr auto alphabet = std::string_view { "a \"\\'$" };
+    static constexpr auto max_len = std::size_t { 4 };
+
+    for (auto style : { scanners::QuoteStyle::Posix, scanners::QuoteStyle::Windows }) {
+        for (auto len = std::size_t { 0 }; len <= max_len; ++len) {
+            auto count = std::size_t { 1 };
+            for (auto i = std::size_t { 0 }; i < len; ++i) {
+                count *= alphabet.size();
+            }
+            for (auto n = std::size_t { 0 }; n < count; ++n) {
+                auto word = std::string {};
+                auto rest = n;
+                for (auto i = std::size_t { 0 }; i < len; ++i) {
+                    word += alphabet[rest % alphabet.size()];
+                    rest /= alphabet.size();
+                }
+
+                auto quoted = quote(word, style);
+                auto parsed = pup::test::split_for(quoted, style);
+
+                INFO(
+                    "style=" << (style == scanners::QuoteStyle::Posix ? "posix" : "windows") << " word=[" << word
+                             << "] quoted=[" << quoted << "]"
+                );
+                REQUIRE(parsed.has_value());
+                REQUIRE(parsed->size() == 1);
+                REQUIRE((*parsed)[0] == word);
+            }
+        }
+    }
+}
+
+TEST_CASE("ClangClScanner keeps a spaced include path in one argument", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+    auto dep_cmd = scanner.build_dep_command(clang_cl_compile(
+        9, "clang-cl /imsvc \"C:/Program Files/LLVM/lib/clang/20/include\" -c foo.cpp -o foo.obj"
+    ));
+    REQUIRE(dep_cmd.has_value());
+
+    auto command = pup::global_pool().get(*dep_cmd);
+    auto words = pup::test::split_for_host(command);
+
+    INFO("dep command: " << command);
+    REQUIRE(words.has_value());
+    REQUIRE(
+        *words
+        == std::vector<std::string> {
+            "clang-cl",
+            "/clang:-M",
+            "/imsvc",
+            "C:/Program Files/LLVM/lib/clang/20/include",
+            "foo.cpp",
+        }
+    );
 }
 
 TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner][clang_cl]")
