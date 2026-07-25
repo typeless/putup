@@ -169,7 +169,10 @@ auto cmd_export_script(Options const& opts, std::string_view variant_name) -> in
         }
     }
 
-    std::sort(output_dirs.begin(), output_dirs.end());
+    // StringId order is intern order, which varies with loaded-index state
+    std::sort(output_dirs.begin(), output_dirs.end(), [](StringId a, StringId b) {
+        return global_pool().get(a) < global_pool().get(b);
+    });
     output_dirs.erase(std::unique(output_dirs.begin(), output_dirs.end()), output_dirs.end());
 
     if (!output_dirs.empty()) {
