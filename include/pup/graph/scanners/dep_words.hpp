@@ -17,8 +17,22 @@ auto is_compiler_wrapper(std::string_view name) -> bool;
 [[nodiscard]]
 auto has_shell_special(std::string_view flag) -> bool;
 
-/// Append `s` to `out`, single-quoted if the shell would otherwise mangle it.
-auto shell_quote_into(Buf& out, std::string_view s) -> void;
+/// The shell a scan command will be handed to: putup spawns commands through
+/// `sh -c` on POSIX and `cmd.exe /c` on Windows, which share no quoting syntax.
+enum class QuoteStyle {
+    Posix,
+    Windows,
+};
+
+inline constexpr auto host_quote_style =
+#ifdef _WIN32
+    QuoteStyle::Windows;
+#else
+    QuoteStyle::Posix;
+#endif
+
+/// Append `s` to `out`, quoted if `style`'s shell would otherwise mangle it.
+auto shell_quote_into(Buf& out, std::string_view s, QuoteStyle style = host_quote_style) -> void;
 
 /// Append `path` to `out` with `.`/`..` segments resolved textually.
 auto normalize_path_lexically_into(Buf& out, std::string_view path) -> void;
