@@ -3,22 +3,22 @@ include_rules
 
 : ../unit/putup_test$(_exe) |> ^ TEST unit^ ./%f "~[e2e]" > %o 2>&1 |> unit.log
 
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 00/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 0 > %o 2>&1 |> e2e-00.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 01/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 1 > %o 2>&1 |> e2e-01.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 02/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 2 > %o 2>&1 |> e2e-02.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 03/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 3 > %o 2>&1 |> e2e-03.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 04/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 4 > %o 2>&1 |> e2e-04.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 05/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 5 > %o 2>&1 |> e2e-05.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 06/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 6 > %o 2>&1 |> e2e-06.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 07/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 7 > %o 2>&1 |> e2e-07.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 08/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 8 > %o 2>&1 |> e2e-08.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 09/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 9 > %o 2>&1 |> e2e-09.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 10/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 10 > %o 2>&1 |> e2e-10.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 11/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 11 > %o 2>&1 |> e2e-11.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 12/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 12 > %o 2>&1 |> e2e-12.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 13/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 13 > %o 2>&1 |> e2e-13.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 14/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 14 > %o 2>&1 |> e2e-14.log
-: ../unit/putup_test$(_exe) ../../putup$(_exe) |> ^ TEST e2e 15/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 15 > %o 2>&1 |> e2e-15.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 00/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 0 > %o 2>&1 |> e2e-00.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 01/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 1 > %o 2>&1 |> e2e-01.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 02/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 2 > %o 2>&1 |> e2e-02.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 03/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 3 > %o 2>&1 |> e2e-03.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 04/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 4 > %o 2>&1 |> e2e-04.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 05/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 5 > %o 2>&1 |> e2e-05.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 06/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 6 > %o 2>&1 |> e2e-06.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 07/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 7 > %o 2>&1 |> e2e-07.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 08/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 8 > %o 2>&1 |> e2e-08.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 09/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 9 > %o 2>&1 |> e2e-09.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 10/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 10 > %o 2>&1 |> e2e-10.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 11/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 11 > %o 2>&1 |> e2e-11.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 12/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 12 > %o 2>&1 |> e2e-12.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 13/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 13 > %o 2>&1 |> e2e-13.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 14/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 14 > %o 2>&1 |> e2e-14.log
+: ../unit/putup_test$(_exe) ../../putup$(_exe) | ../e2e/fixtures/** |> ^ TEST e2e 15/16^ set -- %f && PUP="$2" "$1" "[e2e]" --shard-count 16 --shard-index 15 > %o 2>&1 |> e2e-15.log
 
 : unit.log e2e-*.log |> ^ TEST summary^ awk '/All tests passed/ { sub(/\(/, "", $4); a += $4; c += $7 } END { printf "all tests passed (%%d assertions in %%d test cases)\n", a, c }' %f > %o && cat %o |> summary.txt
 endif
