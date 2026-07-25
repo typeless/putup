@@ -4,8 +4,8 @@ cd "$(dirname "$0")"
 
 # Create output directories
 mkdir -p "build"
-mkdir -p "build/test/e2e/fixtures/dollar_escape"
 mkdir -p "build/examples/helloworld"
+mkdir -p "build/test/e2e/fixtures/dollar_escape"
 mkdir -p "build/test/unit"
 
 (cd "test/e2e/fixtures/dollar_escape" && VAR=hello; echo $VAR > ../../../../build/test/e2e/fixtures/dollar_escape/output.txt)

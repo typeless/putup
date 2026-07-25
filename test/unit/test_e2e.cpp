@@ -2558,6 +2558,38 @@ SCENARIO("Show exporters omit commands from inactive conditional branches", "[e2
     }
 }
 
+SCENARIO("Show script output is independent of saved index state", "[e2e][show]")
+{
+    GIVEN("a two-directory variant project and a freshly generated script")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a;\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("beta/b.c", "int b;\n");
+        f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+        f.write_file("build/tup.config",
+            "CONFIG_SCRIPT_PROLOGUE=#!/bin/sh\\nset -ex\\ncd \"$(dirname \"$0\")\"\n"
+            "CONFIG_SCRIPT_RUN=(cd \"%DIR\" && %CMD)\n"
+            "CONFIG_SCRIPT_MKDIR=mkdir -p \"%DIR\"\n"
+            "CONFIG_SCRIPT_COMMENT=#\n");
+        auto fresh = f.pup({ "show", "script", "-B", "build" });
+        REQUIRE(fresh.success());
+        REQUIRE(fresh.stdout_output.find("build/alpha") != std::string::npos);
+
+        WHEN("a scoped build reshapes the saved index and the script is regenerated")
+        {
+            REQUIRE(f.build({ "-B", "build", "beta" }).success());
+            auto regenerated = f.pup({ "show", "script", "-B", "build" });
+
+            THEN("the generated script is byte-identical")
+            {
+                REQUIRE(regenerated.success());
+                REQUIRE(regenerated.stdout_output == fresh.stdout_output);
+            }
+        }
+    }
+}
+
 SCENARIO("Show script generates shell build script", "[e2e][show]")
 {
     GIVEN("a simple C project")
