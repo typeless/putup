@@ -159,4 +159,9 @@ private:
 /// Get path to fixtures directory
 [[nodiscard]] auto get_fixtures_dir() -> std::filesystem::path;
 
+/// Absolute path to this test binary; `--dump-argv` makes it print the argv it
+/// was handed, which is how spawn-path tests observe what a shell passed on.
+[[nodiscard]]
+auto test_executable() -> std::string_view;
+
 } // namespace pup::test

@@ -17,8 +17,10 @@ _libm =
 : $(ROOT)/src/core/new_delete.cpp |> !cxx |> new_delete.$(_obj) {test_support}
 endif
 
-# Catch2 amalgamated
-: $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx_thirdparty |> catch_amalgamated.$(_obj) {test_support}
+# Catch2 amalgamated. Its main() is suppressed so test_main.cpp can provide one
+# that re-execs this binary as an argv probe (see test_dep_scanner.cpp).
+!cxx_catch = |> ^ CXX %f^ @(CXX_THIRDPARTY_CMD) -DCATCH_AMALGAMATED_CUSTOM_MAIN |> %B.$(_obj)
+: $(ROOT)/third_party/catch_amalgamated.cpp |> !cxx_catch |> catch_amalgamated.$(_obj) {test_support}
 
 # E2E test fixture
 : e2e_fixture.cpp |> !cxx |> e2e_fixture.$(_obj) {test_support}
