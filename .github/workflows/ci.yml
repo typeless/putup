@@ -149,6 +149,27 @@ jobs:
       - name: Run clang-tidy
         run: make tidy PUTUP=./build/putup RUN_CLANG_TIDY=run-clang-tidy-18
 
+  # CI bootstraps itself from the committed bootstrap-*.sh, so their drift is invisible until someone regenerates.
+  bootstrap-drift:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux
+          path: build/
+      - name: Fix permissions
+        run: chmod +x build/putup
+      - name: Regenerate bootstrap scripts
+        run: make bootstrap-scripts PUTUP=./build/putup
+      - name: Check for drift
+        run: |
+          git diff --exit-code -- bootstrap-linux.sh bootstrap-macos.sh && exit 0
+          echo "::error title=Stale bootstrap scripts::bootstrap-linux.sh / bootstrap-macos.sh do not match the current Tupfile and configs. Run 'make bootstrap' on Linux and commit the regenerated scripts."
+          exit 1
+
   coverage:
     needs: build-linux
     runs-on: ubuntu-latest

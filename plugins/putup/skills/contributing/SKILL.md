@@ -21,6 +21,7 @@ Putup requires `putup` in PATH for self-hosting builds.
 | `make tidy` | Run clang-tidy |
 | `make iwyu` | Detect dead includes via clang-include-cleaner |
 | `make format` | Format with clang-format |
+| `make bootstrap` | Regenerate the committed `bootstrap-*.sh` scripts |
 | `make check` | Full CI: format-check + tidy + test |
 | `make coverage` | Build gcov-instrumented variant, run tests, write gcovr report to build-coverage/report/ |
 | `make clean` | Clean build artifacts |

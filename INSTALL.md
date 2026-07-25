@@ -48,18 +48,13 @@ Windows binaries are cross-compiled from Linux (clang-cl + xwin) by the release 
 ### Regenerating Bootstrap Scripts
 
 `putup show script` emits the compile commands recorded in an already-configured
-build directory, so regenerate on each target platform: configure first, then
-show. `CONFIG=<name>` selects `configs/<name>.config` at configure time — it has
-no effect on `show script` on its own.
-
-On Linux:
+build directory. Both scripts come from a single Linux host — the macOS script
+needs the macOS *config*, not a macOS machine — so regenerate them together:
 
 ```bash
-putup configure -B build && putup show script -B build > bootstrap-linux.sh
+make bootstrap
 ```
 
-For the macOS config:
-
-```bash
-CONFIG=macosx putup configure -B build && CONFIG=macosx putup show script -B build > bootstrap-macos.sh
-```
+Commit the result with the `Tupfile`, `Tuprules.tup`, or `configs/` change that
+caused it. CI regenerates and fails on any diff, so a stale script blocks the PR
+rather than landing on someone else's.
