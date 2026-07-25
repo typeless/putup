@@ -27,6 +27,7 @@ struct Options {
     Vec<std::pair<StringId, StringId>> config_defines = {};
     bool keep_going = false;
     bool no_stat_cache = false;
+    bool rerun = false;
     bool verbose = false;
     bool dry_run = false;
     bool stat = false;

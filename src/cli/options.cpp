@@ -74,6 +74,8 @@ auto parse_args(int argc, char** argv) -> Options
             opts.keep_going = true;
         } else if (arg == "--no-stat-cache") {
             opts.no_stat_cache = true;
+        } else if (arg == "--rerun") {
+            opts.rerun = true;
         } else if (arg == "-j" || arg == "--jobs") {
             if (i + 1 < argc) {
                 auto const* str = argv[++i];
@@ -198,6 +200,7 @@ auto print_usage() -> void
           "  -j, --jobs N       Run N jobs in parallel\n"
           "  -k, --keep-going   Continue after failures\n"
           "  --no-stat-cache    Hash every file's contents (skip the size+mtime fast path)\n"
+          "  --rerun            Re-execute up-to-date commands (scoped by targets if given)\n"
           "  -n, --dry-run      Print commands without executing\n"
           "  -v, --verbose      Verbose output\n"
           "  -D, --define VAR=value\n"
