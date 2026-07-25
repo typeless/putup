@@ -7,6 +7,7 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
+#include "pup/graph/scanners/dep_words.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -15,11 +16,6 @@
 namespace pup::graph::scanners {
 
 namespace {
-
-auto is_compiler_wrapper(std::string_view name) -> bool
-{
-    return name == "ccache" || name == "distcc" || name == "sccache" || name == "icecc";
-}
 
 auto is_compiler_name(std::string_view name) -> bool
 {
@@ -52,79 +48,6 @@ auto is_compiler_name(std::string_view name) -> bool
         }
     }
     return false;
-}
-
-auto has_shell_special(std::string_view flag) -> bool
-{
-    return flag.find('`') != std::string_view::npos || flag.find("$(") != std::string_view::npos;
-}
-
-auto needs_shell_quoting(std::string_view s) -> bool
-{
-    return std::ranges::any_of(s, [](char c) {
-        return c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
-            || c == '!' || c == '*' || c == '?' || c == '[' || c == ']' || c == '(' || c == ')'
-            || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '&' || c == ';'
-            || c == '#' || c == '~';
-    });
-}
-
-auto shell_quote_into(Buf& out, std::string_view s) -> void
-{
-    if (!needs_shell_quoting(s)) {
-        out += s;
-        return;
-    }
-
-    out += '\'';
-    for (auto c : s) {
-        if (c == '\'') {
-            out += "'\\''";
-        } else {
-            out += c;
-        }
-    }
-    out += '\'';
-}
-
-auto normalize_path_lexically_into(Buf& out, std::string_view path) -> void
-{
-    auto parts = Vec<std::string_view> {};
-    auto start = std::size_t { 0 };
-    auto is_absolute = !path.empty() && path[0] == '/';
-
-    while (start < path.size()) {
-        auto end = path.find('/', start);
-        if (end == std::string_view::npos) {
-            end = path.size();
-        }
-        auto part = path.substr(start, end - start);
-        if (!part.empty() && part != ".") {
-            if (part == ".." && !parts.empty() && parts.back() != "..") {
-                parts.pop_back();
-            } else {
-                parts.push_back(part);
-            }
-        }
-        start = end + 1;
-    }
-
-    if (parts.empty()) {
-        out += is_absolute ? "/" : ".";
-        return;
-    }
-
-    if (is_absolute) {
-        out += '/';
-    }
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-        if (i > 0 || is_absolute) {
-            if (i > 0) {
-                out += '/';
-            }
-        }
-        out += parts[i];
-    }
 }
 
 auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
@@ -166,21 +89,6 @@ auto is_dep_relevant_flag(std::string_view flag) -> bool
     return false;
 }
 
-auto is_source_file(std::string_view word) -> bool
-{
-    if (word.empty() || word[0] == '-') {
-        return false;
-    }
-    auto dot_pos = word.rfind('.');
-    if (dot_pos == std::string_view::npos) {
-        return false;
-    }
-    auto ext = word.substr(dot_pos);
-    return ext == ".c" || ext == ".cc" || ext == ".cpp" || ext == ".cxx" || ext == ".C" || ext == ".c++"
-        || ext == ".m" || ext == ".mm"
-        || ext == ".S" || ext == ".s" || ext == ".asm";
-}
-
 } // namespace
 
 auto matches_gcc_compile(std::string_view command) -> bool
@@ -192,21 +100,11 @@ auto matches_gcc_compile(std::string_view command) -> bool
 
     auto& pool = global_pool();
     auto compiler_idx = std::size_t { 0 };
-    auto first_basename = pool.get(word_ids[0]);
-    if (auto pos = first_basename.rfind('/'); pos != std::string_view::npos) {
-        first_basename = first_basename.substr(pos + 1);
-    }
-
-    if (is_compiler_wrapper(first_basename) && word_ids.size() > 1) {
+    if (is_compiler_wrapper(program_basename(pool.get(word_ids[0]))) && word_ids.size() > 1) {
         compiler_idx = 1;
     }
 
-    auto compiler_basename = pool.get(word_ids[compiler_idx]);
-    if (auto pos = compiler_basename.rfind('/'); pos != std::string_view::npos) {
-        compiler_basename = compiler_basename.substr(pos + 1);
-    }
-
-    if (!is_compiler_name(compiler_basename)) {
+    if (!is_compiler_name(program_basename(pool.get(word_ids[compiler_idx])))) {
         return false;
     }
 
@@ -260,20 +158,11 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     }
 
     auto compiler_idx = std::size_t { 0 };
-    auto first_basename = words[0];
-    if (auto slash_pos = first_basename.rfind('/'); slash_pos != std::string_view::npos) {
-        first_basename = first_basename.substr(slash_pos + 1);
-    }
-
-    if (is_compiler_wrapper(first_basename) && words.size() > 1) {
+    if (is_compiler_wrapper(program_basename(words[0])) && words.size() > 1) {
         compiler_idx = 1;
     }
 
-    auto compiler_basename = words[compiler_idx];
-    if (auto pos = compiler_basename.rfind('/'); pos != std::string_view::npos) {
-        compiler_basename = compiler_basename.substr(pos + 1);
-    }
-    if (!is_compiler_name(compiler_basename)) {
+    if (!is_compiler_name(program_basename(words[compiler_idx]))) {
         return std::nullopt;
     }
 

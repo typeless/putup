@@ -10,10 +10,10 @@
 
 namespace pup::graph::scanners {
 
-/// Dependency scanner for GCC/Clang C/C++ compilers.
-/// Detects gcc, g++, clang, clang++, cc, c++ commands with -c flag
-/// and generates -M dependency scan commands.
-class GccScanner final : public DepScanner {
+/// Dependency scanner for clang's MSVC-compatible driver (clang-cl).
+/// Detects clang-cl commands with -c//c and generates `/clang:-M` scan
+/// commands, which emit a GNU-format depfile on stdout.
+class ClangClScanner final : public DepScanner {
 public:
     [[nodiscard]]
     auto matches(CommandInfo const& cmd) const -> bool override;
@@ -27,17 +27,18 @@ public:
     [[nodiscard]]
     auto name() const -> std::string_view override
     {
-        return "gcc";
+        return "clang-cl";
     }
 };
 
-/// Create a GCC/Clang scanner instance
+/// Create a clang-cl scanner instance
 [[nodiscard]]
-auto make_gcc_scanner() -> std::unique_ptr<DepScanner>;
+auto make_clang_cl_scanner() -> std::unique_ptr<DepScanner>;
 
-/// Check if a command string is a GCC/Clang compile command (compiler + -c flag).
-/// Used as a lightweight predicate for RulePattern matching without std::regex.
+/// Check if a command string is a clang-cl compile command (driver + -c//c).
 [[nodiscard]]
-auto matches_gcc_compile(std::string_view command) -> bool;
+auto matches_clang_cl_compile(std::string_view command) -> bool;
+
+// TODO: Add MsvcScanner for cl.exe using /showIncludes (stdout) or /sourceDependencies (file)
 
 } // namespace pup::graph::scanners

@@ -1894,7 +1894,7 @@ PUP_IMPLICIT_DEPS=0 putup
 
 1. Putup pattern-matches C/C++ compile commands
 
-2. Auto-generates `gcc -M` rules to discover dependencies
+2. Auto-generates `gcc -M` (or `clang-cl /clang:-M`) rules to discover dependencies
 
 3. Generated rules run before their parent compile commands
 
@@ -1912,13 +1912,25 @@ Putup generates an internal dependency-scanning rule equivalent to:
 gcc -M -MT foo.o foo.c
 ```
 
+For `clang-cl` the scan rule uses the MSVC-driver spelling, which emits the same
+GNU-format depfile on stdout:
+```bash
+clang-cl /clang:-M foo.cpp
+```
+
 **Pattern matching:**
 
-Recognized compilers: `gcc`, `g++`, `clang`, `clang++`, `cc`, `c++`
+Recognized compilers: `gcc`, `g++`, `clang`, `clang++`, `cc`, `c++`, `clang-cl`
 
 Recognized wrappers: `ccache`, `distcc`, `sccache`, `icecc`
 
-Preserved flags: `-I`, `-D`, `-U`, `-std=`, `-isystem`, `--sysroot`
+Preserved flags (GNU driver): `-I`, `-D`, `-U`, `-std=`, `-isystem`, `--sysroot`
+
+Preserved flags (clang-cl): the above plus `/I`, `/D`, `/U`, `/std:`, `/imsvc`,
+`/external:I`, `/FI`, `/winsysroot`, `--target=`, `/TP`, `/TC`
+
+`cl.exe` (real MSVC) is **not** recognized — it has no GNU-depfile mode. Use
+`/sourceDependencies` or a `clang-cl` build if you need implicit deps there.
 
 **When to use each method:**
 

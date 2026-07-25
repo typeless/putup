@@ -22,6 +22,7 @@
 #include "pup/graph/builder.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/graph/dep_scanner.hpp"
+#include "pup/graph/scanners/clang_cl.hpp"
 #include "pup/graph/scanners/gcc.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/parser/ast.hpp"
@@ -51,6 +52,7 @@ auto make_scanner_registry() -> std::optional<graph::DepScannerRegistry>
     }
     auto registry = graph::DepScannerRegistry {};
     registry.register_scanner(graph::scanners::make_gcc_scanner());
+    registry.register_scanner(graph::scanners::make_clang_cl_scanner());
     return registry;
 }
 
