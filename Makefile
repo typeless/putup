@@ -39,7 +39,10 @@ GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' \
 	--exclude-throw-branches --exclude-unreachable-branches \
 	--gcov-executable '$(GCOV)'
 
-.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check check clean distclean bootstrap
+.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check check clean distclean bootstrap bootstrap-scripts
+
+# putup parallelizes internally; make -j here only races targets sharing $(BUILD_DIR).
+.NOTPARALLEL:
 
 all: build
 
@@ -77,9 +80,12 @@ install: build
 	ln -sf putup $(PREFIX)/bin/pup
 	@echo "Installed putup to $(PREFIX)/bin/putup (with pup symlink)"
 
+bootstrap: build bootstrap-scripts
+
+# Generation needs the putup binary and a configured build dir, not a built one — the CI drift check reuses this without paying for a rebuild.
 # -D LTO: the bootstrap is a one-shot full build, so it keeps the LTO that the
 # development default drops for incremental-rebuild speed (see 6ce999f10).
-bootstrap: build
+bootstrap-scripts: configure
 	@echo "Regenerating bootstrap scripts..."
 	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-linux.sh
 	@CONFIG=macosx ./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
