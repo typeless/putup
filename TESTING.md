@@ -21,9 +21,13 @@ cached — unchanged inputs (test binary, putup binary, `test/e2e/fixtures/**`)
 mean "Nothing to do"; `--rerun` overrides. Shard logs live in
 `build/test/runner/` and a failed shard's log prints with the failure.
 The E2E shards are subprocess-bound, so `-j` above core count pays off.
-CI uses `test/run-tests.sh` (a shard-parallel script) instead: CI test jobs
-run from bootstrap-built artifacts, which have no `.pup` index for the graph
-runner to build on.
+
+CI runs the same graph runner. The build job bootstraps (which writes no
+index), then re-runs the build through putup so the artifact carries a real
+`.pup` index; the test job downloads it and runs `putup -B build -D LTO
+test/runner/`, which null-builds and executes only the test rules against the
+uploaded binaries. `-D LTO` must match the build job — it is folded into every
+command identity. Windows runs `putup_test.exe` directly (it excludes `[e2e]`).
 
 ### Unit Test Tags
 
