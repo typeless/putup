@@ -1,0 +1,2 @@
+: | data/*.txt |> ls data > %o |> listing.txt
+: listing.txt |> cat %f > %o |> copy.txt

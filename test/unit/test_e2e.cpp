@@ -1220,6 +1220,105 @@ SCENARIO("New source file triggers rebuild", "[e2e][incremental]")
     }
 }
 
+SCENARIO("New file under an order-only glob triggers rebuild", "[e2e][incremental]")
+{
+    GIVEN("a rule whose only glob input is order-only, so it never reaches the command text")
+    {
+        auto f = E2EFixture { "glob_order_only" };
+
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("listing.txt") == "one.txt\n");
+
+        AND_GIVEN("a no-op rebuild confirms stability")
+        {
+            REQUIRE(f.build().is_noop());
+
+            WHEN("a new file is added under the glob")
+            {
+                f.write_file("data/two.txt", "two\n");
+                auto result = f.build();
+
+                THEN("the consuming rule re-runs and sees the new file")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE(f.read_file("listing.txt") == "one.txt\ntwo.txt\n");
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("Removed file under an order-only glob triggers rebuild", "[e2e][incremental]")
+{
+    GIVEN("a rule whose only glob input is order-only, so it never reaches the command text")
+    {
+        auto f = E2EFixture { "glob_order_only" };
+        f.write_file("data/two.txt", "two\n");
+
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("listing.txt") == "one.txt\ntwo.txt\n");
+
+        WHEN("a file is removed from under the glob")
+        {
+            f.remove_file("data/two.txt");
+            auto result = f.build();
+
+            THEN("the consuming rule re-runs and no longer sees it")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("listing.txt") == "one.txt\n");
+            }
+
+            THEN("the change propagates to downstream rules")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("copy.txt") == "one.txt\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A scoped build does not blind the next full build", "[e2e][incremental][scope]")
+{
+    GIVEN("two independent directories")
+    {
+        auto f = E2EFixture { "scoped_out_of_scope_edit" };
+
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/out.txt") == "v1\n");
+
+        WHEN("a scoped build rewrites the index without parsing the other directory")
+        {
+            f.write_file("a/src.txt", "v2\n");
+            auto scoped = f.build({ "a/" });
+            REQUIRE(scoped.success());
+            REQUIRE_FALSE(scoped.is_noop());
+
+            AND_WHEN("a file in the unparsed directory is then edited")
+            {
+                f.write_file("b/src.txt", "v2\n");
+                auto result = f.build();
+
+                THEN("the full build still sees it")
+                {
+                    INFO("stdout: " << result.stdout_output);
+                    REQUIRE(result.success());
+                    REQUIRE(f.read_file("b/out.txt") == "v2\n");
+                }
+
+                THEN("and the build settles afterwards")
+                {
+                    REQUIRE(result.success());
+                    REQUIRE(f.build().is_noop());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file triggers stale output cleanup", "[e2e][incremental]")
 {
     GIVEN("a project with two source files")

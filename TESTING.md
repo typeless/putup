@@ -25,12 +25,9 @@ verifies that each of the 32 shard indices ran exactly once, so a dropped or
 misnumbered shard rule fails the build instead of silently reducing coverage.
 The E2E shards are subprocess-bound, so `-j` above core count pays off.
 
-**Caveat — newly added fixture files:** globs re-expand only when the Tupfile's
-content changes, so a file *added* under `test/e2e/fixtures/` is not tracked
-until something forces a re-parse (issue #166). Edits to existing fixtures are
-tracked normally. Adding a fixture usually accompanies a test-source change,
-which rebuilds the binary and reruns every shard anyway; when it doesn't, use
-`--rerun`.
+Adding or removing a file under `test/e2e/fixtures/` reruns every shard, even
+though the fixture tree reaches the rules as an order-only input that never
+appears in the command text (issue #166).
 
 CI runs the same graph runner. The build job bootstraps (which writes no
 index), then re-runs the build through putup so the artifact carries a real
