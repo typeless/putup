@@ -13,6 +13,7 @@
 PREFIX ?= $(HOME)
 PUTUP ?= $(PREFIX)/bin/putup
 BUILD_DIR := build
+TEST_JOBS ?= 16
 
 # Detect mold linker
 MOLD_PATH := $(shell command -v mold 2>/dev/null)
@@ -55,23 +56,25 @@ build: configure
 	$(PUTUP) -B $(BUILD_DIR) $(BUILD_OPTIONS)
 
 # Tests run as graph rules in the test/runner nested project, driven by the
-# freshly built putup (the PATH driver may predate runner syntax). -j16: the
-# E2E shards are subprocess-bound, so jobs above core count pay off.
+# freshly built putup (the PATH driver may predate runner syntax). TEST_JOBS
+# exceeds core count deliberately: the E2E shards are subprocess-bound.
 # Force a rerun without changes (e.g. flake check):
 #   ./build/putup --rerun -B build -j16 test/runner/
 test: build
-	./$(BUILD_DIR)/putup -B $(BUILD_DIR) -j16 test/runner/
+	./$(BUILD_DIR)/putup -B $(BUILD_DIR) -j$(TEST_JOBS) $(BUILD_OPTIONS) test/runner/
 	@cat $(BUILD_DIR)/test/runner/summary.txt
 
 # Coverage: build a gcov-instrumented variant, run the full test suite (with
 # PUP pointing at the instrumented binary so E2E subprocess runs count too),
 # then aggregate with gcovr into a summary + HTML + Cobertura report.
+# --rerun is mandatory: deleting the .gcda files is invisible to the graph, so
+# a cached "Nothing to do" would leave gcovr nothing to aggregate.
 coverage:
 	@command -v $(GCOVR) >/dev/null 2>&1 || { echo "gcovr not found. Install it with: pipx install gcovr  (or: pip install --user gcovr)"; exit 1; }
 	CONFIG=coverage $(PUTUP) configure -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
 	CONFIG=coverage $(PUTUP) -B $(COVERAGE_DIR) $(BUILD_OPTIONS)
 	find $(COVERAGE_DIR) -name '*.gcda' -delete 2>/dev/null || true
-	./$(COVERAGE_DIR)/putup -B $(COVERAGE_DIR) -j16 test/runner/
+	./$(COVERAGE_DIR)/putup --rerun -B $(COVERAGE_DIR) -j$(TEST_JOBS) $(BUILD_OPTIONS) test/runner/
 	@cat $(COVERAGE_DIR)/test/runner/summary.txt
 	@mkdir -p $(COVERAGE_REPORT)
 	$(GCOVR) $(GCOVR_FLAGS) --print-summary \
@@ -92,9 +95,12 @@ bootstrap: build bootstrap-scripts
 # Generation needs the putup binary and a configured build dir, not a built one — the CI drift check reuses this without paying for a rebuild.
 # -D LTO: the bootstrap is a one-shot full build, so it keeps the LTO that the
 # development default drops for incremental-rebuild speed (see 6ce999f10).
+# CONFIG is pinned for both scripts: unset, the config-copy rule renders
+# @(TUP_PLATFORM) of the generating machine into the other platform's script.
 bootstrap-scripts: configure
 	@echo "Regenerating bootstrap scripts..."
-	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-linux.sh
+	@CONFIG=linux ./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
+	@CONFIG=linux ./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-linux.sh
 	@CONFIG=macosx ./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
 	@CONFIG=macosx ./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-macos.sh
 	@./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null

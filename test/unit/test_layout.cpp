@@ -8,6 +8,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <random>
 
 namespace fs = std::filesystem;
 
@@ -19,10 +20,20 @@ namespace {
 /// RAII helper to create a temporary directory tree for testing
 class TempDir {
 public:
+    // Shards run concurrently as separate processes, so the name must be unique
+    // across processes: std::rand() is unseeded and yields the same sequence in
+    // every one of them.
     TempDir()
-        : path_(fs::temp_directory_path() / ("pup_test_" + std::to_string(std::rand())))
     {
-        fs::create_directories(path_);
+        auto rng = std::random_device {};
+        auto dist = std::uniform_int_distribution<unsigned int> { 0, 0xFFFFFFFF };
+        for (;;) {
+            auto candidate = fs::temp_directory_path() / ("pup_test_" + std::to_string(dist(rng)));
+            if (fs::create_directory(candidate)) {
+                path_ = candidate;
+                return;
+            }
+        }
     }
 
     ~TempDir()

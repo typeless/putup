@@ -19,8 +19,18 @@ plain builds; composed by targeting it): one rule for the fast `~[e2e]` suite,
 32 Catch2 `--shard-count` shards for `[e2e]`, and a summary join. Results are
 cached — unchanged inputs (test binary, putup binary, `test/e2e/fixtures/**`)
 mean "Nothing to do"; `--rerun` overrides. Shard logs live in
-`build/test/runner/` and a failed shard's log prints with the failure.
+`build/test/runner/`; a failing shard prints its own log before failing, so the
+Catch2 output is visible in terminal and CI output alike. The summary rule
+verifies that each of the 32 shard indices ran exactly once, so a dropped or
+misnumbered shard rule fails the build instead of silently reducing coverage.
 The E2E shards are subprocess-bound, so `-j` above core count pays off.
+
+**Caveat — newly added fixture files:** globs re-expand only when the Tupfile's
+content changes, so a file *added* under `test/e2e/fixtures/` is not tracked
+until something forces a re-parse (issue #166). Edits to existing fixtures are
+tracked normally. Adding a fixture usually accompanies a test-source change,
+which rebuilds the binary and reruns every shard anyway; when it doesn't, use
+`--rerun`.
 
 CI runs the same graph runner. The build job bootstraps (which writes no
 index), then re-runs the build through putup so the artifact carries a real
