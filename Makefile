@@ -96,7 +96,7 @@ bootstrap-scripts: configure
 	@echo "Regenerating bootstrap scripts..."
 	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-linux.sh
 	@CONFIG=macosx ./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
-	@./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-macos.sh
+	@CONFIG=macosx ./$(BUILD_DIR)/putup show script -B $(BUILD_DIR) -D LTO > bootstrap-macos.sh
 	@./$(BUILD_DIR)/putup configure -B $(BUILD_DIR) > /dev/null
 	@chmod +x bootstrap-linux.sh bootstrap-macos.sh
 	@echo "Regenerated bootstrap-linux.sh and bootstrap-macos.sh (commit them with Tupfile changes)"

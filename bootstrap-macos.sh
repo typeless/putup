@@ -9,7 +9,7 @@ mkdir -p "build/test/e2e/fixtures/dollar_escape"
 mkdir -p "build/test/unit"
 
 (cd "test/e2e/fixtures/dollar_escape" && VAR=hello; echo $VAR > ../../../../build/test/e2e/fixtures/dollar_escape/output.txt)
-(cd "configs" && cp linux.config ../build/tup.config)
+(cd "configs" && cp macosx.config ../build/tup.config)
 (cd "." && clang++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -flto -MD -c src/core/throw_stubs.cpp -o build/throw_stubs.o)
 (cd "." && clang++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -flto -MD -c src/main.cpp -o build/main.o)
 (cd "." && clang++ -std=c++20 -Wall -Wextra -Werror -Wpedantic -fPIC -fno-exceptions -fno-rtti -I./include -I./third_party  -O2 -DNDEBUG -ffunction-sections -fdata-sections -flto -MD -c src/platform/vm-posix.cpp -o build/vm-posix.o)
