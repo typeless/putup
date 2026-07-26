@@ -1,0 +1,1 @@
+: src.txt |> cat %f > %o |> out.txt

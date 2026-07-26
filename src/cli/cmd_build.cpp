@@ -764,10 +764,6 @@ auto serialize_edges(
         return pup::node_id::make_command(cmd_remap.get(id));
     };
     for (auto const& edge : state.graph.edges) {
-        // Order-only edges are ephemeral — rebuilt from Tupfiles on each parse
-        if (edge.type == pup::LinkType::OrderOnly) {
-            continue;
-        }
         auto from = remap_endpoint(edge.from);
         auto to = remap_endpoint(edge.to);
         if (from == pup::INVALID_NODE_ID || to == pup::INVALID_NODE_ID) {
@@ -1147,7 +1143,8 @@ auto merge_out_of_scope_commands(
     }
 
     for (auto const& edge : old_index.edges()) {
-        if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::OrderOnly) {
+        // Implicit edges are carried by preserve_old_implicit_edges instead.
+        if (edge.type == pup::LinkType::Implicit) {
             continue;
         }
         auto from_is_merged = pup::node_id::is_command(edge.from) && old_to_new_cmd.contains(edge.from);
@@ -1395,6 +1392,126 @@ auto detect_new_commands(
     return result;
 }
 
+struct InputSetDelta {
+    pup::Vec<StringId> changed_paths;  ///< New source paths, plus outputs of commands whose input vanished.
+    pup::Vec<pup::NodeId> forced_cmds; ///< Output-less commands whose input vanished.
+};
+
+/// Reconcile the previous input set against the current one. Change detection
+/// walks the index while routing walks the graph, so a file in only one of them
+/// falls through both: an added file has no index entry to compare against, and a
+/// removed one has no graph edge back to its consumer. Inputs the rendered text
+/// names (`%f`) escape via command identity; order-only and `%f`-less ones do not.
+auto reconcile_input_set(
+    pup::graph::BuildGraph const& state,
+    pup::index::Index const& idx,
+    pup::Vec<StringId> const& changed,
+    IdentityMap const& identity_map,
+    std::string_view variant_name,
+    bool verbose
+) -> InputSetDelta
+{
+    auto const& g = state.graph;
+    auto result = InputSetDelta {};
+
+    // Every typed path, so "left the graph" below means gone, not merely not-a-source:
+    // a generated file the user deleted is still a graph node and must not read as removed.
+    auto graph_paths = pup::Vec<StringId> {};
+    auto new_sources = pup::Vec<StringId> {};
+    for (auto id : pup::graph::all_nodes(g)) {
+        if (pup::node_id::is_command(id)) {
+            continue;
+        }
+        auto path_sv = pup::graph::get_full_path(g, id, state.path_cache);
+        if (path_sv.empty()) {
+            continue;
+        }
+        auto path_id = pup::global_pool().intern(path_sv);
+        graph_paths.push_back(path_id);
+        if (pup::graph::get<pup::NodeType>(g, id) == pup::NodeType::File) {
+            new_sources.push_back(path_id);
+        }
+    }
+    std::sort(graph_paths.begin(), graph_paths.end());
+
+    auto index_files = pup::Vec<std::pair<StringId, pup::NodeId>> {};
+    index_files.reserve(idx.files().size());
+    for (auto const& file : idx.files()) {
+        if (!pup::is_empty(file.path)) {
+            index_files.emplace_back(file.path, file.id);
+        }
+    }
+    std::sort(index_files.begin(), index_files.end());
+
+    auto find_indexed = [&](StringId path_id) -> pup::index::FileEntry const* {
+        auto it = std::lower_bound(
+            index_files.begin(), index_files.end(), path_id, [](auto const& entry, StringId key) { return entry.first < key; }
+        );
+        return (it != index_files.end() && it->first == path_id) ? idx.find_file_by_id(it->second) : nullptr;
+    };
+
+    for (auto path_id : new_sources) {
+        if (find_indexed(path_id)) {
+            continue;
+        }
+        result.changed_paths.push_back(path_id);
+        if (verbose) {
+            vprint(variant_name, "  New file: {}\n", pup::global_pool().get(path_id));
+        }
+    }
+
+    auto orphaned = pup::Vec<pup::NodeId> {};
+    for (auto path_id : changed) {
+        if (std::binary_search(graph_paths.begin(), graph_paths.end(), path_id)) {
+            continue;
+        }
+        auto const* file = find_indexed(path_id);
+        if (!file) {
+            continue;
+        }
+        // The complementary half of the input edge types; expand_implicit_deps
+        // routes Implicit and Sticky through the same index for any changed file.
+        for (auto const* edge : idx.edges_from(pup::NodeId { file->id })) {
+            if (edge->type != pup::LinkType::Normal && edge->type != pup::LinkType::OrderOnly
+                && edge->type != pup::LinkType::Group) {
+                continue;
+            }
+            auto const* cmd = idx.find_command_by_id(pup::NodeId { edge->to });
+            if (!cmd) {
+                continue;
+            }
+            if (auto cmd_node_id = find_by_identity(identity_map, cmd->identity)) {
+                orphaned.push_back(*cmd_node_id);
+                if (verbose) {
+                    vprint(
+                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, *cmd_node_id))
+                    );
+                }
+            }
+        }
+    }
+    // Explicit comparator: libc++ extern-templates std::__sort for unsigned int*,
+    // so the default form links against a libc++ we deliberately do not have.
+    std::sort(orphaned.begin(), orphaned.end(), [](pup::NodeId a, pup::NodeId b) { return a < b; });
+    orphaned.erase(std::unique(orphaned.begin(), orphaned.end()), orphaned.end());
+
+    // Outputs, not the command itself, are the currency dependents propagate through.
+    for (auto cmd_id : orphaned) {
+        auto pushed_outputs = false;
+        for (auto output_id : pup::graph::get_outputs(g, cmd_id)) {
+            auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
+            if (!output_path_sv.empty()) {
+                result.changed_paths.push_back(pup::global_pool().intern(output_path_sv));
+                pushed_outputs = true;
+            }
+        }
+        if (!pushed_outputs) {
+            result.forced_cmds.push_back(cmd_id);
+        }
+    }
+    return result;
+}
+
 /// Remove stale outputs from removed commands and report them.
 auto remove_stale_outputs(
     pup::index::Index const& idx,
@@ -1636,6 +1753,11 @@ auto build_single_variant(
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
+        auto input_delta = reconcile_input_set(bs, idx, changed_files, identity_map, variant_name, opts.verbose);
+        for (auto path_id : input_delta.changed_paths) {
+            changed_files.push_back(path_id);
+        }
+
         auto implicit_deps_start = pup::SteadyClock::now();
         changed_files = expand_implicit_deps(changed_files, idx, bs, identity_map);
         auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
@@ -1649,6 +1771,9 @@ auto build_single_variant(
             changed_files.push_back(std::move(f));
         }
         forced_cmds = std::move(new_cmds.forced_cmds);
+        for (auto cmd_id : input_delta.forced_cmds) {
+            forced_cmds.push_back(cmd_id);
+        }
 
         if (opts.rerun) {
             for (auto id : pup::graph::all_nodes(bs.graph)) {
