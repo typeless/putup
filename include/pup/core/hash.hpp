@@ -64,6 +64,10 @@ auto hex_to_hash(std::string_view hex) -> Result<Hash256>;
 [[nodiscard]]
 auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool;
 
+/// Byte-lexicographic order, for sorting and binary-searching hash-keyed ranges.
+[[nodiscard]]
+auto hash_less(Hash256 const& a, Hash256 const& b) -> bool;
+
 /// Zero hash constant
 inline constexpr auto ZERO_HASH = Hash256 {};
 

@@ -948,7 +948,10 @@ auto build_context(
         }
     }
 
-    (void)graph::finalize_graph(ctx.impl_->graph, builder_state);
+    auto finalized = graph::finalize_graph(ctx.impl_->graph, builder_state);
+    if (!finalized) {
+        return unexpected<Error>(finalized.error());
+    }
 
     for (auto warning_id : builder_state.warnings) {
         eprint("warning: {}\n", pool.get(warning_id));
