@@ -218,7 +218,8 @@ auto discover_variants(
         }
     }
 
-    std::sort(result.begin(), result.end());
+    // StringId order is interning order, i.e. readdir order, not name order.
+    std::ranges::sort(result, {}, [&pool](StringId id) { return pool.get(id); });
     return result;
 }
 

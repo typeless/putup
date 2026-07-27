@@ -6,9 +6,11 @@
 #include "pup/core/layout.hpp"
 #include "pup/core/string_pool.hpp"
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -197,5 +199,40 @@ TEST_CASE("discover_layout from build directory", "[e2e][layout]")
         REQUIRE(result.has_value());
         REQUIRE(fs::canonical(std::string(global_pool().get(result->source_root))) == fs::canonical(tmp.path()).string());
         REQUIRE(fs::canonical(std::string(global_pool().get(result->output_root))) == fs::canonical(tmp.path() / "build").string());
+    }
+}
+
+SCENARIO("discover_variants orders variants by name, not by interning order", "[e2e][layout]")
+{
+    GIVEN("build directories whose names were interned in reverse-lexicographic order")
+    {
+        // Names unique to this test, so the interning below decides their handles.
+        auto const names = std::array<std::string_view, 4> {
+            "dvar_alpha",
+            "dvar_bravo",
+            "dvar_mike",
+            "dvar_zeta",
+        };
+
+        auto tmp = TempDir {};
+        tmp.create_file("Tupfile.ini");
+        for (auto name : names) {
+            tmp.create_file(fs::path { name } / "tup.config");
+        }
+        for (auto i = names.size(); i-- > 0;) {
+            (void)global_pool().intern(names[i]);
+        }
+
+        WHEN("the source root is scanned for variants")
+        {
+            THEN("the variants are in lexicographic name order")
+            {
+                auto found = std::vector<std::string_view> {};
+                for (auto id : pup::discover_variants(tmp.path().string())) {
+                    found.push_back(global_pool().get(id));
+                }
+                REQUIRE(found == std::vector<std::string_view>(names.begin(), names.end()));
+            }
+        }
     }
 }
