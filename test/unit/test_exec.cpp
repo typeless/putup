@@ -479,6 +479,57 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         pup::platform::unset_env("PUP_TEST_EXPORT_VAR");
     }
 
+    SECTION("every exported var reaches the environment whatever order it was interned in")
+    {
+        // Interned reverse-lexicographically, so handle order is the reverse of
+        // name order. Names are unique to this test so this decides the handles.
+        auto z_id = intern("PUP_TEST_ORDER_Z");
+        auto m_id = intern("PUP_TEST_ORDER_M");
+        auto a_id = intern("PUP_TEST_ORDER_A");
+        pup::platform::set_env("PUP_TEST_ORDER_Z", "zzz");
+        pup::platform::set_env("PUP_TEST_ORDER_M", "mmm");
+        pup::platform::set_env("PUP_TEST_ORDER_A", "aaa");
+
+        auto bs = graph::make_build_graph();
+
+        auto input_id = graph::add_file_node(bs.graph, graph::FileNode {
+            .name = intern("/dev/null"),
+        });
+
+        auto cmd_node = graph::CommandNode {
+            .instruction_id = intern("echo \"[$PUP_TEST_ORDER_A|$PUP_TEST_ORDER_M|$PUP_TEST_ORDER_Z]\""),
+        };
+        cmd_node.exported_vars.insert(to_underlying(z_id));
+        cmd_node.exported_vars.insert(to_underlying(m_id));
+        cmd_node.exported_vars.insert(to_underlying(a_id));
+        auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));
+
+        auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
+            .type = NodeType::Generated,
+            .name = intern("/tmp/test_export_order.txt"),
+        });
+
+        (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
+        (void)graph::add_edge(bs.graph, *cmd_id, *output_id);
+
+        auto captured_output = std::string {};
+        auto opts = SchedulerOptions { .jobs = 1 };
+        auto scheduler = Scheduler { opts };
+        scheduler.on_job_complete([&](BuildJob const&, JobResult const& result) {
+            captured_output = std::string { sv(result.output) };
+        });
+
+        auto result = scheduler.build(bs);
+
+        REQUIRE(result.has_value());
+        REQUIRE(result->completed_jobs == 1);
+        REQUIRE(captured_output.find("[aaa|mmm|zzz]") != std::string_view::npos);
+
+        pup::platform::unset_env("PUP_TEST_ORDER_Z");
+        pup::platform::unset_env("PUP_TEST_ORDER_M");
+        pup::platform::unset_env("PUP_TEST_ORDER_A");
+    }
+
     SECTION("unexported vars not passed")
     {
         pup::platform::set_env("PUP_TEST_HIDDEN_VAR", "hidden_value");

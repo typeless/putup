@@ -18,7 +18,10 @@ auto group_by_name(AssignmentLog const& log)
     auto result = Vec<VarHistory> {};
 
     for (auto const& assign : log) {
-        auto it = std::lower_bound(result.begin(), result.end(), assign.name, [](auto const& h, auto const& n) { return h.name < n; });
+        // Ordered by name, not handle: `show var` prints this list.
+        auto it = std::lower_bound(result.begin(), result.end(), assign.name, [&](auto const& h, auto const& n) {
+            return global_pool().get(h.name) < global_pool().get(n);
+        });
         if (it == result.end() || it->name != assign.name) {
             it = result.insert(it, VarHistory { .name = assign.name, .assignments = {}, .final_value = {} });
         }

@@ -187,7 +187,7 @@ auto request_demand_driven_parse(
     auto in_available = [&] {
         auto dir_id = global_pool().find(dir_path);
         return dir_id != StringId::Empty
-            && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id);
+            && std::binary_search(eval.available_tupfile_dirs->begin(), eval.available_tupfile_dirs->end(), dir_id, pup::handle_less);
     };
     if (!in_available() && eval.compose_nested_project) {
         (void)eval.compose_nested_project(dir_path);

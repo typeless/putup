@@ -257,7 +257,7 @@ auto discover_tupfile_dirs(
         return true;
     });
 
-    std::sort(dirs.begin(), dirs.end());
+    std::sort(dirs.begin(), dirs.end(), pup::handle_less);
     dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
     return dirs;
 }
@@ -460,14 +460,14 @@ auto compose_nested_project_subtree(std::string_view dir, ParseContext& ctx) -> 
     for (auto sub_id : sub_dirs) {
         auto sub_sv = pool.get(sub_id);
         auto rel_id = (sub_sv == ".") ? pool.intern(marker_prefix) : pup::path::join(marker_prefix, sub_sv);
-        if (!std::binary_search(available.begin(), available.end(), rel_id)) {
+        if (!std::binary_search(available.begin(), available.end(), rel_id, pup::handle_less)) {
             available.push_back(rel_id);
         }
     }
     if (available.size() == before) {
         return false;
     }
-    std::sort(available.begin(), available.end());
+    std::sort(available.begin(), available.end(), pup::handle_less);
     return true;
 }
 
@@ -674,7 +674,7 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
         }
     }
 
-    std::sort(result.cached_env_vars.begin(), result.cached_env_vars.end());
+    std::ranges::sort(result.cached_env_vars, {}, [&pool](auto const& p) { return pool.get(p.first); });
 
     if (verbose && !result.cached_env_vars.empty()) {
         print("Loaded {} cached env vars from index\n", result.cached_env_vars.size());

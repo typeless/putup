@@ -210,7 +210,7 @@ auto collect_implicit_dep_files(
         }
     }
 
-    std::sort(result.begin(), result.end());
+    std::sort(result.begin(), result.end(), pup::handle_less);
     result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
 }
@@ -247,7 +247,7 @@ auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<S
         }
     }
 
-    std::sort(result.begin(), result.end());
+    std::sort(result.begin(), result.end(), pup::handle_less);
     result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
 }
@@ -282,7 +282,7 @@ auto find_changed_files_with_implicit(
         }
 
         // No active rule produces this, so its absence is not a change.
-        if (std::binary_search(inactive_outputs.begin(), inactive_outputs.end(), file.path)) {
+        if (std::binary_search(inactive_outputs.begin(), inactive_outputs.end(), file.path, pup::handle_less)) {
             continue;
         }
 
@@ -299,7 +299,7 @@ auto find_changed_files_with_implicit(
         if (!scopes.empty() && !is_tupfile(file_path_sv)
             && !pup::is_path_in_any_scope(scope_path_sv, scopes)
             && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)
-            && !std::binary_search(implicit_dep_files.begin(), implicit_dep_files.end(), file.path)) {
+            && !std::binary_search(implicit_dep_files.begin(), implicit_dep_files.end(), file.path, pup::handle_less)) {
             continue;
         }
 
@@ -1187,7 +1187,7 @@ auto expand_implicit_deps(
     for (auto const& s : changed) {
         added.push_back(s);
     }
-    std::sort(added.begin(), added.end());
+    std::sort(added.begin(), added.end(), pup::handle_less);
 
     // Build sorted path -> file pointer map
     auto path_to_file = Vec<std::pair<StringId, pup::index::FileEntry const*>> {};
@@ -1197,7 +1197,7 @@ auto expand_implicit_deps(
             path_to_file.emplace_back(file.path, &file);
         }
     }
-    std::sort(path_to_file.begin(), path_to_file.end());
+    std::sort(path_to_file.begin(), path_to_file.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
 
     // Build edge index using NodeIdArenaIndex pattern (from_id -> edge pointers)
     // Use a sorted vector of (from_id, edge*) for grouped lookup
@@ -1211,7 +1211,7 @@ auto expand_implicit_deps(
     std::sort(edges_by_from.begin(), edges_by_from.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
 
     for (auto const& path : changed) {
-        auto it = std::lower_bound(path_to_file.begin(), path_to_file.end(), path, [](auto const& p, auto const& k) { return p.first < k; });
+        auto it = std::lower_bound(path_to_file.begin(), path_to_file.end(), path, [](auto const& p, auto const& k) { return pup::handle_less(p.first, k); });
         if (it == path_to_file.end() || it->first != path) {
             continue;
         }
@@ -1236,8 +1236,8 @@ auto expand_implicit_deps(
                 auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
                 if (!output_path_sv.empty()) {
                     auto output_path_id = pup::global_pool().intern(output_path_sv);
-                    if (!std::binary_search(added.begin(), added.end(), output_path_id)) {
-                        auto pos = std::lower_bound(added.begin(), added.end(), output_path_id);
+                    if (!std::binary_search(added.begin(), added.end(), output_path_id, pup::handle_less)) {
+                        auto pos = std::lower_bound(added.begin(), added.end(), output_path_id, pup::handle_less);
                         added.insert(pos, output_path_id);
                         result.push_back(output_path_id);
                     }
@@ -1433,7 +1433,7 @@ auto reconcile_input_set(
             new_sources.push_back(path_id);
         }
     }
-    std::sort(graph_paths.begin(), graph_paths.end());
+    std::sort(graph_paths.begin(), graph_paths.end(), pup::handle_less);
 
     auto index_files = pup::Vec<std::pair<StringId, pup::NodeId>> {};
     index_files.reserve(idx.files().size());
@@ -1442,11 +1442,11 @@ auto reconcile_input_set(
             index_files.emplace_back(file.path, file.id);
         }
     }
-    std::sort(index_files.begin(), index_files.end());
+    std::sort(index_files.begin(), index_files.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
 
     auto find_indexed = [&](StringId path_id) -> pup::index::FileEntry const* {
         auto it = std::lower_bound(
-            index_files.begin(), index_files.end(), path_id, [](auto const& entry, StringId key) { return entry.first < key; }
+            index_files.begin(), index_files.end(), path_id, [](auto const& entry, StringId key) { return pup::handle_less(entry.first, key); }
         );
         return (it != index_files.end() && it->first == path_id) ? idx.find_file_by_id(it->second) : nullptr;
     };
@@ -1463,7 +1463,7 @@ auto reconcile_input_set(
 
     auto orphaned = pup::Vec<pup::NodeId> {};
     for (auto path_id : changed) {
-        if (std::binary_search(graph_paths.begin(), graph_paths.end(), path_id)) {
+        if (std::binary_search(graph_paths.begin(), graph_paths.end(), path_id, pup::handle_less)) {
             continue;
         }
         auto const* file = find_indexed(path_id);

@@ -574,7 +574,7 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
 
     for (auto const& cmd : graph.commands) {
         if (!is_empty(cmd.instruction_id)) {
-            auto pos = std::lower_bound(instruction_usage.begin(), instruction_usage.end(), cmd.instruction_id, [](auto const& p, auto const& k) { return p.first < k; });
+            auto pos = std::lower_bound(instruction_usage.begin(), instruction_usage.end(), cmd.instruction_id, [](auto const& p, auto const& k) { return pup::handle_less(p.first, k); });
             if (pos != instruction_usage.end() && pos->first == cmd.instruction_id) {
                 pos->second.push_back(cmd.id);
             } else {

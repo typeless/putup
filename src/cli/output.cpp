@@ -36,7 +36,7 @@ auto remove_empty_directories(
     for (auto id : output_dir_ids) {
         dirs.push_back(id);
     }
-    std::ranges::sort(dirs);
+    std::ranges::sort(dirs, handle_less);
     dirs.erase(std::unique(dirs.begin(), dirs.end()), dirs.end());
     std::ranges::sort(dirs, std::greater {}, [](auto id) {
         return global_pool().get(id).size();
