@@ -296,10 +296,10 @@ auto glob_expand_all(
 
     if (!result.exclusions.empty()) {
         auto excl_sorted = Vec<StringId> { result.exclusions };
-        std::sort(excl_sorted.begin(), excl_sorted.end());
+        std::sort(excl_sorted.begin(), excl_sorted.end(), pup::handle_less);
         auto& m = result.matches;
         for (auto it = m.begin(); it != m.end();) {
-            if (std::binary_search(excl_sorted.begin(), excl_sorted.end(), *it)) {
+            if (std::binary_search(excl_sorted.begin(), excl_sorted.end(), *it, pup::handle_less)) {
                 it = m.erase(it);
             } else {
                 ++it;

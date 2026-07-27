@@ -8267,3 +8267,31 @@ SCENARIO("A glob reaching into a sibling directory counts each match once", "[e2
         }
     }
 }
+
+SCENARIO("Imported values survive in the cache whatever order the imports are declared in", "[e2e][incremental]")
+{
+    GIVEN("a project importing three variables, declared in reverse-lexicographic order")
+    {
+        auto f = E2EFixture { "import_order" };
+        {
+            auto z = EnvGuard { "PUP_T_ZVAR", "zzz" };
+            auto m = EnvGuard { "PUP_T_MVAR", "mmm" };
+            auto a = EnvGuard { "PUP_T_AVAR", "aaa" };
+            REQUIRE(f.init().success());
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "A=aaa M=mmm Z=zzz\n");
+        }
+
+        WHEN("the variables are unset and the project is rebuilt")
+        {
+            auto second = f.build();
+
+            THEN("the values cached in the index are used")
+            {
+                INFO("stdout: " << second.stdout_output);
+                REQUIRE(second.success());
+                REQUIRE(f.read_file("out.txt") == "A=aaa M=mmm Z=zzz\n");
+            }
+        }
+    }
+}

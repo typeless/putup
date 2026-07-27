@@ -59,7 +59,7 @@ auto build_env_cache(Vec<BuildJob> const& jobs) -> EnvCache
             names.push_back(var_id);
         }
     }
-    std::sort(names.begin(), names.end());
+    std::ranges::sort(names, {}, [&pool](StringId id) { return pool.get(id); });
     names.erase(std::unique(names.begin(), names.end()), names.end());
 
     // Look up each name once

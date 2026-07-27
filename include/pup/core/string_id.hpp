@@ -32,4 +32,19 @@ constexpr auto make_string_id(std::uint32_t value) -> StringId
     return static_cast<StringId>(value);
 }
 
+/// Relative order of two StringIds is deleted, so each site states which order it
+/// means: `handle_less` for a set, or a pool projection for anything observable.
+/// The built-in enum comparison is interning order, and the two spellings were
+/// indistinguishable — issues #171, #175, #183 and #184 were all that confusion.
+auto operator<(StringId, StringId) -> bool = delete;
+auto operator>(StringId, StringId) -> bool = delete;
+auto operator<=(StringId, StringId) -> bool = delete;
+auto operator>=(StringId, StringId) -> bool = delete;
+
+/// Order by interning handle. Valid only where the order is unobservable —
+/// membership, dedup, binary search against a handle-keyed range.
+inline constexpr auto handle_less = [](StringId a, StringId b) {
+    return to_underlying(a) < to_underlying(b);
+};
+
 } // namespace pup

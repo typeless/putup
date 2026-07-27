@@ -1,0 +1,4 @@
+import PUP_T_ZVAR
+import PUP_T_MVAR
+import PUP_T_AVAR
+: |> echo "A=$(PUP_T_AVAR) M=$(PUP_T_MVAR) Z=$(PUP_T_ZVAR)" > %o |> out.txt
