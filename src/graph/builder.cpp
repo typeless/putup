@@ -670,9 +670,11 @@ auto expand_glob_pattern(
 
     auto matches = Vec<StringId> {};
 
+    // Normalized into the generated half's path space: join() does not normalize,
+    // so a ../ pattern spells the same file two ways and dedup keeps both.
     if (auto expanded = parser::glob_expand(path, base_sv)) {
         for (auto p : *expanded) {
-            matches.push_back(is_empty(ctx.current_dir) ? p : pup::path::join(str(ctx.current_dir), str(p)));
+            matches.push_back(is_empty(ctx.current_dir) ? pup::path::normalize(str(p)) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), str(p)))));
         }
     }
 
