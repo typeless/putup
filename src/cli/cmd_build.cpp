@@ -850,15 +850,12 @@ auto preserve_old_implicit_edges(
     // positional and shift across builds (e.g. when an earlier-created command is
     // removed), so the old edge's `to` id cannot be trusted to mean the same command.
     // Identity is stable, so we re-resolve each carried edge's command through it.
-    auto hash_less = [](pup::Hash256 const& a, pup::Hash256 const& b) {
-        return std::memcmp(a.data(), b.data(), a.size()) < 0;
-    };
     auto identity_to_new_id = pup::Vec<std::pair<pup::Hash256, pup::NodeId>> {};
     identity_to_new_id.reserve(ctx.index.commands().size());
     for (auto const& cmd : ctx.index.commands()) {
         identity_to_new_id.emplace_back(cmd.identity, cmd.id);
     }
-    std::sort(identity_to_new_id.begin(), identity_to_new_id.end(), [&](auto const& a, auto const& b) { return hash_less(a.first, b.first); });
+    std::sort(identity_to_new_id.begin(), identity_to_new_id.end(), [&](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
 
     for (auto const& edge : old_index.edges()) {
         if (edge.type != pup::LinkType::Implicit) {
@@ -872,7 +869,7 @@ auto preserve_old_implicit_edges(
         if (!old_cmd) {
             continue;
         }
-        auto match = std::lower_bound(identity_to_new_id.begin(), identity_to_new_id.end(), old_cmd->identity, [&](auto const& p, pup::Hash256 const& key) { return hash_less(p.first, key); });
+        auto match = std::lower_bound(identity_to_new_id.begin(), identity_to_new_id.end(), old_cmd->identity, [&](auto const& p, pup::Hash256 const& key) { return pup::hash_less(p.first, key); });
         if (match == identity_to_new_id.end() || match->first != old_cmd->identity) {
             continue;
         }
@@ -904,34 +901,32 @@ auto preserve_old_implicit_edges(
     }
 }
 
-auto hash_less(pup::Hash256 const& a, pup::Hash256 const& b) -> bool
-{
-    return std::memcmp(a.data(), b.data(), a.size()) < 0;
-}
-
 /// Sorted (identity → graph NodeId) map: the cross-build join key for commands.
 using IdentityMap = Vec<std::pair<pup::Hash256, pup::NodeId>>;
 
+/// Guard-satisfied only: that is the set the index records, and the set finalize_graph
+/// enforces injectivity over. Widening it here would readmit the duplicate keys that
+/// enforcement exists to rule out.
 auto build_identity_map(pup::graph::BuildGraph const& state) -> IdentityMap
 {
     auto map = IdentityMap {};
     for (auto id : pup::graph::all_nodes(state.graph)) {
-        if (pup::node_id::is_command(id)) {
+        if (pup::node_id::is_command(id) && pup::graph::is_guard_satisfied(state.graph, id)) {
             map.emplace_back(
                 pup::graph::compute_command_identity(state.graph, id, state.path_cache), id
             );
         }
     }
-    std::sort(map.begin(), map.end(), [](auto const& a, auto const& b) { return hash_less(a.first, b.first); });
+    std::sort(map.begin(), map.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
     return map;
 }
 
 auto find_by_identity(IdentityMap const& map, pup::Hash256 const& identity) -> std::optional<pup::NodeId>
 {
     auto const* it = std::lower_bound(
-        map.begin(), map.end(), identity, [](auto const& p, auto const& k) { return hash_less(p.first, k); }
+        map.begin(), map.end(), identity, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
     );
-    if (it == map.end() || std::memcmp(it->first.data(), identity.data(), identity.size()) != 0) {
+    if (it == map.end() || !pup::hash_equal(it->first, identity)) {
         return std::nullopt;
     }
     return it->second;
@@ -1000,7 +995,7 @@ auto merge_out_of_scope_commands(
     for (auto const& cmd : ctx.index.commands()) {
         new_identities.push_back(cmd.identity);
     }
-    std::sort(new_identities.begin(), new_identities.end(), hash_less);
+    std::sort(new_identities.begin(), new_identities.end(), pup::hash_less);
 
     // serialize_graph_nodes registers File/Generated/Directory paths but not
     // Ghosts; without this the merge would duplicate a ghost's entry by path.
@@ -1096,7 +1091,7 @@ auto merge_out_of_scope_commands(
         if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
-        if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, hash_less)) {
+        if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, pup::hash_less)) {
             continue;
         }
         if (any_dep_changed(cmd)) {
@@ -1362,7 +1357,7 @@ auto detect_new_commands(
     for (auto const& cmd : idx.commands()) {
         old_identities.push_back(cmd.identity);
     }
-    std::sort(old_identities.begin(), old_identities.end(), hash_less);
+    std::sort(old_identities.begin(), old_identities.end(), pup::hash_less);
 
     for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
@@ -1372,7 +1367,7 @@ auto detect_new_commands(
             continue;
         }
         auto identity = pup::graph::compute_command_identity(g, id, state.path_cache);
-        if (!std::binary_search(old_identities.begin(), old_identities.end(), identity, hash_less)) {
+        if (!std::binary_search(old_identities.begin(), old_identities.end(), identity, pup::hash_less)) {
             auto pushed_outputs = false;
             for (auto output_id : pup::graph::get_outputs(g, id)) {
                 auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);

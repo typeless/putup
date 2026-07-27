@@ -2500,6 +2500,44 @@ auto add_tupfile(
     return {};
 }
 
+/// Command identity is the cross-build join key, and every consumer looks a command up by
+/// identity alone; two commands sharing one make that lookup answer arbitrarily. Reject the
+/// graph here rather than join it wrong later. Only guard-satisfied commands are considered,
+/// matching the set the index records: complementary branches of one conditional legitimately
+/// render the same text, and at most one of them is ever live.
+auto reject_ambiguous_identities(BuildGraph& build_state) -> Result<void>
+{
+    auto& g = build_state.graph;
+
+    auto identities = Vec<std::pair<Hash256, NodeId>> {};
+    for (auto id : all_nodes(g)) {
+        if (!node_id::is_command(id) || !is_guard_satisfied(g, id)) {
+            continue;
+        }
+        identities.emplace_back(compute_command_identity(g, id, build_state.path_cache), id);
+    }
+
+    std::sort(identities.begin(), identities.end(), [](auto const& a, auto const& b) {
+        return hash_less(a.first, b.first);
+    });
+    auto const* dup = std::adjacent_find(identities.begin(), identities.end(), [](auto const& a, auto const& b) {
+        return hash_equal(a.first, b.first);
+    });
+    if (dup == identities.end()) {
+        return {};
+    }
+
+    auto dir_sv = str(get<SourceDir>(g, dup->second));
+    auto err = Buf {};
+    err.fmt(
+        "Duplicate command in '{}': two rules render the same command line, so no build can "
+        "tell them apart:\n  {}",
+        dir_sv.empty() ? "." : dir_sv,
+        str(expand_instruction(g, dup->second, build_state.path_cache))
+    );
+    return make_error<void>(ErrorCode::DuplicateNode, err.view());
+}
+
 auto finalize_graph(
     BuildGraph& build_state,
     Builder& state
@@ -2628,7 +2666,9 @@ auto finalize_graph(
     }
 
     state.deferred_edges.clear();
-    return {};
+
+    // Last: pass 2 rewrites command text, so identity is not final before it.
+    return reject_ambiguous_identities(build_state);
 }
 
 } // namespace pup::graph

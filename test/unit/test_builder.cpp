@@ -1892,3 +1892,65 @@ TEST_CASE("GraphBuilder variable assigned under a config branch keeps later cond
 
     CHECK(wrapped > baseline);
 }
+
+namespace {
+
+auto finalize_tupfile(
+    BuilderTestFixture const& fixture,
+    std::string_view source,
+    VarDb const* config_vars = nullptr
+) -> pup::Result<void>
+{
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars, .config_vars = config_vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(source, fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+    return finalize_graph(bs, builder_state);
+}
+
+} // namespace
+
+TEST_CASE("GraphBuilder rejects two commands that share one identity", "[builder][identity]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = finalize_tupfile(fixture, ": |> ./gen |> a.out\n: |> ./gen |> b.out\n");
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(sv(result.error().message).find("./gen") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder accepts commands whose rendered text differs", "[builder][identity]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    CHECK(finalize_tupfile(fixture, ": |> ./gen a |> a.out\n: |> ./gen b |> b.out\n").has_value());
+}
+
+TEST_CASE("GraphBuilder accepts identical text under complementary guards", "[builder][identity][phi]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto config = VarDb {};
+    config.set("M", "y");
+
+    auto result = finalize_tupfile(
+        fixture,
+        "ifeq (@(M),y)\n: |> ./gen |> out.txt\nelse\n: |> ./gen |> out.txt\nendif\n",
+        &config
+    );
+
+    CHECK(result.has_value());
+}

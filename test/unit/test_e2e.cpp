@@ -4473,6 +4473,59 @@ SCENARIO("Duplicate output detection", "[e2e][duplicate]")
     }
 }
 
+SCENARIO("Duplicate command detection", "[e2e][duplicate][identity]")
+{
+    GIVEN("a Tupfile with two rules that render the same command line")
+    {
+        auto f = E2EFixture { "duplicate_command" };
+
+        WHEN("pup parses the project")
+        {
+            auto result = f.build();
+
+            THEN("build fails naming the ambiguous command")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Duplicate command") != std::string::npos);
+                REQUIRE(result.stderr_output.find("./gen") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Complementary branches may render the same command line", "[e2e][duplicate][identity][phi]")
+{
+    GIVEN("a project whose two conditional branches carry identical rule text")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", R"(
+ifeq (@(MODE),release)
+: input.txt |> cp %f %o |> output.txt
+else
+: input.txt |> cp %f %o |> output.txt
+endif
+)");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "CONFIG_MODE=debug\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("only the guard-satisfied branch counts, so the build succeeds")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/output.txt"));
+            }
+        }
+    }
+}
+
 // =============================================================================
 // Platform Conditional Tests
 // =============================================================================

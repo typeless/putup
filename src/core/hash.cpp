@@ -213,4 +213,9 @@ auto hash_equal(Hash256 const& a, Hash256 const& b) -> bool
     return std::memcmp(a.data(), b.data(), a.size()) == 0;
 }
 
+auto hash_less(Hash256 const& a, Hash256 const& b) -> bool
+{
+    return std::memcmp(a.data(), b.data(), a.size()) < 0;
+}
+
 } // namespace pup
