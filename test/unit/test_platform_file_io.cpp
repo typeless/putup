@@ -7,12 +7,14 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #ifndef _WIN32
 #include <pthread.h>
@@ -417,3 +419,60 @@ TEST_CASE("walk_directory descends deep trees without a per-frame stack blowup",
     REQUIRE(args.saw_leaf);
 }
 #endif
+
+SCENARIO("read_directory returns entries in name order", "[platform][file_io][walk]")
+{
+    GIVEN("a directory whose entries were created in reverse-lexicographic order")
+    {
+        auto const names = std::array<std::string_view, 6> {
+            "alpha", "bravo", "charlie", "mike", "yankee", "zeta"
+        };
+        auto dir = TempDir { "order" };
+        for (auto i = names.size(); i-- > 0;) {
+            dir.write(names[i], "x");
+        }
+
+        WHEN("the directory is read")
+        {
+            auto listing = pup::platform::DirEntries {};
+            REQUIRE(pup::platform::read_directory(dir.path().string(), listing).has_value());
+
+            THEN("the entries are in name order")
+            {
+                auto seen = std::vector<std::string_view> {};
+                for (auto const& entry : listing.entries) {
+                    seen.push_back(entry.name);
+                }
+                REQUIRE(seen == std::vector<std::string_view>(names.begin(), names.end()));
+            }
+        }
+    }
+}
+
+SCENARIO("walk_directory visits every level in name order", "[platform][file_io][walk]")
+{
+    GIVEN("a nested tree created in reverse-lexicographic order")
+    {
+        auto dir = TempDir { "walk_order" };
+        for (auto name : std::array<std::string_view, 4> { "z.txt", "sub/y.txt", "sub/b.txt", "a.txt" }) {
+            dir.write(name, "x");
+        }
+
+        WHEN("the tree is walked")
+        {
+            auto seen = std::vector<std::string> {};
+            auto r = pup::platform::walk_directory(
+                dir.path().string(),
+                [&](pup::platform::DirEntry const& /*entry*/, std::string_view rel_path) -> bool {
+                    seen.emplace_back(rel_path);
+                    return true;
+                });
+
+            THEN("each directory is enumerated in name order, depth first")
+            {
+                REQUIRE(r.has_value());
+                REQUIRE(seen == std::vector<std::string> { "a.txt", "sub", "sub/b.txt", "sub/y.txt", "z.txt" });
+            }
+        }
+    }
+}
