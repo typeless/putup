@@ -390,15 +390,23 @@ auto expand_instruction(
 [[nodiscard]]
 auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
 
-/// Compute a command's structural identity: a content hash that determines whether
-/// the command must re-run. It folds the fully-expanded command text together with
-/// the values (content hashes) of every Variable node the command depends on via a
-/// Sticky edge — capturing config/env vars that affect the output without appearing
-/// in the rendered text (e.g. an exported env var the subprocess reads via $VAR).
-/// Two builds yield the same identity iff the command's effective definition is the
-/// same, so it is the correct cross-build join key (unlike the rendered string).
+/// What the command will do, for deciding whether it must re-run: the fully-expanded
+/// command text plus the values (content hashes) of every Variable node it depends on
+/// via a Sticky edge — capturing config/env vars that affect the output without
+/// appearing in the rendered text (e.g. an exported env var read as $VAR).
+///
+/// Not a cross-build key. Editing a recipe changes the signature and must not make the
+/// rule a different rule; that is what compute_command_key answers.
 [[nodiscard]]
-auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256;
+auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256;
+
+/// Which rule this is, for joining a command against the previous build. A command that
+/// produces files is keyed by the files themselves — output ownership is unique among
+/// guard-satisfied commands, enforced when the output edge is created — so this textual
+/// key is the fallback for output-less commands, which have nothing else to be named by.
+/// It deliberately excludes variable values: a var change means re-run, not a new rule.
+[[nodiscard]]
+auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256;
 
 /// Set the build root name (relative path from source root to build root)
 /// For in-tree builds, this should be empty. For variant builds, e.g. "build".

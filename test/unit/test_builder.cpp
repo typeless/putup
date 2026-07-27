@@ -1925,14 +1925,23 @@ auto finalize_tupfile(
 
 } // namespace
 
-TEST_CASE("GraphBuilder rejects two commands that share one identity", "[builder][identity]")
+TEST_CASE("GraphBuilder rejects two output-less commands that share one key", "[builder][identity]")
 {
     auto fixture = BuilderTestFixture {};
 
-    auto result = finalize_tupfile(fixture, ": |> ./gen |> a.out\n: |> ./gen |> b.out\n");
+    // No outputs to be named by, and identical text: no later build can tell them apart.
+    auto result = finalize_tupfile(fixture, ": |> ./check |>\n: |> ./check |>\n");
 
     REQUIRE_FALSE(result.has_value());
-    CHECK(sv(result.error().message).find("./gen") != std::string_view::npos);
+    CHECK(sv(result.error().message).find("./check") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder accepts identical text when the outputs differ", "[builder][identity]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    // Same recipe, but each is named by what it produces, so the join stays unambiguous.
+    CHECK(finalize_tupfile(fixture, ": |> ./gen |> a.out\n: |> ./gen |> b.out\n").has_value());
 }
 
 TEST_CASE("GraphBuilder accepts commands whose rendered text differs", "[builder][identity]")

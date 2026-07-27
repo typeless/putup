@@ -54,7 +54,11 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       compiles of one source with equal flags render byte-identical scans, so
 ///       v17 gave them one identity and the join between them was arbitrary
 ///       (issue #170); every dep-scan command's identity changes.
-inline constexpr auto INDEX_VERSION = std::uint32_t { 18 };
+///  19 - The single `identity` splits into `key` (which rule this is) and
+///       `signature` (what it will do), because one value cannot both stay stable
+///       across a recipe edit and change when the recipe changes (issue #188).
+///       v18 entries carry neither field.
+inline constexpr auto INDEX_VERSION = std::uint32_t { 19 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
@@ -102,11 +106,11 @@ struct alignas(8) RawCommandEntry {
     std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
     std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
-    Hash256 identity = {};            ///< Structural identity (v11): SHA-256 over command text
-                                      ///< plus the values of vars it depends on (sticky/exported)
+    Hash256 key = {};                 ///< Which rule this is, for the cross-build join (v19)
+    Hash256 signature = {};           ///< What it will do, for deciding whether to re-run (v19)
 };
 
-static_assert(sizeof(RawCommandEntry) == 48, "RawCommandEntry must be 48 bytes");
+static_assert(sizeof(RawCommandEntry) == 80, "RawCommandEntry must be 80 bytes");
 
 /// Raw edge entry (16 bytes)
 /// Represents dependencies between nodes

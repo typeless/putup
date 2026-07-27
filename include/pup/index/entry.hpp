@@ -54,7 +54,8 @@ struct CommandEntry {
     StringId display = StringId::Empty;             ///< Display text (from ^ ^ markers)
     StringId env = StringId::Empty;                 ///< Environment variables
 
-    Hash256 identity = {}; ///< Structural identity: command text + values of vars it depends on
+    Hash256 key = {};       ///< Which rule this is: the cross-build join key
+    Hash256 signature = {}; ///< What it will do: changes mean re-run, not a different rule
 
     Vec<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
     Vec<NodeId> outputs = {}; ///< Output file operands (for %o expansion)

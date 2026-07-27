@@ -1637,7 +1637,7 @@ TEST_CASE("node_id encoding: 30-bit index roundtrips and kinds are mutually excl
     REQUIRE_FALSE(pup::node_id::is_file(pup::INVALID_NODE_ID));
 }
 
-TEST_CASE("compute_command_identity separates rules by directory", "[graph][identity]")
+TEST_CASE("compute_command_key separates rules by directory", "[graph][identity]")
 {
     auto bs = make_build_graph();
     auto& g = bs.graph;
@@ -1655,31 +1655,31 @@ TEST_CASE("compute_command_identity separates rules by directory", "[graph][iden
     REQUIRE(in_a.has_value());
     REQUIRE(in_b.has_value());
 
-    SECTION("same text in different directories yields different identities")
+    SECTION("same text in different directories yields different keys")
     {
-        CHECK(compute_command_identity(g, *in_a, bs.path_cache)
-            != compute_command_identity(g, *in_b, bs.path_cache));
+        CHECK(compute_command_key(g, *in_a, bs.path_cache)
+            != compute_command_key(g, *in_b, bs.path_cache));
     }
 
-    SECTION("identity is stable for the same command")
+    SECTION("the key is stable for the same command")
     {
-        CHECK(compute_command_identity(g, *in_a, bs.path_cache)
-            == compute_command_identity(g, *in_a, bs.path_cache));
+        CHECK(compute_command_key(g, *in_a, bs.path_cache)
+            == compute_command_key(g, *in_a, bs.path_cache));
     }
 
-    SECTION("different text in the same directory yields different identities")
+    SECTION("different text in the same directory yields different keys")
     {
         auto other = add_command_node(g, CommandNode {
             .source_dir = intern("a"),
             .instruction_id = intern("cat other.txt > out.txt"),
         });
         REQUIRE(other.has_value());
-        CHECK(compute_command_identity(g, *in_a, bs.path_cache)
-            != compute_command_identity(g, *other, bs.path_cache));
+        CHECK(compute_command_key(g, *in_a, bs.path_cache)
+            != compute_command_key(g, *other, bs.path_cache));
     }
 }
 
-TEST_CASE("compute_command_identity separates dep-scan commands by parent", "[graph][identity]")
+TEST_CASE("compute_command_key separates dep-scan commands by parent", "[graph][identity]")
 {
     auto bs = make_build_graph();
     auto& g = bs.graph;
@@ -1712,15 +1712,15 @@ TEST_CASE("compute_command_identity separates dep-scan commands by parent", "[gr
     REQUIRE(scan_a.has_value());
     REQUIRE(scan_b.has_value());
 
-    SECTION("identical scan text under different parents yields different identities")
+    SECTION("identical scan text under different parents yields different keys")
     {
-        CHECK(compute_command_identity(g, *scan_a, bs.path_cache)
-            != compute_command_identity(g, *scan_b, bs.path_cache));
+        CHECK(compute_command_key(g, *scan_a, bs.path_cache)
+            != compute_command_key(g, *scan_b, bs.path_cache));
     }
 
-    SECTION("a scan's identity is stable")
+    SECTION("a scan's key is stable")
     {
-        CHECK(compute_command_identity(g, *scan_a, bs.path_cache)
-            == compute_command_identity(g, *scan_a, bs.path_cache));
+        CHECK(compute_command_key(g, *scan_a, bs.path_cache)
+            == compute_command_key(g, *scan_a, bs.path_cache));
     }
 }
