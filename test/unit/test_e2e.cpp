@@ -4549,13 +4549,20 @@ SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2
                 INFO("AAA: " << from_aaa);
                 INFO("zz:  " << from_zz);
                 REQUIRE(from_aaa == from_zz);
+                // Pins both halves and the canonical order: equality alone would still
+                // hold if the filesystem half stopped contributing entirely.
+                REQUIRE(from_aaa == "GEN\nKEEP\n");
             }
         }
     }
 }
 
-SCENARIO("A generated file shadowing a source file is one glob match", "[e2e][glob][pathspace]")
+SCENARIO("A generated file shadowing a source file is one glob match", "[e2e][glob][pathspace][deviation]")
 {
+    // Upstream tup rejects this project outright ("Attempting to insert 'x.dat' as a generated
+    // node when it already exists as a different type"). putup accepts it and lets the generated
+    // node win; issue #194 tracks that deviation. This asserts only the dedup #191 is about --
+    // one match rather than two -- and is not a claim that shadowing should be legal.
     GIVEN("a generated file whose name also exists as a checked-in source")
     {
         auto f = E2EFixture { "glob_mixed_space" };
