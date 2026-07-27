@@ -1107,6 +1107,44 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("Implicit deps survive identical rules in sibling directories", "[e2e][incremental][identity]")
+{
+    // Command text is Tupfile-relative, so these two rules render the same string.
+    // If identity ignores the directory they collide, and one directory's header
+    // edges get attached to the other's command.
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("two directories whose rules and sources are byte-identical")
+    {
+        auto f = E2EFixture { "identity_collision" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("a/program").stdout_output == "Version 1\n");
+        REQUIRE(f.run("b/program").stdout_output == "Version 1\n");
+
+        WHEN("only the second directory's header changes")
+        {
+            f.write_file("b/config.h", "#ifndef CONFIG_H\n"
+                                       "#define CONFIG_H\n"
+                                       "#define VERSION 2\n"
+                                       "#endif\n");
+            auto result = f.build();
+
+            THEN("that directory rebuilds")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.run("b/program").stdout_output == "Version 2\n");
+            }
+
+            THEN("the other directory is untouched")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.run("a/program").stdout_output == "Version 1\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit deps cover every source of a multi-source command", "[e2e][incremental]")
 {
     // gcc -M emits one rule per source; stopping at the first leaves b.h untracked and the program silently stale
