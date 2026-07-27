@@ -102,6 +102,8 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>;
 
 // Directory traversal.
 //
+// Entries come back in name order — readdir order is a filesystem artifact.
+//
 // A DirEntry's `name` is a view into the `names` arena of the DirEntries that
 // produced it — valid until the next read_directory on that DirEntries, or its
 // destruction. In a walk, the `rel_path` handed to the visitor is likewise a

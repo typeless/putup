@@ -8,6 +8,8 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <algorithm>
+
 #include <windows.h>
 
 namespace pup::platform {
@@ -640,6 +642,7 @@ auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
     for (auto i = std::size_t { 0 }; i < out.entries.size(); ++i) {
         out.entries[i].name = base.substr(offsets[i], offsets[i + 1] - offsets[i]);
     }
+    std::ranges::sort(out.entries, {}, &DirEntry::name);
     return {};
 }
 
