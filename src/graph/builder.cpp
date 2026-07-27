@@ -2517,13 +2517,6 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
         if (!node_id::is_command(id) || !is_guard_satisfied(g, id) || !get_outputs(g, id).empty()) {
             continue;
         }
-        // The configure pass evaluates before tup.config exists, so every rule gated on an
-        // unset config var renders empty and collides with the next one. Those commands
-        // never run: a real build rejects them outright, and configure schedules only the
-        // config-generating rules.
-        if (str(expand_instruction(g, id, build_state.path_cache)).find_first_not_of(" \t") == std::string_view::npos) {
-            continue;
-        }
         keys.emplace_back(compute_command_key(g, id, build_state.path_cache), id);
     }
 
@@ -2677,7 +2670,12 @@ auto finalize_graph(
 
     state.deferred_edges.clear();
 
-    // Last: pass 2 rewrites command text, so identity is not final before it.
+    // The configure pass runs before tup.config exists, so rendered text does not yet
+    // distinguish anything and a key collision there means nothing; it schedules only the
+    // config-generating rules anyway. Last, because pass 2 rewrites command text.
+    if (!state.options.reject_empty_commands) {
+        return {};
+    }
     return reject_ambiguous_keys(build_state);
 }
 
