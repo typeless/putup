@@ -4522,6 +4522,93 @@ SCENARIO("Editing a rule's recipe does not make it a different rule", "[e2e][ide
     }
 }
 
+SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2e][glob][pathspace]")
+{
+    GIVEN("a glob matching one generated and one source file, built out-of-tree")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.write_file("a/Tupfile", ": src.in |> cp %f %o |> gen.dat\n: *.dat |> cat %f > %o |> all.txt\n");
+        f.write_file("a/src.in", "GEN\n");
+        f.write_file("a/keep.dat", "KEEP\n");
+
+        WHEN("built into two differently-named build directories")
+        {
+            f.mkdir("AAA");
+            REQUIRE(f.pup({ "configure", "-B", "AAA" }).success());
+            REQUIRE(f.build({ "-B", "AAA" }).success());
+            auto from_aaa = f.read_file("AAA/a/all.txt");
+
+            f.mkdir("zz");
+            REQUIRE(f.pup({ "configure", "-B", "zz" }).success());
+            REQUIRE(f.build({ "-B", "zz" }).success());
+            auto from_zz = f.read_file("zz/a/all.txt");
+
+            THEN("the artifact is byte-identical")
+            {
+                INFO("AAA: " << from_aaa);
+                INFO("zz:  " << from_zz);
+                REQUIRE(from_aaa == from_zz);
+            }
+        }
+    }
+}
+
+SCENARIO("A generated file shadowing a source file is one glob match", "[e2e][glob][pathspace]")
+{
+    GIVEN("a generated file whose name also exists as a checked-in source")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.write_file("a/Tupfile", ": gen.src |> cp %f %o |> x.dat\n: *.dat |> cat %f > %o |> all.txt\n");
+        f.write_file("a/gen.src", "FROMRULE\n");
+        f.write_file("a/x.dat", "FROMSRC\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built out-of-tree")
+        {
+            REQUIRE(f.build({ "-B", "build" }).success());
+
+            THEN("it is consumed once, not twice")
+            {
+                auto content = f.read_file("build/a/all.txt");
+                INFO("all.txt: " << content);
+                REQUIRE(content == "FROMRULE\n");
+            }
+        }
+    }
+}
+
+SCENARIO("An exclusion applies to generated glob matches out-of-tree", "[e2e][glob][pathspace]")
+{
+    GIVEN("a glob over generated files with one of them excluded")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": keep.in |> cp %f %o |> keep.gen\n"
+            ": skip.in |> cp %f %o |> skip.gen\n"
+            ": *.gen !skip.gen |> echo %f > %o |> out.txt\n");
+        f.write_file("keep.in", "k\n");
+        f.write_file("skip.in", "s\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built out-of-tree")
+        {
+            REQUIRE(f.build({ "-B", "build" }).success());
+
+            THEN("the excluded file is absent from %f")
+            {
+                auto content = f.read_file("build/out.txt");
+                INFO("out.txt: " << content);
+                REQUIRE(content.find("keep.gen") != std::string::npos);
+                REQUIRE(content.find("skip.gen") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
 {
     GIVEN("a built rule that declares two outputs")
