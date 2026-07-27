@@ -45,7 +45,12 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       order, so %f and the identity hashing it changed for every glob-fed
 ///       command (issue #171); v15 identities no longer join, and a scoped build
 ///       would merge the stale twin back in beside the new one.
-inline constexpr auto INDEX_VERSION = std::uint32_t { 16 };
+///  17 - Glob expansion merges filesystem and generated matches into one list
+///       instead of letting a filesystem match suppress the generated ones, so
+///       both the membership and the order of %f changed for any pattern a
+///       generated file matches (issues #177, #178); v16 identities no longer
+///       join for those commands.
+inline constexpr auto INDEX_VERSION = std::uint32_t { 17 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {

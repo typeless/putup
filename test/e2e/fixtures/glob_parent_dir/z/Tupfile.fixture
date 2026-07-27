@@ -1,0 +1,1 @@
+: ../b/*.q |> cat %f > %o |> out.txt
