@@ -694,17 +694,13 @@ auto expand_glob_pattern(
         }
         auto match_path_sv = pool.get(pup::strip_path_prefix(node_path_sv, build_root_name));
         if (glob.matches(match_path_sv)) {
-            // The stripped path, not the physical one: out-of-tree the two halves would
-            // otherwise be in different path spaces, and everything below compares strings.
-            // resolve_input_node looks under BuildRoot first, so this still names the
-            // generated node.
+            // Stripped, not physical: one path space for both halves (resolve_input_node
+            // is BuildRoot-first, so this still names the generated node).
             matches.push_back(pool.intern(match_path_sv));
         }
     }
 
-    // Both halves are now source-relative, so a generated file seen from both is one input,
-    // ordering does not depend on where the build tree lives, and an exclusion written
-    // source-relative can match.
+    // Sorting and deduping across two path spaces would order by where the build tree lives.
     std::ranges::sort(matches, {}, [&pool](StringId id) { return pool.get(id); });
     matches.erase(std::unique(matches.begin(), matches.end()), matches.end());
     for (auto id : matches) {
