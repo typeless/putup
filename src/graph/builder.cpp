@@ -2514,6 +2514,13 @@ auto reject_ambiguous_identities(BuildGraph& build_state) -> Result<void>
         if (!node_id::is_command(id) || !is_guard_satisfied(g, id)) {
             continue;
         }
+        // The configure pass evaluates before tup.config exists, so every rule gated on an
+        // unset config var renders empty and collides with the next one. Those commands
+        // never run: a real build rejects them outright, and configure schedules only the
+        // config-generating rules.
+        if (str(expand_instruction(g, id, build_state.path_cache)).find_first_not_of(" \t") == std::string_view::npos) {
+            continue;
+        }
         identities.emplace_back(compute_command_identity(g, id, build_state.path_cache), id);
     }
 

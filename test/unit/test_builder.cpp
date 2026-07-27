@@ -1898,7 +1898,8 @@ namespace {
 auto finalize_tupfile(
     BuilderTestFixture const& fixture,
     std::string_view source,
-    VarDb const* config_vars = nullptr
+    VarDb const* config_vars = nullptr,
+    bool reject_empty_commands = true
 ) -> pup::Result<void>
 {
     auto bs = make_build_graph();
@@ -1912,6 +1913,7 @@ auto finalize_tupfile(
         .config_path = pup::StringId::Empty,
         .expand_globs = false,
         .validate_inputs = false,
+        .reject_empty_commands = reject_empty_commands,
     };
     auto builder_state = make_builder(options);
 
@@ -1938,6 +1940,20 @@ TEST_CASE("GraphBuilder accepts commands whose rendered text differs", "[builder
     auto fixture = BuilderTestFixture {};
 
     CHECK(finalize_tupfile(fixture, ": |> ./gen a |> a.out\n: |> ./gen b |> b.out\n").has_value());
+}
+
+TEST_CASE("GraphBuilder accepts empty-rendered duplicates in the configure pass", "[builder][identity][configure]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    // The configure pass evaluates before tup.config exists, so every rule gated on an
+    // unset config var renders empty and collides with the next one. Those commands are
+    // never scheduled -- only the config-generating rules are -- so the collision is inert.
+    auto result = finalize_tupfile(
+        fixture, ": |> @(CC) |> a.out\n: |> @(CC) |> b.out\n", nullptr, false
+    );
+
+    CHECK(result.has_value());
 }
 
 TEST_CASE("GraphBuilder accepts identical text under complementary guards", "[builder][identity][phi]")

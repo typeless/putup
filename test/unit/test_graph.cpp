@@ -1678,3 +1678,49 @@ TEST_CASE("compute_command_identity separates rules by directory", "[graph][iden
             != compute_command_identity(g, *other, bs.path_cache));
     }
 }
+
+TEST_CASE("compute_command_identity separates dep-scan commands by parent", "[graph][identity]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    // A dep-scan command drops its parent's -o, so two compiles of one source with
+    // equal flags render byte-identical scans; only the parent tells them apart.
+    auto compile_a = add_command_node(g, CommandNode {
+        .source_dir = intern("a"),
+        .instruction_id = intern("g++ -c ggc.cc -o one.o"),
+    });
+    auto compile_b = add_command_node(g, CommandNode {
+        .source_dir = intern("a"),
+        .instruction_id = intern("g++ -c ggc.cc -o two.o"),
+    });
+    REQUIRE(compile_a.has_value());
+    REQUIRE(compile_b.has_value());
+
+    auto scan_a = add_command_node(g, CommandNode {
+        .source_dir = intern("a"),
+        .instruction_id = intern("g++ -M ggc.cc"),
+        .output_action = OutputAction::InjectImplicitDeps,
+        .parent_command = *compile_a,
+    });
+    auto scan_b = add_command_node(g, CommandNode {
+        .source_dir = intern("a"),
+        .instruction_id = intern("g++ -M ggc.cc"),
+        .output_action = OutputAction::InjectImplicitDeps,
+        .parent_command = *compile_b,
+    });
+    REQUIRE(scan_a.has_value());
+    REQUIRE(scan_b.has_value());
+
+    SECTION("identical scan text under different parents yields different identities")
+    {
+        CHECK(compute_command_identity(g, *scan_a, bs.path_cache)
+            != compute_command_identity(g, *scan_b, bs.path_cache));
+    }
+
+    SECTION("a scan's identity is stable")
+    {
+        CHECK(compute_command_identity(g, *scan_a, bs.path_cache)
+            == compute_command_identity(g, *scan_a, bs.path_cache));
+    }
+}
