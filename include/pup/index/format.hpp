@@ -50,7 +50,11 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       both the membership and the order of %f changed for any pattern a
 ///       generated file matches (issues #177, #178); v16 identities no longer
 ///       join for those commands.
-inline constexpr auto INDEX_VERSION = std::uint32_t { 17 };
+///  18 - A dep-scan command's identity folds its parent command's identity. Two
+///       compiles of one source with equal flags render byte-identical scans, so
+///       v17 gave them one identity and the join between them was arbitrary
+///       (issue #170); every dep-scan command's identity changes.
+inline constexpr auto INDEX_VERSION = std::uint32_t { 18 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {

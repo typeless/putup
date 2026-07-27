@@ -1045,6 +1045,15 @@ auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cach
     state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
+    // A dep-scan command drops its parent's -o, so two compiles of one source with equal
+    // flags render byte-identical scans that differ only in whose deps they inject.
+    // Recursion is one level: a parent is a rule-authored command and has no parent.
+    if (auto parent = get_parent_command(graph, cmd_id); parent != INVALID_NODE_ID) {
+        auto parent_identity = compute_command_identity(graph, parent, cache);
+        state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
+        state = sha256_update(state, std::span<std::byte const> { parent_identity.data(), parent_identity.size() });
+    }
+
     // Fold in (name, value-hash) of each Variable node reached via a Sticky edge.
     // This captures vars that affect output without appearing in the rendered text —
     // exported env vars the subprocess reads as $VAR, config vars gating an export, etc.
