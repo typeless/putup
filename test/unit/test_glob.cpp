@@ -6,12 +6,58 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/glob.hpp"
 
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <random>
+#include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
+
 using namespace pup::parser;
 using pup::StringId;
 using pup::global_pool;
 
 namespace {
 auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
+
+/// RAII helper to create a temporary directory tree for testing
+class TempDir {
+public:
+    // Test shards run as concurrent processes, so the name must be unique across them.
+    TempDir()
+    {
+        auto rng = std::random_device {};
+        auto dist = std::uniform_int_distribution<unsigned int> { 0, 0xFFFFFFFF };
+        for (;;) {
+            auto candidate = fs::temp_directory_path() / ("pup_glob_" + std::to_string(dist(rng)));
+            if (fs::create_directory(candidate)) {
+                path_ = candidate;
+                return;
+            }
+        }
+    }
+
+    ~TempDir()
+    {
+        std::error_code ec;
+        fs::remove_all(path_, ec);
+    }
+
+    TempDir(TempDir const&) = delete;
+    auto operator=(TempDir const&) -> TempDir& = delete;
+
+    [[nodiscard]] auto path() const -> fs::path const& { return path_; }
+
+    auto create_file(std::string_view rel) -> void
+    {
+        std::ofstream { path_ / rel };
+    }
+
+private:
+    fs::path path_;
+};
 } // namespace
 
 TEST_CASE("Glob pattern matching", "[glob]")
@@ -221,5 +267,55 @@ TEST_CASE("glob_match_extract", "[glob]")
     SECTION("double star treated as single")
     {
         REQUIRE(sv(glob_match_extract("**.c", "foo.c")) == "foo");
+    }
+}
+
+SCENARIO("glob expansion orders matches by path, not by interning order", "[glob]")
+{
+    GIVEN("a directory tree whose paths were interned in reverse-lexicographic order")
+    {
+        // Names unique to this test, so the interning below decides their handles.
+        auto const paths = std::array<std::string_view, 5> {
+            "gord_alpha.txt",
+            "gord_bravo.txt",
+            "gord_sub/gord_charlie.txt",
+            "gord_sub/gord_mike.txt",
+            "gord_zeta.txt",
+        };
+
+        auto tmp = TempDir {};
+        fs::create_directory(tmp.path() / "gord_sub");
+        for (auto path : paths) {
+            tmp.create_file(path);
+        }
+        for (auto i = paths.size(); i-- > 0;) {
+            (void)global_pool().intern(paths[i]);
+        }
+
+        auto expanded = [&](std::string_view pattern) {
+            auto matches = glob_expand(pattern, tmp.path().string());
+            REQUIRE(matches.has_value());
+            auto result = std::vector<std::string_view> {};
+            for (auto id : *matches) {
+                result.push_back(sv(id));
+            }
+            return result;
+        };
+
+        WHEN("a plain pattern is expanded")
+        {
+            THEN("the matches are in lexicographic path order")
+            {
+                REQUIRE(expanded("*.txt") == std::vector<std::string_view> { paths[0], paths[1], paths[4] });
+            }
+        }
+
+        WHEN("a recursive pattern is expanded")
+        {
+            THEN("the matches are in lexicographic path order")
+            {
+                REQUIRE(expanded("**/*.txt") == std::vector<std::string_view>(paths.begin(), paths.end()));
+            }
+        }
     }
 }

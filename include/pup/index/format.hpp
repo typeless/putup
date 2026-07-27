@@ -41,7 +41,11 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       resolve to one another through the identity join (issue #167). Also
 ///       covers OrderOnly edges, persisted since issue #166 and load-bearing for
 ///       removal routing; v14 indexes predate them and would lose one removal.
-inline constexpr auto INDEX_VERSION = std::uint32_t { 15 };
+///  16 - Glob matches are ordered by path rather than by interning (readdir)
+///       order, so %f and the identity hashing it changed for every glob-fed
+///       command (issue #171); v15 identities no longer join, and a scoped build
+///       would merge the stale twin back in beside the new one.
+inline constexpr auto INDEX_VERSION = std::uint32_t { 16 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
