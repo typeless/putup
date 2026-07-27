@@ -2500,18 +2500,21 @@ auto add_tupfile(
     return {};
 }
 
-/// Command identity is the cross-build join key, and every consumer looks a command up by
-/// identity alone; two commands sharing one make that lookup answer arbitrarily. Reject the
-/// graph here rather than join it wrong later. Only guard-satisfied commands are considered,
-/// matching the set the index records: complementary branches of one conditional legitimately
-/// render the same text, and at most one of them is ever live.
-auto reject_ambiguous_identities(BuildGraph& build_state) -> Result<void>
+/// A command that produces files is joined across builds by the files, and output ownership
+/// is already unique among guard-satisfied commands. Output-less commands are joined by
+/// their textual key instead, and nothing enforced that key's uniqueness: two such rules in
+/// one directory are indistinguishable to every later build. Reject the graph here rather
+/// than join it wrong later.
+///
+/// Guard-satisfied only, matching the set the index records: complementary branches of one
+/// conditional legitimately render the same text, and at most one of them is ever live.
+auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
 {
     auto& g = build_state.graph;
 
-    auto identities = Vec<std::pair<Hash256, NodeId>> {};
+    auto keys = Vec<std::pair<Hash256, NodeId>> {};
     for (auto id : all_nodes(g)) {
-        if (!node_id::is_command(id) || !is_guard_satisfied(g, id)) {
+        if (!node_id::is_command(id) || !is_guard_satisfied(g, id) || !get_outputs(g, id).empty()) {
             continue;
         }
         // The configure pass evaluates before tup.config exists, so every rule gated on an
@@ -2521,24 +2524,24 @@ auto reject_ambiguous_identities(BuildGraph& build_state) -> Result<void>
         if (str(expand_instruction(g, id, build_state.path_cache)).find_first_not_of(" \t") == std::string_view::npos) {
             continue;
         }
-        identities.emplace_back(compute_command_identity(g, id, build_state.path_cache), id);
+        keys.emplace_back(compute_command_key(g, id, build_state.path_cache), id);
     }
 
-    std::sort(identities.begin(), identities.end(), [](auto const& a, auto const& b) {
+    std::sort(keys.begin(), keys.end(), [](auto const& a, auto const& b) {
         return hash_less(a.first, b.first);
     });
-    auto const* dup = std::adjacent_find(identities.begin(), identities.end(), [](auto const& a, auto const& b) {
+    auto const* dup = std::adjacent_find(keys.begin(), keys.end(), [](auto const& a, auto const& b) {
         return hash_equal(a.first, b.first);
     });
-    if (dup == identities.end()) {
+    if (dup == keys.end()) {
         return {};
     }
 
     auto dir_sv = str(get<SourceDir>(g, dup->second));
     auto err = Buf {};
     err.fmt(
-        "Duplicate command in '{}': two rules render the same command line, so no build can "
-        "tell them apart:\n  {}",
+        "Duplicate command in '{}': two rules produce no output and render the same command "
+        "line, so no build can tell them apart:\n  {}",
         dir_sv.empty() ? "." : dir_sv,
         str(expand_instruction(g, dup->second, build_state.path_cache))
     );
@@ -2675,7 +2678,7 @@ auto finalize_graph(
     state.deferred_edges.clear();
 
     // Last: pass 2 rewrites command text, so identity is not final before it.
-    return reject_ambiguous_identities(build_state);
+    return reject_ambiguous_keys(build_state);
 }
 
 } // namespace pup::graph

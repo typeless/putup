@@ -4475,7 +4475,7 @@ SCENARIO("Duplicate output detection", "[e2e][duplicate]")
 
 SCENARIO("Duplicate command detection", "[e2e][duplicate][identity]")
 {
-    GIVEN("a Tupfile with two rules that render the same command line")
+    GIVEN("a Tupfile with two output-less rules that render the same command line")
     {
         auto f = E2EFixture { "duplicate_command" };
 
@@ -4489,7 +4489,34 @@ SCENARIO("Duplicate command detection", "[e2e][duplicate][identity]")
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("Duplicate command") != std::string::npos);
-                REQUIRE(result.stderr_output.find("./gen") != std::string::npos);
+                REQUIRE(result.stderr_output.find("./check") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Editing a rule's recipe does not make it a different rule", "[e2e][identity][join]")
+{
+    GIVEN("a built project whose rule produces one output")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", ": input.txt |> cp %f %o |> output.txt\n");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        WHEN("only the command text changes, with the same inputs and outputs")
+        {
+            f.write_file("Tupfile", ": input.txt |> cat %f > %o |> output.txt\n");
+            auto result = f.build({ "-B", "build", "-v" });
+
+            THEN("the rule is recognised as the same one and its output is not deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Removed stale") == std::string::npos);
+                REQUIRE(f.exists("build/output.txt"));
             }
         }
     }

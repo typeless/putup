@@ -1,2 +1,2 @@
-: |> ./gen |> a.out
-: |> ./gen |> b.out
+: |> ./check |>
+: |> ./check |>

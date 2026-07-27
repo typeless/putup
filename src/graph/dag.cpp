@@ -1031,7 +1031,32 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId
     return expand_instruction(graph, cmd_id, cache);
 }
 
-auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
+auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
+{
+    auto& pool = global_pool();
+    auto state = sha256_init();
+    auto constexpr SEP = std::byte { 0 };
+
+    state = sha256_update(state, pool.get(expand_instruction(graph, cmd_id, cache)));
+
+    // Command text is Tupfile-relative, so the same rule in sibling directories renders
+    // identically; without the directory those distinct rules share one key.
+    state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
+    state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
+
+    // A dep-scan command is output-less and drops its parent's -o, so two compiles of one
+    // source with equal flags render byte-identical scans; whose deps they inject is the
+    // only thing that tells them apart. One level: a parent is rule-authored, so has none.
+    if (auto parent = get_parent_command(graph, cmd_id); parent != INVALID_NODE_ID) {
+        auto parent_key = compute_command_key(graph, parent, cache);
+        state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
+        state = sha256_update(state, std::span<std::byte const> { parent_key.data(), parent_key.size() });
+    }
+
+    return sha256_finalize(state);
+}
+
+auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
 {
     auto& pool = global_pool();
     auto state = sha256_init();
@@ -1040,19 +1065,8 @@ auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cach
     // Base: the fully-expanded command text (instruction + operand paths + in-text vars).
     state = sha256_update(state, pool.get(expand_instruction(graph, cmd_id, cache)));
 
-    // Command text is Tupfile-relative, so the same rule in sibling directories renders
-    // identically; without the directory those distinct rules share one identity.
     state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
-
-    // A dep-scan command drops its parent's -o, so two compiles of one source with equal
-    // flags render byte-identical scans that differ only in whose deps they inject.
-    // Recursion is one level: a parent is a rule-authored command and has no parent.
-    if (auto parent = get_parent_command(graph, cmd_id); parent != INVALID_NODE_ID) {
-        auto parent_identity = compute_command_identity(graph, parent, cache);
-        state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
-        state = sha256_update(state, std::span<std::byte const> { parent_identity.data(), parent_identity.size() });
-    }
 
     // Fold in (name, value-hash) of each Variable node reached via a Sticky edge.
     // This captures vars that affect output without appearing in the rendered text —

@@ -734,7 +734,8 @@ auto serialize_command_nodes(
             .instruction_pattern = pup::graph::get<pup::graph::InstructionPattern>(g, id),
             .display = pup::graph::get<pup::graph::Display>(g, id),
             .env = pup::StringId::Empty,
-            .identity = pup::graph::compute_command_identity(g, id, state.path_cache),
+            .key = pup::graph::compute_command_key(g, id, state.path_cache),
+            .signature = pup::graph::compute_command_signature(g, id, state.path_cache),
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
         };
@@ -853,7 +854,7 @@ auto preserve_old_implicit_edges(
     auto identity_to_new_id = pup::Vec<std::pair<pup::Hash256, pup::NodeId>> {};
     identity_to_new_id.reserve(ctx.index.commands().size());
     for (auto const& cmd : ctx.index.commands()) {
-        identity_to_new_id.emplace_back(cmd.identity, cmd.id);
+        identity_to_new_id.emplace_back(cmd.key, cmd.id);
     }
     std::sort(identity_to_new_id.begin(), identity_to_new_id.end(), [&](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
 
@@ -869,8 +870,8 @@ auto preserve_old_implicit_edges(
         if (!old_cmd) {
             continue;
         }
-        auto match = std::lower_bound(identity_to_new_id.begin(), identity_to_new_id.end(), old_cmd->identity, [&](auto const& p, pup::Hash256 const& key) { return pup::hash_less(p.first, key); });
-        if (match == identity_to_new_id.end() || match->first != old_cmd->identity) {
+        auto match = std::lower_bound(identity_to_new_id.begin(), identity_to_new_id.end(), old_cmd->key, [&](auto const& p, pup::Hash256 const& key) { return pup::hash_less(p.first, key); });
+        if (match == identity_to_new_id.end() || match->first != old_cmd->key) {
             continue;
         }
         auto new_to_id = match->second;
@@ -902,34 +903,71 @@ auto preserve_old_implicit_edges(
 }
 
 /// Sorted (identity → graph NodeId) map: the cross-build join key for commands.
-using IdentityMap = Vec<std::pair<pup::Hash256, pup::NodeId>>;
+/// Recognises a command from the previous build in the current graph. A command that
+/// produces files is found by the files: output ownership is unique among guard-satisfied
+/// commands, enforced where the output edge is created, so a produced path names its
+/// producer and survives any edit to the recipe. Output-less commands have nothing else
+/// to be named by and fall back to their textual key.
+///
+/// Guard-satisfied only, matching the set the index records.
+struct CommandJoin {
+    Vec<std::pair<StringId, pup::NodeId>> by_output; ///< produced path -> producer
+    Vec<std::pair<pup::Hash256, pup::NodeId>> by_key;
+};
 
-/// Guard-satisfied only: that is the set the index records, and the set finalize_graph
-/// enforces injectivity over. Widening it here would readmit the duplicate keys that
-/// enforcement exists to rule out.
-auto build_identity_map(pup::graph::BuildGraph const& state) -> IdentityMap
+auto build_command_join(pup::graph::BuildGraph const& state) -> CommandJoin
 {
-    auto map = IdentityMap {};
-    for (auto id : pup::graph::all_nodes(state.graph)) {
-        if (pup::node_id::is_command(id) && pup::graph::is_guard_satisfied(state.graph, id)) {
-            map.emplace_back(
-                pup::graph::compute_command_identity(state.graph, id, state.path_cache), id
-            );
+    auto const& g = state.graph;
+    auto join = CommandJoin {};
+
+    for (auto id : pup::graph::all_nodes(g)) {
+        if (!pup::node_id::is_command(id) || !pup::graph::is_guard_satisfied(g, id)) {
+            continue;
+        }
+        auto produced_any = false;
+        for (auto output_id : pup::graph::get_outputs(g, id)) {
+            auto path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
+            if (!path_sv.empty()) {
+                join.by_output.emplace_back(pup::global_pool().intern(path_sv), id);
+                produced_any = true;
+            }
+        }
+        if (!produced_any) {
+            join.by_key.emplace_back(pup::graph::compute_command_key(g, id, state.path_cache), id);
         }
     }
-    std::sort(map.begin(), map.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
-    return map;
+
+    std::sort(join.by_output.begin(), join.by_output.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
+    std::sort(join.by_key.begin(), join.by_key.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
+    return join;
 }
 
-auto find_by_identity(IdentityMap const& map, pup::Hash256 const& identity) -> std::optional<pup::NodeId>
+auto find_joined_command(
+    CommandJoin const& join,
+    pup::index::Index const& idx,
+    pup::index::CommandEntry const& cmd
+) -> std::optional<pup::NodeId>
 {
-    auto const* it = std::lower_bound(
-        map.begin(), map.end(), identity, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
-    );
-    if (it == map.end() || !pup::hash_equal(it->first, identity)) {
-        return std::nullopt;
+    for (auto const* edge : idx.edges_from(cmd.id)) {
+        auto const* file = idx.find_file_by_id(edge->to);
+        if (!file || file->type != pup::NodeType::Generated) {
+            continue;
+        }
+        auto const* it = std::lower_bound(
+            join.by_output.begin(), join.by_output.end(), file->path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
+        );
+        if (it != join.by_output.end() && it->first == file->path) {
+            return it->second;
+        }
     }
-    return it->second;
+
+    auto const* it = std::lower_bound(
+        join.by_key.begin(), join.by_key.end(), cmd.key, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
+    );
+    if (it != join.by_key.end() && pup::hash_equal(it->first, cmd.key)) {
+        return it->second;
+    }
+    return std::nullopt;
 }
 
 auto contains_id(pup::Vec<pup::StringId> const& v, pup::StringId id) -> bool
@@ -993,7 +1031,7 @@ auto merge_out_of_scope_commands(
     auto new_identities = pup::Vec<pup::Hash256> {};
     new_identities.reserve(ctx.index.commands().size());
     for (auto const& cmd : ctx.index.commands()) {
-        new_identities.push_back(cmd.identity);
+        new_identities.push_back(cmd.key);
     }
     std::sort(new_identities.begin(), new_identities.end(), pup::hash_less);
 
@@ -1091,7 +1129,7 @@ auto merge_out_of_scope_commands(
         if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
-        if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.identity, pup::hash_less)) {
+        if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.key, pup::hash_less)) {
             continue;
         }
         if (any_dep_changed(cmd)) {
@@ -1131,7 +1169,8 @@ auto merge_out_of_scope_commands(
             .instruction_pattern = cmd.instruction_pattern,
             .display = cmd.display,
             .env = cmd.env,
-            .identity = cmd.identity,
+            .key = cmd.key,
+            .signature = cmd.signature,
             .inputs = std::move(new_inputs),
             .outputs = std::move(new_outputs),
         });
@@ -1173,7 +1212,7 @@ auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
     pup::graph::BuildGraph const& state,
-    IdentityMap const& identity_map
+    CommandJoin const& join
 ) -> pup::Vec<StringId>
 {
     auto result = pup::Vec<StringId> { changed };
@@ -1222,7 +1261,7 @@ auto expand_implicit_deps(
                 continue;
             }
 
-            auto cmd_node_id = find_by_identity(identity_map, cmd->identity);
+            auto cmd_node_id = find_joined_command(join, index, *cmd);
             if (!cmd_node_id) {
                 continue;
             }
@@ -1335,9 +1374,13 @@ struct NewCommands {
     pup::Vec<pup::NodeId> forced_cmds;
 };
 
-/// Detect new commands (in graph but not index). Their outputs join the changed-file
-/// set; a command that contributes no output paths cannot be reached through that
-/// currency, so it is returned for direct scheduling instead.
+/// Commands that must run because of what they are rather than because a file changed:
+/// no counterpart in the previous build, or a counterpart whose signature differs. Their
+/// outputs join the changed-file set; a command that contributes no output paths cannot
+/// be reached through that currency, so it is returned for direct scheduling instead.
+///
+/// The join runs graph -> index, the mirror of find_joined_command: a produced path names
+/// its producer, and output-less commands fall back to the textual key.
 auto detect_new_commands(
     pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
@@ -1348,16 +1391,23 @@ auto detect_new_commands(
     auto const& g = state.graph;
     auto result = NewCommands {};
 
-    // Identity-keyed membership: a command must (re)build when its structural identity
-    // is absent from the previous index. Identity folds command text together with the
-    // values of the vars it depends on, so a change invisible to the rendered string
-    // (e.g. an exported env var the subprocess reads via $VAR) still flips the identity.
-    auto old_identities = pup::Vec<pup::Hash256> {};
-    old_identities.reserve(idx.commands().size());
+    auto old_by_output = pup::Vec<std::pair<StringId, pup::index::CommandEntry const*>> {};
+    auto old_by_key = pup::Vec<std::pair<pup::Hash256, pup::index::CommandEntry const*>> {};
     for (auto const& cmd : idx.commands()) {
-        old_identities.push_back(cmd.identity);
+        auto produced_any = false;
+        for (auto const* edge : idx.edges_from(cmd.id)) {
+            auto const* file = idx.find_file_by_id(edge->to);
+            if (file && file->type == pup::NodeType::Generated && !pup::is_empty(file->path)) {
+                old_by_output.emplace_back(file->path, &cmd);
+                produced_any = true;
+            }
+        }
+        if (!produced_any) {
+            old_by_key.emplace_back(cmd.key, &cmd);
+        }
     }
-    std::sort(old_identities.begin(), old_identities.end(), pup::hash_less);
+    std::sort(old_by_output.begin(), old_by_output.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
+    std::sort(old_by_key.begin(), old_by_key.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
 
     for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
@@ -1366,23 +1416,49 @@ auto detect_new_commands(
         if (!pup::graph::is_guard_satisfied(g, id)) {
             continue;
         }
-        auto identity = pup::graph::compute_command_identity(g, id, state.path_cache);
-        if (!std::binary_search(old_identities.begin(), old_identities.end(), identity, pup::hash_less)) {
-            auto pushed_outputs = false;
-            for (auto output_id : pup::graph::get_outputs(g, id)) {
-                auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
-                if (!output_path_sv.empty()) {
-                    result.changed_outputs.push_back(pup::global_pool().intern(output_path_sv));
-                    pushed_outputs = true;
-                }
+
+        auto output_paths = pup::Vec<StringId> {};
+        for (auto output_id : pup::graph::get_outputs(g, id)) {
+            auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
+            if (!output_path_sv.empty()) {
+                output_paths.push_back(pup::global_pool().intern(output_path_sv));
             }
-            if (!pushed_outputs) {
-                result.forced_cmds.push_back(id);
+        }
+
+        pup::index::CommandEntry const* previous = nullptr;
+        for (auto path_id : output_paths) {
+            auto const* it = std::lower_bound(
+                old_by_output.begin(), old_by_output.end(), path_id, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
+            );
+            if (it != old_by_output.end() && it->first == path_id) {
+                previous = it->second;
+                break;
             }
-            if (verbose) {
-                auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
-                vprint(variant_name, "  New command: {}\n", display_sv);
+        }
+        if (!previous && output_paths.empty()) {
+            auto key = pup::graph::compute_command_key(g, id, state.path_cache);
+            auto const* it = std::lower_bound(
+                old_by_key.begin(), old_by_key.end(), key, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
+            );
+            if (it != old_by_key.end() && pup::hash_equal(it->first, key)) {
+                previous = it->second;
             }
+        }
+
+        auto signature = pup::graph::compute_command_signature(g, id, state.path_cache);
+        if (previous && pup::hash_equal(previous->signature, signature)) {
+            continue;
+        }
+
+        for (auto path_id : output_paths) {
+            result.changed_outputs.push_back(path_id);
+        }
+        if (output_paths.empty()) {
+            result.forced_cmds.push_back(id);
+        }
+        if (verbose) {
+            auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
+            vprint(variant_name, "  {}: {}\n", previous ? "Changed command" : "New command", display_sv);
         }
     }
     return result;
@@ -1402,7 +1478,7 @@ auto reconcile_input_set(
     pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
     pup::Vec<StringId> const& changed,
-    IdentityMap const& identity_map,
+    CommandJoin const& join,
     std::string_view variant_name,
     bool verbose
 ) -> InputSetDelta
@@ -1476,7 +1552,7 @@ auto reconcile_input_set(
             if (!cmd) {
                 continue;
             }
-            if (auto cmd_node_id = find_by_identity(identity_map, cmd->identity)) {
+            if (auto cmd_node_id = find_joined_command(join, idx, *cmd)) {
                 orphaned.push_back(*cmd_node_id);
                 if (verbose) {
                     vprint(
@@ -1511,7 +1587,7 @@ auto reconcile_input_set(
 /// Remove stale outputs from removed commands and report them.
 auto remove_stale_outputs(
     pup::index::Index const& idx,
-    IdentityMap const& identity_map,
+    CommandJoin const& join,
     pup::Vec<pup::StringId> const& parse_scopes,
     pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
@@ -1530,7 +1606,7 @@ auto remove_stale_outputs(
             continue;
         }
 
-        if (find_by_identity(identity_map, cmd.identity)) {
+        if (find_joined_command(join, idx, cmd)) {
             continue;
         }
 
@@ -1698,7 +1774,7 @@ auto build_single_variant(
         // Build the identity → NodeId map: the cross-build join key for commands.
         // Must happen after parsing (operands set) but before incremental logic.
         auto cmd_index_start = pup::SteadyClock::now();
-        auto const identity_map = build_identity_map(bs);
+        auto const join = build_command_join(bs);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
@@ -1749,13 +1825,13 @@ auto build_single_variant(
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
-        auto input_delta = reconcile_input_set(bs, idx, changed_files, identity_map, variant_name, opts.verbose);
+        auto input_delta = reconcile_input_set(bs, idx, changed_files, join, variant_name, opts.verbose);
         for (auto path_id : input_delta.changed_paths) {
             changed_files.push_back(path_id);
         }
 
         auto implicit_deps_start = pup::SteadyClock::now();
-        changed_files = expand_implicit_deps(changed_files, idx, bs, identity_map);
+        changed_files = expand_implicit_deps(changed_files, idx, bs, join);
         auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
@@ -1789,7 +1865,7 @@ auto build_single_variant(
         auto stale_start = pup::SteadyClock::now();
         remove_stale_outputs(
             idx,
-            identity_map,
+            join,
             parse_scopes,
             excludes,
             ctx.parsed_dirs(),
