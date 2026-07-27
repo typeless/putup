@@ -424,8 +424,10 @@ SCENARIO("read_directory returns entries in name order", "[platform][file_io][wa
 {
     GIVEN("a directory whose entries were created in reverse-lexicographic order")
     {
-        auto const names = std::array<std::string_view, 6> {
-            "alpha", "bravo", "charlie", "mike", "yankee", "zeta"
+        // Mixed case on purpose: NTFS enumerates case-insensitively, so an
+        // all-lowercase set would already arrive sorted and pin nothing there.
+        auto const names = std::array<std::string_view, 4> {
+            "Bravo", "Zulu", "alpha", "mike"
         };
         auto dir = TempDir { "order" };
         for (auto i = names.size(); i-- > 0;) {
@@ -454,7 +456,7 @@ SCENARIO("walk_directory visits every level in name order", "[platform][file_io]
     GIVEN("a nested tree created in reverse-lexicographic order")
     {
         auto dir = TempDir { "walk_order" };
-        for (auto name : std::array<std::string_view, 4> { "z.txt", "sub/y.txt", "sub/b.txt", "a.txt" }) {
+        for (auto name : std::array<std::string_view, 4> { "alpha.txt", "sub/bravo.txt", "sub/Yankee.txt", "Zulu.txt" }) {
             dir.write(name, "x");
         }
 
@@ -471,7 +473,7 @@ SCENARIO("walk_directory visits every level in name order", "[platform][file_io]
             THEN("each directory is enumerated in name order, depth first")
             {
                 REQUIRE(r.has_value());
-                REQUIRE(seen == std::vector<std::string> { "a.txt", "sub", "sub/b.txt", "sub/y.txt", "z.txt" });
+                REQUIRE(seen == std::vector<std::string> { "Zulu.txt", "alpha.txt", "sub", "sub/Yankee.txt", "sub/bravo.txt" });
             }
         }
     }
