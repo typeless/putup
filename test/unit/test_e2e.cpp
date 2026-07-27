@@ -8182,3 +8182,57 @@ SCENARIO("A group reference composes a nested project into the build", "[e2e][ex
         }
     }
 }
+
+SCENARIO("A glob over generated files is path-ordered and stable across builds", "[e2e][glob]")
+{
+    GIVEN("a rule globbing files its neighbours generate, declared out of alphabetical order")
+    {
+        auto f = E2EFixture { "glob_generated" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        THEN("the matches are in path order, not rule order")
+        {
+            REQUIRE(f.read_file("matches.txt") == "alpha.gen mike.gen zeta.gen\n");
+        }
+
+        // The generated files exist on disk from here on, so a filesystem glob can
+        // now see what only the graph could see during the first build.
+        WHEN("the unchanged project is rebuilt")
+        {
+            auto second = f.build();
+
+            THEN("nothing re-runs")
+            {
+                INFO("stdout: " << second.stdout_output);
+                REQUIRE(second.is_noop());
+            }
+
+            THEN("the matches are unchanged")
+            {
+                REQUIRE(f.read_file("matches.txt") == "alpha.gen mike.gen zeta.gen\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A glob matches source and generated files together", "[e2e][glob]")
+{
+    GIVEN("a pattern matching both a checked-in file and two generated ones")
+    {
+        auto f = E2EFixture { "glob_generated_and_source" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("every match is an input, in path order")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("matches.txt") == "alpha.gen kept.gen zeta.gen\n");
+            }
+        }
+    }
+}

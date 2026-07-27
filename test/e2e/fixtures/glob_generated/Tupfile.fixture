@@ -1,0 +1,2 @@
+: foreach zeta.in mike.in alpha.in |> cp %f %o |> %B.gen
+: *.gen |> echo %f > %o |> matches.txt

@@ -652,8 +652,12 @@ auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const&
 // §6 — Glob expansion
 // ---------------------------------------------------------------------------
 
-/// Expand a glob pattern against filesystem and graph nodes.
+/// Expand a glob pattern against the filesystem and the graph's generated nodes.
 /// Adds matched paths to result vector.
+///
+/// Both sources feed one path-ordered list. A match on disk must not hide a
+/// generated match, or the input set — and the identity hashing %f — would be a
+/// function of filesystem state rather than of the project (issue #178).
 auto expand_glob_pattern(
     BuilderContext& ctx,
     std::string_view path,
@@ -664,18 +668,16 @@ auto expand_glob_pattern(
     auto base_sv = is_empty(ctx.current_dir) ? str(ctx.options.source_root)
                                              : pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
 
-    auto expanded = parser::glob_expand(path, base_sv);
-    if (expanded && !expanded->empty()) {
+    auto matches = Vec<StringId> {};
+
+    if (auto expanded = parser::glob_expand(path, base_sv)) {
         for (auto p : *expanded) {
-            if (!is_empty(ctx.current_dir)) {
-                result.push_back(pup::path::join(str(ctx.current_dir), str(p)));
-            } else {
-                result.push_back(p);
-            }
+            matches.push_back(is_empty(ctx.current_dir) ? p : pup::path::join(str(ctx.current_dir), str(p)));
         }
-        return;
     }
 
+    // Unconditional: the generated half of the match set would otherwise depend on
+    // how far the parse fixpoint has progressed.
     auto pattern_dir = pup::path::parent(path);
     auto abs_pattern_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), pattern_dir))));
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir_sv);
@@ -690,8 +692,15 @@ auto expand_glob_pattern(
         }
         auto match_path_sv = pool.get(pup::strip_path_prefix(node_path_sv, build_root_name));
         if (glob.matches(match_path_sv)) {
-            result.push_back(pool.intern(node_path_sv));
+            matches.push_back(pool.intern(node_path_sv));
         }
+    }
+
+    // In-tree builds see a generated file from both sources; it is one input.
+    std::ranges::sort(matches, {}, [&pool](StringId id) { return pool.get(id); });
+    matches.erase(std::unique(matches.begin(), matches.end()), matches.end());
+    for (auto id : matches) {
+        result.push_back(id);
     }
 }
 
