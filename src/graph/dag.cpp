@@ -1035,9 +1035,15 @@ auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cach
 {
     auto& pool = global_pool();
     auto state = sha256_init();
+    auto constexpr SEP = std::byte { 0 };
 
     // Base: the fully-expanded command text (instruction + operand paths + in-text vars).
     state = sha256_update(state, pool.get(expand_instruction(graph, cmd_id, cache)));
+
+    // Command text is Tupfile-relative, so the same rule in sibling directories renders
+    // identically; without the directory those distinct rules share one identity.
+    state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
+    state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
     // Fold in (name, value-hash) of each Variable node reached via a Sticky edge.
     // This captures vars that affect output without appearing in the rendered text —
@@ -1057,7 +1063,6 @@ auto compute_command_identity(Graph const& graph, NodeId cmd_id, PathCache& cach
         vars.end()
     );
 
-    auto constexpr SEP = std::byte { 0 };
     for (auto const& [name, value_hash] : vars) {
         state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
         state = sha256_update(state, name);

@@ -36,7 +36,12 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///  14 - Guard-unsatisfied commands are no longer serialized; v13 indexes carry
 ///       their identities and would mask reactivated output-less commands as
 ///       already known, so they never run (issue #118)
-inline constexpr auto INDEX_VERSION = std::uint32_t { 14 };
+///  15 - Command identity folds the rule's source directory; v14 identities are
+///       directory-blind, so identical rules in sibling directories collide and
+///       resolve to one another through the identity join (issue #167). Also
+///       covers OrderOnly edges, persisted since issue #166 and load-bearing for
+///       removal routing; v14 indexes predate them and would lose one removal.
+inline constexpr auto INDEX_VERSION = std::uint32_t { 15 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {

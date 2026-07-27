@@ -1,0 +1,2 @@
+: main.c |> gcc -c %f -o %o |> main.o
+: main.o |> gcc %f -o %o |> program

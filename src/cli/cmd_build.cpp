@@ -979,7 +979,8 @@ auto is_dir_authoritative(
 /// Carry forward old-index commands from directories this run has no
 /// authoritative knowledge of, so a scoped build's saved index still describes
 /// the whole project (issue #125). Copies each command with its operand files
-/// (stat data preserved) and Normal/Sticky edges, remapping ids to the new
+/// (stat data preserved) and every edge except Implicit — OrderOnly among them,
+/// which carries removal routing for order-only inputs — remapping ids to the new
 /// index's dense sequences; implicit edges are re-attached afterwards by
 /// preserve_old_implicit_edges through the identity match.
 auto merge_out_of_scope_commands(
@@ -1469,11 +1470,11 @@ auto reconcile_input_set(
         if (!file) {
             continue;
         }
-        // The complementary half of the input edge types; expand_implicit_deps
-        // routes Implicit and Sticky through the same index for any changed file.
+        // Edge types that reach a command in one hop; expand_implicit_deps routes
+        // Implicit and Sticky. Group is neither: it runs file -> group, and the
+        // group -> command hop is a separate OrderOnly edge, so it needs two (#169).
         for (auto const* edge : idx.edges_from(pup::NodeId { file->id })) {
-            if (edge->type != pup::LinkType::Normal && edge->type != pup::LinkType::OrderOnly
-                && edge->type != pup::LinkType::Group) {
+            if (edge->type != pup::LinkType::Normal && edge->type != pup::LinkType::OrderOnly) {
                 continue;
             }
             auto const* cmd = idx.find_command_by_id(pup::NodeId { edge->to });
