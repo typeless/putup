@@ -460,7 +460,10 @@ auto compose_nested_project_subtree(std::string_view dir, ParseContext& ctx) -> 
     for (auto sub_id : sub_dirs) {
         auto sub_sv = pool.get(sub_id);
         auto rel_id = (sub_sv == ".") ? pool.intern(marker_prefix) : pup::path::join(marker_prefix, sub_sv);
-        if (!std::binary_search(available.begin(), available.end(), rel_id, pup::handle_less)) {
+        // Search only the sorted prefix: appending unsorts the tail, and a binary search
+        // over that reports a present directory absent, so it gets parsed twice.
+        auto* sorted_end = available.begin() + static_cast<std::ptrdiff_t>(before);
+        if (!std::binary_search(available.begin(), sorted_end, rel_id, pup::handle_less)) {
             available.push_back(rel_id);
         }
     }
@@ -468,6 +471,7 @@ auto compose_nested_project_subtree(std::string_view dir, ParseContext& ctx) -> 
         return false;
     }
     std::sort(available.begin(), available.end(), pup::handle_less);
+    available.erase(std::unique(available.begin(), available.end()), available.end());
     return true;
 }
 

@@ -126,7 +126,15 @@ auto prepare_job_launch(
     for (auto var_id : base_env) {
         env_ids.push_back(var_id);
     }
+    // Handle order reaches the child: create_env_block (process-win32.cpp:102) emits this
+    // sequence verbatim, and Win32 expects an alphabetically sorted block.
+    auto exported = Vec<StringId> {};
     for (auto var_id : job.exported_vars) {
+        exported.push_back(static_cast<StringId>(var_id));
+    }
+    std::ranges::sort(exported, {}, [&pool](StringId id) { return pool.get(id); });
+
+    for (auto var_id : exported) {
         auto var_sv = pool.get(var_id);
         if (auto it = env_cache_find(env_cache, var_sv)) {
             auto eb = Buf {};
