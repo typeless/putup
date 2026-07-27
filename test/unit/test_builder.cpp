@@ -1955,11 +1955,24 @@ TEST_CASE("GraphBuilder accepts empty-rendered duplicates in the configure pass"
 {
     auto fixture = BuilderTestFixture {};
 
-    // The configure pass evaluates before tup.config exists, so every rule gated on an
-    // unset config var renders empty and collides with the next one. Those commands are
-    // never scheduled -- only the config-generating rules are -- so the collision is inert.
+    // The configure pass evaluates before tup.config exists, so rendered text does not yet
+    // distinguish anything. Those commands are never scheduled -- only the config-generating
+    // rules are -- so no collision among them can matter.
     auto result = finalize_tupfile(
         fixture, ": |> @(CC) |> a.out\n: |> @(CC) |> b.out\n", nullptr, false
+    );
+
+    CHECK(result.has_value());
+}
+
+TEST_CASE("GraphBuilder accepts config-distinguished commands in the configure pass", "[builder][identity][configure]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    // Distinct once tup.config is read; identical before it exists. Rejecting here would
+    // fail the very pass that creates the file that tells them apart.
+    auto result = finalize_tupfile(
+        fixture, ": |> ./run @(A) |>\n: |> ./run @(B) |>\n", nullptr, false
     );
 
     CHECK(result.has_value());

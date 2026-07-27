@@ -4522,6 +4522,35 @@ SCENARIO("Editing a rule's recipe does not make it a different rule", "[e2e][ide
     }
 }
 
+SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
+{
+    GIVEN("a built rule that declares two outputs")
+    {
+        auto f = E2EFixture { "phi_same_output" };
+        f.write_file("Tupfile", ": input.txt |> sh -c \"cp input.txt build/a.out && cp input.txt build/b.out\" |> a.out b.out\n");
+        f.write_file("input.txt", "test\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/a.out"));
+        REQUIRE(f.exists("build/b.out"));
+
+        WHEN("the rule is edited to declare only the first output")
+        {
+            f.write_file("Tupfile", ": input.txt |> sh -c \"cp input.txt build/a.out\" |> a.out\n");
+            auto result = f.build({ "-B", "build", "-v" });
+
+            THEN("the output it no longer produces is deleted, and the one it still does survives")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/a.out"));
+                REQUIRE_FALSE(f.exists("build/b.out"));
+            }
+        }
+    }
+}
+
 SCENARIO("Complementary branches may render the same command line", "[e2e][duplicate][identity][phi]")
 {
     GIVEN("a project whose two conditional branches carry identical rule text")

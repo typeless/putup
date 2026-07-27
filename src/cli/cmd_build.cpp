@@ -832,6 +832,136 @@ auto process_implicit_deps(
     }
 }
 
+/// How a set of commands is addressed for joining, in one place so that every join --
+/// graph to index, index to graph, index to index -- agrees on what "the same command"
+/// means. A command that produces files is addressed by the files: output ownership is
+/// unique among guard-satisfied commands, enforced where the output edge is created, so a
+/// produced path names its producer and survives any edit to the recipe. A command that
+/// produces nothing has no such name and is addressed by its textual key instead.
+///
+/// The two are exclusive. A command that produced files is never looked up by key, or the
+/// two directions of a join would disagree about whether two commands correspond.
+struct CommandLookup {
+    Vec<std::pair<StringId, pup::NodeId>> by_output; ///< produced path -> producer
+    Vec<std::pair<pup::Hash256, pup::NodeId>> by_key;
+};
+
+/// What one command answers to. Empty outputs is what selects the textual key.
+struct CommandAddress {
+    Vec<StringId> outputs;
+    pup::Hash256 key = {};
+};
+
+auto sort_lookup(CommandLookup& lookup) -> void
+{
+    std::sort(lookup.by_output.begin(), lookup.by_output.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
+    std::sort(lookup.by_key.begin(), lookup.by_key.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
+}
+
+auto graph_command_address(pup::graph::BuildGraph const& state, pup::NodeId id) -> CommandAddress
+{
+    auto address = CommandAddress {};
+    for (auto output_id : pup::graph::get_outputs(state.graph, id)) {
+        auto path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+        if (!path_sv.empty()) {
+            address.outputs.push_back(pup::global_pool().intern(path_sv));
+        }
+    }
+    if (address.outputs.empty()) {
+        address.key = pup::graph::compute_command_key(state.graph, id, state.path_cache);
+    }
+    return address;
+}
+
+auto index_command_address(pup::index::Index const& idx, pup::index::CommandEntry const& cmd) -> CommandAddress
+{
+    auto address = CommandAddress { .outputs = {}, .key = cmd.key };
+    for (auto const* edge : idx.edges_from(cmd.id)) {
+        auto const* file = idx.find_file_by_id(edge->to);
+        if (file && file->type == pup::NodeType::Generated && !pup::is_empty(file->path)) {
+            address.outputs.push_back(file->path);
+        }
+    }
+    return address;
+}
+
+/// Guard-satisfied only, matching the set the index records.
+auto graph_command_lookup(pup::graph::BuildGraph const& state) -> CommandLookup
+{
+    auto lookup = CommandLookup {};
+    for (auto id : pup::graph::all_nodes(state.graph)) {
+        if (!pup::node_id::is_command(id) || !pup::graph::is_guard_satisfied(state.graph, id)) {
+            continue;
+        }
+        auto address = graph_command_address(state, id);
+        for (auto path : address.outputs) {
+            lookup.by_output.emplace_back(path, id);
+        }
+        if (address.outputs.empty()) {
+            lookup.by_key.emplace_back(address.key, id);
+        }
+    }
+    sort_lookup(lookup);
+    return lookup;
+}
+
+auto index_command_lookup(pup::index::Index const& idx) -> CommandLookup
+{
+    auto lookup = CommandLookup {};
+    for (auto const& cmd : idx.commands()) {
+        auto address = index_command_address(idx, cmd);
+        for (auto path : address.outputs) {
+            lookup.by_output.emplace_back(path, cmd.id);
+        }
+        if (address.outputs.empty()) {
+            lookup.by_key.emplace_back(address.key, cmd.id);
+        }
+    }
+    sort_lookup(lookup);
+    return lookup;
+}
+
+auto find_joined(CommandLookup const& lookup, CommandAddress const& address) -> std::optional<pup::NodeId>
+{
+    for (auto path : address.outputs) {
+        auto const* it = std::lower_bound(
+            lookup.by_output.begin(), lookup.by_output.end(), path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
+        );
+        if (it != lookup.by_output.end() && it->first == path) {
+            return it->second;
+        }
+    }
+    if (!address.outputs.empty()) {
+        return std::nullopt;
+    }
+
+    auto const* it = std::lower_bound(
+        lookup.by_key.begin(), lookup.by_key.end(), address.key, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
+    );
+    if (it != lookup.by_key.end() && pup::hash_equal(it->first, address.key)) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+/// Whether any command in the lookup still produces this path.
+auto has_live_producer(CommandLookup const& lookup, StringId path) -> bool
+{
+    auto const* it = std::lower_bound(
+        lookup.by_output.begin(), lookup.by_output.end(), path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
+    );
+    return it != lookup.by_output.end() && it->first == path;
+}
+
+auto find_joined_command(
+    CommandLookup const& lookup,
+    pup::index::Index const& idx,
+    pup::index::CommandEntry const& cmd
+) -> std::optional<pup::NodeId>
+{
+    return find_joined(lookup, index_command_address(idx, cmd));
+}
+
 /// Preserve implicit edges from the old index for commands that weren't rebuilt.
 auto preserve_old_implicit_edges(
     pup::index::Index const& old_index,
@@ -847,34 +977,28 @@ auto preserve_old_implicit_edges(
         }
     }
 
-    // Map a command's structural identity -> its id in the new index. Command ids are
-    // positional and shift across builds (e.g. when an earlier-created command is
-    // removed), so the old edge's `to` id cannot be trusted to mean the same command.
-    // Identity is stable, so we re-resolve each carried edge's command through it.
-    auto identity_to_new_id = pup::Vec<std::pair<pup::Hash256, pup::NodeId>> {};
-    identity_to_new_id.reserve(ctx.index.commands().size());
-    for (auto const& cmd : ctx.index.commands()) {
-        identity_to_new_id.emplace_back(cmd.key, cmd.id);
-    }
-    std::sort(identity_to_new_id.begin(), identity_to_new_id.end(), [&](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
+    // Command ids are positional and shift across builds (e.g. when an earlier-created
+    // command is removed), so the old edge's `to` id cannot be trusted to mean the same
+    // command; re-resolve each carried edge's command through the same join every other
+    // consumer uses.
+    auto const new_lookup = index_command_lookup(ctx.index);
 
     for (auto const& edge : old_index.edges()) {
         if (edge.type != pup::LinkType::Implicit) {
             continue;
         }
 
-        // Re-resolve the old command to its identity-matched counterpart in the new
-        // index. If it's gone or its definition changed (no identity match), drop the
-        // edge: the command either no longer exists or rebuilt and rediscovered its deps.
+        // If the command is gone, drop the edge. If it survived but re-ran, the branch
+        // below drops it too: it rediscovered its own deps.
         auto const* old_cmd = old_index.find_command_by_id(edge.to);
         if (!old_cmd) {
             continue;
         }
-        auto match = std::lower_bound(identity_to_new_id.begin(), identity_to_new_id.end(), old_cmd->key, [&](auto const& p, pup::Hash256 const& key) { return pup::hash_less(p.first, key); });
-        if (match == identity_to_new_id.end() || match->first != old_cmd->key) {
+        auto joined = find_joined(new_lookup, index_command_address(old_index, *old_cmd));
+        if (!joined) {
             continue;
         }
-        auto new_to_id = match->second;
+        auto new_to_id = *joined;
 
         if (commands_with_new_deps.contains(new_to_id)) {
             continue;
@@ -900,74 +1024,6 @@ auto preserve_old_implicit_edges(
             });
         }
     }
-}
-
-/// Sorted (identity → graph NodeId) map: the cross-build join key for commands.
-/// Recognises a command from the previous build in the current graph. A command that
-/// produces files is found by the files: output ownership is unique among guard-satisfied
-/// commands, enforced where the output edge is created, so a produced path names its
-/// producer and survives any edit to the recipe. Output-less commands have nothing else
-/// to be named by and fall back to their textual key.
-///
-/// Guard-satisfied only, matching the set the index records.
-struct CommandJoin {
-    Vec<std::pair<StringId, pup::NodeId>> by_output; ///< produced path -> producer
-    Vec<std::pair<pup::Hash256, pup::NodeId>> by_key;
-};
-
-auto build_command_join(pup::graph::BuildGraph const& state) -> CommandJoin
-{
-    auto const& g = state.graph;
-    auto join = CommandJoin {};
-
-    for (auto id : pup::graph::all_nodes(g)) {
-        if (!pup::node_id::is_command(id) || !pup::graph::is_guard_satisfied(g, id)) {
-            continue;
-        }
-        auto produced_any = false;
-        for (auto output_id : pup::graph::get_outputs(g, id)) {
-            auto path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
-            if (!path_sv.empty()) {
-                join.by_output.emplace_back(pup::global_pool().intern(path_sv), id);
-                produced_any = true;
-            }
-        }
-        if (!produced_any) {
-            join.by_key.emplace_back(pup::graph::compute_command_key(g, id, state.path_cache), id);
-        }
-    }
-
-    std::sort(join.by_output.begin(), join.by_output.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
-    std::sort(join.by_key.begin(), join.by_key.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
-    return join;
-}
-
-auto find_joined_command(
-    CommandJoin const& join,
-    pup::index::Index const& idx,
-    pup::index::CommandEntry const& cmd
-) -> std::optional<pup::NodeId>
-{
-    for (auto const* edge : idx.edges_from(cmd.id)) {
-        auto const* file = idx.find_file_by_id(edge->to);
-        if (!file || file->type != pup::NodeType::Generated) {
-            continue;
-        }
-        auto const* it = std::lower_bound(
-            join.by_output.begin(), join.by_output.end(), file->path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
-        );
-        if (it != join.by_output.end() && it->first == file->path) {
-            return it->second;
-        }
-    }
-
-    auto const* it = std::lower_bound(
-        join.by_key.begin(), join.by_key.end(), cmd.key, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
-    );
-    if (it != join.by_key.end() && pup::hash_equal(it->first, cmd.key)) {
-        return it->second;
-    }
-    return std::nullopt;
 }
 
 auto contains_id(pup::Vec<pup::StringId> const& v, pup::StringId id) -> bool
@@ -1015,7 +1071,7 @@ auto is_dir_authoritative(
 /// (stat data preserved) and every edge except Implicit — OrderOnly among them,
 /// which carries removal routing for order-only inputs — remapping ids to the new
 /// index's dense sequences; implicit edges are re-attached afterwards by
-/// preserve_old_implicit_edges through the identity match.
+/// preserve_old_implicit_edges through the same join.
 auto merge_out_of_scope_commands(
     pup::index::Index const& old_index,
     pup::Vec<pup::StringId> const& parse_scopes,
@@ -1028,12 +1084,7 @@ auto merge_out_of_scope_commands(
 {
     auto& pool = pup::global_pool();
 
-    auto new_identities = pup::Vec<pup::Hash256> {};
-    new_identities.reserve(ctx.index.commands().size());
-    for (auto const& cmd : ctx.index.commands()) {
-        new_identities.push_back(cmd.key);
-    }
-    std::sort(new_identities.begin(), new_identities.end(), pup::hash_less);
+    auto new_lookup = index_command_lookup(ctx.index);
 
     // serialize_graph_nodes registers File/Generated/Directory paths but not
     // Ghosts; without this the merge would duplicate a ghost's entry by path.
@@ -1129,7 +1180,7 @@ auto merge_out_of_scope_commands(
         if (is_dir_authoritative(old_index, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
-        if (std::binary_search(new_identities.begin(), new_identities.end(), cmd.key, pup::hash_less)) {
+        if (find_joined(new_lookup, index_command_address(old_index, cmd))) {
             continue;
         }
         if (any_dep_changed(cmd)) {
@@ -1212,7 +1263,7 @@ auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
     pup::graph::BuildGraph const& state,
-    CommandJoin const& join
+    CommandLookup const& join
 ) -> pup::Vec<StringId>
 {
     auto result = pup::Vec<StringId> { changed };
@@ -1478,7 +1529,7 @@ auto reconcile_input_set(
     pup::graph::BuildGraph const& state,
     pup::index::Index const& idx,
     pup::Vec<StringId> const& changed,
-    CommandJoin const& join,
+    CommandLookup const& join,
     std::string_view variant_name,
     bool verbose
 ) -> InputSetDelta
@@ -1587,7 +1638,7 @@ auto reconcile_input_set(
 /// Remove stale outputs from removed commands and report them.
 auto remove_stale_outputs(
     pup::index::Index const& idx,
-    CommandJoin const& join,
+    CommandLookup const& join,
     pup::Vec<pup::StringId> const& parse_scopes,
     pup::parser::IgnoreList const& excludes,
     pup::Vec<pup::StringId> const& parsed_dirs,
@@ -1606,13 +1657,15 @@ auto remove_stale_outputs(
             continue;
         }
 
-        if (find_joined_command(join, idx, cmd)) {
-            continue;
-        }
-
+        // Staleness is per file, not per command: a rule that drops one of its outputs
+        // still joins through the ones it kept, so asking only "did this command survive"
+        // would leave the dropped file owned by nothing and never delete it.
         for (auto const* edge : idx.edges_from(cmd.id)) {
             auto const* file = idx.find_file_by_id(edge->to);
             if (!file || file->type != pup::NodeType::Generated) {
+                continue;
+            }
+            if (has_live_producer(join, file->path)) {
                 continue;
             }
 
@@ -1632,7 +1685,7 @@ auto remove_stale_outputs(
             }
         }
 
-        if (verbose) {
+        if (verbose && !find_joined_command(join, idx, cmd)) {
             vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(cmd.display));
         }
     }
@@ -1774,7 +1827,7 @@ auto build_single_variant(
         // Build the identity → NodeId map: the cross-build join key for commands.
         // Must happen after parsing (operands set) but before incremental logic.
         auto cmd_index_start = pup::SteadyClock::now();
-        auto const join = build_command_join(bs);
+        auto const join = graph_command_lookup(bs);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
 
