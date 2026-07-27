@@ -254,7 +254,8 @@ auto glob_expand(
         }
     }
 
-    std::ranges::sort(results);
+    // StringId order is interning order, i.e. readdir order, not path order.
+    std::ranges::sort(results, {}, [&pool](StringId id) { return pool.get(id); });
     return results;
 }
 
