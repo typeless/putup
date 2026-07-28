@@ -1224,6 +1224,7 @@ auto merge_out_of_scope_commands(
             .env = cmd.env,
             .key = cmd.key,
             .signature = cmd.signature,
+            .failed = cmd.failed,
             .inputs = std::move(new_inputs),
             .outputs = std::move(new_outputs),
         });
@@ -1426,6 +1427,7 @@ auto validate_output_targets(
 struct NewCommands {
     pup::Vec<StringId> changed_outputs;
     pup::Vec<pup::NodeId> forced_cmds;
+    pup::Vec<pup::NodeId> retry_after_failure; ///< Recorded as failed; still failed unless they succeed now
 };
 
 /// Commands that must run because of what they are rather than because a file changed:
@@ -1504,6 +1506,9 @@ auto detect_new_commands(
         // consumers of whatever it half-wrote are rescheduled too.
         auto signature = pup::graph::compute_command_signature(g, id, state.path_cache);
         auto retry_after_failure = previous != nullptr && previous->failed;
+        if (retry_after_failure) {
+            result.retry_after_failure.push_back(id);
+        }
         if (previous && !retry_after_failure && pup::hash_equal(previous->signature, signature)) {
             continue;
         }
@@ -1826,6 +1831,10 @@ auto build_single_variant(
     auto index_path = pup::global_pool().get(ctx.layout().index_path());
     auto const* old_idx_ptr = ctx.old_index();
     auto use_incremental = false;
+    // Carries "has not succeeded since it last failed": seeded from the previous index, cleared
+    // only by a successful run. A build in which the command does not run at all -- a target or
+    // scoped build -- must not forget it.
+    auto failed_cmds = pup::NodeIdMap32 {};
     auto changed_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
 
@@ -1907,6 +1916,9 @@ auto build_single_variant(
         for (auto cmd_id : input_delta.forced_cmds) {
             forced_cmds.push_back(cmd_id);
         }
+        for (auto cmd_id : new_cmds.retry_after_failure) {
+            failed_cmds.set(cmd_id, 1);
+        }
 
         if (opts.rerun) {
             for (auto id : pup::graph::all_nodes(bs.graph)) {
@@ -1965,9 +1977,6 @@ auto build_single_variant(
     };
 
     auto scheduler = pup::exec::Scheduler { std::move(sched_opts) };
-
-    // A command that exited nonzero must run again whatever its outputs look like.
-    auto failed_cmds = pup::NodeIdMap32 {};
     auto discovered_deps = DiscoveredDeps {};
 
     auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose && !opts.dry_run;
@@ -1989,6 +1998,9 @@ auto build_single_variant(
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         auto& pool = pup::global_pool();
+        if (job_result.success) {
+            failed_cmds.remove(job.id);
+        }
         if (!job_result.success) {
             failed_cmds.set(job.id, 1);
             if (use_tty_progress) {
