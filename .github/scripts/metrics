@@ -28,6 +28,16 @@ SIZE_COLUMNS = [
     "file_kb",
 ]
 
+CHURN_COLUMNS = [
+    "window_days",
+    "added",
+    "removed",
+    "rework_lines",
+    "rework_pct",
+    "median_age_days",
+    "hot_files",
+]
+
 COVERAGE_COLUMNS = [
     "overall",
     "median",
@@ -301,6 +311,114 @@ def cmd_coverage(args):
     return 0
 
 
+def git(*args):
+    run = subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=False
+    )
+    return run.stdout if run.returncode == 0 else ""
+
+
+BLAME_HEADER = re.compile(r"^\^?([0-9a-f]{40}) \d+ (\d+)")
+
+
+def blame_line_times(rev, path):
+    """Commit time of the last change to each line of path, as of rev.
+
+    Porcelain emits a commit's metadata only the first time that commit appears,
+    so the time is resolved at the content line, by which point it is either just
+    parsed or already cached.
+    """
+    times = {}
+    sha_time = {}
+    sha = None
+    lineno = None
+    for line in git("blame", "--porcelain", rev, "--", path).splitlines():
+        if line.startswith("\t"):
+            if sha is not None:
+                times[lineno] = sha_time.get(sha)
+            sha = lineno = None
+            continue
+        header = BLAME_HEADER.match(line)
+        if header:
+            sha = header.group(1)
+            lineno = int(header.group(2))
+        elif line.startswith("committer-time ") and sha is not None:
+            sha_time[sha] = int(line.split(" ", 1)[1])
+    return times
+
+
+def removed_line_numbers(base, head, path):
+    """Line numbers in base's copy of path that this diff deletes."""
+    removed = []
+    for line in git("diff", "-U0", "-M", f"{base}..{head}", "--", path).splitlines():
+        if not line.startswith("@@"):
+            continue
+        old = line.split(" ")[1]  # "-a,b"
+        start, _, count = old[1:].partition(",")
+        count = int(count) if count else 1
+        removed.extend(range(int(start), int(start) + count))
+    return removed
+
+
+def cmd_churn(args):
+    base = git("merge-base", args.base, args.head).strip() or args.base
+    base_time = int(git("show", "-s", "--format=%ct", base).strip() or 0)
+    window = args.window_days * 86400
+
+    added = removed = 0
+    paths = []
+    for line in git("diff", "--numstat", "-M", f"{base}..{args.head}").splitlines():
+        cells = line.split("\t")
+        if len(cells) != 3 or cells[0] == "-":  # binary
+            continue
+        added += int(cells[0])
+        removed += int(cells[1])
+        paths.append(cells[2])
+
+    ages = []
+    for path in paths:
+        line_times = blame_line_times(base, path)
+        if not line_times:
+            continue  # added by this PR, so nothing of it is being reworked
+        for lineno in removed_line_numbers(base, args.head, path):
+            when = line_times.get(lineno)
+            if when is not None:
+                ages.append(base_time - when)
+
+    rework = sum(1 for age in ages if age < window)
+    rework_pct = (rework / len(ages) * 100) if ages else 0.0
+    median_age = (statistics.median(ages) / 86400) if ages else 0.0
+
+    # Commits that DELETED from the file, not merely touched it: a test file that
+    # every PR appends to is not a hotspot, one that keeps being rewritten is.
+    heat = []
+    for path in paths:
+        rewrites = 0
+        for line in git(
+            "log", "--numstat", "--format=%H",
+            f"--since={args.window_days} days ago", base, "--", path
+        ).splitlines():
+            cells = line.split("\t")
+            if len(cells) == 3 and cells[1] not in ("-", "0"):
+                rewrites += 1
+        if rewrites > 1:
+            heat.append((rewrites, path))
+    heat.sort(reverse=True)
+    hot = ", ".join(f"{p} ({n})" for n, p in heat[:3]) or "none"
+
+    print("\t".join(CHURN_COLUMNS))
+    print("\t".join(str(v) for v in (
+        args.window_days,
+        added,
+        removed,
+        rework,
+        f"{rework_pct:.1f}",
+        f"{median_age:.1f}",
+        hot,
+    )))
+    return 0
+
+
 def read_tsv(path):
     if not path:
         return []
@@ -439,6 +557,39 @@ def coverage_section(cur, base):
     return lines
 
 
+def churn_section(cur):
+    window = cur["window_days"]
+    removed = num(cur["removed"])
+    rework_pct = num(cur["rework_pct"])
+    # A ratio over a handful of lines says nothing; report the count and withhold
+    # the percentage rather than let a 2-line diff read as "100% rework".
+    share = (
+        f"{rework_pct:g}%" if removed >= 20
+        else "n/a"
+    )
+    lines = [
+        f"### Code churn (rework window: {window}d)",
+        "",
+        "| Added | Removed | Reworked | Rework | Median age of removed |",
+        "|---|---|---|---|---|",
+        "| {} | {} | {} | {} | {} |".format(
+            annotate(num(cur["added"]), None, "abs"),
+            annotate(removed, None, "abs"),
+            "{} lines".format(cur["rework_lines"]),
+            share,
+            "{} d".format(cur["median_age_days"]),
+        ),
+        "",
+        "Rework is the share of removed lines that were themselves written within the "
+        f"last {window} days — code being rewritten, as distinct from code being added. "
+        "The median age says which: near 0 means this change is undoing work from the "
+        "same few days.",
+    ]
+    if cur["hot_files"] != "none":
+        lines += ["", "Repeatedly touched in the window: {}.".format(cur["hot_files"])]
+    return lines
+
+
 def cmd_render(args):
     sections = []
     baseline_used = False
@@ -460,6 +611,10 @@ def cmd_render(args):
         base = read_tsv(args.baseline_size)
         baseline_used |= bool(base)
         sections.append(size_section(size, base))
+
+    churn = read_tsv(args.churn)
+    if churn:
+        sections.append(churn_section(churn[0]))
 
     cov = read_tsv(args.coverage)
     if cov:
@@ -506,6 +661,12 @@ def main() -> int:
     coverage.add_argument("summary_json")
     coverage.set_defaults(func=cmd_coverage)
 
+    churn = sub.add_parser("churn")
+    churn.add_argument("base")
+    churn.add_argument("head")
+    churn.add_argument("--window-days", type=int, default=30)
+    churn.set_defaults(func=cmd_churn)
+
     size = sub.add_parser("size")
     size.add_argument("binaries", nargs="+")
     size.set_defaults(func=cmd_size)
@@ -515,6 +676,7 @@ def main() -> int:
     render.add_argument("--stat")
     render.add_argument("--size")
     render.add_argument("--coverage")
+    render.add_argument("--churn")
     render.add_argument("--baseline-perf")
     render.add_argument("--baseline-stat")
     render.add_argument("--baseline-size")
