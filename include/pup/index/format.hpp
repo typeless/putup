@@ -109,8 +109,8 @@ struct alignas(8) RawCommandEntry {
     std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
     std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
-    std::uint32_t flags = 0;          ///< CommandFlags bitset (v20)
-    std::uint32_t reserved = 0;       ///< Keeps the hashes 8-byte aligned
+    std::uint32_t flags = 0;          ///< COMMAND_FLAG_* bits (v20)
+    std::uint32_t reserved = 0;       ///< Explicit tail padding; keeps serialized bytes deterministic
     Hash256 key = {};                 ///< Which rule this is, for the cross-build join (v19)
     Hash256 signature = {};           ///< What it will do, for deciding whether to re-run (v19)
 };

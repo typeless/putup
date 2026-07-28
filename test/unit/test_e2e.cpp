@@ -4553,29 +4553,96 @@ SCENARIO("A command that failed is re-run on the next build", "[e2e][incremental
 
 SCENARIO("A failed command's consumer runs once the command succeeds", "[e2e][incremental][failure]")
 {
-    GIVEN("a producer that writes partial output and fails, feeding a consumer")
+    // The consumer's output already exists holding V1, so nothing schedules the consumer except
+    // propagation from the producer's re-run. Routing the retry through forced_cmds instead of
+    // changed_outputs leaves final.txt at V1 forever, which is what this pins.
+    GIVEN("a built producer/consumer pair whose producer then fails after writing partial output")
     {
         auto f = E2EFixture { "failed_command" };
         f.write_file("Tupfile",
             ": src.txt |> sh -c 'if [ -f FAILMARK ]; then echo PARTIAL > %o; exit 1; else cp %f %o; fi' |> mid.txt\n"
             ": mid.txt |> cp %f %o |> final.txt\n");
-        f.write_file("src.txt", "ORIGINAL\n");
-        f.write_file("FAILMARK", "x\n");
+        f.write_file("src.txt", "V1\n");
         f.mkdir("build");
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build", "-k" }).success());
+        REQUIRE(f.read_file("build/final.txt") == "V1\n");
+
+        f.write_file("src.txt", "V2\n");
+        f.write_file("FAILMARK", "x\n");
         REQUIRE_FALSE(f.build({ "-B", "build", "-k" }).success());
+        REQUIRE(f.read_file("build/mid.txt") == "PARTIAL\n");
 
         WHEN("the cause of the failure is removed and nothing else changes")
         {
             f.remove_file("FAILMARK");
             auto result = f.build({ "-B", "build", "-k" });
 
-            THEN("the producer re-runs and its consumer sees the corrected output")
+            THEN("the producer re-runs and the consumer picks up the corrected output")
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                REQUIRE(f.exists("build/final.txt"));
-                REQUIRE(f.read_file("build/final.txt") == "ORIGINAL\n");
+                REQUIRE(f.read_file("build/mid.txt") == "V2\n");
+                REQUIRE(f.read_file("build/final.txt") == "V2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A target build does not forget another command's failure", "[e2e][incremental][failure]")
+{
+    GIVEN("one failed command and one healthy command")
+    {
+        auto f = E2EFixture { "failed_command" };
+        f.write_file("Tupfile",
+            ": a.txt |> cp %f %o && false |> outa.txt\n"
+            ": b.txt |> cp %f %o |> outb.txt\n");
+        f.write_file("a.txt", "A\n");
+        f.write_file("b.txt", "B\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE_FALSE(f.build({ "-B", "build", "-k" }).success());
+
+        WHEN("only the healthy target is built, then the whole project")
+        {
+            (void)f.build({ "-B", "build", "-k", "build/outb.txt" });
+            auto full = f.build({ "-B", "build", "-k" });
+
+            THEN("the failure is still remembered")
+            {
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.stdout_output.find("Nothing to do") == std::string::npos);
+                REQUIRE_FALSE(full.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A scoped build does not forget an out-of-scope failure", "[e2e][incremental][failure][scope]")
+{
+    GIVEN("a failing command in one directory and a healthy one in another")
+    {
+        auto f = E2EFixture { "failed_command" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("a/Tupfile", ": a.txt |> cp %f %o && false |> outa.txt\n");
+        f.write_file("b/Tupfile", ": b.txt |> cp %f %o |> outb.txt\n");
+        f.write_file("a/a.txt", "A\n");
+        f.write_file("b/b.txt", "B\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE_FALSE(f.build({ "-B", "build", "-k" }).success());
+
+        WHEN("only the healthy directory is built, then the whole project")
+        {
+            (void)f.build({ "-B", "build", "-k", "b/" });
+            auto full = f.build({ "-B", "build", "-k" });
+
+            THEN("the out-of-scope failure is still remembered")
+            {
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.stdout_output.find("Nothing to do") == std::string::npos);
+                REQUIRE_FALSE(full.success());
             }
         }
     }
