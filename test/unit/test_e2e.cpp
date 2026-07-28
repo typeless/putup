@@ -4589,6 +4589,31 @@ SCENARIO("A failed command's consumer runs once the command succeeds", "[e2e][in
     }
 }
 
+SCENARIO("A rule may not overwrite a checked-in source file", "[e2e][shadow]")
+{
+    GIVEN("a rule whose output path is also a source file in the tree")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": gen.src |> cp %f %o |> x.dat\n");
+        f.write_file("gen.src", "FROMRULE\n");
+        f.write_file("x.dat", "FROMSRC\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("it is rejected and the source file is untouched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("x.dat") != std::string::npos);
+                REQUIRE(f.read_file("x.dat") == "FROMSRC\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A target build does not forget another command's failure", "[e2e][incremental][failure]")
 {
     GIVEN("one failed command and one healthy command")
@@ -4648,6 +4673,97 @@ SCENARIO("A scoped build does not forget an out-of-scope failure", "[e2e][increm
     }
 }
 
+SCENARIO("Converting a read source into a generated file is rejected, then unblocked by deleting it", "[e2e][shadow]")
+{
+    GIVEN("a built project where a rule reads a checked-in file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.write_file("a/Tupfile", ": x.dat |> cp %f %o |> copy.txt\n");
+        f.write_file("a/x.dat", "FROMSRC\n");
+        f.write_file("a/gen.src", "FROMRULE\n");
+        REQUIRE(f.build().success());
+
+        WHEN("a rule is changed to generate that same file")
+        {
+            f.write_file("a/Tupfile", ": gen.src |> cp %f %o |> x.dat\n");
+            auto rejected = f.build();
+
+            THEN("it is rejected while the file is still there")
+            {
+                INFO("stderr: " << rejected.stderr_output);
+                REQUIRE_FALSE(rejected.success());
+                REQUIRE(f.read_file("a/x.dat") == "FROMSRC\n");
+            }
+
+            AND_WHEN("the file is deleted as the message instructs")
+            {
+                f.remove_file("a/x.dat");
+                auto result = f.build();
+
+                THEN("the build proceeds and generates it")
+                {
+                    INFO("stderr: " << result.stderr_output);
+                    REQUIRE(result.success());
+                    REQUIRE(f.read_file("a/x.dat") == "FROMRULE\n");
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("An inactive conditional branch's output is not treated as a shadow", "[e2e][shadow][phi]")
+{
+    GIVEN("a rule inside an unsatisfied ifdef whose output name matches a source file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.write_file("a/Tupfile",
+            "ifdef FOO\n"
+            ": gen.src |> cp %f %o |> x.dat\n"
+            "endif\n"
+            ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("a/x.dat", "FROMSRC\n");
+        f.write_file("a/gen.src", "FROMRULE\n");
+        f.write_file("a/src.txt", "S\n");
+
+        WHEN("built with the condition unsatisfied")
+        {
+            auto result = f.build();
+
+            THEN("the build succeeds and the source is untouched")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a/x.dat") == "FROMSRC\n");
+            }
+        }
+    }
+}
+
+SCENARIO("An in-tree rebuild does not mistake its own output for a source file", "[e2e][shadow]")
+{
+    GIVEN("an ordinary in-tree project built once, so its output is on disk beside the sources")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out.txt"));
+
+        WHEN("it is built again")
+        {
+            auto again = f.build();
+
+            THEN("the rebuild succeeds")
+            {
+                INFO("stderr: " << again.stderr_output);
+                REQUIRE(again.success());
+            }
+        }
+    }
+}
+
 SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2e][glob][pathspace]")
 {
     GIVEN("a glob matching one generated and one source file, built out-of-tree")
@@ -4683,12 +4799,12 @@ SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2
     }
 }
 
-SCENARIO("A generated file shadowing a source file is one glob match", "[e2e][glob][pathspace][deviation]")
+SCENARIO("Out-of-tree, a generated file shadowing a source is one glob match and the source survives", "[e2e][glob][pathspace]")
 {
-    // Upstream tup rejects this project outright ("Attempting to insert 'x.dat' as a generated
-    // node when it already exists as a different type"). putup accepts it and lets the generated
-    // node win; issue #194 tracks that deviation. This asserts only the dedup #191 is about --
-    // one match rather than two -- and is not a claim that shadowing should be legal.
+    // Out-of-tree the output lands under the build root, so the committed file is shadowed
+    // rather than overwritten -- confusing, but not data loss, which is why #194's rejection
+    // is limited to in-tree builds. What #191 guarantees here is that the file is one match
+    // rather than two.
     GIVEN("a generated file whose name also exists as a checked-in source")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -4701,13 +4817,14 @@ SCENARIO("A generated file shadowing a source file is one glob match", "[e2e][gl
 
         WHEN("built out-of-tree")
         {
-            REQUIRE(f.build({ "-B", "build" }).success());
+            auto result = f.build({ "-B", "build" });
 
-            THEN("it is consumed once, not twice")
+            THEN("it is consumed once, and the committed file is untouched")
             {
-                auto content = f.read_file("build/a/all.txt");
-                INFO("all.txt: " << content);
-                REQUIRE(content == "FROMRULE\n");
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/a/all.txt") == "FROMRULE\n");
+                REQUIRE(f.read_file("a/x.dat") == "FROMSRC\n");
             }
         }
     }

@@ -1430,6 +1430,100 @@ struct NewCommands {
     pup::Vec<pup::NodeId> retry_after_failure; ///< Recorded as failed; still failed unless they succeed now
 };
 
+/// A rule may not produce a file that already exists as a source. Upstream tup rejects it
+/// ("Attempting to insert '<f>' as a generated node when it already exists as a different
+/// type"); putup used to let the generated node win, and in-tree that overwrote the tracked
+/// file on disk. The previous index is what tells a source file apart from our own output
+/// sitting in the source tree after an in-tree build -- exactly the distinction tup's node
+/// types carry.
+auto reject_shadowed_sources(
+    pup::graph::BuildGraph const& state,
+    pup::index::Index const* old_index,
+    std::string_view source_root,
+    std::string_view config_root
+) -> pup::Result<void>
+{
+    auto const& g = state.graph;
+    auto& pool = pup::global_pool();
+    auto build_root_name = pup::graph::get_build_root_name(g);
+
+    // Only in-tree builds can destroy anything: out-of-tree, %o resolves under the build
+    // root, so a rule whose output path collides with a committed file writes beside it
+    // rather than over it. The collision is still confusing there -- the source becomes
+    // unreadable through that path -- but it is not data loss, and rejecting on it fails
+    // builds that cannot hurt anyone (a second build dir sees the first one's artifacts).
+    if (!build_root_name.empty()) {
+        return {};
+    }
+
+    // Two questions putup can answer for certain. With no previous index nothing we
+    // produced can be on disk yet, so anything sitting at an output's path is a source.
+    // With one, a path it recorded as a source File is a source whatever is on disk now.
+    // Everything else -- notably a generated file the previous index does not mention,
+    // which is what a scoped build leaves behind for out-of-scope outputs -- is not
+    // decidable from here and is left alone.
+    auto recorded_sources = pup::Vec<StringId> {};
+    if (old_index != nullptr) {
+        for (auto const& file : old_index->files()) {
+            if (file.type == pup::NodeType::File && !pup::is_empty(file.path)) {
+                recorded_sources.push_back(file.path);
+            }
+        }
+        std::sort(recorded_sources.begin(), recorded_sources.end(), pup::handle_less);
+    }
+
+    // Guard-satisfied producers only, like every other command walk here: an inactive
+    // conditional branch declares outputs it will never write, and rejecting on those
+    // fails projects that build fine.
+    for (auto cmd_id : pup::graph::all_nodes(g)) {
+        if (!pup::node_id::is_command(cmd_id) || !pup::graph::is_guard_satisfied(g, cmd_id)) {
+            continue;
+        }
+        for (auto id : pup::graph::get_outputs(g, cmd_id)) {
+            auto full_path_sv = pup::graph::get_full_path(g, id, state.path_cache);
+            if (full_path_sv.empty()) {
+                continue;
+            }
+            auto rel_sv = pool.get(pup::strip_path_prefix(full_path_sv, build_root_name));
+            // The two-stage configure design has a rule produce the tup.config that the same
+            // build then reads as configuration. Match the whole basename: a suffix test also
+            // exempts anything merely ending in those characters, e.g. mytup.config.
+            if (rel_sv == "tup.config" || rel_sv.ends_with("/tup.config")) {
+                continue;
+            }
+
+            // On disk in either input tree. Without this the printed remedy -- delete the file
+            // and try again -- would not clear the error, because the index still records it.
+            auto abs_sv = pool.get(pup::path::join(source_root, rel_sv));
+            auto on_disk = pup::platform::exists(abs_sv);
+            if (!on_disk && !config_root.empty() && config_root != source_root) {
+                on_disk = pup::platform::exists(pool.get(pup::path::join(config_root, rel_sv)));
+            }
+            if (!on_disk) {
+                continue;
+            }
+
+            auto rel_id = pool.intern(rel_sv);
+            if (old_index != nullptr
+                && !std::binary_search(recorded_sources.begin(), recorded_sources.end(), rel_id, pup::handle_less)) {
+                continue;
+            }
+
+            auto err = pup::Buf {};
+            err.fmt(
+                "Attempting to create '{}' as a generated file when it already exists as a source "
+                "file. You can do one of two things to fix this:\n"
+                "  1) If this file is really supposed to be created from the command, delete the "
+                "file from the filesystem and try again.\n"
+                "  2) Change your rule in the Tupfile so you aren't trying to overwrite the file.",
+                rel_sv
+            );
+            return pup::make_error<void>(pup::ErrorCode::DuplicateNode, err.view());
+        }
+    }
+    return {};
+}
+
 /// Commands that must run because of what they are rather than because a file changed:
 /// no counterpart in the previous build, or a counterpart whose signature differs. Their
 /// outputs join the changed-file set; a command that contributes no output paths cannot
@@ -1830,6 +1924,11 @@ auto build_single_variant(
 
     auto index_path = pup::global_pool().get(ctx.layout().index_path());
     auto const* old_idx_ptr = ctx.old_index();
+
+    if (auto shadowed = reject_shadowed_sources(bs, old_idx_ptr, source_root_str, config_root_str); !shadowed) {
+        veprint(variant_name, "Error: {}\n", shadowed.error().msg());
+        return EXIT_FAILURE;
+    }
     auto use_incremental = false;
     // Carries "has not succeeded since it last failed": seeded from the previous index, cleared
     // only by a successful run. A build in which the command does not run at all -- a target or
