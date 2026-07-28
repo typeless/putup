@@ -58,7 +58,10 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       `signature` (what it will do), because one value cannot both stay stable
 ///       across a recipe edit and change when the recipe changes (issue #188).
 ///       v18 entries carry neither field.
-inline constexpr auto INDEX_VERSION = std::uint32_t { 19 };
+///  20 - A command records whether its last run failed. v19 inferred that from the
+///       output being absent, which is false whenever a failing command writes its
+///       output before failing, so the failure was forgotten (issue #187).
+inline constexpr auto INDEX_VERSION = std::uint32_t { 20 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
@@ -106,11 +109,16 @@ struct alignas(8) RawCommandEntry {
     std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
     std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
+    std::uint32_t flags = 0;          ///< CommandFlags bitset (v20)
+    std::uint32_t reserved = 0;       ///< Keeps the hashes 8-byte aligned
     Hash256 key = {};                 ///< Which rule this is, for the cross-build join (v19)
     Hash256 signature = {};           ///< What it will do, for deciding whether to re-run (v19)
 };
 
-static_assert(sizeof(RawCommandEntry) == 80, "RawCommandEntry must be 80 bytes");
+/// Its last run exited nonzero, so it must run again whatever its outputs look like.
+inline constexpr auto COMMAND_FLAG_FAILED = std::uint32_t { 1 };
+
+static_assert(sizeof(RawCommandEntry) == 88, "RawCommandEntry must be 88 bytes");
 
 /// Raw edge entry (16 bytes)
 /// Represents dependencies between nodes

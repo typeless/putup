@@ -80,9 +80,9 @@ TEST_CASE("Index format struct sizes", "[index]")
         REQUIRE(sizeof(RawFileEntry) == 64);
     }
 
-    SECTION("RawCommandEntry is 80 bytes (v19: + key and signature hashes)")
+    SECTION("RawCommandEntry is 88 bytes (v20: + flags)")
     {
-        REQUIRE(sizeof(RawCommandEntry) == 80);
+        REQUIRE(sizeof(RawCommandEntry) == 88);
     }
 
     SECTION("RawEdge is 16 bytes")
@@ -178,6 +178,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
         .env = intern("CC=gcc"),
         .key = key,
         .signature = signature,
+        .failed = true,
         .inputs = { 10 },
         .outputs = { 20 },
     };
@@ -190,6 +191,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.env_offset == 100);
     REQUIRE(raw.key == key);
     REQUIRE(raw.signature == signature);
+    REQUIRE(raw.flags == pup::index::COMMAND_FLAG_FAILED);
 
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto& pool = global_pool();
@@ -205,6 +207,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(restored.env == cmd.env);
     REQUIRE(restored.key == key);
     REQUIRE(restored.signature == signature);
+    REQUIRE(restored.failed);
     REQUIRE(restored.inputs == cmd.inputs);
     REQUIRE(restored.outputs == cmd.outputs);
 }
