@@ -18,7 +18,7 @@ namespace {
 
 auto is_config_output(std::string_view path) -> bool
 {
-    return path.ends_with("tup.config");
+    return path == "tup.config" || path.ends_with("/tup.config");
 }
 
 } // anonymous namespace
