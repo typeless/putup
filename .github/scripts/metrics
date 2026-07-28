@@ -417,8 +417,13 @@ def cmd_churn(args):
         rework_pct = f"{rework / len(ages) * 100:.1f}"
         median_age = f"{statistics.median(ages) / 86400:.1f}"
 
-    # Commits that DELETED from the file, not merely touched it: a test file that
-    # every PR appends to is not a hotspot, one that keeps being rewritten is.
+    # Commits reachable from the base, so this is the file's history BEFORE the PR --
+    # context for the diff above, not part of it.
+    #
+    # Counted only if the commit DELETED from the file. Growth is not churn, and the
+    # distinction survives excluding tests: of 102 production files touched in a recent
+    # window, 59 count differently under the two rules and 4 are append-only with
+    # multiple touches (string_id.hpp, context.hpp, region.hpp, index/writer.cpp).
     heat = []
     for path in paths:
         rewrites = 0
@@ -606,8 +611,9 @@ def churn_section(cur):
             f"{median} d" if num(median) is not None else "—",
         ),
         "",
-        "Rework is the share of removed lines that were themselves written within the "
-        f"last {window} days — code being rewritten, as distinct from code being added. "
+        "Rework is the share of the lines *this PR* removes that were themselves "
+        f"written within the last {window} days — code being rewritten, as distinct "
+        "from code being added. "
         "The median age says which: near 0 means this change is undoing work from the "
         "same few days. Test code is excluded: it is rewritten whenever the code it "
         "covers is, so counting it measures the same change twice.",
@@ -615,7 +621,8 @@ def churn_section(cur):
     if cur["hot_files"] != "none":
         lines += [
             "",
-            f"<details><summary>Also rewritten in the last {window} days</summary>",
+            f"<details><summary>Same files, rewritten in the {window} days "
+            "before this PR</summary>",
             "",
             "| File | Commits deleting from it |",
             "|---|---|",
