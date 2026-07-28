@@ -289,9 +289,8 @@ jobs:
           fetch-depth: 0  # churn blames removed lines; a shallow clone has no history
       - name: Code churn
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: .github/scripts/metrics churn "$BASE" "$HEAD" > churn-metrics.tsv
+        run: .github/scripts/metrics churn "$HEAD" > churn-metrics.tsv
       - name: Download perf metrics
         uses: actions/download-artifact@v4
         with:
