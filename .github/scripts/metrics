@@ -28,19 +28,27 @@ SIZE_COLUMNS = [
     "file_kb",
 ]
 
-# Tests are rewritten whenever the code they cover is, so counting them measures the
-# production change twice and dilutes the signal with churn that is working as intended.
-CHURN_EXCLUDE_PREFIXES = ("test/",)
+# Churn is only worth measuring where our defects come from. Tests are rewritten
+# whenever the code they cover is, so counting them measures the same change twice;
+# third_party/ is vendored, its history is imports; examples/ is build recipes for
+# other people's source.
+CHURN_EXCLUDE_PREFIXES = ("test/", "third_party/", "examples/")
+
+# Generated and committed: `make bootstrap` regenerates these from the Tupfiles, so
+# their churn is a mechanical echo, at ~10x the volume, of a change already counted
+# at its source. Ranked 2nd and 3rd before they were excluded.
+CHURN_EXCLUDE_FILES = ("bootstrap-linux.sh", "bootstrap-macos.sh")
 
 CHURN_HOT_FILES = 10
 
 CHURN_COLUMNS = [
     "window_days",
+    "files",
     "added",
     "removed",
-    "rework_lines",
-    "rework_pct",
-    "median_age_days",
+    "surviving",
+    "churned",
+    "churn_pct",
     "hot_files",
 ]
 
@@ -367,86 +375,75 @@ def removed_line_numbers(base, head, path):
 
 
 def cmd_churn(args):
+    """Churn across the whole codebase over a window, not the diff of one change.
+
+    Of the lines written in the window, how many are already gone? Work that was
+    written and then discarded inside the same window is the codebase telling you
+    where it is being rewritten rather than built.
+    """
     # Every git call here degrades to empty output, so a missing history would be
     # reported as zero churn rather than as a failure. Refuse instead.
     if git("rev-parse", "--is-shallow-repository").strip() == "true":
         print("churn needs full history (fetch-depth: 0)", file=sys.stderr)
         return 1
 
-    base = git("merge-base", args.base, args.head).strip()
-    if not base:
-        print(f"no merge base for {args.base}..{args.head}", file=sys.stderr)
+    rev = git("rev-parse", args.rev).strip()
+    if not rev:
+        print(f"unknown revision {args.rev}", file=sys.stderr)
         return 1
-    base_time = int(git("show", "-s", "--format=%ct", base).strip() or 0)
-    window = args.window_days * 86400
+    # Dated against the analyzed commit, not wall-clock now, so a re-run agrees.
+    cutoff = int(git("show", "-s", "--format=%ct", rev).strip() or 0) - args.window_days * 86400
 
+    added_by_file = {}
     added = removed = 0
-    paths = []
-    for line in git("diff", "--numstat", "-M", f"{base}..{args.head}").splitlines():
+    for line in git(
+        "log", "--numstat", "-M", "--format=", f"--since={args.window_days} days ago", rev
+    ).splitlines():
         cells = line.split("\t")
         if len(cells) != 3 or cells[0] == "-":  # binary
             continue
-        if cells[2].startswith(CHURN_EXCLUDE_PREFIXES):
+        path = cells[2]
+        if path.startswith(CHURN_EXCLUDE_PREFIXES) or path in CHURN_EXCLUDE_FILES:
             continue
         added += int(cells[0])
         removed += int(cells[1])
-        paths.append(cells[2])
+        added_by_file[path] = added_by_file.get(path, 0) + int(cells[0])
 
-    ages = []
-    for path in paths:
-        line_times = blame_line_times(base, path)
-        if not line_times:
-            continue  # added by this PR, so nothing of it is being reworked
-        for lineno in removed_line_numbers(base, args.head, path):
-            when = line_times.get(lineno)
-            if when is not None:
-                ages.append(base_time - when)
+    if not added:
+        print(f"no production changes in the last {args.window_days} days", file=sys.stderr)
+        return 1
 
-    # No ages means nothing was measured, which is not the same as "nothing was
-    # reworked": a median of 0.0 days is the strongest churn reading there is, and
-    # printing it for an empty measurement says the opposite of the truth.
-    if not ages:
-        if removed:
-            print(
-                f"could not date any of the {removed} removed lines", file=sys.stderr
-            )
-            return 1
-        rework, rework_pct, median_age = 0, "n/a", "n/a"
-    else:
-        rework = sum(1 for age in ages if age < window)
-        rework_pct = f"{rework / len(ages) * 100:.1f}"
-        median_age = f"{statistics.median(ages) / 86400:.1f}"
+    # A line written in the window and still present at rev survived; the rest of what
+    # was written in the window has since been deleted or rewritten.
+    surviving = 0
+    churn_by_file = []
+    for path, wrote in added_by_file.items():
+        lived = sum(
+            1 for when in blame_line_times(rev, path).values()
+            if when is not None and when >= cutoff
+        )
+        surviving += min(lived, wrote)
+        gone = wrote - min(lived, wrote)
+        if gone:
+            churn_by_file.append((gone, path))
 
-    # Commits reachable from the base, so this is the file's history BEFORE the PR --
-    # context for the diff above, not part of it.
-    #
-    # Counted only if the commit DELETED from the file. Growth is not churn, and the
-    # distinction survives excluding tests: of 102 production files touched in a recent
-    # window, 59 count differently under the two rules and 4 are append-only with
-    # multiple touches (string_id.hpp, context.hpp, region.hpp, index/writer.cpp).
-    heat = []
-    for path in paths:
-        rewrites = 0
-        for line in git(
-            "log", "--numstat", "--format=%H",
-            f"--since={args.window_days} days ago", base, "--", path
-        ).splitlines():
-            cells = line.split("\t")
-            if len(cells) == 3 and cells[1] not in ("-", "0"):
-                rewrites += 1
-        if rewrites > 1:
-            heat.append((rewrites, path))
-    heat.sort(key=lambda e: (-e[0], e[1]))
-    hot = "; ".join(f"{p} ({n})" for n, p in heat[:CHURN_HOT_FILES]) or "none"
+    churned = added - surviving
+    churn_pct = churned / added * 100
+
+    churn_by_file.sort(key=lambda e: (-e[0], e[1]))
+    hot = "; ".join(
+        f"{p} ({n})" for n, p in churn_by_file[:CHURN_HOT_FILES]
+    ) or "none"
 
     print("\t".join(CHURN_COLUMNS))
     print("\t".join(str(v) for v in (
         args.window_days,
+        len(added_by_file),
         added,
         removed,
-        rework,
-        rework_pct,
-        median_age,
+        surviving,
+        churned,
+        f"{churn_pct:.1f}",
         hot,
     )))
     return 0
@@ -592,39 +589,32 @@ def coverage_section(cur, base):
 
 def churn_section(cur):
     window = cur["window_days"]
-    removed = num(cur["removed"])
-    rework_pct = num(cur["rework_pct"])
-    # A ratio over a handful of lines says nothing; report the count and withhold
-    # the percentage rather than let a 2-line diff read as "100% rework".
-    share = f"{rework_pct:g}%" if rework_pct is not None and removed >= 20 else "—"
-    median = cur["median_age_days"]
     lines = [
-        f"### Code churn (rework window: {window}d)",
+        f"### Code churn (whole codebase, last {window}d)",
         "",
-        "| Added | Removed | Reworked | Rework | Median age of removed |",
+        "| Files | Lines written | Still present | Churned | Churn rate |",
         "|---|---|---|---|---|",
         "| {} | {} | {} | {} | {} |".format(
-            annotate(num(cur["added"]), None, "abs"),
-            annotate(removed, None, "abs"),
-            "{} lines".format(cur["rework_lines"]) if removed else "—",
-            share,
-            f"{median} d" if num(median) is not None else "—",
+            cur["files"],
+            cur["added"],
+            cur["surviving"],
+            cur["churned"],
+            f"{num(cur['churn_pct']):g}%",
         ),
         "",
-        "Rework is the share of the lines *this PR* removes that were themselves "
-        f"written within the last {window} days — code being rewritten, as distinct "
-        "from code being added. "
-        "The median age says which: near 0 means this change is undoing work from the "
-        "same few days. Test code is excluded: it is rewritten whenever the code it "
-        "covers is, so counting it measures the same change twice.",
+        f"Of the lines written across the codebase in the last {window} days, how many "
+        "are already gone — work that was written and then discarded or rewritten "
+        "inside the same window. This is the state of the tree including this PR, not "
+        "a measure of the PR itself. Tests, examples, vendored code and generated "
+        f"files are excluded. {cur['removed']} lines were deleted in the window in "
+        "total, most of them older than it.",
     ]
     if cur["hot_files"] != "none":
         lines += [
             "",
-            f"<details><summary>Same files, rewritten in the {window} days "
-            "before this PR</summary>",
+            "<details><summary>Where the churn is</summary>",
             "",
-            "| File | Commits deleting from it |",
+            "| File | Lines written then discarded |",
             "|---|---|",
         ]
         for entry in cur["hot_files"].split("; "):
@@ -707,8 +697,7 @@ def main() -> int:
     coverage.set_defaults(func=cmd_coverage)
 
     churn = sub.add_parser("churn")
-    churn.add_argument("base")
-    churn.add_argument("head")
+    churn.add_argument("rev", nargs="?", default="HEAD")
     churn.add_argument("--window-days", type=int, default=30)
     churn.set_defaults(func=cmd_churn)
 
