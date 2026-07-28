@@ -285,6 +285,13 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # churn blames removed lines; a shallow clone has no history
+      - name: Code churn
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/metrics churn "$BASE" "$HEAD" > churn-metrics.tsv
       - name: Download perf metrics
         uses: actions/download-artifact@v4
         with:
@@ -330,6 +337,7 @@ jobs:
             --perf perf-metrics.tsv --stat stat-metrics.tsv \
             --size size-metrics.tsv \
             --coverage coverage-metrics.tsv \
+            --churn churn-metrics.tsv \
             --baseline-perf baseline/perf/perf-metrics.tsv \
             --baseline-stat baseline/stat/stat-metrics.tsv \
             --baseline-size baseline/size/size-metrics.tsv \
