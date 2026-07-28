@@ -361,7 +361,16 @@ def removed_line_numbers(base, head, path):
 
 
 def cmd_churn(args):
-    base = git("merge-base", args.base, args.head).strip() or args.base
+    # Every git call here degrades to empty output, so a missing history would be
+    # reported as zero churn rather than as a failure. Refuse instead.
+    if git("rev-parse", "--is-shallow-repository").strip() == "true":
+        print("churn needs full history (fetch-depth: 0)", file=sys.stderr)
+        return 1
+
+    base = git("merge-base", args.base, args.head).strip()
+    if not base:
+        print(f"no merge base for {args.base}..{args.head}", file=sys.stderr)
+        return 1
     base_time = int(git("show", "-s", "--format=%ct", base).strip() or 0)
     window = args.window_days * 86400
 
