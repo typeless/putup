@@ -402,9 +402,20 @@ def cmd_churn(args):
             if when is not None:
                 ages.append(base_time - when)
 
-    rework = sum(1 for age in ages if age < window)
-    rework_pct = (rework / len(ages) * 100) if ages else 0.0
-    median_age = (statistics.median(ages) / 86400) if ages else 0.0
+    # No ages means nothing was measured, which is not the same as "nothing was
+    # reworked": a median of 0.0 days is the strongest churn reading there is, and
+    # printing it for an empty measurement says the opposite of the truth.
+    if not ages:
+        if removed:
+            print(
+                f"could not date any of the {removed} removed lines", file=sys.stderr
+            )
+            return 1
+        rework, rework_pct, median_age = 0, "n/a", "n/a"
+    else:
+        rework = sum(1 for age in ages if age < window)
+        rework_pct = f"{rework / len(ages) * 100:.1f}"
+        median_age = f"{statistics.median(ages) / 86400:.1f}"
 
     # Commits that DELETED from the file, not merely touched it: a test file that
     # every PR appends to is not a hotspot, one that keeps being rewritten is.
@@ -429,8 +440,8 @@ def cmd_churn(args):
         added,
         removed,
         rework,
-        f"{rework_pct:.1f}",
-        f"{median_age:.1f}",
+        rework_pct,
+        median_age,
         hot,
     )))
     return 0
@@ -580,10 +591,8 @@ def churn_section(cur):
     rework_pct = num(cur["rework_pct"])
     # A ratio over a handful of lines says nothing; report the count and withhold
     # the percentage rather than let a 2-line diff read as "100% rework".
-    share = (
-        f"{rework_pct:g}%" if removed >= 20
-        else "n/a"
-    )
+    share = f"{rework_pct:g}%" if rework_pct is not None and removed >= 20 else "—"
+    median = cur["median_age_days"]
     lines = [
         f"### Code churn (rework window: {window}d)",
         "",
@@ -592,9 +601,9 @@ def churn_section(cur):
         "| {} | {} | {} | {} | {} |".format(
             annotate(num(cur["added"]), None, "abs"),
             annotate(removed, None, "abs"),
-            "{} lines".format(cur["rework_lines"]),
+            "{} lines".format(cur["rework_lines"]) if removed else "—",
             share,
-            "{} d".format(cur["median_age_days"]),
+            f"{median} d" if num(median) is not None else "—",
         ),
         "",
         "Rework is the share of removed lines that were themselves written within the "
