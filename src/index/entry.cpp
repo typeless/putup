@@ -68,6 +68,7 @@ auto CommandEntry::to_raw(
     raw.env_offset = env_offset;
     raw.key = key;
     raw.signature = signature;
+    raw.flags = failed ? COMMAND_FLAG_FAILED : 0U;
     return raw;
 }
 
@@ -89,6 +90,7 @@ auto CommandEntry::from_raw(
         .env = global_pool().intern(env_str),
         .key = raw.key,
         .signature = raw.signature,
+        .failed = (raw.flags & COMMAND_FLAG_FAILED) != 0U,
         .inputs = std::move(inputs),
         .outputs = std::move(outputs),
     };

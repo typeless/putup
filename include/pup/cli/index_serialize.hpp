@@ -35,7 +35,8 @@ auto serialize_graph_nodes(
 auto serialize_command_nodes(
     graph::BuildGraph const& state,
     index::Index& index,
-    PathIdMap const& path_to_id
+    PathIdMap const& path_to_id,
+    NodeIdMap32 const& failed_cmds = {}
 ) -> NodeIdMap32;
 
 /// Serialize graph edges to the index (order-only edges are ephemeral),

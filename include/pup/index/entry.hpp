@@ -56,6 +56,7 @@ struct CommandEntry {
 
     Hash256 key = {};       ///< Which rule this is: the cross-build join key
     Hash256 signature = {}; ///< What it will do: changes mean re-run, not a different rule
+    bool failed = false;    ///< Its last run exited nonzero, so it must run again
 
     Vec<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
     Vec<NodeId> outputs = {}; ///< Output file operands (for %o expansion)

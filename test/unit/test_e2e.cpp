@@ -4522,6 +4522,65 @@ SCENARIO("Editing a rule's recipe does not make it a different rule", "[e2e][ide
     }
 }
 
+SCENARIO("A command that failed is re-run on the next build", "[e2e][incremental][failure]")
+{
+    GIVEN("a built project whose command is then changed to fail after writing its output")
+    {
+        auto f = E2EFixture { "failed_command" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        WHEN("it fails under keep-going and the build is repeated")
+        {
+            f.write_file("src.txt", "NEWCONTENT\n");
+            f.write_file("Tupfile", ": src.txt |> cp %f %o && false |> out.txt\n");
+            REQUIRE_FALSE(f.build({ "-B", "build", "-k" }).success());
+
+            auto again = f.build({ "-B", "build", "-k" });
+
+            THEN("the failure is remembered rather than reported as up to date")
+            {
+                INFO("stdout: " << again.stdout_output);
+                REQUIRE(again.stdout_output.find("Nothing to do") == std::string::npos);
+                REQUIRE_FALSE(again.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A failed command's consumer runs once the command succeeds", "[e2e][incremental][failure]")
+{
+    GIVEN("a producer that writes partial output and fails, feeding a consumer")
+    {
+        auto f = E2EFixture { "failed_command" };
+        f.write_file("Tupfile",
+            ": src.txt |> sh -c 'if [ -f FAILMARK ]; then echo PARTIAL > %o; exit 1; else cp %f %o; fi' |> mid.txt\n"
+            ": mid.txt |> cp %f %o |> final.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        f.write_file("FAILMARK", "x\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE_FALSE(f.build({ "-B", "build", "-k" }).success());
+
+        WHEN("the cause of the failure is removed and nothing else changes")
+        {
+            f.remove_file("FAILMARK");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("the producer re-runs and its consumer sees the corrected output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("build/final.txt"));
+                REQUIRE(f.read_file("build/final.txt") == "ORIGINAL\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2e][glob][pathspace]")
 {
     GIVEN("a glob matching one generated and one source file, built out-of-tree")

@@ -701,7 +701,8 @@ auto serialize_graph_nodes(
 auto serialize_command_nodes(
     pup::graph::BuildGraph const& state,
     pup::index::Index& index,
-    PathIdMap const& path_to_id
+    PathIdMap const& path_to_id,
+    pup::NodeIdMap32 const& failed_cmds
 ) -> pup::NodeIdMap32
 {
     auto const& g = state.graph;
@@ -736,6 +737,7 @@ auto serialize_command_nodes(
             .env = pup::StringId::Empty,
             .key = pup::graph::compute_command_key(g, id, state.path_cache),
             .signature = pup::graph::compute_command_signature(g, id, state.path_cache),
+            .failed = failed_cmds.contains(id),
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
         };
@@ -1347,13 +1349,14 @@ auto build_index(
     pup::parser::IgnoreList const& excludes = {},
     pup::Vec<pup::StringId> const& parsed_dirs = {},
     pup::Vec<pup::StringId> const& available_dirs = {},
-    pup::Vec<pup::StringId> const& pruned_dirs = {}
+    pup::Vec<pup::StringId> const& pruned_dirs = {},
+    pup::NodeIdMap32 const& failed_cmds = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
     auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root);
 
-    auto cmd_remap = serialize_command_nodes(state, index, path_to_id);
+    auto cmd_remap = serialize_command_nodes(state, index, path_to_id, failed_cmds);
 
     serialize_edges(state, index, cmd_remap);
 
@@ -1496,8 +1499,12 @@ auto detect_new_commands(
             }
         }
 
+        // A recorded failure outranks the signature: a command that failed must run again
+        // even when nothing about it changed, and its outputs must be treated as changed so
+        // consumers of whatever it half-wrote are rescheduled too.
         auto signature = pup::graph::compute_command_signature(g, id, state.path_cache);
-        if (previous && pup::hash_equal(previous->signature, signature)) {
+        auto retry_after_failure = previous != nullptr && previous->failed;
+        if (previous && !retry_after_failure && pup::hash_equal(previous->signature, signature)) {
             continue;
         }
 
@@ -1509,7 +1516,8 @@ auto detect_new_commands(
         }
         if (verbose) {
             auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
-            vprint(variant_name, "  {}: {}\n", previous ? "Changed command" : "New command", display_sv);
+            auto reason = retry_after_failure ? "Failed last run" : (previous ? "Changed command" : "New command");
+            vprint(variant_name, "  {}: {}\n", reason, display_sv);
         }
     }
     return result;
@@ -1957,6 +1965,9 @@ auto build_single_variant(
     };
 
     auto scheduler = pup::exec::Scheduler { std::move(sched_opts) };
+
+    // A command that exited nonzero must run again whatever its outputs look like.
+    auto failed_cmds = pup::NodeIdMap32 {};
     auto discovered_deps = DiscoveredDeps {};
 
     auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose && !opts.dry_run;
@@ -1979,6 +1990,7 @@ auto build_single_variant(
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         auto& pool = pup::global_pool();
         if (!job_result.success) {
+            failed_cmds.set(job.id, 1);
             if (use_tty_progress) {
                 pup::exec::finalize_progress(prev_lines);
             }
@@ -2131,7 +2143,8 @@ auto build_single_variant(
             excludes,
             ctx.parsed_dirs(),
             ctx.available_dirs(),
-            ctx.pruned_dirs()
+            ctx.pruned_dirs(),
+            failed_cmds
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
