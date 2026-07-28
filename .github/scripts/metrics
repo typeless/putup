@@ -28,6 +28,12 @@ SIZE_COLUMNS = [
     "file_kb",
 ]
 
+# Tests are rewritten whenever the code they cover is, so counting them measures the
+# production change twice and dilutes the signal with churn that is working as intended.
+CHURN_EXCLUDE_PREFIXES = ("test/",)
+
+CHURN_HOT_FILES = 10
+
 CHURN_COLUMNS = [
     "window_days",
     "added",
@@ -380,6 +386,8 @@ def cmd_churn(args):
         cells = line.split("\t")
         if len(cells) != 3 or cells[0] == "-":  # binary
             continue
+        if cells[2].startswith(CHURN_EXCLUDE_PREFIXES):
+            continue
         added += int(cells[0])
         removed += int(cells[1])
         paths.append(cells[2])
@@ -412,8 +420,8 @@ def cmd_churn(args):
                 rewrites += 1
         if rewrites > 1:
             heat.append((rewrites, path))
-    heat.sort(reverse=True)
-    hot = ", ".join(f"{p} ({n})" for n, p in heat[:3]) or "none"
+    heat.sort(key=lambda e: (-e[0], e[1]))
+    hot = "; ".join(f"{p} ({n})" for n, p in heat[:CHURN_HOT_FILES]) or "none"
 
     print("\t".join(CHURN_COLUMNS))
     print("\t".join(str(v) for v in (
@@ -592,10 +600,22 @@ def churn_section(cur):
         "Rework is the share of removed lines that were themselves written within the "
         f"last {window} days — code being rewritten, as distinct from code being added. "
         "The median age says which: near 0 means this change is undoing work from the "
-        "same few days.",
+        "same few days. Test code is excluded: it is rewritten whenever the code it "
+        "covers is, so counting it measures the same change twice.",
     ]
     if cur["hot_files"] != "none":
-        lines += ["", "Repeatedly touched in the window: {}.".format(cur["hot_files"])]
+        lines += [
+            "",
+            f"<details><summary>Also rewritten in the last {window} days</summary>",
+            "",
+            "| File | Commits deleting from it |",
+            "|---|---|",
+        ]
+        for entry in cur["hot_files"].split("; "):
+            match = re.match(r"^(.*) \((\d+)\)$", entry)
+            if match:
+                lines.append(f"| `{match.group(1)}` | {match.group(2)} |")
+        lines += ["", "</details>"]
     return lines
 
 
