@@ -28,11 +28,12 @@ SIZE_COLUMNS = [
     "file_kb",
 ]
 
-# Churn is only worth measuring where our defects come from. Tests are rewritten
-# whenever the code they cover is, so counting them measures the same change twice;
-# third_party/ is vendored, its history is imports; examples/ is build recipes for
-# other people's source.
-CHURN_EXCLUDE_PREFIXES = ("test/", "third_party/", "examples/")
+# Churn is only worth measuring where our defects come from: tests echo the change
+# they cover, third_party/ is vendored, examples/ builds other people's source,
+# .github/ is CI plumbing, and prose is not code.
+CHURN_EXCLUDE_PREFIXES = (".github/", "test/", "third_party/", "examples/", "docs/")
+
+CHURN_EXCLUDE_SUFFIXES = (".md",)
 
 # Generated and committed: `make bootstrap` regenerates these from the Tupfiles, so
 # their churn is a mechanical echo, at ~10x the volume, of a change already counted
@@ -403,7 +404,9 @@ def cmd_churn(args):
         if len(cells) != 3 or cells[0] == "-":  # binary
             continue
         path = cells[2]
-        if path.startswith(CHURN_EXCLUDE_PREFIXES) or path in CHURN_EXCLUDE_FILES:
+        if (path.startswith(CHURN_EXCLUDE_PREFIXES)
+                or path.endswith(CHURN_EXCLUDE_SUFFIXES)
+                or path in CHURN_EXCLUDE_FILES):
             continue
         added += int(cells[0])
         removed += int(cells[1])
@@ -605,9 +608,10 @@ def churn_section(cur):
         f"Of the lines written across the codebase in the last {window} days, how many "
         "are already gone — work that was written and then discarded or rewritten "
         "inside the same window. This is the state of the tree including this PR, not "
-        "a measure of the PR itself. Tests, examples, vendored code and generated "
-        f"files are excluded. {cur['removed']} lines were deleted in the window in "
-        "total, most of them older than it.",
+        "a measure of the PR itself. Only code we write is counted: tests, examples, "
+        "vendored and generated files, CI plumbing and prose are excluded. "
+        f"{cur['removed']} lines were deleted in the window in total, most of them "
+        "older than it.",
     ]
     if cur["hot_files"] != "none":
         lines += [
