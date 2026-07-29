@@ -31,7 +31,8 @@ make tidy         # Run clang-tidy
 make iwyu         # Detect dead includes via clang-include-cleaner
 make format       # Format with clang-format
 make bootstrap    # Regenerate the committed bootstrap-*.sh scripts
-make check        # Full CI: format-check + tidy + test
+make spec-check   # Verify spec/requirements against the test suite
+make check        # Full CI: format-check + tidy + spec-check + test
 make clean        # Clean build artifacts
 make distclean    # Full reset: remove build/
 ```
@@ -88,6 +89,8 @@ make iwyu                                    # Check for dead includes
 **For new features:** Write tests expressing the expected behavior before any implementation. Use BDD-style SCENARIO/GIVEN/WHEN/THEN for E2E tests.
 
 Always run `make format`, `make tidy`, and `make iwyu` before finalizing changes. When `Tupfile`, `Tuprules.tup`, or `configs/` change, also run `make bootstrap` and commit the regenerated scripts — CI rejects stale ones.
+
+When a change alters behaviour that `spec/requirements/` specifies, update the requirement and run `make spec-check`. Requirements cite tests by name, so renaming or deleting a cited test is itself a spec change — CI fails on a `discharge:` naming a test that no longer exists. Format and conventions: [spec/requirements/README.md](spec/requirements/README.md).
 
 ## Code Style
 
