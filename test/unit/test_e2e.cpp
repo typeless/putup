@@ -5022,6 +5022,33 @@ SCENARIO("An exclusion matches an input spelled with the build-directory prefix"
     }
 }
 
+SCENARIO("A foreach rule substitutes %g in its command, not only in its output name", "[e2e][glob][foreach]")
+{
+    GIVEN("a foreach rule using %g on both sides")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": foreach *_test.c |> echo MATCH-%g-END > %o |> %g_result.txt\n");
+        f.write_file("foo_test.c", "a\n");
+        f.write_file("bar_test.c", "b\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built")
+        {
+            REQUIRE(f.build({ "-B", "build" }).success());
+
+            THEN("the command sees the same match the output name did")
+            {
+                REQUIRE(f.exists("build/foo_result.txt"));
+                REQUIRE(f.exists("build/bar_result.txt"));
+                INFO("foo_result.txt: " << f.read_file("build/foo_result.txt"));
+                REQUIRE(f.read_file("build/foo_result.txt") == "MATCH-foo-END\n");
+                REQUIRE(f.read_file("build/bar_result.txt") == "MATCH-bar-END\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
 {
     GIVEN("a built rule that declares two outputs")

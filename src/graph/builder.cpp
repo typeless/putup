@@ -778,6 +778,31 @@ auto apply_exclusions(
 // §7 — Input/output expansion
 // ---------------------------------------------------------------------------
 
+/// Resolve %g only, leaving every other flag for the graph-time expander: %g is the
+/// one flag not derivable from a command's operands, so it cannot be expanded later.
+auto substitute_glob_match(std::string_view text, std::string_view match) -> StringId
+{
+    auto buf = Buf {};
+    auto pos = std::size_t { 0 };
+    while (pos < text.size()) {
+        auto percent = text.find('%', pos);
+        if (percent == std::string_view::npos || percent + 1 >= text.size()) {
+            buf.append(text.substr(pos));
+            break;
+        }
+        buf.append(text.substr(pos, percent - pos));
+        auto flag = text[percent + 1];
+        if (flag == 'g') {
+            buf.append(match);
+        } else {
+            buf.append('%');
+            buf.append(flag);
+        }
+        pos = percent + 2;
+    }
+    return buf.intern(global_pool());
+}
+
 auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
@@ -798,7 +823,7 @@ auto expand_command(
     }
 
     if (out_instruction) {
-        *out_instruction = *expanded;
+        *out_instruction = substitute_glob_match(pool.get(*expanded), flags.glob_match);
     }
 
     auto tc = make_transform_context(ctx);

@@ -4,8 +4,9 @@
 - required-legs: none
 
 A glob is expanded during the parse and its result becomes a rule's inputs. The subject here
-is that expansion: which paths a pattern names, in what order, and what an exclusion removes.
-See `README.md` for the format and the rules that apply to every area.
+is that expansion: which paths a pattern names, in what order, what an exclusion removes, and
+what the match itself names. See `README.md` for the format and the rules that apply to every
+area.
 
 This area requires no legs. Glob expansion carries no state across builds — it is a function
 of the project and the filesystem — so its requirements are invariants of that function and
@@ -213,3 +214,18 @@ it as if it had been named without that prefix.
 - discharge: test "Scenario: A glob exclusion matches a hidden file the same as any other"
 
 putup shall apply a glob exclusion to a hidden file on the same terms as to any other file.
+
+---
+
+## Group: match-extraction
+
+What `%g` names, and where it is resolved.
+
+### REQ-GLOB-MATCH-COMMAND
+
+- conformance: unclassified
+- reference: `docs/reference.md:977` documents `%g` as the glob match portion; upstream not read
+- discharge: test "Scenario: A foreach rule substitutes %g in its command, not only in its output name"
+
+putup shall substitute a foreach rule's glob match into the rule's command text as well as
+into its output names.
