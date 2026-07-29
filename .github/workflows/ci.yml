@@ -136,6 +136,35 @@ jobs:
           ./build/putup -B build -D LTO -j16 test/runner/
           cat build/test/runner/summary.txt
 
+  spec-check:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-linux
+          path: build/
+      - name: Fix permissions
+        run: chmod +x build/test/unit/putup_test
+      # --verify-gaps needs an authenticated gh: a gap citing an issue that has
+      # since closed is a stale requirement, and nothing local can detect it.
+      - name: Check the requirements
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/spec-check \
+            --spec spec/requirements/*.ears.md \
+            --tests build/test/unit/putup_test \
+            --gherkin-dir spec-features \
+            --verify-gaps
+      - name: Publish the generated scenarios
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec-features
+          path: spec-features/
+
   test-macos:
     needs: build-macos
     runs-on: macos-latest

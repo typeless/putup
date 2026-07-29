@@ -22,7 +22,8 @@ Putup requires `putup` in PATH for self-hosting builds.
 | `make iwyu` | Detect dead includes via clang-include-cleaner |
 | `make format` | Format with clang-format |
 | `make bootstrap` | Regenerate the committed `bootstrap-*.sh` scripts |
-| `make check` | Full CI: format-check + tidy + test |
+| `make spec-check` | Verify `spec/requirements/` against the test suite |
+| `make check` | Full CI: format-check + tidy + spec-check + test |
 | `make coverage` | Build gcov-instrumented variant, run tests, write gcovr report to build-coverage/report/ |
 | `make clean` | Clean build artifacts |
 | `make distclean` | Full reset: remove build/ |
@@ -77,6 +78,8 @@ make format && make tidy                      # Clean up
 ```
 
 For bug fixes: write a test that reproduces the bug first, then fix.
+
+When a change alters behaviour that `spec/requirements/` specifies, update the requirement and run `make spec-check`. Requirements cite tests by name, so renaming or deleting a cited test is itself a spec change — CI fails on a `discharge:` naming a test that no longer exists.
 
 ## Test Architecture
 

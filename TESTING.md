@@ -267,6 +267,18 @@ SCENARIO("My feature works", "[e2e][my_feature]")
 ./build/test/unit/putup_test '[my_feature]' -s
 ```
 
+### 4. Update the Spec
+
+`spec/requirements/` cites the tests that witness a requirement, by name:
+
+```markdown
+- discharge: test "Scenario: My feature works"
+```
+
+Renaming or deleting a cited test therefore breaks `make spec-check`, which CI runs as its own
+job. Behaviour added to an area that already has requirements wants a requirement too — see
+[spec/requirements/README.md](spec/requirements/README.md).
+
 ## Recent Features
 
 ### Assignment Operators

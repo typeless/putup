@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import re
+import subprocess
+import sys
+import textwrap
+import xml.parsers.expat as expat
+
+SYSTEM = "putup"
+
+EARS_PATTERNS = [
+    ("complex", rf"^While (?P<state>.+?), when (?P<trigger>.+?), {SYSTEM} shall (?P<response>.+)$"),
+    ("event-driven", rf"^When (?P<trigger>.+?), {SYSTEM} shall (?P<response>.+)$"),
+    ("state-driven", rf"^While (?P<state>.+?), {SYSTEM} shall (?P<response>.+)$"),
+    ("optional-feature", rf"^Where (?P<feature>.+?), {SYSTEM} shall (?P<response>.+)$"),
+    ("unwanted-behaviour", rf"^If (?P<condition>.+?), then {SYSTEM} shall (?P<response>.+)$"),
+    ("ubiquitous", rf"^{SYSTEM} shall (?P<response>.+)$"),
+]
+
+STEP_ORDER = [("state", "Given"), ("feature", "Given"), ("condition", "Given"), ("trigger", "When")]
+
+KNOWN_LEGS = ("record", "compare", "route", "invariant")
+KNOWN_FIELDS = ("leg", "conformance", "reference", "discharge", "gap")
+CONFORMANCE_VALUES = ("tup-conformant", "deliberate-deviation", "putup-only", "unclassified")
+CONFORMANCE_NEEDING_REFERENCE = ("tup-conformant", "deliberate-deviation", "unclassified")
+MULTI_VALUED = ("discharge",)
+
+
+class Requirement:
+    def __init__(self, ident, line, group):
+        self.ident = ident
+        self.line = line
+        self.group = group
+        self.fields = {}
+        self.discharges = []
+        self.text_lines = []
+
+    @property
+    def text(self):
+        return " ".join(" ".join(self.text_lines).split())
+
+    def match(self):
+        body = self.text[:-1] if self.text.endswith(".") else self.text
+        for name, pattern in EARS_PATTERNS:
+            found = re.match(pattern, body)
+            if found:
+                return name, found
+        return None, None
+
+
+class Group:
+    def __init__(self, name, line):
+        self.name = name
+        self.line = line
+        self.requirements = []
+
+
+class Area:
+    def __init__(self, path):
+        self.path = path
+        self.name = ""
+        self.required_legs = []
+        self.legs_declared = False
+        self.groups = []
+
+    @property
+    def requirements(self):
+        return [req for group in self.groups for req in group.requirements]
+
+
+def parse_spec(path):
+    area = Area(path)
+    current_group = None
+    current_req = None
+    errors = []
+
+    with open(path, encoding="utf-8") as handle:
+        for number, raw in enumerate(handle, start=1):
+            line = raw.rstrip("\n")
+
+            header = re.match(r"^- (area|required-legs):\s*(.*)$", line)
+            if header and current_req is None:
+                key, value = header.group(1), header.group(2).strip()
+                if area.groups:
+                    errors.append(
+                        f"{path}:{number}: '{key}' must appear before the first group"
+                    )
+                    continue
+                if key == "area":
+                    area.name = value
+                else:
+                    area.legs_declared = True
+                    if value != "none":
+                        area.required_legs = [
+                            leg.strip() for leg in value.split(",") if leg.strip()
+                        ]
+                continue
+
+            group_match = re.match(r"^## Group: (\S+)\s*$", line)
+            if group_match:
+                current_group = Group(group_match.group(1), number)
+                area.groups.append(current_group)
+                current_req = None
+                continue
+
+            req_match = re.match(r"^### (REQ-[A-Z0-9-]+)\s*$", line)
+            if req_match:
+                if current_group is None:
+                    errors.append(f"{path}:{number}: {req_match.group(1)} is outside any group")
+                    continue
+                current_req = Requirement(req_match.group(1), number, current_group)
+                current_group.requirements.append(current_req)
+                continue
+
+            if current_req is None:
+                continue
+
+            field_match = re.match(r"^- ([a-z-]+):\s*(.*)$", line)
+            if field_match:
+                key, value = field_match.group(1), field_match.group(2).strip()
+                if key not in KNOWN_FIELDS:
+                    errors.append(
+                        f"{path}:{number}: {current_req.ident} has unknown field '{key}'"
+                    )
+                elif key in MULTI_VALUED:
+                    current_req.discharges.append(value)
+                elif key in current_req.fields:
+                    errors.append(f"{path}:{number}: {current_req.ident} repeats field '{key}'")
+                else:
+                    current_req.fields[key] = value
+                continue
+
+            if line.startswith("#") or line.startswith("|") or line.startswith("---"):
+                current_req = None
+                continue
+
+            if line.strip():
+                current_req.text_lines.append(line.strip())
+
+    if not area.name:
+        errors.append(f"{path}:1: no 'area' declared")
+    if not area.legs_declared:
+        errors.append(
+            f"{path}:1: no 'required-legs' declared; write 'none' if the area requires none"
+        )
+    for leg in area.required_legs:
+        if leg not in KNOWN_LEGS:
+            errors.append(f"{path}:1: area requires unknown leg '{leg}'")
+
+    return area, errors
+
+
+def reject_entity(*_args):
+    raise ValueError("spec-check: refusing XML with entity declarations")
+
+
+def parse_listing(text):
+    tests = {}
+    collected = {}
+    element = [""]
+
+    def start(name, _attrs):
+        element[0] = name
+        if name == "TestCase":
+            collected.clear()
+
+    def characters(data):
+        if element[0] in ("Name", "File", "Line", "Tags"):
+            collected[element[0]] = collected.get(element[0], "") + data
+
+    def end(name):
+        element[0] = ""
+        if name == "TestCase" and "Name" in collected:
+            location = ""
+            if "File" in collected and "Line" in collected:
+                location = f"{collected['File'].strip()}:{collected['Line'].strip()}"
+            tests[collected["Name"].strip()] = {
+                "where": location,
+                "tags": re.findall(r"\[([^\]]+)\]", collected.get("Tags", "")),
+            }
+
+    parser = expat.ParserCreate()
+    parser.EntityDeclHandler = reject_entity
+    parser.UnparsedEntityDeclHandler = reject_entity
+    parser.ExternalEntityRefHandler = lambda *_args: False
+    parser.StartElementHandler = start
+    parser.CharacterDataHandler = characters
+    parser.EndElementHandler = end
+    parser.Parse(text, True)
+    return tests
+
+
+def list_tests(binary):
+    try:
+        result = subprocess.run(
+            [binary, "--list-tests", "--reporter", "xml"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as failure:
+        print(f"spec-check: {binary} exited {failure.returncode}", file=sys.stderr)
+        print(failure.stderr, file=sys.stderr)
+        raise SystemExit(1) from failure
+    return parse_listing(result.stdout)
+
+
+def parse_discharge(value):
+    match = re.fullmatch(r'test\s+"(.+)"', value)
+    return match.group(1) if match else None
+
+
+def check(area, tests, seen_requirements):
+    path = area.path
+    errors = []
+    seen_groups = {}
+
+    for group in area.groups:
+        if group.name in seen_groups:
+            errors.append(
+                f"{path}:{group.line}: group '{group.name}' duplicates the one at line {seen_groups[group.name]}"
+            )
+        seen_groups[group.name] = group.line
+
+        legs = {}
+        for req in group.requirements:
+            if req.ident in seen_requirements:
+                errors.append(
+                    f"{path}:{req.line}: {req.ident} duplicates the one at {seen_requirements[req.ident]}"
+                )
+            seen_requirements[req.ident] = f"{path}:{req.line}"
+
+            if not req.text:
+                errors.append(f"{path}:{req.line}: {req.ident} has no requirement sentence")
+            elif not req.text.endswith("."):
+                errors.append(f"{path}:{req.line}: {req.ident} does not end in a period")
+            elif ". " in req.text:
+                errors.append(
+                    f"{path}:{req.line}: {req.ident} is more than one sentence; a requirement is one sentence"
+                )
+            elif req.match()[0] is None:
+                errors.append(
+                    f"{path}:{req.line}: {req.ident} is not in an EARS pattern: {req.text!r}"
+                )
+
+            leg = req.fields.get("leg")
+            if not area.required_legs:
+                if leg is not None:
+                    errors.append(
+                        f"{path}:{req.line}: {req.ident} has a 'leg' but '{area.name}' requires none"
+                    )
+            elif leg is None:
+                errors.append(f"{path}:{req.line}: {req.ident} has no 'leg'")
+            elif leg not in KNOWN_LEGS:
+                errors.append(f"{path}:{req.line}: {req.ident} has unknown leg '{leg}'")
+            elif leg in area.required_legs:
+                legs.setdefault(leg, req)
+
+            conformance = req.fields.get("conformance")
+            if conformance is None:
+                errors.append(f"{path}:{req.line}: {req.ident} has no 'conformance'")
+            elif conformance not in CONFORMANCE_VALUES:
+                errors.append(
+                    f"{path}:{req.line}: {req.ident} has unknown conformance '{conformance}'"
+                )
+            elif conformance in CONFORMANCE_NEEDING_REFERENCE and not req.fields.get("reference"):
+                errors.append(
+                    f"{path}:{req.line}: {req.ident} is '{conformance}' but cites no reference"
+                )
+
+            gap = req.fields.get("gap")
+            if req.discharges and gap:
+                errors.append(f"{path}:{req.line}: {req.ident} has both 'discharge' and 'gap'")
+            elif not req.discharges and not gap:
+                errors.append(f"{path}:{req.line}: {req.ident} has neither 'discharge' nor 'gap'")
+            elif gap and not re.fullmatch(r"#\d+", gap):
+                errors.append(f"{path}:{req.line}: {req.ident} gap '{gap}' is not an issue number")
+            for value in req.discharges:
+                name = parse_discharge(value)
+                if name is None:
+                    errors.append(
+                        f"{path}:{req.line}: {req.ident} discharge must be test \"NAME\", got {value!r}"
+                    )
+                elif name not in tests:
+                    errors.append(
+                        f"{path}:{req.line}: {req.ident} names a test that does not exist: {name!r}"
+                    )
+
+        for leg in area.required_legs:
+            if leg not in legs:
+                errors.append(f"{path}:{group.line}: group '{group.name}' has no '{leg}' leg")
+
+    return errors
+
+
+def gherkin_for(req):
+    _, found = req.match()
+    parts = found.groupdict()
+    steps = [f"{keyword} {parts[name]}" for name, keyword in STEP_ORDER if parts.get(name)]
+    steps.append(f"Then {SYSTEM} shall {parts['response']}")
+    return steps
+
+
+def render_gherkin(area, tests):
+    lines = [
+        "# Generated from " + area.path + " by .github/scripts/spec-check.",
+        "# This file is a rendering of the requirements, not an independent check:",
+        "# it is derived from the spec, so it cannot disagree with it. The verification",
+        "# is the spec-check job, which fails the build on a missing leg, a broken",
+        "# EARS sentence, or a discharge naming a test that does not exist.",
+        "",
+        f"Feature: {area.name}",
+        "",
+    ]
+    for group in area.groups:
+        lines.append(f"  Rule: {group.name}")
+        lines.append("")
+        for req in group.requirements:
+            leg = req.fields.get("leg")
+            tags = [f"@{req.ident}"]
+            if leg:
+                tags.append(f"@leg-{leg}")
+            tags.append(f"@{req.fields.get('conformance', '?')}")
+            lines.append("    " + " ".join(tags))
+            lines.append(f"    Scenario: {req.ident}" + (f" ({leg})" if leg else ""))
+            lines.extend(f"      {step}" for step in gherkin_for(req))
+            gap = req.fields.get("gap")
+            if gap:
+                lines.append(f"      # NOT DISCHARGED - open gap {gap}")
+            for value in req.discharges:
+                name = parse_discharge(value)
+                where = tests.get(name, {}).get("where", "unknown")
+                lines.append(f"      # discharged by {name!r} at {where}")
+            lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def verify_gaps(areas):
+    errors = []
+    sites = {}
+    for area in areas:
+        for req in area.requirements:
+            gap = req.fields.get("gap")
+            if gap:
+                sites.setdefault(gap, []).append((area.path, req.line, req.ident))
+
+    for gap, cited in sorted(sites.items(), key=lambda item: int(item[0].lstrip("#"))):
+        result = subprocess.run(
+            ["gh", "issue", "view", gap.lstrip("#"), "--json", "state", "--jq", ".state"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            errors.append(f"gap {gap}: could not read issue state: {result.stderr.strip()}")
+            continue
+        state = result.stdout.strip()
+        if state != "OPEN":
+            for path, line, ident in cited:
+                errors.append(f"{path}:{line}: {ident} cites gap {gap}, which is {state}")
+    return errors
+
+
+def witnessed_tags(areas, tests):
+    tags = set()
+    for area in areas:
+        for req in area.requirements:
+            for value in req.discharges:
+                name = parse_discharge(value)
+                tags.update(tests.get(name, {}).get("tags", []))
+    return tags
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--spec", required=True, nargs="+")
+    parser.add_argument("--tests", required=True)
+    parser.add_argument("--gherkin-dir")
+    parser.add_argument(
+        "--verify-gaps",
+        action="store_true",
+        help="check each cited gap issue is still open; needs an authenticated gh",
+    )
+    args = parser.parse_args()
+
+    tests = list_tests(args.tests)
+    areas = []
+    errors = []
+    seen_requirements = {}
+    for path in sorted(args.spec):
+        area, parse_errors = parse_spec(path)
+        areas.append(area)
+        errors += parse_errors
+        errors += check(area, tests, seen_requirements)
+
+    if args.verify_gaps and not errors:
+        errors += verify_gaps(areas)
+
+    if errors:
+        for error in errors:
+            print(error, file=sys.stderr)
+        print(f"\nspec-check: {len(errors)} violation(s)", file=sys.stderr)
+        return 1
+
+    if args.gherkin_dir:
+        os.makedirs(args.gherkin_dir, exist_ok=True)
+        for area in areas:
+            name = os.path.basename(area.path).split(".")[0] + ".feature"
+            with open(os.path.join(args.gherkin_dir, name), "w", encoding="utf-8") as handle:
+                handle.write(render_gherkin(area, tests))
+
+    requirements = [req for area in areas for req in area.requirements]
+    gaps = [req for req in requirements if req.fields.get("gap")]
+    unclassified = [req for req in requirements if req.fields.get("conformance") == "unclassified"]
+    gap_label = "open gaps" if args.verify_gaps else "gaps (issue state unverified)"
+    print(
+        f"spec-check: {len(areas)} areas, {len(requirements)} requirements, "
+        f"{len(gaps)} {gap_label}, {len(unclassified)} unclassified against upstream"
+    )
+    for area in areas:
+        legs = ", ".join(area.required_legs) if area.required_legs else "no required legs"
+        print(f"  {area.name}: {len(area.requirements)} requirements ({legs})")
+    for req in gaps:
+        leg = req.fields.get("leg")
+        site = f"{req.group.name}/{leg}" if leg else req.group.name
+        print(f"  gap {req.fields['gap']}: {req.ident} ({site})")
+
+    all_tags = {tag for entry in tests.values() for tag in entry["tags"]}
+    covered = witnessed_tags(areas, tests)
+    unwitnessed = sorted(all_tags - covered)
+    print(f"  {len(covered)} test tags witnessed by some requirement")
+    print(f"  {len(unwitnessed)} not yet witnessed, the backlog of unspecified subsystems:")
+    for chunk in textwrap.wrap(" ".join(unwitnessed), width=88):
+        print(f"    {chunk}")
+    if args.gherkin_dir:
+        with open(os.path.join(args.gherkin_dir, "unwitnessed-tags.txt"), "w") as handle:
+            handle.write("\n".join(unwitnessed) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

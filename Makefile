@@ -40,7 +40,7 @@ GCOVR_FLAGS := --root . --filter 'src/' --filter 'include/pup/' \
 	--exclude-throw-branches --exclude-unreachable-branches \
 	--gcov-executable '$(GCOV)'
 
-.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check check clean distclean bootstrap bootstrap-scripts
+.PHONY: all build configure test coverage install compdb tidy tidy-fix format format-check spec-check check clean distclean bootstrap bootstrap-scripts
 
 # putup parallelizes internally; make -j here only races targets sharing $(BUILD_DIR).
 .NOTPARALLEL:
@@ -141,7 +141,13 @@ iwyu: compdb
 	if [ "$$fail" -eq 1 ]; then echo "Dead includes found."; exit 1; fi; \
 	echo "No dead includes found."
 
-check: format-check tidy test
+spec-check: build
+	@python3 .github/scripts/spec-check \
+		--spec spec/requirements/*.ears.md \
+		--tests $(BUILD_DIR)/test/unit/putup_test \
+		--gherkin-dir $(BUILD_DIR)/spec
+
+check: format-check tidy spec-check test
 	@echo "All checks passed."
 
 clean:
