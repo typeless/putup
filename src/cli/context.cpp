@@ -896,69 +896,96 @@ auto build_context(
     auto [old_index, cached_env_vars] = load_old_index(pool.get(ctx.impl_->layout.output_root), ctx_opts.verbose);
     ctx.impl_->old_index = std::move(old_index);
 
-    // 6. Parse Tupfiles
-    auto builder_opts = graph::BuilderOptions {
-        .source_root = ctx.impl_->layout.source_root,
-        .config_root = ctx.impl_->layout.config_root,
-        .output_root = ctx.impl_->layout.output_root,
-        .config_path = pool.intern(config_path_sv),
-        .expand_globs = true,
-        .verbose = ctx_opts.verbose,
-        .reject_empty_commands = !ctx_opts.root_config_only,
-        .scanner_registry = ctx_opts.scanner_registry,
-        .pattern_registry = ctx_opts.pattern_registry,
-        .cached_env_vars = std::move(cached_env_vars),
-    };
-    auto builder_state = graph::make_builder(std::move(builder_opts));
+    // 6. Parse Tupfiles.
+    //
+    // A rule may glob over files a directory parsed later generates, so a single pass
+    // resolves that glob against a partial graph. Each round records what it generated
+    // and seeds the next, until no glob's match set changes (issue #188). The rule set
+    // is a function of the source tree alone — no command runs during parsing — and the
+    // seed only grows, so this converges; two rounds is the usual worst case.
+    auto constexpr max_parse_rounds = 8;
+    auto generated_seed = Vec<StringId> {};
+    auto builder_state = graph::Builder {};
 
-    auto parse_ctx = ParseContext {
-        .state = ctx.impl_->state,
-        .builder_state = builder_state,
-        .graph = ctx.impl_->graph,
-        .source_root = pool.get(ctx.impl_->layout.source_root),
-        .config_root = pool.get(ctx.impl_->layout.config_root),
-        .output_root = pool.get(ctx.impl_->layout.output_root),
-        .base_vars = ctx.impl_->vars,
-        .verbose = ctx_opts.verbose,
-        .root_config_only = ctx_opts.root_config_only,
-        .on_var_assigned = &ctx_opts.on_var_assigned,
-        .on_statement = &ctx_opts.on_statement,
-    };
+    for (auto round = 0; round < max_parse_rounds; ++round) {
+        auto builder_opts = graph::BuilderOptions {
+            .source_root = ctx.impl_->layout.source_root,
+            .config_root = ctx.impl_->layout.config_root,
+            .output_root = ctx.impl_->layout.output_root,
+            .config_path = pool.intern(config_path_sv),
+            .expand_globs = true,
+            .verbose = ctx_opts.verbose,
+            .reject_empty_commands = !ctx_opts.root_config_only,
+            .scanner_registry = ctx_opts.scanner_registry,
+            .pattern_registry = ctx_opts.pattern_registry,
+            .cached_env_vars = cached_env_vars,
+            .generated_seed = generated_seed,
+        };
+        builder_state = graph::make_builder(std::move(builder_opts));
 
-    // Parse to a fixpoint: a group reference under a nested project root
-    // composes that subtree into the available set mid-pass, and the new
-    // dirs need a pass of their own.
-    while (true) {
-        auto const available_before = ctx.impl_->state.available.size();
-        for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {
-            auto dir_sv = pool.get(dir_id);
-            if (sorted_contains(ctx.impl_->state.parsed, dir_sv)) {
-                continue;
+        auto parse_ctx = ParseContext {
+            .state = ctx.impl_->state,
+            .builder_state = builder_state,
+            .graph = ctx.impl_->graph,
+            .source_root = pool.get(ctx.impl_->layout.source_root),
+            .config_root = pool.get(ctx.impl_->layout.config_root),
+            .output_root = pool.get(ctx.impl_->layout.output_root),
+            .base_vars = ctx.impl_->vars,
+            .verbose = ctx_opts.verbose,
+            .root_config_only = ctx_opts.root_config_only,
+            .on_var_assigned = &ctx_opts.on_var_assigned,
+            .on_statement = &ctx_opts.on_statement,
+        };
+
+        // Parse to a fixpoint: a group reference under a nested project root
+        // composes that subtree into the available set mid-pass, and the new
+        // dirs need a pass of their own.
+        while (true) {
+            auto const available_before = ctx.impl_->state.available.size();
+            for (auto dir_id : sort_dirs_by_depth(ctx.impl_->state.available)) {
+                auto dir_sv = pool.get(dir_id);
+                if (sorted_contains(ctx.impl_->state.parsed, dir_sv)) {
+                    continue;
+                }
+                if (!ctx_opts.parse_scopes.empty()
+                    && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
+                    continue;
+                }
+                if (ctx_opts.excludes.is_ignored_dir(dir_sv)) {
+                    continue;
+                }
+                auto result = parse_directory(dir_sv, parse_ctx);
+                if (!result && !ctx_opts.keep_going) {
+                    return unexpected<Error>(result.error());
+                }
             }
-            if (!ctx_opts.parse_scopes.empty()
-                && !pup::is_path_in_any_scope(dir_sv, ctx_opts.parse_scopes)) {
-                continue;
-            }
-            if (ctx_opts.excludes.is_ignored_dir(dir_sv)) {
-                continue;
-            }
-            auto result = parse_directory(dir_sv, parse_ctx);
-            if (!result && !ctx_opts.keep_going) {
-                return unexpected<Error>(result.error());
+            if (ctx.impl_->state.available.size() == available_before) {
+                break;
             }
         }
-        if (ctx.impl_->state.available.size() == available_before) {
+
+        // The configure pass parses only the root config, so a partial match set there
+        // is intended rather than a traversal artefact.
+        if (ctx_opts.root_config_only) {
             break;
         }
-    }
 
-    // Not on the configure pass: it parses only the root config, so a partial
-    // match set there is intended rather than a traversal artefact.
-    if (!ctx_opts.root_config_only) {
         auto stable = graph::check_glob_stability(ctx.impl_->graph, builder_state);
-        if (!stable) {
+        if (stable) {
+            break;
+        }
+        if (round + 1 == max_parse_rounds) {
             return unexpected<Error>(stable.error());
         }
+
+        generated_seed = graph::collect_generated_paths(ctx.impl_->graph);
+
+        auto build_root_name = pool.intern(graph::get_build_root_name(ctx.impl_->graph.graph));
+        ctx.impl_->graph = graph::make_build_graph();
+        graph::set_build_root_name(ctx.impl_->graph, pool.get(build_root_name));
+        ctx.impl_->state.parsed.clear();
+        ctx.impl_->state.parsing.clear();
+        ctx.impl_->state.failed.clear();
     }
 
     auto finalized = graph::finalize_graph(ctx.impl_->graph, builder_state);
