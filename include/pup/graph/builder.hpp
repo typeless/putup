@@ -91,11 +91,14 @@ struct GroupMemberTable {
     }
 };
 
+struct Builder;
+
 /// Context for building the graph (per-Tupfile state)
 struct BuilderContext {
     BuildGraph* state = nullptr;
     parser::EvalContext* eval = nullptr;
     parser::VarDb* vars = nullptr; ///< Variable database for import
+    Builder* builder = nullptr;    ///< Session state outliving this Tupfile
     BuilderOptions options = {};
 
     Vec<std::pair<std::uint32_t, BangMacroDef>> macros = {}; ///< Sorted by interned name key
@@ -196,6 +199,14 @@ struct DeferredOrderOnlyEdge {
     auto operator==(DeferredOrderOnlyEdge const& other) const -> bool = default;
 };
 
+/// A glob resolved during the parse, kept so its match set can be rechecked once
+/// every Tupfile has been seen: a directory parsed later may generate a match.
+struct GlobResolution {
+    StringId dir = StringId::Empty;     ///< Directory of the rule that wrote the pattern
+    StringId pattern = StringId::Empty; ///< Project-relative pattern, as matched against
+    Vec<StringId> matches;              ///< Generated matches visible when it resolved
+};
+
 /// Per-session state that persists across multiple Tupfiles
 struct Builder {
     BuilderOptions options;
@@ -207,6 +218,9 @@ struct Builder {
 
     /// Deferred edges to resolve after all Tupfiles are parsed
     Vec<DeferredOrderOnlyEdge> deferred_edges;
+
+    /// Globs resolved during the parse, for the post-fixpoint stability check
+    Vec<GlobResolution> glob_resolutions;
 
     /// Config variable nodes (interned name StringId → NodeId)
     SortedPairVec config_var_nodes;
@@ -245,6 +259,15 @@ auto add_tupfile(
     parser::Tupfile const& tupfile,
     parser::EvalContext& eval,
     Builder& state
+) -> Result<void>;
+
+/// Recheck every glob resolved during the parse against the completed graph.
+/// A rule that globs over files a later-parsed directory generates resolved against
+/// a partial graph, so its match set is a function of traversal order, not the project.
+[[nodiscard]]
+auto check_glob_stability(
+    BuildGraph& build_state,
+    Builder const& state
 ) -> Result<void>;
 
 /// Finalize the graph after all Tupfiles are parsed.
