@@ -4995,6 +4995,33 @@ SCENARIO("A glob exclusion matches a hidden file the same as any other", "[e2e][
     }
 }
 
+SCENARIO("An exclusion matches an input spelled with the build-directory prefix", "[e2e][glob][pathspace][exclusion]")
+{
+    GIVEN("a generated input named build-prefixed alongside an exclusion that covers it")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": foo.in |> cp %f %o |> foo.gen\n"
+            ": keep.txt build/foo.gen !*.gen |> echo F=[%f] > %o |> out.txt\n");
+        f.write_file("foo.in", "f\n");
+        f.write_file("keep.txt", "k\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built out-of-tree")
+        {
+            REQUIRE(f.build({ "-B", "build" }).success());
+
+            THEN("the exclusion removes it, as it does for the unprefixed spelling")
+            {
+                auto content = f.read_file("build/out.txt");
+                INFO("out.txt: " << content);
+                REQUIRE(content == "F=[keep.txt]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
 {
     GIVEN("a built rule that declares two outputs")
