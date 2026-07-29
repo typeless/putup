@@ -197,6 +197,15 @@ from its inputs whether the build is in-tree or out-of-tree.
 When a rule's input list holds a group reference or a pattern that has not been expanded,
 putup shall leave that entry in place while applying an exclusion.
 
+### REQ-GLOB-EXCL-SPELLING
+
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: An exclusion matches an input spelled with the build-directory prefix"
+
+When a rule names an input with the build directory's prefix, putup shall apply an exclusion to
+it as if it had been named without that prefix.
+
 ### REQ-GLOB-EXCL-HIDDEN
 
 - conformance: unclassified
