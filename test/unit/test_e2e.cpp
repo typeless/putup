@@ -4859,6 +4859,142 @@ SCENARIO("An exclusion applies to generated glob matches out-of-tree", "[e2e][gl
     }
 }
 
+SCENARIO("An exclusion that is itself a glob applies to generated matches out-of-tree", "[e2e][glob][pathspace][exclusion]")
+{
+    GIVEN("a glob over generated files excluded by a pattern rather than a literal")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": keep.in |> cp %f %o |> keep.gen\n"
+            ": skip.in |> cp %f %o |> skip.gen\n"
+            ": *.gen !s*.gen |> echo %f > %o |> out.txt\n");
+        f.write_file("keep.in", "k\n");
+        f.write_file("skip.in", "s\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built out-of-tree")
+        {
+            REQUIRE(f.build({ "-B", "build" }).success());
+
+            THEN("the excluded file is absent from %f")
+            {
+                auto content = f.read_file("build/out.txt");
+                INFO("out.txt: " << content);
+                REQUIRE(content.find("keep.gen") != std::string::npos);
+                REQUIRE(content.find("skip.gen") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A glob exclusion's match set does not depend on what exists on disk", "[e2e][glob][pathspace][exclusion]")
+{
+    GIVEN("a pattern exclusion over files the build itself generates")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": keep.in |> cp %f %o |> keep.gen\n"
+            ": skip.in |> cp %f %o |> skip.gen\n"
+            ": *.gen !s*.gen |> echo %f > %o |> out.txt\n");
+        f.write_file("keep.in", "k\n");
+        f.write_file("skip.in", "s\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built twice in-tree, so the second parse sees files the first did not")
+        {
+            REQUIRE(f.build().success());
+            auto first = f.read_file("out.txt");
+
+            REQUIRE(f.build().success());
+            auto second = f.read_file("out.txt");
+
+            THEN("both builds exclude the pattern's matches and agree")
+            {
+                INFO("build 1: " << first);
+                INFO("build 2: " << second);
+                REQUIRE(first.find("skip.gen") == std::string::npos);
+                REQUIRE(first == second);
+            }
+        }
+    }
+}
+
+SCENARIO("An exclusion applies to bin members out-of-tree", "[e2e][glob][pathspace][exclusion][bin]")
+{
+    GIVEN("a rule consuming a bin with one member excluded")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": x.in |> cp %f %o |> x.dat {bin}\n"
+            ": y.in |> cp %f %o |> y.dat {bin}\n"
+            ": {bin} !x.dat |> cat %f > %o |> out.txt\n");
+        f.write_file("x.in", "x\n");
+        f.write_file("y.in", "y\n");
+        f.mkdir("build");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("built out-of-tree")
+        {
+            REQUIRE(f.build({ "-B", "build" }).success());
+
+            THEN("the excluded member is absent, and the surviving one is readable")
+            {
+                auto content = f.read_file("build/out.txt");
+                INFO("out.txt: " << content);
+                REQUIRE(content == "y\n");
+            }
+        }
+    }
+}
+
+SCENARIO("An exclusion does not erase a group reference or the pattern it filters", "[e2e][glob][pathspace][exclusion]")
+{
+    GIVEN("a rule whose inputs are a group reference and a glob, with a matching exclusion")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("sub");
+        f.write_file("sub/Tupfile", ": |> echo g > %o |> gen.h | <hdrs>\n");
+        f.write_file("Tupfile", ": sub/<hdrs> sub/*.c !sub/* |> echo F=[%f] > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built with an exclusion that also matches those non-file entries")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the rule still runs")
+            {
+                REQUIRE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A glob exclusion matches a hidden file the same as any other", "[e2e][glob][pathspace][exclusion]")
+{
+    GIVEN("an explicitly named hidden input alongside ordinary ones")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": .foo.c bar.c other.txt !*.c |> echo F=[%f] > %o |> out.txt\n");
+        f.write_file(".foo.c", "h\n");
+        f.write_file("bar.c", "b\n");
+        f.write_file("other.txt", "o\n");
+        REQUIRE(f.init().success());
+
+        WHEN("built with an exclusion matching the .c extension")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the hidden file is excluded like the rest")
+            {
+                auto content = f.read_file("out.txt");
+                INFO("out.txt: " << content);
+                REQUIRE(content == "F=[other.txt]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
 {
     GIVEN("a built rule that declares two outputs")

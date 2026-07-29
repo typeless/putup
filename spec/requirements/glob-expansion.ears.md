@@ -11,11 +11,9 @@ This area requires no legs. Glob expansion carries no state across builds — it
 of the project and the filesystem — so its requirements are invariants of that function and
 carry no `leg` field.
 
-Two open issues appear below as gaps rather than prose: #188 (the match set depends on parse
-traversal order) and #195 (an exclusion that is itself a glob is expanded against the
-filesystem only). Both are load-bearing: the first makes a rule's inputs a function of
-something other than the project, and the second makes `!pattern` silently ineffective
-out-of-tree.
+One open issue appears below as a gap rather than prose: #188, the match set depending on parse
+traversal order. It is load-bearing — it makes a rule's inputs a function of something other
+than the project.
 
 ---
 
@@ -166,8 +164,43 @@ match set whether the build is in-tree or out-of-tree.
 ### REQ-GLOB-EXCL-PATTERN
 
 - conformance: unclassified
-- reference: not yet read against upstream; filed as #195
-- gap: #195
+- reference: upstream mechanism not read
+- discharge: test "Scenario: An exclusion that is itself a glob applies to generated matches out-of-tree"
 
 When a rule names an exclusion that is itself a glob, putup shall remove every path it
 matches from the match set, generated files included.
+
+### REQ-GLOB-EXCL-STABLE
+
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: A glob exclusion's match set does not depend on what exists on disk"
+
+putup shall remove the same paths for a glob exclusion whatever files exist on disk when the
+rule is parsed.
+
+### REQ-GLOB-EXCL-BIN
+
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: An exclusion applies to bin members out-of-tree"
+
+When a rule names an exclusion and consumes a bin, putup shall remove the matching members
+from its inputs whether the build is in-tree or out-of-tree.
+
+### REQ-GLOB-EXCL-SENTINEL
+
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: An exclusion does not erase a group reference or the pattern it filters"
+
+When a rule's input list holds a group reference or a pattern that has not been expanded,
+putup shall leave that entry in place while applying an exclusion.
+
+### REQ-GLOB-EXCL-HIDDEN
+
+- conformance: unclassified
+- reference: upstream mechanism not read; a decided widening of filesystem-expansion semantics, not inherited from them
+- discharge: test "Scenario: A glob exclusion matches a hidden file the same as any other"
+
+putup shall apply a glob exclusion to a hidden file on the same terms as to any other file.

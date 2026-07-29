@@ -730,20 +730,18 @@ auto apply_exclusions(
         for (auto excl_id : *paths) {
             auto excl = pool.get(excl_id);
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
-                auto base_sv = is_empty(ctx.current_dir) ? str(ctx.options.source_root)
-                                                         : pool.get(pup::path::join(str(ctx.options.source_root), str(ctx.current_dir)));
-                auto expanded = parser::glob_expand(excl, base_sv);
-                if (expanded && !expanded->empty()) {
-                    for (auto p : *expanded) {
-                        auto p_sv = str(p);
-                        auto normalized = is_empty(ctx.current_dir) ? pup::path::normalize(p_sv) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), p_sv)));
-                        for (auto it = result.begin(); it != result.end();) {
-                            if (pool.get(*it) == pool.get(normalized)) {
-                                it = result.erase(it);
-                            } else {
-                                ++it;
-                            }
-                        }
+                // Matched against the merged list, not re-expanded against disk: generated matches are not on disk.
+                auto pattern_id = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
+                auto glob = parser::Glob { pool.get(pattern_id) };
+                for (auto it = result.begin(); it != result.end();) {
+                    auto entry_sv = pool.get(*it);
+                    // The list is not all file paths; erasing a group reference or an unexpanded
+                    // pattern would drop the rule that named it.
+                    auto is_file_entry = !is_order_only_group_reference(entry_sv) && !parser::has_glob_chars(entry_sv);
+                    if (is_file_entry && glob.matches(entry_sv)) {
+                        it = result.erase(it);
+                    } else {
+                        ++it;
                     }
                 }
             } else {
@@ -902,10 +900,12 @@ auto expand_inputs(
         if (pattern.is_group) {
             auto gkey = to_underlying(intern(str(pattern.group_name)));
             if (auto const* members = ctx.groups.find(gkey)) {
+                auto build_root_name = get_build_root_name(ctx.state->graph);
                 for (auto id : *members) {
                     auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
                     if (!path_sv.empty()) {
-                        result.push_back(intern(path_sv));
+                        // Stripped, like the glob half: one path space, so an exclusion can match.
+                        result.push_back(pup::strip_path_prefix(path_sv, build_root_name));
                     }
                 }
             }
