@@ -726,6 +726,14 @@ auto expand_glob_pattern(
     for (auto const& match : matches) {
         result.push_back(match);
     }
+
+    if (ctx.builder) {
+        auto resolution = GlobResolution { ctx.current_dir, pool.intern(pattern_path_sv), {} };
+        for (auto const& match : matches) {
+            resolution.matches.push_back(match.value);
+        }
+        ctx.builder->glob_resolutions.push_back(std::move(resolution));
+    }
 }
 
 /// Apply exclusion patterns to filter out paths from the result.
@@ -2335,6 +2343,7 @@ auto add_tupfile(
         .state = &build_state,
         .eval = &eval,
         .vars = eval.vars,
+        .builder = &state,
         .options = state.options,
         .current_dir = intern(relative_dir_str),
         .current_file = tupfile.filename,
@@ -2583,6 +2592,43 @@ auto reject_ambiguous_keys(BuildGraph& build_state) -> Result<void>
         str(expand_instruction(g, dup->second, build_state.path_cache))
     );
     return make_error<void>(ErrorCode::DuplicateNode, err.view());
+}
+
+auto check_glob_stability(
+    BuildGraph& build_state,
+    Builder const& state
+) -> Result<void>
+{
+    auto& pool = global_pool();
+    auto build_root_name = get_build_root_name(build_state.graph);
+
+    for (auto const& resolved : state.glob_resolutions) {
+        auto glob = parser::Glob { pool.get(resolved.pattern) };
+        for (auto id : nodes_of_type(build_state.graph, NodeType::Generated)) {
+            auto node_path_sv = get_full_path(build_state.graph, id, build_state.path_cache);
+            if (node_path_sv.empty()) {
+                continue;
+            }
+            auto candidate = pup::strip_path_prefix(pool.get(pup::path::normalize(node_path_sv)), build_root_name);
+            if (!glob.matches(pool.get(candidate))) {
+                continue;
+            }
+            if (std::ranges::find(resolved.matches, candidate) != resolved.matches.end()) {
+                continue;
+            }
+            auto err = Buf {};
+            err.fmt(
+                "Glob '{}' in '{}' missed '{}', which a directory parsed later generates.\n"
+                "  The match set depends on parse order, so this rule's inputs are not a "
+                "function of the project (issue #188).",
+                pool.get(resolved.pattern),
+                is_empty(resolved.dir) ? "." : pool.get(resolved.dir),
+                pool.get(candidate)
+            );
+            return make_error<void>(ErrorCode::ParseError, err.view());
+        }
+    }
+    return {};
 }
 
 auto finalize_graph(

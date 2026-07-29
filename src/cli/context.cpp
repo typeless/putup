@@ -952,6 +952,15 @@ auto build_context(
         }
     }
 
+    // Not on the configure pass: it parses only the root config, so a partial
+    // match set there is intended rather than a traversal artefact.
+    if (!ctx_opts.root_config_only) {
+        auto stable = graph::check_glob_stability(ctx.impl_->graph, builder_state);
+        if (!stable) {
+            return unexpected<Error>(stable.error());
+        }
+    }
+
     auto finalized = graph::finalize_graph(ctx.impl_->graph, builder_state);
     if (!finalized) {
         return unexpected<Error>(finalized.error());
