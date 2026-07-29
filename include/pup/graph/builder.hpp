@@ -36,6 +36,7 @@ struct BuilderOptions {
     DepScannerRegistry const* scanner_registry = nullptr;    ///< Optional scanner registry for implicit deps
     RulePatternRegistry const* pattern_registry = nullptr;   ///< Optional pattern registry for auto-generated rules
     Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
+    Vec<StringId> generated_seed = {};                       ///< Paths a previous parse round generated, sorted; empty on the first round
 };
 
 /// Bang macro definition
@@ -260,6 +261,11 @@ auto add_tupfile(
     parser::EvalContext& eval,
     Builder& state
 ) -> Result<void>;
+
+/// Every path the graph declares as generated, canonical and sorted — the seed that
+/// lets the next parse round resolve globs against what the project produces.
+[[nodiscard]]
+auto collect_generated_paths(BuildGraph& build_state) -> Vec<StringId>;
 
 /// Recheck every glob resolved during the parse against the completed graph.
 /// A rule that globs over files a later-parsed directory generates resolved against
