@@ -252,16 +252,23 @@ jobs:
           echo 'int main() { return 0; }' > /tmp/test.c
           build-gcc/gcc/gcc/cc1 /tmp/test.c -quiet -o /tmp/test.s
           grep 'GCC.*15.2.0' /tmp/test.s
+      # Measurement runs after the build and smoke test have passed, so its failure
+      # must not read as a broken GCC BSP; the empty tsv keeps the uploads valid (#202).
       - name: Benchmark (perf)
+        continue-on-error: true
         run: |
+          : > perf-metrics.tsv
           sudo sysctl -w kernel.perf_event_paranoid=1
+          sudo apt-get update
           sudo apt-get install -y valgrind
           sudo apt-get install -y linux-tools-$(uname -r) || sudo apt-get install -y linux-tools-generic
           command -v perf >/dev/null || export PERF="$(ls /usr/lib/linux-tools/*/perf | sort -V | tail -1)"
           .github/scripts/metrics bench build/putup examples/bsp source-root build-gcc > perf-metrics.tsv
           .github/scripts/metrics render --perf perf-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Internal stats (--stat)
+        continue-on-error: true
         run: |
+          : > stat-metrics.tsv
           .github/scripts/metrics stat build/putup examples/bsp source-root build-gcc > stat-metrics.tsv
           .github/scripts/metrics render --stat stat-metrics.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Upload perf metrics
