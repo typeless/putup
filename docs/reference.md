@@ -852,6 +852,12 @@ Custom display text replaces the command in output:
 # Shows "CC main.o" instead of full command
 ```
 
+`%` flags expand as they do in the command. When a rule applies a `!macro` that carries its own
+display, the macro's wins — it owns the command the display names — and a display written on the
+rule is discarded. A failing command is reported by its command line rather than its display, which
+would not say what broke. Unlike tup, where `--verbose` switches from the display to the real
+command, putup's `-v` shows displays; use `show script` to see the commands a build would run.
+
 ### 5.2 Variables
 
 **Assignment:**

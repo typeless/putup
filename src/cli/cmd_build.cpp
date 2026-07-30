@@ -2117,8 +2117,8 @@ auto build_single_variant(
             if (use_tty_progress) {
                 pup::exec::finalize_progress(prev_lines);
             }
-            auto display_sv = pool.get(job.display);
-            veprint(variant_name, "FAILED: {}\n", display_sv);
+            // The command, not the display: "CC main.o" does not say which flags broke, and this is the only line a build prints of what actually ran.
+            veprint(variant_name, "FAILED: {}\n", pool.get(job.command));
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
                 eprint("{}\n", output_sv);

@@ -1679,6 +1679,38 @@ TEST_CASE("compute_command_key separates rules by directory", "[graph][identity]
     }
 }
 
+TEST_CASE("Display text stays out of command identity", "[graph][identity][display]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    // A display annotation is presentation only: were it folded in, capturing one would restate
+    // every annotated command's identity and rebuild every project carrying one.
+    auto plain = add_command_node(g, CommandNode {
+        .source_dir = intern("a"),
+        .instruction_id = intern("cc -c main.c -o main.o"),
+    });
+    auto annotated = add_command_node(g, CommandNode {
+        .display = intern("CC main.o"),
+        .source_dir = intern("a"),
+        .instruction_id = intern("cc -c main.c -o main.o"),
+    });
+    REQUIRE(plain.has_value());
+    REQUIRE(annotated.has_value());
+
+    SECTION("the key ignores it")
+    {
+        CHECK(compute_command_key(g, *plain, bs.path_cache)
+            == compute_command_key(g, *annotated, bs.path_cache));
+    }
+
+    SECTION("the signature ignores it")
+    {
+        CHECK(compute_command_signature(g, *plain, bs.path_cache)
+            == compute_command_signature(g, *annotated, bs.path_cache));
+    }
+}
+
 TEST_CASE("compute_command_key separates dep-scan commands by parent", "[graph][identity]")
 {
     auto bs = make_build_graph();

@@ -2065,9 +2065,10 @@ auto expand_rule(
 
     if (eff_display) {
         auto disp_result = expand_command(ctx, *eff_display, flags, *outputs);
-        if (disp_result) {
-            display = *disp_result;
+        if (!disp_result) {
+            return pup::unexpected<Error>(disp_result.error());
         }
+        display = *disp_result;
     }
 
     // Expand non-group order-only inputs. Typed groups (<name>) are already handled
