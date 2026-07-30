@@ -1977,6 +1977,25 @@ auto build_single_variant(
             }
         }
 
+        // Before detection, not after: a deleted output is a change like any other, and
+        // a consumer reaching it order-only is only notified if detection sees it gone.
+        auto stale_start = pup::SteadyClock::now();
+        remove_stale_outputs(
+            idx,
+            join,
+            parse_scopes,
+            excludes,
+            ctx.parsed_dirs(),
+            ctx.available_dirs(),
+            ctx.pruned_dirs(),
+            source_root_str,
+            variant_name,
+            opts.dry_run,
+            opts.verbose
+        );
+        auto stale_elapsed = pup::SteadyClock::now() - stale_start;
+        pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
+
         auto change_detect_start = pup::SteadyClock::now();
         changed_files = find_changed_files_with_implicit(
             source_root_str,
@@ -2033,23 +2052,6 @@ auto build_single_variant(
                 forced_cmds.push_back(id);
             }
         }
-
-        auto stale_start = pup::SteadyClock::now();
-        remove_stale_outputs(
-            idx,
-            join,
-            parse_scopes,
-            excludes,
-            ctx.parsed_dirs(),
-            ctx.available_dirs(),
-            ctx.pruned_dirs(),
-            source_root_str,
-            variant_name,
-            opts.dry_run,
-            opts.verbose
-        );
-        auto stale_elapsed = pup::SteadyClock::now() - stale_start;
-        pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 
         if (changed_files.empty() && forced_cmds.empty()) {
             vprint(variant_name, "Nothing to do (up to date).\n");

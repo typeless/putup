@@ -13,8 +13,8 @@ may also carry `invariant` requirements, for an obligation the category owes tha
 of the three.
 
 A category missing a leg is a silent wrong build. Every historical instance in this campaign
-(#125, #126, #128, #138, #152, #166, #187) was a missing leg, and the two open ones (#169,
-#172) are recorded below as `gap:` so the absence is visible rather than inferred.
+(#125, #126, #128, #138, #152, #166, #172, #187) was a missing leg, and the one still open
+(#169) is recorded below as `gap:` so the absence is visible rather than inferred.
 
 ---
 
@@ -266,7 +266,7 @@ outputs that are no longer declared.
 - leg: route
 - conformance: unclassified
 - reference: upstream mechanism not read
-- gap: #172
+- discharge: test "Scenario: Deleting a stale output re-runs its order-only consumer in the same build"
 
 When putup deletes an output that is no longer declared, putup shall schedule the commands
 that consume that output.
