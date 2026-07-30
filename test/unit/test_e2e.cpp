@@ -5164,6 +5164,35 @@ SCENARIO("A glob whose producer is parsed first is unaffected", "[e2e][glob][tra
     }
 }
 
+SCENARIO("Deleting a stale output re-runs its order-only consumer in the same build", "[e2e][stale][order-only]")
+{
+    GIVEN("a consumer that depends on a generated file order-only")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("a/Tupfile", ": |> echo hi > %o |> gen.txt\n");
+        f.write_file("b/Tupfile", ": | ../a/gen.txt |> ls ../a > %o |> listing.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/listing.txt").find("gen.txt") != std::string::npos);
+
+        WHEN("the producing rule is dropped, so the file becomes stale and is deleted")
+        {
+            f.write_file("a/Tupfile", "");
+            auto result = f.build();
+            REQUIRE(result.success());
+
+            THEN("the consumer re-runs in that build rather than the next one")
+            {
+                REQUIRE_FALSE(f.exists("a/gen.txt"));
+                INFO("listing.txt: " << f.read_file("b/listing.txt"));
+                REQUIRE(f.read_file("b/listing.txt").find("gen.txt") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
 {
     GIVEN("a built rule that declares two outputs")
