@@ -1154,7 +1154,7 @@ Groups collect outputs for use as inputs to other rules.
 : {objs} |> gcc %f -o %o |> program
 ```
 
-**Order-Only Group** - Depend on group without triggering rebuild:
+**Order-Only Group** - Depend on a group for ordering, without pulling its members into `%f` (changes to them still trigger a rebuild):
 ```tup
 : main.c | <generated_headers> |> gcc -c %f -o %o |> main.o
 ```
@@ -2049,7 +2049,7 @@ Binary file at `.pup/index` storing the complete build state (v11 format).
 | Command | Build command to execute |
 | Variable | Config variable from tup.config |
 
-**Note on Ghost nodes:** Ghosts are created during parsing when a rule references a file that doesn't exist yet (common in variant builds where directories are parsed alphabetically). When the producing rule is later parsed, the Ghost is upgraded to Generated. Ghosts are never written to the index—they're transient during parsing only.
+**Note on Ghost nodes:** Ghosts are created during parsing when a rule references a file that doesn't exist yet (common in variant builds where directories are parsed alphabetically). When the producing rule is later parsed, the Ghost is upgraded to Generated. Ghosts *are* written to the index, one entry each so node ids stay dense, but only a Ghost backed by a file on disk records a path and content hash; the rest are empty slots. That recorded content is what makes a **foreign input** — a file no rule produces, such as the variant's `tup.config` — visible to change detection across builds.
 
 **Key design:**
 
@@ -2691,7 +2691,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Node variables (&) | ✅ | ⚠️ | Partial |
 | Conditionals | ✅ | ✅ | `ifdef`/`ifndef` check Tupfile vars before config vars (tup: config only) |
 | Groups | ✅ | ✅ | Removing a member reschedules the group's consumers (tup: leaves them stale) |
-| Order-only deps | ✅ | ✅ | |
+| Order-only deps | ✅ | ✅ | Changing one triggers a rebuild. Deleting a stale output re-runs its order-only consumers in that same build (tup: leaves them stale) |
 | **Directives** |
 | include | ✅ | ✅ | |
 | include_rules | ✅ | ✅ | |

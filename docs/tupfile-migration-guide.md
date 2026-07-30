@@ -99,7 +99,7 @@ Headers generated at build time must be available before compilation:
 : foreach $(srcs) | $(S)/include/<gen-headers> |> !cc |> {objs}
 ```
 
-**The `|` separator**: Inputs after `|` are order-only (must exist before command runs, but changes don't trigger rebuild).
+**The `|` separator**: Inputs after `|` are order-only — they must exist before the command runs and are excluded from `%f`, but changing one still triggers a rebuild, exactly as a regular input does.
 
 ### Pattern 5: Cross-Directory Library Aggregation
 
