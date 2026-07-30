@@ -1440,6 +1440,48 @@ TEST_CASE("collect_affected_commands resolves directory-structured paths", "[gra
     }
 }
 
+TEST_CASE("A forced command brings the scanner that reports what it read", "[graph][implicit]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    auto foo_c = add_file_node(g, FileNode { .name = intern("foo.c") });
+    auto gate = add_command_node(g, CommandNode { .instruction_id = intern("gcc -c foo.c -o /dev/null") });
+    REQUIRE(foo_c.has_value());
+    REQUIRE(gate.has_value());
+
+    auto scanner = add_command_node(g, CommandNode { .instruction_id = intern("gcc -MM foo.c"), .parent_command = *gate });
+    REQUIRE(scanner.has_value());
+
+    (void)add_edge(g, *foo_c, *scanner);
+    (void)add_edge(g, *scanner, *gate);
+
+    SECTION("a command forced with no changed file still pulls its scanner")
+    {
+        // The channel that carries a forced command differs per caller, but the scanner must
+        // follow all of them: running the parent alone retires its recorded deps (#228).
+        auto affected = collect_affected_commands(g, {}, pup::Vec<pup::NodeId> { *gate });
+
+        REQUIRE(affected.contains(*gate));
+        REQUIRE(affected.contains(*scanner));
+    }
+
+    SECTION("forcing does not make the forced command's consumers run")
+    {
+        auto out = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("out.o") });
+        auto consumer = add_command_node(g, CommandNode { .instruction_id = intern("link out.o") });
+        REQUIRE(out.has_value());
+        REQUIRE(consumer.has_value());
+        (void)add_edge(g, *gate, *out);
+        (void)add_edge(g, *out, *consumer);
+
+        auto affected = collect_affected_commands(g, {}, pup::Vec<pup::NodeId> { *gate });
+
+        REQUIRE(affected.contains(*gate));
+        REQUIRE_FALSE(affected.contains(*consumer));
+    }
+}
+
 TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
 {
     auto bs = make_build_graph();

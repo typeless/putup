@@ -503,7 +503,8 @@ auto make_build_graph() -> BuildGraph;
 /// Collect all commands affected by the given changed files.
 /// Uses forward traversal: starts at changed inputs, walks forward through outputs.
 [[nodiscard]]
-auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files) -> NodeIdMap32;
+auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files, Vec<NodeId> const& forced = {})
+    -> NodeIdMap32;
 
 /// Collect all commands required to build the given target nodes.
 /// Uses reverse traversal: starts at targets, walks backward through inputs.

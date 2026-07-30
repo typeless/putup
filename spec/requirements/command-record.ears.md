@@ -258,6 +258,27 @@ changed.
 When a command is re-joined across builds, putup shall carry its recorded implicit
 dependencies to the joined command and to no other.
 
+### REQ-IMPL-SCHEDULE
+
+- leg: route
+- conformance: unclassified
+- reference: upstream mechanism not read; same shape as REQ-SIG-ROUTE, which states this for identity
+- discharge: test "Scenario: A changed header re-runs the output-less command that read it"
+
+When a recorded implicit dependency of a command changes, putup shall schedule that command
+even if it declares no outputs.
+
+### REQ-IMPL-SURVIVE
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: A changed header re-runs the output-less command that read it"
+- discharge: test "A forced command brings the scanner that reports what it read"
+
+When a command runs, putup shall record the files that run read, whatever caused it to be
+scheduled.
+
 ---
 
 ## Group: output-set
