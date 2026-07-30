@@ -5,8 +5,10 @@
 
 A rule may carry a `^ text ^` annotation ahead of its command. The subject here is what that
 annotation names in output and how it resolves: where it stands in for the command, where it
-deliberately does not, how it composes with a `!macro`, and what it must not touch. See
-`README.md` for the format and the rules that apply to every area.
+deliberately does not, how it composes with a `!macro`, and what it must not touch. Both branches
+belong here — a rule *without* an annotation still has to be named, and stating only the branch
+that has one is what let four call sites report nothing at all (#229). See `README.md` for the
+format and the rules that apply to every area.
 
 This area requires no legs. A display is a function of the rule that declares it and carries no
 state across builds, so its requirements are invariants of that function and carry no `leg` field.
@@ -29,6 +31,15 @@ Where the annotation stands in for the command, and where it must not.
 
 Where a rule carries a display annotation, putup shall report that rule by its annotation rather
 than by its command text.
+
+### REQ-DISP-ABSENT
+
+- conformance: tup-conformant
+- reference: upstream substitutes the display for the entry's name only where one exists (tup/src/tup/entry.c:257); with no annotation the entry's name — the command itself — is what gets reported, so a rule without one is never nameless
+- discharge: test "Scenario: A rebuild reason names a command that carries no display annotation"
+- discharge: test "Scenario: Removing a group member re-runs the commands that consume the group"
+
+Where a rule carries no display annotation, putup shall report that rule by its command text.
 
 ### REQ-DISP-FAIL
 

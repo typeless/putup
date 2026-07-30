@@ -1031,6 +1031,24 @@ auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId
     return expand_instruction(graph, cmd_id, cache);
 }
 
+auto command_label(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId
+{
+    auto display = get<Display>(graph, cmd_id);
+    return is_empty(display) ? expand_instruction(graph, cmd_id, cache) : display;
+}
+
+auto command_label(Graph const& graph, NodeId cmd_id, PathCache& cache, std::string_view source_root, std::string_view config_root) -> StringId
+{
+    auto display = get<Display>(graph, cmd_id);
+    return is_empty(display) ? expand_instruction(graph, cmd_id, cache, source_root, config_root) : display;
+}
+
+auto command_label(Graph const& graph, NodeId cmd_id) -> StringId
+{
+    auto display = get<Display>(graph, cmd_id);
+    return is_empty(display) ? expand_instruction(graph, cmd_id) : display;
+}
+
 auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) -> Hash256
 {
     auto& pool = global_pool();

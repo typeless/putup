@@ -823,6 +823,31 @@ SCENARIO("A Tupfile edit that changes no command re-runs nothing", "[e2e][increm
     }
 }
 
+SCENARIO("A rebuild reason names a command that carries no display annotation", "[e2e][display][incremental]")
+{
+    GIVEN("a built project whose rule has no ^ ^ annotation")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo one > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("the rule's command text changes")
+        {
+            f.write_file("Tupfile", ": |> echo two > %o |> out.txt\n");
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the reason names the command, rather than trailing off after the colon")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("Changed command: echo two > out.txt") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Changed command: \n") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Config-driven identity change re-runs an output-less command", "[e2e][incremental]")
 {
     GIVEN("a built project with an output-less command reading a config-driven variable")
@@ -5423,7 +5448,10 @@ SCENARIO("Removing a group member re-runs the commands that consume the group", 
                 REQUIRE(f.read_file("b/listing.txt").find("two.o") == std::string::npos);
                 REQUIRE(f.read_file("b/listing.txt").find("one.o") != std::string::npos);
                 INFO("stdout: " << result.stdout_output);
-                REQUIRE(result.stdout_output.find("Removed input: a/two.o") != std::string::npos);
+                // Names the consuming command too, which an unannotated rule did not (#229).
+                REQUIRE(result.stdout_output.find("Removed input: a/two.o (ls ../a") != std::string::npos);
+                // The removed foreach instance, not the pattern its sibling also matches.
+                REQUIRE(result.stdout_output.find("Removed command: cp two.txt two.o (in a)") != std::string::npos);
             }
         }
     }

@@ -1681,7 +1681,7 @@ auto detect_new_commands(
             result.forced_cmds.push_back(id);
         }
         if (verbose) {
-            auto display_sv = pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, id));
+            auto display_sv = pup::global_pool().get(pup::graph::command_label(g, id, state.path_cache));
             auto reason = retry_after_failure ? "Failed last run" : (previous ? "Changed command" : "New command");
             vprint(variant_name, "  {}: {}\n", reason, display_sv);
         }
@@ -1771,7 +1771,7 @@ auto reconcile_input_set(
                 orphaned.push_back(cmd_node_id);
                 if (verbose) {
                     vprint(
-                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, cmd_node_id))
+                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::command_label(g, cmd_node_id, state.path_cache))
                     );
                 }
             }
@@ -1850,7 +1850,15 @@ auto remove_stale_outputs(
         }
 
         if (verbose && !find_joined_command(join, idx, cmd)) {
-            vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(cmd.display));
+            // Not graph::command_label: the command has left the graph, but the index keeps its operands, so a pattern shared by a foreach still names one command.
+            auto label = pup::is_empty(cmd.display) ? pup::index::get_command_string(idx, cmd) : cmd.display;
+            auto const* dir = idx.find_file_by_id(cmd.dir_id);
+            auto dir_sv = dir ? pup::global_pool().get(dir->path) : std::string_view {};
+            if (dir_sv.empty()) {
+                vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(label));
+            } else {
+                vprint(variant_name, "  Removed command: {} (in {})\n", pup::global_pool().get(label), dir_sv);
+            }
         }
     }
 }

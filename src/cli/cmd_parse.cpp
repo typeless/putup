@@ -93,9 +93,9 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
         print("[{}] Commands:\n", variant_name);
         auto cache = pup::graph::PathCache {};
         for (auto id : commands) {
-            auto display_sv = pool.get(pup::graph::get<pup::graph::Display>(ctx.graph().graph, id));
-            auto cmd_str_id = pup::graph::expand_instruction(ctx.graph().graph, id, cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root));
-            auto label = display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
+            auto label = pool.get(
+                pup::graph::command_label(ctx.graph().graph, id, cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root))
+            );
             print("[{}]   {}\n", variant_name, label);
         }
     }

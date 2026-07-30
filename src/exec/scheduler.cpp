@@ -622,6 +622,8 @@ auto Scheduler::build_job_list(
 
         // Expand command from instruction pattern + operands
         auto cmd_id = graph::expand_instruction(g, id, cache, source_root_sv, config_root_sv);
+        // Not graph::command_label: the expansion it would fall back to is already in cmd_id,
+        // and every job would pay for it twice.
         auto display_id = graph::get<graph::Display>(g, id);
 
         auto const& exported_raw = graph::view<graph::ExportedVars>(g, id);

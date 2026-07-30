@@ -438,6 +438,25 @@ auto expand_instruction(
 [[nodiscard]]
 auto expand_instruction(Graph const& graph, NodeId cmd_id) -> StringId;
 
+/// How to name a command in a message: its `^ ^` text if it has one, else what it will run.
+/// Never empty — a rule without an annotation still has to be identifiable, and every caller
+/// answering that for itself is how four of them came to print nothing at all (#229). The
+/// overloads mirror expand_instruction's because the fallback is what it computes.
+[[nodiscard]]
+auto command_label(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId;
+
+[[nodiscard]]
+auto command_label(
+    Graph const& graph,
+    NodeId cmd_id,
+    PathCache& cache,
+    std::string_view source_root,
+    std::string_view config_root = {}
+) -> StringId;
+
+[[nodiscard]]
+auto command_label(Graph const& graph, NodeId cmd_id) -> StringId;
+
 /// What the command will do, for deciding whether it must re-run: the fully-expanded
 /// command text plus the values (content hashes) of every Variable node it depends on
 /// via a Sticky edge — capturing config/env vars that affect the output without
