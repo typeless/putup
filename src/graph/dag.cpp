@@ -1166,7 +1166,7 @@ auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids
     return commands;
 }
 
-auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files) -> NodeIdMap32
+auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files, Vec<NodeId> const& forced) -> NodeIdMap32
 {
     auto& pool = global_pool();
     auto affected = NodeIdMap32 {};
@@ -1215,11 +1215,18 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
         });
     }
 
+    // Joined after the cascade, not before: a forced command runs, but nothing about it
+    // says its consumers must, and seeding it upstream would say exactly that.
+    for (auto id : forced) {
+        affected.set(id, 1);
+    }
+
     // InjectImplicitDeps siblings (dep-scan commands) have no graph outputs,
     // so the cascade above can't reach them. They must run whenever their
     // parent compile runs — otherwise newly-introduced transitive includes
-    // are never re-discovered. Walk all commands and attach any whose
-    // parent_command was just marked affected.
+    // are never re-discovered, and the parent's run drops the recorded ones
+    // with nothing to re-report them (#228). Walk all commands and attach any
+    // whose parent_command was just marked affected.
     for (auto cmd_id : nodes_of_type(graph, NodeType::Command)) {
         auto parent = get_parent_command(graph, cmd_id);
         if (parent != INVALID_NODE_ID && affected.contains(parent)) {

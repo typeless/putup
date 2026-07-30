@@ -1256,6 +1256,49 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("A changed header re-runs the output-less command that read it", "[e2e][incremental][implicit]")
+{
+    // Routing a discovered dep pushes the reading command's outputs, so a command with none was
+    // reached and then dropped. A compile gate is the shape that has no outputs on purpose (#228).
+    GIVEN("an output-less compile gate that reads a header")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("bar.h", "#define VAL 1\n");
+        f.write_file("foo.c", "#include \"bar.h\"\nint f(void) { return VAL; }\n");
+        f.write_file("Tupfile", ": foo.c |> gcc -c %f -o /dev/null |>\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the header changes")
+        {
+            f.write_file("bar.h", "#define VAL 2\n");
+            auto result = f.build();
+
+            THEN("the gate runs again rather than reporting the tree up to date")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+
+            AND_WHEN("the header changes a second time")
+            {
+                REQUIRE(f.build().is_noop());
+                f.write_file("bar.h", "#define VAL 3\n");
+                auto again = f.build();
+
+                THEN("it runs again: one rebuild must not consume the dependency")
+                {
+                    INFO("stdout: " << again.stdout_output);
+                    REQUIRE(again.success());
+                    REQUIRE_FALSE(again.is_noop());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("A build whose discovered dependency was deleted quiesces", "[e2e][incremental][implicit]")
 {
     // The command re-runs and rediscovers nothing, which the carry logic could not tell from "did not run", so the dead edge and its file entry came back every build (#224).

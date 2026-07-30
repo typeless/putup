@@ -1299,14 +1299,47 @@ auto for_each_consuming_command(
     }
 }
 
+/// What routing a change produces: paths to treat as changed, and the commands that have no
+/// output path to carry one. Shared by every router, so none can report only the first half.
+struct RoutingDelta {
+    pup::Vec<StringId> changed_paths;
+    pup::Vec<pup::NodeId> forced_cmds;
+};
+
+/// Outputs, not the command itself, are the currency dependents propagate through; a command
+/// declaring none has no path to carry, so it is forced directly.
+template<typename PushPath>
+auto propagate_command_effect(
+    pup::graph::BuildGraph const& state,
+    pup::NodeId cmd_id,
+    PushPath push_path,
+    pup::Vec<pup::NodeId>& forced_cmds
+) -> void
+{
+    auto has_output_path = false;
+    for (auto output_id : pup::graph::get_outputs(state.graph, cmd_id)) {
+        auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+        if (output_path_sv.empty()) {
+            continue;
+        }
+        // Set before push_path decides: a caller that dedups an already-changed path has still
+        // found an output, and forcing the command as well would be wrong.
+        has_output_path = true;
+        push_path(pup::global_pool().intern(output_path_sv));
+    }
+    if (!has_output_path) {
+        forced_cmds.push_back(cmd_id);
+    }
+}
+
 auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
     pup::graph::BuildGraph const& state,
     CommandLookup const& join
-) -> pup::Vec<StringId>
+) -> RoutingDelta
 {
-    auto result = pup::Vec<StringId> { changed };
+    auto result = RoutingDelta { .changed_paths = pup::Vec<StringId> { changed }, .forced_cmds = {} };
     auto added = Vec<StringId> {};
     added.reserve(changed.size());
     for (auto const& s : changed) {
@@ -1336,21 +1369,17 @@ auto expand_implicit_deps(
             pup::NodeId { it->second->id },
             pup::graph::edge_mask::discovered_consumers,
             [&](pup::NodeId cmd_node_id) {
-                // No output-less fallback as reconcile_input_set has, so an output-less `gcc -c`
-                // rule's header change routes nowhere (#228) — pre-existing, not this walk's doing.
-                for (auto output_id : pup::graph::get_outputs(state.graph, cmd_node_id)) {
-                    auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
-                    if (output_path_sv.empty()) {
-                        continue;
-                    }
-                    auto output_path_id = pup::global_pool().intern(output_path_sv);
-                    auto pos = std::lower_bound(added.begin(), added.end(), output_path_id, pup::handle_less);
-                    if (pos != added.end() && *pos == output_path_id) {
-                        continue;
-                    }
-                    added.insert(pos, output_path_id);
-                    result.push_back(output_path_id);
-                }
+                propagate_command_effect(
+                    state, cmd_node_id, [&](StringId output_path_id) {
+                        auto pos = std::lower_bound(added.begin(), added.end(), output_path_id, pup::handle_less);
+                        if (pos != added.end() && *pos == output_path_id) {
+                            return;
+                        }
+                        added.insert(pos, output_path_id);
+                        result.changed_paths.push_back(output_path_id);
+                    },
+                    result.forced_cmds
+                );
             }
         );
     }
@@ -1689,11 +1718,6 @@ auto detect_new_commands(
     return result;
 }
 
-struct InputSetDelta {
-    pup::Vec<StringId> changed_paths;  ///< New source paths, plus outputs of commands whose input vanished.
-    pup::Vec<pup::NodeId> forced_cmds; ///< Output-less commands whose input vanished.
-};
-
 /// Reconcile the previous input set against the current one. Change detection
 /// walks the index while routing walks the graph, so a file in only one of them
 /// falls through both: an added file has no index entry to compare against, and a
@@ -1706,10 +1730,10 @@ auto reconcile_input_set(
     CommandLookup const& join,
     std::string_view variant_name,
     bool verbose
-) -> InputSetDelta
+) -> RoutingDelta
 {
     auto const& g = state.graph;
-    auto result = InputSetDelta {};
+    auto result = RoutingDelta {};
 
     // Every typed path, so "left the graph" below means gone, not merely not-a-source:
     // a generated file the user deleted is still a graph node and must not read as removed.
@@ -1782,19 +1806,10 @@ auto reconcile_input_set(
     std::sort(orphaned.begin(), orphaned.end(), [](pup::NodeId a, pup::NodeId b) { return a < b; });
     orphaned.erase(std::unique(orphaned.begin(), orphaned.end()), orphaned.end());
 
-    // Outputs, not the command itself, are the currency dependents propagate through.
     for (auto cmd_id : orphaned) {
-        auto pushed_outputs = false;
-        for (auto output_id : pup::graph::get_outputs(g, cmd_id)) {
-            auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
-            if (!output_path_sv.empty()) {
-                result.changed_paths.push_back(pup::global_pool().intern(output_path_sv));
-                pushed_outputs = true;
-            }
-        }
-        if (!pushed_outputs) {
-            result.forced_cmds.push_back(cmd_id);
-        }
+        propagate_command_effect(
+            state, cmd_id, [&](StringId path) { result.changed_paths.push_back(path); }, result.forced_cmds
+        );
     }
     return result;
 }
@@ -2089,7 +2104,8 @@ auto build_single_variant(
         }
 
         auto implicit_deps_start = pup::SteadyClock::now();
-        changed_files = expand_implicit_deps(changed_files, idx, bs, join);
+        auto implicit_delta = expand_implicit_deps(changed_files, idx, bs, join);
+        changed_files = std::move(implicit_delta.changed_paths);
         auto implicit_deps_elapsed = pup::SteadyClock::now() - implicit_deps_start;
         pup::thread_metrics().implicit_deps_time = std::chrono::duration_cast<std::chrono::microseconds>(implicit_deps_elapsed);
 
@@ -2102,6 +2118,9 @@ auto build_single_variant(
         }
         forced_cmds = std::move(new_cmds.forced_cmds);
         for (auto cmd_id : input_delta.forced_cmds) {
+            forced_cmds.push_back(cmd_id);
+        }
+        for (auto cmd_id : implicit_delta.forced_cmds) {
             forced_cmds.push_back(cmd_id);
         }
         for (auto cmd_id : new_cmds.retry_after_failure) {
@@ -2257,11 +2276,7 @@ auto build_single_variant(
     auto filter = BuildFilter {};
 
     if (use_incremental) {
-        auto affected = pup::graph::collect_affected_commands(bs.graph, changed_files);
-        for (auto id : forced_cmds) {
-            affected.set(id, 1);
-        }
-        filter.intersect_with(std::move(affected));
+        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files, forced_cmds));
     }
 
     if (!target_node_ids.empty()) {
