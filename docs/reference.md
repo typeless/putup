@@ -2684,7 +2684,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Config variables (@) | ✅ | ✅ | |
 | Node variables (&) | ✅ | ⚠️ | Partial |
 | Conditionals | ✅ | ✅ | `ifdef`/`ifndef` check Tupfile vars before config vars (tup: config only) |
-| Groups | ✅ | ✅ | |
+| Groups | ✅ | ✅ | Removing a member reschedules the group's consumers (tup: leaves them stale) |
 | Order-only deps | ✅ | ✅ | |
 | **Directives** |
 | include | ✅ | ✅ | |
