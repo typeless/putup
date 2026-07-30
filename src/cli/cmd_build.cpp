@@ -1292,7 +1292,8 @@ auto expand_implicit_deps(
     auto edges_by_from = Vec<std::pair<pup::NodeId, pup::index::EdgeEntry const*>> {};
 
     for (auto const& edge : index.edges()) {
-        if (edge.type == pup::LinkType::Implicit || edge.type == pup::LinkType::Sticky) {
+        // Implicit only: a Sticky edge carries identity, not data, so following it re-ran commands on any Tupfile byte (#225).
+        if (edge.type == pup::LinkType::Implicit) {
             edges_by_from.emplace_back(edge.from, &edge);
         }
     }
