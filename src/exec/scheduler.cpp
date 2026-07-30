@@ -592,37 +592,10 @@ auto Scheduler::build_job_list(
     }
 
     auto& pool = global_pool();
-    auto output_root_sv = pool.get(impl_->options.output_root);
     auto source_root_sv = pool.get(impl_->options.source_root);
     auto config_root_sv = pool.get(impl_->options.config_root);
-
-    // Validate no unrealized ghost nodes remain (missing inputs)
-    // Exception: Ghost nodes whose files actually exist on disk are valid
-    // non-generated input files (e.g., tup.config, manually-created config files)
     auto const& g = state.graph;
     auto& cache = state.path_cache;
-
-    for (auto id : topo_result.order) {
-        if (graph::get<NodeType>(g, id) == NodeType::Ghost && !graph::get_outputs(g, id).empty()) {
-            auto path_sv = graph::get_full_path(g, id, cache);
-            auto build_root_name = graph::get_build_root_name(g);
-            auto file_path_sv = pool.get(pup::path::join(output_root_sv, path_sv));
-            auto lookup_path = path_sv;
-            auto build_prefix = Buf {};
-            build_prefix += build_root_name;
-            build_prefix += '/';
-            if (!build_root_name.empty() && path_sv.starts_with(build_prefix.view())) {
-                lookup_path = path_sv.substr(build_prefix.size());
-                file_path_sv = pool.get(pup::path::join(output_root_sv, lookup_path));
-            }
-            if (pup::platform::exists(file_path_sv)) {
-                continue;
-            }
-            auto err = Buf {};
-            err.fmt("Missing input file (unresolved ghost): {}\n  Hint: try building with -a to include upstream dependencies", path_sv);
-            return make_error<Vec<BuildJob>>(ErrorCode::ParseError, err.view());
-        }
-    }
 
     auto jobs = Vec<BuildJob> {};
 

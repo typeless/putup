@@ -1524,6 +1524,51 @@ auto reject_shadowed_sources(
     return {};
 }
 
+/// A ghost is a path no rule produces. Nothing consuming it is harmless, and one backed by a
+/// file on disk is a foreign input like tup.config; the rest are inputs the project declares
+/// and cannot supply. Runs before the up-to-date short-circuit, so an ill-formed project is
+/// rejected on every build rather than only on one that has work to do.
+auto reject_unresolved_ghosts(
+    pup::graph::BuildGraph const& state,
+    std::string_view output_root
+) -> pup::Result<void>
+{
+    auto const& g = state.graph;
+    auto& pool = pup::global_pool();
+    auto build_root_name = pup::graph::get_build_root_name(g);
+
+    for (auto id : pup::graph::nodes_of_type(g, pup::NodeType::Ghost)) {
+        auto consumed = false;
+        pup::graph::edges_for_each(
+            g, id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&consumed](pup::NodeId) { consumed = true; }
+        );
+        if (!consumed) {
+            continue;
+        }
+
+        auto path_sv = pup::graph::get_full_path(g, id, state.path_cache);
+        auto lookup_path = path_sv;
+        auto build_prefix = pup::Buf {};
+        build_prefix += build_root_name;
+        build_prefix += '/';
+        if (!build_root_name.empty() && path_sv.starts_with(build_prefix.view())) {
+            lookup_path = path_sv.substr(build_prefix.size());
+        }
+        if (pup::platform::exists(pool.get(pup::path::join(output_root, lookup_path)))) {
+            continue;
+        }
+
+        auto err = pup::Buf {};
+        err.fmt(
+            "Missing input file (unresolved ghost): {}\n"
+            "  Hint: try building with -a to include upstream dependencies",
+            path_sv
+        );
+        return pup::make_error<void>(pup::ErrorCode::ParseError, err.view());
+    }
+    return {};
+}
+
 /// Commands that must run because of what they are rather than because a file changed:
 /// no counterpart in the previous build, or a counterpart whose signature differs. Their
 /// outputs join the changed-file set; a command that contributes no output paths cannot
@@ -1937,6 +1982,11 @@ auto build_single_variant(
 
     if (auto shadowed = reject_shadowed_sources(bs, old_idx_ptr, source_root_str, config_root_str); !shadowed) {
         veprint(variant_name, "Error: {}\n", shadowed.error().msg());
+        return EXIT_FAILURE;
+    }
+
+    if (auto ghosts = reject_unresolved_ghosts(bs, pool.get(ctx.layout().output_root)); !ghosts) {
+        veprint(variant_name, "Build failed: {}\n", ghosts.error().msg());
         return EXIT_FAILURE;
     }
     auto use_incremental = false;
