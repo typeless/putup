@@ -233,9 +233,10 @@ The files a command actually read during its last run.
 - conformance: unclassified
 - reference: tup's central mechanism, but no line citation read yet
 - discharge: test "Scenario: Implicit dependencies track header changes"
+- discharge: test "Scenario: A build whose discovered dependency was deleted quiesces"
 
 putup shall record, for each command, the set of files it read during its last successful
-run.
+run, including when that run read none.
 
 ### REQ-IMPL-COMPARE
 

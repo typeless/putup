@@ -967,15 +967,15 @@ auto find_joined_command(
 /// Preserve implicit edges from the old index for commands that weren't rebuilt.
 auto preserve_old_implicit_edges(
     pup::index::Index const& old_index,
-    DiscoveredDeps const& discovered_deps,
+    pup::Vec<pup::NodeId> const& executed_cmds,
     ImplicitDepContext& ctx
 ) -> void
 {
     auto& pool = pup::global_pool();
-    auto commands_with_new_deps = pup::NodeIdMap32 {};
-    for (auto const& [graph_cmd_id, _] : discovered_deps) {
+    auto commands_that_ran = pup::NodeIdMap32 {};
+    for (auto graph_cmd_id : executed_cmds) {
         if (ctx.cmd_remap.contains(graph_cmd_id)) {
-            commands_with_new_deps.set(pup::node_id::make_command(ctx.cmd_remap.get(graph_cmd_id)), 1);
+            commands_that_ran.set(pup::node_id::make_command(ctx.cmd_remap.get(graph_cmd_id)), 1);
         }
     }
 
@@ -990,8 +990,8 @@ auto preserve_old_implicit_edges(
             continue;
         }
 
-        // If the command is gone, drop the edge. If it survived but re-ran, the branch
-        // below drops it too: it rediscovered its own deps.
+        // If the command is gone, drop the edge. If it survived and ran, the branch below
+        // drops it too: whatever that run reported is now the whole truth, empty included.
         auto const* old_cmd = old_index.find_command_by_id(edge.to);
         if (!old_cmd) {
             continue;
@@ -1002,7 +1002,7 @@ auto preserve_old_implicit_edges(
         }
         auto new_to_id = *joined;
 
-        if (commands_with_new_deps.contains(new_to_id)) {
+        if (commands_that_ran.contains(new_to_id)) {
             continue;
         }
 
@@ -1352,7 +1352,8 @@ auto build_index(
     pup::Vec<pup::StringId> const& parsed_dirs = {},
     pup::Vec<pup::StringId> const& available_dirs = {},
     pup::Vec<pup::StringId> const& pruned_dirs = {},
-    pup::NodeIdMap32 const& failed_cmds = {}
+    pup::NodeIdMap32 const& failed_cmds = {},
+    pup::Vec<pup::NodeId> const& executed_cmds = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
@@ -1384,7 +1385,7 @@ auto build_index(
 
     // Preserve implicit edges from the old index for commands that weren't rebuilt
     if (old_index) {
-        preserve_old_implicit_edges(*old_index, discovered_deps, ctx);
+        preserve_old_implicit_edges(*old_index, executed_cmds, ctx);
     }
 
     return std::move(index);
@@ -2140,6 +2141,7 @@ auto build_single_variant(
 
     auto scheduler = pup::exec::Scheduler { std::move(sched_opts) };
     auto discovered_deps = DiscoveredDeps {};
+    auto executed_cmds = pup::Vec<pup::NodeId> {};
 
     auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose && !opts.dry_run;
     auto progress = pup::exec::ProgressState { .total = num_commands };
@@ -2176,10 +2178,15 @@ auto build_single_variant(
             }
         }
 
+        auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
+            ? job_result.deps_for_command
+            : job.id;
+        if (job_result.success) {
+            // Recorded even when it discovered nothing: an empty report is a report, and treating it as silence carried dead edges forever (#224).
+            executed_cmds.push_back(target_id);
+        }
+
         if (!job_result.discovered_deps.empty()) {
-            auto target_id = job_result.deps_for_command != pup::INVALID_NODE_ID
-                ? job_result.deps_for_command
-                : job.id;
             auto& deps = discovered_deps_get(discovered_deps, target_id);
 
             auto source_root_sv = pool.get(ctx.layout().source_root);
@@ -2318,7 +2325,8 @@ auto build_single_variant(
             ctx.parsed_dirs(),
             ctx.available_dirs(),
             ctx.pruned_dirs(),
-            failed_cmds
+            failed_cmds,
+            executed_cmds
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
