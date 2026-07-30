@@ -5193,6 +5193,74 @@ SCENARIO("Deleting a stale output re-runs its order-only consumer in the same bu
     }
 }
 
+SCENARIO("Removing a group member re-runs the commands that consume the group", "[e2e][stale][order-only][group]")
+{
+    // The rule vanishes with its glob match, never by a Tupfile edit: an edit rebuilds a surviving member, and a rebuilt member reaches the consumer over the live graph, masking the removal (#169).
+    GIVEN("a consumer that depends on a group order-only and reads the directory for members")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("a/Tupfile", ": foreach *.txt |> cp %f %o |> %B.o <objs>\n");
+        f.write_file("a/one.txt", "x\n");
+        f.write_file("a/two.txt", "x\n");
+        f.write_file("b/Tupfile", ": | ../a/<objs> |> ls ../a > %o |> listing.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/listing.txt").find("two.o") != std::string::npos);
+
+        WHEN("one member's rule vanishes and no surviving member is rebuilt")
+        {
+            f.remove_file("a/two.txt");
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the consumer re-runs, routed by the removed member itself")
+            {
+                REQUIRE_FALSE(f.exists("a/two.o"));
+                INFO("listing.txt: " << f.read_file("b/listing.txt"));
+                REQUIRE(f.read_file("b/listing.txt").find("two.o") == std::string::npos);
+                REQUIRE(f.read_file("b/listing.txt").find("one.o") != std::string::npos);
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("Removed input: a/two.o") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Removing a group member schedules nothing when the group's only consumer is guarded off", "[e2e][stale][order-only][group]")
+{
+    // Edges into a guard-unsatisfied command are dropped when the index is written, so the walk finding nothing here is the correct answer and not a missed route.
+    GIVEN("a group whose only consumer sits in an inactive conditional")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("a/Tupfile", ": foreach *.txt |> cp %f %o |> %B.o <objs>\n");
+        f.write_file("a/one.txt", "x\n");
+        f.write_file("a/two.txt", "x\n");
+        f.write_file("b/Tupfile", "ifdef WANT_LISTING\n: | ../a/<objs> |> ls ../a > %o |> listing.txt\nendif\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE_FALSE(f.exists("b/listing.txt"));
+
+        WHEN("a member's rule vanishes with its glob match")
+        {
+            f.remove_file("a/two.txt");
+            auto result = f.build({ "-v" });
+
+            THEN("the build succeeds and routes the removal to no command")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("a/two.o"));
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("Removed input:") == std::string::npos);
+                REQUIRE_FALSE(f.exists("b/listing.txt"));
+            }
+        }
+    }
+}
+
 SCENARIO("Dropping one output of a rule removes that output", "[e2e][identity][join][stale]")
 {
     GIVEN("a built rule that declares two outputs")

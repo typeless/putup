@@ -1699,24 +1699,34 @@ auto reconcile_input_set(
         if (!file) {
             continue;
         }
-        // Edge types that reach a command in one hop; expand_implicit_deps routes
-        // Implicit and Sticky. Group is neither: it runs file -> group, and the
-        // group -> command hop is a separate OrderOnly edge, so it needs two (#169).
-        for (auto const* edge : idx.edges_from(pup::NodeId { file->id })) {
-            if (edge->type != pup::LinkType::Normal && edge->type != pup::LinkType::OrderOnly) {
-                continue;
-            }
-            auto const* cmd = idx.find_command_by_id(pup::NodeId { edge->to });
-            if (!cmd) {
-                continue;
-            }
-            if (auto cmd_node_id = find_joined_command(join, idx, *cmd)) {
-                orphaned.push_back(*cmd_node_id);
-                if (verbose) {
-                    vprint(
-                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, *cmd_node_id))
-                    );
+        // Stop at commands, cross the rest: a group hop needs no special case, and stopping is what keeps a command's output edges out of the walk (#169).
+        auto frontier = pup::Vec<pup::NodeId> { pup::NodeId { file->id } };
+        auto crossed = pup::NodeIdMap32 {};
+        while (!frontier.empty()) {
+            auto from = frontier.back();
+            frontier.pop_back();
+            for (auto const* edge : idx.edges_from(from)) {
+                if (edge->type != pup::LinkType::Normal && edge->type != pup::LinkType::OrderOnly
+                    && edge->type != pup::LinkType::Group) {
+                    continue;
                 }
+                auto to = pup::NodeId { edge->to };
+                if (auto const* cmd = idx.find_command_by_id(to)) {
+                    if (auto cmd_node_id = find_joined_command(join, idx, *cmd)) {
+                        orphaned.push_back(*cmd_node_id);
+                        if (verbose) {
+                            vprint(
+                                variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, *cmd_node_id))
+                            );
+                        }
+                    }
+                    continue;
+                }
+                if (crossed.contains(to)) {
+                    continue;
+                }
+                crossed.set(to, 1);
+                frontier.push_back(to);
             }
         }
     }

@@ -300,9 +300,9 @@ from group membership.
 ### REQ-GRP-ROUTE
 
 - leg: route
-- conformance: unclassified
-- reference: upstream mechanism not read
-- gap: #169
+- conformance: deliberate-deviation
+- reference: tup 0.8-8-g4247a523 leaves the consumer unscheduled — it deletes the member and reports "No commands to execute", so the consumer's output stays stale permanently; putup reschedules instead, which costs no Tupfile portability because only scheduling differs
+- discharge: test "Scenario: Removing a group member re-runs the commands that consume the group"
 
 When a command stops contributing an output to a group, putup shall schedule the commands
 that consume that group.
