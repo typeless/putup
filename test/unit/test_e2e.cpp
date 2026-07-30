@@ -796,6 +796,33 @@ SCENARIO("Editing an output-less command re-runs it", "[e2e][incremental]")
     }
 }
 
+SCENARIO("A Tupfile edit that changes no command re-runs nothing", "[e2e][incremental][identity]")
+{
+    // Complement of "Editing an output-less command re-runs it". The rule needs an output: the Sticky route propagates a command's outputs, so an output-less one cannot exhibit this at all (#225).
+    GIVEN("a built project whose rebuild is stable")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo hi > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("a comment is added to the Tupfile, leaving every command's text identical")
+        {
+            f.write_file("Tupfile", "# a comment changes no command\n: |> echo hi > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("nothing re-runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Config-driven identity change re-runs an output-less command", "[e2e][incremental]")
 {
     GIVEN("a built project with an output-less command reading a config-driven variable")
@@ -1715,7 +1742,8 @@ SCENARIO("Tupfile changes detected regardless of scope", "[e2e][incremental][sco
 
         WHEN("a Tupfile outside scope is modified")
         {
-            f.append_file("app/Tupfile", "\n# comment\n");
+            // A comment would not do: an edit leaving every command's text identical is correctly a no-op (#225), so the mutation has to change a command.
+            f.write_file("app/Tupfile", ": main.c ../lib/foo.o |> gcc %f -o %o -DEXTRA=1 |> app\n");
             auto result = f.run_pup_in_dir("lib", { "-v" });
 
             THEN("the change is detected and triggers rebuild")

@@ -108,6 +108,16 @@ the command as changed.
 When a command is treated as changed, putup shall schedule it even if it declares no
 outputs.
 
+### REQ-SIG-STABLE
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: tup decides re-runs by `command_modified` over the command's own text and sticky variable values, so a Tupfile edit rendering identical commands reports "No commands to execute" — verified by running tup v0.8-8-g4247a523 on a comment-only edit
+- discharge: test "Scenario: A Tupfile edit that changes no command re-runs nothing"
+
+If a Tupfile changes without changing the signature of any command it declares, then putup
+shall not treat those commands as changed.
+
 ---
 
 ## Group: exit-status
