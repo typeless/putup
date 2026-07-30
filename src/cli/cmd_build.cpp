@@ -1262,6 +1262,43 @@ auto merge_out_of_scope_commands(
     }
 }
 
+/// Walk index edges from a file to the commands that consume it, reporting each one's joined
+/// graph id. Crossing non-command nodes is what makes a group hop need no special case, and
+/// stopping at commands is what keeps a command's own output edges out of the walk (#169).
+template<typename Fn>
+auto for_each_consuming_command(
+    pup::index::Index const& idx,
+    CommandLookup const& join,
+    pup::NodeId start,
+    pup::graph::LinkTypeMask mask,
+    Fn&& emit
+) -> void
+{
+    auto frontier = pup::Vec<pup::NodeId> { start };
+    auto crossed = pup::NodeIdMap32 {};
+    while (!frontier.empty()) {
+        auto from = frontier.back();
+        frontier.pop_back();
+        for (auto const* edge : idx.edges_from(from)) {
+            if (!pup::graph::in_mask(edge->type, mask)) {
+                continue;
+            }
+            auto to = pup::NodeId { edge->to };
+            if (auto const* cmd = idx.find_command_by_id(to)) {
+                if (auto cmd_node_id = find_joined_command(join, idx, *cmd)) {
+                    emit(*cmd_node_id);
+                }
+                continue;
+            }
+            if (crossed.contains(to)) {
+                continue;
+            }
+            crossed.set(to, 1);
+            frontier.push_back(to);
+        }
+    }
+}
+
 auto expand_implicit_deps(
     pup::Vec<StringId> const& changed,
     pup::index::Index const& index,
@@ -1287,52 +1324,35 @@ auto expand_implicit_deps(
     }
     std::sort(path_to_file.begin(), path_to_file.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
 
-    // Build edge index using NodeIdArenaIndex pattern (from_id -> edge pointers)
-    // Use a sorted vector of (from_id, edge*) for grouped lookup
-    auto edges_by_from = Vec<std::pair<pup::NodeId, pup::index::EdgeEntry const*>> {};
-
-    for (auto const& edge : index.edges()) {
-        // Implicit only: a Sticky edge carries identity, not data, so following it re-ran commands on any Tupfile byte (#225).
-        if (edge.type == pup::LinkType::Implicit) {
-            edges_by_from.emplace_back(edge.from, &edge);
-        }
-    }
-    std::sort(edges_by_from.begin(), edges_by_from.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
-
     for (auto const& path : changed) {
         auto it = std::lower_bound(path_to_file.begin(), path_to_file.end(), path, [](auto const& p, auto const& k) { return pup::handle_less(p.first, k); });
         if (it == path_to_file.end() || it->first != path) {
             continue;
         }
 
-        auto file_id = pup::NodeId { it->second->id };
-        auto edge_lo = std::lower_bound(edges_by_from.begin(), edges_by_from.end(), file_id, [](auto const& p, auto const& k) { return p.first < k; });
-
-        for (auto edge_it = edge_lo; edge_it != edges_by_from.end() && edge_it->first == file_id; ++edge_it) {
-            auto const* edge = edge_it->second;
-            auto cmd_id = pup::NodeId { edge->to };
-            auto const* cmd = index.find_command_by_id(cmd_id);
-            if (!cmd) {
-                continue;
-            }
-
-            auto cmd_node_id = find_joined_command(join, index, *cmd);
-            if (!cmd_node_id) {
-                continue;
-            }
-
-            for (auto output_id : pup::graph::get_outputs(state.graph, *cmd_node_id)) {
-                auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
-                if (!output_path_sv.empty()) {
-                    auto output_path_id = pup::global_pool().intern(output_path_sv);
-                    if (!std::binary_search(added.begin(), added.end(), output_path_id, pup::handle_less)) {
-                        auto pos = std::lower_bound(added.begin(), added.end(), output_path_id, pup::handle_less);
-                        added.insert(pos, output_path_id);
-                        result.push_back(output_path_id);
+        for_each_consuming_command(
+            index,
+            join,
+            pup::NodeId { it->second->id },
+            pup::graph::edge_mask::discovered_consumers,
+            [&](pup::NodeId cmd_node_id) {
+                // No output-less fallback as reconcile_input_set has, so an output-less `gcc -c`
+                // rule's header change routes nowhere (#228) — pre-existing, not this walk's doing.
+                for (auto output_id : pup::graph::get_outputs(state.graph, cmd_node_id)) {
+                    auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+                    if (output_path_sv.empty()) {
+                        continue;
                     }
+                    auto output_path_id = pup::global_pool().intern(output_path_sv);
+                    auto pos = std::lower_bound(added.begin(), added.end(), output_path_id, pup::handle_less);
+                    if (pos != added.end() && *pos == output_path_id) {
+                        continue;
+                    }
+                    added.insert(pos, output_path_id);
+                    result.push_back(output_path_id);
                 }
             }
-        }
+        );
     }
 
     return result;
@@ -1746,36 +1766,16 @@ auto reconcile_input_set(
         if (!file) {
             continue;
         }
-        // Stop at commands, cross the rest: a group hop needs no special case, and stopping is what keeps a command's output edges out of the walk (#169).
-        auto frontier = pup::Vec<pup::NodeId> { pup::NodeId { file->id } };
-        auto crossed = pup::NodeIdMap32 {};
-        while (!frontier.empty()) {
-            auto from = frontier.back();
-            frontier.pop_back();
-            for (auto const* edge : idx.edges_from(from)) {
-                if (edge->type != pup::LinkType::Normal && edge->type != pup::LinkType::OrderOnly
-                    && edge->type != pup::LinkType::Group) {
-                    continue;
+        for_each_consuming_command(
+            idx, join, pup::NodeId { file->id }, pup::graph::edge_mask::parsed_consumers, [&](pup::NodeId cmd_node_id) {
+                orphaned.push_back(cmd_node_id);
+                if (verbose) {
+                    vprint(
+                        variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, cmd_node_id))
+                    );
                 }
-                auto to = pup::NodeId { edge->to };
-                if (auto const* cmd = idx.find_command_by_id(to)) {
-                    if (auto cmd_node_id = find_joined_command(join, idx, *cmd)) {
-                        orphaned.push_back(*cmd_node_id);
-                        if (verbose) {
-                            vprint(
-                                variant_name, "  Removed input: {} ({})\n", pup::global_pool().get(path_id), pup::global_pool().get(pup::graph::get<pup::graph::Display>(g, *cmd_node_id))
-                            );
-                        }
-                    }
-                    continue;
-                }
-                if (crossed.contains(to)) {
-                    continue;
-                }
-                crossed.set(to, 1);
-                frontier.push_back(to);
             }
-        }
+        );
     }
     // Explicit comparator: libc++ extern-templates std::__sort for unsigned int*,
     // so the default form links against a libc++ we deliberately do not have.

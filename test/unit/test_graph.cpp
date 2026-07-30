@@ -1209,6 +1209,79 @@ TEST_CASE("Topological sort respects order-only deps through groups", "[topo][gr
     REQUIRE(c1_pos < c2_pos);
 }
 
+TEST_CASE("Every edge mask follows from one role per link type", "[graph]")
+{
+    using pup::LinkRole;
+    using pup::LinkType;
+    using pup::graph::link_type_bit;
+
+    SECTION("each link type carries the role its routers assume")
+    {
+        REQUIRE(pup::link_role(LinkType::Normal) == LinkRole::DataFlow);
+        REQUIRE(pup::link_role(LinkType::Group) == LinkRole::DataFlow);
+        REQUIRE(pup::link_role(LinkType::Implicit) == LinkRole::DataFlow);
+        REQUIRE(pup::link_role(LinkType::OrderOnly) == LinkRole::Ordering);
+        REQUIRE(pup::link_role(LinkType::Sticky) == LinkRole::Identity);
+    }
+
+    SECTION("each mask holds exactly the types its name claims")
+    {
+        REQUIRE(
+            pup::graph::edge_mask::data_flow
+            == (link_type_bit(LinkType::Normal) | link_type_bit(LinkType::Group) | link_type_bit(LinkType::Implicit))
+        );
+        REQUIRE(pup::graph::edge_mask::order_only == link_type_bit(LinkType::OrderOnly));
+        REQUIRE(pup::graph::edge_mask::sticky == link_type_bit(LinkType::Sticky));
+        REQUIRE(
+            pup::graph::edge_mask::inputs
+            == (link_type_bit(LinkType::Normal) | link_type_bit(LinkType::Sticky) | link_type_bit(LinkType::Group)
+                | link_type_bit(LinkType::Implicit))
+        );
+        REQUIRE(
+            pup::graph::edge_mask::consumers
+            == (link_type_bit(LinkType::Normal) | link_type_bit(LinkType::Group) | link_type_bit(LinkType::Implicit)
+                | link_type_bit(LinkType::OrderOnly))
+        );
+    }
+
+    SECTION("the two index-side walks partition every consumption edge")
+    {
+        using pup::graph::edge_mask::consumers;
+        using pup::graph::edge_mask::discovered_consumers;
+        using pup::graph::edge_mask::parsed_consumers;
+
+        REQUIRE((parsed_consumers | discovered_consumers) == consumers);
+        REQUIRE((parsed_consumers & discovered_consumers) == 0);
+        REQUIRE(discovered_consumers == link_type_bit(LinkType::Implicit));
+        REQUIRE(
+            parsed_consumers
+            == (link_type_bit(LinkType::Normal) | link_type_bit(LinkType::Group) | link_type_bit(LinkType::OrderOnly))
+        );
+    }
+
+    SECTION("a link type this build does not know routes nothing")
+    {
+        // Index edge types are deserialized without validation, so membership has to answer for
+        // every byte: 33 shifts past the mask width and read as Normal until in_mask was total.
+        for (auto byte : { 0, 6, 8, 9, 33, 255 }) {
+            auto const unknown = static_cast<LinkType>(byte);
+            REQUIRE(pup::link_role(unknown) == LinkRole::Unknown);
+            REQUIRE_FALSE(pup::graph::in_mask(unknown, pup::graph::edge_mask::consumers));
+            REQUIRE_FALSE(pup::graph::in_mask(unknown, pup::graph::edge_mask::parsed_consumers));
+            REQUIRE_FALSE(pup::graph::in_mask(unknown, pup::graph::edge_mask::discovered_consumers));
+            REQUIRE_FALSE(pup::graph::in_mask(unknown, pup::graph::edge_mask::inputs));
+        }
+    }
+
+    SECTION("every known link type is in the masks its role implies")
+    {
+        for (auto type : { LinkType::Normal, LinkType::Sticky, LinkType::Group, LinkType::Implicit, LinkType::OrderOnly }) {
+            REQUIRE(pup::graph::in_mask(type, pup::graph::edge_mask::consumers) == (pup::link_role(type) != LinkRole::Identity));
+            REQUIRE(pup::graph::in_mask(type, pup::graph::edge_mask::sticky) == (pup::link_role(type) == LinkRole::Identity));
+        }
+    }
+}
+
 TEST_CASE("edges_where parameterized edge query", "[graph]")
 {
     using pup::LinkType;
