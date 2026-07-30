@@ -20,12 +20,15 @@ using PathIdMap = Vec<std::pair<StringId, NodeId>>;
 
 /// Serialize non-command nodes from the build graph to the index.
 /// Emits one entry per live file-space node so ids stay dense (id == position + 1).
+/// Paths in `deleted_stale` are marked NodeFlags::Deleted: this build removed them and routed
+/// their absence, so the next build must not read the same stat failure as news.
 [[nodiscard]]
 auto serialize_graph_nodes(
     graph::BuildGraph const& state,
     std::string_view source_root,
     std::string_view config_root,
-    std::string_view output_root
+    std::string_view output_root,
+    Vec<StringId> const& deleted_stale = {}
 ) -> std::pair<index::Index, PathIdMap>;
 
 /// Serialize guard-satisfied command nodes to the index with dense ids.

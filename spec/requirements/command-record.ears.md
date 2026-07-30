@@ -308,11 +308,30 @@ outputs that are no longer declared.
 
 - leg: route
 - conformance: deliberate-deviation
-- reference: tup v0.8-8-g4247a523 rejects rather than reroutes when the consumer names the file explicitly — a deleted output named as an input is a parse error (parser.c:2783), so tup deletes nothing and the file survives. Only globs and groups reach tup's rerouting path, where deleted files drop out of the match set (parser.c:2799); there putup and tup agree. putup reroutes in both cases and then rejects the explicitly named one on the following build (REQ-INPUT-UNRESOLVED), because after glob expansion it can no longer tell an explicitly named input from a globbed one
+- reference: tup v0.8-8-g4247a523 rejects rather than reroutes when the consumer names the file explicitly — a deleted output named as an input is a parse error (parser.c:2783), so tup deletes nothing and the file survives. Only globs and groups reach tup's rerouting path, where deleted files drop out of the match set (parser.c:2799); there putup and tup agree on the match set, though not on scheduling — tup runs the consumer zero times (see REQ-OUT-SETTLE). putup reroutes in both cases and then rejects the explicitly named one on the following build (REQ-INPUT-UNRESOLVED), because after glob expansion it can no longer tell an explicitly named input from a globbed one
 - discharge: test "Scenario: Deleting a stale output re-runs its order-only consumer in the same build"
 
 When putup deletes an output that is no longer declared, putup shall schedule the commands
 that consume that output.
+
+### REQ-OUT-SETTLE
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream never reaches this state — tup runs the consumer zero times for the same deletion (see REQ-OUT-ROUTE), so it has no second run to suppress
+- discharge: test "Scenario: A glob consumer of a deleted stale output settles after the healing build"
+
+When putup has deleted an output and scheduled its consumers, putup shall not schedule them
+again on a later build for that same deletion.
+
+### REQ-OUT-REAPPEAR
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: A glob consumer of a deleted stale output settles after the healing build"
+
+If an output putup deleted exists again on disk, then putup shall treat it as changed.
 
 ---
 
