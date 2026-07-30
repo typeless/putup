@@ -331,6 +331,12 @@ auto find_changed_files_with_implicit(
         }
 
         if (!stat_result) {
+            // Still gone, and the build that deleted it already routed that to its consumers;
+            // reporting it again is what ran them a second time (#213). Only absence is
+            // discharged — if it comes back, the checks below see it like any other change.
+            if (pup::has_flag(file.flags, pup::NodeFlags::Deleted)) {
+                continue;
+            }
             if (verbose) {
                 print("  Changed (stat failed): {}\n", file_path_sv);
             }
@@ -511,7 +517,8 @@ auto serialize_graph_nodes(
     pup::graph::BuildGraph const& state,
     std::string_view source_root,
     std::string_view config_root,
-    std::string_view output_root
+    std::string_view output_root,
+    pup::Vec<pup::StringId> const& deleted_stale
 ) -> std::pair<pup::index::Index, PathIdMap>
 {
     auto const& g = state.graph;
@@ -583,12 +590,17 @@ auto serialize_graph_nodes(
             }
 
             auto& pool = pup::global_pool();
+            // Records that this build already routed the file's absence, so the next one does
+            // not read the same stat failure as news. The slot has to stay: id == position + 1.
+            auto entry_flags = std::binary_search(deleted_stale.begin(), deleted_stale.end(), pool.intern(node_path), pup::handle_less)
+                ? node_flags | pup::NodeFlags::Deleted
+                : node_flags;
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
                 .type = type,
-                .flags = node_flags,
+                .flags = entry_flags,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = pool.intern(node_path),
                 .size = file_size,
@@ -1402,11 +1414,12 @@ auto build_index(
     pup::Vec<pup::StringId> const& available_dirs = {},
     pup::Vec<pup::StringId> const& pruned_dirs = {},
     pup::NodeIdMap32 const& failed_cmds = {},
-    pup::Vec<pup::NodeId> const& executed_cmds = {}
+    pup::Vec<pup::NodeId> const& executed_cmds = {},
+    pup::Vec<pup::StringId> const& deleted_stale = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
-    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root);
+    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale);
 
     auto cmd_remap = serialize_command_nodes(state, index, path_to_id, failed_cmds);
 
@@ -1827,8 +1840,9 @@ auto remove_stale_outputs(
     std::string_view variant_name,
     bool dry_run,
     bool verbose
-) -> void
+) -> pup::Vec<pup::StringId>
 {
+    auto deleted = pup::Vec<pup::StringId> {};
     for (auto const& cmd : idx.commands()) {
         // Only delete outputs of a command whose directory we have authoritative
         // knowledge of this run; anything else is preserved.
@@ -1856,6 +1870,7 @@ auto remove_stale_outputs(
                     vprint(variant_name, "Would remove stale: {}\n", file_path_sv);
                 } else {
                     if (pup::platform::remove_file(abs_path)) {
+                        deleted.push_back(file->path);
                         if (verbose) {
                             vprint(variant_name, "  Removed stale: {}\n", file_path_sv);
                         }
@@ -1876,6 +1891,8 @@ auto remove_stale_outputs(
             }
         }
     }
+    std::sort(deleted.begin(), deleted.end(), pup::handle_less);
+    return deleted;
 }
 
 auto intersect_filters(
@@ -2021,6 +2038,7 @@ auto build_single_variant(
     auto failed_cmds = pup::NodeIdMap32 {};
     auto changed_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
+    auto deleted_stale = pup::Vec<pup::StringId> {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
@@ -2065,7 +2083,7 @@ auto build_single_variant(
         // Before detection, not after: a deleted output is a change like any other, and
         // a consumer reaching it order-only is only notified if detection sees it gone.
         auto stale_start = pup::SteadyClock::now();
-        remove_stale_outputs(
+        deleted_stale = remove_stale_outputs(
             idx,
             join,
             parse_scopes,
@@ -2349,7 +2367,8 @@ auto build_single_variant(
             ctx.available_dirs(),
             ctx.pruned_dirs(),
             failed_cmds,
-            executed_cmds
+            executed_cmds,
+            deleted_stale
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };

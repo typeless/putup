@@ -5452,6 +5452,54 @@ SCENARIO("Deleting a stale output re-runs its order-only consumer in the same bu
     }
 }
 
+SCENARIO("A glob consumer of a deleted stale output settles after the healing build", "[e2e][stale][order-only]")
+{
+    // The heal in build 2 is #212 and is deliberately better than tup, which runs the consumer
+    // zero times; only the third build is the defect (#213).
+    GIVEN("a consumer that reaches a generated file through an order-only glob")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("a/Tupfile", ": |> echo hi > %o |> gen.txt\n");
+        f.write_file("b/Tupfile", ": | ../a/*.txt |> ls ../a > %o |> listing.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/listing.txt").find("gen.txt") != std::string::npos);
+
+        WHEN("the producing rule is dropped and the healing build has run")
+        {
+            f.write_file("a/Tupfile", "");
+            auto heal = f.build();
+            REQUIRE(heal.success());
+            REQUIRE_FALSE(heal.is_noop());
+            REQUIRE_FALSE(f.exists("a/gen.txt"));
+
+            THEN("the build after it has nothing left to do")
+            {
+                auto settled = f.build();
+                INFO("stdout: " << settled.stdout_output);
+                REQUIRE(settled.success());
+                REQUIRE(settled.is_noop());
+            }
+
+            AND_WHEN("the deleted file is put back by hand")
+            {
+                f.write_file("a/gen.txt", "recreated\n");
+                auto again = f.build();
+
+                THEN("the consumer runs again: an absence already routed is not a licence to stop looking")
+                {
+                    INFO("stdout: " << again.stdout_output);
+                    REQUIRE(again.success());
+                    REQUIRE_FALSE(again.is_noop());
+                    REQUIRE(f.read_file("b/listing.txt").find("gen.txt") != std::string::npos);
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("A rule still naming a deleted stale output is rejected rather than re-run", "[e2e][stale][order-only]")
 {
     // The first rebuild is #212's routed heal; the defect is the build after it, which re-detects the file putup itself deleted (#213).
