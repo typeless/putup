@@ -1231,6 +1231,49 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("A build whose discovered dependency was deleted quiesces", "[e2e][incremental][implicit]")
+{
+    // The command re-runs and rediscovers nothing, which the carry logic could not tell from "did not run", so the dead edge and its file entry came back every build (#224).
+    GIVEN("a rule whose command reports its own dependencies")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": gen.sh |> sh gen.sh %o |> out.o\n");
+        f.write_file(
+            "gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f extra.txt ]; then\n"
+            "  cat extra.txt > \"$out\"\n"
+            "  printf '%s: extra.txt\\n' \"$out\" > \"$dep\"\n"
+            "else\n"
+            "  echo base > \"$out\"\n"
+            "  : > \"$dep\"\n"
+            "fi\n"
+        );
+        f.write_file("extra.txt", "from-extra\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the discovered dependency is deleted")
+        {
+            f.remove_file("extra.txt");
+            auto heal = f.build();
+            REQUIRE(heal.success());
+            REQUIRE_FALSE(heal.is_noop());
+
+            THEN("the build after the healing one does nothing")
+            {
+                auto result = f.build();
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit deps survive identical rules in sibling directories", "[e2e][incremental][identity]")
 {
     // Command text is Tupfile-relative, so these two rules render the same string.
