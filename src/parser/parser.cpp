@@ -72,7 +72,7 @@ auto parse_import(ParserState& s) -> Result<Import>;
 auto parse_expression(ParserState& s) -> Result<Expression>;
 auto parse_expression_until(ParserState& s, pup::Function<bool(Token const&)> const& stop, bool stop_at_gap = false) -> Result<Expression>;
 auto parse_path_pattern(ParserState& s, bool stop_at_angle = false) -> Result<PathPattern>;
-auto parse_command(ParserState& s) -> Result<Expression>;
+auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result<Expression>;
 auto report_error(ParserState& s, std::string_view message) -> void;
 
 auto advance(ParserState& s) -> Token
@@ -536,7 +536,7 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
     advance(s); // Consume |> and read command token in Command context
 
     // Parse command
-    auto cmd = parse_command(s);
+    auto cmd = parse_command(s, body.display);
     if (!cmd) {
         return pup::unexpected<Error>(cmd.error());
     }
@@ -900,7 +900,7 @@ auto parse_path_pattern(ParserState& s, bool stop_at_angle) -> Result<PathPatter
     return pattern;
 }
 
-auto parse_command(ParserState& s) -> Result<Expression>
+auto parse_command(ParserState& s, std::optional<Expression>& display) -> Result<Expression>
 {
     auto expr = Expression {};
     auto tok = Token { s.current }; // Start with current token (already advanced past |>)
@@ -929,6 +929,14 @@ auto parse_command(ParserState& s) -> Result<Expression>
     if (!cmd_sv.empty() && cmd_sv[0] == '^') {
         auto second_caret = cmd_sv.find('^', 1);
         if (second_caret != std::string_view::npos) {
+            auto annotation = cmd_sv.substr(1, second_caret - 1);
+            auto start = annotation.find_first_not_of(" \t");
+            if (start != std::string_view::npos) {
+                auto stop = annotation.find_last_not_of(" \t");
+                auto display_expr = Expression {};
+                display_expr.parts.emplace_back(Expression::Literal { global_pool().intern(annotation.substr(start, stop - start + 1)) });
+                display = std::move(display_expr);
+            }
             auto rest = cmd_sv.substr(second_caret + 1);
             auto pos = rest.find_first_not_of(" \t");
             if (pos != std::string_view::npos) {

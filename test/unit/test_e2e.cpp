@@ -123,6 +123,103 @@ SCENARIO("Building with bang macros", "[e2e][build]")
     }
 }
 
+SCENARIO("A rule's display text stands in for the command in build output", "[e2e][build][display]")
+{
+    GIVEN("a rule carrying a ^ text ^ display annotation")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> ^ GREET the-file^ echo hi > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build reports each command it runs")
+        {
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the annotation is what appears, in place of the command text")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("GREET the-file") != std::string::npos);
+                REQUIRE(result.stdout_output.find("echo hi >") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Percent flags inside display text expand against the rule", "[e2e][build][display]")
+{
+    GIVEN("a rule whose display annotation names its output and stem")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("in.src", "x\n");
+        f.write_file("Tupfile", ": foreach *.src |> ^ CC %B -> %o^ cp %f %o |> %B.obj\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build reports the command it runs")
+        {
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the flags render as the rule's own stem and output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("CC in -> in.obj") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A failing command is reported by its command line, not its display", "[e2e][build][display]")
+{
+    // The display names the step, not what broke, and this is the only line a build prints of what actually ran.
+    GIVEN("an annotated rule whose command fails")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> ^ OOPS^ sh -c \"echo boom >&2; exit 1\" > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs and the command fails")
+        {
+            auto result = f.build();
+            REQUIRE_FALSE(result.success());
+
+            THEN("the failure names the command, and the tool's own output survives")
+            {
+                INFO("stderr: " << result.stderr_output);
+                INFO("stdout: " << result.stdout_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("FAILED: sh -c") != std::string::npos);
+                REQUIRE(combined.find("boom") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A bang macro's display wins over one written on the rule", "[e2e][build][display][bang]")
+{
+    // Outputs and groups resolve rule-over-macro; display is the one field that goes the other way, because the macro owns the command the display names.
+    GIVEN("a macro carrying a display, applied by a rule that also carries one")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("in.src", "x\n");
+        f.write_file("Tupfile", "!cp = |> ^ MACRO %o^ cp %f %o |>\n: foreach *.src |> ^ RULE %o^ !cp |> %B.obj\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build reports the command it runs")
+        {
+            auto result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the macro's display is used and the rule's is discarded")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("MACRO in.obj") != std::string::npos);
+                REQUIRE(result.stdout_output.find("RULE") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Building with output groups", "[e2e][build]")
 {
     GIVEN("an initialized groups project")
@@ -6291,8 +6388,9 @@ SCENARIO("Config tree inside source tree", "[e2e][out-of-tree-config]")
 
             THEN("globs resolve against source root, not config root")
             {
-                // main.c is in source_dir, not source_dir/tupfiles
-                REQUIRE(result.stdout_output.find("main.c") != std::string::npos);
+                // main.c lives in source_dir, not source_dir/tupfiles, so a rule for its object exists only if the glob matched it there.
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("main.o") != std::string::npos);
             }
         }
 
@@ -7801,14 +7899,12 @@ SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-o
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                // The archive command must write to the build tree.
-                // Bug:   "ar rcs libmath.a ..."  (bare filename → written to source tree)
-                // Fixed: "ar rcs ../../build/zzz_lib/libmath.a ..."
-                auto ar_pos = result.stdout_output.find("ar rcs ");
+                // The fixture's display is "AR %o", so the word after it is the rendered %o: a bare "libmath.a" is the bug, meaning the archive was written to the source tree.
+                auto ar_pos = result.stdout_output.find("AR ");
                 REQUIRE(ar_pos != std::string::npos);
-                // Extract the %o argument (first word after "ar rcs ")
-                auto output_start = ar_pos + 7; // strlen("ar rcs ")
-                auto output_end = result.stdout_output.find(' ', output_start);
+                auto output_start = ar_pos + 3; // strlen("AR ")
+                // Bounded to the line: %o is the last word on it, and the next line begins "[build]", which would satisfy the check below on its own.
+                auto output_end = result.stdout_output.find_first_of(" \n", output_start);
                 auto output_arg = result.stdout_output.substr(output_start, output_end - output_start);
                 INFO("archive output arg: " << output_arg);
                 // %o must point to the build directory, not be a bare filename
