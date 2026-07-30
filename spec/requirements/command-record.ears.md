@@ -200,6 +200,17 @@ consume its outputs.
 When a command's input set changes, putup shall preserve the recorded state of the inputs
 that remain.
 
+### REQ-INPUT-UNRESOLVED
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: tup parser.c:2746 rejects an explicitly named input it cannot find, and parser.c:2761 rejects one that resolves to a ghost; both apply to order-only inputs, verified by running tup v0.8-8-g4247a523 on #213's reproducer
+- discharge: test "Scenario: A rule still naming a deleted stale output is rejected rather than re-run"
+- discharge: test "Scenario: Fresh scoped build WITHOUT -a fails for cross-directory deps"
+
+If a command declares an input that no rule produces and that does not exist on disk, then
+putup shall fail the build, whether the input is declared as a regular or an order-only one.
+
 ---
 
 ## Group: implicit-deps
@@ -264,8 +275,8 @@ outputs that are no longer declared.
 ### REQ-OUT-ROUTE
 
 - leg: route
-- conformance: unclassified
-- reference: upstream mechanism not read
+- conformance: deliberate-deviation
+- reference: tup v0.8-8-g4247a523 rejects rather than reroutes when the consumer names the file explicitly — a deleted output named as an input is a parse error (parser.c:2783), so tup deletes nothing and the file survives. Only globs and groups reach tup's rerouting path, where deleted files drop out of the match set (parser.c:2799); there putup and tup agree. putup reroutes in both cases and then rejects the explicitly named one on the following build (REQ-INPUT-UNRESOLVED), because after glob expansion it can no longer tell an explicitly named input from a globbed one
 - discharge: test "Scenario: Deleting a stale output re-runs its order-only consumer in the same build"
 
 When putup deletes an output that is no longer declared, putup shall schedule the commands

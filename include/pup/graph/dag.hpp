@@ -287,6 +287,10 @@ inline constexpr auto inputs = link_type_bit(LinkType::Normal)
 inline constexpr auto sticky = link_type_bit(LinkType::Sticky);
 
 inline constexpr auto order_only = link_type_bit(LinkType::OrderOnly);
+
+/// Every edge by which something consumes a node — data_flow omits order-only, but a file
+/// reached only through `|` is still one whose absence is an error.
+inline constexpr auto consumers = data_flow | order_only;
 } // namespace edge_mask
 
 /// Visit neighbor ids by direction and type mask without materializing a Vec.
