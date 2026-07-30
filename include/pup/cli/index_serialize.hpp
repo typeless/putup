@@ -39,9 +39,9 @@ auto serialize_command_nodes(
     NodeIdMap32 const& failed_cmds = {}
 ) -> NodeIdMap32;
 
-/// Serialize graph edges to the index (order-only edges are ephemeral),
-/// rewriting command endpoints through the remap and dropping edges whose
-/// command endpoint is absent from it.
+/// Serialize graph edges to the index, rewriting command endpoints through the
+/// remap and dropping edges whose command endpoint is absent from it.
+/// Every edge type is persisted, order-only included — removal routing reads them back (#166).
 auto serialize_edges(
     graph::BuildGraph const& state,
     index::Index& index,
