@@ -12,6 +12,29 @@
 
 using namespace pup::test;
 
+// The assertion most incremental scenarios rest on, so it has to be exact: a substring test
+// for "0 commands" also accepts every multiple of ten, and a quiescence check that can pass
+// while a build ran hides the very defects those scenarios exist to catch (#234).
+TEST_CASE("is_noop accepts only a build that ran nothing", "[e2e-fixture]")
+{
+    auto result_with = [](std::string out) { return PupResult { .exit_code = 0, .stdout_output = std::move(out), .stderr_output = {} }; };
+
+    SECTION("a build that ran nothing is a no-op")
+    {
+        REQUIRE(result_with("[.] Nothing to do (up to date).\n").is_noop());
+        REQUIRE(result_with("[.] Build completed: 0 commands in 3ms\n").is_noop());
+    }
+
+    SECTION("a build that ran commands is not, however many it ran")
+    {
+        REQUIRE_FALSE(result_with("[.] Build completed: 1 commands in 3ms\n").is_noop());
+        REQUIRE_FALSE(result_with("[.] Build completed: 10 commands in 3ms\n").is_noop());
+        REQUIRE_FALSE(result_with("[.] Build completed: 20 commands in 3ms\n").is_noop());
+        REQUIRE_FALSE(result_with("[.] Build completed: 100 commands in 3ms\n").is_noop());
+        REQUIRE_FALSE(result_with("[.] Build completed: 30 commands (2 failed) in 3ms\n").is_noop());
+    }
+}
+
 // =============================================================================
 // Build Verification Tests
 // =============================================================================
@@ -8485,7 +8508,7 @@ SCENARIO("Rerun forces up-to-date commands to execute", "[e2e][incremental][reru
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                REQUIRE(result.stdout_output.find("3 commands") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Build completed: 3 commands") != std::string::npos);
             }
         }
 
@@ -8497,7 +8520,7 @@ SCENARIO("Rerun forces up-to-date commands to execute", "[e2e][incremental][reru
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                REQUIRE(result.stdout_output.find("2 commands") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Build completed: 2 commands") != std::string::npos);
             }
         }
 
@@ -9033,7 +9056,7 @@ SCENARIO("Changes in excluded directories are deferred until re-inclusion", "[e2
                         INFO("stdout: " << full.stdout_output);
                         INFO("stderr: " << full.stderr_output);
                         REQUIRE(full.success());
-                        REQUIRE(full.stdout_output.find("1 commands") != std::string::npos);
+                        REQUIRE(full.stdout_output.find("Build completed: 1 commands") != std::string::npos);
                         REQUIRE(f.read_file("tests/t.out") == "t\nmodified\n");
                     }
                 }
@@ -9061,7 +9084,7 @@ SCENARIO("Fresh exclusion then full build runs only the excluded commands", "[e2
                 REQUIRE(full.success());
                 REQUIRE(f.exists("tests/t.out"));
                 REQUIRE(f.exists("lib/tests/n.out"));
-                REQUIRE(full.stdout_output.find("2 commands") != std::string::npos);
+                REQUIRE(full.stdout_output.find("Build completed: 2 commands") != std::string::npos);
             }
         }
     }

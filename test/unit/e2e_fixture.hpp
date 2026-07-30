@@ -53,8 +53,9 @@ struct PupResult {
     [[nodiscard]] auto success() const -> bool { return exit_code == 0; }
     [[nodiscard]] auto is_noop() const -> bool
     {
+        // Anchored to the whole count: bare "0 commands" also accepts "10", "20", "100".
         return stdout_output.find("Nothing to do") != std::string::npos
-            || stdout_output.find("0 commands") != std::string::npos;
+            || stdout_output.find("Build completed: 0 commands") != std::string::npos;
     }
 };
 
