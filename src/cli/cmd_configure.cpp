@@ -119,6 +119,7 @@ auto configure_single_variant(
 
     // Filter config commands by scope if specified
     auto config_commands = pup::NodeIdMap32 {};
+    auto label_cache = pup::graph::PathCache {};
     for (auto const& cfg : configs) {
         auto source_dir_sv = pool.get(pup::graph::get<pup::graph::SourceDir>(ctx.graph().graph, cfg.cmd_id));
         if (!scopes.empty() && !pup::is_path_in_any_scope(source_dir_sv, scopes)) {
@@ -126,10 +127,9 @@ auto configure_single_variant(
         }
         config_commands.set(cfg.cmd_id, 1);
         if (opts.verbose) {
-            auto display_sv = pool.get(pup::graph::get<pup::graph::Display>(ctx.graph().graph, cfg.cmd_id));
-            if (display_sv.empty()) {
-                display_sv = "<unknown>";
-            }
+            auto display_sv = pool.get(
+                pup::graph::command_label(ctx.graph().graph, cfg.cmd_id, label_cache, pool.get(ctx.layout().source_root), pool.get(ctx.layout().config_root))
+            );
             auto output_path_sv = pool.get(cfg.output_path);
             print("[{}] Config rule: {} -> {}\n", variant_name, display_sv, output_path_sv);
         }

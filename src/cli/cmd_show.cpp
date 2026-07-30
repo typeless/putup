@@ -253,9 +253,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
         if (opts.verbose) {
             print("[{}] Commands:\n", variant_name);
             for (auto id : commands) {
-                auto display_sv = global_pool().get(graph::get<graph::Display>(ctx.graph().graph, id));
-                auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
-                auto display = display_sv.empty() ? global_pool().get(cmd_str_id) : display_sv;
+                auto display = global_pool().get(graph::command_label(ctx.graph().graph, id));
                 print("[{}]   {}\n", variant_name, display);
             }
         }
@@ -271,9 +269,7 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
 
         auto get_label = [&]() -> std::string_view {
             if (node_id::is_command(id)) {
-                auto display_sv = global_pool().get(graph::get<graph::Display>(ctx.graph().graph, id));
-                auto cmd_str_id = graph::expand_instruction(ctx.graph().graph, id);
-                return display_sv.empty() ? pool.get(cmd_str_id) : display_sv;
+                return pool.get(graph::command_label(ctx.graph().graph, id));
             }
             return pool.get(graph::get_full_path(ctx.graph().graph, id));
         };
