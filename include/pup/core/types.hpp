@@ -134,6 +134,33 @@ enum class LinkType : std::uint8_t {
     OrderOnly = 5, ///< Order-only dependency (must build first, but not a data dep)
 };
 
+/// What an edge does for code that routes changes, as opposed to what it records.
+enum class LinkRole : std::uint8_t {
+    DataFlow, ///< Carries content: a change at the tail is a change at the head
+    Ordering, ///< Sequences without carrying content
+    Identity, ///< Contributes to what a command is, not to what it reads
+    Unknown,  ///< Not a link type this build knows; joins no mask, so it routes nothing
+};
+
+/// The one place a new LinkType must be classified: no `default`, so -Wswitch makes
+/// omitting one a build error here instead of a silent exclusion from every mask.
+[[nodiscard]]
+constexpr auto link_role(LinkType type) -> LinkRole
+{
+    switch (type) {
+    case LinkType::Normal:
+    case LinkType::Group:
+    case LinkType::Implicit:
+        return LinkRole::DataFlow;
+    case LinkType::OrderOnly:
+        return LinkRole::Ordering;
+    case LinkType::Sticky:
+        return LinkRole::Identity;
+    }
+    // Reached only from an out-of-range value in a corrupt index, which must route nothing.
+    return LinkRole::Unknown;
+}
+
 /// Node state flags (bitmask)
 enum class NodeFlags : std::uint16_t {
     None = 0,

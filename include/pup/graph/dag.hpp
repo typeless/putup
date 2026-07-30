@@ -17,6 +17,7 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
 
@@ -274,23 +275,66 @@ constexpr auto link_type_bit(LinkType t) -> LinkTypeMask
     return LinkTypeMask { 1 } << (static_cast<std::uint8_t>(t) - 1);
 }
 
+/// Whether a link type belongs to a mask. Total over every byte an index can hold: edge
+/// types are deserialized unvalidated, and a wild one must route nothing rather than shift
+/// past the mask width and land on another type's bit.
+[[nodiscard]]
+constexpr auto in_mask(LinkType t, LinkTypeMask mask) -> bool
+{
+    return link_role(t) != LinkRole::Unknown && (link_type_bit(t) & mask) != 0;
+}
+
+/// Collect every link type whose role is one of those given. Sweeping the mask's whole
+/// width rather than a list of enumerators keeps `link_role` the only place a new link
+/// type has to be named; a bit naming no link type classifies as Unknown and joins nothing.
+template<typename... Roles>
+[[nodiscard]]
+constexpr auto mask_of_roles(Roles... roles) -> LinkTypeMask
+{
+    auto mask = LinkTypeMask {};
+    for (auto bit = std::uint8_t { 0 }; bit < std::numeric_limits<LinkTypeMask>::digits; ++bit) {
+        auto type = static_cast<LinkType>(bit + 1);
+        if (((link_role(type) == roles) || ...)) {
+            mask |= link_type_bit(type);
+        }
+    }
+    return mask;
+}
+
+/// The width dimension of what -Wswitch checks at `link_role`: a classified link type whose
+/// value exceeds the mask's bits would join no mask and route nothing, silently.
+constexpr auto every_link_type_fits_mask() -> bool
+{
+    for (auto value = std::numeric_limits<LinkTypeMask>::digits + 1; value <= 255; ++value) {
+        if (link_role(static_cast<LinkType>(value)) != LinkRole::Unknown) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(every_link_type_fits_mask(), "widen LinkTypeMask: a LinkType value exceeds its bit width");
+
 namespace edge_mask {
-inline constexpr auto data_flow = link_type_bit(LinkType::Normal)
-    | link_type_bit(LinkType::Group)
-    | link_type_bit(LinkType::Implicit);
+inline constexpr auto data_flow = mask_of_roles(LinkRole::DataFlow);
 
-inline constexpr auto inputs = link_type_bit(LinkType::Normal)
-    | link_type_bit(LinkType::Sticky)
-    | link_type_bit(LinkType::Group)
-    | link_type_bit(LinkType::Implicit);
+/// Everything upstream of a command: what it reads, plus what decides its identity.
+inline constexpr auto inputs = mask_of_roles(LinkRole::DataFlow, LinkRole::Identity);
 
-inline constexpr auto sticky = link_type_bit(LinkType::Sticky);
+inline constexpr auto sticky = mask_of_roles(LinkRole::Identity);
 
-inline constexpr auto order_only = link_type_bit(LinkType::OrderOnly);
+inline constexpr auto order_only = mask_of_roles(LinkRole::Ordering);
 
 /// Every edge by which something consumes a node — data_flow omits order-only, but a file
 /// reached only through `|` is still one whose absence is an error.
-inline constexpr auto consumers = data_flow | order_only;
+inline constexpr auto consumers = mask_of_roles(LinkRole::DataFlow, LinkRole::Ordering);
+
+/// The half of `consumers` the live graph carries too, so routing it index-side is needed
+/// only for a node that has left the graph.
+inline constexpr auto parsed_consumers = static_cast<LinkTypeMask>(consumers & ~link_type_bit(LinkType::Implicit));
+
+/// The half only the index carries: a discovered dependency is never parsed from a Tupfile,
+/// so its consumer has no graph edge to cascade over and must be routed on every change.
+inline constexpr auto discovered_consumers = link_type_bit(LinkType::Implicit);
 } // namespace edge_mask
 
 /// Visit neighbor ids by direction and type mask without materializing a Vec.
