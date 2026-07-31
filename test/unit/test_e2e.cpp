@@ -1901,6 +1901,46 @@ SCENARIO("A stale output that cannot be deleted fails the build and keeps its re
     }
 }
 
+SCENARIO("A rule turned off by a guard is reported removed only once", "[e2e][incremental][stale]")
+{
+    GIVEN("a guarded rule whose output has been built")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("tup.config", "CONFIG_FOO=y\n");
+        f.write_file("in.txt", "hello\n");
+        f.write_file("Tupfile", "ifdef FOO\n: in.txt |> cp %f %o |> in.o\nendif\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("in.o"));
+
+        WHEN("the guard is turned off")
+        {
+            f.write_file("tup.config", "# FOO off\n");
+            auto result = f.build({ "-v" });
+
+            THEN("the output it built is deleted and the removal is reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("in.o"));
+                REQUIRE(result.stdout_output.find("Removed command") != std::string::npos);
+            }
+
+            AND_WHEN("the project is built again")
+            {
+                auto settled = f.build({ "-v" });
+
+                THEN("the retired command is not reported a second time")
+                {
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.stdout_output.find("Removed command") == std::string::npos);
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")
