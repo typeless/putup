@@ -1993,12 +1993,8 @@ auto build_single_variant(
 
     auto& ctx = *result;
     auto& bs = ctx.graph();
+    // No early exit on an empty graph: having nothing to run is not having nothing to clean up (#231).
     auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
-
-    if (num_commands == 0) {
-        vprint(variant_name, "Nothing to do.\n");
-        return EXIT_SUCCESS;
-    }
 
     auto target_ids_result = validate_output_targets(
         opts.output_targets,

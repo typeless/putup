@@ -1801,6 +1801,45 @@ SCENARIO("A directory that failed to parse keeps the record of what it produced"
     }
 }
 
+SCENARIO("A project whose last rule is removed deletes the output it built", "[e2e][incremental][stale]")
+{
+    GIVEN("a project whose single rule has produced its output")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("in.txt", "hello\n");
+        f.write_file("Tupfile", ": foreach *.txt |> cp %f %o |> %B.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("in.o"));
+
+        WHEN("that rule is removed, leaving the project with none")
+        {
+            f.write_file("Tupfile", "# no rules\n");
+            auto result = f.build({ "-v" });
+
+            THEN("the output it produced is deleted, and the deletion is reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("in.o"));
+                REQUIRE(result.stdout_output.find("Removed stale: in.o") != std::string::npos);
+            }
+
+            AND_WHEN("the project is built again")
+            {
+                auto settled = f.build({ "-v" });
+
+                THEN("the retired command is not reported a second time")
+                {
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.stdout_output.find("Removed command") == std::string::npos);
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")
