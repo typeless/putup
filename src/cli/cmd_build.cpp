@@ -1898,10 +1898,11 @@ auto remove_stale_outputs(
                 auto label = pup::is_empty(cmd.display) ? pup::index::get_command_string(idx, cmd) : cmd.display;
                 auto const* dir = idx.find_file_by_id(cmd.dir_id);
                 auto dir_sv = dir ? pup::global_pool().get(dir->path) : std::string_view {};
+                auto verb = dry_run ? std::string_view { "Would remove command" } : std::string_view { "Removed command" };
                 if (dir_sv.empty()) {
-                    vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(label));
+                    vprint(variant_name, "  {}: {}\n", verb, pup::global_pool().get(label));
                 } else {
-                    vprint(variant_name, "  Removed command: {} (in {})\n", pup::global_pool().get(label), dir_sv);
+                    vprint(variant_name, "  {}: {} (in {})\n", verb, pup::global_pool().get(label), dir_sv);
                 }
             }
         }
