@@ -1676,6 +1676,38 @@ SCENARIO("A scoped build keeps the record of what an out-of-scope command produc
     }
 }
 
+SCENARIO("An out-of-scope command is marked when its order-only input changes", "[e2e][incremental][order-only]")
+{
+    GIVEN("an out-of-scope command reaching a rebuilt file only through an order-only input")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/src.txt", "v1\n");
+        f.write_file("a/Tupfile", ": src.txt |> cp %f %o |> gen.txt\n");
+        f.write_file("b/base.txt", "base\n");
+        f.write_file("b/Tupfile", ": base.txt | ../a/gen.txt |> cat base.txt ../a/gen.txt > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/out.txt") == "base\nv1\n");
+
+        WHEN("a scoped build rebuilds that file while the consumer is out of scope")
+        {
+            f.write_file("a/src.txt", "v2\n");
+            REQUIRE(f.build({ "a/" }).success());
+
+            THEN("the next full build re-runs the consumer")
+            {
+                auto result = f.build({ "-v" });
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b/out.txt") == "base\nv2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A config rule a build will not run does not stay marked unverified", "[e2e][incremental][configure]")
 {
     GIVEN("a config rule whose input a scoped build is about to change")

@@ -144,6 +144,7 @@ keep that record until the command exits zero.
 - conformance: unclassified
 - reference: upstream mechanism not read
 - discharge: test "Scenario: An unverified record survives a build that scheduled it without running it"
+- discharge: test "Scenario: An out-of-scope command is marked when its order-only input changes"
 
 When a build carries a command's record forward across a change to one of that command's
 dependencies, putup shall record that command as needing to run.
@@ -155,7 +156,7 @@ dependencies, putup shall record that command as needing to run.
 - reference: upstream mechanism not read
 - discharge: test "Scenario: A config rule a build will not run does not stay marked unverified"
 
-Where a rule generates configuration, putup shall not record it as needing to run.
+putup shall not retain a needing-to-run record that no putup invocation can discharge.
 
 ### REQ-EXIT-COMPARE
 
