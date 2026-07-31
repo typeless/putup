@@ -46,9 +46,10 @@ Where a rule carries no display annotation, putup shall report that rule by its 
 - conformance: deliberate-deviation
 - reference: upstream reports a failing command by its display unless --verbose (tup/src/tup/entry.c:257); putup's default output echoes no per-command line, so the failure line is the only record of what ran and an annotation there would name the step rather than the fault
 - discharge: test "Scenario: A failing command is reported by its command line, not its display"
+- discharge: test "Scenario: A failing config rule is reported by its command line, not its display"
 
-When a command fails, putup shall report it by its command line rather than by its display
-annotation.
+When a command fails, whether run by `build` or by `configure`, putup shall report it by its
+command line rather than by its display annotation.
 
 ### REQ-DISP-VERBOSE
 
