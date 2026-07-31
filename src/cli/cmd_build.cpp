@@ -1153,8 +1153,7 @@ auto merge_out_of_scope_commands(
         return new_id;
     };
 
-    // A dep whose content moved since the old save is content this command never consumed, so
-    // its record no longer says the outputs are current — but it still says which they are.
+    // Content that moved, not content that vanished (#247): the record stops claiming currency, not ownership.
     auto dep_state_changed = [&](pup::NodeId old_id) -> bool {
         auto const* old_file = old_index.find_file_by_id(old_id);
         if (!old_file || pup::is_empty(old_file->path)) {
