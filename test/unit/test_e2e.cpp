@@ -1941,6 +1941,38 @@ SCENARIO("A rule turned off by a guard is reported removed only once", "[e2e][in
     }
 }
 
+SCENARIO("A dry run reports the command removal it would make, not one it made", "[e2e][incremental][stale]")
+{
+    GIVEN("a rule that has been removed, whose output is still on disk")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": |> echo x > %o |> a.o\n");
+        f.write_file("b/Tupfile", ": |> echo y > %o |> b.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("a/a.o"));
+        f.write_file("a/Tupfile", "# no rules\n");
+
+        WHEN("the project is built with -n")
+        {
+            auto result = f.build({ "-n", "-v" });
+
+            THEN("both the output and the command are reported as removals it would make")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("a/a.o"));
+                REQUIRE(result.stdout_output.find("Would remove stale: a/a.o") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Would remove command") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Removed command") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")

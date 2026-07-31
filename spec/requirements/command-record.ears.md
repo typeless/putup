@@ -75,6 +75,16 @@ putup shall delete the outputs it produced.
 While a build is not a dry run, when a recorded command in a directory that build has
 authority over joins no graph command, putup shall retire that record.
 
+### REQ-KEY-DRYRUN
+
+- leg: invariant
+- conformance: putup-only
+- reference: upstream's closest analogue is `tup todo`, which lists only the commands that would be executed; measured on tup v0.8-8-g4247a523, it reports no retirement at any phase and ends with "Everything is up-to-date", so there is no wording to conform to; the internal reference is the stale-output line in the same loop, which already hedges as "Would remove stale"
+- discharge: test "Scenario: A dry run reports the command removal it would make, not one it made"
+
+While a build is a dry run, putup shall not report a command retirement as one it has
+performed.
+
 ### REQ-KEY-UNDELETABLE
 
 - leg: invariant
