@@ -169,7 +169,7 @@ auto configure_single_variant(
 
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         if (!job_result.success) {
-            // The command, not the display: configure echoes no per-command line, so this is its only record of what ran.
+            // The command, not the display: configure's own echo shows the annotation, so this is the only line naming what actually ran.
             eprint("[{}] FAILED: {}\n", variant_name, pool.get(job.command));
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);

@@ -48,8 +48,8 @@ Where a rule carries no display annotation, putup shall report that rule by its 
 - discharge: test "Scenario: A failing command is reported by its command line, not its display"
 - discharge: test "Scenario: A failing config rule is reported by its command line, not its display"
 
-When a command fails, whether run by `build` or by `configure`, putup shall report it by its
-command line rather than by its display annotation.
+When a command fails, putup shall report it by its command line rather than by its display
+annotation.
 
 ### REQ-DISP-VERBOSE
 
