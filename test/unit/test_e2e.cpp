@@ -218,6 +218,32 @@ SCENARIO("A failing command is reported by its command line, not its display", "
     }
 }
 
+SCENARIO("A failing config rule is reported by its command line, not its display", "[e2e][configure][display]")
+{
+    GIVEN("an annotated config-generating rule whose command fails")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.write_file("Tupfile", ": configs/board.config |> ^ GENCONF^ sh -c \"echo boom >&2; exit 1\" > %o |> tup.config\n");
+        f.write_file("configs/Tupfile", "# no rules\n");
+        f.write_file("sub/Tupfile", "# no rules\n");
+
+        WHEN("configure runs and the rule fails")
+        {
+            auto result = f.pup({ "configure" });
+            REQUIRE_FALSE(result.success());
+
+            THEN("the failure names the command, and the tool's own output survives")
+            {
+                INFO("stderr: " << result.stderr_output);
+                INFO("stdout: " << result.stdout_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("FAILED: sh -c") != std::string::npos);
+                REQUIRE(combined.find("boom") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A bang macro's display wins over one written on the rule", "[e2e][build][display][bang]")
 {
     // Outputs and groups resolve rule-over-macro; display is the one field that goes the other way, because the macro owns the command the display names.
