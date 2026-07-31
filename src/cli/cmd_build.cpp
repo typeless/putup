@@ -1823,6 +1823,14 @@ auto reconcile_input_set(
     return result;
 }
 
+/// What a pass of stale-output cleanup found: the outputs it deleted, and whether any recorded
+/// command joined no graph command. The second is what makes writing the index worthwhile on a
+/// build with nothing to run -- retiring the record is the only way it stops being reported.
+struct StaleCleanup {
+    pup::Vec<pup::StringId> deleted;
+    bool retired_commands = false;
+};
+
 /// Remove stale outputs from removed commands and report them.
 ///
 /// Fails on the first output it cannot remove: the record naming that output is retired by not
@@ -1840,9 +1848,10 @@ auto remove_stale_outputs(
     std::string_view variant_name,
     bool dry_run,
     bool verbose
-) -> pup::Result<pup::Vec<pup::StringId>>
+) -> pup::Result<StaleCleanup>
 {
     auto deleted = pup::Vec<pup::StringId> {};
+    auto retired_commands = false;
     for (auto const& cmd : idx.commands()) {
         // Only delete outputs of a command whose directory we have authoritative
         // knowledge of this run; anything else is preserved.
@@ -1872,7 +1881,7 @@ auto remove_stale_outputs(
                     if (auto removed = pup::platform::remove_file(abs_path); !removed) {
                         auto err = pup::Buf {};
                         err.fmt("Unable to remove previous output file: {}", file_path_sv);
-                        return pup::make_error<pup::Vec<pup::StringId>>(removed.error().code, err.view());
+                        return pup::make_error<StaleCleanup>(removed.error().code, err.view());
                     }
                     deleted.push_back(file->path);
                     if (verbose) {
@@ -1882,20 +1891,23 @@ auto remove_stale_outputs(
             }
         }
 
-        if (verbose && !find_joined_command(join, idx, cmd)) {
-            // Not graph::command_label: the command has left the graph, but the index keeps its operands, so a pattern shared by a foreach still names one command.
-            auto label = pup::is_empty(cmd.display) ? pup::index::get_command_string(idx, cmd) : cmd.display;
-            auto const* dir = idx.find_file_by_id(cmd.dir_id);
-            auto dir_sv = dir ? pup::global_pool().get(dir->path) : std::string_view {};
-            if (dir_sv.empty()) {
-                vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(label));
-            } else {
-                vprint(variant_name, "  Removed command: {} (in {})\n", pup::global_pool().get(label), dir_sv);
+        if (!find_joined_command(join, idx, cmd)) {
+            retired_commands = true;
+            if (verbose) {
+                // Not graph::command_label: the command has left the graph, but the index keeps its operands, so a pattern shared by a foreach still names one command.
+                auto label = pup::is_empty(cmd.display) ? pup::index::get_command_string(idx, cmd) : cmd.display;
+                auto const* dir = idx.find_file_by_id(cmd.dir_id);
+                auto dir_sv = dir ? pup::global_pool().get(dir->path) : std::string_view {};
+                if (dir_sv.empty()) {
+                    vprint(variant_name, "  Removed command: {}\n", pup::global_pool().get(label));
+                } else {
+                    vprint(variant_name, "  Removed command: {} (in {})\n", pup::global_pool().get(label), dir_sv);
+                }
             }
         }
     }
     std::sort(deleted.begin(), deleted.end(), pup::handle_less);
-    return deleted;
+    return StaleCleanup { .deleted = std::move(deleted), .retired_commands = retired_commands };
 }
 
 auto intersect_filters(
@@ -2099,7 +2111,8 @@ auto build_single_variant(
             veprint(variant_name, "Build failed: {}\n", stale_result.error().msg());
             return EXIT_FAILURE;
         }
-        deleted_stale = std::move(*stale_result);
+        auto const retired_commands = stale_result->retired_commands;
+        deleted_stale = std::move(stale_result->deleted);
         auto stale_elapsed = pup::SteadyClock::now() - stale_start;
         pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 
@@ -2164,7 +2177,8 @@ auto build_single_variant(
             }
         }
 
-        if (changed_files.empty() && forced_cmds.empty()) {
+        // A retired record is not "nothing to do": only the write below persists the retirement (#245).
+        if (changed_files.empty() && forced_cmds.empty() && !retired_commands) {
             vprint(variant_name, "Nothing to do (up to date).\n");
             if (opts.stat) {
                 print_stats(idx, index_path, num_commands, 0, variant_start);

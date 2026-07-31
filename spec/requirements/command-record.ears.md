@@ -62,7 +62,18 @@ When a graph command joins no recorded command, putup shall schedule it.
 - discharge: test "Scenario: A directory that failed to parse keeps the record of what it produced"
 - discharge: test "Scenario: A project whose last rule is removed deletes the output it built"
 
-When a recorded command joins no graph command, putup shall delete the outputs it produced.
+When a recorded command in a directory this build has authority over joins no graph command,
+putup shall delete the outputs it produced.
+
+### REQ-KEY-RETIRE
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: tup `delete_files` (updater.c:679) retires each removed command with `tup_del_id_force` in the same update that unlinks its outputs; measured on tup v0.8-8-g4247a523, turning off a rule's `ifdef` reports "rm: in.o" and "Deleting 1 command" once, and every later update reports "No files to delete"
+- discharge: test "Scenario: A rule turned off by a guard is reported removed only once"
+
+While a build is not a dry run, when a recorded command in a directory that build has
+authority over joins no graph command, putup shall retire that record.
 
 ### REQ-KEY-UNDELETABLE
 
