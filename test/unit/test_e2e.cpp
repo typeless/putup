@@ -1644,6 +1644,102 @@ SCENARIO("Removed source file triggers stale output cleanup", "[e2e][incremental
     }
 }
 
+SCENARIO("A scoped build keeps the record of what an out-of-scope command produced", "[e2e][incremental][scoped-config]")
+{
+    GIVEN("an out-of-scope command whose input a scoped build is about to rebuild")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/src.txt", "v1\n");
+        f.write_file("a/Tupfile", ": src.txt |> cp %f %o |> gen.txt\n");
+        f.write_file("b/Tupfile", ": ../a/gen.txt |> cp %f %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("b/out.txt"));
+
+        WHEN("the scoped build rebuilds that input and the out-of-scope rule is then dropped")
+        {
+            f.write_file("a/src.txt", "v2\n");
+            REQUIRE(f.build({ "a/" }).success());
+            f.write_file("b/Tupfile", "# no rules\n");
+            auto result = f.build({ "-v" });
+
+            THEN("the output it produced is still known, and is deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("b/out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("An unverified record survives a build that scheduled it without running it", "[e2e][incremental][scoped-config]")
+{
+    GIVEN("an out-of-scope command whose record a scoped build has marked unverified")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/src.txt", "v1\n");
+        f.write_file("a/Tupfile", ": src.txt |> cp %f %o |> gen.txt\n");
+        f.write_file("b/Tupfile", ": ../a/gen.txt |> cp %f %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.write_file("a/src.txt", "v2\n");
+        REQUIRE(f.build({ "a/" }).success());
+
+        WHEN("a target build schedules it but the target filter keeps it from running")
+        {
+            REQUIRE(f.build({ "a/gen.txt" }).success());
+
+            THEN("the next full build still runs it")
+            {
+                auto result = f.build({ "-v" });
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A directory that failed to parse keeps the record of what it produced", "[e2e][incremental][keep-going]")
+{
+    GIVEN("a project in which one directory has stopped parsing")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/in.txt", "x\n");
+        f.write_file("b/in.txt", "y\n");
+        f.write_file("a/Tupfile", ": foreach *.txt |> cp %f %o |> %B.o\n");
+        f.write_file("b/Tupfile", ": foreach *.txt |> cp %f %o |> %B.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("b/in.o"));
+
+        WHEN("a keep-going build runs past the parse failure and the rule is then dropped")
+        {
+            f.write_file("b/Tupfile", "include nope.tup\n");
+            REQUIRE(f.build({ "-k" }).success());
+            f.write_file("b/Tupfile", "# no rules\n");
+            auto result = f.build({ "-v" });
+
+            THEN("the output it produced is still known, and is deleted")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("b/in.o"));
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")

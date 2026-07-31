@@ -115,8 +115,10 @@ struct alignas(8) RawCommandEntry {
     Hash256 signature = {};           ///< What it will do, for deciding whether to re-run (v19)
 };
 
-/// Its last run exited nonzero, so it must run again whatever its outputs look like.
-inline constexpr auto COMMAND_FLAG_FAILED = std::uint32_t { 1 };
+/// Its last run is not evidence that its outputs are current, so it must run again whatever they
+/// look like: either it exited nonzero, or a build carried the record past a change to one of its
+/// deps without re-running it.
+inline constexpr auto COMMAND_FLAG_MUST_RERUN = std::uint32_t { 1 };
 
 static_assert(sizeof(RawCommandEntry) == 88, "RawCommandEntry must be 88 bytes");
 

@@ -714,7 +714,7 @@ auto serialize_command_nodes(
     pup::graph::BuildGraph const& state,
     pup::index::Index& index,
     PathIdMap const& path_to_id,
-    pup::NodeIdMap32 const& failed_cmds
+    pup::NodeIdMap32 const& must_rerun_cmds
 ) -> pup::NodeIdMap32
 {
     auto const& g = state.graph;
@@ -749,7 +749,7 @@ auto serialize_command_nodes(
             .env = pup::StringId::Empty,
             .key = pup::graph::compute_command_key(g, id, state.path_cache),
             .signature = pup::graph::compute_command_signature(g, id, state.path_cache),
-            .failed = failed_cmds.contains(id),
+            .must_rerun = must_rerun_cmds.contains(id),
             .inputs = std::move(inputs),
             .outputs = std::move(outputs),
         };
@@ -1153,11 +1153,8 @@ auto merge_out_of_scope_commands(
         return new_id;
     };
 
-    // A merged command's identity asserts "ran against these dep states". If a
-    // dep resolves to a new-index entry whose content moved since the old save
-    // (e.g. an in-scope input rebuilt this very build), merging would record the
-    // command as current against content it never consumed — and nothing would
-    // ever re-run it. Leaving it out re-runs it as a new command instead.
+    // A dep whose content moved since the old save is content this command never consumed, so
+    // its record no longer says the outputs are current — but it still says which they are.
     auto dep_state_changed = [&](pup::NodeId old_id) -> bool {
         auto const* old_file = old_index.find_file_by_id(old_id);
         if (!old_file || pup::is_empty(old_file->path)) {
@@ -1197,9 +1194,9 @@ auto merge_out_of_scope_commands(
         if (find_joined(new_lookup, index_command_address(old_index, cmd))) {
             continue;
         }
-        if (any_dep_changed(cmd)) {
-            continue;
-        }
+        // Marked, not dropped: dropping retracts which outputs this command owns along with the
+        // claim that they are current, and only the second is in doubt (#241).
+        auto must_rerun = cmd.must_rerun || any_dep_changed(cmd);
 
         auto new_dir_id = pup::NodeId { 0 };
         if (cmd.dir_id != pup::NodeId { 0 }) {
@@ -1236,7 +1233,7 @@ auto merge_out_of_scope_commands(
             .env = cmd.env,
             .key = cmd.key,
             .signature = cmd.signature,
-            .failed = cmd.failed,
+            .must_rerun = must_rerun,
             .inputs = std::move(new_inputs),
             .outputs = std::move(new_outputs),
         });
@@ -1413,7 +1410,7 @@ auto build_index(
     pup::Vec<pup::StringId> const& parsed_dirs = {},
     pup::Vec<pup::StringId> const& available_dirs = {},
     pup::Vec<pup::StringId> const& pruned_dirs = {},
-    pup::NodeIdMap32 const& failed_cmds = {},
+    pup::NodeIdMap32 const& must_rerun_cmds = {},
     pup::Vec<pup::NodeId> const& executed_cmds = {},
     pup::Vec<pup::StringId> const& deleted_stale = {}
 ) -> pup::index::Index
@@ -1421,7 +1418,7 @@ auto build_index(
     // Serialize file/directory nodes from the build graph
     auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale);
 
-    auto cmd_remap = serialize_command_nodes(state, index, path_to_id, failed_cmds);
+    auto cmd_remap = serialize_command_nodes(state, index, path_to_id, must_rerun_cmds);
 
     serialize_edges(state, index, cmd_remap);
 
@@ -1491,7 +1488,7 @@ auto validate_output_targets(
 struct NewCommands {
     pup::Vec<StringId> changed_outputs;
     pup::Vec<pup::NodeId> forced_cmds;
-    pup::Vec<pup::NodeId> retry_after_failure; ///< Recorded as failed; still failed unless they succeed now
+    pup::Vec<pup::NodeId> must_rerun; ///< Recorded as needing to run; still do unless they succeed now
 };
 
 /// A rule may not produce a file that already exists as a source. Upstream tup rejects it
@@ -1704,15 +1701,15 @@ auto detect_new_commands(
             }
         }
 
-        // A recorded failure outranks the signature: a command that failed must run again
-        // even when nothing about it changed, and its outputs must be treated as changed so
-        // consumers of whatever it half-wrote are rescheduled too.
+        // A record that is not evidence outranks the signature: the command must run again even
+        // when nothing about it changed, and its outputs must be treated as changed so consumers
+        // of whatever it half-wrote, or never wrote, are rescheduled too.
         auto signature = pup::graph::compute_command_signature(g, id, state.path_cache);
-        auto retry_after_failure = previous != nullptr && previous->failed;
-        if (retry_after_failure) {
-            result.retry_after_failure.push_back(id);
+        auto must_rerun = previous != nullptr && previous->must_rerun;
+        if (must_rerun) {
+            result.must_rerun.push_back(id);
         }
-        if (previous && !retry_after_failure && pup::hash_equal(previous->signature, signature)) {
+        if (previous && !must_rerun && pup::hash_equal(previous->signature, signature)) {
             continue;
         }
 
@@ -1724,7 +1721,7 @@ auto detect_new_commands(
         }
         if (verbose) {
             auto display_sv = pup::global_pool().get(pup::graph::command_label(g, id, state.path_cache));
-            auto reason = retry_after_failure ? "Failed last run" : (previous ? "Changed command" : "New command");
+            auto reason = must_rerun ? "Last run not verified" : (previous ? "Changed command" : "New command");
             vprint(variant_name, "  {}: {}\n", reason, display_sv);
         }
     }
@@ -2035,7 +2032,7 @@ auto build_single_variant(
     // Carries "has not succeeded since it last failed": seeded from the previous index, cleared
     // only by a successful run. A build in which the command does not run at all -- a target or
     // scoped build -- must not forget it.
-    auto failed_cmds = pup::NodeIdMap32 {};
+    auto must_rerun_cmds = pup::NodeIdMap32 {};
     auto changed_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
@@ -2141,8 +2138,8 @@ auto build_single_variant(
         for (auto cmd_id : implicit_delta.forced_cmds) {
             forced_cmds.push_back(cmd_id);
         }
-        for (auto cmd_id : new_cmds.retry_after_failure) {
-            failed_cmds.set(cmd_id, 1);
+        for (auto cmd_id : new_cmds.must_rerun) {
+            must_rerun_cmds.set(cmd_id, 1);
         }
 
         if (opts.rerun) {
@@ -2208,10 +2205,10 @@ auto build_single_variant(
     scheduler.on_job_complete([&](pup::exec::BuildJob const& job, pup::exec::JobResult const& job_result) {
         auto& pool = pup::global_pool();
         if (job_result.success) {
-            failed_cmds.remove(job.id);
+            must_rerun_cmds.remove(job.id);
         }
         if (!job_result.success) {
-            failed_cmds.set(job.id, 1);
+            must_rerun_cmds.set(job.id, 1);
             if (use_tty_progress) {
                 pup::exec::finalize_progress(prev_lines);
             }
@@ -2366,7 +2363,7 @@ auto build_single_variant(
             ctx.parsed_dirs(),
             ctx.available_dirs(),
             ctx.pruned_dirs(),
-            failed_cmds,
+            must_rerun_cmds,
             executed_cmds,
             deleted_stale
         ) };

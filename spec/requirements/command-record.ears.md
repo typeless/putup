@@ -120,9 +120,11 @@ shall not treat those commands as changed.
 
 ---
 
-## Group: exit-status
+## Group: must-rerun
 
-Whether the last run succeeded. Closed by #187.
+Whether the last run is evidence that the outputs are current. Two things retract that
+evidence — the run failed, or a build changed a dependency without re-running the command —
+and both oblige the same treatment, so both are recorded in one state. Closed by #187 and #241.
 
 ### REQ-EXIT-RECORD
 
@@ -131,8 +133,19 @@ Whether the last run succeeded. Closed by #187.
 - reference: upstream mechanism not read; #187 fixed putup's behaviour without citing tup's
 - discharge: test "Scenario: A target build does not forget another command's failure"
 
-When a command exits nonzero, putup shall record that command as failed and shall keep
-that record until the command exits zero.
+When a command exits nonzero, putup shall record that command as needing to run and shall
+keep that record until the command exits zero.
+
+### REQ-EXIT-CARRY
+
+- leg: record
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: A scoped build keeps the record of what an out-of-scope command produced"
+- discharge: test "Scenario: A directory that failed to parse keeps the record of what it produced"
+
+When a build carries a command's record forward across a change to one of that command's
+dependencies, putup shall record that command as needing to run.
 
 ### REQ-EXIT-COMPARE
 
@@ -140,9 +153,10 @@ that record until the command exits zero.
 - conformance: unclassified
 - reference: upstream mechanism not read
 - discharge: test "Scenario: A command that failed is re-run on the next build"
+- discharge: test "Scenario: An unverified record survives a build that scheduled it without running it"
 
-If a command is recorded as failed, then putup shall treat it as needing to run even when
-every declared output exists on disk.
+If a command is recorded as needing to run, then putup shall schedule it even when every
+declared output exists on disk, and shall keep that record until it exits zero.
 
 ### REQ-EXIT-ROUTE
 
@@ -151,8 +165,8 @@ every declared output exists on disk.
 - reference: upstream mechanism not read
 - discharge: test "Scenario: A failed command's consumer runs once the command succeeds"
 
-When a recorded-failed command is scheduled, putup shall also schedule the commands that
-consume its outputs.
+When a command recorded as needing to run is scheduled, putup shall also schedule the
+commands that consume its outputs.
 
 ### REQ-EXIT-SCOPE
 
