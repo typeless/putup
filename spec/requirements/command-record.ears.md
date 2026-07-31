@@ -58,6 +58,8 @@ When a graph command joins no recorded command, putup shall schedule it.
 - conformance: tup-conformant
 - reference: tup parser.c:3105 `find_existing_command`
 - discharge: test "Scenario: Removed source file triggers stale output cleanup"
+- discharge: test "Scenario: A scoped build keeps the record of what an out-of-scope command produced"
+- discharge: test "Scenario: A directory that failed to parse keeps the record of what it produced"
 
 When a recorded command joins no graph command, putup shall delete the outputs it produced.
 
@@ -141,11 +143,19 @@ keep that record until the command exits zero.
 - leg: record
 - conformance: unclassified
 - reference: upstream mechanism not read
-- discharge: test "Scenario: A scoped build keeps the record of what an out-of-scope command produced"
-- discharge: test "Scenario: A directory that failed to parse keeps the record of what it produced"
+- discharge: test "Scenario: An unverified record survives a build that scheduled it without running it"
 
 When a build carries a command's record forward across a change to one of that command's
 dependencies, putup shall record that command as needing to run.
+
+### REQ-EXIT-DISCHARGEABLE
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read
+- discharge: test "Scenario: A config rule a build will not run does not stay marked unverified"
+
+Where a rule generates configuration, putup shall not record it as needing to run.
 
 ### REQ-EXIT-COMPARE
 

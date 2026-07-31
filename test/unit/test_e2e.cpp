@@ -1676,6 +1676,35 @@ SCENARIO("A scoped build keeps the record of what an out-of-scope command produc
     }
 }
 
+SCENARIO("A config rule a build will not run does not stay marked unverified", "[e2e][incremental][configure]")
+{
+    GIVEN("a config rule whose input a scoped build is about to change")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.write_file("Tupfile", ": configs/board.config |> cp %f %o |> tup.config\n: tup.config |> cp %f %o |> conf_copy.txt\n");
+        f.write_file("configs/Tupfile", ": board.config |> cp %f %o |> copy.txt\n");
+        f.write_file("sub/Tupfile", "# no rules\n");
+        f.write_file("configs/board.config", "CONFIG_MSG=one\n");
+        REQUIRE(f.pup({ "configure" }).success());
+        REQUIRE(f.build().success());
+
+        WHEN("the scoped build changes it while the config rule is out of scope")
+        {
+            f.write_file("configs/board.config", "CONFIG_MSG=two\n");
+            REQUIRE(f.build({ "configs/" }).success());
+            REQUIRE(f.build().success());
+
+            THEN("the build after that has nothing left to do")
+            {
+                auto settled = f.build();
+                INFO("stdout: " << settled.stdout_output);
+                REQUIRE(settled.success());
+                REQUIRE(settled.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("An unverified record survives a build that scheduled it without running it", "[e2e][incremental][scoped-config]")
 {
     GIVEN("an out-of-scope command whose record a scoped build has marked unverified")
