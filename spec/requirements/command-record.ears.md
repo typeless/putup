@@ -56,10 +56,11 @@ When a graph command joins no recorded command, putup shall schedule it.
 
 - leg: route
 - conformance: tup-conformant
-- reference: tup parser.c:3105 `find_existing_command`
+- reference: tup parser.c:3105 `find_existing_command`; measured on tup v0.8-8-g4247a523, a project emptied of every rule reports "rm: in.o" and "Deleting 1 command", so the join is over the recorded set whether or not the graph still has commands to run
 - discharge: test "Scenario: Removed source file triggers stale output cleanup"
 - discharge: test "Scenario: A scoped build keeps the record of what an out-of-scope command produced"
 - discharge: test "Scenario: A directory that failed to parse keeps the record of what it produced"
+- discharge: test "Scenario: A project whose last rule is removed deletes the output it built"
 
 When a recorded command joins no graph command, putup shall delete the outputs it produced.
 
