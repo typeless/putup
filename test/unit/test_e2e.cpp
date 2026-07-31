@@ -1840,6 +1840,67 @@ SCENARIO("A project whose last rule is removed deletes the output it built", "[e
     }
 }
 
+SCENARIO("A stale output that cannot be deleted fails the build and keeps its record", "[e2e][incremental][stale]")
+{
+    GIVEN("a rule that has been removed, whose output is in a directory that cannot be written")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": |> echo x > %o |> a.o\n");
+        f.write_file("b/Tupfile", ": |> echo y > %o |> b.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("a/a.o"));
+        f.write_file("a/Tupfile", "# no rules\n");
+
+        auto const dir = f.workdir() / "a";
+        auto const writable = std::filesystem::status(dir).permissions();
+        std::filesystem::permissions(
+            dir,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace
+        );
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(dir / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(dir / "probe", probe_ec);
+            std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke write permission (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("the build tries to delete that stale output")
+        {
+            auto result = f.build({ "-v" });
+            std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
+
+            THEN("it fails, naming the file it could not remove")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE((result.stdout_output + result.stderr_output).find("a/a.o") != std::string::npos);
+            }
+
+            AND_WHEN("the directory becomes writable and the project is built again")
+            {
+                auto settled = f.build({ "-v" });
+
+                THEN("the record that survived deletes the stale output after all")
+                {
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE_FALSE(f.exists("a/a.o"));
+                    REQUIRE(settled.stdout_output.find("Removed stale: a/a.o") != std::string::npos);
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")

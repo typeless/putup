@@ -1824,6 +1824,10 @@ auto reconcile_input_set(
 }
 
 /// Remove stale outputs from removed commands and report them.
+///
+/// Fails on the first output it cannot remove: the record naming that output is retired by not
+/// being written, so a build that gave up on the file and carried on would leave nothing that
+/// knows the file should not be there (#246).
 auto remove_stale_outputs(
     pup::index::Index const& idx,
     CommandLookup const& join,
@@ -1836,7 +1840,7 @@ auto remove_stale_outputs(
     std::string_view variant_name,
     bool dry_run,
     bool verbose
-) -> pup::Vec<pup::StringId>
+) -> pup::Result<pup::Vec<pup::StringId>>
 {
     auto deleted = pup::Vec<pup::StringId> {};
     for (auto const& cmd : idx.commands()) {
@@ -1865,11 +1869,14 @@ auto remove_stale_outputs(
                 if (dry_run) {
                     vprint(variant_name, "Would remove stale: {}\n", file_path_sv);
                 } else {
-                    if (pup::platform::remove_file(abs_path)) {
-                        deleted.push_back(file->path);
-                        if (verbose) {
-                            vprint(variant_name, "  Removed stale: {}\n", file_path_sv);
-                        }
+                    if (auto removed = pup::platform::remove_file(abs_path); !removed) {
+                        auto err = pup::Buf {};
+                        err.fmt("Unable to remove previous output file: {}", file_path_sv);
+                        return pup::make_error<pup::Vec<pup::StringId>>(removed.error().code, err.view());
+                    }
+                    deleted.push_back(file->path);
+                    if (verbose) {
+                        vprint(variant_name, "  Removed stale: {}\n", file_path_sv);
                     }
                 }
             }
@@ -2075,7 +2082,7 @@ auto build_single_variant(
         // Before detection, not after: a deleted output is a change like any other, and
         // a consumer reaching it order-only is only notified if detection sees it gone.
         auto stale_start = pup::SteadyClock::now();
-        deleted_stale = remove_stale_outputs(
+        auto stale_result = remove_stale_outputs(
             idx,
             join,
             parse_scopes,
@@ -2088,6 +2095,11 @@ auto build_single_variant(
             opts.dry_run,
             opts.verbose
         );
+        if (!stale_result) {
+            veprint(variant_name, "Build failed: {}\n", stale_result.error().msg());
+            return EXIT_FAILURE;
+        }
+        deleted_stale = std::move(*stale_result);
         auto stale_elapsed = pup::SteadyClock::now() - stale_start;
         pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 

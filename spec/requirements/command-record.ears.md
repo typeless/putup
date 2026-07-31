@@ -64,6 +64,16 @@ When a graph command joins no recorded command, putup shall schedule it.
 
 When a recorded command joins no graph command, putup shall delete the outputs it produced.
 
+### REQ-KEY-UNDELETABLE
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: tup updater.c:693 `delete_files` aborts the update when `delete_file` fails, and retires the node with `tup_del_id_force` only after the unlink has succeeded
+- discharge: test "Scenario: A stale output that cannot be deleted fails the build and keeps its record"
+
+If putup cannot delete a stale output, then putup shall fail the build and keep the record
+that names that output.
+
 ### REQ-KEY-INJECTIVE
 
 - leg: invariant
