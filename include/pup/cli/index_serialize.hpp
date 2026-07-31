@@ -39,7 +39,7 @@ auto serialize_command_nodes(
     graph::BuildGraph const& state,
     index::Index& index,
     PathIdMap const& path_to_id,
-    NodeIdMap32 const& failed_cmds = {}
+    NodeIdMap32 const& must_rerun_cmds = {}
 ) -> NodeIdMap32;
 
 /// Serialize graph edges to the index, rewriting command endpoints through the
