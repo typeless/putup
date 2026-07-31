@@ -2282,8 +2282,7 @@ auto build_single_variant(
     auto config_cmd_ids = NodeIdMap32 {};
     for (auto const& cfg : config_cmds) {
         config_cmd_ids.set(cfg.cmd_id, 1);
-        // Recording "must run" for a command this build refuses to run promises a discharge no
-        // build here can make, and the record would re-route its consumers for ever.
+        // Nothing here will ever run a config rule, so a needing-to-run record on one is undischargeable.
         must_rerun_cmds.remove(cfg.cmd_id);
     }
 
