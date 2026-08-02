@@ -78,7 +78,6 @@ endif
 srcs-y += src/platform/process-$(_os_api).cpp
 srcs-y += src/platform/file_io-$(_os_api).cpp
 srcs-y += src/platform/env-$(_os_api).cpp
-srcs-y += src/platform/path-$(_os_api).cpp
 srcs-y += src/platform/vm-$(_os_api).cpp
 
 # Compile (third-party C without -Werror)
