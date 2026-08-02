@@ -2129,6 +2129,46 @@ SCENARIO("A dry run summarises what it would run, not a build it completed", "[e
     }
 }
 
+SCENARIO("A configure dry run neither claims nor performs the work", "[e2e][configure][dry-run]")
+{
+    GIVEN("a project whose tup.config a config rule would generate")
+    {
+        auto f = E2EFixture { "configure_cmd" };
+        f.write_file("Tupfile", ": configs/board.config |> cp %f %o |> tup.config\n");
+        f.write_file("configs/Tupfile", "# no rules\n");
+        f.write_file("sub/Tupfile", "# no rules\n");
+        f.write_file("configs/board.config", "CONFIG_MSG=one\n");
+
+        WHEN("configure runs with -n")
+        {
+            auto result = f.pup({ "configure", "-n" });
+
+            THEN("it reports future work and writes no tup.config")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("tup.config"));
+                REQUIRE(result.stdout_output.find("Would run: 1 commands") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Configure completed") == std::string::npos);
+                REQUIRE(result.stdout_output.find("Created ") == std::string::npos);
+            }
+        }
+
+        WHEN("configure runs for real")
+        {
+            auto result = f.pup({ "configure" });
+
+            THEN("it reports the work it did and the config exists")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("tup.config"));
+                REQUIRE(result.stdout_output.find("Configure completed: 1 commands") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")
