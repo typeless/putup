@@ -1594,7 +1594,8 @@ auto reject_shadowed_sources(
 /// rejected on every build rather than only on one that has work to do.
 auto reject_unresolved_ghosts(
     pup::graph::BuildGraph const& state,
-    std::string_view output_root
+    std::string_view output_root,
+    bool all_deps_would_help
 ) -> pup::Result<void>
 {
     auto const& g = state.graph;
@@ -1623,11 +1624,10 @@ auto reject_unresolved_ghosts(
         }
 
         auto err = pup::Buf {};
-        err.fmt(
-            "Missing input file (unresolved ghost): {}\n"
-            "  Hint: try building with -a to include upstream dependencies",
-            path_sv
-        );
+        err.fmt("Missing input file (unresolved ghost): {}\n", path_sv);
+        // -a only pulls in rules this build left out of scope; when nothing was left out,
+        // offering it sends the user round the same failure (#222).
+        err.append(all_deps_would_help ? "  Hint: try building with -a to include upstream dependencies" : "  Hint: no rule in this build produces it — the rule that did may have been removed");
         return pup::make_error<void>(pup::ErrorCode::ParseError, err.view());
     }
     return {};
@@ -2043,7 +2043,8 @@ auto build_single_variant(
         return EXIT_FAILURE;
     }
 
-    if (auto ghosts = reject_unresolved_ghosts(bs, pool.get(ctx.layout().output_root)); !ghosts) {
+    auto const all_deps_would_help = !opts.targets.empty() && !opts.include_all_deps;
+    if (auto ghosts = reject_unresolved_ghosts(bs, pool.get(ctx.layout().output_root), all_deps_would_help); !ghosts) {
         veprint(variant_name, "Build failed: {}\n", ghosts.error().msg());
         return EXIT_FAILURE;
     }

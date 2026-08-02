@@ -2576,6 +2576,66 @@ SCENARIO("Fresh scoped build WITHOUT -a fails for cross-directory deps", "[e2e][
     }
 }
 
+SCENARIO("The ghost hint offers -a only where -a could help", "[e2e][scope]")
+{
+    GIVEN("a consumer whose producer's rule has been deleted")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": |> echo x > %o |> gen.txt\n");
+        f.write_file("b/Tupfile", ": ../a/gen.txt |> cp %f %o |> out.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.write_file("a/Tupfile", "# no rules\n");
+        f.remove_file("a/gen.txt");
+
+        WHEN("a full build hits the missing input")
+        {
+            auto result = f.build();
+
+            THEN("it names the likely cause instead of a remedy that cannot apply")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("unresolved ghost") != std::string::npos);
+                REQUIRE(combined.find("building with -a") == std::string::npos);
+            }
+        }
+
+        WHEN("a scoped build that already passed -a hits it")
+        {
+            auto result = f.build({ "b/", "-a" });
+
+            THEN("it does not repeat the remedy the user just used")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("building with -a") == std::string::npos);
+            }
+        }
+
+        WHEN("a scoped build without -a hits it")
+        {
+            auto result = f.build({ "b/" });
+
+            THEN("the -a hint is still offered, because there it can help")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("building with -a") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Fresh scoped build with -a does NOT build unrelated dirs", "[e2e][scope]")
 {
     GIVEN("a project with producer, consumer, and unrelated directories")
