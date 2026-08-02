@@ -1273,6 +1273,20 @@ TEST_CASE("Every edge mask follows from one role per link type", "[graph]")
         }
     }
 
+    SECTION("every content-carrying link type reaches the scope-crossing bypass")
+    {
+        // The scoped-detection bypass reads edge_mask::inputs. Enumerating its members by hand
+        // is what omitted Normal and made a declared source input invisible to a scoped build
+        // (#200); deriving it from the role is what keeps a future type from being omitted the
+        // same way (#189). Ordering must stay out: order-only is existence, not content.
+        for (auto type : { LinkType::Normal, LinkType::Sticky, LinkType::Group, LinkType::Implicit, LinkType::OrderOnly }) {
+            auto const carries_content = pup::link_role(type) == LinkRole::DataFlow
+                || pup::link_role(type) == LinkRole::Identity;
+            REQUIRE(pup::graph::in_mask(type, pup::graph::edge_mask::inputs) == carries_content);
+        }
+        REQUIRE_FALSE(pup::graph::in_mask(LinkType::OrderOnly, pup::graph::edge_mask::inputs));
+    }
+
     SECTION("every known link type is in the masks its role implies")
     {
         for (auto type : { LinkType::Normal, LinkType::Sticky, LinkType::Group, LinkType::Implicit, LinkType::OrderOnly }) {
