@@ -171,9 +171,8 @@ auto is_tupfile(std::string_view path) -> bool
         || path.ends_with("/tup.config") || path == "tup.config";
 }
 
-/// Collect file paths that are implicit dependencies of in-scope commands.
-/// These files (typically headers from .d files) must not be skipped by the
-/// scope filter, even if they live outside the scoped directories.
+/// Collect the content-carrying inputs (`edge_mask::inputs`) of in-scope commands: the files
+/// the scope filter must not skip even though they live outside the scoped directories.
 auto collect_scope_crossing_inputs(
     pup::index::Index const& index,
     pup::Vec<pup::StringId> const& scopes

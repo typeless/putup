@@ -1273,18 +1273,28 @@ TEST_CASE("Every edge mask follows from one role per link type", "[graph]")
         }
     }
 
-    SECTION("every content-carrying link type reaches the scope-crossing bypass")
+    SECTION("a new link type must state whether the scope-crossing bypass carries it")
     {
-        // The scoped-detection bypass reads edge_mask::inputs. Enumerating its members by hand
-        // is what omitted Normal and made a declared source input invisible to a scoped build
-        // (#200); deriving it from the role is what keeps a future type from being omitted the
-        // same way (#189). Ordering must stay out: order-only is existence, not content.
+        // The switch has no default, so a new LinkType stops compiling here until someone
+        // decides whether a scoped build must notice its content changing. Deriving both sides
+        // from link_role instead would move together and answer nothing — which is how a
+        // declared source input stayed invisible to every scoped build (#200, #189).
+        auto const carried_by_bypass = [](LinkType t) {
+            switch (t) {
+            case LinkType::Normal:
+            case LinkType::Group:
+            case LinkType::Implicit:
+            case LinkType::Sticky:
+                return true;
+            case LinkType::OrderOnly:
+                return false;
+            }
+            return false;
+        };
+
         for (auto type : { LinkType::Normal, LinkType::Sticky, LinkType::Group, LinkType::Implicit, LinkType::OrderOnly }) {
-            auto const carries_content = pup::link_role(type) == LinkRole::DataFlow
-                || pup::link_role(type) == LinkRole::Identity;
-            REQUIRE(pup::graph::in_mask(type, pup::graph::edge_mask::inputs) == carries_content);
+            REQUIRE(pup::graph::in_mask(type, pup::graph::edge_mask::inputs) == carried_by_bypass(type));
         }
-        REQUIRE_FALSE(pup::graph::in_mask(LinkType::OrderOnly, pup::graph::edge_mask::inputs));
     }
 
     SECTION("every known link type is in the masks its role implies")
