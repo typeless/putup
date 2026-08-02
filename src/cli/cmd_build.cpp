@@ -1197,31 +1197,35 @@ auto merge_out_of_scope_commands(
         // claim that they are current, and only the second is in doubt (#241).
         auto must_rerun = cmd.must_rerun || any_dep_changed(cmd);
 
+        // Omitted, not dropped (#243): an unresolvable operand is one this record cannot
+        // describe, but the outputs that did resolve are still owned by nothing else.
+        auto unresolved = false;
         auto new_dir_id = pup::NodeId { 0 };
         if (cmd.dir_id != pup::NodeId { 0 }) {
             new_dir_id = resolve_file(cmd.dir_id);
             if (new_dir_id == pup::INVALID_NODE_ID) {
-                continue;
+                new_dir_id = pup::NodeId { 0 };
+                unresolved = true;
             }
         }
 
-        auto resolve_operands = [&](pup::Vec<pup::NodeId> const& old_ids, pup::Vec<pup::NodeId>& out) -> bool {
+        auto resolve_operands = [&](pup::Vec<pup::NodeId> const& old_ids, pup::Vec<pup::NodeId>& out) -> void {
             for (auto old_id : old_ids) {
                 auto id = resolve_file(old_id);
                 if (id == pup::INVALID_NODE_ID) {
-                    return false;
+                    unresolved = true;
+                    continue;
                 }
                 out.push_back(id);
             }
-            return true;
         };
-        // An unresolvable operand (e.g. a pathless group node) would corrupt %f/%o
-        // expansion; leaving the command out just re-runs it on the next full build.
         auto new_inputs = pup::Vec<pup::NodeId> {};
         auto new_outputs = pup::Vec<pup::NodeId> {};
-        if (!resolve_operands(cmd.inputs, new_inputs) || !resolve_operands(cmd.outputs, new_outputs)) {
-            continue;
-        }
+        resolve_operands(cmd.inputs, new_inputs);
+        resolve_operands(cmd.outputs, new_outputs);
+        // An operand it could not carry means the record no longer describes what ran, so it
+        // keeps its outputs but stops claiming they are current.
+        must_rerun = must_rerun || unresolved;
 
         auto new_cmd_id = pup::node_id::make_command(static_cast<std::uint32_t>(ctx.index.commands().size()) + 1);
         ctx.index.add_command(pup::index::CommandEntry {
