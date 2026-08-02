@@ -52,6 +52,7 @@ struct BuildContextOptions {
     bool verbose = false;
     bool keep_going = false;
     bool auto_init = false;
+    bool dry_run = false;
     bool root_config_only = false;
     bool require_config = false;
     Vec<StringId> parse_scopes = {};

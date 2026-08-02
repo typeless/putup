@@ -620,7 +620,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     return result;
 }
 
-auto try_auto_init(ProjectLayout const& layout) -> void
+auto try_auto_init(ProjectLayout const& layout, bool dry_run) -> void
 {
     auto& pool = global_pool();
     auto pup_dir_sv = pool.get(layout.pup_dir());
@@ -628,6 +628,11 @@ auto try_auto_init(ProjectLayout const& layout) -> void
         return;
     }
     if (!pup::platform::exists(pool.get(pup::path::join(pool.get(layout.source_root), "Tupfile.ini")))) {
+        return;
+    }
+    // A dry run creates nothing, so it must not create the project either (#261).
+    if (dry_run) {
+        print("Would initialize pup in \"{}\"\n", pup_dir_sv);
         return;
     }
     (void)pup::platform::create_directories(pup_dir_sv);
@@ -839,7 +844,7 @@ auto build_context(
 
     // 2. Auto-init if needed
     if (ctx_opts.auto_init) {
-        try_auto_init(ctx.impl_->layout);
+        try_auto_init(ctx.impl_->layout, ctx_opts.dry_run);
     }
 
     // 3. Discover Tupfiles

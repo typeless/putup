@@ -2172,6 +2172,31 @@ SCENARIO("A dry run reports the command removal it would make, not one it made",
     }
 }
 
+SCENARIO("A dry run does not initialize the project", "[e2e][build][dry-run]")
+{
+    GIVEN("a project that has never been built")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("in.txt", "hello\n");
+        f.write_file("Tupfile", ": in.txt |> cp %f %o |> out.o\n");
+        f.write_file("tup.config", "");
+        REQUIRE_FALSE(f.exists(".pup"));
+
+        WHEN("it is built with -n")
+        {
+            auto result = f.build({ "-n" });
+
+            THEN("no .pup directory is created and the report is future tense")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists(".pup"));
+                REQUIRE(result.stdout_output.find("Initialized pup") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A dry run summarises what it would run, not a build it completed", "[e2e][build][dry-run]")
 {
     GIVEN("a project with one command that has never been built")
