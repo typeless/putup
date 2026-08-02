@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
 
+#include <fstream>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -2571,6 +2572,48 @@ SCENARIO("Fresh scoped build WITHOUT -a fails for cross-directory deps", "[e2e][
                 REQUIRE_FALSE(result.success());
                 auto combined = result.stdout_output + result.stderr_output;
                 REQUIRE(combined.find("unresolved ghost") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A file that cannot be hashed is named in a warning", "[e2e][incremental]")
+{
+    // The only signal a user gets when content hashing fails; it had no test at all (#204).
+    GIVEN("a source file that cannot be read")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("in.txt", "hello\n");
+        // The command must not read in.txt, or it fails before putup ever hashes it.
+        f.write_file("Tupfile", ": in.txt |> echo done > %o |> out.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        auto const victim = f.workdir() / "in.txt";
+        auto const readable = std::filesystem::status(victim).permissions();
+        std::filesystem::permissions(victim, std::filesystem::perms::none, std::filesystem::perm_options::replace);
+        auto probe = std::ifstream { victim };
+        if (probe.good()) {
+            std::filesystem::permissions(victim, readable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke read permission (running as root?): scenario not exercised");
+            return;
+        }
+        probe.close();
+
+        WHEN("a build has to hash it")
+        {
+            f.write_file("Tupfile", ": in.txt |> echo done > %o |> renamed.o\n");
+            auto result = f.build();
+            std::filesystem::permissions(victim, readable, std::filesystem::perm_options::replace);
+
+            THEN("the warning names the file it could not hash")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("Failed to hash file") != std::string::npos);
+                REQUIRE(combined.find("in.txt") != std::string::npos);
             }
         }
     }
