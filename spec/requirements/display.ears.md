@@ -13,9 +13,9 @@ format and the rules that apply to every area.
 This area requires no legs. A display is a function of the rule that declares it and carries no
 state across builds, so its requirements are invariants of that function and carry no `leg` field.
 
-The grammar of the caret head is out of scope here and tracked by #217: upstream keys flags against
-display on whether a space follows the opening `^`, and rejects an unterminated caret at parse
-time, where putup reads every head as display and lets an unterminated one reach the shell.
+The grammar of the caret head belongs here too. Upstream keys flags against display on whether a
+space follows the opening `^`, and rejects an unterminated caret at parse time; putup implements
+neither flag, so it refuses the flag form rather than rendering it as a label.
 
 ---
 
@@ -90,6 +90,23 @@ command without its annotation.
 
 Where a rule applies a `!macro` that carries its own display annotation, putup shall report the
 macro's annotation and discard the rule's.
+
+### REQ-DISP-UNTERMINATED
+
+- conformance: tup-conformant
+- reference: upstream makes a missing closing caret a parse-time error, "Missing ending `'^'` flag" (tup/src/tup/parser.c:3431-3472)
+- discharge: test "Scenario: An unterminated caret is a parse error, not a shell error"
+
+If a display annotation has no closing `^`, then putup shall reject the Tupfile while parsing it.
+
+### REQ-DISP-HEAD
+
+- conformance: deliberate-deviation
+- reference: upstream reads the non-space run after `^` as flags — `t` marks outputs transient, `o` requests output comparison (tup/src/tup/parser.c:3431-3472); putup implements neither, and treating the run as display text would render a flag as a label, honouring nothing and refusing nothing
+- discharge: test "Scenario: An upstream caret flag is rejected, not rendered as a label"
+
+Where the characters after `^` are not preceded by a space, putup shall reject the Tupfile rather
+than treat them as a display annotation.
 
 ---
 
