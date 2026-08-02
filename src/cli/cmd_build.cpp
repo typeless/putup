@@ -1436,14 +1436,17 @@ auto build_index(
         .cmd_remap = cmd_remap,
     };
 
-    // Merge out-of-scope commands forward before the implicit-edge passes so
-    // preserve_old_implicit_edges can re-attach their edges by identity.
+    // Process discovered implicit dependencies from compiler output
+    process_implicit_deps(discovered_deps, ctx);
+
+    // After the discovered deps, so a merge-created copy of an old entry cannot shadow the
+    // fresh one this build just stat'd — a carried NodeFlags::Deleted would then discharge a
+    // later real deletion as already routed, and the consumer would never run (#237). Still
+    // before preserve_old_implicit_edges, which re-attaches carried edges by identity and so
+    // must see the merged records; that, not the ordering against the deps, is the constraint.
     if (old_index) {
         merge_out_of_scope_commands(*old_index, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs, ctx);
     }
-
-    // Process discovered implicit dependencies from compiler output
-    process_implicit_deps(discovered_deps, ctx);
 
     // Preserve implicit edges from the old index for commands that weren't rebuilt
     if (old_index) {
