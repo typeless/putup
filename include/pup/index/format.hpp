@@ -98,7 +98,13 @@ struct alignas(8) RawFileEntry {
     Hash256 content_hash = {};      ///< SHA-256 content hash
 };
 
-static_assert(sizeof(RawFileEntry) == 64, "RawFileEntry must be 64 bytes");
+static_assert(
+    sizeof(RawFileEntry) == 64,
+    "RawFileEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
+    "— record it here, compare it where staleness is decided, and route it "
+    "(collect_affected_commands) — before updating this number. Note a category carried in "
+    "`flags` changes no size and this assert will not fire for it"
+);
 
 /// Raw command entry (16 bytes) - v8
 /// Represents build commands. In v8, cmd_offset points to template string (with %f/%o patterns)
@@ -128,7 +134,8 @@ inline constexpr auto COMMAND_FLAG_MUST_RERUN = std::uint32_t { 1 };
 static_assert(
     sizeof(RawCommandEntry) == 88,
     "RawCommandEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
-    "— record it here, compare it (compute_command_signature or the must_rerun channel), "
+    "— record it here, compare it (compute_command_signature, the must_rerun channel, or the "
+    "identity key if it changes which rule this is), "
     "and route it (collect_affected_commands) — before updating this number"
 );
 
