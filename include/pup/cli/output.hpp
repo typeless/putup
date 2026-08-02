@@ -17,21 +17,19 @@ struct OutputMode {
     bool verbose = false;
 };
 
-/// Result of file removal operations
+/// Outcome of a removal pass
 struct RemoveResult {
     std::size_t removed_count = 0;
     std::size_t error_count = 0;
-    Vec<StringId> output_dirs = {};
 };
 
 /// Remove empty directories from deepest to shallowest
-/// Returns count of directories removed
 auto remove_empty_directories(
     Vec<StringId> const& dirs,
     std::string_view build_dir,
     std::string_view source_dir,
     OutputMode mode
-) -> std::size_t;
+) -> RemoveResult;
 
 /// Escape string for DOT format (graphviz)
 [[nodiscard]]

@@ -49,7 +49,8 @@ auto remove_indexed_outputs(
     std::string_view index_path,
     std::string_view root,
     OutputMode mode,
-    std::string_view variant_name
+    std::string_view variant_name,
+    Vec<StringId>& output_dirs
 ) -> RemoveResult
 {
     auto result = RemoveResult {};
@@ -72,7 +73,7 @@ auto remove_indexed_outputs(
         for (auto parent = pup::path::parent(abs_path_sv);
              !parent.empty() && parent != pup::path::parent(parent);
              parent = pup::path::parent(parent)) {
-            result.output_dirs.push_back(pup::global_pool().intern(parent));
+            output_dirs.push_back(pup::global_pool().intern(parent));
         }
 
         if (!pup::platform::exists(abs_path_sv)) {
@@ -117,19 +118,18 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     }
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
-    auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name);
+    auto output_dirs = Vec<StringId> {};
+    auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs);
 
-    auto dirs_removed = remove_empty_directories(
-        result.output_dirs, build_dir_sv, root_sv, mode
-    );
+    auto dirs = remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode);
 
     if (opts.dry_run) {
-        vprint(variant_name, "Would remove {} files, {} directories\n", result.removed_count, dirs_removed);
+        vprint(variant_name, "Would remove {} files, {} directories\n", result.removed_count, dirs.removed_count);
     } else {
-        vprint(variant_name, "Removed {} files, {} directories\n", result.removed_count, dirs_removed);
+        vprint(variant_name, "Removed {} files, {} directories\n", result.removed_count, dirs.removed_count);
     }
 
-    return result.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    return result.error_count + dirs.error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 auto distclean_single_variant(Options const& opts, std::string_view variant_name) -> int
@@ -150,9 +150,8 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
     if (pup::platform::exists(index_path_sv)) {
-        auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name);
+        auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs);
         error_count += result.error_count;
-        output_dirs = std::move(result.output_dirs);
     }
 
     auto pup_dir_sv = pool.get(pup::path::join(build_dir_sv, ".pup"));
@@ -163,7 +162,10 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
             if (opts.verbose) {
                 vprint(variant_name, "Removing: {}\n", pup_dir_sv);
             }
-            (void)pup::platform::remove_all(pup_dir_sv);
+            if (auto r = pup::platform::remove_all(pup_dir_sv); !r) {
+                veprint(variant_name, "Error removing {}: {}\n", pup_dir_sv, r.error().msg());
+                ++error_count;
+            }
         }
     }
 
@@ -175,15 +177,22 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
             if (opts.verbose) {
                 vprint(variant_name, "Removing: {}\n", config_path_sv);
             }
-            (void)pup::platform::remove_file(config_path_sv);
+            if (auto r = pup::platform::remove_file(config_path_sv); !r) {
+                veprint(variant_name, "Error removing {}: {}\n", config_path_sv, r.error().msg());
+                ++error_count;
+            }
         }
     }
 
     output_dirs.push_back(pool.intern(build_dir_sv));
-    remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode);
+    error_count += remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode).error_count;
 
     if (!opts.dry_run) {
-        vprint(variant_name, "Project reset complete\n");
+        if (error_count > 0) {
+            veprint(variant_name, "Project reset incomplete: {} errors\n", error_count);
+        } else {
+            vprint(variant_name, "Project reset complete\n");
+        }
     }
 
     return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;

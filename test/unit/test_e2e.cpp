@@ -1927,6 +1927,96 @@ SCENARIO("A stale output that cannot be deleted fails the build and keeps its re
     }
 }
 
+SCENARIO("clean does not count an empty directory it could not remove", "[e2e][clean]")
+{
+    GIVEN("a build whose only generated directory sits in a root that cannot be written")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo x > %o |> out/gen.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out/gen.o"));
+
+        auto const root = f.workdir();
+        auto const writable = std::filesystem::status(root).permissions();
+        std::filesystem::permissions(
+            root,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace
+        );
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(root / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(root / "probe", probe_ec);
+            std::filesystem::permissions(root, writable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke write permission (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("clean removes the file but cannot remove the directory")
+        {
+            auto result = f.clean({ "-v" });
+            std::filesystem::permissions(root, writable, std::filesystem::perm_options::replace);
+
+            THEN("it neither counts nor announces the directory as removed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(f.is_directory("out"));
+                REQUIRE(combined.find("Removed empty dir") == std::string::npos);
+                REQUIRE(combined.find("0 directories") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("distclean does not report a reset it could not perform", "[e2e][clean]")
+{
+    GIVEN("a configured project whose build directory cannot be written")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo x > %o |> out/gen.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        auto const root = f.workdir();
+        auto const writable = std::filesystem::status(root).permissions();
+        std::filesystem::permissions(
+            root,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace
+        );
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(root / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(root / "probe", probe_ec);
+            std::filesystem::permissions(root, writable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke write permission (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("distclean can remove neither the index directory nor tup.config")
+        {
+            auto result = f.distclean({ "-v" });
+            std::filesystem::permissions(root, writable, std::filesystem::perm_options::replace);
+
+            THEN("it fails instead of claiming the project was reset")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(f.exists("tup.config"));
+                REQUIRE(f.is_directory(".pup"));
+                REQUIRE(combined.find("Project reset complete") == std::string::npos);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
 SCENARIO("A rule turned off by a guard is reported removed only once", "[e2e][incremental][stale]")
 {
     GIVEN("a guarded rule whose output has been built")
