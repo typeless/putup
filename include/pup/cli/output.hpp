@@ -28,7 +28,8 @@ auto remove_empty_directories(
     Vec<StringId> const& dirs,
     std::string_view build_dir,
     std::string_view source_dir,
-    OutputMode mode
+    OutputMode mode,
+    std::string_view variant_name
 ) -> RemoveResult;
 
 /// Escape string for DOT format (graphviz)

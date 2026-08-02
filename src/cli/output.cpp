@@ -26,7 +26,8 @@ auto remove_empty_directories(
     Vec<StringId> const& output_dir_ids,
     std::string_view build_dir,
     std::string_view source_dir,
-    OutputMode mode
+    OutputMode mode,
+    std::string_view variant_name
 ) -> RemoveResult
 {
     auto result = RemoveResult {};
@@ -58,14 +59,14 @@ auto remove_empty_directories(
         }
 
         if (mode.dry_run) {
-            print("Would remove empty dir: {}\n", dir);
+            print("[{}] Would remove empty dir: {}\n", variant_name, dir);
         } else if (auto r = pup::platform::remove_file(dir); r) {
             ++result.removed_count;
             if (mode.verbose) {
-                print("Removed empty dir: {}\n", dir);
+                print("[{}] Removed empty dir: {}\n", variant_name, dir);
             }
         } else {
-            eprint("Error removing empty dir {}: {}\n", dir, r.error().msg());
+            eprint("[{}] Error removing empty dir {}: {}\n", variant_name, dir, r.error().msg());
             ++result.error_count;
         }
     }

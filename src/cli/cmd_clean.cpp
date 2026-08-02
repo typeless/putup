@@ -121,7 +121,7 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     auto output_dirs = Vec<StringId> {};
     auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs);
 
-    auto dirs = remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode);
+    auto dirs = remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name);
 
     if (opts.dry_run) {
         vprint(variant_name, "Would remove {} files, {} directories\n", result.removed_count, dirs.removed_count);
@@ -185,7 +185,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     }
 
     output_dirs.push_back(pool.intern(build_dir_sv));
-    error_count += remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode).error_count;
+    error_count += remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name).error_count;
 
     if (!opts.dry_run) {
         if (error_count > 0) {
