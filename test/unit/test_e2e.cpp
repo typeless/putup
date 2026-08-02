@@ -1433,6 +1433,87 @@ SCENARIO("A scoped build sees a declared input outside the scope change", "[e2e]
     }
 }
 
+SCENARIO("A command that raced its discovered dependency runs again", "[e2e][incremental][implicit]")
+{
+    // Nothing orders a consumer against a producer it only discovers, so it can read the file
+    // before it exists. The dep is then recorded from a post-run stat — as already satisfied —
+    // and no later build re-runs it, leaving the output permanently wrong (#274).
+    GIVEN("a consumer that discovers a generated file with nothing ordering the two")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": |> sleep 1; echo produced > %o |> p.txt\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../a/p.txt ]; then cat ../a/p.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("a/p.txt"));
+
+        WHEN("the project is built again")
+        {
+            REQUIRE(f.build().success());
+
+            THEN("the consumer has caught up with the dependency it raced")
+            {
+                INFO("c.o: " << f.read_file("b/c.o"));
+                REQUIRE(f.read_file("b/c.o") == "produced\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A consumer ordered through a sibling output is not taxed for discovering the other", "[e2e][incremental][implicit]")
+{
+    // Codegen emitting one declared and one discovered output: the consumer is ordered through
+    // the declared one, so it cannot have raced the discovered one. Marking it anyway doubles
+    // every codegen rebuild — the shape a two-hop ordering check cannot see (#274).
+    GIVEN("a generator producing a source the consumer declares and a header it only discovers")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": gen.sh |> sh gen.sh |> gen.c gen.h\n"
+            ": gen.c |> sh build.sh %f %o |> gen.o\n");
+        f.write_file("gen.sh", "echo 'int v(void);' > gen.h\necho 'int v(void){return 1;}' > gen.c\n");
+        f.write_file("build.sh", "cat \"$1\" > \"$2\"\nprintf '%s: gen.h\\n' \"$2\" > \"${2%.o}.d\"\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the generator's input changes, re-running it and the consumer")
+        {
+            f.write_file("gen.sh", "echo 'int v(void);' > gen.h\necho 'int v(void){return 2;}' > gen.c\n");
+            REQUIRE(f.build().success());
+
+            THEN("the build after that does nothing")
+            {
+                auto settled = f.build();
+                INFO("stdout: " << settled.stdout_output);
+                REQUIRE(settled.success());
+                REQUIRE(settled.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
 {
     // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,

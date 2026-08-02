@@ -401,6 +401,10 @@ struct ImplicitDepContext {
     pup::NodeIdPairSet& added_edges;
     std::string_view source_root;
     pup::NodeIdMap32 const& cmd_remap;
+    /// Files written by commands that ran in this build, by index id. A consumer that reads one
+    /// of these with nothing ordering it after the producer may have read it before it existed,
+    /// and the dep is then recorded from a post-run stat — as already satisfied (#274).
+    pup::NodeIdMap32 const& produced_this_build;
 };
 
 /// Recursively get or create directory entries in the index.
@@ -807,6 +811,43 @@ auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
     return pup::NodeId { max_file_id + 1 };
 }
 
+/// Whether anything in the recorded edges puts `cmd` after `dep`: walk forward from `dep` over
+/// every edge kind the scheduler orders by. A command reached this way cannot have run before
+/// `dep` existed, so it did not race it (#274). Reaching `cmd` from its own output — a depfile
+/// naming its target — counts, which is what keeps a malformed .d from marking forever.
+auto orders_after(pup::index::Index const& index, pup::NodeId dep, pup::NodeId cmd) -> bool
+{
+    auto seen = pup::NodeIdMap32 {};
+    auto queue = pup::Vec<pup::NodeId> {};
+    // From the producer, not the file: a generator's other output is what orders the consumer,
+    // and that path leaves the file backwards before going forward.
+    for (auto const* edge : index.edges_to(dep)) {
+        if (pup::node_id::is_command(edge->from) && !seen.contains(edge->from)) {
+            seen.set(edge->from, 1);
+            queue.push_back(edge->from);
+        }
+    }
+    if (!seen.contains(dep)) {
+        seen.set(dep, 1);
+        queue.push_back(dep);
+    }
+
+    while (!queue.empty()) {
+        auto const id = queue.back();
+        queue.pop_back();
+        if (id == cmd) {
+            return true;
+        }
+        for (auto const* edge : index.edges_from(id)) {
+            if (!seen.contains(edge->to)) {
+                seen.set(edge->to, 1);
+                queue.push_back(edge->to);
+            }
+        }
+    }
+    return false;
+}
+
 /// Process discovered implicit dependencies from compiler output.
 /// Adds new file entries and implicit edges to the index.
 auto process_implicit_deps(
@@ -835,6 +876,19 @@ auto process_implicit_deps(
             auto dep_id = it != nullptr
                 ? it->second
                 : create_implicit_file(ctx, abs_path, rel_path);
+
+            // Only when nothing orders this command after the file. Ordering is transitive —
+            // a codegen emitting one declared and one discovered output orders its consumer
+            // through the declared one — so this asks reachability, not adjacency: enumerating
+            // path shapes is how the two previous attempts at this taxed correct builds.
+            if (ctx.produced_this_build.contains(dep_id) && !orders_after(ctx.index, dep_id, cmd_id)) {
+                for (auto& entry : ctx.index.commands()) {
+                    if (entry.id == cmd_id) {
+                        entry.must_rerun = true;
+                        break;
+                    }
+                }
+            }
 
             if (ctx.added_edges.insert(dep_id, cmd_id)) {
                 ctx.index.add_edge(pup::index::EdgeEntry {
@@ -1428,6 +1482,20 @@ auto build_index(
 
     auto next_id = compute_next_id(state);
     auto added_edges = pup::NodeIdPairSet {};
+
+    auto produced_this_build = pup::NodeIdMap32 {};
+    for (auto graph_cmd_id : executed_cmds) {
+        if (!cmd_remap.contains(graph_cmd_id)) {
+            continue;
+        }
+        auto const cmd_id = pup::node_id::make_command(cmd_remap.get(graph_cmd_id));
+        for (auto const* edge : index.edges_from(cmd_id)) {
+            if (!pup::node_id::is_command(edge->to)) {
+                produced_this_build.set(edge->to, 1);
+            }
+        }
+    }
+
     auto ctx = ImplicitDepContext {
         .index = index,
         .path_to_id = path_to_id,
@@ -1435,6 +1503,7 @@ auto build_index(
         .added_edges = added_edges,
         .source_root = source_root,
         .cmd_remap = cmd_remap,
+        .produced_this_build = produced_this_build,
     };
 
     // Process discovered implicit dependencies from compiler output
