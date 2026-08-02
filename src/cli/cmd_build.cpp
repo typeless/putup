@@ -405,6 +405,10 @@ struct ImplicitDepContext {
     /// of these with nothing ordering it after the producer may have read it before it existed,
     /// and the dep is then recorded from a post-run stat — as already satisfied (#274).
     pup::NodeIdMap32 const& produced_this_build;
+    /// One cone walk per produced file, not one per consumer of it: a generated config header
+    /// discovered by hundreds of TUs would otherwise re-walk the same downstream graph each time.
+    pup::Vec<pup::NodeId>& ordered_memo_deps;
+    pup::Vec<pup::NodeIdMap32>& ordered_memo_reached;
 };
 
 /// Recursively get or create directory entries in the index.
@@ -811,41 +815,40 @@ auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
     return pup::NodeId { max_file_id + 1 };
 }
 
-/// Whether anything in the recorded edges puts `cmd` after `dep`: walk forward from `dep` over
-/// every edge kind the scheduler orders by. A command reached this way cannot have run before
-/// `dep` existed, so it did not race it (#274). Reaching `cmd` from its own output — a depfile
-/// naming its target — counts, which is what keeps a malformed .d from marking forever.
-auto orders_after(pup::index::Index const& index, pup::NodeId dep, pup::NodeId cmd) -> bool
+/// Whether anything the scheduler orders by puts `cmd` after `dep`: walk forward from the file's
+/// producers over the edges the live graph also carries. A command reached this way cannot have
+/// run before `dep` existed, so it did not race it (#274). Implicit edges are excluded — they are
+/// index-only and order nothing, so treating one as evidence would let a consumer that raced
+/// vouch for the next one. Reaching `cmd` from its own output counts, which keeps a depfile that
+/// names its target from marking forever.
+auto reachable_from_producers(pup::index::Index const& index, pup::NodeId dep) -> pup::NodeIdMap32
 {
     auto seen = pup::NodeIdMap32 {};
     auto queue = pup::Vec<pup::NodeId> {};
-    // From the producer, not the file: a generator's other output is what orders the consumer,
-    // and that path leaves the file backwards before going forward.
+    auto visit = [&](pup::NodeId id) {
+        if (!seen.contains(id)) {
+            seen.set(id, 1);
+            queue.push_back(id);
+        }
+    };
+
     for (auto const* edge : index.edges_to(dep)) {
-        if (pup::node_id::is_command(edge->from) && !seen.contains(edge->from)) {
-            seen.set(edge->from, 1);
-            queue.push_back(edge->from);
+        if (pup::node_id::is_command(edge->from)) {
+            visit(edge->from);
         }
     }
-    if (!seen.contains(dep)) {
-        seen.set(dep, 1);
-        queue.push_back(dep);
-    }
+    visit(dep);
 
     while (!queue.empty()) {
         auto const id = queue.back();
         queue.pop_back();
-        if (id == cmd) {
-            return true;
-        }
         for (auto const* edge : index.edges_from(id)) {
-            if (!seen.contains(edge->to)) {
-                seen.set(edge->to, 1);
-                queue.push_back(edge->to);
+            if (pup::graph::in_mask(edge->type, pup::graph::edge_mask::parsed_consumers)) {
+                visit(edge->to);
             }
         }
     }
-    return false;
+    return seen;
 }
 
 /// Process discovered implicit dependencies from compiler output.
@@ -881,7 +884,18 @@ auto process_implicit_deps(
             // a codegen emitting one declared and one discovered output orders its consumer
             // through the declared one — so this asks reachability, not adjacency: enumerating
             // path shapes is how the two previous attempts at this taxed correct builds.
-            if (ctx.produced_this_build.contains(dep_id) && !orders_after(ctx.index, dep_id, cmd_id)) {
+            auto ordered_after_dep = [&](pup::NodeId file_id, pup::NodeId consumer) -> bool {
+                for (auto i = std::size_t { 0 }; i < ctx.ordered_memo_deps.size(); ++i) {
+                    if (ctx.ordered_memo_deps[i] == file_id) {
+                        return ctx.ordered_memo_reached[i].contains(consumer);
+                    }
+                }
+                ctx.ordered_memo_deps.push_back(file_id);
+                ctx.ordered_memo_reached.push_back(reachable_from_producers(ctx.index, file_id));
+                return ctx.ordered_memo_reached.back().contains(consumer);
+            };
+
+            if (ctx.produced_this_build.contains(dep_id) && !ordered_after_dep(dep_id, cmd_id)) {
                 for (auto& entry : ctx.index.commands()) {
                     if (entry.id == cmd_id) {
                         entry.must_rerun = true;
@@ -1496,6 +1510,8 @@ auto build_index(
         }
     }
 
+    auto ordered_memo_deps = pup::Vec<pup::NodeId> {};
+    auto ordered_memo_reached = pup::Vec<pup::NodeIdMap32> {};
     auto ctx = ImplicitDepContext {
         .index = index,
         .path_to_id = path_to_id,
@@ -1504,6 +1520,8 @@ auto build_index(
         .source_root = source_root,
         .cmd_remap = cmd_remap,
         .produced_this_build = produced_this_build,
+        .ordered_memo_deps = ordered_memo_deps,
+        .ordered_memo_reached = ordered_memo_reached,
     };
 
     // Process discovered implicit dependencies from compiler output
