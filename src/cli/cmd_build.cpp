@@ -2000,6 +2000,7 @@ auto build_single_variant(
         .verbose = opts.verbose,
         .keep_going = opts.keep_going,
         .auto_init = true,
+        .dry_run = opts.dry_run,
         .root_config_only = false,
         .require_config = true,
         .parse_scopes = parse_scopes,
