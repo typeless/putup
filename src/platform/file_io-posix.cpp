@@ -88,6 +88,14 @@ auto write_all(int fd, void const* data, std::size_t n) -> int
     return 0;
 }
 
+// Only these mean "not there". Any other stat failure means we cannot tell, and answering
+// "absent" silently skips the caller's removal and orphans the file (#248).
+auto stat_error_means_absent(int err) -> bool
+{
+    auto const e = err < 0 ? -err : err;
+    return e == ENOENT || e == ENOTDIR || e == ENAMETOOLONG;
+}
+
 auto is_dot_or_dotdot(char const* name) -> bool
 {
     return std::strcmp(name, ".") == 0 || std::strcmp(name, "..") == 0;
@@ -254,7 +262,11 @@ auto exists(std::string_view path) -> bool
 {
     auto p = CPath { path };
     auto st = sys::Stat {};
-    return sys::stat(p.c_str(), st) == 0;
+    auto rc = sys::stat(p.c_str(), st);
+    if (rc == 0) {
+        return true;
+    }
+    return !stat_error_means_absent(rc);
 }
 
 auto is_file(std::string_view path) -> bool
@@ -358,7 +370,7 @@ auto remove_file(std::string_view path) -> Result<void>
     auto st = sys::Stat {};
     auto rc = sys::lstat(p.c_str(), st);
     if (rc != 0) {
-        if (rc == -ENOENT) {
+        if (stat_error_means_absent(rc)) {
             return {};
         }
         return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to stat: ", path, rc));
@@ -383,7 +395,7 @@ auto remove_all_recursive(std::string_view path) -> int
     auto st = sys::Stat {};
     auto rc = sys::lstat(cp.c_str(), st);
     if (rc != 0) {
-        return rc == -ENOENT ? 0 : rc;
+        return stat_error_means_absent(rc) ? 0 : rc;
     }
 
     if (!sys::is_dir(st.mode)) {
