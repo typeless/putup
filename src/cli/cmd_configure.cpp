@@ -101,13 +101,20 @@ auto configure_single_variant(
     // Helper to ensure tup.config exists for variant detection (only on success)
     auto ensure_config = [&]() {
         auto config_path_sv = pool.get(pup::path::join(pool.get(ctx.layout().output_root), "tup.config"));
-        if (!pup::platform::exists(config_path_sv)) {
-            (void)pup::platform::create_directories(pup::path::parent(config_path_sv));
-            (void)pup::platform::write_file(config_path_sv, "");
-            auto cp = Buf {};
-            cp.append(config_path_sv);
-            print("[{}] Created {}\n", variant_name, cp.c_str());
+        if (pup::platform::exists(config_path_sv)) {
+            return;
         }
+        auto cp = Buf {};
+        cp.append(config_path_sv);
+        // Guarded here rather than at the three call sites: a dry run that writes tup.config
+        // disarms the "run configure first" gate, so a later plain build silently proceeds.
+        if (opts.dry_run) {
+            print("[{}] Would create {}\n", variant_name, cp.c_str());
+            return;
+        }
+        (void)pup::platform::create_directories(pup::path::parent(config_path_sv));
+        (void)pup::platform::write_file(config_path_sv, "");
+        print("[{}] Created {}\n", variant_name, cp.c_str());
     };
 
     auto configs = find_config_commands(ctx.graph(), pool.get(ctx.layout().source_root));
@@ -202,7 +209,11 @@ auto configure_single_variant(
         return EXIT_FAILURE;
     }
 
-    print("[{}] Configure completed: {} commands\n", variant_name, stats.completed_jobs);
+    if (opts.dry_run) {
+        print("[{}] Would run: {} commands\n", variant_name, stats.completed_jobs);
+    } else {
+        print("[{}] Configure completed: {} commands\n", variant_name, stats.completed_jobs);
+    }
     ensure_config();
     return EXIT_SUCCESS;
 }

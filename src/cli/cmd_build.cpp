@@ -2362,11 +2362,12 @@ auto build_single_variant(
     auto const& stats = *build_result;
     if (stats.completed_jobs == 0 && stats.failed_jobs == 0) {
         vprint(variant_name, "Nothing to do.\n");
+    } else if (stats.failed_jobs > 0) {
+        // Ahead of the dry-run branch so that a scheduler which ever fails a dry job reports it.
+        vprint(variant_name, "Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
     } else if (opts.dry_run) {
         // "Would run", matching clean's "Would remove": a dry run has completed nothing.
         vprint(variant_name, "Would run: {} commands\n", stats.completed_jobs);
-    } else if (stats.failed_jobs > 0) {
-        vprint(variant_name, "Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
     } else {
         vprint(variant_name, "Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
     }
