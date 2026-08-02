@@ -96,7 +96,7 @@ auto remove_indexed_outputs(
                 vprint(variant_name, "Removed: {}\n", file_path_sv);
             }
         } else {
-            veprint(variant_name, "Error removing {}: {}\n", file_path_sv, r.error().msg());
+            veprint(variant_name, "{}\n", r.error().msg());
             ++result.error_count;
         }
     }
@@ -168,7 +168,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
                 vprint(variant_name, "Removing: {}\n", pup_dir_sv);
             }
             if (auto r = pup::platform::remove_all(pup_dir_sv); !r) {
-                veprint(variant_name, "Error removing {}: {}\n", pup_dir_sv, r.error().msg());
+                veprint(variant_name, "{}\n", r.error().msg());
                 ++error_count;
             }
         }
@@ -183,7 +183,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
                 vprint(variant_name, "Removing: {}\n", config_path_sv);
             }
             if (auto r = pup::platform::remove_file(config_path_sv); !r) {
-                veprint(variant_name, "Error removing {}: {}\n", config_path_sv, r.error().msg());
+                veprint(variant_name, "{}\n", r.error().msg());
                 ++error_count;
             }
         }
