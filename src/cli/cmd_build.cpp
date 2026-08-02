@@ -195,12 +195,12 @@ auto collect_scope_crossing_inputs(
         }
     }
 
-    // Every kind of edge that carries content-sensitivity, not a subset: a declared source
-    // input makes a Normal edge, and omitting it was the one dependency a scoped build could
-    // not see (#200). OrderOnly stays out — it means existence, not content.
+    // Derived from link_role rather than enumerated here, so a new link type joins this
+    // bypass by being classified once instead of by every walk remembering it — the omission
+    // that made a declared source input invisible to a scoped build (#200, #189). Ordering
+    // is excluded by the role, not by hand: order-only means existence, not content.
     for (auto const& edge : index.edges()) {
-        if (edge.type != pup::LinkType::Implicit && edge.type != pup::LinkType::Sticky
-            && edge.type != pup::LinkType::Normal) {
+        if (!pup::graph::in_mask(edge.type, pup::graph::edge_mask::inputs)) {
             continue;
         }
         if (!in_scope_cmds.contains(edge.to)) {
