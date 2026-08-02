@@ -1400,6 +1400,55 @@ SCENARIO("A changed header re-runs the output-less command that read it", "[e2e]
     }
 }
 
+SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
+{
+    // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,
+    // that copy shadowed the fresh one, so a carried NodeFlags::Deleted discharged the next
+    // real deletion as "already routed" and the consumer never ran again (#237).
+    GIVEN("a guarded producer, a consumer that discovers its output, and an out-of-scope declarer")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.mkdir("d");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", "ifdef FOO\n: |> echo produced > %o |> p.txt\nendif\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../a/p.txt ]; then cat ../a/p.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        f.write_file("d/Tupfile", ": ../a/p.txt |> cp %f %o |> o.copy\n");
+        f.write_file("tup.config", "CONFIG_FOO=y\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/c.o") == "produced\n");
+
+        WHEN("the guard is turned off, the output is recreated by hand, and then deleted again")
+        {
+            f.write_file("tup.config", "# CONFIG_FOO off\n");
+            REQUIRE(f.build().success());
+            REQUIRE_FALSE(f.exists("a/p.txt"));
+
+            f.write_file("a/p.txt", "hand-made\n");
+            REQUIRE(f.build({ "b/" }).success());
+            REQUIRE(f.read_file("b/c.o") == "hand-made\n");
+
+            f.remove_file("a/p.txt");
+            auto result = f.build({ "b/" });
+
+            THEN("the consumer runs for the deletion instead of keeping a stale output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b/c.o") == "missing\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A build whose discovered dependency was deleted quiesces", "[e2e][incremental][implicit]")
 {
     // The command re-runs and rediscovers nothing, which the carry logic could not tell from "did not run", so the dead edge and its file entry came back every build (#224).
