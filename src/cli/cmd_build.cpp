@@ -174,7 +174,7 @@ auto is_tupfile(std::string_view path) -> bool
 /// Collect file paths that are implicit dependencies of in-scope commands.
 /// These files (typically headers from .d files) must not be skipped by the
 /// scope filter, even if they live outside the scoped directories.
-auto collect_implicit_dep_files(
+auto collect_scope_crossing_inputs(
     pup::index::Index const& index,
     pup::Vec<pup::StringId> const& scopes
 ) -> Vec<StringId>
@@ -195,9 +195,12 @@ auto collect_implicit_dep_files(
         }
     }
 
-    // Collect files with implicit/sticky edges to in-scope commands
+    // Every kind of edge that carries content-sensitivity, not a subset: a declared source
+    // input makes a Normal edge, and omitting it was the one dependency a scoped build could
+    // not see (#200). OrderOnly stays out — it means existence, not content.
     for (auto const& edge : index.edges()) {
-        if (edge.type != pup::LinkType::Implicit && edge.type != pup::LinkType::Sticky) {
+        if (edge.type != pup::LinkType::Implicit && edge.type != pup::LinkType::Sticky
+            && edge.type != pup::LinkType::Normal) {
             continue;
         }
         if (!in_scope_cmds.contains(edge.to)) {
@@ -259,7 +262,7 @@ auto find_changed_files_with_implicit(
     pup::Vec<pup::StringId> const& scopes,
     pup::parser::IgnoreList const& excludes,
     Vec<std::string_view> const& upstream_files,
-    Vec<StringId> const& implicit_dep_files,
+    Vec<StringId> const& scope_crossing_inputs,
     Vec<StringId> const& inactive_outputs,
     bool verbose = false,
     bool no_stat_cache = false
@@ -298,7 +301,7 @@ auto find_changed_files_with_implicit(
         if (!scopes.empty() && !is_tupfile(file_path_sv)
             && !pup::is_path_in_any_scope(scope_path_sv, scopes)
             && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)
-            && !std::binary_search(implicit_dep_files.begin(), implicit_dep_files.end(), file.path, pup::handle_less)) {
+            && !std::binary_search(scope_crossing_inputs.begin(), scope_crossing_inputs.end(), file.path, pup::handle_less)) {
             continue;
         }
 
@@ -2077,9 +2080,9 @@ auto build_single_variant(
 
         // Always include implicit deps (headers from .d files) for in-scope
         // commands, even if the headers live outside the scoped directories.
-        auto implicit_dep_files = Vec<StringId> {};
+        auto scope_crossing_inputs = Vec<StringId> {};
         if (!scopes.empty()) {
-            implicit_dep_files = collect_implicit_dep_files(idx, scopes);
+            scope_crossing_inputs = collect_scope_crossing_inputs(idx, scopes);
         }
         if (opts.verbose) {
             if (scopes.empty()) {
@@ -2093,8 +2096,8 @@ auto build_single_variant(
                 if (opts.include_all_deps) {
                     print(" (+{} upstream deps)", upstream_files.size());
                 }
-                if (!implicit_dep_files.empty()) {
-                    print(" (+{} implicit deps)", implicit_dep_files.size());
+                if (!scope_crossing_inputs.empty()) {
+                    print(" (+{} tracked inputs)", scope_crossing_inputs.size());
                 }
                 print("\n");
             }
@@ -2134,7 +2137,7 @@ auto build_single_variant(
             scopes,
             excludes,
             upstream_files,
-            implicit_dep_files,
+            scope_crossing_inputs,
             collect_inactive_output_paths(bs),
             opts.verbose,
             opts.no_stat_cache
