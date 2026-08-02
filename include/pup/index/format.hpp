@@ -120,7 +120,17 @@ struct alignas(8) RawCommandEntry {
 /// deps without re-running it.
 inline constexpr auto COMMAND_FLAG_MUST_RERUN = std::uint32_t { 1 };
 
-static_assert(sizeof(RawCommandEntry) == 88, "RawCommandEntry must be 88 bytes");
+// Widening this record adds a category of recorded state, and a category is only useful once all
+// three of its legs exist: written here, compared where staleness is decided, and routed so the
+// commands that depend on it are scheduled. A category with a missing leg is a silent wrong build,
+// which is the shape #189 catalogues — so the size is fixed deliberately, to stop a new field
+// reaching the index before someone has answered for all three.
+static_assert(
+    sizeof(RawCommandEntry) == 88,
+    "RawCommandEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
+    "— record it here, compare it (compute_command_signature or the must_rerun channel), "
+    "and route it (collect_affected_commands) — before updating this number"
+);
 
 /// Raw edge entry (16 bytes)
 /// Represents dependencies between nodes
