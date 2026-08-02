@@ -1456,6 +1456,9 @@ SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2
         );
         f.write_file("d/Tupfile", ": ../a/p.txt |> cp %f %o |> o.copy\n");
         f.write_file("tup.config", "CONFIG_FOO=y\n");
+        // Twice: b/ depends on a/p.txt only by discovery, so nothing orders the first build's
+        // two commands. The second build re-runs b/ against the now-recorded dependency.
+        REQUIRE(f.build().success());
         REQUIRE(f.build().success());
         REQUIRE(f.read_file("b/c.o") == "produced\n");
 
