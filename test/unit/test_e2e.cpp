@@ -1928,6 +1928,32 @@ SCENARIO("A stale output that cannot be deleted fails the build and keeps its re
     }
 }
 
+SCENARIO("A clean dry run counts the directories it lists", "[e2e][clean][dry-run]")
+{
+    GIVEN("a build whose only generated directory would be removed")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo x > %o |> out/gen.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out/gen.o"));
+
+        WHEN("clean runs with -n")
+        {
+            auto result = f.clean({ "-n", "-v" });
+
+            THEN("the summary counts the directory it just said it would remove")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out/gen.o"));
+                REQUIRE(result.stdout_output.find("Would remove empty dir") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Would remove 1 files, 1 directories") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("clean does not count an empty directory it could not remove", "[e2e][clean]")
 {
     GIVEN("a build whose only generated directory sits in a root that cannot be written")
