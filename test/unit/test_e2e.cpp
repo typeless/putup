@@ -1966,7 +1966,9 @@ SCENARIO("clean does not count an empty directory it could not remove", "[e2e][c
                 auto combined = result.stdout_output + result.stderr_output;
                 REQUIRE(f.is_directory("out"));
                 REQUIRE(combined.find("Removed empty dir") == std::string::npos);
+                REQUIRE(combined.find("Error removing empty dir") != std::string::npos);
                 REQUIRE(combined.find("0 directories") != std::string::npos);
+                REQUIRE_FALSE(result.success());
             }
         }
     }
