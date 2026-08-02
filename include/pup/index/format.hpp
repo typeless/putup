@@ -101,7 +101,7 @@ struct alignas(8) RawFileEntry {
 static_assert(
     sizeof(RawFileEntry) == 64,
     "RawFileEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
-    "— record it here, compare it where staleness is decided, and route it "
+    "— record it here, compare it in the change-detection walk, and route it "
     "(collect_affected_commands) — before updating this number. Note a category carried in "
     "`flags` changes no size and this assert will not fire for it"
 );
@@ -136,7 +136,9 @@ static_assert(
     "RawCommandEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
     "— record it here, compare it (compute_command_signature, the must_rerun channel, or the "
     "identity key if it changes which rule this is), "
-    "and route it (collect_affected_commands) — before updating this number"
+    "and route it (collect_affected_commands) — before updating this number. A category carried "
+    "as a bit in `flags` changes no size and will not trip this assert: COMMAND_FLAG_MUST_RERUN "
+    "landed that way"
 );
 
 /// Raw edge entry (16 bytes)
