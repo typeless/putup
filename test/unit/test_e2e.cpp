@@ -2091,6 +2091,44 @@ SCENARIO("A dry run reports the command removal it would make, not one it made",
     }
 }
 
+SCENARIO("A dry run summarises what it would run, not a build it completed", "[e2e][build][dry-run]")
+{
+    GIVEN("a project with one command that has never been built")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("in.txt", "hello\n");
+        f.write_file("Tupfile", ": in.txt |> cp %f %o |> out.o\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built with -n")
+        {
+            auto result = f.build({ "-n" });
+
+            THEN("the summary is future tense and no output was produced")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("out.o"));
+                REQUIRE(result.stdout_output.find("Would run: 1 commands") != std::string::npos);
+                REQUIRE(result.stdout_output.find("Build completed") == std::string::npos);
+            }
+        }
+
+        WHEN("a real build runs")
+        {
+            auto result = f.build();
+
+            THEN("the summary still reports the build it completed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.o"));
+                REQUIRE(result.stdout_output.find("Build completed: 1 commands") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incremental][variant]")
 {
     GIVEN("a variant build with two source files")
