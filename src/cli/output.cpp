@@ -27,9 +27,9 @@ auto remove_empty_directories(
     std::string_view build_dir,
     std::string_view source_dir,
     OutputMode mode
-) -> std::size_t
+) -> RemoveResult
 {
-    auto removed = std::size_t { 0 };
+    auto result = RemoveResult {};
 
     auto dirs = Vec<StringId> {};
     dirs.reserve(output_dir_ids.size());
@@ -59,15 +59,17 @@ auto remove_empty_directories(
 
         if (mode.dry_run) {
             print("Would remove empty dir: {}\n", dir);
-        } else {
-            (void)pup::platform::remove_file(dir);
-            ++removed;
+        } else if (auto r = pup::platform::remove_file(dir); r) {
+            ++result.removed_count;
             if (mode.verbose) {
                 print("Removed empty dir: {}\n", dir);
             }
+        } else {
+            eprint("Error removing empty dir {}: {}\n", dir, r.error().msg());
+            ++result.error_count;
         }
     }
-    return removed;
+    return result;
 }
 
 auto escape_dot_label(std::string_view s) -> StringId
