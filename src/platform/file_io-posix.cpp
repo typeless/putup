@@ -66,6 +66,28 @@ auto make_err_msg2(std::string_view prefix, std::string_view a, std::string_view
     return buf.intern(global_pool());
 }
 
+// Retrying the remainder means the terminal failure carries the kernel's own code; a short
+// write is not an error to guess at.
+auto write_all(int fd, void const* data, std::size_t n) -> int
+{
+    auto const* p = static_cast<char const*>(data);
+    auto off = std::size_t { 0 };
+    while (off < n) {
+        auto w = sys::write(fd, p + off, n - off);
+        if (w < 0) {
+            if (w == -EINTR) {
+                continue;
+            }
+            return static_cast<int>(w);
+        }
+        if (w == 0) {
+            return -EIO;
+        }
+        off += static_cast<std::size_t>(w);
+    }
+    return 0;
+}
+
 auto is_dot_or_dotdot(char const* name) -> bool
 {
     return std::strcmp(name, ".") == 0 || std::strcmp(name, "..") == 0;
@@ -120,15 +142,16 @@ auto MappedFile::open(std::string_view path) -> Result<MappedFile>
     auto p = CPath { path };
     file.impl_->fd = sys::open_ro(p.c_str());
     if (file.impl_->fd < 0) {
+        auto const err = file.impl_->fd;
         file.impl_.reset();
-        return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
+        return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path, err));
     }
 
     auto st = sys::Stat {};
-    if (sys::fstat(file.impl_->fd, st) < 0) {
+    if (auto rc = sys::fstat(file.impl_->fd, st); rc < 0) {
         sys::close(file.impl_->fd);
         file.impl_.reset();
-        return make_error<MappedFile>(ErrorCode::IoError, "Failed to stat file");
+        return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to stat file: ", path, rc));
     }
 
     file.impl_->size = static_cast<std::size_t>(st.size);
@@ -138,7 +161,7 @@ auto MappedFile::open(std::string_view path) -> Result<MappedFile>
         if (file.impl_->data == nullptr) {
             sys::close(file.impl_->fd);
             file.impl_.reset();
-            return make_error<MappedFile>(ErrorCode::IoError, "Failed to mmap file");
+            return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to mmap file: ", path, 0));
         }
     }
 
@@ -164,8 +187,8 @@ auto stat_file(std::string_view path) -> Result<FileStat>
 {
     auto p = CPath { path };
     auto st = sys::Stat {};
-    if (sys::stat(p.c_str(), st) != 0) {
-        return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
+    if (auto rc = sys::stat(p.c_str(), st); rc != 0) {
+        return make_error<FileStat>(ErrorCode::IoError, make_err_msg("Failed to stat file: ", path, rc));
     }
 
     return FileStat {
@@ -200,27 +223,26 @@ auto atomic_write(
 
     auto fd = sys::create_trunc(temp_path.c_str(), 0600);
     if (fd < 0) {
-        return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create temporary file: ", temp_path.view(), fd));
     }
 
-    auto bytes_written = sys::write(fd, data.data(), data.size());
-    auto write_error = (bytes_written != static_cast<std::int64_t>(data.size()));
+    auto write_err = write_all(fd, data.data(), data.size());
 
-    if (sys::fsync(fd) < 0) {
-        write_error = true;
+    if (auto rc = sys::fsync(fd); rc < 0 && write_err == 0) {
+        write_err = rc;
     }
 
     sys::close(fd);
 
-    if (write_error) {
+    if (write_err != 0) {
         sys::unlink(temp_path.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to write file");
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", temp_path.view(), write_err));
     }
 
     auto p = CPath { path };
-    if (sys::rename(temp_path.c_str(), p.c_str()) != 0) {
+    if (auto rc = sys::rename(temp_path.c_str(), p.c_str()); rc != 0) {
         sys::unlink(temp_path.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to rename file");
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", temp_path.view(), " -> ", path, rc));
     }
 
     return {};
@@ -450,10 +472,8 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
         if (n == 0) {
             break;
         }
-        auto written = sys::write(dst_fd, buf, static_cast<std::size_t>(n));
-        if (written != n) {
-            // A short write reports no code of its own; ENOSPC is what produces one.
-            copy_err = written < 0 ? static_cast<int>(written) : -ENOSPC;
+        if (auto rc = write_all(dst_fd, buf, static_cast<std::size_t>(n)); rc != 0) {
+            copy_err = rc;
             break;
         }
     }
@@ -475,7 +495,7 @@ auto current_directory() -> Result<StringId>
     char buf[4096];
     auto n = sys::getcwd(buf, sizeof(buf));
     if (n < 0) {
-        return make_error<StringId>(ErrorCode::IoError, "Failed to get current directory");
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to get current directory", "", static_cast<int>(n)));
     }
     return global_pool().intern(std::string_view { buf, static_cast<std::size_t>(n) });
 }
@@ -594,12 +614,11 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
         return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path, fd));
     }
 
-    auto n = sys::write(fd, data.data(), data.size());
+    auto rc = write_all(fd, data.data(), data.size());
     sys::close(fd);
 
-    if (n != static_cast<std::int64_t>(data.size())) {
-        // A short write reports no code of its own; ENOSPC is what produces one.
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path, n < 0 ? static_cast<int>(n) : -ENOSPC));
+    if (rc != 0) {
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path, rc));
     }
     return {};
 }

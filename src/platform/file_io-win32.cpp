@@ -85,6 +85,26 @@ auto append_reason(Buf& buf, DWORD err) -> void
     buf.append(std::string_view { reason.data(), reason.size() });
 }
 
+// Retrying the remainder means the terminal failure carries the system's own code; a short
+// write is not an error to guess at.
+auto write_all(HANDLE h, void const* data, std::size_t n) -> DWORD
+{
+    auto const* p = static_cast<char const*>(data);
+    auto off = std::size_t { 0 };
+    while (off < n) {
+        auto chunk = static_cast<DWORD>(n - off);
+        auto written = DWORD {};
+        if (!WriteFile(h, p + off, chunk, &written, nullptr)) {
+            return GetLastError();
+        }
+        if (written == 0) {
+            return ERROR_WRITE_FAULT;
+        }
+        off += written;
+    }
+    return 0;
+}
+
 auto make_err_msg(std::string_view prefix, std::string_view path, DWORD err) -> StringId
 {
     auto buf = Buf {};
@@ -164,15 +184,17 @@ auto MappedFile::open(std::string_view path) -> Result<MappedFile>
     );
 
     if (file.impl_->file_handle == INVALID_HANDLE_VALUE) {
+        auto const err = GetLastError();
         file.impl_.reset();
-        return make_error<MappedFile>(ErrorCode::IoError, "Failed to open file");
+        return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path, err));
     }
 
     auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(file.impl_->file_handle, &file_size)) {
+        auto const err = GetLastError();
         CloseHandle(file.impl_->file_handle);
         file.impl_.reset();
-        return make_error<MappedFile>(ErrorCode::IoError, "Failed to get file size");
+        return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path, err));
     }
 
     file.impl_->size = static_cast<std::size_t>(file_size.QuadPart);
@@ -188,9 +210,10 @@ auto MappedFile::open(std::string_view path) -> Result<MappedFile>
         );
 
         if (!file.impl_->mapping_handle) {
+            auto const err = GetLastError();
             CloseHandle(file.impl_->file_handle);
             file.impl_.reset();
-            return make_error<MappedFile>(ErrorCode::IoError, "Failed to create file mapping");
+            return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to create file mapping: ", path, err));
         }
 
         file.impl_->data = static_cast<std::byte*>(
@@ -198,10 +221,11 @@ auto MappedFile::open(std::string_view path) -> Result<MappedFile>
         );
 
         if (!file.impl_->data) {
+            auto const err = GetLastError();
             CloseHandle(file.impl_->mapping_handle);
             CloseHandle(file.impl_->file_handle);
             file.impl_.reset();
-            return make_error<MappedFile>(ErrorCode::IoError, "Failed to map view of file");
+            return make_error<MappedFile>(ErrorCode::IoError, make_err_msg("Failed to map view of file: ", path, err));
         }
     }
 
@@ -231,7 +255,7 @@ auto stat_file(std::string_view path) -> Result<FileStat>
     auto wpath = to_wide(path);
     auto attrs = WIN32_FILE_ATTRIBUTE_DATA {};
     if (!GetFileAttributesExW(wpath.c_str(), GetFileExInfoStandard, &attrs)) {
-        return make_error<FileStat>(ErrorCode::IoError, "Failed to stat file");
+        return make_error<FileStat>(ErrorCode::IoError, make_err_msg("Failed to stat file: ", path, GetLastError()));
     }
 
     auto file_size = ULARGE_INTEGER {};
@@ -286,23 +310,25 @@ auto atomic_write(
     );
 
     if (file == INVALID_HANDLE_VALUE) {
-        return make_error<void>(ErrorCode::IoError, "Failed to create temporary file");
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create temporary file: ", temp_path.view(), GetLastError()));
     }
 
-    auto bytes_written = DWORD {};
-    auto write_ok = WriteFile(file, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
-    auto flush_ok = FlushFileBuffers(file);
+    auto write_err = write_all(file, data.data(), data.size());
+    if (!FlushFileBuffers(file) && write_err == 0) {
+        write_err = GetLastError();
+    }
     CloseHandle(file);
 
-    if (!write_ok || bytes_written != data.size() || !flush_ok) {
+    if (write_err != 0) {
         DeleteFileW(wtemp.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to write file");
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", temp_path.view(), write_err));
     }
 
     auto wpath = to_wide(path);
     if (!MoveFileExW(wtemp.c_str(), wpath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        auto const err = GetLastError();
         DeleteFileW(wtemp.c_str());
-        return make_error<void>(ErrorCode::IoError, "Failed to rename file");
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", temp_path.view(), " -> ", path, err));
     }
 
     return {};
@@ -475,7 +501,7 @@ auto current_directory() -> Result<StringId>
 {
     auto len = GetCurrentDirectoryW(0, nullptr);
     if (len == 0) {
-        return make_error<StringId>(ErrorCode::IoError, "Failed to get current directory");
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to get current directory", "", GetLastError()));
     }
     auto wbuf = std::wstring(len, L'\0');
     GetCurrentDirectoryW(len, wbuf.data());
@@ -553,8 +579,9 @@ auto read_symlink(std::string_view path) -> Result<StringId>
     }
     auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
     if (len == 0) {
+        auto const err = GetLastError();
         CloseHandle(h);
-        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, GetLastError()));
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, err));
     }
     auto wbuf = std::wstring(len, L'\0');
     GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
@@ -586,8 +613,9 @@ auto read_file(std::string_view path, Buf& out) -> Result<void>
     }
     auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(h, &file_size)) {
+        auto const err = GetLastError();
         CloseHandle(h);
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path, GetLastError()));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path, err));
     }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
     out.clear();
@@ -629,11 +657,10 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
     if (h == INVALID_HANDLE_VALUE) {
         return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path, GetLastError()));
     }
-    auto bytes_written = DWORD {};
-    auto ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
+    auto err = write_all(h, data.data(), data.size());
     CloseHandle(h);
-    if (!ok || bytes_written != data.size()) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path, GetLastError()));
+    if (err != 0) {
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path, err));
     }
     return {};
 }

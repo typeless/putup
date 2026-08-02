@@ -61,6 +61,8 @@ auto error_text(int err) -> std::string_view
         return "Too many open files in system";
     case EXDEV:
         return "Invalid cross-device link";
+    case ETXTBSY:
+        return "Text file busy";
     case EBADF:
         return "Bad file descriptor";
     case ENOMEM:
