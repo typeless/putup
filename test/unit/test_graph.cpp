@@ -1292,7 +1292,13 @@ TEST_CASE("Every edge mask follows from one role per link type", "[graph]")
             return false;
         };
 
-        for (auto type : { LinkType::Normal, LinkType::Sticky, LinkType::Group, LinkType::Implicit, LinkType::OrderOnly }) {
+        // Sweeping the mask's width rather than listing types: the switch above demands the
+        // statement, this checks it, and neither needs editing when a sixth type arrives.
+        for (auto value = std::uint8_t { 1 }; value <= std::numeric_limits<pup::graph::LinkTypeMask>::digits; ++value) {
+            auto const type = static_cast<LinkType>(value);
+            if (pup::link_role(type) == LinkRole::Unknown) {
+                continue;
+            }
             REQUIRE(pup::graph::in_mask(type, pup::graph::edge_mask::inputs) == carried_by_bypass(type));
         }
     }
