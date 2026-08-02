@@ -193,6 +193,57 @@ SCENARIO("Percent flags inside display text expand against the rule", "[e2e][bui
     }
 }
 
+SCENARIO("An unterminated caret is a parse error, not a shell error", "[e2e][build][display]")
+{
+    // Upstream rejects this at parse time; falling through left the ^ in the command text,
+    // so the rule died mid-build as "sh: ^: not found" — blamed on the tool, not the typo (#217).
+    GIVEN("a rule whose display annotation is never closed")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", ": |> ^ CC out.txt echo hi > %o |> out.txt\n");
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("parsing fails and says the caret was never closed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("not found") == std::string::npos);
+                REQUIRE(combined.find("^") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("An upstream caret flag is rejected, not rendered as a label", "[e2e][build][display]")
+{
+    // tup reads the non-space run after ^ as flags (t, o); putup implements neither, and
+    // printing "t" as the rule's label honours nothing and refuses nothing (#217).
+    GIVEN("a rule using upstream's caret-flag form")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        REQUIRE(f.init().success());
+        f.write_file("Tupfile", ": |> ^t^ echo hi > %o |> out.txt\n");
+
+        WHEN("the project is parsed")
+        {
+            auto result = f.parse();
+
+            THEN("it is refused rather than shown as display text")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
 SCENARIO("A failing command is reported by its command line, not its display", "[e2e][build][display]")
 {
     // The display names the step, not what broke, and this is the only line a build prints of what actually ran.
