@@ -1400,6 +1400,39 @@ SCENARIO("A changed header re-runs the output-less command that read it", "[e2e]
     }
 }
 
+SCENARIO("A scoped build sees a declared input outside the scope change", "[e2e][incremental][scope]")
+{
+    // Detection skips out-of-scope files unless a bypass covers them, and the bypass admitted
+    // Implicit and Sticky edges but not Normal — so a plainly declared source input was the one
+    // kind of dependency a scoped build could not see (#200).
+    GIVEN("a rule in a subdirectory declaring a source file above it")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("sub");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("outer.txt", "outer-v1\n");
+        f.write_file("sub/inner.txt", "inner-v1\n");
+        f.write_file("sub/Tupfile", ": inner.txt ../outer.txt |> cat %f > %o |> combined.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "sub/" }).success());
+        REQUIRE(f.read_file("sub/combined.txt") == "inner-v1\nouter-v1\n");
+        REQUIRE(f.build({ "sub/" }).is_noop());
+
+        WHEN("the out-of-scope source changes and the same scope is rebuilt")
+        {
+            f.write_file("outer.txt", "outer-v2\n");
+            auto result = f.build({ "sub/" });
+
+            THEN("the rule re-runs against the new content")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("sub/combined.txt") == "inner-v1\nouter-v2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
 {
     // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,
