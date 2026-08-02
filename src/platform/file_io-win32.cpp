@@ -105,6 +105,16 @@ auto write_all(HANDLE h, void const* data, std::size_t n) -> DWORD
     return 0;
 }
 
+// Only these mean "not there". Any other attribute-query failure means we cannot tell, and
+// answering "absent" silently skips the caller's removal and orphans the file (#248).
+auto attr_error_means_absent(DWORD err) -> bool
+{
+    return err == ERROR_FILE_NOT_FOUND
+        || err == ERROR_PATH_NOT_FOUND
+        || err == ERROR_INVALID_NAME
+        || err == ERROR_FILENAME_EXCED_RANGE;
+}
+
 auto make_err_msg(std::string_view prefix, std::string_view path, DWORD err) -> StringId
 {
     auto buf = Buf {};
@@ -339,7 +349,10 @@ auto atomic_write(
 auto exists(std::string_view path) -> bool
 {
     auto wpath = to_wide(path);
-    return GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES;
+    if (GetFileAttributesW(wpath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+    return !attr_error_means_absent(GetLastError());
 }
 
 auto is_file(std::string_view path) -> bool
@@ -432,7 +445,11 @@ auto remove_file(std::string_view path) -> Result<void>
     auto wpath = to_wide(path);
     auto attrs = GetFileAttributesW(wpath.c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {
-        return {};
+        auto const err = GetLastError();
+        if (attr_error_means_absent(err)) {
+            return {};
+        }
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to query: ", path, err));
     }
     if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
         if (!RemoveDirectoryW(wpath.c_str())) {
@@ -451,7 +468,11 @@ auto remove_all(std::string_view path) -> Result<void>
     auto wpath = to_wide(path);
     auto attrs = GetFileAttributesW(wpath.c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES) {
-        return {};
+        auto const err = GetLastError();
+        if (attr_error_means_absent(err)) {
+            return {};
+        }
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to query: ", path, err));
     }
     if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
         if (!DeleteFileW(wpath.c_str())) {

@@ -2019,6 +2019,60 @@ SCENARIO("distclean does not report a reset it could not perform", "[e2e][clean]
     }
 }
 
+SCENARIO("A stale output that cannot even be queried keeps its record", "[e2e][incremental][stale]")
+{
+    // The rule lives in the readable root Tupfile so its directory stays authoritative;
+    // only the output's directory is locked, which is what reaches the exists() guard.
+    GIVEN("a removed rule whose output sits in a directory that cannot be read")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.write_file("Tupfile", ": |> echo x > %o |> a/gen.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("a/gen.o"));
+        f.write_file("Tupfile", "# no rules\n");
+
+        auto const dir = f.workdir() / "a";
+        auto const readable = std::filesystem::status(dir).permissions();
+        std::filesystem::permissions(dir, std::filesystem::perms::none, std::filesystem::perm_options::replace);
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(dir / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(dir / "probe", probe_ec);
+            std::filesystem::permissions(dir, readable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke directory permissions (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("the build cannot determine whether the stale output is there")
+        {
+            auto locked = f.build({ "-v" });
+            std::filesystem::permissions(dir, readable, std::filesystem::perm_options::replace);
+
+            THEN("it fails rather than silently dropping the record")
+            {
+                INFO("stdout: " << locked.stdout_output);
+                INFO("stderr: " << locked.stderr_output);
+                REQUIRE_FALSE(locked.success());
+            }
+
+            AND_WHEN("the directory becomes readable and the project is built again")
+            {
+                auto healed = f.build({ "-v" });
+
+                THEN("the surviving record deletes the stale output")
+                {
+                    INFO("stdout: " << healed.stdout_output);
+                    REQUIRE(healed.success());
+                    REQUIRE_FALSE(f.exists("a/gen.o"));
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("A rule turned off by a guard is reported removed only once", "[e2e][incremental][stale]")
 {
     GIVEN("a guarded rule whose output has been built")
