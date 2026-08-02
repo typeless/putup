@@ -304,6 +304,46 @@ TEST_CASE("walk_directory interns no per-entry strings", "[platform][file_io][wa
 }
 
 #ifndef _WIN32
+SCENARIO("A failed removal reports the reason the system gave", "[platform][file_io]")
+{
+    GIVEN("a file inside a directory that cannot be written")
+    {
+        auto dir = TempDir { "remove_reason" };
+        dir.write("locked/victim.txt", "x");
+        auto const locked = dir.path() / "locked";
+        auto const writable = std::filesystem::status(locked).permissions();
+        std::filesystem::permissions(
+            locked,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace
+        );
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(locked / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(locked / "probe", probe_ec);
+            std::filesystem::permissions(locked, writable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke write permission (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("the removal fails")
+        {
+            auto r = pup::platform::remove_file((locked / "victim.txt").string());
+            std::filesystem::permissions(locked, writable, std::filesystem::perm_options::replace);
+
+            THEN("the message carries the path and what the system said")
+            {
+                REQUIRE_FALSE(r);
+                auto msg = std::string { r.error().msg() };
+                INFO("msg: " << msg);
+                REQUIRE(msg.find("victim.txt") != std::string::npos);
+                REQUIRE(msg.find("Permission denied") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("walk_directory does not descend symlinked directories on POSIX", "[platform][file_io][walk]")
 {
     GIVEN("a directory containing a symlink to another directory")

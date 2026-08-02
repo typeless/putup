@@ -53,21 +53,55 @@ auto backslash_to_forward(std::string_view sv, Buf& out) -> void
     }
 }
 
-auto make_err_msg(std::string_view prefix, std::string_view path) -> StringId
+// GetLastError is read before anything else runs: these are called straight off a failed Win32 call.
+auto append_reason(Buf& buf, DWORD err) -> void
+{
+    if (err == 0) {
+        return;
+    }
+    wchar_t* text = nullptr;
+    auto len = FormatMessageW(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr,
+        err,
+        0,
+        reinterpret_cast<wchar_t*>(&text),
+        0,
+        nullptr
+    );
+    if (len == 0 || text == nullptr) {
+        return;
+    }
+    while (len > 0 && (text[len - 1] == L'\n' || text[len - 1] == L'\r' || text[len - 1] == L' ')) {
+        --len;
+    }
+    auto reason = Buf {};
+    from_wide(std::wstring { text, len }, reason);
+    LocalFree(text);
+    if (reason.empty()) {
+        return;
+    }
+    buf.append(": ");
+    buf.append(std::string_view { reason.data(), reason.size() });
+}
+
+auto make_err_msg(std::string_view prefix, std::string_view path, DWORD err) -> StringId
 {
     auto buf = Buf {};
     buf.append(prefix);
     buf.append(path);
+    append_reason(buf, err);
     return buf.intern(global_pool());
 }
 
-auto make_err_msg2(std::string_view prefix, std::string_view a, std::string_view mid, std::string_view b) -> StringId
+auto make_err_msg2(std::string_view prefix, std::string_view a, std::string_view mid, std::string_view b, DWORD err) -> StringId
 {
     auto buf = Buf {};
     buf.append(prefix);
     buf.append(a);
     buf.append(mid);
     buf.append(b);
+    append_reason(buf, err);
     return buf.intern(global_pool());
 }
 
@@ -361,7 +395,7 @@ auto create_directories(std::string_view path) -> Result<void>
     if (!CreateDirectoryW(wpath.c_str(), nullptr)) {
         auto err = GetLastError();
         if (err != ERROR_ALREADY_EXISTS) {
-            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create directory: ", path));
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create directory: ", path, err));
         }
     }
     return {};
@@ -376,11 +410,11 @@ auto remove_file(std::string_view path) -> Result<void>
     }
     if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
         if (!RemoveDirectoryW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path));
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path, GetLastError()));
         }
     } else {
         if (!DeleteFileW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path));
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path, GetLastError()));
         }
     }
     return {};
@@ -395,7 +429,7 @@ auto remove_all(std::string_view path) -> Result<void>
     }
     if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
         if (!DeleteFileW(wpath.c_str())) {
-            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path));
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path, GetLastError()));
         }
         return {};
     }
@@ -410,7 +444,7 @@ auto remove_all(std::string_view path) -> Result<void>
         }
     }
     if (!RemoveDirectoryW(wpath.c_str())) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path, GetLastError()));
     }
     return {};
 }
@@ -420,7 +454,7 @@ auto rename_path(std::string_view from, std::string_view to) -> Result<void>
     auto wfrom = to_wide(from);
     auto wto = to_wide(to);
     if (!MoveFileExW(wfrom.c_str(), wto.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", from, " -> ", to));
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", from, " -> ", to, GetLastError()));
     }
     return {};
 }
@@ -430,7 +464,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     auto wfrom = to_wide(from);
     auto wto = to_wide(to);
     if (!CopyFileW(wfrom.c_str(), wto.c_str(), FALSE)) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to copy: ", from, " -> ", to));
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to copy: ", from, " -> ", to, GetLastError()));
     }
     return {};
 }
@@ -485,7 +519,7 @@ auto canonical(std::string_view path) -> Result<StringId>
     // Fallback for non-existent paths: lexical resolution only
     auto len = GetFullPathNameW(wpath.c_str(), 0, nullptr, nullptr);
     if (len == 0) {
-        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path));
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path, GetLastError()));
     }
     auto wbuf = std::wstring(len, L'\0');
     GetFullPathNameW(wpath.c_str(), len, wbuf.data(), nullptr);
@@ -515,12 +549,12 @@ auto read_symlink(std::string_view path) -> Result<StringId>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path));
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, GetLastError()));
     }
     auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
     if (len == 0) {
         CloseHandle(h);
-        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path));
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, GetLastError()));
     }
     auto wbuf = std::wstring(len, L'\0');
     GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
@@ -548,12 +582,12 @@ auto read_file(std::string_view path, Buf& out) -> Result<void>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path, GetLastError()));
     }
     auto file_size = LARGE_INTEGER {};
     if (!GetFileSizeEx(h, &file_size)) {
         CloseHandle(h);
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to get file size: ", path, GetLastError()));
     }
     auto size = static_cast<std::size_t>(file_size.QuadPart);
     out.clear();
@@ -593,13 +627,13 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
         nullptr
     );
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path, GetLastError()));
     }
     auto bytes_written = DWORD {};
     auto ok = WriteFile(h, data.data(), static_cast<DWORD>(data.size()), &bytes_written, nullptr);
     CloseHandle(h);
     if (!ok || bytes_written != data.size()) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path, GetLastError()));
     }
     return {};
 }
@@ -617,7 +651,7 @@ auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
     auto fd = WIN32_FIND_DATAW {};
     auto h = FindFirstFileW(wpath.c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path, GetLastError()));
     }
     // Names concatenate into out.names, which may relocate as it grows, so views
     // are bound only after the fill completes. Offsets carry a trailing sentinel.
