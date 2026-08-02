@@ -26,6 +26,50 @@ auto strip_last_component(char const* resolved, std::size_t len) -> std::size_t
 
 } // namespace
 
+auto error_text(int err) -> std::string_view
+{
+    switch (err < 0 ? -err : err) {
+    case EACCES:
+        return "Permission denied";
+    case EPERM:
+        return "Operation not permitted";
+    case ENOENT:
+        return "No such file or directory";
+    case ENOTEMPTY:
+        return "Directory not empty";
+    case EBUSY:
+        return "Device or resource busy";
+    case EROFS:
+        return "Read-only file system";
+    case EISDIR:
+        return "Is a directory";
+    case ENOTDIR:
+        return "Not a directory";
+    case EEXIST:
+        return "File exists";
+    case ENOSPC:
+        return "No space left on device";
+    case EIO:
+        return "Input/output error";
+    case ELOOP:
+        return "Too many levels of symbolic links";
+    case ENAMETOOLONG:
+        return "File name too long";
+    case EMFILE:
+        return "Too many open files";
+    case ENFILE:
+        return "Too many open files in system";
+    case EXDEV:
+        return "Invalid cross-device link";
+    case EBADF:
+        return "Bad file descriptor";
+    case ENOMEM:
+        return "Cannot allocate memory";
+    default:
+        return {};
+    }
+}
+
 auto realpath(char const* path, char (&out)[path_max]) -> std::int64_t
 {
     if (path == nullptr || path[0] == '\0') {

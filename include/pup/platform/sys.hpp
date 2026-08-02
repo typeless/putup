@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace pup::platform::sys {
 
@@ -53,6 +54,9 @@ auto readlink(char const* path, char* buf, std::size_t n) -> std::int64_t;
 auto getcwd(char* buf, std::size_t n) -> std::int64_t;
 auto chdir(char const* path) -> int;
 auto realpath(char const* path, char (&out)[path_max]) -> std::int64_t;
+
+/// Text for an errno these calls return (sign-insensitive); empty when unrecognised.
+auto error_text(int err) -> std::string_view;
 
 enum class FileType : std::uint8_t { Unknown,
                                      Regular,

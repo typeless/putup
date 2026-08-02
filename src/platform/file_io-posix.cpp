@@ -31,21 +31,38 @@ struct CPath {
     auto c_str() const -> char const* { return buf.c_str(); }
 };
 
-auto make_err_msg(std::string_view prefix, std::string_view path) -> StringId
+// The code is passed in, not read from errno: this binary is freestanding on Linux and has no errno.
+auto append_reason(Buf& buf, int err) -> void
+{
+    if (err == 0) {
+        return;
+    }
+    auto text = sys::error_text(err);
+    buf.append(": ");
+    if (!text.empty()) {
+        buf.append(text);
+        return;
+    }
+    buf.fmt("errno {}", err < 0 ? -err : err);
+}
+
+auto make_err_msg(std::string_view prefix, std::string_view path, int err) -> StringId
 {
     auto buf = Buf {};
     buf.append(prefix);
     buf.append(path);
+    append_reason(buf, err);
     return buf.intern(global_pool());
 }
 
-auto make_err_msg2(std::string_view prefix, std::string_view a, std::string_view mid, std::string_view b) -> StringId
+auto make_err_msg2(std::string_view prefix, std::string_view a, std::string_view mid, std::string_view b, int err) -> StringId
 {
     auto buf = Buf {};
     buf.append(prefix);
     buf.append(a);
     buf.append(mid);
     buf.append(b);
+    append_reason(buf, err);
     return buf.intern(global_pool());
 }
 
@@ -277,27 +294,27 @@ auto is_empty(std::string_view path) -> bool
 
 namespace {
 
-auto mkdir_recursive(std::string_view path) -> bool
+auto mkdir_recursive(std::string_view path) -> int
 {
     if (path.empty()) {
-        return true;
+        return 0;
     }
 
     auto cp = CPath { path };
     auto st = sys::Stat {};
     if (sys::stat(cp.c_str(), st) == 0) {
-        return sys::is_dir(st.mode);
+        return sys::is_dir(st.mode) ? 0 : -ENOTDIR;
     }
 
     auto par = pup::path::parent(path);
     if (!par.empty() && par != path) {
-        if (!mkdir_recursive(par)) {
-            return false;
+        if (auto rc = mkdir_recursive(par); rc != 0) {
+            return rc;
         }
     }
 
     auto rc = sys::mkdir(cp.c_str(), 0755);
-    return rc == 0 || rc == -EEXIST;
+    return (rc == 0 || rc == -EEXIST) ? 0 : rc;
 }
 
 } // namespace
@@ -307,8 +324,8 @@ auto create_directories(std::string_view path) -> Result<void>
     if (path.empty()) {
         return {};
     }
-    if (!mkdir_recursive(path)) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create directories: ", path));
+    if (auto rc = mkdir_recursive(path); rc != 0) {
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create directories: ", path, rc));
     }
     return {};
 }
@@ -322,15 +339,15 @@ auto remove_file(std::string_view path) -> Result<void>
         if (rc == -ENOENT) {
             return {};
         }
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to stat: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to stat: ", path, rc));
     }
     if (sys::is_dir(st.mode)) {
-        if (sys::rmdir(p.c_str()) != 0) {
-            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path));
+        if (auto rm_rc = sys::rmdir(p.c_str()); rm_rc != 0) {
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove directory: ", path, rm_rc));
         }
     } else {
-        if (sys::unlink(p.c_str()) != 0) {
-            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path));
+        if (auto rm_rc = sys::unlink(p.c_str()); rm_rc != 0) {
+            return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove file: ", path, rm_rc));
         }
     }
     return {};
@@ -338,22 +355,22 @@ auto remove_file(std::string_view path) -> Result<void>
 
 namespace {
 
-auto remove_all_recursive(std::string_view path) -> bool
+auto remove_all_recursive(std::string_view path) -> int
 {
     auto cp = CPath { path };
     auto st = sys::Stat {};
     auto rc = sys::lstat(cp.c_str(), st);
     if (rc != 0) {
-        return rc == -ENOENT;
+        return rc == -ENOENT ? 0 : rc;
     }
 
     if (!sys::is_dir(st.mode)) {
-        return sys::unlink(cp.c_str()) == 0;
+        return sys::unlink(cp.c_str());
     }
 
     auto d = sys::Dir {};
-    if (sys::open_dir(cp.c_str(), d) != 0) {
-        return false;
+    if (auto open_rc = sys::open_dir(cp.c_str(), d); open_rc != 0) {
+        return open_rc;
     }
 
     // Collect first: unlinking while iterating the open directory can skip
@@ -367,25 +384,26 @@ auto remove_all_recursive(std::string_view path) -> bool
     }
     sys::close_dir(d);
 
-    auto ok = true;
+    // Every child is attempted; the first failure is the one reported.
+    auto first_err = 0;
     for (auto child : children) {
-        if (!remove_all_recursive(global_pool().get(child))) {
-            ok = false;
+        if (auto child_rc = remove_all_recursive(global_pool().get(child)); child_rc != 0 && first_err == 0) {
+            first_err = child_rc;
         }
     }
 
-    if (ok) {
-        ok = (sys::rmdir(cp.c_str()) == 0);
+    if (first_err != 0) {
+        return first_err;
     }
-    return ok;
+    return sys::rmdir(cp.c_str());
 }
 
 } // namespace
 
 auto remove_all(std::string_view path) -> Result<void>
 {
-    if (!remove_all_recursive(path)) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove: ", path));
+    if (auto rc = remove_all_recursive(path); rc != 0) {
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to remove: ", path, rc));
     }
     return {};
 }
@@ -394,8 +412,8 @@ auto rename_path(std::string_view from, std::string_view to) -> Result<void>
 {
     auto f = CPath { from };
     auto t = CPath { to };
-    if (sys::rename(f.c_str(), t.c_str()) != 0) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", from, " -> ", to));
+    if (auto rc = sys::rename(f.c_str(), t.c_str()); rc != 0) {
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to rename: ", from, " -> ", to, rc));
     }
     return {};
 }
@@ -406,7 +424,7 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     auto t = CPath { to };
     auto src_fd = sys::open_ro(f.c_str());
     if (src_fd < 0) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open source: ", from));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open source: ", from, src_fd));
     }
 
     auto st = sys::Stat {};
@@ -415,25 +433,27 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     auto dst_fd = sys::create_trunc(t.c_str(), st.mode & 0777);
     if (dst_fd < 0) {
         sys::close(src_fd);
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create destination: ", to));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create destination: ", to, dst_fd));
     }
 
     char buf[8192];
-    auto ok = true;
+    auto copy_err = 0;
     while (true) {
         auto n = sys::read(src_fd, buf, sizeof(buf));
         if (n < 0) {
             if (n == -EINTR) {
                 continue;
             }
-            ok = false;
+            copy_err = static_cast<int>(n);
             break;
         }
         if (n == 0) {
             break;
         }
-        if (sys::write(dst_fd, buf, static_cast<std::size_t>(n)) != n) {
-            ok = false;
+        auto written = sys::write(dst_fd, buf, static_cast<std::size_t>(n));
+        if (written != n) {
+            // A short write reports no code of its own; ENOSPC is what produces one.
+            copy_err = written < 0 ? static_cast<int>(written) : -ENOSPC;
             break;
         }
     }
@@ -441,9 +461,9 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>
     sys::close(src_fd);
     sys::close(dst_fd);
 
-    if (!ok) {
+    if (copy_err != 0) {
         sys::unlink(t.c_str());
-        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to copy: ", from, " -> ", to));
+        return make_error<void>(ErrorCode::IoError, make_err_msg2("Failed to copy: ", from, " -> ", to, copy_err));
     }
     return {};
 }
@@ -516,7 +536,7 @@ auto read_symlink(std::string_view path) -> Result<StringId>
     auto p = CPath { path };
     auto n = sys::readlink(p.c_str(), buf, sizeof(buf) - 1);
     if (n < 0) {
-        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path));
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, static_cast<int>(n)));
     }
     return global_pool().intern(std::string_view { buf, static_cast<std::size_t>(n) });
 }
@@ -528,7 +548,7 @@ auto read_file(std::string_view path, Buf& out) -> Result<void>
     auto p = CPath { path };
     auto fd = sys::open_ro(p.c_str());
     if (fd < 0) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file: ", path, fd));
     }
 
     auto st = sys::Stat {};
@@ -571,14 +591,15 @@ auto write_file(std::string_view path, std::string_view data) -> Result<void>
     auto p = CPath { path };
     auto fd = sys::create_trunc(p.c_str(), 0644);
     if (fd < 0) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path));
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open file for writing: ", path, fd));
     }
 
     auto n = sys::write(fd, data.data(), data.size());
     sys::close(fd);
 
     if (n != static_cast<std::int64_t>(data.size())) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path));
+        // A short write reports no code of its own; ENOSPC is what produces one.
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to write file: ", path, n < 0 ? static_cast<int>(n) : -ENOSPC));
     }
     return {};
 }
@@ -594,8 +615,8 @@ auto read_directory(std::string_view path, DirEntries& out) -> Result<void>
     out.entries.clear();
 
     auto d = sys::Dir {};
-    if (sys::open_dir(p.c_str(), d) != 0) {
-        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path));
+    if (auto rc = sys::open_dir(p.c_str(), d); rc != 0) {
+        return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to open directory: ", path, rc));
     }
 
     // Names concatenate into out.names, which may relocate as it grows, so views
