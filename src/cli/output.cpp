@@ -104,7 +104,7 @@ auto remove_empty_directories(
                 print("[{}] Removed empty dir: {}\n", variant_name, dir);
             }
         } else {
-            eprint("[{}] Error removing empty dir {}: {}\n", variant_name, dir, r.error().msg());
+            eprint("[{}] {}\n", variant_name, r.error().msg());
             ++result.error_count;
         }
     }
