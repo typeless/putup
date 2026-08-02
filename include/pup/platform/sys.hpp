@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 
 namespace pup::platform::sys {
 
@@ -55,8 +54,10 @@ auto getcwd(char* buf, std::size_t n) -> std::int64_t;
 auto chdir(char const* path) -> int;
 auto realpath(char const* path, char (&out)[path_max]) -> std::int64_t;
 
-/// Text for an errno these calls return (sign-insensitive); empty when unrecognised.
-auto error_text(int err) -> std::string_view;
+/// Text for an errno these calls return (sign-insensitive); null when unrecognised.
+/// Returns char const* so this header pulls in no std headers: it is included by
+/// throw_stubs.cpp, which defines the std::__throw_* symbols libstdc++ would declare.
+auto error_text(int err) -> char const*;
 
 enum class FileType : std::uint8_t { Unknown,
                                      Regular,

@@ -37,9 +37,9 @@ auto append_reason(Buf& buf, int err) -> void
     if (err == 0) {
         return;
     }
-    auto text = sys::error_text(err);
+    auto const* text = sys::error_text(err);
     buf.append(": ");
-    if (!text.empty()) {
+    if (text != nullptr) {
         buf.append(text);
         return;
     }
