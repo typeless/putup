@@ -26,7 +26,7 @@ auto strip_last_component(char const* resolved, std::size_t len) -> std::size_t
 
 } // namespace
 
-auto error_text(int err) -> std::string_view
+auto error_text(int err) -> char const*
 {
     switch (err < 0 ? -err : err) {
     case EACCES:
@@ -68,7 +68,7 @@ auto error_text(int err) -> std::string_view
     case ENOMEM:
         return "Cannot allocate memory";
     default:
-        return {};
+        return nullptr;
     }
 }
 
