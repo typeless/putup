@@ -50,7 +50,8 @@ auto remove_indexed_outputs(
     std::string_view root,
     OutputMode mode,
     std::string_view variant_name,
-    Vec<StringId>& output_dirs
+    Vec<StringId>& output_dirs,
+    Vec<StringId>& removed_paths
 ) -> RemoveResult
 {
     auto result = RemoveResult {};
@@ -83,12 +84,14 @@ auto remove_indexed_outputs(
         if (mode.dry_run) {
             vprint(variant_name, "Would remove: {}\n", file_path_sv);
             ++result.removed_count;
+            removed_paths.push_back(pup::global_pool().intern(abs_path_sv));
             continue;
         }
 
         auto r = pup::platform::remove_file(abs_path_sv);
         if (r) {
             ++result.removed_count;
+            removed_paths.push_back(pup::global_pool().intern(abs_path_sv));
             if (mode.verbose) {
                 vprint(variant_name, "Removed: {}\n", file_path_sv);
             }
@@ -119,9 +122,10 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
     auto output_dirs = Vec<StringId> {};
-    auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs);
+    auto removed_paths = Vec<StringId> {};
+    auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
 
-    auto dirs = remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name);
+    auto dirs = remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name, removed_paths);
 
     if (opts.dry_run) {
         vprint(variant_name, "Would remove {} files, {} directories\n", result.removed_count, dirs.removed_count);
@@ -146,11 +150,12 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     auto index_path_sv = pool.get(pup::path::join(pool.get(pup::path::join(build_dir_sv, ".pup")), "index"));
     auto error_count = std::size_t { 0 };
     auto output_dirs = Vec<StringId> {};
+    auto removed_paths = Vec<StringId> {};
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
     if (pup::platform::exists(index_path_sv)) {
-        auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs);
+        auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
         error_count += result.error_count;
     }
 
@@ -185,7 +190,7 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     }
 
     output_dirs.push_back(pool.intern(build_dir_sv));
-    error_count += remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name).error_count;
+    error_count += remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name, removed_paths).error_count;
 
     if (!opts.dry_run) {
         if (error_count > 0) {

@@ -29,7 +29,8 @@ auto remove_empty_directories(
     std::string_view build_dir,
     std::string_view source_dir,
     OutputMode mode,
-    std::string_view variant_name
+    std::string_view variant_name,
+    Vec<StringId> const& removed_files
 ) -> RemoveResult;
 
 /// Escape string for DOT format (graphviz)
