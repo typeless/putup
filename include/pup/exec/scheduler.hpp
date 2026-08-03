@@ -50,14 +50,6 @@ struct JobResult {
     NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
 };
 
-/// One command that must run before another, on evidence the graph does not carry.
-/// A discovered dependency is recorded only in the index, so without this the scheduler
-/// would order the pair by nothing and they would race on every build that runs both (#276).
-struct OrderingEdge {
-    NodeId producer = INVALID_NODE_ID;
-    NodeId consumer = INVALID_NODE_ID;
-};
-
 /// Callback types for scheduler events
 using JobStartCallback = Function<void(BuildJob const&)>;
 using JobCompleteCallback = Function<void(BuildJob const&, JobResult const&)>;

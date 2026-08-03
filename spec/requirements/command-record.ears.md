@@ -302,8 +302,8 @@ run, including when that run read none.
 - reference: no line citation read yet
 - discharge: test "Scenario: Incremental rebuilds detect header changes"
 
-When a recorded implicit dependency of a command changes, putup shall treat the command as
-changed.
+When the pre-build comparison finds a recorded implicit dependency of a command changed, putup
+shall treat the command as changed.
 
 ### REQ-IMPL-ROUTE
 
@@ -358,6 +358,17 @@ having read, putup shall run the producer first unless the rules order the two t
 When a command reads a file another command produced in the same build and nothing that build
 enforced put the reader after the producer, putup shall run the reader again on a later build,
 whatever ordering an earlier build recorded.
+
+### REQ-IMPL-PREROUTE
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream's discovered dependencies are graph members, so scheduling reaches them the way it reaches a declared input; no line citation read yet
+- discharge: test "Scenario: A producer's own input change reaches the consumer that only discovered it"
+- discharge: test "Scenario: A producer's input change reaches a chain of discovered consumers"
+
+When a change reaches a command that produces a file another command was recorded as having
+read, putup shall schedule the reader as well.
 
 ---
 

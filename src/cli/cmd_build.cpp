@@ -1072,9 +1072,9 @@ auto find_joined_command(
 auto collect_discovered_ordering(
     pup::index::Index const& old_index,
     CommandLookup const& join
-) -> pup::Vec<pup::exec::OrderingEdge>
+) -> pup::Vec<pup::OrderingEdge>
 {
-    auto ordering = pup::Vec<pup::exec::OrderingEdge> {};
+    auto ordering = pup::Vec<pup::OrderingEdge> {};
     for (auto const& edge : old_index.edges()) {
         if (edge.type != pup::LinkType::Implicit) {
             continue;
@@ -1097,7 +1097,7 @@ auto collect_discovered_ordering(
              producer != join.by_output.end() && producer->first == dep->path;
              ++producer) {
             if (producer->second != *consumer_node) {
-                ordering.push_back(pup::exec::OrderingEdge { .producer = producer->second, .consumer = *consumer_node });
+                ordering.push_back(pup::OrderingEdge { .producer = producer->second, .consumer = *consumer_node });
             }
         }
     }
@@ -1544,7 +1544,7 @@ auto build_index(
     pup::NodeIdMap32 const& must_rerun_cmds = {},
     pup::Vec<pup::NodeId> const& executed_cmds = {},
     pup::Vec<pup::StringId> const& deleted_stale = {},
-    pup::Vec<pup::exec::OrderingEdge> const& enforced_ordering = {}
+    pup::Vec<pup::OrderingEdge> const& enforced_ordering = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
@@ -2483,15 +2483,16 @@ auto build_single_variant(
 
     // Past the up-to-date exit, not with the rest of the incremental work: this is one pair per
     // recorded discovery, and a build that schedules nothing would derive all of them to run none.
-    auto injected_ordering = old_idx_ptr ? collect_discovered_ordering(*old_idx_ptr, join) : pup::Vec<pup::exec::OrderingEdge> {};
+    auto injected_ordering = old_idx_ptr ? collect_discovered_ordering(*old_idx_ptr, join) : pup::Vec<pup::OrderingEdge> {};
 
     auto start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
 
     // Composable filter: layer independent concerns, intersect when combined
     auto filter = BuildFilter {};
 
+    // Same pairs the scheduler gets, but kept on contradiction: over-routing costs a run, not the build.
     if (use_incremental) {
-        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files, forced_cmds));
+        filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files, forced_cmds, injected_ordering));
     }
 
     if (!target_node_ids.empty()) {

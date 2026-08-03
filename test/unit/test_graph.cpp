@@ -1512,6 +1512,63 @@ TEST_CASE("A forced command brings the scanner that reports what it read", "[gra
     }
 }
 
+TEST_CASE("A recorded discovery routes the consumer no edge points at", "[graph][implicit]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    auto seed = add_file_node(g, FileNode { .name = intern("seed.txt") });
+    auto producer = add_command_node(g, CommandNode { .instruction_id = intern("cat seed.txt > p.txt") });
+    auto p_txt = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("p.txt") });
+    auto consumer = add_command_node(g, CommandNode { .instruction_id = intern("sh gen.sh c.o") });
+    auto c_o = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("c.o") });
+    REQUIRE(seed.has_value());
+    REQUIRE(producer.has_value());
+    REQUIRE(p_txt.has_value());
+    REQUIRE(consumer.has_value());
+    REQUIRE(c_o.has_value());
+
+    (void)add_edge(g, *seed, *producer);
+    (void)add_edge(g, *producer, *p_txt);
+    (void)add_edge(g, *consumer, *c_o);
+
+    auto const discovery = pup::Vec<pup::OrderingEdge> {
+        pup::OrderingEdge { .producer = *producer, .consumer = *consumer }
+    };
+
+    SECTION("a change upstream of the producer carries on past the consumer")
+    {
+        auto changed = pup::Vec<pup::StringId> { intern("seed.txt") };
+        auto affected = collect_affected_commands(g, changed, {}, discovery);
+
+        REQUIRE(affected.contains(*producer));
+        REQUIRE(affected.contains(*consumer));
+        REQUIRE(affected.contains(*c_o));
+    }
+
+    SECTION("forcing the producer does not recruit the consumer")
+    {
+        // RED if the expansion moves below the forced join.
+        auto affected = collect_affected_commands(g, {}, pup::Vec<pup::NodeId> { *producer }, discovery);
+
+        REQUIRE(affected.contains(*producer));
+        REQUIRE_FALSE(affected.contains(*consumer));
+    }
+
+    SECTION("a routed consumer brings the scanner that reports what it read")
+    {
+        // RED if the expansion moves below the scanner sweep: #228 by another door.
+        auto scanner = add_command_node(g, CommandNode { .instruction_id = intern("gcc -MM c.c"), .parent_command = *consumer });
+        REQUIRE(scanner.has_value());
+
+        auto changed = pup::Vec<pup::StringId> { intern("seed.txt") };
+        auto affected = collect_affected_commands(g, changed, {}, discovery);
+
+        REQUIRE(affected.contains(*consumer));
+        REQUIRE(affected.contains(*scanner));
+    }
+}
+
 TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
 {
     auto bs = make_build_graph();

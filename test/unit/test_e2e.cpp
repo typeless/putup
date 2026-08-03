@@ -1758,6 +1758,198 @@ SCENARIO("Ordering the scheduler did not enforce does not excuse a race", "[e2e]
     }
 }
 
+SCENARIO("A producer's own input change reaches the consumer that only discovered it", "[e2e][incremental][implicit]")
+{
+    // The affected cascade walks graph edges from the pre-build changed set, and a discovered
+    // dependency has none; the file is not known changed until its producer has run, and the
+    // index then stamps it from a post-run stat. So the consumer was never scheduled at all and
+    // its output stayed wrong while the build reported the tree up to date (#277).
+    GIVEN("a settled project whose consumer only discovers what the other produces")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": seed.txt |> sleep 1; cat seed.txt > %o |> p.txt\n");
+        f.write_file("a/seed.txt", "v1\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../a/p.txt ]; then cat ../a/p.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("only the producer's input changes")
+        {
+            f.write_file("a/seed.txt", "v4\n");
+            auto rebuild = f.build();
+            REQUIRE(rebuild.success());
+
+            THEN("the consumer ran too, and after the producer")
+            {
+                INFO("stdout: " << rebuild.stdout_output);
+                INFO("c.o: " << f.read_file("b/c.o"));
+                REQUIRE(f.read_file("b/c.o") == "v4\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+
+            AND_WHEN("the consumer stops reading the file and reports nothing")
+            {
+                f.write_file(
+                    "b/gen.sh",
+                    "out=$1\n"
+                    "dep=\"${out%.o}.d\"\n"
+                    "echo standalone > \"$out\"\n"
+                    ": > \"$dep\"\n"
+                );
+                REQUIRE(f.build().success());
+                REQUIRE(f.build().is_noop());
+
+                THEN("the producer's next change reaches it no longer")
+                {
+                    f.write_file("a/seed.txt", "v5\n");
+                    auto producer_only = f.build();
+                    INFO("stdout: " << producer_only.stdout_output);
+                    REQUIRE(producer_only.success());
+                    REQUIRE(producer_only.stdout_output.find("Build completed: 1 commands") != std::string::npos);
+                    REQUIRE(f.read_file("b/c.o") == "standalone\n");
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A producer's input change reaches a chain of discovered consumers", "[e2e][incremental][implicit]")
+{
+    // Routing a discovered consumer makes its own outputs change, so whatever discovered those
+    // must follow. Expanding the recorded pairs once rather than inside the cascade's fixpoint
+    // would reach the first consumer and stop (#277).
+    GIVEN("a settled chain where each link only discovers the one before it")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.mkdir("c");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": seed.txt |> sleep 1; cat seed.txt > %o |> p.txt\n");
+        f.write_file("a/seed.txt", "v1\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../a/p.txt ]; then cat ../a/p.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        f.write_file("c/Tupfile", ": gen.sh |> sh gen.sh %o |> d.o\n");
+        f.write_file(
+            "c/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../b/c.o ]; then cat ../b/c.o > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../b/c.o\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("only the head of the chain changes")
+        {
+            f.write_file("a/seed.txt", "v7\n");
+            REQUIRE(f.build().success());
+
+            THEN("the change reached the far end")
+            {
+                INFO("c.o: " << f.read_file("b/c.o"));
+                INFO("d.o: " << f.read_file("c/d.o"));
+                REQUIRE(f.read_file("b/c.o") == "v7\n");
+                REQUIRE(f.read_file("c/d.o") == "v7\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A discovered consumer re-runs for a producer that rewrites the same bytes", "[e2e][incremental][implicit]")
+{
+    // Membership routes, not content: the consumer re-runs because its producer ran, exactly as
+    // a declared consumer does. Pinned so the pessimism is a decision rather than a surprise, and
+    // so that it costs one run per producer run and not one per build (#277).
+    GIVEN("a settled project whose producer writes constant output from a changing input")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": seed.txt |> cat seed.txt > /dev/null; echo constant > %o |> p.txt\n");
+        f.write_file("a/seed.txt", "v1\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "cat ../a/p.txt > \"$out\"\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the producer's input changes without changing its output")
+        {
+            f.write_file("a/seed.txt", "v2\n");
+            auto rebuild = f.build();
+
+            THEN("both commands run")
+            {
+                INFO("stdout: " << rebuild.stdout_output);
+                REQUIRE(rebuild.success());
+                REQUIRE(rebuild.stdout_output.find("Build completed: 2 commands") != std::string::npos);
+            }
+
+            AND_WHEN("the input stops changing")
+            {
+                THEN("it settles rather than re-running every build")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
 {
     // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,
