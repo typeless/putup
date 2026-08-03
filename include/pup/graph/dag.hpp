@@ -502,9 +502,15 @@ auto make_build_graph() -> BuildGraph;
 
 /// Collect all commands affected by the given changed files.
 /// Uses forward traversal: starts at changed inputs, walks forward through outputs.
+/// `ordering` supplies the successors no edge carries: a command that discovered a file must run
+/// whenever the command producing that file does, and the graph has no edge saying so (#277).
 [[nodiscard]]
-auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files, Vec<NodeId> const& forced = {})
-    -> NodeIdMap32;
+auto collect_affected_commands(
+    Graph const& graph,
+    Vec<StringId> const& changed_files,
+    Vec<NodeId> const& forced = {},
+    Vec<OrderingEdge> const& ordering = {}
+) -> NodeIdMap32;
 
 /// Collect all commands required to build the given target nodes.
 /// Uses reverse traversal: starts at targets, walks backward through inputs.

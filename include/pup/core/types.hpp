@@ -161,6 +161,14 @@ constexpr auto link_role(LinkType type) -> LinkRole
     return LinkRole::Unknown;
 }
 
+/// One command that must run before another, on evidence no edge in the graph carries. A
+/// discovered dependency is recorded only in the index, so both the router that decides who runs
+/// and the scheduler that decides in what order have to be told about it separately (#276, #277).
+struct OrderingEdge {
+    NodeId producer = INVALID_NODE_ID;
+    NodeId consumer = INVALID_NODE_ID;
+};
+
 /// Node state flags (bitmask)
 enum class NodeFlags : std::uint16_t {
     None = 0,

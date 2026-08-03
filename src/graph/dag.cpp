@@ -1166,11 +1166,23 @@ auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids
     return commands;
 }
 
-auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_files, Vec<NodeId> const& forced) -> NodeIdMap32
+auto collect_affected_commands(
+    Graph const& graph,
+    Vec<StringId> const& changed_files,
+    Vec<NodeId> const& forced,
+    Vec<OrderingEdge> const& ordering
+) -> NodeIdMap32
 {
     auto& pool = global_pool();
     auto affected = NodeIdMap32 {};
     auto to_process = Vec<NodeId> {};
+
+    auto discovered_consumers = Vec<std::pair<NodeId, NodeId>> {};
+    discovered_consumers.reserve(ordering.size());
+    for (auto const& edge : ordering) {
+        discovered_consumers.emplace_back(edge.producer, edge.consumer);
+    }
+    std::sort(discovered_consumers.begin(), discovered_consumers.end());
 
     for (auto file_id : changed_files) {
         auto file_path = pool.get(file_id);
@@ -1213,6 +1225,16 @@ auto collect_affected_commands(Graph const& graph, Vec<StringId> const& changed_
                 to_process.push_back(dep_id);
             }
         });
+
+        // A contradictory pair only adds a command here: the set only grows, so no cycle check.
+        for (auto const *hop = std::lower_bound(discovered_consumers.begin(), discovered_consumers.end(), id, [](auto const& h, NodeId k) { return h.first < k; });
+             hop != discovered_consumers.end() && hop->first == id;
+             ++hop) {
+            if (!affected.contains(hop->second)) {
+                affected.set(hop->second, 1);
+                to_process.push_back(hop->second);
+            }
+        }
     }
 
     // Joined after the cascade, not before: a forced command runs, but nothing about it
