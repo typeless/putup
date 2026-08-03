@@ -61,7 +61,11 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///  20 - A command records whether its last run failed. v19 inferred that from the
 ///       output being absent, which is false whenever a failing command writes its
 ///       output before failing, so the failure was forgotten (issue #187).
-inline constexpr auto INDEX_VERSION = std::uint32_t { 20 };
+///  21 - A build records only the state of files it examined; one it neither examined
+///       nor produced keeps what the last build that looked at it recorded (issue
+///       #288). A v20 index may already assert currency for a file no build ever
+///       verified, and no later build detects that, so v20 is not read.
+inline constexpr auto INDEX_VERSION = std::uint32_t { 21 };
 
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {

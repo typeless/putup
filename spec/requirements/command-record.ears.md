@@ -243,6 +243,7 @@ putup shall record, for each command, the set of input files it was built from.
 - conformance: unclassified
 - reference: upstream mechanism not read
 - discharge: test "Scenario: New source file triggers rebuild"
+- discharge: test "Scenario: A file added while building from a subdirectory is still built"
 
 When a command's input set differs from the recorded set, putup shall treat the command as
 changed.
@@ -267,6 +268,17 @@ consume its outputs.
 
 When a command's input set changes, putup shall preserve the recorded state of the inputs
 that remain.
+
+### REQ-INPUT-UNEXAMINED
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read; same class as #125, stated for files rather than commands
+- discharge: test "Scenario: A build run from a subdirectory does not stamp an out-of-scope change as current"
+- discharge: test "Scenario: A build with --all-deps does not stamp an out-of-scope change as current"
+
+If a build does not examine a recorded file, then putup shall preserve that file's recorded
+state rather than replacing it with state observed during that build.
 
 ### REQ-INPUT-UNRESOLVED
 
