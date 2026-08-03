@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace pup::index {
 
@@ -119,16 +120,47 @@ struct alignas(8) RawCommandEntry {
     std::uint32_t cmd_offset = 0;     ///< Offset to template string with %f/%o patterns (v8)
     std::uint32_t display_offset = 0; ///< Display text offset (length-prefixed)
     std::uint32_t env_offset = 0;     ///< Environment variables offset (length-prefixed)
-    std::uint32_t flags = 0;          ///< COMMAND_FLAG_* bits (v20)
+    std::uint32_t flags = 0;          ///< CommandFlag bits (v20)
     std::uint32_t reserved = 0;       ///< Explicit tail padding; keeps serialized bytes deterministic
     Hash256 key = {};                 ///< Which rule this is, for the cross-build join (v19)
     Hash256 signature = {};           ///< What it will do, for deciding whether to re-run (v19)
 };
 
-/// Its last run is not evidence that its outputs are current, so it must run again whatever they
-/// look like: either it exited nonzero, or a build carried the record past a change to one of its
-/// deps without re-running it.
-inline constexpr auto COMMAND_FLAG_MUST_RERUN = std::uint32_t { 1 };
+/// A bit in RawCommandEntry::flags. Each bit is a category of recorded state that changes no
+/// size, so the assert below cannot see it; `flag_category` is what asks for the three legs
+/// instead, and it does not compile until a new flag answers.
+enum class CommandFlag : std::uint32_t {
+    /// Its last run is not evidence that its outputs are current, so it must run again whatever
+    /// they look like: either it exited nonzero, or a build carried the record past a change to
+    /// one of its deps without re-running it.
+    MustRerun = 1,
+};
+
+/// Which category of recorded state this flag carries, named as its requirements group is. The
+/// switch is exhaustive under -Wswitch, so adding a flag without answering is a build error.
+[[nodiscard]]
+constexpr auto flag_category(CommandFlag flag) -> std::string_view
+{
+    switch (flag) {
+    case CommandFlag::MustRerun:
+        return "must-rerun";
+    }
+    return {};
+}
+
+// Nothing calls flag_category — the switch is the point, so this is what keeps it compiled.
+static_assert(!flag_category(CommandFlag::MustRerun).empty(), "a flag names a category or it is not a category");
+
+[[nodiscard]]
+constexpr auto to_underlying(CommandFlag flag) -> std::uint32_t
+{
+    return static_cast<std::uint32_t>(flag);
+}
+
+static_assert(
+    to_underlying(CommandFlag::MustRerun) == 1,
+    "a flag's value is on-disk format, not implementation: changing one needs an INDEX_VERSION bump"
+);
 
 // Widening this record adds a category of recorded state, and a category is only useful once all
 // three of its legs exist: written here, compared where staleness is decided, and routed so the
@@ -141,8 +173,8 @@ static_assert(
     "— record it here, compare it (compute_command_signature, the must_rerun channel, or the "
     "identity key if it changes which rule this is), "
     "and route it (collect_affected_commands) — before updating this number. A category carried "
-    "as a bit in `flags` changes no size and will not trip this assert: COMMAND_FLAG_MUST_RERUN "
-    "landed that way"
+    "as a bit in `flags` changes no size and will not trip this assert: CommandFlag::MustRerun "
+    "landed that way, which is why every flag has to name its category in flag_category"
 );
 
 /// Raw edge entry (16 bytes)
