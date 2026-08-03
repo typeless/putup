@@ -2555,9 +2555,7 @@ auto build_single_variant(
 
     auto final_index = std::optional<pup::index::Index> {};
     if (!opts.dry_run) {
-        // Save index even after partial failures - successful outputs are recorded
-        // so they won't be rebuilt. Failed outputs don't exist, so stat will fail
-        // and they'll be detected as changed on next build.
+        // Persisting a partial failure is safe because must_rerun records it, not because a failed command's outputs are missing.
         auto output_root_str = pup::global_pool().get(ctx.layout().output_root);
         auto index_rebuild_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         auto index = pup::index::Index { build_index(
