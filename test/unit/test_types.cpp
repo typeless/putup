@@ -20,7 +20,7 @@ TEST_CASE("NodeFlags bitwise operations", "[types]")
         auto const flags = Modified | Created;
         REQUIRE(pup::has_flag(flags, Modified));
         REQUIRE(pup::has_flag(flags, Created));
-        REQUIRE_FALSE(pup::has_flag(flags, Deleted));
+        REQUIRE_FALSE(pup::has_flag(flags, AbsenceRouted));
     }
 
     SECTION("check None")

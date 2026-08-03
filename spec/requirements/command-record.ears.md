@@ -301,9 +301,21 @@ run, including when that run read none.
 - conformance: unclassified
 - reference: no line citation read yet
 - discharge: test "Scenario: Incremental rebuilds detect header changes"
+- discharge: test "Scenario: A dependency that was absent when recorded still re-runs its reader when it appears"
 
 When the pre-build comparison finds a recorded implicit dependency of a command changed, putup
 shall treat the command as changed.
+
+### REQ-IMPL-ABSENT
+
+- leg: compare
+- conformance: tup-conformant
+- reference: tup v0.8-8-g4247a523 records an accessed path that does not exist as a ghost node with a sentinel mtime (create_name_file.c:637) and never deletes it (create_name_file.c:333, upstream test t6061), so a still-absent dependency compares equal; measured on a command opening a missing file — one run, then "No commands to execute", and a re-run when the file appears
+- discharge: test "Scenario: A dependency absent when it was recorded settles rather than re-running forever"
+- discharge: test "Scenario: A deleted dependency a command still reports re-runs it once"
+
+When a recorded implicit dependency was absent at the time it was recorded and the pre-build
+comparison finds it still absent, putup shall not treat the command as changed.
 
 ### REQ-IMPL-ROUTE
 

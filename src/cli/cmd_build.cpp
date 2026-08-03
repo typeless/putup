@@ -332,10 +332,8 @@ auto find_changed_files_with_implicit(
         }
 
         if (!stat_result) {
-            // Still gone, and the build that deleted it already routed that to its consumers;
-            // reporting it again is what ran them a second time (#213). Only absence is
-            // discharged — if it comes back, the checks below see it like any other change.
-            if (pup::has_flag(file.flags, pup::NodeFlags::Deleted)) {
+            // Accounted for already: deleted and routed (#213), or read absent by its reader (#281).
+            if (pup::has_flag(file.flags, pup::NodeFlags::AbsenceRouted)) {
                 continue;
             }
             if (verbose) {
@@ -486,7 +484,8 @@ auto create_implicit_file(
     auto content_hash = pup::Hash256 {};
     auto file_size = std::uint64_t { 0 };
     auto mtime_ns = std::int64_t { 0 };
-    if (pup::platform::exists(abs_path)) {
+    auto const present = pup::platform::exists(abs_path);
+    if (present) {
         auto hash_result = pup::sha256_file(abs_path);
         if (hash_result) {
             content_hash = *hash_result;
@@ -512,7 +511,8 @@ auto create_implicit_file(
         .parent_id = parent_id,
         .src_id = 0,
         .type = pup::NodeType::File,
-        .flags = pup::NodeFlags::None,
+        // The run that reported this dep already saw it absent, so only its return is news (#281).
+        .flags = present ? pup::NodeFlags::None : pup::NodeFlags::AbsenceRouted,
         .name = pool.intern(pup::path::filename(rel_path)),
         .path = pool.intern(rel_path),
         .size = file_size,
@@ -608,7 +608,7 @@ auto serialize_graph_nodes(
             // Records that this build already routed the file's absence, so the next one does
             // not read the same stat failure as news. The slot has to stay: id == position + 1.
             auto entry_flags = std::binary_search(deleted_stale.begin(), deleted_stale.end(), pool.intern(node_path), pup::handle_less)
-                ? node_flags | pup::NodeFlags::Deleted
+                ? node_flags | pup::NodeFlags::AbsenceRouted
                 : node_flags;
             auto entry = pup::index::FileEntry {
                 .id = id,
@@ -1601,7 +1601,7 @@ auto build_index(
     process_implicit_deps(discovered_deps, ctx);
 
     // After the discovered deps, so a merge-created copy of an old entry cannot shadow the
-    // fresh one this build just stat'd — a carried NodeFlags::Deleted would then discharge a
+    // fresh one this build just stat'd — a carried NodeFlags::AbsenceRouted would then discharge a
     // later real deletion as already routed, and the consumer would never run (#237). Still
     // before preserve_old_implicit_edges, which re-attaches carried edges by identity and so
     // must see the merged records; that, not the ordering against the deps, is the constraint.

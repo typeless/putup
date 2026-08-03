@@ -20,7 +20,7 @@ using PathIdMap = Vec<std::pair<StringId, NodeId>>;
 
 /// Serialize non-command nodes from the build graph to the index.
 /// Emits one entry per live file-space node so ids stay dense (id == position + 1).
-/// Paths in `deleted_stale` are marked NodeFlags::Deleted: this build removed them and routed
+/// Paths in `deleted_stale` are marked NodeFlags::AbsenceRouted: this build removed them and routed
 /// their absence, so the next build must not read the same stat failure as news.
 [[nodiscard]]
 auto serialize_graph_nodes(
