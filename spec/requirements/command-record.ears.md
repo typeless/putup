@@ -334,8 +334,8 @@ dependencies to the joined command and to no other.
 - reference: upstream mechanism not read; same shape as REQ-SIG-ROUTE, which states this for identity
 - discharge: test "Scenario: A changed header re-runs the output-less command that read it"
 
-When a recorded implicit dependency of a command changes, putup shall schedule that command
-even if it declares no outputs.
+When the pre-build comparison finds a recorded implicit dependency of a command changed, putup
+shall schedule that command even if it declares no outputs.
 
 ### REQ-IMPL-SURVIVE
 
