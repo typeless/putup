@@ -1898,6 +1898,53 @@ SCENARIO("A producer's input change reaches a chain of discovered consumers", "[
     }
 }
 
+SCENARIO("A producer's input change reaches an output-less discovered consumer", "[e2e][incremental][implicit]")
+{
+    // The cascade marks the consumer command node itself, so a reader with no output path is
+    // reached the same way one with outputs is; routing through outputs instead would drop it,
+    // the shape #228 had on the comparison route (#284).
+    GIVEN("a settled gate that declares no outputs and only discovered the generated header")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": seed.txt |> sleep 1; cat seed.txt > %o |> p.h\n");
+        f.write_file("a/seed.txt", "#define VAL 1\n");
+        f.write_file("b/Tupfile", "# the gate arrives once the header exists\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        // The gate's dep scan must see the header to record it; introduced together they race
+        // and the discovery is silently empty.
+        f.write_file("b/Tupfile", ": gate.c |> gcc -c %f -o /dev/null |>\n");
+        f.write_file(
+            "b/gate.c",
+            "#include \"../a/p.h\"\n"
+            "_Static_assert(VAL == 1, \"gate saw the old header\");\n"
+            "int f(void) { return VAL; }\n"
+        );
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("only the producer's input changes")
+        {
+            f.write_file("a/seed.txt", "#define VAL 2\n");
+            auto rebuild = f.build();
+
+            THEN("the gate was scheduled too, so the regenerated header broke its compile")
+            {
+                INFO("stdout: " << rebuild.stdout_output);
+                INFO("stderr: " << rebuild.stderr_output);
+                auto combined = rebuild.stdout_output + rebuild.stderr_output;
+                REQUIRE_FALSE(rebuild.success());
+                REQUIRE(combined.find("FAILED: gcc -c gate.c -o /dev/null") != std::string::npos);
+                REQUIRE(combined.find("gate saw the old header") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A discovered consumer re-runs for a producer that rewrites the same bytes", "[e2e][incremental][implicit]")
 {
     // Membership routes, not content: the consumer re-runs because its producer ran, exactly as
