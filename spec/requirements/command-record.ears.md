@@ -12,9 +12,10 @@ is compared against it, and a difference is routed to the command and its consum
 may also carry `invariant` requirements, for an obligation the category owes that is not one
 of the three.
 
-A category missing a leg is a silent wrong build. Every historical instance in this campaign
-(#125, #126, #128, #138, #152, #166, #172, #187) was a missing leg, and the one still open
-(#169) is recorded below as `gap:` so the absence is visible rather than inferred.
+A category missing a leg is a silent wrong build. Every instance this campaign found (#125,
+#126, #128, #138, #152, #166, #169, #172, #187) was a missing leg. All are closed and no group
+below carries a `gap:`, so every category here claims all three legs — `spec-check` fails the
+build on one that does not.
 
 ---
 
