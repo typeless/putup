@@ -253,9 +253,14 @@ auto add_producer_dependencies(
 ///          dependents[i] = list of jobs that depend on job i
 ///
 /// Uses NodeIds from the graph edges directly - no path string matching needed.
+/// Appends to `enforced` every `ordering` edge that became a dependency here — the one place that
+/// knows which ones did. Whatever later treats an ordering as evidence of what ran first must read
+/// that vector and not `ordering`, or a pair skipped here would vouch for a run nothing ordered.
 auto build_dependency_map(
     Vec<BuildJob> const& jobs,
-    graph::Graph const& graph
+    graph::Graph const& graph,
+    Vec<OrderingEdge> const& ordering,
+    Vec<OrderingEdge>& enforced
 ) -> std::pair<Vec<std::size_t>, Vec<Vec<std::size_t>>>
 {
     auto in_degree = Vec<std::size_t> {};
@@ -267,6 +272,23 @@ auto build_dependency_map(
     auto cmd_to_job = NodeIdMap32 {};
     for (auto i = std::size_t { 0 }; i < jobs.size(); ++i) {
         cmd_to_job.set(jobs[i].id, static_cast<std::uint32_t>(i));
+    }
+
+    // An endpoint outside this build's job set orders nothing: a producer that is not running
+    // is one nothing has to wait for.
+    auto injected_producers = Vec<Vec<std::size_t>> {};
+    if (!ordering.empty()) {
+        injected_producers.resize(jobs.size());
+        for (auto const& edge : ordering) {
+            if (!cmd_to_job.contains(edge.producer) || !cmd_to_job.contains(edge.consumer)) {
+                continue;
+            }
+            auto producer_idx = static_cast<std::size_t>(cmd_to_job.get(edge.producer));
+            auto consumer_idx = static_cast<std::size_t>(cmd_to_job.get(edge.consumer));
+            if (producer_idx != consumer_idx) {
+                sorted_insert_unique(injected_producers[consumer_idx], producer_idx);
+            }
+        }
     }
 
     // For each job, find dependencies via input edges
@@ -308,6 +330,16 @@ auto build_dependency_map(
             }
         });
 
+        // Case 4: ordering the graph does not carry, from a previous build's discoveries
+        if (!injected_producers.empty()) {
+            for (auto dep_idx : injected_producers[j]) {
+                if (!current_active || jobs[dep_idx].guard_active) {
+                    sorted_insert_unique(dependencies, dep_idx);
+                    enforced.push_back(OrderingEdge { .producer = jobs[dep_idx].id, .consumer = cmd_id });
+                }
+            }
+        }
+
         in_degree[j] = dependencies.size();
         for (auto dep : dependencies) {
             dependents[dep].push_back(j);
@@ -315,6 +347,38 @@ auto build_dependency_map(
     }
 
     return { std::move(in_degree), std::move(dependents) };
+}
+
+/// Whether the dependency map has a cycle, by counting how many jobs a Kahn sweep can reach.
+/// The graph's own edges are acyclic (build_job_list topologically sorts them), so only the
+/// injected ordering can close a cycle -- but a stalled ready queue leaves execute_parallel
+/// reporting success with the cycle's jobs never run, so it has to be caught before the loop.
+/// Guards are not consulted: whether a job would be skipped says nothing about the shape.
+auto has_cycle(
+    Vec<std::size_t> const& in_degree,
+    Vec<Vec<std::size_t>> const& dependents
+) -> bool
+{
+    auto remaining = Vec<std::size_t> { in_degree };
+    auto ready = std::queue<std::size_t> {};
+    for (auto i = std::size_t { 0 }; i < remaining.size(); ++i) {
+        if (remaining[i] == 0) {
+            ready.push(i);
+        }
+    }
+
+    auto reached = std::size_t { 0 };
+    while (!ready.empty()) {
+        auto i = ready.front();
+        ready.pop();
+        ++reached;
+        for (auto dep_idx : dependents[i]) {
+            if (--remaining[dep_idx] == 0) {
+                ready.push(dep_idx);
+            }
+        }
+    }
+    return reached < in_degree.size();
 }
 
 /// Validate that no active job depends on a skipped job's output.
@@ -518,7 +582,11 @@ auto Scheduler::stats() const -> BuildStats
 // Public build API
 // ---------------------------------------------------------------------------
 
-auto Scheduler::build(graph::BuildGraph const& state, NodeIdMap32 const* filter) -> Result<BuildStats>
+auto Scheduler::build(
+    graph::BuildGraph const& state,
+    NodeIdMap32 const* filter,
+    Vec<OrderingEdge> const& ordering
+) -> Result<BuildStats>
 {
     impl_->cancelled = false;
     impl_->stats = BuildStats {};
@@ -547,7 +615,7 @@ auto Scheduler::build(graph::BuildGraph const& state, NodeIdMap32 const* filter)
         return impl_->stats;
     }
 
-    auto exec_result = execute_parallel(jobs, state);
+    auto exec_result = execute_parallel(jobs, state, ordering);
 
     impl_->stats.total_time = std::chrono::duration_cast<std::chrono::milliseconds>(
         pup::SteadyClock::now() - start_time
@@ -696,7 +764,8 @@ auto Scheduler::build_job_list(
 
 auto Scheduler::execute_parallel(
     Vec<BuildJob> const& jobs,
-    graph::BuildGraph const& state
+    graph::BuildGraph const& state,
+    Vec<OrderingEdge> const& ordering
 ) -> Result<void>
 {
     auto const env_cache = build_env_cache(jobs);
@@ -704,8 +773,20 @@ auto Scheduler::execute_parallel(
 
     auto& pool = global_pool();
 
-    // Build dependency map
-    auto [in_degree, dependents] = build_dependency_map(jobs, state.graph);
+    // Build dependency map. The injected ordering comes from a previous build and the graph is
+    // this one's truth, so a contradiction between them retracts the injection rather than
+    // failing an otherwise valid build -- all of it, since which edge closed the cycle is not
+    // a question the count answers, and the fallback is what every build did before #276.
+    auto enforced = Vec<OrderingEdge> {};
+    auto dep_map = build_dependency_map(jobs, state.graph, ordering, enforced);
+    if (!ordering.empty() && has_cycle(dep_map.first, dep_map.second)) {
+        enforced.clear();
+        dep_map = build_dependency_map(jobs, state.graph, {}, enforced);
+        impl_->stats.injected_ordering_applied = false;
+    }
+    impl_->stats.enforced_ordering = std::move(enforced);
+    auto& in_degree = dep_map.first;
+    auto& dependents = dep_map.second;
 
     if (auto result = validate_guard_dependencies(jobs, dependents); !result) {
         return pup::unexpected<Error>(result.error());

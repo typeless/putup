@@ -409,6 +409,12 @@ struct ImplicitDepContext {
     /// discovered by hundreds of TUs would otherwise re-walk the same downstream graph each time.
     pup::Vec<pup::NodeId>& ordered_memo_deps;
     pup::Vec<pup::NodeIdMap32>& ordered_memo_reached;
+    /// The ordering this build's scheduler enforced, producer command to consumer command in this
+    /// index's ids, sorted by producer. Evidence, not routing: the walk below asks what ran first,
+    /// and these edges are the half of the answer the graph does not carry (#276). Enforced, not
+    /// offered — a pair whose consumer never entered the job set ordered nothing, and crediting it
+    /// would let a command reach its own alibi through the absent one's outputs.
+    pup::Vec<std::pair<pup::NodeId, pup::NodeId>> const& ordering_hops;
 };
 
 /// Recursively get or create directory entries in the index.
@@ -816,12 +822,19 @@ auto compute_next_id(pup::graph::BuildGraph const& state) -> pup::NodeId
 }
 
 /// Whether anything the scheduler orders by puts `cmd` after `dep`: walk forward from the file's
-/// producers over the edges the live graph also carries. A command reached this way cannot have
-/// run before `dep` existed, so it did not race it (#274). Implicit edges are excluded — they are
-/// index-only and order nothing, so treating one as evidence would let a consumer that raced
-/// vouch for the next one. Reaching `cmd` from its own output counts, which keeps a depfile that
-/// names its target from marking forever.
-auto reachable_from_producers(pup::index::Index const& index, pup::NodeId dep) -> pup::NodeIdMap32
+/// producers over the edges the live graph also carries, plus the ordering this build injected
+/// into the scheduler. A command reached this way cannot have run before `dep` existed, so it did
+/// not race it (#274). Implicit edges as a class are excluded — they are index-only, so treating
+/// one as evidence would let a consumer that raced vouch for the next one; `hops` is the subset
+/// of them the scheduler enforced (#276). Every step is then slot-ordered: a hop's endpoints are
+/// both job-set members, and job-set membership propagates over graph edges, so a command reached
+/// by hop-then-graph is one this build also scheduled after the hop's consumer. Reaching `cmd`
+/// from its own output counts, which keeps a depfile that names its target from marking forever.
+auto reachable_from_producers(
+    pup::index::Index const& index,
+    pup::NodeId dep,
+    pup::Vec<std::pair<pup::NodeId, pup::NodeId>> const& hops
+) -> pup::NodeIdMap32
 {
     auto seen = pup::NodeIdMap32 {};
     auto queue = pup::Vec<pup::NodeId> {};
@@ -846,6 +859,11 @@ auto reachable_from_producers(pup::index::Index const& index, pup::NodeId dep) -
             if (pup::graph::in_mask(edge->type, pup::graph::edge_mask::parsed_consumers)) {
                 visit(edge->to);
             }
+        }
+        for (auto const *hop = std::lower_bound(hops.begin(), hops.end(), id, [](auto const& h, pup::NodeId k) { return h.first < k; });
+             hop != hops.end() && hop->first == id;
+             ++hop) {
+            visit(hop->second);
         }
     }
     return seen;
@@ -891,7 +909,7 @@ auto process_implicit_deps(
                     }
                 }
                 ctx.ordered_memo_deps.push_back(file_id);
-                ctx.ordered_memo_reached.push_back(reachable_from_producers(ctx.index, file_id));
+                ctx.ordered_memo_reached.push_back(reachable_from_producers(ctx.index, file_id, ctx.ordering_hops));
                 return ctx.ordered_memo_reached.back().contains(consumer);
             };
 
@@ -1043,6 +1061,47 @@ auto find_joined_command(
 ) -> std::optional<pup::NodeId>
 {
     return find_joined(lookup, index_command_address(idx, cmd));
+}
+
+/// The ordering a previous build's discoveries imply, as command pairs the scheduler can order
+/// by. A discovered dependency is recorded only in the index, so nothing in the graph puts its
+/// consumer after its producer and the two race on every build that runs both (#276). Producers
+/// are read from the current graph's outputs, so a rule that no longer produces the file orders
+/// nothing; both endpoints are guard-satisfied because the lookup holds only those, and an
+/// inactive one would otherwise fail the build as a dependency on a skipped command.
+auto collect_discovered_ordering(
+    pup::index::Index const& old_index,
+    CommandLookup const& join
+) -> pup::Vec<pup::exec::OrderingEdge>
+{
+    auto ordering = pup::Vec<pup::exec::OrderingEdge> {};
+    for (auto const& edge : old_index.edges()) {
+        if (edge.type != pup::LinkType::Implicit) {
+            continue;
+        }
+        auto const* consumer = old_index.find_command_by_id(edge.to);
+        if (!consumer) {
+            continue;
+        }
+        auto consumer_node = find_joined_command(join, old_index, *consumer);
+        if (!consumer_node) {
+            continue;
+        }
+        auto const* dep = old_index.find_file_by_id(edge.from);
+        if (!dep || pup::is_empty(dep->path)) {
+            continue;
+        }
+        for (auto const *producer = std::lower_bound(
+                 join.by_output.begin(), join.by_output.end(), dep->path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
+             );
+             producer != join.by_output.end() && producer->first == dep->path;
+             ++producer) {
+            if (producer->second != *consumer_node) {
+                ordering.push_back(pup::exec::OrderingEdge { .producer = producer->second, .consumer = *consumer_node });
+            }
+        }
+    }
+    return ordering;
 }
 
 /// Preserve implicit edges from the old index for commands that weren't rebuilt.
@@ -1484,7 +1543,8 @@ auto build_index(
     pup::Vec<pup::StringId> const& pruned_dirs = {},
     pup::NodeIdMap32 const& must_rerun_cmds = {},
     pup::Vec<pup::NodeId> const& executed_cmds = {},
-    pup::Vec<pup::StringId> const& deleted_stale = {}
+    pup::Vec<pup::StringId> const& deleted_stale = {},
+    pup::Vec<pup::exec::OrderingEdge> const& enforced_ordering = {}
 ) -> pup::index::Index
 {
     // Serialize file/directory nodes from the build graph
@@ -1510,6 +1570,18 @@ auto build_index(
         }
     }
 
+    auto ordering_hops = pup::Vec<std::pair<pup::NodeId, pup::NodeId>> {};
+    for (auto const& edge : enforced_ordering) {
+        if (!cmd_remap.contains(edge.producer) || !cmd_remap.contains(edge.consumer)) {
+            continue;
+        }
+        ordering_hops.emplace_back(
+            pup::node_id::make_command(cmd_remap.get(edge.producer)),
+            pup::node_id::make_command(cmd_remap.get(edge.consumer))
+        );
+    }
+    std::sort(ordering_hops.begin(), ordering_hops.end(), [](auto const& a, auto const& b) { return a.first < b.first; });
+
     auto ordered_memo_deps = pup::Vec<pup::NodeId> {};
     auto ordered_memo_reached = pup::Vec<pup::NodeIdMap32> {};
     auto ctx = ImplicitDepContext {
@@ -1522,6 +1594,7 @@ auto build_index(
         .produced_this_build = produced_this_build,
         .ordered_memo_deps = ordered_memo_deps,
         .ordered_memo_reached = ordered_memo_reached,
+        .ordering_hops = ordering_hops,
     };
 
     // Process discovered implicit dependencies from compiler output
@@ -2148,6 +2221,7 @@ auto build_single_variant(
     auto changed_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
+    auto injected_ordering = pup::Vec<pup::exec::OrderingEdge> {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
@@ -2158,6 +2232,8 @@ auto build_single_variant(
         auto const join = graph_command_lookup(bs);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
+
+        injected_ordering = collect_discovered_ordering(idx, join);
 
         auto upstream_files = Vec<std::string_view> {};
         if (opts.include_all_deps && !scopes.empty()) {
@@ -2438,7 +2514,7 @@ auto build_single_variant(
         filter.intersect_with(std::move(non_config));
     }
 
-    auto build_result = scheduler.build(bs, filter.ptr());
+    auto build_result = scheduler.build(bs, filter.ptr(), injected_ordering);
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
     // The scheduler times its own job-list construction; the rest of the span is execution.
@@ -2457,6 +2533,10 @@ auto build_single_variant(
     }
 
     auto const& stats = *build_result;
+    if (!stats.injected_ordering_applied && opts.verbose) {
+        vprint(variant_name, "Recorded discovered dependencies contradict the current rules; ordering by the rules alone\n");
+    }
+
     if (stats.completed_jobs == 0 && stats.failed_jobs == 0) {
         vprint(variant_name, "Nothing to do.\n");
     } else if (stats.failed_jobs > 0) {
@@ -2490,7 +2570,8 @@ auto build_single_variant(
             ctx.pruned_dirs(),
             must_rerun_cmds,
             executed_cmds,
-            deleted_stale
+            deleted_stale,
+            stats.enforced_ordering
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };

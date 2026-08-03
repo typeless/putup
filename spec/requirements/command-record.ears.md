@@ -336,6 +336,29 @@ even if it declares no outputs.
 When a command runs, putup shall record the files that run read, whatever caused it to be
 scheduled.
 
+### REQ-IMPL-ORDER
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream keeps discovered dependencies in its dependency graph, so ordering by them is not a putup invention; no line citation read yet
+- discharge: test "Scenario: A discovered dependency orders its consumer on a later build"
+- discharge: test "Scenario: A recorded discovery that the rules now contradict does not stall the build"
+
+When a build schedules both a command and one that produced a file that command was recorded as
+having read, putup shall run the producer first unless the rules order the two the other way.
+
+### REQ-IMPL-RACE
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream orders by its discovered dependencies, so it has no unordered pair left to mark; no line citation read yet
+- discharge: test "Scenario: A command that raced its discovered dependency runs again"
+- discharge: test "Scenario: Ordering the scheduler did not enforce does not excuse a race"
+
+When a command reads a file another command produced in the same build and nothing that build
+enforced put the reader after the producer, putup shall run the reader again on a later build,
+whatever ordering an earlier build recorded.
+
 ---
 
 ## Group: output-set

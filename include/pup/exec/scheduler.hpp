@@ -50,6 +50,14 @@ struct JobResult {
     NodeId deps_for_command = INVALID_NODE_ID; ///< If set, deps belong to this command (not id)
 };
 
+/// One command that must run before another, on evidence the graph does not carry.
+/// A discovered dependency is recorded only in the index, so without this the scheduler
+/// would order the pair by nothing and they would race on every build that runs both (#276).
+struct OrderingEdge {
+    NodeId producer = INVALID_NODE_ID;
+    NodeId consumer = INVALID_NODE_ID;
+};
+
 /// Callback types for scheduler events
 using JobStartCallback = Function<void(BuildJob const&)>;
 using JobCompleteCallback = Function<void(BuildJob const&, JobResult const&)>;
@@ -75,6 +83,11 @@ struct BuildStats {
     std::size_t skipped_jobs = 0;
     std::chrono::milliseconds total_time = {};
     std::chrono::milliseconds build_time = {}; ///< Time spent in commands
+    bool injected_ordering_applied = true;     ///< False when the extra ordering contradicted the graph and was dropped
+    /// The `ordering` edges this build actually put into the dependency map, and only those. A
+    /// pair whose endpoints are not both in the job set orders nothing, so anything reading this
+    /// as evidence of what ran first must read what was enforced, never what was offered.
+    Vec<OrderingEdge> enforced_ordering = {};
 };
 
 /// Build scheduler - executes commands in topological order
@@ -90,8 +103,13 @@ public:
     auto operator=(Scheduler&&) noexcept -> Scheduler&;
 
     /// Build commands matching the filter. nullptr = build all.
+    /// `ordering` adds edges the graph does not carry; endpoints outside the filter are ignored.
     [[nodiscard]]
-    auto build(graph::BuildGraph const& state, NodeIdMap32 const* filter = nullptr) -> Result<BuildStats>;
+    auto build(
+        graph::BuildGraph const& state,
+        NodeIdMap32 const* filter = nullptr,
+        Vec<OrderingEdge> const& ordering = {}
+    ) -> Result<BuildStats>;
 
     /// Set callback for job start
     auto on_job_start(JobStartCallback callback) -> void;
@@ -121,7 +139,8 @@ private:
     /// Execute jobs in parallel using the async event loop
     auto execute_parallel(
         Vec<BuildJob> const& jobs,
-        graph::BuildGraph const& graph
+        graph::BuildGraph const& graph,
+        Vec<OrderingEdge> const& ordering
     ) -> Result<void>;
 
     /// Build job list from graph in topological order
