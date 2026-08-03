@@ -154,7 +154,7 @@ enum class NodeFlags : std::uint16_t {
     None = 0,
     Modified = 1 << 0,  // Content changed since last build
     Created = 1 << 1,   // Newly created
-    Deleted = 1 << 2,   // Marked for deletion
+    AbsenceRouted = 1 << 2, // This absence is already accounted for; only a return is news
     ConfigDep = 1 << 3, // Depends on configuration
     Transient = 1 << 4, // Temporary file
 };

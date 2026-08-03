@@ -1950,10 +1950,156 @@ SCENARIO("A discovered consumer re-runs for a producer that rewrites the same by
     }
 }
 
+SCENARIO("A dependency absent when it was recorded settles rather than re-running forever", "[e2e][incremental][implicit]")
+{
+    // A command may report reading a file that is not there -- a conditional include that
+    // resolved to nothing. Reading the same stat failure as news every build re-runs the command
+    // forever for output that cannot change, which is the loop the campaign exists to kill. tup
+    // records the absence as a ghost and settles, and re-runs only if the file appears (#281).
+    GIVEN("a consumer whose dependency report names a file that does not exist")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": c.sh |> sh c.sh %o |> c.o\n");
+        f.write_file(
+            "c.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f h.txt ]; then cat h.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: h.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("the project is built again")
+        {
+            THEN("it has settled")
+            {
+                auto settled = f.build();
+                INFO("stdout: " << settled.stdout_output);
+                REQUIRE(settled.success());
+                REQUIRE(settled.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("A dependency that was absent when recorded still re-runs its reader when it appears", "[e2e][incremental][implicit]")
+{
+    // What settling must not cost: the absence is recorded as zero size, zero mtime and a zero
+    // hash, and a file arriving has to be read as a change against all three (#281).
+    GIVEN("a settled consumer whose dependency report names a file that does not exist")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": c.sh |> sh c.sh %o |> c.o\n");
+        f.write_file(
+            "c.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f h.txt ]; then cat h.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: h.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("the named file appears")
+        {
+            f.write_file("h.txt", "arrived\n");
+            REQUIRE(f.build().success());
+
+            THEN("the consumer ran against its contents")
+            {
+                INFO("c.o: " << f.read_file("c.o"));
+                REQUIRE(f.read_file("c.o") == "arrived\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+
+        WHEN("the named file appears empty")
+        {
+            // Size and mtime match the sentinel zeros, so only the recorded hash separates it.
+            f.write_file("h.txt", "");
+            REQUIRE(f.build().success());
+
+            THEN("the consumer ran against it anyway")
+            {
+                INFO("c.o: " << f.read_file("c.o"));
+                REQUIRE(f.read_file("c.o").empty());
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A deleted dependency a command still reports re-runs it once", "[e2e][incremental][implicit]")
+{
+    // The deletion is a real change and must reach the reader, but the run that follows records
+    // the file as absent -- so the build after it has nothing new to say and must settle (#281).
+    GIVEN("a settled consumer whose dependency is then deleted")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": c.sh |> sh c.sh %o |> c.o\n");
+        f.write_file(
+            "c.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f h.txt ]; then cat h.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: h.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        f.write_file("h.txt", "present\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("c.o") == "present\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the dependency is deleted")
+        {
+            f.remove_file("h.txt");
+            REQUIRE(f.build().success());
+
+            THEN("the consumer ran against its absence")
+            {
+                INFO("c.o: " << f.read_file("c.o"));
+                REQUIRE(f.read_file("c.o") == "missing\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
 {
     // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,
-    // that copy shadowed the fresh one, so a carried NodeFlags::Deleted discharged the next
+    // that copy shadowed the fresh one, so a carried NodeFlags::AbsenceRouted discharged the next
     // real deletion as "already routed" and the consumer never ran again (#237).
     GIVEN("a guarded producer, a consumer that discovers its output, and an out-of-scope declarer")
     {
