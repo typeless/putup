@@ -1514,6 +1514,250 @@ SCENARIO("A consumer ordered through a sibling output is not taxed for discoveri
     }
 }
 
+SCENARIO("A discovered dependency orders its consumer on a later build", "[e2e][incremental][implicit]")
+{
+    // A discovery is index-only, so it orders nothing: every later build that runs both the
+    // producer and the consumer races them again, and the consumer is taxed with an extra run
+    // to catch up. The previous build's discovery is what the scheduler orders by now (#276).
+    GIVEN("a settled project whose consumer only discovers what the other produces")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": seed.txt |> sleep 1; cat seed.txt > %o |> p.txt\n");
+        f.write_file("a/seed.txt", "v1\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../a/p.txt ]; then cat ../a/p.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("both commands are re-run by their own inputs changing")
+        {
+            f.write_file("a/seed.txt", "v9\n");
+            f.append_file("b/gen.sh", "# touched\n");
+            auto rerun = f.build();
+            REQUIRE(rerun.success());
+
+            THEN("the consumer read what the producer wrote in that same build")
+            {
+                INFO("c.o: " << f.read_file("b/c.o"));
+                REQUIRE(f.read_file("b/c.o") == "v9\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("nothing needs to catch up")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A recorded discovery that the rules now contradict does not stall the build", "[e2e][incremental][implicit]")
+{
+    // The ordering carried from the last build is stale by construction: the rules can since
+    // have turned the discovered file's producer into a consumer of the discoverer's output.
+    // The rules are this build's truth, so the contradiction retracts the carried ordering —
+    // taking it as binding leaves both commands waiting for each other, and a scheduler with
+    // nothing runnable and nothing running reports the build complete having run neither (#276).
+    GIVEN("a settled project where one command discovers what the other produces")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": a.sh |> sh a.sh %o |> x.o\n"
+            ": b.sh |> sh b.sh %o |> y.txt\n");
+        f.write_file(
+            "a.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f y.txt ]; then cat y.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: y.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        f.write_file("b.sh", "echo v1 > \"$1\"\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the rules reverse the two, so the recorded discovery points the wrong way")
+        {
+            f.write_file("Tupfile",
+                ": a.sh |> sh a.sh %o |> x.o\n"
+                ": b.sh x.o |> sh b.sh %o |> y.txt\n");
+            f.write_file(
+                "a.sh",
+                "out=$1\n"
+                "dep=\"${out%.o}.d\"\n"
+                "echo standalone > \"$out\"\n"
+                "printf '%s: a.sh\\n' \"$out\" > \"$dep\"\n"
+            );
+            f.write_file("b.sh", "echo v2 > \"$1\"\n");
+            auto reversed = f.build();
+
+            THEN("both commands still run, in the order the rules give")
+            {
+                INFO("stdout: " << reversed.stdout_output);
+                REQUIRE(reversed.success());
+                REQUIRE(!reversed.is_noop());
+                REQUIRE(f.read_file("x.o") == "standalone\n");
+                REQUIRE(f.read_file("y.txt") == "v2\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A discovery whose producing rule is gone orders nothing", "[e2e][incremental][implicit]")
+{
+    // Ordering carried from the last build names a producer by the file it produces, so a rule
+    // that has since stopped producing it names nothing and the consumer waits for no one (#276).
+    GIVEN("a settled project whose consumer discovers a generated file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": gen.sh |> sh gen.sh %o |> h.txt\n"
+            ": c.sh |> sh c.sh %o |> c.o\n");
+        f.write_file("gen.sh", "echo generated > \"$1\"\n");
+        f.write_file(
+            "c.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f h.txt ]; then\n"
+            "  cat h.txt > \"$out\"\n"
+            "  printf '%s: h.txt\\n' \"$out\" > \"$dep\"\n"
+            "else\n"
+            "  echo missing > \"$out\"\n"
+            "  : > \"$dep\"\n"
+            "fi\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the rule producing the discovered file is removed")
+        {
+            f.write_file("Tupfile", ": c.sh |> sh c.sh %o |> c.o\n");
+            auto removed = f.build();
+
+            THEN("the consumer runs against the file's absence")
+            {
+                INFO("stdout: " << removed.stdout_output);
+                REQUIRE(removed.success());
+                REQUIRE(f.read_file("c.o") == "missing\n");
+            }
+
+            AND_WHEN("it is built once more")
+            {
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("Ordering the scheduler did not enforce does not excuse a race", "[e2e][incremental][implicit]")
+{
+    // A carried ordering is only real for a pair this build actually scheduled: the consumer may
+    // be quiescent and absent from the job set, and then nothing enforced it. Crediting it anyway
+    // lets a command reach its own excuse through the missing one's outputs, and the race it did
+    // commit goes unmarked — the permanently wrong output #274 exists to prevent (#276).
+    GIVEN("a settled project whose quiescent consumer bridges a producer to a third command")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("p");
+        f.mkdir("c");
+        f.mkdir("x");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("p/Tupfile", ": seed.txt |> sleep 1; cat seed.txt > %o |> d.txt\n");
+        f.write_file("p/seed.txt", "v1\n");
+        f.write_file("c/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "c/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../p/d.txt ]; then cat ../p/d.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../p/d.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        f.write_file("x/Tupfile", ": gen.sh ../c/c.o |> sh gen.sh %o |> x.o\n");
+        f.write_file(
+            "x/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "cat ../c/c.o > \"$out\"\n"
+            ": > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("a third command starts reading the producer's file while the consumer stays put")
+        {
+            f.write_file("p/seed.txt", "v2\n");
+            f.write_file(
+                "x/gen.sh",
+                "out=$1\n"
+                "dep=\"${out%.o}.d\"\n"
+                "cat ../p/d.txt > \"$out\"\n"
+                "printf '%s: ../p/d.txt\\n' \"$out\" > \"$dep\"\n"
+            );
+            REQUIRE(f.build().success());
+
+            THEN("the build after the race heals it")
+            {
+                auto heal = f.build();
+                INFO("stdout: " << heal.stdout_output);
+                INFO("x.o: " << f.read_file("x/x.o"));
+                REQUIRE(heal.success());
+                REQUIRE(f.read_file("x/x.o") == "v2\n");
+            }
+
+            AND_WHEN("it is built twice more")
+            {
+                REQUIRE(f.build().success());
+
+                THEN("it has settled")
+                {
+                    auto settled = f.build();
+                    INFO("stdout: " << settled.stdout_output);
+                    REQUIRE(settled.success());
+                    REQUIRE(settled.is_noop());
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
 {
     // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,
