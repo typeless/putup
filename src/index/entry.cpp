@@ -68,7 +68,7 @@ auto CommandEntry::to_raw(
     raw.env_offset = env_offset;
     raw.key = key;
     raw.signature = signature;
-    raw.flags = must_rerun ? COMMAND_FLAG_MUST_RERUN : 0U;
+    raw.flags = must_rerun ? to_underlying(CommandFlag::MustRerun) : 0U;
     return raw;
 }
 
@@ -90,7 +90,7 @@ auto CommandEntry::from_raw(
         .env = global_pool().intern(env_str),
         .key = raw.key,
         .signature = raw.signature,
-        .must_rerun = (raw.flags & COMMAND_FLAG_MUST_RERUN) != 0U,
+        .must_rerun = (raw.flags & to_underlying(CommandFlag::MustRerun)) != 0U,
         .inputs = std::move(inputs),
         .outputs = std::move(outputs),
     };

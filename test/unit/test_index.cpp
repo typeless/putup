@@ -191,7 +191,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.env_offset == 100);
     REQUIRE(raw.key == key);
     REQUIRE(raw.signature == signature);
-    REQUIRE(raw.flags == pup::index::COMMAND_FLAG_MUST_RERUN);
+    REQUIRE(raw.flags == pup::index::to_underlying(pup::index::CommandFlag::MustRerun));
 
     // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto& pool = global_pool();
