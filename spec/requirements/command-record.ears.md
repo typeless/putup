@@ -378,6 +378,7 @@ whatever ordering an earlier build recorded.
 - reference: upstream's discovered dependencies are graph members, so scheduling reaches them the way it reaches a declared input; no line citation read yet
 - discharge: test "Scenario: A producer's own input change reaches the consumer that only discovered it"
 - discharge: test "Scenario: A producer's input change reaches a chain of discovered consumers"
+- discharge: test "Scenario: A producer's input change reaches an output-less discovered consumer"
 
 When a change reaches a command that produces a file another command was recorded as having
 read, putup shall schedule the reader as well.
