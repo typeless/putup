@@ -253,6 +253,13 @@ auto collect_inactive_output_paths(pup::graph::BuildGraph const& state) -> Vec<S
     return result;
 }
 
+/// What the pre-build comparison found, and what it looked at while finding it. The record leg
+/// may only restate a file this walk actually stat'ed (#288).
+struct ChangeScan {
+    pup::Vec<StringId> changed;
+    pup::Vec<StringId> examined;
+};
+
 auto find_changed_files_with_implicit(
     std::string_view source_root,
     std::string_view config_root,
@@ -265,9 +272,10 @@ auto find_changed_files_with_implicit(
     Vec<StringId> const& inactive_outputs,
     bool verbose = false,
     bool no_stat_cache = false
-) -> pup::Vec<StringId>
+) -> ChangeScan
 {
-    auto changed = pup::Vec<StringId> {};
+    auto scan = ChangeScan {};
+    auto& changed = scan.changed;
     auto& metrics = pup::thread_metrics();
 
     // Racy-clean threshold: files modified within 1 second of index save
@@ -311,6 +319,9 @@ auto find_changed_files_with_implicit(
         }
 
         ++metrics.files_checked;
+        // Past every skip above: this is the one place that decides the walk looked at a file,
+        // so it is the one place that can say so (#288).
+        scan.examined.push_back(file.path);
 
         // File resolution:
         // All paths are now source-relative (generated files include build root, e.g., "build/program").
@@ -387,7 +398,8 @@ auto find_changed_files_with_implicit(
         }
     }
 
-    return changed;
+    std::sort(scan.examined.begin(), scan.examined.end(), pup::handle_less);
+    return scan;
 }
 
 /// Context for building implicit dependency entries in the index.
@@ -526,6 +538,18 @@ auto create_implicit_file(
 
 } // namespace
 
+auto CarriedState::carry_for(StringId path) const -> pup::index::FileEntry const*
+{
+    if (std::binary_search(examined.begin(), examined.end(), path, pup::handle_less)
+        || std::binary_search(refreshed.begin(), refreshed.end(), path, pup::handle_less)) {
+        return nullptr;
+    }
+    auto const* it = std::lower_bound(
+        by_path.begin(), by_path.end(), path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
+    );
+    return (it != by_path.end() && it->first == path) ? it->second : nullptr;
+}
+
 /// Serialize file and directory nodes from the build graph to the index.
 /// Returns the populated index and a path-to-id mapping for later use.
 auto serialize_graph_nodes(
@@ -533,7 +557,8 @@ auto serialize_graph_nodes(
     std::string_view source_root,
     std::string_view config_root,
     std::string_view output_root,
-    pup::Vec<pup::StringId> const& deleted_stale
+    pup::Vec<pup::StringId> const& deleted_stale,
+    CarriedState const& carried
 ) -> std::pair<pup::index::Index, PathIdMap>
 {
     auto const& g = state.graph;
@@ -589,7 +614,13 @@ auto serialize_graph_nodes(
             auto file_size = std::uint64_t { 0 };
             auto mtime_ns = std::int64_t { 0 };
 
-            if (pup::platform::exists(file_path)) {
+            auto const path_id = pup::global_pool().intern(node_path);
+            auto const* carried_entry = carried.carry_for(path_id);
+            if (carried_entry != nullptr) {
+                content_hash = carried_entry->content_hash;
+                file_size = carried_entry->size;
+                mtime_ns = carried_entry->mtime_ns;
+            } else if (pup::platform::exists(file_path)) {
                 auto hash_result = pup::sha256_file(file_path);
                 if (hash_result) {
                     content_hash = *hash_result;
@@ -1544,11 +1575,32 @@ auto build_index(
     pup::NodeIdMap32 const& must_rerun_cmds = {},
     pup::Vec<pup::NodeId> const& executed_cmds = {},
     pup::Vec<pup::StringId> const& deleted_stale = {},
-    pup::Vec<pup::OrderingEdge> const& enforced_ordering = {}
+    pup::Vec<pup::OrderingEdge> const& enforced_ordering = {},
+    pup::Vec<pup::StringId> const& examined_files = {}
 ) -> pup::index::Index
 {
+    auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {} };
+    if (old_index != nullptr) {
+        carried.by_path.reserve(old_index->files().size());
+        for (auto const& file : old_index->files()) {
+            if (!pup::is_empty(file.path)) {
+                carried.by_path.emplace_back(file.path, &file);
+            }
+        }
+        std::sort(carried.by_path.begin(), carried.by_path.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
+    }
+    for (auto graph_cmd_id : executed_cmds) {
+        for (auto output_id : pup::graph::get_outputs(state.graph, graph_cmd_id)) {
+            auto output_path_sv = pup::graph::get_full_path(state.graph, output_id, state.path_cache);
+            if (!output_path_sv.empty()) {
+                carried.refreshed.push_back(pup::global_pool().intern(output_path_sv));
+            }
+        }
+    }
+    std::sort(carried.refreshed.begin(), carried.refreshed.end(), pup::handle_less);
+
     // Serialize file/directory nodes from the build graph
-    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale);
+    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale, carried);
 
     auto cmd_remap = serialize_command_nodes(state, index, path_to_id, must_rerun_cmds);
 
@@ -2219,6 +2271,8 @@ auto build_single_variant(
     // scoped build -- must not forget it.
     auto must_rerun_cmds = pup::NodeIdMap32 {};
     auto changed_files = pup::Vec<StringId> {};
+    // What the comparison below looked at, and so the only files this build may restate (#288).
+    auto examined_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
     // Outlives the block only so the ordering can be derived after the up-to-date exit below.
@@ -2290,7 +2344,7 @@ auto build_single_variant(
         pup::thread_metrics().stale_outputs_time = std::chrono::duration_cast<std::chrono::microseconds>(stale_elapsed);
 
         auto change_detect_start = pup::SteadyClock::now();
-        changed_files = find_changed_files_with_implicit(
+        auto scan = find_changed_files_with_implicit(
             source_root_str,
             config_root_str,
             pup::graph::get_build_root_name(bs.graph),
@@ -2303,6 +2357,8 @@ auto build_single_variant(
             opts.verbose,
             opts.no_stat_cache
         );
+        changed_files = std::move(scan.changed);
+        examined_files = std::move(scan.examined);
         auto change_detect_elapsed = pup::SteadyClock::now() - change_detect_start;
         pup::thread_metrics().change_detection_time = std::chrono::duration_cast<std::chrono::microseconds>(change_detect_elapsed);
 
@@ -2573,7 +2629,8 @@ auto build_single_variant(
             must_rerun_cmds,
             executed_cmds,
             deleted_stale,
-            stats.enforced_ordering
+            stats.enforced_ordering,
+            examined_files
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };

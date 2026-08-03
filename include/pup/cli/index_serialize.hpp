@@ -18,6 +18,19 @@ namespace pup::cli {
 /// Path string → NodeId mapping built during serialization
 using PathIdMap = Vec<std::pair<StringId, NodeId>>;
 
+/// The state a build may not restate. A file this build neither examined nor produced keeps what
+/// the last build that looked at it recorded: stamping a fresh stat instead asserts a currency
+/// nothing verified, and the next build then compares the new state against itself (#288).
+struct CarriedState {
+    Vec<std::pair<StringId, index::FileEntry const*>> by_path; ///< the old index, sorted by path
+    Vec<StringId> examined;                                    ///< sorted: what change detection stat'ed
+    Vec<StringId> refreshed;                                   ///< sorted: outputs of the commands that ran
+
+    /// The entry to keep for `path`, or nullptr when this build may observe the file itself.
+    [[nodiscard]]
+    auto carry_for(StringId path) const -> index::FileEntry const*;
+};
+
 /// Serialize non-command nodes from the build graph to the index.
 /// Emits one entry per live file-space node so ids stay dense (id == position + 1).
 /// Paths in `deleted_stale` are marked NodeFlags::AbsenceRouted: this build removed them and routed
@@ -28,7 +41,8 @@ auto serialize_graph_nodes(
     std::string_view source_root,
     std::string_view config_root,
     std::string_view output_root,
-    Vec<StringId> const& deleted_stale = {}
+    Vec<StringId> const& deleted_stale = {},
+    CarriedState const& carried = {}
 ) -> std::pair<index::Index, PathIdMap>;
 
 /// Serialize guard-satisfied command nodes to the index with dense ids.

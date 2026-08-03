@@ -2488,6 +2488,102 @@ SCENARIO("A scoped build does not blind the next full build", "[e2e][incremental
     }
 }
 
+SCENARIO("A build run from a subdirectory does not stamp an out-of-scope change as current", "[e2e][incremental][scope]")
+{
+    // A cwd-derived scope parses the whole project but detects only its own directory, while the
+    // record leg re-hashed every graph file: a/src.txt was recorded current on the strength of a
+    // stat nothing consumed, so the next full build compared v2 against v2 forever (#288).
+    GIVEN("two independent directories, settled")
+    {
+        auto f = E2EFixture { "scoped_out_of_scope_edit" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a/out.txt") == "v1\n");
+
+        WHEN("the out-of-scope source changes and a build runs from the other directory")
+        {
+            f.write_file("a/src.txt", "v2\n");
+            f.write_file("b/src.txt", "v2\n");
+            auto scoped = f.run_pup_in_dir("b", {});
+            REQUIRE(scoped.success());
+            REQUIRE_FALSE(scoped.is_noop());
+
+            THEN("the next full build still rebuilds the directory it never examined")
+            {
+                auto full = f.build();
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE(f.read_file("a/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A build with --all-deps does not stamp an out-of-scope change as current", "[e2e][incremental][scope]")
+{
+    // -a empties parse_scopes for the same reason cwd scoping does, so it reaches #288 by the
+    // same door: everything is parsed, only the scope is detected, everything is recorded.
+    GIVEN("two independent directories, settled")
+    {
+        auto f = E2EFixture { "scoped_out_of_scope_edit" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a/out.txt") == "v1\n");
+
+        WHEN("the out-of-scope source changes and a scoped -a build runs")
+        {
+            f.write_file("a/src.txt", "v2\n");
+            f.write_file("b/src.txt", "v2\n");
+            auto scoped = f.build({ "-a", "b/" });
+            REQUIRE(scoped.success());
+            REQUIRE_FALSE(scoped.is_noop());
+
+            THEN("the next full build still rebuilds the directory it never examined")
+            {
+                auto full = f.build();
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE(f.read_file("a/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A file added while building from a subdirectory is still built", "[e2e][incremental][scope]")
+{
+    // The other side of #288's fix: carrying an unexamined file's recorded state forward must not
+    // become "record nothing", or a file first seen by a scoped build would never be built.
+    GIVEN("a settled project whose other directory globs its sources")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": foreach *.txt |> cp %f %o |> %B.out\n");
+        f.write_file("a/one.txt", "1\n");
+        f.write_file("b/Tupfile", ": in.txt |> cat %f > %o |> b.out\n");
+        f.write_file("b/in.txt", "i1\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("a file appears in the other directory and a build runs from this one")
+        {
+            f.write_file("a/two.txt", "2\n");
+            f.write_file("b/in.txt", "i2\n");
+            REQUIRE(f.run_pup_in_dir("b", {}).success());
+
+            THEN("the added file is built no later than the next full build")
+            {
+                auto full = f.build();
+                INFO("stdout: " << full.stdout_output);
+                REQUIRE(full.success());
+                REQUIRE(f.read_file("a/two.out") == "2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Removed source file triggers stale output cleanup", "[e2e][incremental]")
 {
     GIVEN("a project with two source files")
