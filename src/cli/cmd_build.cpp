@@ -2221,7 +2221,8 @@ auto build_single_variant(
     auto changed_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
-    auto injected_ordering = pup::Vec<pup::exec::OrderingEdge> {};
+    // Outlives the block only so the ordering can be derived after the up-to-date exit below.
+    auto join = CommandLookup {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
@@ -2229,11 +2230,9 @@ auto build_single_variant(
         // Build the identity → NodeId map: the cross-build join key for commands.
         // Must happen after parsing (operands set) but before incremental logic.
         auto cmd_index_start = pup::SteadyClock::now();
-        auto const join = graph_command_lookup(bs);
+        join = graph_command_lookup(bs);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
         pup::thread_metrics().command_index_time = std::chrono::duration_cast<std::chrono::microseconds>(cmd_index_elapsed);
-
-        injected_ordering = collect_discovered_ordering(idx, join);
 
         auto upstream_files = Vec<std::string_view> {};
         if (opts.include_all_deps && !scopes.empty()) {
@@ -2481,6 +2480,10 @@ auto build_single_variant(
         // Nothing here will ever run a config rule, so a needing-to-run record on one is undischargeable.
         must_rerun_cmds.remove(cfg.cmd_id);
     }
+
+    // Past the up-to-date exit, not with the rest of the incremental work: this is one pair per
+    // recorded discovery, and a build that schedules nothing would derive all of them to run none.
+    auto injected_ordering = old_idx_ptr ? collect_discovered_ordering(*old_idx_ptr, join) : pup::Vec<pup::exec::OrderingEdge> {};
 
     auto start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
 
