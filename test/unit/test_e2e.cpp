@@ -1364,6 +1364,40 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
     }
 }
 
+SCENARIO("A dependency outside the source tree is recorded rather than dropped", "[e2e][incremental][implicit]")
+{
+    // The arms that drop a discovered dep sit above an else that keeps the out-of-tree ones as
+    // absolute paths. Nothing pinned that, and #305 was filed on the assumption it drops them.
+    GIVEN("a compile whose depfile names system headers")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": foreach *.c |> gcc -MD -MF %o.d -c %f -o %o |> %B.o\n");
+        f.write_file("a.c", "#include <stdio.h>\nint a(void){return 0;}\n");
+
+        WHEN("the project is built without -v")
+        {
+            auto built = f.build();
+
+            THEN("it says nothing about dependencies it could not take")
+            {
+                INFO("stdout: " << built.stdout_output);
+                INFO("stderr: " << built.stderr_output);
+                REQUIRE(built.success());
+                REQUIRE(built.stderr_output.find("Skipping dependency") == std::string::npos);
+                REQUIRE(built.stderr_output.find("Cannot relativize") == std::string::npos);
+            }
+
+            THEN("the headers outside the tree are in the record, by absolute path")
+            {
+                auto shown = f.pup({ "show", "index" });
+                INFO("stdout: " << shown.stdout_output);
+                REQUIRE(shown.success());
+                REQUIRE(shown.stdout_output.find("implicit: /") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A changed header re-runs the output-less command that read it", "[e2e][incremental][implicit]")
 {
     // Routing a discovered dep pushes the reading command's outputs, so a command with none was

@@ -2473,11 +2473,10 @@ auto build_single_variant(
                 auto to_resolve = pup::path::is_absolute(dep_sv)
                     ? dep_sv
                     : pool.get(pup::path::join(working_dir_sv, dep_sv));
+                // Dropping a dep loses an edge no later build re-derives, so neither arm is gated on -v.
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
-                    if (opts.verbose) {
-                        eprint("Warning: Skipping dependency '{}': {}\n", dep_sv, resolved_result.error().msg());
-                    }
+                    eprint("Warning: Skipping dependency '{}': {}\n", dep_sv, resolved_result.error().msg());
                     continue;
                 }
                 auto resolved_sv = pool.get(*resolved_result);
@@ -2485,13 +2484,12 @@ auto build_single_variant(
                 if (pup::is_path_under(resolved_sv, source_root_sv)) {
                     auto rel_sv = pool.get(pup::path::relative(resolved_sv, source_root_sv));
                     if (rel_sv.starts_with("..")) {
-                        if (opts.verbose) {
-                            eprint("Warning: Cannot relativize '{}'\n", resolved_sv);
-                        }
+                        eprint("Warning: Cannot relativize '{}'\n", resolved_sv);
                         continue;
                     }
                     deps.push_back(pool.intern(rel_sv));
                 } else {
+                    // Recorded, not ignored: tup drops out-of-tree deps unless --full-deps, putup tracks them (DESIGN.md).
                     deps.push_back(*resolved_result);
                 }
             }
