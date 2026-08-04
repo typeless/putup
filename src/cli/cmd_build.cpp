@@ -2559,6 +2559,21 @@ auto build_single_variant(
         filter.intersect_with(std::move(non_config));
     }
 
+    // A command this build means to run is unverified until it succeeds: an abort strands or kills it silently (#304).
+    for (auto id : pup::graph::all_nodes(bs.graph)) {
+        if (!node_id::is_command(id) || !pup::graph::is_guard_satisfied(bs.graph, id)) {
+            continue;
+        }
+        if (auto const* intended = filter.ptr(); intended != nullptr && !intended->contains(id)) {
+            continue;
+        }
+        // Nothing here will ever run a config rule, so a mark on one is undischargeable (as above).
+        if (config_cmd_ids.contains(id)) {
+            continue;
+        }
+        must_rerun_cmds.set(id, 1);
+    }
+
     auto build_result = scheduler.build(bs, filter.ptr(), injected_ordering);
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
