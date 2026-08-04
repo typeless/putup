@@ -36,6 +36,34 @@ auto read_index(IndexFile const& f) -> Result<Index>;
 [[nodiscard]]
 auto read_index(std::string_view path) -> Result<Index>;
 
+/// What a previous build's record says about the paths in this tree: which ones it recorded as
+/// sources, and which ones it produced. A version bump retracts the record's currency; #291 was
+/// it retracting this along with it, leaving the next build to call its own outputs checked-in
+/// source files.
+struct PriorPaths {
+    enum class Kind : std::uint8_t {
+        NeverBuilt, ///< No record at all, so nothing this project produced can be on disk yet
+        Known,      ///< Recovered whole
+        Lost,       ///< A build happened here and what it produced cannot be recovered
+    };
+
+    Kind kind = Kind::NeverBuilt;
+    Vec<StringId> sources;   ///< Sorted; empty unless kind == Known
+    Vec<StringId> generated; ///< Sorted; empty unless kind == Known
+};
+
+/// Classify the paths an already-loaded record holds.
+[[nodiscard]]
+auto prior_paths(Index const& index) -> PriorPaths;
+
+/// Classify the paths a record on disk holds, including one too old for `read_index`. Reads the
+/// header, the file table and the string table and nothing else, so no command, signature or
+/// recorded currency from a version putup no longer trusts can reach a caller through here. A
+/// record failing any check -- magic, checksum, the readable version window, its own declared
+/// layout -- comes back `Lost`, never partly read.
+[[nodiscard]]
+auto read_prior_paths(std::string_view path) -> PriorPaths;
+
 /// Get the header
 [[nodiscard]]
 auto index_header(IndexFile const& f) -> RawHeader const*;

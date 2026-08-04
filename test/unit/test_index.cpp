@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/cli/index_serialize.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/hash.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/dag.hpp"
@@ -17,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -662,182 +664,66 @@ TEST_CASE("Index reader validation", "[e2e][index]")
     }
 }
 
-TEST_CASE("Index reader malicious data handling", "[e2e][index]")
+TEST_CASE("A record whose declared layout does not fit the file is refused", "[e2e][index]")
 {
-    // Create a minimal valid index to use as base
+    // Reading it as empty was the old behaviour: an out-of-bounds section became a zero-length
+    // span, so a damaged record loaded as the record of a project that had produced nothing --
+    // and the source-file guard, which reads exactly that, went quiet and let a rule overwrite
+    // a checked-in file (#293).
     auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
     index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("gcc test.c"), .inputs = { 1 } });
     index.add_edge(EdgeEntry { .from = 1, .to = cmd_id });
 
-        auto data = serialize_index(index);
+    auto const data = serialize_index(index);
     REQUIRE(data.has_value());
 
-    auto temp_path = (std::filesystem::temp_directory_path() / "pup_malicious_test").string();
+    auto const path = (std::filesystem::temp_directory_path() / "pup_malicious_test").string();
+    auto const past_end = static_cast<std::uint32_t>(data->size()) + 1000;
+    auto const overflowing_count = static_cast<std::uint32_t>(data->size() / sizeof(RawFileEntry)) + 100;
 
-    SECTION("file_offset beyond file size")
-    {
+    auto const write_mutated = [&](auto&& mutate) {
         auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->file_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        mutate(*reinterpret_cast<RawHeader*>(corrupted.data()));
+        auto out = std::ofstream { path, std::ios::binary | std::ios::trunc };
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        out.write(reinterpret_cast<char const*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
+    };
 
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto files = index_raw_files(*reader_result);
-        REQUIRE(files.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
+    SECTION("the unmutated record still opens")
+    {
+        write_mutated([](RawHeader&) {});
+        auto opened = open_index(path);
+        REQUIRE(opened.has_value());
+        opened->file.close();
     }
 
-    SECTION("file_count causes overflow past file end")
+    SECTION("a section starting or running past the end is refused")
     {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->file_count = 0xFFFFFFFF;
+        auto const [name, mutate] = GENERATE_REF(table<char const*, std::function<void(RawHeader&)>>({
+            { "file_offset", [&](RawHeader& h) { h.file_offset = past_end; } },
+            { "file_count", [](RawHeader& h) { h.file_count = 0xFFFFFFFF; } },
+            { "file_count just past the end", [&](RawHeader& h) { h.file_offset = sizeof(RawHeader); h.file_count = overflowing_count; } },
+            { "command_offset", [&](RawHeader& h) { h.command_offset = past_end; } },
+            { "command_count", [](RawHeader& h) { h.command_count = 0xFFFFFFFF; } },
+            { "edge_offset", [&](RawHeader& h) { h.edge_offset = past_end; } },
+            { "edge_count", [](RawHeader& h) { h.edge_count = 0xFFFFFFFF; } },
+            { "string_offset", [&](RawHeader& h) { h.string_offset = past_end; } },
+            { "string_table_size", [](RawHeader& h) { h.string_table_size = 0xFFFFFFFF; } },
+            { "operand_table_offset", [&](RawHeader& h) { h.operand_table_offset = past_end; } },
+            { "operand_data_offset", [&](RawHeader& h) { h.operand_data_offset = past_end; } },
+        }));
+        INFO("mutated " << name);
 
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
+        write_mutated(mutate);
 
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto files = index_raw_files(*reader_result);
-        REQUIRE(files.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
+        auto opened = open_index(path);
+        REQUIRE_FALSE(opened.has_value());
     }
 
-    SECTION("command_offset beyond file size")
-    {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->command_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
-
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto commands = index_raw_commands(*reader_result);
-        REQUIRE(commands.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
-    }
-
-    SECTION("command_count causes overflow past file end")
-    {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->command_count = 0xFFFFFFFF;
-
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto commands = index_raw_commands(*reader_result);
-        REQUIRE(commands.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
-    }
-
-    SECTION("edge_offset beyond file size")
-    {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->edge_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
-
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto edges = index_raw_edges(*reader_result);
-        REQUIRE(edges.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
-    }
-
-    SECTION("edge_count causes overflow past file end")
-    {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->edge_count = 0xFFFFFFFF;
-
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto edges = index_raw_edges(*reader_result);
-        REQUIRE(edges.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
-    }
-
-    SECTION("offset at boundary but count overflows")
-    {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        // Set offset to valid position, but count would overflow
-        hdr->file_offset = sizeof(RawHeader);
-        hdr->file_count = static_cast<std::uint32_t>(corrupted.size() / sizeof(RawFileEntry)) + 100;
-
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        auto files = index_raw_files(*reader_result);
-        REQUIRE(files.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
-    }
-
-    SECTION("string offset beyond file size")
-    {
-        auto corrupted = *data;
-        auto* hdr = reinterpret_cast<RawHeader*>(corrupted.data());
-        hdr->string_offset = static_cast<std::uint32_t>(corrupted.size()) + 1000;
-
-        std::ofstream out { temp_path, std::ios::binary };
-        out.write(reinterpret_cast<char*>(corrupted.data()), static_cast<std::streamsize>(corrupted.size()));
-        out.close();
-
-        auto reader_result = open_index(temp_path);
-        REQUIRE(reader_result.has_value());
-
-        // get_string should return empty for out-of-bounds
-        auto str = index_get_string(*reader_result, 0);
-        REQUIRE(str.empty());
-
-        reader_result->file.close();
-        std::filesystem::remove(temp_path);
-    }
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("StringTable overflow handling", "[index]")
@@ -1492,4 +1378,181 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
 
         require_graph_index_roundtrip(bs, "pup_test_rt_prop");
     }
+}
+
+namespace {
+
+/// Rewrite a serialized record's version and re-sign it, the way an older putup would have
+/// written it: every version since INDEX_LAYOUT_FLOOR lays its header and file table out
+/// identically, so these bytes are what one of those really produced.
+auto stamp_version(Vec<std::byte>& bytes, std::uint32_t version) -> void
+{
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto* hdr = reinterpret_cast<RawHeader*>(bytes.data());
+    hdr->version = version;
+
+    auto const content_size = bytes.size() - sizeof(RawFooter);
+    auto const checksum = pup::sha256(std::span<std::byte const> { bytes.data(), content_size });
+    std::memcpy(bytes.data() + content_size, checksum.data(), checksum.size());
+}
+
+auto write_bytes(std::string const& path, Vec<std::byte> const& bytes) -> void
+{
+    auto out = std::ofstream { path, std::ios::binary | std::ios::trunc };
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    out.write(reinterpret_cast<char const*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+auto temp_index_path(std::string_view stem) -> std::string
+{
+    return (std::filesystem::temp_directory_path() / std::string { stem }).string();
+}
+
+/// A record with one file of every type, laid out under a directory chain so the recovered
+/// paths exercise the parent walk rather than bare basenames.
+auto index_with_every_node_type() -> Index
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("src") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_file(FileEntry { .id = 4, .type = NodeType::Ghost, .name = intern("missing.h") });
+    index.add_file(FileEntry { .id = 5, .type = NodeType::Group, .name = intern("objs") });
+    index.add_file(FileEntry { .id = 6, .type = NodeType::File, .name = intern("Tupfile") });
+    index.add_file(FileEntry { .id = 7, .parent_id = 1, .type = NodeType::Generated, .name = intern("gen.h") });
+    index.compute_paths();
+    return index;
+}
+
+auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
+{
+    auto out = Vec<StringId> {};
+    for (auto const& file : index.files()) {
+        if (file.type == type && !pup::is_empty(file.path)) {
+            out.push_back(file.path);
+        }
+    }
+    std::sort(out.begin(), out.end(), pup::handle_less);
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("A record names the paths it recorded even at a version too old to trust", "[index]")
+{
+    auto const index = index_with_every_node_type();
+    auto const expected_sources = sorted_paths_of_type(index, NodeType::File);
+    auto const expected_generated = sorted_paths_of_type(index, NodeType::Generated);
+    REQUIRE_FALSE(expected_sources.empty());
+    REQUIRE_FALSE(expected_generated.empty());
+
+    auto const data = serialize_index(index);
+    REQUIRE(data.has_value());
+    auto const path = temp_index_path("pup_prior_window");
+
+    // The window is a handful of integers, so it is enumerated rather than sampled.
+    for (auto version = INDEX_LAYOUT_FLOOR - 1; version <= INDEX_VERSION + 1; ++version) {
+        INFO("version=" << version);
+        auto bytes = *data;
+        stamp_version(bytes, version);
+        write_bytes(path, bytes);
+
+        auto const recovered = read_prior_paths(path);
+        auto const in_window = version >= INDEX_LAYOUT_FLOOR && version <= INDEX_VERSION;
+
+        if (in_window) {
+            REQUIRE(recovered.kind == PriorPaths::Kind::Known);
+            REQUIRE(recovered.sources == expected_sources);
+            REQUIRE(recovered.generated == expected_generated);
+        } else {
+            REQUIRE(recovered.kind == PriorPaths::Kind::Lost);
+            REQUIRE(recovered.sources.empty());
+            REQUIRE(recovered.generated.empty());
+        }
+    }
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Absence of a record is not the same answer as an unreadable one", "[index]")
+{
+    auto const missing = read_prior_paths(temp_index_path("pup_prior_absent"));
+    REQUIRE(missing.kind == PriorPaths::Kind::NeverBuilt);
+
+    auto const path = temp_index_path("pup_prior_garbage");
+    auto garbage = Vec<std::byte> {};
+    garbage.resize(200);
+    write_bytes(path, garbage);
+    REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("Recovering a record's paths agrees with reading the record", "[index]")
+{
+    auto const types = std::array {
+        NodeType::File, NodeType::Generated, NodeType::Directory, NodeType::Variable,
+        NodeType::Group, NodeType::Ghost, NodeType::GeneratedDir, NodeType::Root,
+    };
+
+    for (auto seed = std::uint32_t { 0 }; seed < 20; ++seed) {
+        INFO("seed=" << seed);
+        auto rng = std::mt19937 { seed };
+
+        auto index = Index {};
+        auto const count = std::size_t { 1 + rng() % 30 };
+        for (auto i = std::size_t { 0 }; i < count; ++i) {
+            // Parent is always an earlier entry, so the chain terminates however it is drawn.
+            auto parent = (i == 0 || rng() % 3 == 0) ? NodeId { 0 } : static_cast<NodeId>(1 + rng() % i);
+            index.add_file(FileEntry {
+                .id = static_cast<NodeId>(i + 1),
+                .parent_id = parent,
+                .type = types[rng() % types.size()],
+                .name = (rng() % 8 == 0) ? StringId::Empty : intern("n" + std::to_string(rng() % 100)),
+            });
+        }
+        index.compute_paths();
+
+        auto const path = temp_index_path("pup_prior_diff_" + std::to_string(seed));
+        REQUIRE(write_index(path, index).has_value());
+
+        auto const loaded = read_index(path);
+        REQUIRE(loaded.has_value());
+
+        auto const from_loaded = prior_paths(*loaded);
+        auto const from_file = read_prior_paths(path);
+
+        REQUIRE(from_loaded.kind == PriorPaths::Kind::Known);
+        REQUIRE(from_file.kind == PriorPaths::Kind::Known);
+        REQUIRE(from_file.sources == from_loaded.sources);
+        REQUIRE(from_file.generated == from_loaded.generated);
+        REQUIRE(from_file.sources == sorted_paths_of_type(index, NodeType::File));
+        REQUIRE(from_file.generated == sorted_paths_of_type(index, NodeType::Generated));
+
+        std::filesystem::remove(path);
+    }
+}
+
+TEST_CASE("One flipped bit anywhere in a record makes it unrecoverable, never partly read", "[index]")
+{
+    auto const index = index_with_every_node_type();
+    auto const data = serialize_index(index);
+    REQUIRE(data.has_value());
+    auto const path = temp_index_path("pup_prior_flip");
+
+    auto rng = std::mt19937 { 20260804 };
+    for (auto pos = std::size_t { 0 }; pos < data->size(); ++pos) {
+        INFO("byte=" << pos);
+        auto bytes = *data;
+        auto const bit = std::uint8_t { 1 } << (rng() % 8);
+        bytes[pos] = static_cast<std::byte>(static_cast<std::uint8_t>(bytes[pos]) ^ bit);
+        write_bytes(path, bytes);
+
+        auto const recovered = read_prior_paths(path);
+        REQUIRE(recovered.kind == PriorPaths::Kind::Lost);
+        REQUIRE(recovered.sources.empty());
+        REQUIRE(recovered.generated.empty());
+    }
+
+    std::filesystem::remove(path);
 }

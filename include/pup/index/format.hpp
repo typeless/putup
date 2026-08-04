@@ -68,6 +68,14 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       verified, and no later build detects that, so v20 is not read.
 inline constexpr auto INDEX_VERSION = std::uint32_t { 21 };
 
+/// The oldest version whose `RawHeader` and `RawFileEntry` bytes mean what today's mean, so a
+/// record that old still says which paths it recorded as sources and which as generated even
+/// though nothing else in it may be trusted (issue #291). v9 is where both structs last changed.
+/// Nothing but that classification is ever read from a version below `INDEX_VERSION`.
+inline constexpr auto INDEX_LAYOUT_FLOOR = std::uint32_t { 9 };
+
+static_assert(INDEX_LAYOUT_FLOOR <= INDEX_VERSION, "the readable window runs backwards from the current version");
+
 /// Index file header (56 bytes) - v9
 struct alignas(8) RawHeader {
     std::array<char, 4> magic = INDEX_MAGIC; ///< "PUPI"
@@ -108,7 +116,8 @@ static_assert(
     "RawFileEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
     "— record it here, compare it in the change-detection walk, and route it "
     "(collect_affected_commands) — before updating this number. Note a category carried in "
-    "`flags` changes no size and this assert will not fire for it"
+    "`flags` changes no size and this assert will not fire for it. This is also where "
+    "INDEX_LAYOUT_FLOOR stops being true: raise it to the new version"
 );
 
 /// Raw command entry (16 bytes) - v8

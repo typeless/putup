@@ -12,7 +12,6 @@
 #include "pup/core/print.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/index/reader.hpp"
 #include "pup/platform/file_io.hpp"
@@ -56,20 +55,16 @@ auto remove_indexed_outputs(
 {
     auto result = RemoveResult {};
 
-    auto index_result = pup::index::read_index(index_path);
-    if (!index_result) {
-        eprint("Warning: Could not load index: {}\n", index_result.error().msg());
+    // Which outputs the record owns, not whether they are current: a record too old for
+    // read_index still knows what it produced, and that is the whole question here (#291).
+    auto const prior = pup::index::read_prior_paths(index_path);
+    if (prior.kind != pup::index::PriorPaths::Kind::Known) {
+        eprint("Warning: Could not read the build record, so no generated file can be named\n");
         return result;
     }
 
-    auto const& index = *index_result;
-
-    for (auto const& file : index.files()) {
-        if (file.type != pup::NodeType::Generated) {
-            continue;
-        }
-
-        auto file_path_sv = pup::global_pool().get(file.path);
+    for (auto path_id : prior.generated) {
+        auto file_path_sv = pup::global_pool().get(path_id);
         auto abs_path_sv = pup::global_pool().get(pup::path::join(root, file_path_sv));
         for (auto parent = pup::path::parent(abs_path_sv);
              !parent.empty() && parent != pup::path::parent(parent);

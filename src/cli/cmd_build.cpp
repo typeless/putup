@@ -27,6 +27,7 @@
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
+#include "pup/index/reader.hpp"
 #include "pup/index/writer.hpp"
 #include "pup/parser/ignore.hpp"
 #include "pup/platform/file_io.hpp"
@@ -1715,10 +1716,11 @@ struct NewCommands {
 /// type"); putup used to let the generated node win, and in-tree that overwrote the tracked
 /// file on disk. The previous index is what tells a source file apart from our own output
 /// sitting in the source tree after an in-tree build -- exactly the distinction tup's node
-/// types carry.
+/// types carry. Unlike tup this names every collision at once, because the remedy is per file
+/// and one-at-a-time made an upgrade an N-build loop (#291).
 auto reject_shadowed_sources(
     pup::graph::BuildGraph const& state,
-    pup::index::Index const* old_index,
+    pup::index::PriorPaths const& prior,
     std::string_view source_root,
     std::string_view config_root
 ) -> pup::Result<void>
@@ -1736,21 +1738,14 @@ auto reject_shadowed_sources(
         return {};
     }
 
-    // Two questions putup can answer for certain. With no previous index nothing we
-    // produced can be on disk yet, so anything sitting at an output's path is a source.
-    // With one, a path it recorded as a source File is a source whatever is on disk now.
-    // Everything else -- notably a generated file the previous index does not mention,
-    // which is what a scoped build leaves behind for out-of-scope outputs -- is not
-    // decidable from here and is left alone.
-    auto recorded_sources = pup::Vec<StringId> {};
-    if (old_index != nullptr) {
-        for (auto const& file : old_index->files()) {
-            if (file.type == pup::NodeType::File && !pup::is_empty(file.path)) {
-                recorded_sources.push_back(file.path);
-            }
-        }
-        std::sort(recorded_sources.begin(), recorded_sources.end(), pup::handle_less);
-    }
+    // What the previous build's record settles. `Known`: a path it recorded as a source File is
+    // a source whatever is on disk now, and everything else -- notably a generated file it does
+    // not mention, which is what a scoped build leaves behind for out-of-scope outputs -- is not
+    // decidable from here and is left alone. `NeverBuilt`: nothing we produced can be on disk
+    // yet, so anything sitting at an output's path is a source. `Lost`: a build happened here
+    // and putup cannot tell either way, which is the only case that says so out loud.
+    auto const known = prior.kind == pup::index::PriorPaths::Kind::Known;
+    auto shadowed = pup::Vec<StringId> {};
 
     // Guard-satisfied producers only, like every other command walk here: an inactive
     // conditional branch declares outputs it will never write, and rejecting on those
@@ -1784,24 +1779,38 @@ auto reject_shadowed_sources(
             }
 
             auto rel_id = pool.intern(rel_sv);
-            if (old_index != nullptr
-                && !std::binary_search(recorded_sources.begin(), recorded_sources.end(), rel_id, pup::handle_less)) {
+            if (known
+                && !std::binary_search(prior.sources.begin(), prior.sources.end(), rel_id, pup::handle_less)) {
                 continue;
             }
 
-            auto err = pup::Buf {};
-            err.fmt(
-                "Attempting to create '{}' as a generated file when it already exists as a source "
-                "file. You can do one of two things to fix this:\n"
-                "  1) If this file is really supposed to be created from the command, delete the "
-                "file from the filesystem and try again.\n"
-                "  2) Change your rule in the Tupfile so you aren't trying to overwrite the file.",
-                rel_sv
-            );
-            return pup::make_error<void>(pup::ErrorCode::DuplicateNode, err.view());
+            shadowed.push_back(rel_id);
         }
     }
-    return {};
+
+    if (shadowed.empty()) {
+        return {};
+    }
+
+    std::sort(shadowed.begin(), shadowed.end(), [&pool](StringId a, StringId b) { return pool.get(a) < pool.get(b); });
+    shadowed.erase(std::unique(shadowed.begin(), shadowed.end()), shadowed.end());
+
+    auto err = pup::Buf {};
+    err.append(
+        prior.kind == pup::index::PriorPaths::Kind::Lost
+            ? "A previous build's record for this tree cannot be read, so putup cannot tell which of these files that build produced:\n"
+            : "Attempting to create files that already exist as source files:\n"
+    );
+    for (auto id : shadowed) {
+        err.fmt("  {}\n", pool.get(id));
+    }
+    err.append(
+        "You can do one of two things to fix this:\n"
+        "  1) If a file is really supposed to be created from the command, delete it from the "
+        "filesystem and try again.\n"
+        "  2) Change your rule in the Tupfile so you aren't trying to overwrite it."
+    );
+    return pup::make_error<void>(pup::ErrorCode::DuplicateNode, err.view());
 }
 
 /// A ghost is a path no rule produces. Nothing consuming it is harmless, and one backed by a
@@ -2255,7 +2264,14 @@ auto build_single_variant(
     auto index_path = pup::global_pool().get(ctx.layout().index_path());
     auto const* old_idx_ptr = ctx.old_index();
 
-    if (auto shadowed = reject_shadowed_sources(bs, old_idx_ptr, source_root_str, config_root_str); !shadowed) {
+    // A record too old for read_index still says which paths it recorded as sources; the version
+    // gate retracts its currency, not that (#291). Nothing recovered this way is ever loaded as
+    // `old_idx_ptr` -- it answers this one question and dies here.
+    auto const prior = old_idx_ptr != nullptr
+        ? pup::index::prior_paths(*old_idx_ptr)
+        : pup::index::read_prior_paths(index_path);
+
+    if (auto shadowed = reject_shadowed_sources(bs, prior, source_root_str, config_root_str); !shadowed) {
         veprint(variant_name, "Error: {}\n", shadowed.error().msg());
         return EXIT_FAILURE;
     }

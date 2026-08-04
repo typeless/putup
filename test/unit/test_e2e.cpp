@@ -3,9 +3,16 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "pup/core/hash.hpp"
+#include "pup/index/format.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <filesystem>
+#include <iterator>
+#include <span>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -6698,6 +6705,184 @@ SCENARIO("An in-tree rebuild does not mistake its own output for a source file",
             {
                 INFO("stderr: " << again.stderr_output);
                 REQUIRE(again.success());
+            }
+        }
+    }
+}
+
+namespace {
+
+auto index_bytes(E2EFixture const& f) -> std::vector<std::byte>
+{
+    auto in = std::ifstream { f.workdir() / ".pup" / "index", std::ios::binary };
+    auto chars = std::vector<char> { std::istreambuf_iterator<char> { in }, std::istreambuf_iterator<char> {} };
+    auto bytes = std::vector<std::byte> (chars.size());
+    std::memcpy(bytes.data(), chars.data(), chars.size());
+    return bytes;
+}
+
+auto write_index_bytes(E2EFixture const& f, std::vector<std::byte> const& bytes) -> void
+{
+    auto out = std::ofstream { f.workdir() / ".pup" / "index", std::ios::binary | std::ios::trunc };
+    out.write(reinterpret_cast<char const*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+/// Restamp the build record's format version and re-sign it, so it reads as one an older putup
+/// wrote. Only the version differs: the file table is the part every version since the floor
+/// shares, and it is all the recovery read looks at.
+auto stamp_index_version(E2EFixture const& f, std::uint32_t version) -> void
+{
+    auto bytes = index_bytes(f);
+    REQUIRE(bytes.size() > sizeof(pup::index::RawHeader) + sizeof(pup::index::RawFooter));
+
+    auto* hdr = reinterpret_cast<pup::index::RawHeader*>(bytes.data());
+    hdr->version = version;
+
+    auto const content_size = bytes.size() - sizeof(pup::index::RawFooter);
+    auto const checksum = pup::sha256(std::span<std::byte const> { bytes.data(), content_size });
+    std::memcpy(bytes.data() + content_size, checksum.data(), checksum.size());
+
+    write_index_bytes(f, bytes);
+}
+
+auto truncate_index(E2EFixture const& f, std::uintmax_t size) -> void
+{
+    std::filesystem::resize_file(f.workdir() / ".pup" / "index", size);
+}
+
+} // namespace
+
+SCENARIO("An index an older putup wrote does not turn an in-tree build's own outputs into source collisions", "[e2e][shadow][incremental]")
+{
+    GIVEN("an in-tree project built once, so its output is on disk beside the sources")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out.txt"));
+
+        WHEN("the record carries the previous format version and the project is rebuilt")
+        {
+            stamp_index_version(f, pup::index::INDEX_VERSION - 1);
+            auto again = f.build();
+
+            THEN("the build succeeds: a record too old to trust still says which files it made")
+            {
+                INFO("stdout: " << again.stdout_output);
+                INFO("stderr: " << again.stderr_output);
+                REQUIRE(again.success());
+                REQUIRE(f.read_file("out.txt") == "ORIGINAL\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Cleaning removes the outputs a record too old to trust still names", "[e2e][clean][shadow]")
+{
+    GIVEN("an in-tree project built once against a record from an older putup")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        stamp_index_version(f, pup::index::INDEX_VERSION - 1);
+
+        WHEN("the project is cleaned")
+        {
+            auto cleaned = f.clean();
+
+            THEN("the generated file is removed and the source is not")
+            {
+                INFO("stdout: " << cleaned.stdout_output);
+                INFO("stderr: " << cleaned.stderr_output);
+                REQUIRE_FALSE(f.exists("out.txt"));
+                REQUIRE(f.exists("src.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A record older than the readable window is refused, not misread", "[e2e][shadow][incremental]")
+{
+    GIVEN("an in-tree project built once")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+
+        WHEN("the record carries a version whose layout putup no longer knows")
+        {
+            stamp_index_version(f, pup::index::INDEX_LAYOUT_FLOOR - 1);
+            auto again = f.build();
+
+            THEN("the build stops and says the record is unreadable rather than blaming the Tupfile")
+            {
+                INFO("stdout: " << again.stdout_output);
+                INFO("stderr: " << again.stderr_output);
+                REQUIRE_FALSE(again.success());
+                REQUIRE(again.stderr_output.find("out.txt") != std::string::npos);
+                REQUIRE(again.stderr_output.find("cannot be read") != std::string::npos);
+                REQUIRE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A damaged build record does not silently disarm the source-file guard", "[e2e][shadow]")
+{
+    GIVEN("a built in-tree project whose Tupfile then starts generating a file it used to read")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": keep.txt |> cp %f %o |> out.txt\n");
+        f.write_file("keep.txt", "PRECIOUS\n");
+        REQUIRE(f.build().success());
+        f.write_file("Tupfile",
+            ": keep.txt |> cp %f %o |> out.txt\n"
+            ": src.txt |> cp %f %o |> keep.txt\n");
+        f.write_file("src.txt", "CLOBBERED\n");
+
+        WHEN("the record is truncated, so it no longer describes the tree it came from")
+        {
+            truncate_index(f, 100);
+            auto result = f.build();
+
+            THEN("the build is rejected and the checked-in file survives")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(f.read_file("keep.txt") == "PRECIOUS\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Every shadowed source is named, not just the first", "[e2e][shadow]")
+{
+    GIVEN("two rules whose outputs are both checked-in files")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": gen.src |> cp %f %o |> a.dat\n"
+            ": gen.src |> cp %f %o |> b.dat\n");
+        f.write_file("gen.src", "FROMRULE\n");
+        f.write_file("a.dat", "FROMSRC\n");
+        f.write_file("b.dat", "FROMSRC\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("one build names both, so the remedy does not have to be repeated per file")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("a.dat") != std::string::npos);
+                REQUIRE(result.stderr_output.find("b.dat") != std::string::npos);
+                REQUIRE(f.read_file("a.dat") == "FROMSRC\n");
+                REQUIRE(f.read_file("b.dat") == "FROMSRC\n");
             }
         }
     }
