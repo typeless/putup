@@ -6498,6 +6498,89 @@ SCENARIO("Duplicate output detection", "[e2e][duplicate]")
     }
 }
 
+SCENARIO("A build that aborted on a failure does not report the tree up to date", "[e2e][incremental][failure]")
+{
+    GIVEN("a settled project whose command then starts failing for a reason outside its inputs")
+    {
+        auto f = E2EFixture { "failed_command" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o && test ! -f gate |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        f.write_file("gate", "");
+
+        WHEN("the command re-runs, fails, and the build aborts without keep-going")
+        {
+            REQUIRE_FALSE(f.build({ "--rerun" }).success());
+
+            THEN("the next build still knows the command has not succeeded since")
+            {
+                auto again = f.build();
+                INFO("stdout: " << again.stdout_output);
+                INFO("stderr: " << again.stderr_output);
+                REQUIRE(again.stdout_output.find("Nothing to do") == std::string::npos);
+                REQUIRE_FALSE(again.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A build aborted before a command could run does not record it as done", "[e2e][incremental][failure]")
+{
+    GIVEN("eight independent rules, settled, one of which then starts failing")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        auto tupfile = std::string {};
+        for (auto i = 1; i <= 8; ++i) {
+            auto n = std::to_string(i);
+            tupfile += ": s";
+            tupfile += n;
+            tupfile += ".txt |> cp %f %o";
+            if (i == 2) {
+                tupfile += " && test ! -f gate";
+            }
+            tupfile += " |> o";
+            tupfile += n;
+            tupfile += ".txt\n";
+            f.write_file("s" + n + ".txt", "v1\n");
+        }
+        f.write_file("Tupfile", tupfile);
+        REQUIRE(f.build().success());
+
+        WHEN("every input changes and the build aborts serially on the failing rule")
+        {
+            for (auto i = 1; i <= 8; ++i) {
+                f.write_file("s" + std::to_string(i) + ".txt", "v2\n");
+            }
+            f.write_file("gate", "");
+            REQUIRE_FALSE(f.build({ "-j1" }).success());
+
+            // Self-validating: the point of the scenario is that an abort leaves commands
+            // it meant to run un-run, so it must witness one before asserting what follows.
+            auto stranded = 0;
+            for (auto i = 1; i <= 8; ++i) {
+                if (f.read_file("o" + std::to_string(i) + ".txt") == "v1\n") {
+                    ++stranded;
+                }
+            }
+            INFO("stranded commands: " << stranded);
+            REQUIRE(stranded > 0);
+
+            THEN("the next build runs every command the abort skipped")
+            {
+                f.remove_file("gate");
+                auto again = f.build();
+                INFO("stdout: " << again.stdout_output);
+                INFO("stderr: " << again.stderr_output);
+                REQUIRE(again.success());
+                for (auto i = 1; i <= 8; ++i) {
+                    INFO("output " << i);
+                    REQUIRE(f.read_file("o" + std::to_string(i) + ".txt") == "v2\n");
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("Duplicate command detection", "[e2e][duplicate][identity]")
 {
     GIVEN("a Tupfile with two output-less rules that render the same command line")

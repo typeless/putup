@@ -621,7 +621,7 @@ auto Scheduler::build(
         pup::SteadyClock::now() - start_time
     );
 
-    if (!exec_result && !impl_->options.keep_going) {
+    if (!exec_result) {
         return pup::unexpected<Error>(exec_result.error());
     }
 
@@ -1103,10 +1103,7 @@ auto Scheduler::execute_parallel(
         }
     }
 
-    if (failed && !impl_->options.keep_going) {
-        return make_error<void>(ErrorCode::CommandFailed, "Build failed");
-    }
-
+    // A failed command is stats.failed_jobs in both modes; an error here discards the record of what did run (#304).
     return {};
 }
 
