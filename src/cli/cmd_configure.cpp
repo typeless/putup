@@ -47,13 +47,20 @@ auto install_config_file(
     }
 
     auto dest_sv = pool.get(pup::path::join(pool.get(layout.output_root), "tup.config"));
-    (void)pup::platform::create_directories(pup::path::parent(dest_sv));
-    (void)pup::platform::copy_file(config_path_sv, dest_sv);
-
     auto cp = Buf {};
     cp.append(config_path_sv);
     auto dp = Buf {};
     dp.append(dest_sv);
+
+    if (auto r = pup::platform::create_directories(pup::path::parent(dest_sv)); !r) {
+        eprint("[{}] Error: could not install {} -> {}: {}\n", variant_name, cp.c_str(), dp.c_str(), r.error().msg());
+        return EXIT_FAILURE;
+    }
+    if (auto r = pup::platform::copy_file(config_path_sv, dest_sv); !r) {
+        eprint("[{}] Error: could not install {} -> {}: {}\n", variant_name, cp.c_str(), dp.c_str(), r.error().msg());
+        return EXIT_FAILURE;
+    }
+
     print("[{}] Installed {} -> {}\n", variant_name, cp.c_str(), dp.c_str());
     return EXIT_SUCCESS;
 }
@@ -99,10 +106,10 @@ auto configure_single_variant(
     auto& ctx = *result;
 
     // Helper to ensure tup.config exists for variant detection (only on success)
-    auto ensure_config = [&]() {
+    auto ensure_config = [&]() -> int {
         auto config_path_sv = pool.get(pup::path::join(pool.get(ctx.layout().output_root), "tup.config"));
         if (pup::platform::exists(config_path_sv)) {
-            return;
+            return EXIT_SUCCESS;
         }
         auto cp = Buf {};
         cp.append(config_path_sv);
@@ -110,18 +117,24 @@ auto configure_single_variant(
         // disarms the "run configure first" gate, so a later plain build silently proceeds.
         if (opts.dry_run) {
             print("[{}] Would create {}\n", variant_name, cp.c_str());
-            return;
+            return EXIT_SUCCESS;
         }
-        (void)pup::platform::create_directories(pup::path::parent(config_path_sv));
-        (void)pup::platform::write_file(config_path_sv, "");
+        if (auto r = pup::platform::create_directories(pup::path::parent(config_path_sv)); !r) {
+            eprint("[{}] Error: could not create {}: {}\n", variant_name, cp.c_str(), r.error().msg());
+            return EXIT_FAILURE;
+        }
+        if (auto r = pup::platform::write_file(config_path_sv, ""); !r) {
+            eprint("[{}] Error: could not create {}: {}\n", variant_name, cp.c_str(), r.error().msg());
+            return EXIT_FAILURE;
+        }
         print("[{}] Created {}\n", variant_name, cp.c_str());
+        return EXIT_SUCCESS;
     };
 
     auto configs = find_config_commands(ctx.graph(), pool.get(ctx.layout().source_root));
     if (configs.empty()) {
         print("[{}] No config-generating rules found.\n", variant_name);
-        ensure_config();
-        return EXIT_SUCCESS;
+        return ensure_config();
     }
 
     // Filter config commands by scope if specified
@@ -144,8 +157,7 @@ auto configure_single_variant(
 
     if (config_commands.empty()) {
         print("[{}] No config-generating rules in scope.\n", variant_name);
-        ensure_config();
-        return EXIT_SUCCESS;
+        return ensure_config();
     }
 
     auto all_commands = collect_command_dependencies(ctx.graph(), config_commands);
@@ -214,8 +226,7 @@ auto configure_single_variant(
     } else {
         print("[{}] Configure completed: {} commands\n", variant_name, stats.completed_jobs);
     }
-    ensure_config();
-    return EXIT_SUCCESS;
+    return ensure_config();
 }
 
 } // namespace
