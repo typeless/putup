@@ -39,28 +39,29 @@ namespace pup::cli {
 
 namespace {
 
+// A tree that was never built has no implicit deps to hide, so only an unreadable record is news.
 auto load_index_for_all_deps(
     Options const& opts,
     ProjectLayout const& layout
-) -> std::optional<pup::index::Index>
+) -> pup::Result<std::optional<pup::index::Index>>
 {
     if (!opts.include_all_deps) {
-        return std::nullopt;
+        return std::optional<pup::index::Index> {};
     }
 
     auto index_path_sv = pup::global_pool().get(layout.index_path());
     if (!pup::platform::exists(index_path_sv)) {
         eprint("Warning: No index found - run 'putup' first\n");
-        return std::nullopt;
+        return std::optional<pup::index::Index> {};
     }
 
     auto index_result = pup::index::read_index(index_path_sv);
     if (!index_result) {
-        return std::nullopt;
+        return pup::unexpected<Error> { index_result.error() };
     }
 
     index_result->build_edge_indices();
-    return std::move(*index_result);
+    return std::optional<pup::index::Index> { std::move(*index_result) };
 }
 
 auto format_node_id(pup::NodeId id) -> std::string_view
@@ -231,7 +232,12 @@ auto cmd_export_graph(Options const& opts, std::string_view variant_name) -> int
     }
 
     auto& ctx = *result;
-    auto index = load_index_for_all_deps(opts, ctx.layout());
+    auto index_result = load_index_for_all_deps(opts, ctx.layout());
+    if (!index_result) {
+        eprint("[{}] Error: could not read the build record: {}\n", variant_name, index_result.error().msg());
+        return EXIT_FAILURE;
+    }
+    auto& index = *index_result;
 
     if (opts.summary) {
         auto commands = graph::nodes_of_type(ctx.graph().graph, pup::NodeType::Command);

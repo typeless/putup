@@ -4487,6 +4487,32 @@ SCENARIO("Show graph --all-deps with no index warns", "[e2e][show]")
     }
 }
 
+SCENARIO("Show graph --all-deps says so when the record cannot be read", "[e2e][show]")
+{
+    GIVEN("a built project whose record is then overwritten with something that is not a record")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        f.write_file(".pup/index", "not an index\n");
+
+        WHEN("show graph --all-deps is run")
+        {
+            auto result = f.pup({ "show", "graph", "--all-deps" });
+
+            THEN("it fails and names the record instead of drawing a graph missing the deps it was asked for")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("build record") != std::string::npos);
+                REQUIRE(result.stdout_output.find("digraph G {") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Show graph --summary --all-deps shows implicit edge count", "[e2e][show]")
 {
     GIVEN("a built implicit_deps project")
