@@ -3806,8 +3806,10 @@ SCENARIO("Clean with no index reports nothing to clean", "[e2e][clean]")
         {
             auto result = f.clean();
 
-            THEN("reports nothing to clean")
+            THEN("reports nothing to clean, and succeeds: no record and no build is not a failure")
             {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("Nothing to clean") != std::string::npos);
             }
         }
@@ -6798,6 +6800,60 @@ SCENARIO("Cleaning removes the outputs a record too old to trust still names", "
                 INFO("stderr: " << cleaned.stderr_output);
                 REQUIRE_FALSE(f.exists("out.txt"));
                 REQUIRE(f.exists("src.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("Cleaning a record it cannot read fails instead of reporting nothing to clean", "[e2e][clean]")
+{
+    GIVEN("an in-tree project built once")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out.txt"));
+
+        WHEN("the record is stamped below the readable window and the project is cleaned")
+        {
+            stamp_index_version(f, pup::index::INDEX_LAYOUT_FLOOR - 1);
+            auto cleaned = f.clean();
+
+            THEN("it fails and names the record, rather than reporting an empty clean")
+            {
+                INFO("stdout: " << cleaned.stdout_output);
+                INFO("stderr: " << cleaned.stderr_output);
+                REQUIRE_FALSE(cleaned.success());
+                REQUIRE(cleaned.stderr_output.find("cannot be read") != std::string::npos);
+                REQUIRE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("Distcleaning a record it cannot read does not report a complete reset", "[e2e][clean]")
+{
+    GIVEN("an in-tree project built once")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out.txt"));
+
+        WHEN("the record is stamped below the readable window and the project is reset")
+        {
+            stamp_index_version(f, pup::index::INDEX_LAYOUT_FLOOR - 1);
+            auto reset = f.distclean();
+
+            THEN("it fails and does not claim the reset it left half done")
+            {
+                INFO("stdout: " << reset.stdout_output);
+                INFO("stderr: " << reset.stderr_output);
+                REQUIRE_FALSE(reset.success());
+                REQUIRE(reset.stdout_output.find("Project reset complete") == std::string::npos);
+                REQUIRE(f.exists("out.txt"));
             }
         }
     }

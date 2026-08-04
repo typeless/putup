@@ -59,7 +59,9 @@ auto remove_indexed_outputs(
     // read_index still knows what it produced, and that is the whole question here (#291).
     auto const prior = pup::index::read_prior_paths(index_path);
     if (prior.kind != pup::index::PriorPaths::Kind::Known) {
-        eprint("Warning: Could not read the build record, so no generated file can be named\n");
+        veprint(variant_name, "Error: the build record at {} cannot be read, so the files this build produced cannot be named.\n", index_path);
+        veprint(variant_name, "  Remove them by hand, or use a putup that can read this record.\n");
+        ++result.error_count;
         return result;
     }
 
