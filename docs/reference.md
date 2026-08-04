@@ -251,7 +251,7 @@ putup clean build-debug/src/lib # Clean scoped to src/lib
 putup distclean [OPTIONS] [TARGETS...]
 ```
 
-Full reset: remove all generated files, the `.pup/` directory, and `tup.config`. Returns the project to a pristine state.
+Full reset: remove all generated files, the `.pup/` directory, and `tup.config`. Returns the project to a pristine state. A build record this putup cannot read is kept, because it is the only description of what the build owned and another putup may still read it — remove it with `rm -rf` once you are sure.
 Supports path-based variant selection.
 
 **Relevant Options:**

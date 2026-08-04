@@ -7046,6 +7046,92 @@ SCENARIO("Distcleaning a record it cannot read does not report a complete reset"
     }
 }
 
+SCENARIO("Distcleaning keeps a record it cannot read and resets the rest", "[e2e][clean]")
+{
+    GIVEN("an in-tree project built once")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+
+        WHEN("the record is stamped below the readable window and the project is reset")
+        {
+            stamp_index_version(f, pup::index::INDEX_LAYOUT_FLOOR - 1);
+            auto reset = f.distclean();
+
+            THEN("the record survives, the rest of the reset happens, and the way out is named")
+            {
+                INFO("stdout: " << reset.stdout_output);
+                INFO("stderr: " << reset.stderr_output);
+                REQUIRE_FALSE(reset.success());
+                REQUIRE(f.exists(".pup/index"));
+                REQUIRE_FALSE(f.exists("tup.config"));
+                auto combined = reset.stdout_output + reset.stderr_output;
+                REQUIRE(combined.find("rm -rf") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A record distclean kept can still name the files it owns", "[e2e][clean]")
+{
+    GIVEN("a project whose reset was refused because its record could not be read")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        stamp_index_version(f, pup::index::INDEX_LAYOUT_FLOOR - 1);
+        REQUIRE_FALSE(f.distclean().success());
+        REQUIRE(f.exists(".pup/index"));
+        REQUIRE(f.exists("out.txt"));
+
+        WHEN("a putup whose window covers that record cleans the project")
+        {
+            // The same bytes, a reader that accepts them: what keeping the record buys.
+            stamp_index_version(f, pup::index::INDEX_VERSION);
+            auto cleaned = f.clean();
+
+            THEN("the file the refused reset could not name is removed after all")
+            {
+                INFO("stdout: " << cleaned.stdout_output);
+                INFO("stderr: " << cleaned.stderr_output);
+                REQUIRE(cleaned.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+                REQUIRE(f.exists("src.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A distclean dry run predicts the record it would keep", "[e2e][clean][dry-run]")
+{
+    GIVEN("an in-tree project built once, with a record below the readable window")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        stamp_index_version(f, pup::index::INDEX_LAYOUT_FLOOR - 1);
+
+        WHEN("the reset is dry-run")
+        {
+            auto reset = f.distclean({ "-n" });
+
+            THEN("it does not offer to remove the record it would keep")
+            {
+                INFO("stdout: " << reset.stdout_output);
+                INFO("stderr: " << reset.stderr_output);
+                REQUIRE_FALSE(reset.success());
+                REQUIRE(reset.stdout_output.find("Would remove: ") != std::string::npos);
+                REQUIRE(reset.stdout_output.find(".pup\n") == std::string::npos);
+                REQUIRE(f.exists(".pup/index"));
+            }
+        }
+    }
+}
+
 SCENARIO("A record older than the readable window is refused, not misread", "[e2e][shadow][incremental]")
 {
     GIVEN("an in-tree project built once")
