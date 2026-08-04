@@ -1424,6 +1424,31 @@ auto index_with_every_node_type() -> Index
     return index;
 }
 
+/// A record of random shape: every node type, chains that terminate because a parent is always
+/// an earlier entry, and empty names so entries without a path occur too.
+auto random_index(std::uint32_t seed) -> Index
+{
+    auto const types = std::array {
+        NodeType::File, NodeType::Generated, NodeType::Directory, NodeType::Variable,
+        NodeType::Group, NodeType::Ghost, NodeType::GeneratedDir, NodeType::Root,
+    };
+
+    auto rng = std::mt19937 { seed };
+    auto index = Index {};
+    auto const count = std::size_t { 1 + rng() % 30 };
+    for (auto i = std::size_t { 0 }; i < count; ++i) {
+        auto parent = (i == 0 || rng() % 3 == 0) ? NodeId { 0 } : static_cast<NodeId>(1 + rng() % i);
+        index.add_file(FileEntry {
+            .id = static_cast<NodeId>(i + 1),
+            .parent_id = parent,
+            .type = types[rng() % types.size()],
+            .name = (rng() % 8 == 0) ? StringId::Empty : intern("n" + std::to_string(rng() % 100)),
+        });
+    }
+    index.compute_paths();
+    return index;
+}
+
 auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
 {
     auto out = Vec<StringId> {};
@@ -1490,28 +1515,9 @@ TEST_CASE("Absence of a record is not the same answer as an unreadable one", "[i
 
 TEST_CASE("Recovering a record's paths agrees with reading the record", "[index]")
 {
-    auto const types = std::array {
-        NodeType::File, NodeType::Generated, NodeType::Directory, NodeType::Variable,
-        NodeType::Group, NodeType::Ghost, NodeType::GeneratedDir, NodeType::Root,
-    };
-
     for (auto seed = std::uint32_t { 0 }; seed < 20; ++seed) {
         INFO("seed=" << seed);
-        auto rng = std::mt19937 { seed };
-
-        auto index = Index {};
-        auto const count = std::size_t { 1 + rng() % 30 };
-        for (auto i = std::size_t { 0 }; i < count; ++i) {
-            // Parent is always an earlier entry, so the chain terminates however it is drawn.
-            auto parent = (i == 0 || rng() % 3 == 0) ? NodeId { 0 } : static_cast<NodeId>(1 + rng() % i);
-            index.add_file(FileEntry {
-                .id = static_cast<NodeId>(i + 1),
-                .parent_id = parent,
-                .type = types[rng() % types.size()],
-                .name = (rng() % 8 == 0) ? StringId::Empty : intern("n" + std::to_string(rng() % 100)),
-            });
-        }
-        index.compute_paths();
+        auto const index = random_index(seed);
 
         auto const path = temp_index_path("pup_prior_diff_" + std::to_string(seed));
         REQUIRE(write_index(path, index).has_value());
@@ -1555,4 +1561,45 @@ TEST_CASE("One flipped bit anywhere in a record makes it unrecoverable, never pa
     }
 
     std::filesystem::remove(path);
+}
+
+TEST_CASE("Keying a record's file table by path keeps every addressable entry and only those", "[index]")
+{
+    for (auto seed = std::uint32_t { 0 }; seed < 20; ++seed) {
+        INFO("seed=" << seed);
+        auto const index = random_index(seed);
+        auto const by_path = files_by_path(index);
+
+        auto expected = std::vector<FileEntry const*> {};
+        for (auto const& file : index.files()) {
+            if (!pup::is_empty(file.path)) {
+                expected.push_back(&file);
+            }
+        }
+
+        auto keyed = std::vector<FileEntry const*> {};
+        for (auto const& [path, entry] : by_path.entries) {
+            REQUIRE_FALSE(pup::is_empty(path));
+            REQUIRE(entry != nullptr);
+            REQUIRE(entry->path == path);
+            keyed.push_back(entry);
+        }
+
+        // Same entries, each once: an index may record two nodes at one path, and dropping
+        // either would make the map disagree with the table it is derived from.
+        std::sort(expected.begin(), expected.end());
+        std::sort(keyed.begin(), keyed.end());
+        REQUIRE(keyed == expected);
+
+        REQUIRE(std::is_sorted(by_path.entries.begin(), by_path.entries.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); }));
+
+        for (auto const* file : expected) {
+            auto const* found = by_path.find(file->path);
+            REQUIRE(found != nullptr);
+            REQUIRE(found->path == file->path);
+        }
+
+        REQUIRE(by_path.find(intern("no entry is ever recorded at this path " + std::to_string(seed))) == nullptr);
+        REQUIRE(by_path.find(StringId::Empty) == nullptr);
+    }
 }

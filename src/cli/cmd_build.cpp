@@ -545,10 +545,7 @@ auto CarriedState::carry_for(StringId path) const -> pup::index::FileEntry const
         || std::binary_search(refreshed.begin(), refreshed.end(), path, pup::handle_less)) {
         return nullptr;
     }
-    auto const* it = std::lower_bound(
-        by_path.begin(), by_path.end(), path, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
-    );
-    return (it != by_path.end() && it->first == path) ? it->second : nullptr;
+    return by_path.find(path);
 }
 
 /// Serialize file and directory nodes from the build graph to the index.
@@ -1519,26 +1516,18 @@ auto expand_implicit_deps(
     }
     std::sort(added.begin(), added.end(), pup::handle_less);
 
-    // Build sorted path -> file pointer map
-    auto path_to_file = Vec<std::pair<StringId, pup::index::FileEntry const*>> {};
-    path_to_file.reserve(index.files().size());
-    for (auto const& file : index.files()) {
-        if (!pup::is_empty(file.path)) {
-            path_to_file.emplace_back(file.path, &file);
-        }
-    }
-    std::sort(path_to_file.begin(), path_to_file.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
+    auto const path_to_file = pup::index::files_by_path(index);
 
     for (auto const& path : changed) {
-        auto it = std::lower_bound(path_to_file.begin(), path_to_file.end(), path, [](auto const& p, auto const& k) { return pup::handle_less(p.first, k); });
-        if (it == path_to_file.end() || it->first != path) {
+        auto const* file = path_to_file.find(path);
+        if (file == nullptr) {
             continue;
         }
 
         for_each_consuming_command(
             index,
             join,
-            pup::NodeId { it->second->id },
+            pup::NodeId { file->id },
             pup::graph::edge_mask::discovered_consumers,
             [&](pup::NodeId cmd_node_id) {
                 propagate_command_effect(
@@ -1582,13 +1571,7 @@ auto build_index(
 {
     auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {} };
     if (old_index != nullptr) {
-        carried.by_path.reserve(old_index->files().size());
-        for (auto const& file : old_index->files()) {
-            if (!pup::is_empty(file.path)) {
-                carried.by_path.emplace_back(file.path, &file);
-            }
-        }
-        std::sort(carried.by_path.begin(), carried.by_path.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
+        carried.by_path = pup::index::files_by_path(*old_index);
     }
     for (auto graph_cmd_id : executed_cmds) {
         for (auto output_id : pup::graph::get_outputs(state.graph, graph_cmd_id)) {
@@ -1993,24 +1976,10 @@ auto reconcile_input_set(
     }
     std::sort(graph_paths.begin(), graph_paths.end(), pup::handle_less);
 
-    auto index_files = pup::Vec<std::pair<StringId, pup::NodeId>> {};
-    index_files.reserve(idx.files().size());
-    for (auto const& file : idx.files()) {
-        if (!pup::is_empty(file.path)) {
-            index_files.emplace_back(file.path, file.id);
-        }
-    }
-    std::sort(index_files.begin(), index_files.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
-
-    auto find_indexed = [&](StringId path_id) -> pup::index::FileEntry const* {
-        auto it = std::lower_bound(
-            index_files.begin(), index_files.end(), path_id, [](auto const& entry, StringId key) { return pup::handle_less(entry.first, key); }
-        );
-        return (it != index_files.end() && it->first == path_id) ? idx.find_file_by_id(it->second) : nullptr;
-    };
+    auto const index_files = pup::index::files_by_path(idx);
 
     for (auto path_id : new_sources) {
-        if (find_indexed(path_id)) {
+        if (index_files.find(path_id)) {
             continue;
         }
         result.changed_paths.push_back(path_id);
@@ -2024,7 +1993,7 @@ auto reconcile_input_set(
         if (std::binary_search(graph_paths.begin(), graph_paths.end(), path_id, pup::handle_less)) {
             continue;
         }
-        auto const* file = find_indexed(path_id);
+        auto const* file = index_files.find(path_id);
         if (!file) {
             continue;
         }

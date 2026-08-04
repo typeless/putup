@@ -22,9 +22,9 @@ using PathIdMap = Vec<std::pair<StringId, NodeId>>;
 /// the last build that looked at it recorded: stamping a fresh stat instead asserts a currency
 /// nothing verified, and the next build then compares the new state against itself (#288).
 struct CarriedState {
-    Vec<std::pair<StringId, index::FileEntry const*>> by_path; ///< the old index, sorted by path
-    Vec<StringId> examined;                                    ///< sorted: what change detection stat'ed
-    Vec<StringId> refreshed;                                   ///< sorted: outputs of the commands that ran
+    index::FilesByPath by_path; ///< the old index, keyed by path
+    Vec<StringId> examined;     ///< sorted: what change detection stat'ed
+    Vec<StringId> refreshed;    ///< sorted: outputs of the commands that ran
 
     /// The entry to keep for `path`, or nullptr when this build may observe the file itself.
     [[nodiscard]]

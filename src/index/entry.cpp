@@ -12,6 +12,7 @@
 #include "pup/core/vec.hpp"
 #include "pup/index/format.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cstddef>
@@ -479,6 +480,29 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId
     }
 
     return buf.intern(pool);
+}
+
+auto FilesByPath::find(StringId path) const -> FileEntry const*
+{
+    auto const* it = std::lower_bound(
+        entries.begin(), entries.end(), path, [](auto const& e, StringId key) { return handle_less(e.first, key); }
+    );
+    return (it != entries.end() && it->first == path) ? it->second : nullptr;
+}
+
+auto files_by_path(Index const& index) -> FilesByPath
+{
+    auto result = FilesByPath {};
+    result.entries.reserve(index.files().size());
+
+    for (auto const& file : index.files()) {
+        if (!is_empty(file.path)) {
+            result.entries.emplace_back(file.path, &file);
+        }
+    }
+
+    std::sort(result.entries.begin(), result.entries.end(), [](auto const& a, auto const& b) { return handle_less(a.first, b.first); });
+    return result;
 }
 
 } // namespace pup::index
