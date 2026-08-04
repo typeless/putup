@@ -227,6 +227,26 @@ private:
         -> Vec<EdgeEntry const*>;
 };
 
+/// An index's file table keyed by path, ordered by interning handle.
+///
+/// A type of its own rather than the bare pair vector: `pup::cli::PathIdMap` is the same
+/// pair vector ordered by path text, and spelled as one alias nothing would say the two
+/// cannot be exchanged.
+struct FilesByPath {
+    Vec<std::pair<StringId, FileEntry const*>> entries = {};
+
+    /// The entry recorded at `path`, or nullptr. Keyed by handle, so `path` must be interned
+    /// in the same pool as the index's.
+    [[nodiscard]]
+    auto find(StringId path) const -> FileEntry const*;
+};
+
+/// Key `index`'s file table by path. An entry with no path is left out: an index carries them
+/// and a path key cannot address them.
+/// @param index The index to key; its entries must outlive the result, which borrows them
+[[nodiscard]]
+auto files_by_path(Index const& index) -> FilesByPath;
+
 /// Reconstruct full command string from instruction + operands.
 /// Uses pattern expansion to replace %f, %o, %b, %B, etc. with actual paths.
 /// @param index The index containing file entries for path lookup
