@@ -11,6 +11,7 @@
 #include "pup/index/format.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -46,9 +47,34 @@ auto read_raw_entries(
     return { entries, count };
 }
 
-} // namespace
+/// Every section the header declares has to lie inside the file and ahead of the footer. Without
+/// this the out-of-range spans above come back empty instead of failing, so a damaged record
+/// loads as the record of a project that produced nothing -- and the source-file guard, which
+/// reads exactly that, goes quiet (#293).
+auto declared_layout_fits(std::size_t file_size, RawHeader const& hdr) -> bool
+{
+    if (file_size < sizeof(RawHeader) + sizeof(RawFooter)) {
+        return false;
+    }
+    auto const content_end = std::uint64_t { file_size } - sizeof(RawFooter);
 
-auto open_index(std::string_view path) -> Result<IndexFile>
+    auto fits = [content_end](std::uint64_t offset, std::uint64_t size) {
+        return offset <= content_end && size <= content_end - offset;
+    };
+
+    return fits(hdr.file_offset, std::uint64_t { hdr.file_count } * sizeof(RawFileEntry))
+        && fits(hdr.command_offset, std::uint64_t { hdr.command_count } * sizeof(RawCommandEntry))
+        && fits(hdr.edge_offset, std::uint64_t { hdr.edge_count } * sizeof(RawEdge))
+        && fits(hdr.operand_table_offset, std::uint64_t { hdr.command_count } * sizeof(std::uint32_t))
+        && fits(hdr.string_offset, hdr.string_table_size)
+        // Operand data is the only section whose size the header does not carry: it runs from
+        // its own offset to the string table.
+        && hdr.operand_data_offset <= hdr.string_offset;
+}
+
+/// The readable window is always `[min_version, INDEX_VERSION]`. It never opens upward: a record
+/// a newer putup wrote may lay its entries out in ways this one has no way to know about.
+auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> Result<IndexFile>
 {
     auto result = IndexFile {};
 
@@ -63,17 +89,25 @@ auto open_index(std::string_view path) -> Result<IndexFile>
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Index file too small");
     }
 
-    // Validate header
     auto const* hdr = index_header(result);
     if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Invalid index file magic");
     }
-    // v8 format only (clean break from v5)
-    if (hdr->version != INDEX_VERSION) {
+    if (hdr->version < min_version || hdr->version > INDEX_VERSION) {
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Unsupported index version");
+    }
+    if (!declared_layout_fits(result.file.size(), *hdr)) {
+        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Index sections do not fit the file");
     }
 
     return result;
+}
+
+} // namespace
+
+auto open_index(std::string_view path) -> Result<IndexFile>
+{
+    return open_index_in_window(path, INDEX_VERSION);
 }
 
 auto is_valid_index(std::string_view path) -> bool
@@ -146,6 +180,54 @@ auto read_index(std::string_view path) -> Result<Index>
         return pup::unexpected<Error>(file_result.error());
     }
     return read_index(*file_result);
+}
+
+auto prior_paths(Index const& index) -> PriorPaths
+{
+    auto result = PriorPaths { .kind = PriorPaths::Kind::Known, .sources = {}, .generated = {} };
+
+    for (auto const& file : index.files()) {
+        if (pup::is_empty(file.path)) {
+            continue;
+        }
+        if (file.type == NodeType::File) {
+            result.sources.push_back(file.path);
+        } else if (file.type == NodeType::Generated) {
+            result.generated.push_back(file.path);
+        }
+    }
+
+    std::sort(result.sources.begin(), result.sources.end(), pup::handle_less);
+    std::sort(result.generated.begin(), result.generated.end(), pup::handle_less);
+    return result;
+}
+
+auto read_prior_paths(std::string_view path) -> PriorPaths
+{
+    if (!pup::platform::exists(path)) {
+        return PriorPaths { .kind = PriorPaths::Kind::NeverBuilt, .sources = {}, .generated = {} };
+    }
+
+    auto lost = PriorPaths { .kind = PriorPaths::Kind::Lost, .sources = {}, .generated = {} };
+
+    auto file = open_index_in_window(path, INDEX_LAYOUT_FLOOR);
+    // The checksum is what makes an older version's bytes worth reading at all: it says these
+    // are the bytes a putup wrote, not a file that merely starts with the right four.
+    if (!file || !index_verify_checksum(*file)) {
+        return lost;
+    }
+
+    // The file table and nothing else. Everything a version bump invalidates -- command
+    // identities, signatures, recorded currency -- stays unread, so it cannot reach a caller
+    // through this return type.
+    auto recorded = Index {};
+    auto raw = index_raw_files(*file);
+    for (auto i = std::size_t { 0 }; i < raw.size(); ++i) {
+        recorded.add_file(FileEntry::from_raw(raw[i], index_get_string(*file, raw[i].name_offset), i));
+    }
+    recorded.compute_paths();
+
+    return prior_paths(recorded);
 }
 
 auto index_header(IndexFile const& f) -> RawHeader const*
