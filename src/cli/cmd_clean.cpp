@@ -45,6 +45,7 @@ auto veprint(std::string_view variant_name, char const* fmt, Args&&... args) -> 
 }
 
 auto remove_indexed_outputs(
+    pup::index::PriorPaths const& prior,
     std::string_view index_path,
     std::string_view root,
     OutputMode mode,
@@ -55,9 +56,6 @@ auto remove_indexed_outputs(
 {
     auto result = RemoveResult {};
 
-    // Which outputs the record owns, not whether they are current: a record too old for
-    // read_index still knows what it produced, and that is the whole question here (#291).
-    auto const prior = pup::index::read_prior_paths(index_path);
     if (prior.kind != pup::index::PriorPaths::Kind::Known) {
         veprint(variant_name, "Error: the build record at {} cannot be read, so the files this build produced cannot be named.\n", index_path);
         veprint(variant_name, "  Remove them by hand, or use a putup that can read this record.\n");
@@ -120,7 +118,10 @@ auto clean_single_variant(Options const& opts, std::string_view variant_name) ->
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
     auto output_dirs = Vec<StringId> {};
     auto removed_paths = Vec<StringId> {};
-    auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
+    // Which outputs the record owns, not whether they are current: a record too old for
+    // read_index still knows what it produced, and that is the whole question here (#291).
+    auto const prior = pup::index::read_prior_paths(index_path_sv);
+    auto result = remove_indexed_outputs(prior, index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
 
     auto dirs = remove_empty_directories(output_dirs, build_dir_sv, root_sv, mode, variant_name, removed_paths);
 
@@ -151,13 +152,21 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
 
     auto mode = OutputMode { .dry_run = opts.dry_run, .verbose = opts.verbose };
 
+    // Another putup may still read this record, and it is the only description of what the build owned (#300).
+    auto record_readable = true;
     if (pup::platform::exists(index_path_sv)) {
-        auto result = remove_indexed_outputs(index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
+        auto const prior = pup::index::read_prior_paths(index_path_sv);
+        record_readable = prior.kind == pup::index::PriorPaths::Kind::Known;
+        auto result = remove_indexed_outputs(prior, index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
         error_count += result.error_count;
     }
 
     auto pup_dir_sv = pool.get(pup::path::join(build_dir_sv, ".pup"));
-    if (pup::platform::exists(pup_dir_sv)) {
+    if (!record_readable) {
+        // In tree the build directory is the source tree, so the way out names the record itself.
+        auto escape_sv = ctx->is_in_tree ? pup_dir_sv : build_dir_sv;
+        veprint(variant_name, "  {} the build record: a putup that can read it can still remove those files. To reset anyway: rm -rf {}\n", opts.dry_run ? "Would keep" : "Keeping", escape_sv);
+    } else if (pup::platform::exists(pup_dir_sv)) {
         if (opts.dry_run) {
             vprint(variant_name, "Would remove: {}\n", pup_dir_sv);
         } else {
