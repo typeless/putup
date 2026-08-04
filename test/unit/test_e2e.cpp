@@ -6075,6 +6075,57 @@ SCENARIO("Configure creates empty tup.config when no config rules exist", "[e2e]
     }
 }
 
+SCENARIO("A configure that cannot write tup.config does not report creating it", "[e2e][configure]")
+{
+    GIVEN("a project whose build-directory path is occupied by a regular file")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+        // A file where the directory must go beats the exists() guard on tup.config itself,
+        // and needs no permission bits, so the scenario runs under root too.
+        f.write_file("blocked", "");
+
+        WHEN("configure is run against it")
+        {
+            auto result = f.pup({ "configure", "-B", "blocked" });
+
+            THEN("it fails and claims no file it did not create")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stdout_output.find("Created") == std::string::npos);
+                REQUIRE(result.stderr_output.find("tup.config") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A configure that cannot install the config it was given does not report installing it", "[e2e][configure]")
+{
+    GIVEN("a config file to install and a destination that cannot be written")
+    {
+        auto f = E2EFixture { "simple_c" };
+        REQUIRE(f.init().success());
+        f.write_file("my.config", "CONFIG_FOO=bar\n");
+        f.mkdir("blocked/tup.config");
+
+        WHEN("configure is asked to install it there")
+        {
+            auto result = f.pup({ "configure", "--config", "my.config", "-B", "blocked" });
+
+            THEN("it fails and claims no install it did not perform")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stdout_output.find("Installed") == std::string::npos);
+                REQUIRE(f.is_directory("blocked/tup.config"));
+            }
+        }
+    }
+}
+
 SCENARIO("Build requires tup.config", "[e2e][build][configure]")
 {
     GIVEN("a project without tup.config")
