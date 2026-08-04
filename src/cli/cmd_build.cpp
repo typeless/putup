@@ -2595,6 +2595,7 @@ auto build_single_variant(
     }
 
     auto final_index = std::optional<pup::index::Index> {};
+    auto index_saved = true;
     if (!opts.dry_run) {
         // Persisting a partial failure is safe because must_rerun records it, not because a failed command's outputs are missing.
         auto output_root_str = pup::global_pool().get(ctx.layout().output_root);
@@ -2625,7 +2626,9 @@ auto build_single_variant(
         pup::thread_metrics().index_save_time = std::chrono::duration_cast<std::chrono::microseconds>(index_save_end - index_save_start);
 
         if (!write_result) {
-            veprint(variant_name, "Warning: Failed to save index: {}\n", write_result.error().msg());
+            index_saved = false;
+            veprint(variant_name, "Error: could not save the build record: {}\n", write_result.error().msg());
+            veprint(variant_name, "  The commands that ran are not recorded, so the next build will act as if this one had not run. Fix the cause and build again.\n");
         } else if (opts.verbose) {
             vprint(variant_name, "Saved index: {} files, {} commands, {} edges\n", index.file_count(), index.command_count(), index.edge_count());
         }
@@ -2640,7 +2643,8 @@ auto build_single_variant(
         }
     }
 
-    return stats.failed_jobs > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    // A build owes a record of what it ran: without one the next build cannot tell it happened.
+    return stats.failed_jobs > 0 || !index_saved ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 } // anonymous namespace

@@ -6470,6 +6470,33 @@ SCENARIO("Editing a rule's recipe does not make it a different rule", "[e2e][ide
     }
 }
 
+SCENARIO("A build that cannot save its record does not report success", "[e2e][incremental]")
+{
+    GIVEN("an in-tree project whose record path is blocked by a directory")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        // Renaming onto a directory fails for root too, so this needs no permission bits and
+        // no skip guard, unlike the scenarios that revoke write access to a directory.
+        f.mkdir(".pup/index");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the commands ran, and the build fails rather than reporting work it did not record")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.read_file("out.txt") == "ORIGINAL\n");
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("build record") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A command that failed is re-run on the next build", "[e2e][incremental][failure]")
 {
     GIVEN("a built project whose command is then changed to fail after writing its output")
