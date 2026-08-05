@@ -111,6 +111,31 @@ auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind)
     }
 }
 
+auto find_joined_flag(std::span<ArgFlag const> table, std::string_view word) -> ArgFlag const*
+{
+    for (auto const& flag : table) {
+        if (word.starts_with(flag.spelling)) {
+            return &flag;
+        }
+    }
+    return nullptr;
+}
+
+auto find_separate_flag(std::span<ArgFlag const> table, std::string_view word) -> ArgFlag const*
+{
+    for (auto const& flag : table) {
+        if (word == flag.spelling) {
+            return &flag;
+        }
+    }
+    return nullptr;
+}
+
+auto leads_any(std::span<std::string_view const> spellings, std::string_view word) -> bool
+{
+    return std::ranges::any_of(spellings, [word](auto s) { return word.starts_with(s); });
+}
+
 auto is_source_file(std::string_view word) -> bool
 {
     if (word.empty() || word[0] == '-') {

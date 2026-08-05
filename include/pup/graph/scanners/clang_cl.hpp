@@ -5,6 +5,7 @@
 
 #include "pup/core/string_id.hpp"
 #include "pup/graph/dep_scanner.hpp"
+#include "pup/graph/scanners/dep_words.hpp"
 
 #include <memory>
 
@@ -38,6 +39,11 @@ auto make_clang_cl_scanner() -> std::unique_ptr<DepScanner>;
 /// Check if a command string is a clang-cl compile command (driver + -c//c).
 [[nodiscard]]
 auto matches_clang_cl_compile(std::string_view command) -> bool;
+
+/// The scanner's flag tables. A test seam: the suite walks them so a flag added without an
+/// argument policy fails there instead of dropping its word at scan time. No production caller.
+[[nodiscard]]
+auto clang_cl_flag_tables() -> FlagTables;
 
 // TODO: Add MsvcScanner for cl.exe using /showIncludes (stdout) or /sourceDependencies (file)
 

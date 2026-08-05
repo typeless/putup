@@ -998,6 +998,37 @@ auto check_scanners_normalize(std::string const& p) -> void
     );
 }
 
+// The sysroot spellings: the joined one carries its path after '=', the separate one a word later.
+auto check_scanners_normalize_sysroot(std::string const& p) -> void
+{
+    auto const want = std::string { pup::global_pool().get(pup::path::normalize(p)) };
+    INFO("path: " << p << "\npath::normalize: " << want);
+
+    auto gcc = scanners::GccScanner {};
+    REQUIRE(
+        scan_words(gcc.build_dep_command(gcc_compile(44, "gcc --sysroot " + p + " -c foo.c -o foo.o")))
+        == std::vector<std::string> { "gcc", "-M", "--sysroot", want, "foo.c" }
+    );
+    REQUIRE(
+        scan_words(gcc.build_dep_command(gcc_compile(45, "gcc --sysroot=" + p + " -c foo.c -o foo.o")))
+        == std::vector<std::string> { "gcc", "-M", "--sysroot=" + want, "foo.c" }
+    );
+
+    auto clang_cl = scanners::ClangClScanner {};
+    REQUIRE(
+        scan_words(clang_cl.build_dep_command(
+            clang_cl_compile(46, "clang-cl --sysroot " + p + " -c foo.cpp -o foo.obj")
+        ))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "--sysroot", want, "foo.cpp" }
+    );
+    REQUIRE(
+        scan_words(clang_cl.build_dep_command(
+            clang_cl_compile(47, "clang-cl --sysroot=" + p + " -c foo.cpp -o foo.obj")
+        ))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "--sysroot=" + want, "foo.cpp" }
+    );
+}
+
 // A macro definition is the preprocessor's, not a path: the same corpus, asserted verbatim.
 auto check_scanners_pass_values_through(std::string const& p) -> void
 {
@@ -1017,6 +1048,66 @@ auto check_scanners_pass_values_through(std::string const& p) -> void
         ))
         == std::vector<std::string> { "clang-cl", "/clang:-M", "/D", want, "foo.cpp" }
     );
+}
+
+auto gcc_scan_words(std::string const& command) -> std::vector<std::string>
+{
+    auto scanner = scanners::GccScanner {};
+    return scan_words(scanner.build_dep_command(gcc_compile(50, command)));
+}
+
+auto clang_cl_scan_words(std::string const& command) -> std::vector<std::string>
+{
+    auto scanner = scanners::ClangClScanner {};
+    return scan_words(scanner.build_dep_command(clang_cl_compile(51, command)));
+}
+
+struct WalkTarget {
+    std::string_view driver;
+    std::string_view scan_marker;
+    std::string_view source;
+    std::string_view object;
+    scanners::FlagTables tables;
+    std::vector<std::string> (*scan)(std::string const&);
+};
+
+// Acceptance is derived from these tables, so a flag added without an argument policy fails here.
+auto check_flag_table_walk(WalkTarget const& t) -> void
+{
+    auto const payload = std::string { "a/./b/../c" };
+    auto const normalized = std::string { pup::global_pool().get(pup::path::normalize(payload)) };
+
+    auto expect = [&t](std::vector<std::string> const& flag_words) {
+        auto words = std::vector<std::string> { std::string { t.driver }, std::string { t.scan_marker } };
+        words.insert(words.end(), flag_words.begin(), flag_words.end());
+        words.emplace_back(t.source);
+        return words;
+    };
+    auto command = [&t](std::string const& flags) {
+        return std::string { t.driver } + " " + flags + " -c " + std::string { t.source } + " -o "
+            + std::string { t.object };
+    };
+
+    for (auto const& flag : t.tables.joined) {
+        auto const word = std::string { flag.spelling } + payload;
+        auto const want = flag.kind == scanners::SeparateArg::Path
+            ? std::string { flag.spelling } + normalized
+            : word;
+        INFO("joined flag: " << flag.spelling);
+        REQUIRE(t.scan(command(word)) == expect({ want }));
+    }
+
+    for (auto const& flag : t.tables.separate) {
+        auto const want = flag.kind == scanners::SeparateArg::Path ? normalized : payload;
+        INFO("separate flag: " << flag.spelling);
+        REQUIRE(t.scan(command(std::string { flag.spelling } + " " + payload)) == expect({ std::string { flag.spelling }, want }));
+    }
+
+    for (auto spelling : t.tables.standalone) {
+        auto const word = std::string { spelling } + "x";
+        INFO("standalone flag: " << spelling);
+        REQUIRE(t.scan(command(word)) == expect({ word }));
+    }
 }
 
 auto check_under_root(std::string_view root, void (*check)(std::string const&)) -> void
@@ -1132,6 +1223,70 @@ TEST_CASE("ClangClScanner passes separate-word macro words through", "[dep_scann
         scan_words(scanner.build_dep_command(clang_cl_compile(42, "clang-cl -U FOO -c foo.cpp -o foo.obj")))
         == std::vector<std::string> { "clang-cl", "/clang:-M", "-U", "FOO", "foo.cpp" }
     );
+}
+
+TEST_CASE("every flag a scanner knows carries its argument as its row says", "[dep_scanner]")
+{
+    SECTION("gcc")
+    {
+        check_flag_table_walk(WalkTarget {
+            .driver = "gcc",
+            .scan_marker = "-M",
+            .source = "foo.c",
+            .object = "foo.o",
+            .tables = scanners::gcc_flag_tables(),
+            .scan = gcc_scan_words,
+        });
+    }
+
+    SECTION("clang-cl")
+    {
+        check_flag_table_walk(WalkTarget {
+            .driver = "clang-cl",
+            .scan_marker = "/clang:-M",
+            .source = "foo.cpp",
+            .object = "foo.obj",
+            .tables = scanners::clang_cl_flag_tables(),
+            .scan = clang_cl_scan_words,
+        });
+    }
+}
+
+TEST_CASE("GccScanner keeps a separate-word sysroot path", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(48, "gcc --sysroot /opt/sys/../sys -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M --sysroot /opt/sys foo.c");
+}
+
+// gcc takes the word after --sysroot whatever it is, so the scan mirrors that greed.
+TEST_CASE("GccScanner lets a value-less sysroot take the next word", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(49, "gcc --sysroot -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M --sysroot -c foo.c");
+}
+
+TEST_CASE("a scanned sysroot flag says what path::normalize says", "[dep_scanner]")
+{
+    SECTION("relative paths")
+    {
+        check_under_root("", check_scanners_normalize_sysroot);
+    }
+
+    SECTION("rooted paths")
+    {
+        check_under_root("/", check_scanners_normalize_sysroot);
+    }
+
+    SECTION("drive-rooted paths")
+    {
+        check_under_root("C:/", check_scanners_normalize_sysroot);
+    }
 }
 
 TEST_CASE("GccScanner keeps a separate-word undefine", "[dep_scanner][gcc]")

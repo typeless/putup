@@ -1,0 +1,3 @@
+# A separate-word --sysroot: its value must reach the dep scan, or the scan runs with no input file
+: f.c |> gcc --sysroot / -c %f -o %o |> f.o
+: f.o |> gcc %f -o %o |> program
