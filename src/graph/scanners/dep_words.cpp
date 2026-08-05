@@ -4,6 +4,9 @@
 #include "pup/graph/scanners/dep_words.hpp"
 
 #include "pup/core/buf.hpp"
+#include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
+#include "pup/core/string_pool.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -91,6 +94,19 @@ auto shell_quote_into(Buf& out, std::string_view s, QuoteStyle style) -> void
         return;
     case QuoteStyle::Windows:
         quote_windows_into(out, s);
+        return;
+    }
+}
+
+auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind) -> void
+{
+    out += ' ';
+    switch (kind) {
+    case SeparateArg::Path:
+        shell_quote_into(out, global_pool().get(pup::path::normalize(word)));
+        return;
+    case SeparateArg::Value:
+        shell_quote_into(out, word);
         return;
     }
 }

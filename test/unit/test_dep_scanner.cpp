@@ -998,19 +998,40 @@ auto check_scanners_normalize(std::string const& p) -> void
     );
 }
 
-auto check_scanners_normalize_under_root(std::string_view root) -> void
+// A macro definition is the preprocessor's, not a path: the same corpus, asserted verbatim.
+auto check_scanners_pass_values_through(std::string const& p) -> void
+{
+    auto const want = "FOO=" + p;
+    INFO("value: " << want);
+
+    auto gcc = scanners::GccScanner {};
+    REQUIRE(
+        scan_words(gcc.build_dep_command(gcc_compile(34, "gcc -D " + want + " -c foo.c -o foo.o")))
+        == std::vector<std::string> { "gcc", "-M", "-D", want, "foo.c" }
+    );
+
+    auto clang_cl = scanners::ClangClScanner {};
+    REQUIRE(
+        scan_words(clang_cl.build_dep_command(
+            clang_cl_compile(35, "clang-cl /D " + want + " -c foo.cpp -o foo.obj")
+        ))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "/D", want, "foo.cpp" }
+    );
+}
+
+auto check_under_root(std::string_view root, void (*check)(std::string const&)) -> void
 {
     auto const alphabet = std::array<std::string_view, 5> { "a", "b", ".", "..", "" };
     for (auto x : alphabet) {
         auto const one = std::string { root } + std::string { x };
         if (!one.empty()) {
-            check_scanners_normalize(one);
+            check(one);
         }
         for (auto y : alphabet) {
             auto const two = one + "/" + std::string { y };
-            check_scanners_normalize(two);
+            check(two);
             for (auto z : alphabet) {
-                check_scanners_normalize(two + "/" + std::string { z });
+                check(two + "/" + std::string { z });
             }
         }
     }
@@ -1031,18 +1052,95 @@ TEST_CASE("a scanned path flag says what path::normalize says", "[dep_scanner]")
 {
     SECTION("relative paths")
     {
-        check_scanners_normalize_under_root("");
+        check_under_root("", check_scanners_normalize);
     }
 
     SECTION("rooted paths")
     {
-        check_scanners_normalize_under_root("/");
+        check_under_root("/", check_scanners_normalize);
     }
 
     SECTION("drive-rooted paths")
     {
-        check_scanners_normalize_under_root("C:/");
+        check_under_root("C:/", check_scanners_normalize);
     }
+}
+
+TEST_CASE("a scanned value flag passes its word through", "[dep_scanner]")
+{
+    SECTION("relative-looking values")
+    {
+        check_under_root("", check_scanners_pass_values_through);
+    }
+
+    SECTION("rooted values")
+    {
+        check_under_root("/", check_scanners_pass_values_through);
+    }
+
+    SECTION("drive-rooted values")
+    {
+        check_under_root("C:/", check_scanners_pass_values_through);
+    }
+}
+
+TEST_CASE("GccScanner passes a separate-word macro definition through", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(36, "gcc -D FOO=a/../b -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -D FOO=a/../b foo.c");
+}
+
+TEST_CASE("GccScanner keeps a macro value that is only a slash", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(37, "gcc -D ROOT=/ -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -D ROOT=/ foo.c");
+}
+
+TEST_CASE("a macro value needing quotes survives the scan command", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(38, R"(gcc -D "P=a b/../c" -c foo.c -o foo.o)"));
+
+    REQUIRE(
+        scan_words(dep_cmd) == std::vector<std::string> { "gcc", "-M", "-D", "P=a b/../c", "foo.c" }
+    );
+}
+
+TEST_CASE("ClangClScanner passes separate-word macro words through", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+
+    REQUIRE(
+        scan_words(scanner.build_dep_command(clang_cl_compile(39, "clang-cl /D FOO=a/../b -c foo.cpp -o foo.obj")))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "/D", "FOO=a/../b", "foo.cpp" }
+    );
+    REQUIRE(
+        scan_words(scanner.build_dep_command(clang_cl_compile(40, "clang-cl -D FOO=a/../b -c foo.cpp -o foo.obj")))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "-D", "FOO=a/../b", "foo.cpp" }
+    );
+    REQUIRE(
+        scan_words(scanner.build_dep_command(clang_cl_compile(41, "clang-cl /U FOO -c foo.cpp -o foo.obj")))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "/U", "FOO", "foo.cpp" }
+    );
+    REQUIRE(
+        scan_words(scanner.build_dep_command(clang_cl_compile(42, "clang-cl -U FOO -c foo.cpp -o foo.obj")))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "-U", "FOO", "foo.cpp" }
+    );
+}
+
+TEST_CASE("GccScanner keeps a separate-word undefine", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(43, "gcc -U FOO -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -U FOO foo.c");
 }
 
 #ifdef _WIN32
