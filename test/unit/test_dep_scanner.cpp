@@ -1252,6 +1252,24 @@ TEST_CASE("every flag a scanner knows carries its argument as its row says", "[d
     }
 }
 
+TEST_CASE("GccScanner drops a macro the shell would expand and scans anyway", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(52, "gcc -DPATH=$(prefix)/share -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M foo.c");
+}
+
+TEST_CASE("GccScanner carries only the flags its tables know", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(53, "gcc -O2 -Wall -Iinc -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -Iinc foo.c");
+}
+
 TEST_CASE("GccScanner keeps a separate-word sysroot path", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};
