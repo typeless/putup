@@ -462,7 +462,7 @@ auto get_or_create_dir(
             .content_hash = {},
         };
         ctx.index.add_file(std::move(entry));
-        ctx.path_to_id.insert(pool.intern("/"), dir_id);
+        ctx.path_to_id.insert(path_id, dir_id);
         return dir_id;
     }
 
