@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <optional>
 
 namespace pup::graph::scanners {
 
@@ -64,6 +65,18 @@ auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
         }
     }
     out += flag;
+}
+
+auto separate_arg(std::string_view flag) -> std::optional<SeparateArg>
+{
+    if (flag == "-D" || flag == "-U") {
+        return SeparateArg::Value;
+    }
+    if (flag == "-I" || flag == "-include" || flag == "-isystem" || flag == "-iquote"
+        || flag == "-isysroot") {
+        return SeparateArg::Path;
+    }
+    return std::nullopt;
 }
 
 auto is_dep_relevant_flag(std::string_view flag) -> bool
@@ -178,13 +191,12 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
 
     dep_cmd += " -M";
 
-    auto skip_next = false;
+    auto pending = std::optional<SeparateArg> {};
     auto source_files = Vec<std::string_view> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
-        if (skip_next) {
-            dep_cmd += ' ';
-            shell_quote_into(dep_cmd, global_pool().get(pup::path::normalize(words[i])));
-            skip_next = false;
+        if (pending) {
+            append_separate_arg_into(dep_cmd, words[i], *pending);
+            pending.reset();
             continue;
         }
 
@@ -204,10 +216,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
             auto norm = Buf {};
             normalize_flag_path_into(norm, w);
             shell_quote_into(dep_cmd, norm.view());
-            if (w == "-I" || w == "-D" || w == "-U" || w == "-include"
-                || w == "-isystem" || w == "-iquote" || w == "-isysroot") {
-                skip_next = true;
-            }
+            pending = separate_arg(w);
             continue;
         }
 
