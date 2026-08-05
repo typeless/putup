@@ -525,8 +525,11 @@ auto current_directory() -> Result<StringId>
         return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to get current directory", "", GetLastError()));
     }
     auto wbuf = std::wstring(len, L'\0');
-    GetCurrentDirectoryW(len, wbuf.data());
-    wbuf.resize(len - 1);
+    auto written = GetCurrentDirectoryW(len, wbuf.data());
+    if (written == 0 || written >= len) {
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to get current directory", "", GetLastError()));
+    }
+    wbuf.resize(written);
     auto raw = Buf {};
     from_wide(wbuf, raw);
     auto fixed = Buf {};
@@ -608,9 +611,13 @@ auto read_symlink(std::string_view path) -> Result<StringId>
         return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, err));
     }
     auto wbuf = std::wstring(len, L'\0');
-    GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
+    auto written = GetFinalPathNameByHandleW(h, wbuf.data(), len, FILE_NAME_NORMALIZED);
+    auto const fill_err = GetLastError();
     CloseHandle(h);
-    wbuf.resize(len - 1);
+    if (written == 0 || written >= len) {
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to read symlink: ", path, fill_err));
+    }
+    wbuf.resize(written);
     auto raw = Buf {};
     from_wide(wbuf, raw);
     auto fixed = Buf {};
