@@ -544,11 +544,11 @@ auto canonical(std::string_view path) -> Result<StringId>
 
     if (h != INVALID_HANDLE_VALUE) {
         auto len = GetFinalPathNameByHandleW(h, nullptr, 0, FILE_NAME_NORMALIZED);
-        if (len > 0) {
-            auto wbuf = std::wstring(len, L'\0');
-            GetFinalPathNameByHandleW(h, wbuf.data(), len + 1, FILE_NAME_NORMALIZED);
-            CloseHandle(h);
-            wbuf.resize(len - 1);
+        auto wbuf = std::wstring(len, L'\0');
+        auto written = len > 0 ? GetFinalPathNameByHandleW(h, wbuf.data(), len, FILE_NAME_NORMALIZED) : DWORD { 0 };
+        CloseHandle(h);
+        if (written > 0 && written < len) {
+            wbuf.resize(written);
             auto raw = Buf {};
             from_wide(wbuf, raw);
             auto sv = raw.view();
@@ -560,7 +560,6 @@ auto canonical(std::string_view path) -> Result<StringId>
             backslash_to_forward(sv, fixed);
             return global_pool().intern(fixed.view());
         }
-        CloseHandle(h);
     }
 
     // Fallback for non-existent paths: lexical resolution only
@@ -569,8 +568,12 @@ auto canonical(std::string_view path) -> Result<StringId>
         return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path, GetLastError()));
     }
     auto wbuf = std::wstring(len, L'\0');
-    GetFullPathNameW(wpath.c_str(), len, wbuf.data(), nullptr);
-    wbuf.resize(len - 1);
+    // The query call sizes the buffer before `..` collapsing; only the filling call reports what it actually wrote.
+    auto written = GetFullPathNameW(wpath.c_str(), len, wbuf.data(), nullptr);
+    if (written == 0 || written >= len) {
+        return make_error<StringId>(ErrorCode::IoError, make_err_msg("Failed to resolve path: ", path, GetLastError()));
+    }
+    wbuf.resize(written);
     auto raw = Buf {};
     from_wide(wbuf, raw);
     auto fixed = Buf {};
