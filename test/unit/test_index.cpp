@@ -1563,6 +1563,29 @@ TEST_CASE("One flipped bit anywhere in a record makes it unrecoverable, never pa
     std::filesystem::remove(path);
 }
 
+// The mirror of the recovery-path property above, for the path every build takes: a record that
+// is not the one putup wrote is not evidence, whichever door it is read through (#294).
+TEST_CASE("One flipped bit anywhere in a record makes it unreadable", "[index]")
+{
+    auto const index = index_with_every_node_type();
+    auto const data = serialize_index(index);
+    REQUIRE(data.has_value());
+    auto const path = temp_index_path("pup_read_flip");
+
+    auto rng = std::mt19937 { 20260805 };
+    for (auto pos = std::size_t { 0 }; pos < data->size(); ++pos) {
+        INFO("byte=" << pos);
+        auto bytes = *data;
+        auto const bit = std::uint8_t { 1 } << (rng() % 8);
+        bytes[pos] = static_cast<std::byte>(static_cast<std::uint8_t>(bytes[pos]) ^ bit);
+        write_bytes(path, bytes);
+
+        REQUIRE_FALSE(read_index(path).has_value());
+    }
+
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("Keying a record's file table by path keeps every addressable entry and only those", "[index]")
 {
     for (auto seed = std::uint32_t { 0 }; seed < 20; ++seed) {

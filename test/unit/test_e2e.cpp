@@ -1334,6 +1334,62 @@ SCENARIO("Partial failure with -k saves successful outputs", "[e2e][keep-going]"
     }
 }
 
+SCENARIO("A build record that is not putup's own is refused out loud", "[e2e][index]")
+{
+    GIVEN("a built project whose record is quiescent")
+    {
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("one byte inside the record is corrupted")
+        {
+            auto const index_path = f.workdir() / ".pup" / "index";
+            auto bytes = std::string {};
+            {
+                auto in = std::ifstream { index_path, std::ios::binary };
+                bytes.assign(std::istreambuf_iterator<char> { in }, std::istreambuf_iterator<char> {});
+            }
+            REQUIRE(bytes.size() > 128);
+
+            // Mid-file: past the header putup already validates, ahead of the footer, so nothing
+            // but the checksum can notice.
+            auto const pos = bytes.size() / 2;
+            bytes[pos] = static_cast<char>(bytes[pos] ^ 0x01);
+            {
+                auto out = std::ofstream { index_path, std::ios::binary | std::ios::trunc };
+                out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            }
+
+            auto const result = f.build();
+
+            THEN("the build names the cause instead of reading the record anyway")
+            {
+                REQUIRE(result.stderr_output.find("failed its checksum") != std::string::npos);
+            }
+
+            // With the record refused, nothing left says which files on disk this project
+            // produced, and #291's rule is that putup does not guess -- so the build stops and
+            // names them rather than treating its own outputs as checked-in sources.
+            THEN("it refuses rather than claim outputs it can no longer prove are its own")
+            {
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("cannot be read") != std::string::npos);
+                REQUIRE(result.stderr_output.find("program") != std::string::npos);
+            }
+
+            THEN("deleting the files it named is enough to build again")
+            {
+                f.remove_file("main.o");
+                f.remove_file("program");
+                REQUIRE(f.build().success());
+                REQUIRE(f.build().is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("A build records one entry per path", "[e2e][index]")
 {
     GIVEN("a project whose discovered headers live outside the source tree")

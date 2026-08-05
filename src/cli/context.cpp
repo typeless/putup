@@ -657,6 +657,12 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
     auto index_load_start = pup::SteadyClock::now();
     auto index_result = pup::index::read_index(index_path_sv);
     if (!index_result) {
+        // Not fatal here -- what this build can still do depends on what is on disk, and the
+        // guard that knows decides (#291). Said out loud because the alternative is a silent
+        // full rebuild, which reads as a first build (#294).
+        if (index_result.error().code == pup::ErrorCode::IndexChecksumMismatch) {
+            eprint("Warning: the build record at {} failed its checksum, so this build cannot use it.\n", index_path_sv);
+        }
         return result;
     }
 
