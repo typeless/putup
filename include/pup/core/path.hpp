@@ -50,12 +50,24 @@ auto is_absolute(std::string_view p) -> bool;
 [[nodiscard]]
 auto is_root(std::string_view p) -> bool;
 
+/// Whether `p` is what normalize() would return for it: no `.`, no empty or trailing separator,
+/// and `..` only in the leading run of a relative path. The precondition the textual predicates
+/// hold by convention, so they can say which convention.
+[[nodiscard]]
+auto is_normal(std::string_view p) -> bool;
+
 /// Lexically normalize a path by resolving '.' and '..' segments.
 /// Does not touch the filesystem.
 [[nodiscard]]
 auto normalize(std::string_view p) -> StringId;
 
 /// Compute relative path from base to target (lexical, no filesystem access).
+///
+/// Both must be normal -- `.` is skipped but `..` is not cancelled, so an uncollapsed operand
+/// yields a route through a directory that is not on it -- and both must share a root: two
+/// absolutes, or two paths relative to the same base. Roots are dropped during the walk, so
+/// operands rooted differently produce a traversal that does not exist (`relative("C:/a", "D:/a")`
+/// answers `../../C:/a`, #321). Both are asserted in debug builds.
 [[nodiscard]]
 auto relative(std::string_view target, std::string_view base) -> StringId;
 

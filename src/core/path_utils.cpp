@@ -10,6 +10,7 @@
 #include "pup/core/vec.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <optional>
 #include <string_view>
@@ -21,6 +22,8 @@ auto is_path_under(
     std::string_view root
 ) -> bool
 {
+    assert(path::is_normal(path_str) && "is_path_under reads `..` as a component, so it needs a normalized path");
+
     auto root_sv = root;
 
     while (!root_sv.empty() && root_sv.back() == '/') {
@@ -169,6 +172,8 @@ auto strip_path_prefix(
     std::string_view prefix
 ) -> StringId
 {
+    assert(path::is_normal(path_sv) && "strip_path_prefix is textual, so it needs a normalized path");
+
     auto& pool = global_pool();
 
     if (prefix.empty()) {

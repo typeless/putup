@@ -180,6 +180,45 @@ TEST_CASE("path::is_root", "[path]")
 #endif
 }
 
+// The precondition the textual predicates assert. It has to accept everything normalize() emits,
+// or the assertions fire on paths that are already in hand normalized (#316).
+TEST_CASE("path::is_normal", "[path]")
+{
+    SECTION("what normalize would return")
+    {
+        REQUIRE(is_normal(""));
+        REQUIRE(is_normal("."));
+        REQUIRE(is_normal("/"));
+        REQUIRE(is_normal("a"));
+        REQUIRE(is_normal("a/b"));
+        REQUIRE(is_normal("/a/b"));
+        REQUIRE(is_normal(".."));
+        REQUIRE(is_normal("../../a"));
+    }
+
+    SECTION("what it would collapse")
+    {
+        REQUIRE_FALSE(is_normal("./a"));
+        REQUIRE_FALSE(is_normal("a/./b"));
+        REQUIRE_FALSE(is_normal("a/../b"));
+        REQUIRE_FALSE(is_normal("a//b"));
+        REQUIRE_FALSE(is_normal("a/"));
+        REQUIRE_FALSE(is_normal("/a/"));
+        REQUIRE_FALSE(is_normal("/.."));
+    }
+
+    SECTION("agrees with normalize on the paths normalize builds")
+    {
+        auto const inputs = std::array<std::string_view, 8> {
+            "a/./b", "a/../../b", "/a/b/../c", "src//foo.c", "src/lib/", "..", "/..", ""
+        };
+        for (auto in : inputs) {
+            INFO("input: " << in);
+            REQUIRE(is_normal(sv(normalize(in))));
+        }
+    }
+}
+
 TEST_CASE("path::normalize", "[path]")
 {
     SECTION("dot segments")

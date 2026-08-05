@@ -101,10 +101,6 @@ auto normalize_path(std::string_view p) -> StringId
     if (result) {
         return *result;
     }
-    auto abs = platform::absolute(p);
-    if (abs) {
-        return *abs;
-    }
     return global_pool().intern(p);
 }
 

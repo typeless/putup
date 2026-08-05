@@ -521,12 +521,18 @@ auto canonical(std::string_view path) -> Result<StringId>
         return global_pool().intern(std::string_view { resolved, static_cast<std::size_t>(n) });
     }
 
-    auto abs = absolute(path);
-    if (!abs) {
-        return abs;
-    }
     auto& pool = pup::global_pool();
-    auto p = pool.get(*abs);
+    auto abs_id = StringId {};
+    if (!path.empty() && path[0] == '/') {
+        abs_id = pool.intern(path);
+    } else {
+        auto cwd = current_directory();
+        if (!cwd) {
+            return cwd;
+        }
+        abs_id = pup::path::join(pool.get(*cwd), path);
+    }
+    auto p = pool.get(abs_id);
     auto existing_sv = p;
     auto tail_id = StringId::Empty;
     while (!existing_sv.empty()) {
@@ -546,18 +552,6 @@ auto canonical(std::string_view path) -> Result<StringId>
         existing_sv = par;
     }
     return pup::path::normalize(p);
-}
-
-auto absolute(std::string_view path) -> Result<StringId>
-{
-    if (!path.empty() && path[0] == '/') {
-        return global_pool().intern(path);
-    }
-    auto cwd = current_directory();
-    if (!cwd) {
-        return cwd;
-    }
-    return pup::path::join(global_pool().get(*cwd), path);
 }
 
 auto read_symlink(std::string_view path) -> Result<StringId>
