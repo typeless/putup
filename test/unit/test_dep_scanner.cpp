@@ -379,7 +379,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
         REQUIRE(*dep_cmd == intern("g++ -M -std=c++20 foo.cpp"));
     }
 
-    SECTION("strips irrelevant flags")
+    SECTION("carries the compile's other flags")
     {
         auto cmd = CommandInfo {
             .node_id = 4,
@@ -393,7 +393,7 @@ TEST_CASE("GccScanner flag preservation", "[dep_scanner][gcc]")
 
         auto dep_cmd = scanner.build_dep_command(cmd);
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == intern("gcc -M foo.c"));
+        REQUIRE(*dep_cmd == intern("gcc -M -Wall -Wextra -O2 -g foo.c"));
     }
 }
 
@@ -607,13 +607,13 @@ TEST_CASE("ClangClScanner dep command construction", "[dep_scanner][clang_cl]")
         REQUIRE(scanner.dep_spec().output_mode == DepOutputMode::Stdout);
     }
 
-    SECTION("drops compile-only flags and output paths")
+    SECTION("carries compile flags and drops output paths")
     {
         auto dep_cmd = scanner.build_dep_command(
             clang_cl_compile(1, "clang-cl /W3 /WX /O2 /GR- /utf-8 /MT -c foo.cpp -o foo.obj")
         );
         REQUIRE(dep_cmd.has_value());
-        REQUIRE(*dep_cmd == intern("clang-cl /clang:-M foo.cpp"));
+        REQUIRE(*dep_cmd == intern("clang-cl /clang:-M /W3 /WX /O2 /GR- /utf-8 /MT foo.cpp"));
     }
 
     SECTION("drops cl-spelled /c and /Fo")
@@ -1071,7 +1071,7 @@ struct WalkTarget {
     std::vector<std::string> (*scan)(std::string const&);
 };
 
-// Acceptance is derived from these tables, so a flag added without an argument policy fails here.
+// The tables say which arguments to normalize and consume and which words must not ride along.
 auto check_flag_table_walk(WalkTarget const& t) -> void
 {
     auto const payload = std::string { "a/./b/../c" };
@@ -1103,11 +1103,35 @@ auto check_flag_table_walk(WalkTarget const& t) -> void
         REQUIRE(t.scan(command(std::string { flag.spelling } + " " + payload)) == expect({ std::string { flag.spelling }, want }));
     }
 
-    for (auto spelling : t.tables.standalone) {
-        auto const word = std::string { spelling } + "x";
-        INFO("standalone flag: " << spelling);
-        REQUIRE(t.scan(command(word)) == expect({ word }));
+    for (auto spelling : t.tables.hazards) {
+        auto const word = std::string { spelling };
+        INFO("hazard flag: " << word);
+        REQUIRE(t.scan(command(word)) == expect({}));
     }
+}
+
+// The scan is the compile minus the words that would break it: forwarded in order, hazards gone,
+// the output flag and its argument gone, sources last.
+auto check_scan_forwards_the_compile(std::string const& p) -> void
+{
+    auto const want = std::string { pup::global_pool().get(pup::path::normalize(p)) };
+    INFO("path: " << p);
+
+    auto gcc = scanners::GccScanner {};
+    REQUIRE(
+        scan_words(gcc.build_dep_command(
+            gcc_compile(54, "gcc -O2 -MD -I" + p + " -Wall -c foo.c -o foo.o")
+        ))
+        == std::vector<std::string> { "gcc", "-M", "-O2", "-I" + want, "-Wall", "foo.c" }
+    );
+
+    auto clang_cl = scanners::ClangClScanner {};
+    REQUIRE(
+        scan_words(clang_cl.build_dep_command(
+            clang_cl_compile(55, "clang-cl /O2 /showIncludes /imsvc " + p + " /W4 -c foo.cpp -o foo.obj")
+        ))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "/O2", "/imsvc", want, "/W4", "foo.cpp" }
+    );
 }
 
 auto check_under_root(std::string_view root, void (*check)(std::string const&)) -> void
@@ -1252,6 +1276,98 @@ TEST_CASE("every flag a scanner knows carries its argument as its row says", "[d
     }
 }
 
+TEST_CASE("a scan is the compile without the words that would break it", "[dep_scanner]")
+{
+    SECTION("relative paths")
+    {
+        check_under_root("", check_scan_forwards_the_compile);
+    }
+
+    SECTION("rooted paths")
+    {
+        check_under_root("/", check_scan_forwards_the_compile);
+    }
+
+    SECTION("drive-rooted paths")
+    {
+        check_under_root("C:/", check_scan_forwards_the_compile);
+    }
+}
+
+TEST_CASE("GccScanner takes flags from the invocation it scans, sources from all of them", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(
+        gcc_compile(57, "gcc -O2 -c a.c -o a.o && gcc -c b.c -o b.o")
+    );
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -O2 a.c b.c");
+}
+
+TEST_CASE("a line continuation never reaches the scan command", "[dep_scanner]")
+{
+    SECTION("a continuation the command text kept is not a word the scan carries")
+    {
+        auto scanner = scanners::GccScanner {};
+        auto dep_cmd = scanner.build_dep_command(
+            gcc_compile(60, "gcc -O2 \n -DFOO=1 -c foo.c -o foo.o \n ")
+        );
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -O2 -DFOO=1 foo.c");
+    }
+
+    SECTION("a newline inside a word survives the shell that runs the scan")
+    {
+        auto scanner = scanners::GccScanner {};
+        auto dep_cmd = scanner.build_dep_command(gcc_compile(61, "gcc -DA=a\nb -c foo.c -o foo.o"));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(
+            scan_words(dep_cmd) == std::vector<std::string> { "gcc", "-M", "-DA=a\nb", "foo.c" }
+        );
+    }
+
+    SECTION("a carriage return from a Windows-authored Tupfile")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        auto dep_cmd = scanner.build_dep_command(
+            clang_cl_compile(62, "clang-cl /O2 \r\n /I inc -c foo.cpp -o foo.obj")
+        );
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(pup::global_pool().get(*dep_cmd) == "clang-cl /clang:-M /O2 /I inc foo.cpp");
+    }
+}
+
+TEST_CASE("GccScanner takes no flags from a redirection", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("a numbered file descriptor")
+    {
+        auto dep_cmd = scanner.build_dep_command(gcc_compile(58, "gcc -O2 -c foo.c -o foo.o 1> build.log"));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -O2 foo.c");
+    }
+
+    SECTION("a duplicated descriptor")
+    {
+        auto dep_cmd = scanner.build_dep_command(gcc_compile(59, "gcc -O2 -c foo.c -o foo.o 2>&1"));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -O2 foo.c");
+    }
+}
+
+TEST_CASE("ClangClScanner stops at the linker's share of the command", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+    auto dep_cmd = scanner.build_dep_command(
+        clang_cl_compile(56, "clang-cl /I inc -c foo.cpp -o foo.obj /link /LIBPATH:C:/lib")
+    );
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "clang-cl /clang:-M /I inc foo.cpp");
+}
+
 TEST_CASE("GccScanner drops a macro the shell would expand and scans anyway", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};
@@ -1261,13 +1377,13 @@ TEST_CASE("GccScanner drops a macro the shell would expand and scans anyway", "[
     REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M foo.c");
 }
 
-TEST_CASE("GccScanner carries only the flags its tables know", "[dep_scanner][gcc]")
+TEST_CASE("GccScanner carries the compile's other flags into the scan", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};
     auto dep_cmd = scanner.build_dep_command(gcc_compile(53, "gcc -O2 -Wall -Iinc -c foo.c -o foo.o"));
 
     REQUIRE(dep_cmd.has_value());
-    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -Iinc foo.c");
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -O2 -Wall -Iinc foo.c");
 }
 
 TEST_CASE("GccScanner keeps a separate-word sysroot path", "[dep_scanner][gcc]")

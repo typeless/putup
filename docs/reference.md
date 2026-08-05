@@ -1931,33 +1931,42 @@ Recognized compilers: `gcc`, `g++`, `clang`, `clang++`, `cc`, `c++`, `clang-cl`
 
 Recognized wrappers: `ccache`, `distcc`, `sccache`, `icecc`
 
-Preserved flags (GNU driver): `-I`, `-isystem`, `-iquote`, `-include`, `-isysroot`,
-`--sysroot`, `-D`, `-U`, `-std=`
+**The scan carries the compile's flags**, so it preprocesses in the state the compile
+does and discovers the same headers a `-MD` depfile would. Only words that would break
+the scan itself are left out:
 
-Preserved flags (clang-cl): the above plus `/I`, `/imsvc`, `/external:I`, `/FI`,
-`/winsysroot`, `/D`, `/U`, `/std:`, `--target=`, `/TP`, `/TC`, `/clang:`
+- the compile flag (`-c`, `/c`) and the output flags (`-o` and its argument, `/Fo`,
+  `/Fe`, `/Fd`, `/Fi`), which name a product the scan does not make;
+- depfile flags (`-M…`, `/clang:-M…`), which would print a second rule over the
+  scan's own — though a compile that emits its own depfile is not scanned at all;
+- words that change what the driver prints: `/showIncludes` (notes before the rule)
+  and `/P` (preprocessed source instead of it);
+- `/link`, which hands everything after it to the linker, source words included;
+- a word containing a backtick or `$(`, because the scan's shell would evaluate the
+  substitution a second time, on results the compile never saw. A `-D` whose value is
+  a command substitution is therefore invisible to the scan.
 
-A flag that takes an argument is recognized in both spellings the driver accepts —
-glued to it (`-Iinc`, `--sysroot=/opt/sys`) or with the argument as the next word
-(`-I inc`, `--sysroot /opt/sys`). Path arguments are lexically normalized; `-D` and
-`-U` arguments are passed through untouched, because a macro value is not a path.
+A rule that runs several compiles in one command (`gcc -c a.c … && gcc -c b.c …`) is
+scanned once: the scan takes its flags from the first invocation and its sources from
+all of them, so every source is covered but a flag that only the later invocation
+carries is not. A redirection (`> log`, `2>&1`) ends the invocation the same way.
 
-**Every other word is dropped from the scan.** Optimization, warning, codegen and
-linker flags — `-O2`, `-Wall`, `-fPIC`, `-g`, `-L`, `-l`, `-Wl,…`, `/nologo`, `/MT`,
-`/EHsc` — are not carried, because they do not affect where a header is found. Two
-consequences worth knowing:
+Flags whose argument putup recognizes (GNU driver): `-I`, `-isystem`, `-iquote`,
+`-include`, `-isysroot`, `--sysroot`, `-D`, `-U`
 
-- The scan preprocesses under a different macro state than the compile, for macros
-  the compiler defines from those flags. A header included under `#ifdef __OPTIMIZE__`
-  is discovered as if `-O2` were absent, so an edit to it may not trigger a rebuild.
-  Macros you define yourself (`-D`) are carried, so the common case is unaffected.
-- A word containing a backtick or `$(` is dropped rather than carried, because the
-  scan command is run by a shell that would evaluate the substitution a second time —
-  with results the compile never saw. A `-D` whose value is a command substitution is
-  therefore invisible to the scan.
+Recognized argument flags (clang-cl): the above plus `/I`, `/imsvc`, `/external:I`,
+`/FI`, `/winsysroot`, `/D`, `/U`
 
-Add `-MD` to such a compile if you need its dependencies tracked exactly: a command
-that emits its own depfile is not scanned at all, and putup reads the depfile instead.
+Recognizing an argument means consuming it — a flag spells its argument glued on
+(`-Iinc`, `--sysroot=/opt/sys`) or as the next word (`-I inc`, `--sysroot /opt/sys`),
+and putup keeps the two forms apart so the next word is not mistaken for a source.
+Path arguments are lexically normalized; `-D` and `-U` arguments are passed through
+untouched, because a macro value is not a path. Every other flag rides along verbatim.
+
+A scan's stdout must be its dependency rule and nothing else. If it prints anything
+more — or prints nothing at all — the build fails and names the scan command: chatter
+parsed as dependencies would be recorded as files that never exist, and the command
+would re-run for ever.
 
 `cl.exe` (real MSVC) is **not** recognized — it has no GNU-depfile mode. Use
 `/sourceDependencies` or a `clang-cl` build if you need implicit deps there.

@@ -74,8 +74,9 @@ constexpr ArgFlag separate_flags[] = {
     { "-U", SeparateArg::Value },
 };
 
-constexpr std::string_view standalone_flags[] = {
-    "-std=",
+// Words that would change what a -M run prints, or print a second depfile over it.
+constexpr std::string_view hazard_flags[] = {
+    "-M",
 };
 
 auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
@@ -99,15 +100,9 @@ auto separate_arg(std::string_view flag) -> std::optional<SeparateArg>
     return std::nullopt;
 }
 
-auto is_dep_relevant_flag(std::string_view flag) -> bool
+auto is_scan_hazard(std::string_view flag) -> bool
 {
-    if (has_shell_special(flag)) {
-        return false;
-    }
-
-    return find_joined_flag(joined_flags, flag) != nullptr
-        || find_separate_flag(separate_flags, flag) != nullptr
-        || leads_any(standalone_flags, flag);
+    return is_blank_word(flag) || has_shell_special(flag) || leads_any(hazard_flags, flag);
 }
 
 } // namespace
@@ -199,8 +194,22 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     dep_cmd += " -M";
 
     auto pending = std::optional<SeparateArg> {};
+    auto later_invocation = false;
     auto source_files = Vec<std::string_view> {};
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
+        if (is_command_separator(words[i])) {
+            later_invocation = true;
+            pending.reset();
+            continue;
+        }
+
+        if (later_invocation) {
+            if (is_source_file(words[i])) {
+                source_files.push_back(words[i]);
+            }
+            continue;
+        }
+
         if (pending) {
             append_separate_arg_into(dep_cmd, words[i], *pending);
             pending.reset();
@@ -218,18 +227,20 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
             continue;
         }
 
-        if (is_dep_relevant_flag(w)) {
-            dep_cmd += ' ';
-            auto norm = Buf {};
-            normalize_flag_path_into(norm, w);
-            shell_quote_into(dep_cmd, norm.view());
-            pending = separate_arg(w);
+        if (is_scan_hazard(w)) {
             continue;
         }
 
         if (is_source_file(w)) {
             source_files.push_back(w);
+            continue;
         }
+
+        dep_cmd += ' ';
+        auto norm = Buf {};
+        normalize_flag_path_into(norm, w);
+        shell_quote_into(dep_cmd, norm.view());
+        pending = separate_arg(w);
     }
 
     if (source_files.empty()) {
@@ -256,7 +267,7 @@ auto gcc_flag_tables() -> FlagTables
     return FlagTables {
         .joined = joined_flags,
         .separate = separate_flags,
-        .standalone = standalone_flags,
+        .hazards = hazard_flags,
     };
 }
 

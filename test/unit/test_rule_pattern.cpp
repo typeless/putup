@@ -288,7 +288,7 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
         REQUIRE(generated[0].command == intern("g++ -M -I../../include -I../../third_party foo.cpp"));
     }
 
-    SECTION("preserves all relevant flags")
+    SECTION("carries the compile's flags")
     {
         auto cmd = CommandInfo {
             .node_id = 460,
@@ -302,8 +302,10 @@ TEST_CASE("GCC depfile pattern", "[rule_pattern]")
 
         auto generated = registry.match_and_generate(cmd);
         REQUIRE(generated.size() == 1);
-        // Should preserve -std, -I, -D but not -Wall, -Wextra, -O2
-        REQUIRE(generated[0].command == intern("g++ -M -std=c++20 -I../include -DNDEBUG main.cpp"));
+        REQUIRE(
+            generated[0].command
+            == intern("g++ -M -std=c++20 -Wall -Wextra -I../include -DNDEBUG -O2 main.cpp")
+        );
     }
 
     SECTION("does not match link command")

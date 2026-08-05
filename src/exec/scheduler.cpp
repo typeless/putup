@@ -157,17 +157,20 @@ auto parse_stdout_depfile(
     BuildJob const& job,
     std::string_view stdout_sv,
     Vec<StringId>& out_deps,
-    NodeId& out_deps_cmd
+    NodeId& out_deps_cmd,
+    bool& out_rejected
 ) -> void
 {
-    if (job.inject_implicit_deps && !stdout_sv.empty()) {
+    if (job.inject_implicit_deps) {
         auto depfile_result = parser::parse_depfile(stdout_sv);
-        if (depfile_result) {
-            for (auto dep_id : depfile_result->dependencies) {
-                out_deps.push_back(dep_id);
-            }
-            out_deps_cmd = job.parent_command;
+        if (!depfile_result || !parser::is_scan_output(*depfile_result)) {
+            out_rejected = true;
+            return;
         }
+        for (auto dep_id : depfile_result->dependencies) {
+            out_deps.push_back(dep_id);
+        }
+        out_deps_cmd = job.parent_command;
     }
 }
 
@@ -1033,11 +1036,17 @@ auto Scheduler::execute_parallel(
             // Parse depfile from stdout BEFORE reap clears the buffer
             auto stdout_deps = Vec<StringId> {};
             auto stdout_deps_cmd = INVALID_NODE_ID;
-            parse_stdout_depfile(job, slot.stdout_buf.view(), stdout_deps, stdout_deps_cmd);
+            auto scan_rejected = false;
+            parse_stdout_depfile(job, slot.stdout_buf.view(), stdout_deps, stdout_deps_cmd, scan_rejected);
 
             auto result = reap_slot(slot, status);
             result.id = job.id;
             --running;
+
+            if (scan_rejected && result.success) {
+                result.success = false;
+                result.exit_code = 1;
+            }
 
             if (!stdout_deps.empty()) {
                 for (auto dep_id : stdout_deps) {

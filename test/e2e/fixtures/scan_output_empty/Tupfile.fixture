@@ -1,0 +1,2 @@
+# The driver prints nothing on stdout; a scan that discovers nothing must not pass for one that did.
+: f.c |> ./tools/gcc -c %f -o %o |> f.o

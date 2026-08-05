@@ -1,0 +1,2 @@
+# The driver prints a note line before its rule; nothing but the rule may reach the index.
+: f.c |> ./tools/gcc -c %f -o %o |> f.o

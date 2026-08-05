@@ -4,8 +4,10 @@
 #include "pup/parser/depfile.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 #include <string_view>
 
@@ -172,6 +174,12 @@ auto parse_depfile(std::string_view content) -> Result<Depfile>
     }
 
     return result;
+}
+
+auto is_scan_output(Depfile const& depfile) -> bool
+{
+    auto ext = pup::path::extension(global_pool().get(depfile.target));
+    return ext == ".o" || ext == ".obj";
 }
 
 } // namespace pup::parser

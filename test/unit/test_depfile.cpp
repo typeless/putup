@@ -207,3 +207,27 @@ TEST_CASE("Depfile: handle tabs", "[depfile]")
     CHECK(sv(result->target) == "foo.o");
     REQUIRE(result->dependencies.size() == 2);
 }
+
+TEST_CASE("scan output is the rule the scan asked for", "[depfile]")
+{
+    SECTION("a compiler's dependency rule")
+    {
+        auto result = parse_depfile("foo.o: foo.c foo.h\n");
+        REQUIRE(result);
+        REQUIRE(is_scan_output(*result));
+    }
+
+    SECTION("a note printed before the rule")
+    {
+        auto result = parse_depfile("Note: including file: ./foo.h\nfoo.o: foo.c foo.h\n");
+        REQUIRE(result);
+        REQUIRE_FALSE(is_scan_output(*result));
+    }
+
+    SECTION("an object spelled the MSVC way")
+    {
+        auto result = parse_depfile("foo.obj: foo.cpp\n");
+        REQUIRE(result);
+        REQUIRE(is_scan_output(*result));
+    }
+}

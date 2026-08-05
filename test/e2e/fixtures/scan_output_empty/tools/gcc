@@ -1,0 +1,12 @@
+#!/bin/sh
+# A driver that writes its dependencies to a file, the way /P sends preprocessed output to one.
+for arg in "$@"; do
+    case "$arg" in
+    -M)
+        echo "f.o: f.c h.h" > deps.out
+        exit 0
+        ;;
+    esac
+done
+: > "$4"
+exit 0

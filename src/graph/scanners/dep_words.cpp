@@ -19,10 +19,10 @@ namespace {
 auto needs_shell_quoting(std::string_view s) -> bool
 {
     return s.empty() || std::ranges::any_of(s, [](char c) {
-               return c == ' ' || c == '\t' || c == '"' || c == '\'' || c == '\\' || c == '$' || c == '`'
-                   || c == '!' || c == '*' || c == '?' || c == '[' || c == ']' || c == '(' || c == ')'
-                   || c == '{' || c == '}' || c == '<' || c == '>' || c == '|' || c == '&' || c == ';'
-                   || c == '#' || c == '~' || c == '^';
+               return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '"' || c == '\'' || c == '\\'
+                   || c == '$' || c == '`' || c == '!' || c == '*' || c == '?' || c == '[' || c == ']'
+                   || c == '(' || c == ')' || c == '{' || c == '}' || c == '<' || c == '>' || c == '|'
+                   || c == '&' || c == ';' || c == '#' || c == '~' || c == '^';
            });
 }
 
@@ -109,6 +109,23 @@ auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind)
         shell_quote_into(out, word);
         return;
     }
+}
+
+auto is_blank_word(std::string_view word) -> bool
+{
+    // A `\`-continuation in a Tupfile leaves its newline in the command text, where the tokenizer
+    // sees a word rather than a separator.
+    return word.find_first_not_of(" \t\n\r") == std::string_view::npos;
+}
+
+auto is_command_separator(std::string_view word) -> bool
+{
+    if (word == "&&" || word == "||" || word == ";" || word == "|" || word == "&") {
+        return true;
+    }
+    // A redirection may name its file descriptor first: `>log`, `1>log`, `2>&1`, `3<x`.
+    auto rest = word.substr(std::min(word.find_first_not_of("0123456789"), word.size()));
+    return rest.starts_with(">") || rest.starts_with("<");
 }
 
 auto find_joined_flag(std::span<ArgFlag const> table, std::string_view word) -> ArgFlag const*
