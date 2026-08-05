@@ -99,6 +99,11 @@ auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> R
     if (!declared_layout_fits(result.file.size(), *hdr)) {
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Index sections do not fit the file");
     }
+    // What makes the bytes worth reading at all: that they are the ones a putup wrote, not a file
+    // that merely starts with the right four and lays its sections out plausibly (#294).
+    if (!index_verify_checksum(result)) {
+        return make_error<IndexFile>(ErrorCode::IndexChecksumMismatch, "Build record failed its checksum");
+    }
 
     return result;
 }
@@ -211,9 +216,7 @@ auto read_prior_paths(std::string_view path) -> PriorPaths
     auto lost = PriorPaths { .kind = PriorPaths::Kind::Lost, .sources = {}, .generated = {} };
 
     auto file = open_index_in_window(path, INDEX_LAYOUT_FLOOR);
-    // The checksum is what makes an older version's bytes worth reading at all: it says these
-    // are the bytes a putup wrote, not a file that merely starts with the right four.
-    if (!file || !index_verify_checksum(*file)) {
+    if (!file) {
         return lost;
     }
 
