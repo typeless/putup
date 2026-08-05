@@ -7075,7 +7075,96 @@ auto truncate_index(E2EFixture const& f, std::uintmax_t size) -> void
     std::filesystem::resize_file(f.workdir() / ".pup" / "index", size);
 }
 
+/// Everything a record says about *what* the build is, with the two fields that say *when* it
+/// happened left out: the header's save_time_ns and each file's mtime_ns are wall-clock
+/// observations, so two builds minutes apart differ there by design. Section bounds come from the
+/// header rather than hard-coded offsets, so a header that grows a field does not silently turn
+/// this into a comparison of the wrong bytes; the footer is excluded because it is the checksum
+/// over the timestamp we just masked.
+auto index_shape(std::vector<std::byte> const& bytes) -> std::vector<std::byte>
+{
+    REQUIRE(bytes.size() > sizeof(pup::index::RawHeader) + sizeof(pup::index::RawFooter));
+
+    auto hdr = pup::index::RawHeader {};
+    std::memcpy(&hdr, bytes.data(), sizeof(hdr));
+    hdr.save_time_ns = 0;
+
+    auto shape = std::vector<std::byte> {};
+    auto append = [&](void const* src, std::size_t n) {
+        auto const* p = static_cast<std::byte const*>(src);
+        shape.insert(shape.end(), p, p + n);
+    };
+    append(&hdr, sizeof(hdr));
+
+    for (auto i = std::uint32_t { 0 }; i < hdr.file_count; ++i) {
+        auto entry = pup::index::RawFileEntry {};
+        std::memcpy(&entry, bytes.data() + hdr.file_offset + i * sizeof(entry), sizeof(entry));
+        entry.mtime_ns = 0;
+        append(&entry, sizeof(entry));
+    }
+
+    append(bytes.data() + hdr.command_offset, std::size_t { hdr.command_count } * sizeof(pup::index::RawCommandEntry));
+    append(bytes.data() + hdr.edge_offset, std::size_t { hdr.edge_count } * sizeof(pup::index::RawEdge));
+    append(bytes.data() + hdr.operand_table_offset, std::size_t { hdr.command_count } * sizeof(std::uint32_t));
+    append(bytes.data() + hdr.operand_data_offset, hdr.string_offset - hdr.operand_data_offset);
+    append(bytes.data() + hdr.string_offset, hdr.string_table_size);
+
+    return shape;
+}
+
 } // namespace
+
+// Determinism of construction, not of reload: two builds that never saw each other's work must
+// record the same project. Answering this by reading the code is what #298's consult had to do.
+SCENARIO("Two builds of one tree record the same thing", "[e2e][index][determinism]")
+{
+    GIVEN("the same project built twice from scratch, in trees that share nothing")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+        auto first = E2EFixture { "implicit_deps" };
+        REQUIRE(first.init().success());
+        REQUIRE(first.build().success());
+
+        auto second = E2EFixture { "implicit_deps" };
+        REQUIRE(second.init().success());
+        REQUIRE(second.build().success());
+
+        WHEN("the two records are compared")
+        {
+            auto const a = index_bytes(first);
+            auto const b = index_bytes(second);
+
+            THEN("they agree on every entry, edge, operand and string")
+            {
+                REQUIRE(index_shape(a) == index_shape(b));
+            }
+
+            // A record whose sections are identical but whose lengths are not would mean the
+            // masking above is hiding a difference rather than excluding a timestamp; a shape
+            // that covers only the header would mean it is comparing almost nothing.
+            THEN("they are the same size, and the comparison covers the record")
+            {
+                REQUIRE(a.size() == b.size());
+                REQUIRE(index_shape(a).size() > a.size() / 2);
+            }
+        }
+
+        // The weaker property the incremental suite leans on, asserted here because it costs one
+        // build: a run that does nothing must not rewrite what the record says either.
+        WHEN("one of them is rebuilt with nothing to do")
+        {
+            auto const before = index_bytes(first);
+            REQUIRE(first.build().is_noop());
+            auto const after = index_bytes(first);
+
+            THEN("the record it rewrites says the same thing")
+            {
+                REQUIRE(index_shape(before) == index_shape(after));
+            }
+        }
+    }
+}
 
 SCENARIO("An index an older putup wrote does not turn an in-tree build's own outputs into source collisions", "[e2e][shadow][incremental]")
 {
