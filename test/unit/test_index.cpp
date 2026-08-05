@@ -1603,3 +1603,40 @@ TEST_CASE("Keying a record's file table by path keeps every addressable entry an
         REQUIRE(by_path.find(StringId::Empty) == nullptr);
     }
 }
+
+TEST_CASE("Keying the index under construction by path answers the same however it was filled", "[index]")
+{
+    for (auto seed = std::uint32_t { 0 }; seed < 20; ++seed) {
+        INFO("seed=" << seed);
+        auto rng = std::mt19937 { seed };
+
+        auto paths = std::vector<StringId> {};
+        for (auto i = std::size_t { 0 }; i < 50; ++i) {
+            paths.push_back(intern("seed" + std::to_string(seed) + "/dir" + std::to_string(rng() % 7) + "/f" + std::to_string(i) + ".c"));
+        }
+        std::shuffle(paths.begin(), paths.end(), rng);
+
+        auto map = pup::cli::PathIdMap {};
+        for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
+            map.insert(paths[i], NodeId { static_cast<std::uint32_t>(i + 1) });
+        }
+
+        // The walks that build this map also query it, so what it answers cannot depend on how
+        // far along the filling was — the insertion order is the graph's, not the caller's choice.
+        for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
+            auto found = map.find(paths[i]);
+            REQUIRE(found.has_value());
+            REQUIRE(*found == NodeId { static_cast<std::uint32_t>(i + 1) });
+        }
+
+        REQUIRE_FALSE(map.find(intern("seed" + std::to_string(seed) + "/never/inserted.c")).has_value());
+        REQUIRE_FALSE(map.find(StringId::Empty).has_value());
+
+        REQUIRE(std::is_sorted(map.entries.begin(), map.entries.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); }));
+        REQUIRE(map.entries.size() == paths.size());
+
+        map.insert(paths[3], NodeId { 999 });
+        REQUIRE(map.find(paths[3]) == NodeId { 999 });
+        REQUIRE(map.entries.size() == paths.size());
+    }
+}

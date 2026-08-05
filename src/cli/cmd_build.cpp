@@ -44,27 +44,27 @@
 
 namespace pup::cli {
 
-namespace {
-using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<StringId>>>;
-
-auto path_id_find(PathIdMap const& m, std::string_view key) -> std::pair<StringId, pup::NodeId> const*
+auto PathIdMap::find(StringId path) const -> std::optional<NodeId>
 {
-    auto& pool = pup::global_pool();
-    auto pos = std::lower_bound(m.begin(), m.end(), key, [&pool](auto const& p, std::string_view k) { return pool.get(p.first) < k; });
-    return (pos != m.end() && pool.get(pos->first) == key) ? pos : nullptr;
+    auto pos = std::lower_bound(entries.begin(), entries.end(), path, [](auto const& p, StringId k) { return handle_less(p.first, k); });
+    if (pos == entries.end() || pos->first != path) {
+        return std::nullopt;
+    }
+    return pos->second;
 }
 
-auto path_id_insert(PathIdMap& m, StringId key, pup::NodeId id) -> void
+auto PathIdMap::insert(StringId path, NodeId id) -> void
 {
-    auto& pool = pup::global_pool();
-    auto key_sv = pool.get(key);
-    auto pos = std::lower_bound(m.begin(), m.end(), key_sv, [&pool](auto const& p, std::string_view k) { return pool.get(p.first) < k; });
-    if (pos != m.end() && pool.get(pos->first) == key_sv) {
+    auto pos = std::lower_bound(entries.begin(), entries.end(), path, [](auto const& p, StringId k) { return handle_less(p.first, k); });
+    if (pos != entries.end() && pos->first == path) {
         pos->second = id;
     } else {
-        m.insert(pos, std::pair<StringId, pup::NodeId> { key, id });
+        entries.insert(pos, std::pair<StringId, NodeId> { path, id });
     }
 }
+
+namespace {
+using DiscoveredDeps = Vec<std::pair<pup::NodeId, Vec<StringId>>>;
 
 auto discovered_deps_get(DiscoveredDeps& m, pup::NodeId key) -> Vec<StringId>&
 {
@@ -436,14 +436,15 @@ auto get_or_create_dir(
 ) -> pup::NodeId
 {
     auto& pool = pup::global_pool();
-    auto path_str = pool.get(pup::path::normalize(dir_path));
+    auto path_id = pup::path::normalize(dir_path);
+    auto path_str = pool.get(path_id);
 
     if (path_str.empty() || path_str == ".") {
         return pup::NodeId { 0 };
     }
 
-    if (auto it = path_id_find(ctx.path_to_id, path_str); it != nullptr) {
-        return it->second;
+    if (auto id = ctx.path_to_id.find(path_id)) {
+        return *id;
     }
 
     if (pup::path::is_root(path_str)) {
@@ -461,7 +462,7 @@ auto get_or_create_dir(
             .content_hash = {},
         };
         ctx.index.add_file(std::move(entry));
-        path_id_insert(ctx.path_to_id, pool.intern("/"), dir_id);
+        ctx.path_to_id.insert(pool.intern("/"), dir_id);
         return dir_id;
     }
 
@@ -476,13 +477,13 @@ auto get_or_create_dir(
         .type = pup::NodeType::Directory,
         .flags = pup::NodeFlags::None,
         .name = pool.intern(pup::path::filename(path_str)),
-        .path = pool.intern(path_str),
+        .path = path_id,
         .size = 0,
         .mtime_ns = 0,
         .content_hash = {},
     };
     ctx.index.add_file(std::move(entry));
-    path_id_insert(ctx.path_to_id, pool.intern(path_str), dir_id);
+    ctx.path_to_id.insert(path_id, dir_id);
     return dir_id;
 }
 
@@ -491,7 +492,7 @@ auto get_or_create_dir(
 auto create_implicit_file(
     ImplicitDepContext& ctx,
     std::string_view abs_path,
-    std::string_view rel_path
+    StringId rel_path
 ) -> pup::NodeId
 {
     auto content_hash = pup::Hash256 {};
@@ -513,12 +514,13 @@ auto create_implicit_file(
         }
     }
 
-    auto parent_dir = pup::path::parent(rel_path);
+    auto& pool = pup::global_pool();
+    auto rel_sv = pool.get(rel_path);
+    auto parent_dir = pup::path::parent(rel_sv);
     auto parent_id = get_or_create_dir(ctx, parent_dir);
 
     auto file_id = ctx.next_id++;
 
-    auto& pool = pup::global_pool();
     auto entry = pup::index::FileEntry {
         .id = file_id,
         .parent_id = parent_id,
@@ -526,14 +528,14 @@ auto create_implicit_file(
         .type = pup::NodeType::File,
         // The run that reported this dep already saw it absent, so only its return is news (#281).
         .flags = present ? pup::NodeFlags::None : pup::NodeFlags::AbsenceRouted,
-        .name = pool.intern(pup::path::filename(rel_path)),
-        .path = pool.intern(rel_path),
+        .name = pool.intern(pup::path::filename(rel_sv)),
+        .path = rel_path,
         .size = file_size,
         .mtime_ns = mtime_ns,
         .content_hash = content_hash,
     };
     ctx.index.add_file(std::move(entry));
-    path_id_insert(ctx.path_to_id, pool.intern(rel_path), file_id);
+    ctx.path_to_id.insert(rel_path, file_id);
     return file_id;
 }
 
@@ -652,7 +654,7 @@ auto serialize_graph_nodes(
                 .content_hash = content_hash,
             };
             index.add_file(std::move(entry));
-            path_id_insert(path_to_id, pool.intern(node_path), id);
+            path_to_id.insert(pool.intern(node_path), id);
             break;
         }
         case pup::NodeType::Directory:
@@ -674,7 +676,7 @@ auto serialize_graph_nodes(
             };
             index.add_file(std::move(entry));
             if (!node_path.empty()) {
-                path_id_insert(path_to_id, pool.intern(node_path), id);
+                path_to_id.insert(pool.intern(node_path), id);
             }
             break;
         }
@@ -776,12 +778,11 @@ auto serialize_command_nodes(
         auto outputs = pup::graph::view<pup::graph::Outputs>(g, id);
         auto& pool = pup::global_pool();
 
-        auto source_dir_sv = pool.get(pup::graph::get<pup::graph::SourceDir>(g, id));
+        auto source_dir = pup::graph::get<pup::graph::SourceDir>(g, id);
         auto dir_id = pup::NodeId { 0 };
-        if (!source_dir_sv.empty()) {
-            auto it = path_id_find(path_to_id, source_dir_sv);
-            if (it != nullptr) {
-                dir_id = it->second;
+        if (!pool.get(source_dir).empty()) {
+            if (auto found = path_to_id.find(source_dir)) {
+                dir_id = *found;
             }
         }
 
@@ -915,16 +916,13 @@ auto process_implicit_deps(
             auto dep_path = pool.get(dep_id_val);
             auto abs_path = pup::path::is_absolute(dep_path) ? dep_path : pool.get(pup::path::join(ctx.source_root, dep_path));
 
-            auto rel_path = std::string_view {};
-            if (pup::is_path_under(abs_path, ctx.source_root)) {
-                rel_path = pool.get(pup::path::relative(abs_path, ctx.source_root));
-            } else {
-                rel_path = abs_path;
-            }
+            auto rel_path = pup::is_path_under(abs_path, ctx.source_root)
+                ? pup::path::relative(abs_path, ctx.source_root)
+                : pool.intern(abs_path);
 
-            auto it = path_id_find(ctx.path_to_id, rel_path);
-            auto dep_id = it != nullptr
-                ? it->second
+            auto found = ctx.path_to_id.find(rel_path);
+            auto dep_id = found
+                ? *found
                 : create_implicit_file(ctx, abs_path, rel_path);
 
             // Only when nothing orders this command after the file. Ordering is transitive —
@@ -1181,11 +1179,11 @@ auto preserve_old_implicit_edges(
         }
 
         auto old_file_path = pup::global_pool().get(old_file->path);
-        auto new_file_it = path_id_find(ctx.path_to_id, old_file_path);
+        auto new_file_id = ctx.path_to_id.find(old_file->path);
         auto abs_path = pup::path::is_absolute(old_file_path) ? old_file_path : pool.get(pup::path::join(ctx.source_root, old_file_path));
-        auto new_from_id = new_file_it != nullptr
-            ? new_file_it->second
-            : create_implicit_file(ctx, abs_path, old_file_path);
+        auto new_from_id = new_file_id
+            ? *new_file_id
+            : create_implicit_file(ctx, abs_path, old_file->path);
 
         if (ctx.added_edges.insert(new_from_id, new_to_id)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
@@ -1261,17 +1259,17 @@ auto merge_out_of_scope_commands(
     // Ghosts; without this the merge would duplicate a ghost's entry by path.
     auto ghost_paths = PathIdMap {};
     for (auto const& file : ctx.index.files()) {
-        if (!pup::is_empty(file.path) && path_id_find(ctx.path_to_id, pool.get(file.path)) == nullptr) {
-            path_id_insert(ghost_paths, file.path, file.id);
+        if (!pup::is_empty(file.path) && !ctx.path_to_id.find(file.path)) {
+            ghost_paths.insert(file.path, file.id);
         }
     }
 
-    auto find_new_id_by_path = [&](std::string_view path_sv) -> pup::NodeId {
-        if (auto const* it = path_id_find(ctx.path_to_id, path_sv); it != nullptr) {
-            return it->second;
+    auto find_new_id_by_path = [&](StringId path) -> pup::NodeId {
+        if (auto found = ctx.path_to_id.find(path)) {
+            return *found;
         }
-        if (auto const* it = path_id_find(ghost_paths, path_sv); it != nullptr) {
-            return it->second;
+        if (auto found = ghost_paths.find(path)) {
+            return *found;
         }
         return pup::INVALID_NODE_ID;
     };
@@ -1287,7 +1285,7 @@ auto merge_out_of_scope_commands(
         }
         auto path_sv = pool.get(old_file->path);
         auto new_id = pup::NodeId {};
-        if (auto existing = find_new_id_by_path(path_sv); existing != pup::INVALID_NODE_ID) {
+        if (auto existing = find_new_id_by_path(old_file->path); existing != pup::INVALID_NODE_ID) {
             new_id = existing;
         } else {
             auto parent_id = get_or_create_dir(ctx, pup::path::parent(path_sv));
@@ -1304,7 +1302,7 @@ auto merge_out_of_scope_commands(
                 .mtime_ns = old_file->mtime_ns,
                 .content_hash = old_file->content_hash,
             });
-            path_id_insert(ctx.path_to_id, old_file->path, new_id);
+            ctx.path_to_id.insert(old_file->path, new_id);
         }
         old_to_new_file.set(old_id, new_id);
         return new_id;
@@ -1316,7 +1314,7 @@ auto merge_out_of_scope_commands(
         if (!old_file || pup::is_empty(old_file->path)) {
             return false;
         }
-        auto new_id = find_new_id_by_path(pool.get(old_file->path));
+        auto new_id = find_new_id_by_path(old_file->path);
         if (new_id == pup::INVALID_NODE_ID) {
             return false;
         }
