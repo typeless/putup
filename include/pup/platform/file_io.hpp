@@ -87,10 +87,21 @@ auto copy_file(std::string_view from, std::string_view to) -> Result<void>;
 // Path resolution
 [[nodiscard]]
 auto current_directory() -> Result<StringId>;
+
+/// Resolve `path` to the one name this build will use for that file.
+///
+/// Guaranteed on every platform: the result is absolute, normal (no `.` or `..` component, no
+/// repeated or trailing separator) and `/`-separated, and for a path that exists it is physical --
+/// every symlink resolved.
+///
+/// Not guaranteed the same everywhere: for a path that does *not* exist, POSIX resolves the
+/// symlinks of the deepest existing prefix and appends the rest, while Windows resolves the whole
+/// thing lexically. So on Windows the canonical of a file yet to be built is textual where the
+/// canonical of its directory is physical, and relativizing one against the other crosses
+/// spellings if a junction lies anywhere above them (#314).
 [[nodiscard]]
 auto canonical(std::string_view path) -> Result<StringId>;
-[[nodiscard]]
-auto absolute(std::string_view path) -> Result<StringId>;
+
 [[nodiscard]]
 auto read_symlink(std::string_view path) -> Result<StringId>;
 

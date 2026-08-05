@@ -584,11 +584,6 @@ auto canonical(std::string_view path) -> Result<StringId>
     return global_pool().intern(fixed.view());
 }
 
-auto absolute(std::string_view path) -> Result<StringId>
-{
-    return canonical(path);
-}
-
 auto read_symlink(std::string_view path) -> Result<StringId>
 {
     auto wpath = to_wide(path);
