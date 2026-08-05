@@ -1,0 +1,13 @@
+#!/bin/sh
+# A driver that prints chatter before its dependency rule, the way /showIncludes does.
+for arg in "$@"; do
+    case "$arg" in
+    -M)
+        echo "Note: including file: ./h.h"
+        echo "f.o: f.c h.h"
+        exit 0
+        ;;
+    esac
+done
+: > "$4"
+exit 0

@@ -76,13 +76,18 @@ constexpr ArgFlag separate_flags[] = {
     { "/U", SeparateArg::Value },
 };
 
-constexpr std::string_view standalone_flags[] = {
-    "-std=",
-    "/std:",
-    "--target=",
-    "/TP",
-    "/TC",
-    "/clang:",
+// Words that would print something over the -M run's rule, or send it somewhere else.
+constexpr std::string_view hazard_flags[] = {
+    "-M",
+    "/clang:-M",
+    "-clang:-M",
+    "/Fo",
+    "-Fo",
+    "/Fe",
+    "/Fd",
+    "/Fi",
+    "/P",
+    "/showIncludes",
 };
 
 auto separate_arg(std::string_view word) -> std::optional<SeparateArg>
@@ -93,15 +98,9 @@ auto separate_arg(std::string_view word) -> std::optional<SeparateArg>
     return std::nullopt;
 }
 
-auto is_dep_relevant_flag(std::string_view flag) -> bool
+auto is_scan_hazard(std::string_view flag) -> bool
 {
-    if (has_shell_special(flag)) {
-        return false;
-    }
-
-    return find_joined_flag(joined_flags, flag) != nullptr
-        || find_separate_flag(separate_flags, flag) != nullptr
-        || leads_any(standalone_flags, flag);
+    return is_blank_word(flag) || has_shell_special(flag) || leads_any(hazard_flags, flag);
 }
 
 // Root detection is the host's: a cross-build's target-absolute path is treated as relative here.
@@ -198,9 +197,23 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
     dep_cmd += " /clang:-M";
 
     auto pending = std::optional<SeparateArg> {};
+    auto later_invocation = false;
     auto source_files = Vec<std::string_view> {};
     for (auto i = driver_idx + 1; i < words.size(); ++i) {
         auto w = words[i];
+
+        if (is_command_separator(w)) {
+            later_invocation = true;
+            pending.reset();
+            continue;
+        }
+
+        if (later_invocation) {
+            if (is_source_file(w)) {
+                source_files.push_back(w);
+            }
+            continue;
+        }
 
         if (pending) {
             append_separate_arg_into(dep_cmd, w, *pending);
@@ -208,13 +221,7 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
             continue;
         }
 
-        if (is_compile_flag(w) || w.starts_with("/Fo") || w.starts_with("-Fo")) {
-            continue;
-        }
-
-        // A smuggled -MD would redirect the depfile and leave preprocessed
-        // source on the stdout this scan parses.
-        if (w.starts_with("/clang:-M") || w.starts_with("-clang:-M")) {
+        if (is_compile_flag(w)) {
             continue;
         }
 
@@ -223,18 +230,25 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
             continue;
         }
 
-        if (is_dep_relevant_flag(w)) {
-            dep_cmd += ' ';
-            auto norm = Buf {};
-            normalize_flag_path_into(norm, w);
-            shell_quote_into(dep_cmd, norm.view());
-            pending = separate_arg(w);
+        // /link hands everything after it to the linker, source words included.
+        if (w == "/link") {
+            break;
+        }
+
+        if (is_scan_hazard(w)) {
             continue;
         }
 
         if (is_source_file(w)) {
             source_files.push_back(w);
+            continue;
         }
+
+        dep_cmd += ' ';
+        auto norm = Buf {};
+        normalize_flag_path_into(norm, w);
+        shell_quote_into(dep_cmd, norm.view());
+        pending = separate_arg(w);
     }
 
     if (source_files.empty()) {
@@ -261,7 +275,7 @@ auto clang_cl_flag_tables() -> FlagTables
     return FlagTables {
         .joined = joined_flags,
         .separate = separate_flags,
-        .standalone = standalone_flags,
+        .hazards = hazard_flags,
     };
 }
 

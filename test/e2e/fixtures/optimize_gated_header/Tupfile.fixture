@@ -1,0 +1,3 @@
+# -O2 defines __OPTIMIZE__, so the compile reads opt.h; a scan without it reads the other branch.
+: f.c |> gcc -O2 -c %f -o %o |> f.o
+: f.o |> gcc %f -o %o |> program

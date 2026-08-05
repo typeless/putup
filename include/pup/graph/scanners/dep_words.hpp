@@ -46,6 +46,15 @@ enum class SeparateArg {
 /// Append `word` to `out` as `kind` says, preceded by a space and quoted for the scan's shell.
 auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind) -> void;
 
+/// True for a word made only of whitespace, which carries nothing into the scan.
+[[nodiscard]]
+auto is_blank_word(std::string_view word) -> bool;
+
+/// True for the shell words that end one command and begin another. A scan carries the flags of
+/// the invocation it was built for, so it takes none from what follows one of these.
+[[nodiscard]]
+auto is_command_separator(std::string_view word) -> bool;
+
 /// A flag the scan command carries, and what its argument is.
 struct ArgFlag {
     std::string_view spelling;
@@ -64,12 +73,12 @@ auto find_separate_flag(std::span<ArgFlag const> table, std::string_view word) -
 [[nodiscard]]
 auto leads_any(std::span<std::string_view const> spellings, std::string_view word) -> bool;
 
-/// A scanner's three flag tables. Acceptance is derived from them, so a flag the scan carries
-/// always says what its argument is.
+/// A scanner's flag tables. The scan carries every word of the compile except the hazards, so
+/// these say which arguments to normalize and consume, and which words must never ride along.
 struct FlagTables {
     std::span<ArgFlag const> joined;
     std::span<ArgFlag const> separate;
-    std::span<std::string_view const> standalone;
+    std::span<std::string_view const> hazards;
 };
 
 /// True if the word names a C/C++/ObjC/assembly translation unit.

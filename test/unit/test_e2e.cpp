@@ -2419,6 +2419,97 @@ SCENARIO("Implicit deps survive identical rules in sibling directories", "[e2e][
     }
 }
 
+SCENARIO("A header the compile reads only under -O2 is tracked", "[e2e][incremental]")
+{
+    // A scan without the compile's flags resolves the other branch and records the wrong header.
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a source whose include is gated on __OPTIMIZE__")
+    {
+        auto f = E2EFixture { "optimize_gated_header" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("program").stdout_output == "1\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the header the compile actually read changes")
+        {
+            f.write_file("opt.h", "#ifndef OPT_H\n"
+                                  "#define OPT_H\n"
+                                  "#define VALUE 2\n"
+                                  "#endif\n");
+            auto result = f.build();
+
+            THEN("the compile reruns")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+
+            THEN("the program reflects the change")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.run("program").stdout_output == "2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A dep scan that prints nothing fails the build", "[e2e][incremental]")
+{
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a compiler whose scan writes its rule somewhere else")
+    {
+        auto f = E2EFixture { "scan_output_empty" };
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs")
+        {
+            auto result = f.build();
+
+            THEN("it fails")
+            {
+                REQUIRE_FALSE(result.success());
+            }
+
+            THEN("it names the scan that discovered nothing")
+            {
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("./tools/gcc -M f.c") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A dep scan that prints anything but its rule fails the build", "[e2e][incremental]")
+{
+    // Chatter parsed as dependencies never stats, so the command would re-run for ever.
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a compiler whose scan prints a note before its rule")
+    {
+        auto f = E2EFixture { "scan_output_garbage" };
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs")
+        {
+            auto result = f.build();
+
+            THEN("it fails")
+            {
+                REQUIRE_FALSE(result.success());
+            }
+
+            THEN("it names the scan that misbehaved")
+            {
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("./tools/gcc -M f.c") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit deps survive a flag whose path is a separate word", "[e2e][incremental]")
 {
     // A flag's path reaches the scan whichever spelling carries it, or the scan has no input file.

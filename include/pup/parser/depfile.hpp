@@ -25,4 +25,11 @@ auto parse_depfile_path(std::string_view path) -> Result<Depfile>;
 [[nodiscard]]
 auto parse_depfile(std::string_view content) -> Result<Depfile>;
 
+/// Whether a parse is the rule a dep scan asked for, rather than driver chatter that happens to
+/// carry a colon. A scan names its target after the object, so anything else on stdout -- a
+/// `/showIncludes` note, a banner -- parses into dependencies that never stat and re-trigger for
+/// ever, which is why the scan is rejected instead of recorded.
+[[nodiscard]]
+auto is_scan_output(Depfile const& depfile) -> bool;
+
 } // namespace pup::parser
