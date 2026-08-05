@@ -5,6 +5,7 @@
 
 #include "pup/core/buf.hpp"
 
+#include <span>
 #include <string_view>
 
 namespace pup::graph::scanners {
@@ -42,6 +43,32 @@ enum class SeparateArg {
 
 /// Append `word` to `out` as `kind` says, preceded by a space and quoted for the scan's shell.
 auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind) -> void;
+
+/// A flag the scan command carries, and what its argument is.
+struct ArgFlag {
+    std::string_view spelling;
+    SeparateArg kind;
+};
+
+/// The joined-form row leading `word` -- its argument is the tail -- or nullptr.
+[[nodiscard]]
+auto find_joined_flag(std::span<ArgFlag const> table, std::string_view word) -> ArgFlag const*;
+
+/// The separate-form row spelled exactly `word` -- its argument is the next word -- or nullptr.
+[[nodiscard]]
+auto find_separate_flag(std::span<ArgFlag const> table, std::string_view word) -> ArgFlag const*;
+
+/// Whether any of `spellings` leads `word`. Flags that carry no argument are matched this way.
+[[nodiscard]]
+auto leads_any(std::span<std::string_view const> spellings, std::string_view word) -> bool;
+
+/// A scanner's three flag tables. Acceptance is derived from them, so a flag the scan carries
+/// always says what its argument is.
+struct FlagTables {
+    std::span<ArgFlag const> joined;
+    std::span<ArgFlag const> separate;
+    std::span<std::string_view const> standalone;
+};
 
 /// True if the word names a C/C++/ObjC/assembly translation unit.
 [[nodiscard]]

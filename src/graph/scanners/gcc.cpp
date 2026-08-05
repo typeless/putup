@@ -52,16 +52,40 @@ auto is_compiler_name(std::string_view name) -> bool
     return false;
 }
 
+constexpr ArgFlag joined_flags[] = {
+    { "-I", SeparateArg::Path },
+    { "-isystem", SeparateArg::Path },
+    { "-iquote", SeparateArg::Path },
+    { "-include", SeparateArg::Path },
+    { "-isysroot", SeparateArg::Path },
+    { "--sysroot=", SeparateArg::Path },
+    { "-D", SeparateArg::Value },
+    { "-U", SeparateArg::Value },
+};
+
+constexpr ArgFlag separate_flags[] = {
+    { "-I", SeparateArg::Path },
+    { "-isystem", SeparateArg::Path },
+    { "-iquote", SeparateArg::Path },
+    { "-include", SeparateArg::Path },
+    { "-isysroot", SeparateArg::Path },
+    { "--sysroot", SeparateArg::Path },
+    { "-D", SeparateArg::Value },
+    { "-U", SeparateArg::Value },
+};
+
+constexpr std::string_view standalone_flags[] = {
+    "-std=",
+};
+
 auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
 {
-    for (auto const* prefix : { "-I", "-isystem", "-iquote", "-include", "--sysroot=", "-isysroot" }) {
-        if (flag.starts_with(prefix)) {
-            auto path = flag.substr(std::strlen(prefix));
-            if (!path.empty()) {
-                out += std::string_view { prefix };
-                out += global_pool().get(pup::path::normalize(path));
-                return;
-            }
+    if (auto const* joined = find_joined_flag(joined_flags, flag); joined && joined->kind == SeparateArg::Path) {
+        auto path = flag.substr(joined->spelling.size());
+        if (!path.empty()) {
+            out += joined->spelling;
+            out += global_pool().get(pup::path::normalize(path));
+            return;
         }
     }
     out += flag;
@@ -69,12 +93,8 @@ auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
 
 auto separate_arg(std::string_view flag) -> std::optional<SeparateArg>
 {
-    if (flag == "-D" || flag == "-U") {
-        return SeparateArg::Value;
-    }
-    if (flag == "-I" || flag == "-include" || flag == "-isystem" || flag == "-iquote"
-        || flag == "-isysroot") {
-        return SeparateArg::Path;
+    if (auto const* separate = find_separate_flag(separate_flags, flag)) {
+        return separate->kind;
     }
     return std::nullopt;
 }
@@ -85,22 +105,9 @@ auto is_dep_relevant_flag(std::string_view flag) -> bool
         return false;
     }
 
-    if (flag.starts_with("-I") || flag.starts_with("-isystem") || flag.starts_with("-iquote")) {
-        return true;
-    }
-    if (flag.starts_with("-D") || flag.starts_with("-U")) {
-        return true;
-    }
-    if (flag.starts_with("-std=")) {
-        return true;
-    }
-    if (flag.starts_with("-include")) {
-        return true;
-    }
-    if (flag.starts_with("--sysroot") || flag.starts_with("-isysroot")) {
-        return true;
-    }
-    return false;
+    return find_joined_flag(joined_flags, flag) != nullptr
+        || find_separate_flag(separate_flags, flag) != nullptr
+        || leads_any(standalone_flags, flag);
 }
 
 } // namespace
@@ -241,6 +248,15 @@ auto GccScanner::dep_spec() const -> DepSpec
 {
     return DepSpec {
         .output_mode = DepOutputMode::Stdout,
+    };
+}
+
+auto gcc_flag_tables() -> FlagTables
+{
+    return FlagTables {
+        .joined = joined_flags,
+        .separate = separate_flags,
+        .standalone = standalone_flags,
     };
 }
 

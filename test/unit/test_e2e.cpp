@@ -2419,6 +2419,42 @@ SCENARIO("Implicit deps survive identical rules in sibling directories", "[e2e][
     }
 }
 
+SCENARIO("Implicit deps survive a flag whose path is a separate word", "[e2e][incremental]")
+{
+    // A flag's path reaches the scan whichever spelling carries it, or the scan has no input file.
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a compile whose sysroot is spelled as two words")
+    {
+        auto f = E2EFixture { "sysroot_separate_word" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.run("program").stdout_output == "1\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the header it includes changes")
+        {
+            f.write_file("value.h", "#ifndef VALUE_H\n"
+                                    "#define VALUE_H\n"
+                                    "#define VALUE 2\n"
+                                    "#endif\n");
+            auto result = f.build();
+
+            THEN("the compile reruns")
+            {
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+
+            THEN("the program reflects the change")
+            {
+                REQUIRE(result.success());
+                REQUIRE(f.run("program").stdout_output == "2\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Implicit deps cover every source of a multi-source command", "[e2e][incremental]")
 {
     // gcc -M emits one rule per source; stopping at the first leaves b.h untracked and the program silently stale

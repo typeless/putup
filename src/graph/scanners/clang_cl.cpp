@@ -40,33 +40,55 @@ auto is_compile_flag(std::string_view word) -> bool
     return word == "-c" || word == "/c";
 }
 
-/// What the separate word after `word` is, for the flags that take one.
+constexpr ArgFlag joined_flags[] = {
+    { "-I", SeparateArg::Path },
+    { "/I", SeparateArg::Path },
+    { "-isystem", SeparateArg::Path },
+    { "-iquote", SeparateArg::Path },
+    { "-include", SeparateArg::Path },
+    { "-isysroot", SeparateArg::Path },
+    { "--sysroot=", SeparateArg::Path },
+    { "/imsvc", SeparateArg::Path },
+    { "/FI", SeparateArg::Path },
+    { "/external:I", SeparateArg::Path },
+    { "/winsysroot", SeparateArg::Path },
+    { "-D", SeparateArg::Value },
+    { "/D", SeparateArg::Value },
+    { "-U", SeparateArg::Value },
+    { "/U", SeparateArg::Value },
+};
+
+constexpr ArgFlag separate_flags[] = {
+    { "-I", SeparateArg::Path },
+    { "/I", SeparateArg::Path },
+    { "-isystem", SeparateArg::Path },
+    { "-iquote", SeparateArg::Path },
+    { "-include", SeparateArg::Path },
+    { "-isysroot", SeparateArg::Path },
+    { "--sysroot", SeparateArg::Path },
+    { "/imsvc", SeparateArg::Path },
+    { "/FI", SeparateArg::Path },
+    { "/external:I", SeparateArg::Path },
+    { "/winsysroot", SeparateArg::Path },
+    { "-D", SeparateArg::Value },
+    { "/D", SeparateArg::Value },
+    { "-U", SeparateArg::Value },
+    { "/U", SeparateArg::Value },
+};
+
+constexpr std::string_view standalone_flags[] = {
+    "-std=",
+    "/std:",
+    "--target=",
+    "/TP",
+    "/TC",
+    "/clang:",
+};
+
 auto separate_arg(std::string_view word) -> std::optional<SeparateArg>
 {
-    static constexpr std::string_view values[] = {
-        "-D",
-        "/D",
-        "-U",
-        "/U",
-    };
-    static constexpr std::string_view paths[] = {
-        "-I",
-        "/I",
-        "-isystem",
-        "-iquote",
-        "-include",
-        "-isysroot",
-        "--sysroot",
-        "/imsvc",
-        "/FI",
-        "/external:I",
-        "/winsysroot",
-    };
-    if (std::ranges::find(values, word) != std::ranges::end(values)) {
-        return SeparateArg::Value;
-    }
-    if (std::ranges::find(paths, word) != std::ranges::end(paths)) {
-        return SeparateArg::Path;
+    if (auto const* separate = find_separate_flag(separate_flags, word)) {
+        return separate->kind;
     }
     return std::nullopt;
 }
@@ -77,44 +99,20 @@ auto is_dep_relevant_flag(std::string_view flag) -> bool
         return false;
     }
 
-    static constexpr std::string_view prefixes[] = {
-        "-I",
-        "/I",
-        "-D",
-        "/D",
-        "-U",
-        "/U",
-        "-isystem",
-        "-iquote",
-        "-include",
-        "-isysroot",
-        "--sysroot",
-        "-std=",
-        "/std:",
-        "/imsvc",
-        "/FI",
-        "/external:I",
-        "/winsysroot",
-        "--target=",
-        "/TP",
-        "/TC",
-        "/clang:",
-    };
-    return std::ranges::any_of(prefixes, [flag](auto p) { return flag.starts_with(p); });
+    return find_joined_flag(joined_flags, flag) != nullptr
+        || find_separate_flag(separate_flags, flag) != nullptr
+        || leads_any(standalone_flags, flag);
 }
 
 // Root detection is the host's: a cross-build's target-absolute path is treated as relative here.
 auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
 {
-    for (auto const* prefix :
-         { "-I", "/I", "-isystem", "-iquote", "-include", "-isysroot", "--sysroot=", "/imsvc", "/FI", "/external:I", "/winsysroot" }) {
-        if (flag.starts_with(prefix)) {
-            auto path = flag.substr(std::strlen(prefix));
-            if (!path.empty()) {
-                out += std::string_view { prefix };
-                out += global_pool().get(pup::path::normalize(path));
-                return;
-            }
+    if (auto const* joined = find_joined_flag(joined_flags, flag); joined && joined->kind == SeparateArg::Path) {
+        auto path = flag.substr(joined->spelling.size());
+        if (!path.empty()) {
+            out += joined->spelling;
+            out += global_pool().get(pup::path::normalize(path));
+            return;
         }
     }
     out += flag;
@@ -255,6 +253,15 @@ auto ClangClScanner::dep_spec() const -> DepSpec
 {
     return DepSpec {
         .output_mode = DepOutputMode::Stdout,
+    };
+}
+
+auto clang_cl_flag_tables() -> FlagTables
+{
+    return FlagTables {
+        .joined = joined_flags,
+        .separate = separate_flags,
+        .standalone = standalone_flags,
     };
 }
 
