@@ -14,6 +14,36 @@
 
 namespace pup::path {
 
+namespace {
+
+// The prefix `..` cannot escape and normalization reproduces verbatim: 1 for "/", 3 for "C:/".
+auto root_length(std::string_view p) -> std::size_t
+{
+    if (p.empty()) {
+        return 0;
+    }
+    if (p[0] == '/') {
+        return 1;
+    }
+#ifdef _WIN32
+    if (p.size() >= 3 && p[1] == ':' && (p[2] == '/' || p[2] == '\\')) {
+        auto c = p[0];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            return 3;
+        }
+    }
+#endif
+    return 0;
+}
+
+auto append_root(Buf& out, std::string_view p, std::size_t root_len) -> void
+{
+    out.append(p.substr(0, root_len - 1));
+    out += '/';
+}
+
+} // namespace
+
 auto join(std::string_view a, std::string_view b) -> StringId
 {
     if (b.empty()) {
@@ -38,17 +68,25 @@ auto parent(std::string_view p) -> std::string_view
         return {};
     }
 
+    auto const root_len = root_length(p);
+    if (is_root(p)) {
+        return p;
+    }
+
     auto end = p.size();
-    while (end > 1 && p[end - 1] == '/') {
+    while (end > root_len && end > 1 && p[end - 1] == '/') {
         --end;
+    }
+    if (end <= root_len) {
+        return p.substr(0, root_len);
     }
 
     auto pos = p.rfind('/', end - 1);
     if (pos == std::string_view::npos) {
         return {};
     }
-    if (pos == 0) {
-        return p.substr(0, 1);
+    if (pos < root_len) {
+        return p.substr(0, root_len);
     }
     return p.substr(0, pos);
 }
@@ -93,26 +131,21 @@ auto extension(std::string_view p) -> std::string_view
 
 auto is_absolute(std::string_view p) -> bool
 {
-    if (p.empty()) {
-        return false;
-    }
-    if (p[0] == '/') {
-        return true;
-    }
-#ifdef _WIN32
-    if (p.size() >= 3 && p[1] == ':' && (p[2] == '/' || p[2] == '\\')) {
-        auto c = p[0];
-        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
-    }
-#endif
-    return false;
+    return root_length(p) != 0;
+}
+
+auto is_root(std::string_view p) -> bool
+{
+    auto const len = root_length(p);
+    return len != 0 && p.size() == len;
 }
 
 auto normalize(std::string_view p) -> StringId
 {
     auto parts = Vec<std::string_view> {};
-    auto start = std::size_t { 0 };
-    auto absolute = is_absolute(p);
+    auto const root_len = root_length(p);
+    auto start = root_len;
+    auto absolute = root_len != 0;
 
     while (start < p.size()) {
         auto end = p.find('/', start);
@@ -135,12 +168,17 @@ auto normalize(std::string_view p) -> StringId
     auto& pool = global_pool();
 
     if (parts.empty()) {
-        return pool.intern(absolute ? "/" : ".");
+        if (!absolute) {
+            return pool.intern(".");
+        }
+        auto root = Buf {};
+        append_root(root, p, root_len);
+        return root.intern(pool);
     }
 
     auto buf = Buf {};
     if (absolute) {
-        buf += '/';
+        append_root(buf, p, root_len);
     }
     for (std::size_t i = 0; i < parts.size(); ++i) {
         if (i > 0) {
