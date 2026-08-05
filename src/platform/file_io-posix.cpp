@@ -533,11 +533,9 @@ auto canonical(std::string_view path) -> Result<StringId>
         auto cp2 = CPath { existing_sv };
         auto rn = sys::realpath(cp2.c_str(), resolved);
         if (rn > 0) {
+            // Normalizing after the join, not before: only here can a leading `..` cancel, and the prefix realpath returned is symlink-free.
             auto r_sv = std::string_view { resolved, static_cast<std::size_t>(rn) };
-            if (!pup::is_empty(tail_id)) {
-                return pup::path::join(r_sv, pool.get(pup::path::normalize(pool.get(tail_id))));
-            }
-            return pool.intern(r_sv);
+            return pup::path::normalize(pool.get(pup::path::join(r_sv, pool.get(tail_id))));
         }
         auto par = pup::path::parent(existing_sv);
         auto name = pup::path::filename(existing_sv);

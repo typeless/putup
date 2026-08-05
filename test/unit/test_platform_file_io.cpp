@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -518,3 +519,116 @@ SCENARIO("walk_directory visits every level in name order", "[platform][file_io]
         }
     }
 }
+
+namespace {
+
+constexpr auto absent_a = std::string_view { "pup_no_such_a" };
+constexpr auto absent_b = std::string_view { "pup_no_such_b" };
+
+auto is_settled(std::string_view p) -> bool
+{
+    auto start = std::size_t { 0 };
+    while (start <= p.size()) {
+        auto end = p.find('/', start);
+        if (end == std::string_view::npos) {
+            end = p.size();
+        }
+        auto part = p.substr(start, end - start);
+        if (part == "." || part == "..") {
+            return false;
+        }
+        start = end + 1;
+    }
+    return true;
+}
+
+// Every path of up to four components over two names that do not exist and the two
+// that mean something: the absent ones are what force the resolve-what-exists fallback.
+auto unresolvable_suffixes() -> std::vector<std::string>
+{
+    auto const comps = std::array<std::string_view, 4> { absent_a, absent_b, "..", "." };
+    auto out = std::vector<std::string> {};
+    for (auto a : comps) {
+        out.emplace_back(a);
+        for (auto b : comps) {
+            out.push_back(std::string { a } + "/" + std::string { b });
+            for (auto c : comps) {
+                out.push_back(std::string { a } + "/" + std::string { b } + "/" + std::string { c });
+                for (auto d : comps) {
+                    out.push_back(std::string { a } + "/" + std::string { b } + "/" + std::string { c } + "/" + std::string { d });
+                }
+            }
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+SCENARIO("canonical settles a path that does not exist", "[platform][file_io][canonical]")
+{
+    GIVEN("paths built from names that are absent from the current directory")
+    {
+        auto cwd = pup::platform::current_directory();
+        REQUIRE(cwd.has_value());
+        auto const base = std::string { pup::global_pool().get(*cwd) };
+        auto const base_prefix = base + "/";
+        auto const absent_prefix = base_prefix + std::string { absent_a };
+        auto const detour_prefix = absent_prefix + "/../";
+        REQUIRE_FALSE(pup::platform::exists(absent_prefix));
+        REQUIRE_FALSE(pup::platform::exists(base_prefix + std::string { absent_b }));
+
+        WHEN("each is canonicalized")
+        {
+            THEN("the result is absolute and keeps no . or .. component")
+            {
+                for (auto const& suffix : unresolvable_suffixes()) {
+                    auto const input = base_prefix + suffix;
+                    auto const r = pup::platform::canonical(input);
+                    REQUIRE(r.has_value());
+                    auto const out = std::string { pup::global_pool().get(*r) };
+                    INFO("in: " << input << "\nout: " << out);
+                    REQUIRE(pup::path::is_absolute(out));
+                    REQUIRE(is_settled(out));
+                }
+            }
+
+            THEN("a detour that cancels itself names the same path as never taking it")
+            {
+                for (auto const& suffix : unresolvable_suffixes()) {
+                    auto const detour = pup::platform::canonical(detour_prefix + suffix);
+                    auto const direct = pup::platform::canonical(base_prefix + suffix);
+                    REQUIRE(detour.has_value());
+                    REQUIRE(direct.has_value());
+                    INFO("suffix: " << suffix << "\ndetour: " << pup::global_pool().get(*detour) << "\ndirect: " << pup::global_pool().get(*direct));
+                    REQUIRE(pup::global_pool().get(*detour) == pup::global_pool().get(*direct));
+                }
+            }
+        }
+    }
+}
+
+#ifndef _WIN32
+SCENARIO("canonical resolves a symlinked prefix before cancelling what follows it", "[platform][file_io][canonical]")
+{
+    GIVEN("a symlink to a directory two levels down")
+    {
+        auto dir = TempDir { "canonical_symlink" };
+        dir.write("deep/inner/keep.txt", "x");
+        std::filesystem::create_symlink("deep/inner", dir.path() / "deeplink");
+        auto const root = std::filesystem::canonical(dir.path()).string();
+
+        WHEN("a path through the symlink climbs out with more .. than it has names")
+        {
+            auto const r = pup::platform::canonical(root + "/deeplink/nope/../../../z");
+
+            THEN("the .. cancel against the resolved target, not against the link's own name")
+            {
+                REQUIRE(r.has_value());
+                INFO("out: " << pup::global_pool().get(*r));
+                REQUIRE(pup::global_pool().get(*r) == root + "/z");
+            }
+        }
+    }
+}
+#endif
