@@ -15,6 +15,8 @@ namespace pup::graph::scanners {
 auto is_compiler_wrapper(std::string_view name) -> bool;
 
 /// True if the word would be expanded by the shell rather than taken literally.
+/// Such a word is dropped from the scan rather than carried: the scan's own shell would
+/// evaluate the substitution a second time, on results the compile never saw.
 [[nodiscard]]
 auto has_shell_special(std::string_view flag) -> bool;
 
