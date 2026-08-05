@@ -1856,23 +1856,7 @@ auto detect_new_commands(
     auto const& g = state.graph;
     auto result = NewCommands {};
 
-    auto old_by_output = pup::Vec<std::pair<StringId, pup::index::CommandEntry const*>> {};
-    auto old_by_key = pup::Vec<std::pair<pup::Hash256, pup::index::CommandEntry const*>> {};
-    for (auto const& cmd : idx.commands()) {
-        auto produced_any = false;
-        for (auto const* edge : idx.edges_from(cmd.id)) {
-            auto const* file = idx.find_file_by_id(edge->to);
-            if (file && file->type == pup::NodeType::Generated && !pup::is_empty(file->path)) {
-                old_by_output.emplace_back(file->path, &cmd);
-                produced_any = true;
-            }
-        }
-        if (!produced_any) {
-            old_by_key.emplace_back(cmd.key, &cmd);
-        }
-    }
-    std::sort(old_by_output.begin(), old_by_output.end(), [](auto const& a, auto const& b) { return pup::handle_less(a.first, b.first); });
-    std::sort(old_by_key.begin(), old_by_key.end(), [](auto const& a, auto const& b) { return pup::hash_less(a.first, b.first); });
+    auto const old_lookup = index_command_lookup(idx);
 
     for (auto id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(id)) {
@@ -1882,33 +1866,9 @@ auto detect_new_commands(
             continue;
         }
 
-        auto output_paths = pup::Vec<StringId> {};
-        for (auto output_id : pup::graph::get_outputs(g, id)) {
-            auto output_path_sv = pup::graph::get_full_path(g, output_id, state.path_cache);
-            if (!output_path_sv.empty()) {
-                output_paths.push_back(pup::global_pool().intern(output_path_sv));
-            }
-        }
-
-        pup::index::CommandEntry const* previous = nullptr;
-        for (auto path_id : output_paths) {
-            auto const* it = std::lower_bound(
-                old_by_output.begin(), old_by_output.end(), path_id, [](auto const& p, StringId k) { return pup::handle_less(p.first, k); }
-            );
-            if (it != old_by_output.end() && it->first == path_id) {
-                previous = it->second;
-                break;
-            }
-        }
-        if (!previous && output_paths.empty()) {
-            auto key = pup::graph::compute_command_key(g, id, state.path_cache);
-            auto const* it = std::lower_bound(
-                old_by_key.begin(), old_by_key.end(), key, [](auto const& p, auto const& k) { return pup::hash_less(p.first, k); }
-            );
-            if (it != old_by_key.end() && pup::hash_equal(it->first, key)) {
-                previous = it->second;
-            }
-        }
+        auto const address = graph_command_address(state, id);
+        auto const joined = find_joined(old_lookup, address);
+        auto const* previous = joined ? idx.find_command_by_id(*joined) : nullptr;
 
         // A record that is not evidence outranks the signature: the command must run again even
         // when nothing about it changed, and its outputs must be treated as changed so consumers
@@ -1922,10 +1882,10 @@ auto detect_new_commands(
             continue;
         }
 
-        for (auto path_id : output_paths) {
+        for (auto path_id : address.outputs) {
             result.changed_outputs.push_back(path_id);
         }
-        if (output_paths.empty()) {
+        if (address.outputs.empty()) {
             result.forced_cmds.push_back(id);
         }
         if (verbose) {
