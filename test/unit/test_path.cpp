@@ -6,6 +6,11 @@
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 
+#include <array>
+#include <cstddef>
+#include <string>
+#include <string_view>
+
 using namespace pup::path;
 
 namespace {
@@ -161,6 +166,20 @@ TEST_CASE("path::is_absolute", "[path]")
     REQUIRE_FALSE(is_absolute("../foo"));
 }
 
+TEST_CASE("path::is_root", "[path]")
+{
+    REQUIRE(is_root("/"));
+    REQUIRE_FALSE(is_root("/a"));
+    REQUIRE_FALSE(is_root(""));
+    REQUIRE_FALSE(is_root("src"));
+#ifdef _WIN32
+    REQUIRE(is_root("C:/"));
+    REQUIRE(is_root("C:\\"));
+    REQUIRE_FALSE(is_root("C:/a"));
+    REQUIRE_FALSE(is_root("C:"));
+#endif
+}
+
 TEST_CASE("path::normalize", "[path]")
 {
     SECTION("dot segments")
@@ -245,4 +264,167 @@ TEST_CASE("path::relative", "[path]")
     {
         REQUIRE(sv(relative("", "")) == ".");
     }
+}
+
+#ifdef _WIN32
+
+TEST_CASE("path::normalize keeps the drive root", "[path][windows]")
+{
+    SECTION("drive-absolute path is unchanged")
+    {
+        REQUIRE(sv(normalize("C:/a/b")) == "C:/a/b");
+    }
+
+    SECTION("dotdot resolves under the drive")
+    {
+        REQUIRE(sv(normalize("C:/a/../b")) == "C:/b");
+    }
+
+    SECTION("dotdot cannot escape the drive")
+    {
+        REQUIRE(sv(normalize("C:/..")) == "C:/");
+        REQUIRE(sv(normalize("C:/a/../..")) == "C:/");
+    }
+
+    SECTION("drive root normalizes to itself")
+    {
+        REQUIRE(sv(normalize("C:/")) == "C:/");
+    }
+
+    SECTION("trailing slash dropped below the root")
+    {
+        REQUIRE(sv(normalize("C:/a/")) == "C:/a");
+    }
+
+    SECTION("dot segments and double slashes")
+    {
+        REQUIRE(sv(normalize("C:/./a//b")) == "C:/a/b");
+    }
+
+    SECTION("drive letter case preserved")
+    {
+        REQUIRE(sv(normalize("c:/a")) == "c:/a");
+    }
+
+    SECTION("backslash root emits as forward slash")
+    {
+        REQUIRE(sv(normalize("C:\\a")) == "C:/a");
+    }
+}
+
+TEST_CASE("path::is_absolute on drive-absolute paths", "[path][windows]")
+{
+    REQUIRE(is_absolute("C:/a"));
+    REQUIRE(is_absolute("C:\\a"));
+    REQUIRE_FALSE(is_absolute("C:"));
+    REQUIRE_FALSE(is_absolute("C:a"));
+}
+
+TEST_CASE("path::parent on drive-absolute paths", "[path][windows]")
+{
+    REQUIRE(parent("C:/a/b") == "C:/a");
+    REQUIRE(parent("C:/a") == "C:/");
+    REQUIRE(parent("C:/") == "C:/");
+}
+
+TEST_CASE("path::filename on drive-absolute paths", "[path][windows]")
+{
+    REQUIRE(filename("C:/a") == "a");
+    REQUIRE(filename("C:/") == "");
+}
+
+TEST_CASE("path::join on drive-absolute paths", "[path][windows]")
+{
+    REQUIRE(sv(join("C:/a", "b")) == "C:/a/b");
+    REQUIRE(sv(join("x", "C:/b")) == "C:/b");
+}
+
+TEST_CASE("path::relative on drive-absolute paths", "[path][windows]")
+{
+    REQUIRE(sv(relative("C:/a/b", "C:/a")) == "b");
+    REQUIRE(sv(relative("C:/a", "C:/a")) == ".");
+}
+
+#endif
+
+namespace {
+
+auto check_normalize_laws(std::string const& p, std::string_view root) -> void
+{
+    auto const once = std::string { sv(normalize(p)) };
+    auto const twice = std::string { sv(normalize(once)) };
+    INFO("input: " << p << "\nnormalize: " << once << "\nagain: " << twice);
+
+    REQUIRE(once == twice);
+
+    auto const absolute = is_absolute(p);
+    if (absolute) {
+        REQUIRE(is_absolute(once));
+        REQUIRE(std::string_view { once }.starts_with(root));
+    }
+
+    if (once == ".") {
+        return;
+    }
+
+    auto body = std::string_view { once };
+    if (absolute) {
+        body.remove_prefix(root.size());
+    }
+    auto seen_name = false;
+    auto start = std::size_t { 0 };
+    while (start < body.size()) {
+        auto end = body.find('/', start);
+        if (end == std::string_view::npos) {
+            end = body.size();
+        }
+        auto part = body.substr(start, end - start);
+        if (!part.empty()) {
+            REQUIRE(part != ".");
+            if (part == "..") {
+                REQUIRE_FALSE(absolute);
+                REQUIRE_FALSE(seen_name);
+            } else {
+                seen_name = true;
+            }
+        }
+        start = end + 1;
+    }
+}
+
+auto check_laws_under_root(std::string_view root) -> void
+{
+    auto const alphabet = std::array<std::string_view, 5> { "a", "b", ".", "..", "" };
+    for (auto x : alphabet) {
+        check_normalize_laws(std::string { root } + std::string { x }, root);
+        for (auto y : alphabet) {
+            auto const two = std::string { root } + std::string { x } + "/" + std::string { y };
+            check_normalize_laws(two, root);
+            for (auto z : alphabet) {
+                check_normalize_laws(two + "/" + std::string { z }, root);
+            }
+        }
+    }
+}
+
+} // namespace
+
+TEST_CASE("path::normalize obeys its laws", "[path]")
+{
+    SECTION("relative paths")
+    {
+        check_laws_under_root("");
+    }
+
+    SECTION("rooted paths")
+    {
+        check_laws_under_root("/");
+    }
+
+#ifdef _WIN32
+    SECTION("drive-rooted paths")
+    {
+        check_laws_under_root("C:/");
+    }
+#endif
 }

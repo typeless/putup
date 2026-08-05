@@ -45,6 +45,11 @@ auto extension(std::string_view p) -> std::string_view;
 [[nodiscard]]
 auto is_absolute(std::string_view p) -> bool;
 
+/// Check if a path is exactly its own root ("/" or, on Windows, "C:/").
+/// Upward walks stop here: parent() of a root is the root itself.
+[[nodiscard]]
+auto is_root(std::string_view p) -> bool;
+
 /// Lexically normalize a path by resolving '.' and '..' segments.
 /// Does not touch the filesystem.
 [[nodiscard]]

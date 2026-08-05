@@ -446,7 +446,7 @@ auto get_or_create_dir(
         return it->second;
     }
 
-    if (path_str == "/") {
+    if (pup::path::is_root(path_str)) {
         auto dir_id = ctx.next_id++;
         auto entry = pup::index::FileEntry {
             .id = dir_id,
@@ -454,8 +454,8 @@ auto get_or_create_dir(
             .src_id = 0,
             .type = pup::NodeType::Directory,
             .flags = pup::NodeFlags::None,
-            .name = pool.intern("/"),
-            .path = pool.intern("/"),
+            .name = pool.intern(path_str),
+            .path = pool.intern(path_str),
             .size = 0,
             .mtime_ns = 0,
             .content_hash = {},

@@ -131,7 +131,7 @@ auto make_source_relative(
 {
     auto& pool = global_pool();
 
-    if (path_sv.empty() || path_sv[0] == '/') {
+    if (path_sv.empty() || path::is_absolute(path_sv)) {
         return pool.intern(path_sv);
     }
     if (path_sv.size() >= 2 && path_sv[0] == '.' && path_sv[1] == '.') {
