@@ -3,9 +3,15 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
+#include "pup/core/string_id.hpp"
+#include "pup/core/string_pool.hpp"
+#include "pup/index/entry.hpp"
 #include "pup/index/format.hpp"
+#include "pup/index/reader.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -15,6 +21,7 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -1322,6 +1329,45 @@ SCENARIO("Partial failure with -k saves successful outputs", "[e2e][keep-going]"
                     REQUIRE(result2.stdout_output.find("good.c") == std::string::npos);
                     REQUIRE(result2.stdout_output.find("bad.c") != std::string::npos);
                 }
+            }
+        }
+    }
+}
+
+SCENARIO("A build records one entry per path", "[e2e][index]")
+{
+    GIVEN("a project whose discovered headers live outside the source tree")
+    {
+        auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+        auto f = E2EFixture { "implicit_deps" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("the recorded index is read back")
+        {
+            auto const index = pup::index::read_index((f.workdir() / ".pup" / "index").string());
+            REQUIRE(index.has_value());
+
+            auto paths = std::vector<std::string_view> {};
+            for (auto const& file : index->files()) {
+                if (!pup::is_empty(file.path)) {
+                    paths.push_back(pup::global_pool().get(file.path));
+                }
+            }
+            std::sort(paths.begin(), paths.end());
+
+            THEN("an absolute chain was walked, so the root case ran")
+            {
+                REQUIRE(std::ranges::any_of(paths, [](auto p) { return p.starts_with("/"); }));
+            }
+
+            // The directory walk creates an entry and registers it for the next lookup; register
+            // anything but what it created and the next chain re-creates it (#325).
+            THEN("no two entries answer to the same path")
+            {
+                auto const dup = std::adjacent_find(paths.begin(), paths.end());
+                INFO("duplicated path: " << (dup == paths.end() ? std::string_view {} : *dup));
+                REQUIRE(dup == paths.end());
             }
         }
     }
