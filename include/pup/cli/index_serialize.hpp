@@ -10,13 +10,29 @@
 #include "pup/graph/dag.hpp"
 #include "pup/index/entry.hpp"
 
+#include <optional>
 #include <string_view>
 #include <utility>
 
 namespace pup::cli {
 
-/// Path string → NodeId mapping built during serialization
-using PathIdMap = Vec<std::pair<StringId, NodeId>>;
+/// Path → NodeId for the index being built, ordered by interning handle.
+///
+/// A type of its own rather than the bare pair vector it used to alias: `pup::index::FilesByPath`
+/// is the same shape over the same data, and one alias apiece said nothing about which was which.
+/// Keyed by handle, so `path` must be interned in the same pool as the index's; the walks that
+/// build it also query it, so it stays sorted on every insert rather than once at the end.
+struct PathIdMap {
+    Vec<std::pair<StringId, NodeId>> entries = {};
+
+    /// The id recorded at `path`, or nullopt. By value: the two recursive walks insert while a
+    /// previous lookup is still in hand, and a pointer into `entries` would not survive that.
+    [[nodiscard]]
+    auto find(StringId path) const -> std::optional<NodeId>;
+
+    /// Record `id` at `path`, replacing any id already there.
+    auto insert(StringId path, NodeId id) -> void;
+};
 
 /// The state a build may not restate. A file this build neither examined nor produced keeps what
 /// the last build that looked at it recorded: stamping a fresh stat instead asserts a currency

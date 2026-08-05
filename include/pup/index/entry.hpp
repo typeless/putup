@@ -229,9 +229,9 @@ private:
 
 /// An index's file table keyed by path, ordered by interning handle.
 ///
-/// A type of its own rather than the bare pair vector: `pup::cli::PathIdMap` is the same
-/// pair vector ordered by path text, and spelled as one alias nothing would say the two
-/// cannot be exchanged.
+/// A type of its own rather than the bare pair vector: `pup::cli::PathIdMap` keys the index
+/// being built the same way, in the same order, and while the two were spelled as aliases of
+/// a pair vector nothing said which one a function wanted.
 struct FilesByPath {
     Vec<std::pair<StringId, FileEntry const*>> entries = {};
 
