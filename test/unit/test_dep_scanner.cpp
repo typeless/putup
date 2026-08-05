@@ -4,6 +4,7 @@
 #include "catch_amalgamated.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
 #include "pup/core/string_pool.hpp"
@@ -942,3 +943,131 @@ TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner
         REQUIRE(scanner->name() == "clang-cl");
     }
 }
+
+namespace {
+
+auto gcc_compile(pup::NodeId id, std::string_view command) -> CommandInfo
+{
+    return CommandInfo {
+        .node_id = id,
+        .command = intern(command),
+        .display = intern("CC foo.o"),
+        .inputs = { intern("foo.c") },
+        .order_only_inputs = {},
+        .outputs = { path("foo.o") },
+        .working_dir = intern("."),
+    };
+}
+
+auto scan_words(std::optional<pup::StringId> dep_cmd) -> std::vector<std::string>
+{
+    REQUIRE(dep_cmd.has_value());
+    auto words = pup::test::split_for_host(pup::global_pool().get(*dep_cmd));
+    REQUIRE(words.has_value());
+    return *words;
+}
+
+// Four call sites route through path::normalize by convention; this is what checks they still do.
+auto check_scanners_normalize(std::string const& p) -> void
+{
+    auto const want = std::string { pup::global_pool().get(pup::path::normalize(p)) };
+    INFO("path: " << p << "\npath::normalize: " << want);
+
+    auto gcc = scanners::GccScanner {};
+    REQUIRE(
+        scan_words(gcc.build_dep_command(gcc_compile(30, "gcc -I" + p + " -c foo.c -o foo.o")))
+        == std::vector<std::string> { "gcc", "-M", "-I" + want, "foo.c" }
+    );
+    REQUIRE(
+        scan_words(gcc.build_dep_command(gcc_compile(32, "gcc -I " + p + " -c foo.c -o foo.o")))
+        == std::vector<std::string> { "gcc", "-M", "-I", want, "foo.c" }
+    );
+
+    auto clang_cl = scanners::ClangClScanner {};
+    REQUIRE(
+        scan_words(clang_cl.build_dep_command(
+            clang_cl_compile(31, "clang-cl /imsvc " + p + " -c foo.cpp -o foo.obj")
+        ))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "/imsvc", want, "foo.cpp" }
+    );
+    REQUIRE(
+        scan_words(clang_cl.build_dep_command(
+            clang_cl_compile(33, "clang-cl -I" + p + " -c foo.cpp -o foo.obj")
+        ))
+        == std::vector<std::string> { "clang-cl", "/clang:-M", "-I" + want, "foo.cpp" }
+    );
+}
+
+auto check_scanners_normalize_under_root(std::string_view root) -> void
+{
+    auto const alphabet = std::array<std::string_view, 5> { "a", "b", ".", "..", "" };
+    for (auto x : alphabet) {
+        auto const one = std::string { root } + std::string { x };
+        if (!one.empty()) {
+            check_scanners_normalize(one);
+        }
+        for (auto y : alphabet) {
+            auto const two = one + "/" + std::string { y };
+            check_scanners_normalize(two);
+            for (auto z : alphabet) {
+                check_scanners_normalize(two + "/" + std::string { z });
+            }
+        }
+    }
+}
+
+} // namespace
+
+TEST_CASE("GccScanner resolves a root-escaping include path", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(gcc_compile(20, "gcc -I/a/../.. -c foo.c -o foo.o"));
+
+    REQUIRE(dep_cmd.has_value());
+    REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -I/ foo.c");
+}
+
+TEST_CASE("a scanned path flag says what path::normalize says", "[dep_scanner]")
+{
+    SECTION("relative paths")
+    {
+        check_scanners_normalize_under_root("");
+    }
+
+    SECTION("rooted paths")
+    {
+        check_scanners_normalize_under_root("/");
+    }
+
+    SECTION("drive-rooted paths")
+    {
+        check_scanners_normalize_under_root("C:/");
+    }
+}
+
+#ifdef _WIN32
+
+TEST_CASE("ClangClScanner keeps the drive root in a scanned flag", "[dep_scanner][clang_cl][windows]")
+{
+    auto scanner = scanners::ClangClScanner {};
+
+    SECTION("dotdot cannot escape the drive")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(21, "clang-cl /imsvc C:/.. -c foo.cpp -o foo.obj"));
+        REQUIRE(
+            scan_words(dep_cmd)
+            == std::vector<std::string> { "clang-cl", "/clang:-M", "/imsvc", "C:/", "foo.cpp" }
+        );
+    }
+
+    SECTION("the drive root stays rooted")
+    {
+        auto dep_cmd = scanner.build_dep_command(clang_cl_compile(22, "clang-cl /imsvc C:/ -c foo.cpp -o foo.obj"));
+        REQUIRE(
+            scan_words(dep_cmd)
+            == std::vector<std::string> { "clang-cl", "/clang:-M", "/imsvc", "C:/", "foo.cpp" }
+        );
+    }
+}
+
+#endif

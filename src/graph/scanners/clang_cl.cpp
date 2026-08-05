@@ -5,6 +5,7 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
 #include "pup/core/vec.hpp"
@@ -93,6 +94,7 @@ auto is_dep_relevant_flag(std::string_view flag) -> bool
     return std::ranges::any_of(prefixes, [flag](auto p) { return flag.starts_with(p); });
 }
 
+// Root detection is the host's: a cross-build's target-absolute path is treated as relative here.
 auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
 {
     for (auto const* prefix :
@@ -101,7 +103,7 @@ auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
             auto path = flag.substr(std::strlen(prefix));
             if (!path.empty()) {
                 out += std::string_view { prefix };
-                normalize_path_lexically_into(out, path);
+                out += global_pool().get(pup::path::normalize(path));
                 return;
             }
         }
@@ -112,9 +114,7 @@ auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
 auto append_quoted_path(Buf& dep_cmd, std::string_view word) -> void
 {
     dep_cmd += ' ';
-    auto norm = Buf {};
-    normalize_path_lexically_into(norm, word);
-    shell_quote_into(dep_cmd, norm.view());
+    shell_quote_into(dep_cmd, global_pool().get(pup::path::normalize(word)));
 }
 
 } // namespace

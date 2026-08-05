@@ -5,6 +5,7 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
@@ -57,7 +58,7 @@ auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
             auto path = flag.substr(std::strlen(prefix));
             if (!path.empty()) {
                 out += std::string_view { prefix };
-                normalize_path_lexically_into(out, path);
+                out += global_pool().get(pup::path::normalize(path));
                 return;
             }
         }
@@ -182,9 +183,7 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     for (auto i = compiler_idx + 1; i < words.size(); ++i) {
         if (skip_next) {
             dep_cmd += ' ';
-            auto norm = Buf {};
-            normalize_path_lexically_into(norm, words[i]);
-            shell_quote_into(dep_cmd, norm.view());
+            shell_quote_into(dep_cmd, global_pool().get(pup::path::normalize(words[i])));
             skip_next = false;
             continue;
         }
