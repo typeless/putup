@@ -34,9 +34,6 @@ inline constexpr auto host_quote_style =
 /// Append `s` to `out`, quoted if `style`'s shell would otherwise mangle it.
 auto shell_quote_into(Buf& out, std::string_view s, QuoteStyle style = host_quote_style) -> void;
 
-/// Append `path` to `out` with `.`/`..` segments resolved textually.
-auto normalize_path_lexically_into(Buf& out, std::string_view path) -> void;
-
 /// True if the word names a C/C++/ObjC/assembly translation unit.
 [[nodiscard]]
 auto is_source_file(std::string_view word) -> bool;

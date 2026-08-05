@@ -4,7 +4,6 @@
 #include "pup/graph/scanners/dep_words.hpp"
 
 #include "pup/core/buf.hpp"
-#include "pup/core/vec.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -93,44 +92,6 @@ auto shell_quote_into(Buf& out, std::string_view s, QuoteStyle style) -> void
     case QuoteStyle::Windows:
         quote_windows_into(out, s);
         return;
-    }
-}
-
-auto normalize_path_lexically_into(Buf& out, std::string_view path) -> void
-{
-    auto parts = Vec<std::string_view> {};
-    auto start = std::size_t { 0 };
-    auto is_absolute = !path.empty() && path[0] == '/';
-
-    while (start < path.size()) {
-        auto end = path.find('/', start);
-        if (end == std::string_view::npos) {
-            end = path.size();
-        }
-        auto part = path.substr(start, end - start);
-        if (!part.empty() && part != ".") {
-            if (part == ".." && !parts.empty() && parts.back() != "..") {
-                parts.pop_back();
-            } else {
-                parts.push_back(part);
-            }
-        }
-        start = end + 1;
-    }
-
-    if (parts.empty()) {
-        out += is_absolute ? "/" : ".";
-        return;
-    }
-
-    if (is_absolute) {
-        out += '/';
-    }
-    for (std::size_t i = 0; i < parts.size(); ++i) {
-        if (i > 0) {
-            out += '/';
-        }
-        out += parts[i];
     }
 }
 
