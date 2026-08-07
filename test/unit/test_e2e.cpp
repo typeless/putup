@@ -12031,3 +12031,66 @@ SCENARIO("Imported values survive in the cache whatever order the imports are de
         }
     }
 }
+
+SCENARIO("A continuation without a space before it builds and is scanned", "[e2e][incremental]")
+{
+    // Upstream tup rewrites `\`+newline to spaces, so the command runs as `gcc -c foo.c`;
+    // keeping the two bytes made the shell splice them into `-cfoo.c` and hid the compile
+    // from the dep scanner.
+    auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
+
+    GIVEN("a rule whose continuation carries no space before the backslash")
+    {
+        auto f = E2EFixture { "continuation_glued" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+        }
+
+        WHEN("a header the compile includes changes")
+        {
+            REQUIRE(f.build().success());
+            REQUIRE(f.build().is_noop());
+            f.write_file("value.h", "#define VALUE 2\n");
+            auto result = f.build();
+
+            THEN("the compile reruns, so the scan recorded the header")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("compdb reports no argument carrying a newline", "[e2e][show]")
+{
+    GIVEN("a rule spread over three lines by continuations")
+    {
+        auto f = E2EFixture { "continuation_spaced" };
+        REQUIRE(f.init().success());
+
+        WHEN("show compdb is run")
+        {
+            auto result = f.pup({ "show", "compdb" });
+
+            THEN("no argument is or contains a newline")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("\"-I.\", \"foo.c\"") != std::string::npos);
+                REQUIRE(result.stdout_output.find("\\n") == std::string::npos);
+            }
+        }
+    }
+}

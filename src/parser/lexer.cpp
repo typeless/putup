@@ -14,9 +14,34 @@
 namespace pup::parser {
 
 Lexer::Lexer(std::string_view source, std::string_view filename)
-    : source_(source)
-    , filename_id_(global_pool().intern(filename))
+    : filename_id_(global_pool().intern(filename))
 {
+    owned_source_.reserve(source.size());
+
+    for (auto i = std::size_t { 0 }; i < source.size(); ++i) {
+        auto const rest = source.substr(i);
+        auto const continuation = rest.starts_with("\\\r\n") ? std::size_t { 3 }
+            : rest.starts_with("\\\n")                       ? std::size_t { 2 }
+            : rest == "\\\r"                                 ? std::size_t { 2 }
+            : rest == "\\"                                   ? std::size_t { 1 }
+                                                             : std::size_t { 0 };
+        if (continuation == 0) {
+            owned_source_.push_back(source[i]);
+            continue;
+        }
+
+        // Each byte becomes a space, as in tup (parser.c:589-596); the newline's own offset is
+        // kept so diagnostics below a continuation still name their physical line, as tup's do.
+        for (auto n = std::size_t { 0 }; n < continuation; ++n) {
+            owned_source_.push_back(' ');
+        }
+        if (rest[continuation - 1] == '\n') {
+            folded_newlines_.push_back(static_cast<std::uint32_t>(i + continuation - 1));
+        }
+        i += continuation - 1;
+    }
+
+    source_ = std::string_view { owned_source_.data(), owned_source_.size() };
 }
 
 auto Lexer::filename() const -> std::string_view
@@ -70,11 +95,6 @@ auto Lexer::skip_whitespace() -> void
         auto const c = peek_char();
         if (c == ' ' || c == '\t') {
             advance();
-        } else if (c == '\\' && peek_char(1) == '\n') {
-            // Line continuation
-            advance(); // backslash
-            advance(); // newline
-            advance_line();
         } else {
             break;
         }
@@ -112,11 +132,21 @@ auto Lexer::advance() -> char
     if (at_end()) {
         return '\0';
     }
+    auto const idx = pos_;
     auto const c = source_[pos_++];
     if (c == '\n') {
         advance_line();
     } else {
         ++column_;
+    }
+
+    // A folded newline ends a physical line without ending the logical one, so the line
+    // advances and the context does not.
+    if (next_folded_newline_ < folded_newlines_.size() && folded_newlines_[next_folded_newline_] == idx) {
+        ++line_;
+        column_ = 1;
+        line_start_pos_ = pos_;
+        ++next_folded_newline_;
     }
     return c;
 }
@@ -125,6 +155,7 @@ auto Lexer::advance_line() -> void
 {
     ++line_;
     column_ = 1;
+    line_start_pos_ = pos_;
     context_ = Context::LineStart;
 }
 
@@ -319,15 +350,6 @@ auto Lexer::scan_identifier_or_keyword() -> Token
     if (is_path_char(peek_char())) {
         // Continue scanning as text
         while (!at_end() && is_text_char(peek_char())) {
-            auto const c = peek_char();
-            // Handle line continuation
-            if (c == '\\' && peek_char(1) == '\n') {
-                advance();
-                advance();
-                advance_line();
-                skip_whitespace();
-                continue;
-            }
             advance();
         }
         return make_token(TokenType::Text, start);
@@ -375,15 +397,6 @@ auto Lexer::scan_text() -> Token
             break;
         }
 
-        // Handle line continuation
-        if (c == '\\' && peek_char(1) == '\n') {
-            advance();
-            advance();
-            advance_line();
-            skip_whitespace();
-            continue;
-        }
-
         advance();
     }
 
@@ -394,7 +407,7 @@ auto Lexer::scan_command_text() -> Token
 {
     auto const start = pos_;
 
-    // Scan until |> or end of line, handling line continuations
+    // Scan until |> or end of line
     while (!at_end()) {
         auto const c = peek_char();
 
@@ -405,14 +418,6 @@ auto Lexer::scan_command_text() -> Token
         // Check for |>
         if (c == '|' && peek_char(1) == '>') {
             break;
-        }
-
-        // Handle line continuation
-        if (c == '\\' && peek_char(1) == '\n') {
-            advance();
-            advance();
-            advance_line();
-            continue;
         }
 
         advance();
@@ -437,7 +442,9 @@ auto Lexer::make_token(TokenType type, std::size_t start) const -> Token
         .location = SourceLocation {
             .filename = global_pool().get(filename_id_),
             .line = line_,
-            .column = column_ - static_cast<std::uint32_t>(pos_ - start),
+            // A token may start on an earlier line than it ends on, and then it starts where
+            // this line does.
+            .column = static_cast<std::uint32_t>(start > line_start_pos_ ? start - line_start_pos_ + 1 : 1),
             .offset = static_cast<std::uint32_t>(start),
         },
     };

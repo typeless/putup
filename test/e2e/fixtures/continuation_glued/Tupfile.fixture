@@ -1,0 +1,3 @@
+# tup replaces a `\`-continuation with spaces, so this compiles even without a space before it.
+: foo.c |> gcc -c\
+%f -o %o |> %B.o

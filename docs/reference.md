@@ -789,6 +789,21 @@ When enabled, putup auto-generates dependency scanning rules for C/C++ compile c
 
 ## 5. Tupfile Syntax
 
+**Line Continuations:**
+
+A line ending in a backslash continues on the next line. Each byte of the continuation becomes a
+space — two for `\`+newline, three for `\`+CRLF — exactly as in tup, so a continued line means the
+same as the one-line spelling with those spaces in it:
+
+```tup
+: foo.c |> gcc -c \
+    -Iinclude \
+    %f -o %o |> %B.o
+```
+
+The continuation separates words rather than joining them, so `gcc -c\` followed by `%f` runs
+`gcc -c foo.c`, not `gcc -cfoo.c`. No command, variable value or path ever contains a newline.
+
 ### 5.1 Rules
 
 Rules define how to transform inputs into outputs.

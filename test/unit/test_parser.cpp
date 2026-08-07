@@ -6,7 +6,12 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/parser.hpp"
 
+#include <string>
+#include <variant>
+#include <vector>
+
 using namespace pup::parser;
+using pup::Vec;
 using pup::StringId;
 using pup::global_pool;
 
@@ -512,5 +517,117 @@ TEST_CASE("Parser error recovery", "[parser][error]")
         // This may or may not be an error depending on implementation
         // Just verify it parses without crashing
         (void)result;
+    }
+}
+
+namespace {
+
+auto render(Expression const& expr) -> std::string
+{
+    auto out = std::string {};
+    for (auto const& part : expr.parts) {
+        if (auto const* literal = std::get_if<Expression::Literal>(&part)) {
+            out += global_pool().get(literal->value);
+        } else {
+            out += "$(";
+            out += global_pool().get(std::get<Expression::Variable>(part).ref.name);
+            out += ")";
+        }
+    }
+    return out;
+}
+
+auto render(Vec<PathPattern> const& patterns) -> std::string
+{
+    auto out = std::string {};
+    for (auto const& pattern : patterns) {
+        out += render(pattern.path);
+        out += " ";
+    }
+    return out;
+}
+
+auto render(Tupfile const& tupfile) -> std::string
+{
+    auto out = std::string {};
+    for (auto const& statement : tupfile.statements) {
+        if (auto const* assign = statement->as<Assignment>()) {
+            out += render(assign->name) + "=" + render(assign->value) + ";";
+        } else if (auto const* rule = statement->as<Rule>()) {
+            out += render(rule->inputs) + "|>" + render(rule->command) + "|>" + render(rule->outputs) + ";";
+        }
+    }
+    return out;
+}
+
+auto replace_at(std::string_view text, std::size_t pos, std::size_t len, std::string_view with) -> std::string
+{
+    return std::string { text.substr(0, pos) } + std::string { with } + std::string { text.substr(pos + len) };
+}
+
+} // namespace
+
+TEST_CASE("Parser renders a continuation as spaces", "[parser][continuation]")
+{
+    SECTION("rule command is single-line")
+    {
+        auto continued = parse_tupfile(": foo.c |> gcc -c \\\nfoo.c |> foo.o", "test.tup");
+        auto spaced = parse_tupfile(": foo.c |> gcc -c   foo.c |> foo.o", "test.tup");
+
+        REQUIRE(continued.success());
+        REQUIRE(render(continued.tupfile).find('\n') == std::string::npos);
+        REQUIRE(render(continued.tupfile) == render(spaced.tupfile));
+    }
+
+    SECTION("CRLF continuation parses")
+    {
+        auto continued = parse_tupfile(": foo.c |> gcc -c \\\r\nfoo.c |> foo.o\r\n", "test.tup");
+        auto spaced = parse_tupfile(": foo.c |> gcc -c    foo.c |> foo.o\r\n", "test.tup");
+
+        REQUIRE(continued.success());
+        REQUIRE(render(continued.tupfile) == render(spaced.tupfile));
+    }
+
+    SECTION("variable value carries no newline")
+    {
+        auto continued = parse_tupfile("FLAGS = -DA\\\n-DB\n", "test.tup");
+        auto spaced = parse_tupfile("FLAGS = -DA  -DB\n", "test.tup");
+
+        REQUIRE(continued.success());
+        REQUIRE(render(continued.tupfile).find('\n') == std::string::npos);
+        REQUIRE(render(continued.tupfile) == render(spaced.tupfile));
+    }
+}
+
+TEST_CASE("Parser continuation equals its spelling in spaces at every position", "[parser][continuation]")
+{
+    auto const bases = std::vector<std::string> {
+        "FLAGS = -DA  -DB  -DC\n",
+        ": foo.c  bar.c |> gcc  -c  %f  -o  %o |> %B.o\n",
+        "FLAGS = -DA\n: foo.c |> gcc  $(FLAGS)  %f  -o  %o |> %B.o\n",
+        ": foo.c |> gcc -c %f -o %o |> obj/  %B.o\n",
+    };
+
+    for (auto const& base : bases) {
+        auto const base_result = parse_tupfile(base, "test.tup");
+        INFO("base: " << base);
+        REQUIRE(base_result.success());
+
+        auto const expected = render(base_result.tupfile);
+        REQUIRE_FALSE(expected.empty());
+
+        for (auto pos = base.find("  "); pos != std::string::npos; pos = base.find("  ", pos + 1)) {
+            INFO("position: " << pos);
+
+            auto const lf = replace_at(base, pos, 2, "\\\n");
+            auto const lf_result = parse_tupfile(lf, "test.tup");
+            REQUIRE(lf_result.success());
+            REQUIRE(render(lf_result.tupfile) == expected);
+
+            auto const crlf = replace_at(base, pos, 2, "\\\r\n");
+            auto const crlf_result = parse_tupfile(crlf, "test.tup");
+            REQUIRE(crlf_result.success());
+            REQUIRE(render(crlf_result.tupfile) == render(parse_tupfile(replace_at(base, pos, 2, "   "), "test.tup").tupfile));
+        }
     }
 }
