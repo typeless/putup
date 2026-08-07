@@ -113,7 +113,7 @@ auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind)
 
 auto is_blank_word(std::string_view word) -> bool
 {
-    // Quoting can still spell an empty or space-only word; the lexer rules out newline ones (#343).
+    // Emission net: quoting or an imported env value can spell a blank or newline word regardless of the lexer (#343, #347).
     return word.find_first_not_of(" \t\n\r") == std::string_view::npos;
 }
 

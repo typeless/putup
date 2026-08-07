@@ -52,6 +52,12 @@ TEST_CASE("tokenize_shell_command basic", "[string_utils]")
         REQUIRE(sv(result[0]) =="foo");
         REQUIRE(sv(result[1]) =="bar");
     }
+
+    SECTION("only whitespace")
+    {
+        auto const result = tokenize_shell_command("   ");
+        REQUIRE(result.empty());
+    }
 }
 
 TEST_CASE("tokenize_shell_command double quotes", "[string_utils]")

@@ -48,7 +48,7 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
             } else if (c == '"') {
                 in_double_quote = true;
             } else if (c == ' ' || c == '\t') {
-                // Narrower than is_space by design: this break class feeds command identity (#343).
+                // sh's blank class, deliberately: \r\v\f stay in words so the scan carries the compile's words; unquoted \n is sh's command separator, not a word break — #347.
                 if (!current.empty()) {
                     args.push_back(current.intern(pool));
                     current.clear();
