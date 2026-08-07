@@ -83,7 +83,8 @@ bfd_names += elf64 elf64-x86-64 elfxx-x86 cpu-i386
 bfd_names += elf64-gen elf32-gen elf32 elf32-i386
 bfd_names += binary ihex srec tekhex verilog
 
-: | <gen-headers> |> ^ CC-BFD (38 files)^ for f in $(bfd_names); do \
+# no dep scan: for-loop batch compile, the compiler is not the command's first word — see #358
+: | <gen-headers> |> ^ CC-BFD (47 files)^ for f in $(bfd_names); do \
   $(CC) $(CFLAGS) $(BFD_INCLUDES) -c $(BFD)/$$f.c -o $(OUT)/bfd-$$f.o || exit 1; \
   done |> \
   bfd-archive.o bfd-archures.o bfd-bfd.o bfd-bfdio.o bfd-cache.o \
@@ -107,6 +108,7 @@ SFRAME_INCLUDES = -I$(B)/$(BINUTILS_DIR) -I$(SFRAME) -I$(BU)/libctf -I$(BU)/incl
 
 sframe_names = sframe sframe-error
 
+# no dep scan: for-loop batch compile, the compiler is not the command's first word — see #358
 : | <gen-headers> |> ^ CC-SFRAME (2 files)^ for f in $(sframe_names); do \
   $(CC) $(CFLAGS) $(SFRAME_INCLUDES) -c $(SFRAME)/$$f.c -o $(OUT)/sframe-$$f.o || exit 1; \
   done |> \
@@ -118,6 +120,7 @@ sframe_names = sframe sframe-error
 
 opc_names = dis-init disassemble dis-buf i386-dis
 
+# no dep scan: for-loop batch compile, the compiler is not the command's first word — see #358
 : | <gen-headers> |> ^ CC-OPC (4 files)^ for f in $(opc_names); do \
   $(CC) $(CFLAGS) $(BFD_INCLUDES) -I$(OPC) -c $(OPC)/$$f.c -o $(OUT)/opc-$$f.o || exit 1; \
   done |> \
@@ -137,6 +140,7 @@ gas_names += ginsn scfi scfidw2gen gen-sframe sframe-opt codeview
 
 gas_target_names = tc-i386 obj-elf atof-ieee
 
+# no dep scan: for-loop batch compile, the compiler is not the command's first word — see #358
 : | <gen-headers> |> ^ CC-GAS (39 files)^ \
   for f in $(gas_names); do \
     $(CC) $(CFLAGS) $(GAS_INCLUDES) $(BFD_INCLUDES) -c $(GAS)/$$f.c -o $(OUT)/gas-$$f.o || exit 1; \
@@ -164,6 +168,7 @@ gas_target_names = tc-i386 obj-elf atof-ieee
 
 ar_names = ar arsup not-ranlib bucomm rename binemul emul_vanilla version filemode arparse arlex
 
+# no dep scan: for-loop batch compile, the compiler is not the command's first word — see #358
 : | <gen-headers> |> ^ CC-BU (11 files)^ for f in $(ar_names); do \
   $(CC) $(CFLAGS) $(BINUTILS_INCLUDES) $(BFD_INCLUDES) \
   -Dbin_dummy_emulation=bin_vanilla_emulation \

@@ -7,6 +7,7 @@
 #include "pup/cli/index_serialize.hpp"
 #include "pup/cli/multi_variant.hpp"
 #include "pup/cli/options.hpp"
+#include "pup/cli/strict_checks.hpp"
 #include "pup/core/clock.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
@@ -2172,6 +2173,17 @@ auto build_single_variant(
     auto& bs = ctx.graph();
     // No early exit on an empty graph: having nothing to run is not having nothing to clean up (#231).
     auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
+
+    // One line, not one per rule: a warning that fires on every rule of a green build teaches
+    // everyone to scroll past warnings. The per-rule findings live in `parse`.
+    if (auto unscanned = check_unscanned_compiles(bs.graph, bs.path_cache); !unscanned.empty()) {
+        vprint(
+            variant_name,
+            "{} rule{} an object file with no dependency scan; run 'putup parse' for the list.\n",
+            unscanned.size(),
+            unscanned.size() == 1 ? " produces" : "s produce"
+        );
+    }
 
     auto target_ids_result = validate_output_targets(
         opts.output_targets,

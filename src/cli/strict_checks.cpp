@@ -2,11 +2,13 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/cli/strict_checks.hpp"
+#include "pup/cli/context.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
+#include "pup/graph/dep_scanner.hpp"
 #include "pup/parser/ast.hpp"
 #include "pup/platform/file_io.hpp"
 
@@ -124,6 +126,72 @@ auto check_assignment(
                 "Using '=' overrides the parent project's toolchain choice.",
                 name_sv);
         result.push_back(make_diag(file, stmt.location.line, Diagnostic::Warning, buf.view()));
+    }
+
+    return result;
+}
+
+auto check_unscanned_compiles(
+    graph::Graph const& graph,
+    graph::PathCache& cache
+) -> Vec<Diagnostic>
+{
+    auto result = Vec<Diagnostic> {};
+    auto registry = make_scanner_registry();
+    if (!registry || registry->empty()) {
+        return result;
+    }
+
+    auto& pool = global_pool();
+
+    for (auto id : graph::nodes_of_type(graph, NodeType::Command)) {
+        if (graph::get_parent_command(graph, id) != INVALID_NODE_ID) {
+            continue;
+        }
+
+        auto object = std::string_view {};
+        for (auto out_id : graph::get_outputs(graph, id)) {
+            auto sv = pool.get(graph::get_full_path(graph, out_id));
+            if (auto ext = pup::path::extension(sv); ext == ".o" || ext == ".obj") {
+                object = sv;
+                break;
+            }
+        }
+        if (object.empty()) {
+            continue;
+        }
+
+        auto text = graph::expand_instruction(graph, id, cache);
+        auto source_dir = graph::get<graph::SourceDir>(graph, id);
+
+        // The build reads a depfile from beside the object whether or not a scan exists,
+        // so a compile that writes its own is covered without one.
+        if (registry->reports_own_deps(pool.get(text))) {
+            continue;
+        }
+
+        // The production predicate itself, not a re-derivation of it: whatever the build
+        // would generate here is what decides whether this rule's headers get recorded.
+        auto cmd_info = graph::CommandInfo {};
+        cmd_info.node_id = id;
+        cmd_info.command = text;
+        cmd_info.working_dir = source_dir;
+        if (!registry->match_and_generate(cmd_info).empty()) {
+            continue;
+        }
+
+        auto dir = pool.get(source_dir);
+        auto buf = Buf {};
+        buf.fmt("no dependency scan for '{}': putup recognizes no compile it can reproduce in "
+                "this command, so any header this rule reads goes unrecorded. Harmless if it "
+                "preprocesses none — an assembler, a copy, a partial link.",
+                object);
+        result.push_back(make_diag(
+            pool.get(pup::path::join(dir.empty() ? "." : dir, "Tupfile")),
+            0,
+            Diagnostic::Warning,
+            buf.view()
+        ));
     }
 
     return result;

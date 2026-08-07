@@ -16,6 +16,7 @@ namespace pup::graph {
 
 /// Information about a matched command for rule generation
 struct CommandInfo {
+    // check_unscanned_compiles calls match_and_generate with only command/node_id/working_dir populated; a scanner consuming other fields must extend that check.
     NodeId node_id = INVALID_NODE_ID;
     StringId command = StringId::Empty;
     StringId display = StringId::Empty;

@@ -10356,6 +10356,67 @@ SCENARIO("Check level controls convention enforcement", "[e2e][strict]")
     }
 }
 
+SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][strict][depscan]")
+{
+    // The scan is declined correctly — putup cannot reproduce the prefix's shell state — but
+    // declining in silence leaves a rule whose headers are never recorded (#352).
+    GIVEN("a project with a scanned compile, an unscanned compile, and a self-depfiling compile")
+    {
+        auto f = E2EFixture { "unscanned_compile" };
+        REQUIRE(f.init().success());
+
+        WHEN("parse reports at the default check level")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("the unscanned rule is named and the other two are not")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
+                REQUIRE(result.stderr_output.find("hidden.o") != std::string::npos);
+                REQUIRE(result.stderr_output.find("plain.o") == std::string::npos);
+                REQUIRE(result.stderr_output.find("owndep.o") == std::string::npos);
+            }
+        }
+
+        WHEN("parse --check=none is run")
+        {
+            auto result = f.pup({ "parse", "--check=none" });
+
+            THEN("nothing is reported")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("no dependency scan") == std::string::npos);
+            }
+        }
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the build summarizes the count once without naming rules")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("1 rule produces an object file with no dependency scan") != std::string::npos);
+                REQUIRE(result.stdout_output.find("hidden.o") == std::string::npos);
+            }
+
+            THEN("the command it names is one putup accepts")
+            {
+                auto listed = f.pup({ "parse" });
+                INFO("stderr: " << listed.stderr_output);
+                REQUIRE(result.stdout_output.find("run 'putup parse' for the list") != std::string::npos);
+                REQUIRE(listed.success());
+                REQUIRE(listed.stderr_output.find("hidden.o") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Strict checker exempts the config-tree root in 3-tree builds", "[e2e][strict][out-of-tree-config]")
 {
     GIVEN("a 3-tree project whose config-tree root anchors with '='")
