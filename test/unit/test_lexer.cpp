@@ -265,6 +265,40 @@ TEST_CASE("Lexer renders a continuation as spaces", "[lexer][continuation]")
     }
 }
 
+TEST_CASE("Lexer normalizes a CRLF line ending", "[lexer][crlf]")
+{
+    SECTION("the carriage return is not a token")
+    {
+        auto lexer = Lexer{"X = y\r\n"};
+        REQUIRE(lexer.next().text == "X");
+        REQUIRE(lexer.next().is(TokenType::Equals));
+        REQUIRE(lexer.next().text == "y");
+        REQUIRE(lexer.next().is(TokenType::Newline));
+    }
+
+    SECTION("the next line keeps its offsets")
+    {
+        auto lexer = Lexer{"X = 1\r\nb"};
+        REQUIRE(lexer.next().text == "X");
+        REQUIRE(lexer.next().is(TokenType::Equals));
+        REQUIRE(lexer.next().text == "1");
+        REQUIRE(lexer.next().is(TokenType::Newline));
+
+        auto tok = lexer.next();
+        REQUIRE(tok.text == "b");
+        REQUIRE(tok.location.line == 2);
+        REQUIRE(tok.location.column == 1);
+    }
+
+    SECTION("a carriage return that ends no line is left alone")
+    {
+        auto lexer = Lexer{"a\rb"};
+        REQUIRE(lexer.next().text == "a");
+        REQUIRE(lexer.next().is(TokenType::Invalid));
+        REQUIRE(lexer.next().text == "b");
+    }
+}
+
 TEST_CASE("Lexer source location", "[lexer]")
 {
     auto lexer = Lexer{"foo\nbar baz", "test.tup"};

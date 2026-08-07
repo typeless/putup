@@ -1,0 +1,2 @@
+include extra.tup
+: foo.c |> echo [$(Y)] > %o |> %B.o

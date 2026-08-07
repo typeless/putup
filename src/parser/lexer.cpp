@@ -18,6 +18,19 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
 {
     owned_source_.reserve(source.size());
 
+    // A space, not tup's trim: the rewrite must stay length-preserving (token offsets, folded_newlines_); a trailing space is inert in every context — pinned by the trailing-whitespace property test.
+    // Run class is [ \t\r], narrower than tup's isspace trim: a trailing \v/\f blocks the walk-back — #353.
+    auto space_carriage_returns_ending_the_line = [this] {
+        for (auto n = owned_source_.size(); n > 0; --n) {
+            auto& c = owned_source_[n - 1];
+            if (c == '\r') {
+                c = ' ';
+            } else if (c != ' ' && c != '\t') {
+                break;
+            }
+        }
+    };
+
     for (auto i = std::size_t { 0 }; i < source.size(); ++i) {
         auto const rest = source.substr(i);
         auto const continuation = rest.starts_with("\\\r\n") ? std::size_t { 3 }
@@ -26,6 +39,9 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
             : rest == "\\"                                   ? std::size_t { 1 }
                                                              : std::size_t { 0 };
         if (continuation == 0) {
+            if (source[i] == '\n') {
+                space_carriage_returns_ending_the_line();
+            }
             owned_source_.push_back(source[i]);
             continue;
         }
@@ -40,6 +56,7 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
         }
         i += continuation - 1;
     }
+    space_carriage_returns_ending_the_line();
 
     source_ = std::string_view { owned_source_.data(), owned_source_.size() };
 }
