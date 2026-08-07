@@ -48,6 +48,7 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
             } else if (c == '"') {
                 in_double_quote = true;
             } else if (c == ' ' || c == '\t') {
+                // Narrower than is_space by design: this break class feeds command identity (#343).
                 if (!current.empty()) {
                     args.push_back(current.intern(pool));
                     current.clear();

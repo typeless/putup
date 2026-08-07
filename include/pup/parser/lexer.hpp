@@ -6,6 +6,7 @@
 #include "token.hpp"
 
 #include "pup/core/string_id.hpp"
+#include "pup/core/vec.hpp"
 
 #include <optional>
 #include <string_view>
@@ -19,6 +20,10 @@ namespace pup::parser {
 /// - After ':': expects inputs, '|', '|>'
 /// - After '|>': expects command text (minimal tokenization)
 /// - After second '|>': expects outputs, groups
+///
+/// The constructor rewrites every `\`-newline continuation to spaces (tup's
+/// parser.c:589-596), so no token text can span lines and no consumer of a
+/// token — or of a command built from one — has to allow for an embedded newline.
 class Lexer final {
 public:
     /// Lexing context affects how text is tokenized
@@ -31,6 +36,10 @@ public:
     };
 
     explicit Lexer(std::string_view source, std::string_view filename = "<input>");
+
+    // Tokens view the normalized source this owns, so a copy would hand out views into the original.
+    Lexer(Lexer const&) = delete;
+    auto operator=(Lexer const&) -> Lexer& = delete;
 
     /// Get next token (advances position)
     [[nodiscard]]
@@ -90,9 +99,13 @@ public:
     auto filename() const -> std::string_view;
 
 private:
+    Vec<char> owned_source_;
+    Vec<std::uint32_t> folded_newlines_;
+    std::size_t next_folded_newline_ = 0;
     std::string_view source_;
     StringId filename_id_ = StringId::Empty;
     std::size_t pos_ = 0;
+    std::size_t line_start_pos_ = 0;
     std::uint32_t line_ = 1;
     std::uint32_t column_ = 1;
     Context context_ = Context::LineStart;

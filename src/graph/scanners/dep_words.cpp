@@ -113,8 +113,7 @@ auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind)
 
 auto is_blank_word(std::string_view word) -> bool
 {
-    // A `\`-continuation in a Tupfile leaves its newline in the command text, where the tokenizer
-    // sees a word rather than a separator.
+    // Quoting can still spell an empty or space-only word; the lexer rules out newline ones (#343).
     return word.find_first_not_of(" \t\n\r") == std::string_view::npos;
 }
 

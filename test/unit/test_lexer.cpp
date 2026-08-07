@@ -201,6 +201,70 @@ TEST_CASE("Lexer line continuation", "[lexer]")
     REQUIRE(tok2.text == "bar");
 }
 
+TEST_CASE("Lexer renders a continuation as spaces", "[lexer][continuation]")
+{
+    SECTION("command text keeps no newline")
+    {
+        auto lexer = Lexer{"a \\\nb"};
+        lexer.set_context(Lexer::Context::Command);
+        auto tok = lexer.next();
+        REQUIRE(tok.is(TokenType::Text));
+        REQUIRE(tok.text == "a   b");
+    }
+
+    SECTION("CRLF continuation renders as three spaces")
+    {
+        auto lexer = Lexer{"a \\\r\nb"};
+        lexer.set_context(Lexer::Context::Command);
+        auto tok = lexer.next();
+        REQUIRE(tok.is(TokenType::Text));
+        REQUIRE(tok.text == "a    b");
+    }
+
+    SECTION("a later line keeps its physical line number")
+    {
+        auto lexer = Lexer{"a \\\nb\nc"};
+        REQUIRE(lexer.next().text == "a");
+        REQUIRE(lexer.next().text == "b");
+        REQUIRE(lexer.next().is(TokenType::Newline));
+
+        auto tok = lexer.next();
+        REQUIRE(tok.text == "c");
+        REQUIRE(tok.location.line == 3);
+    }
+
+    SECTION("a token spanning a continuation reports a column on its own line")
+    {
+        auto lexer = Lexer{"a \\\nbcd"};
+        lexer.set_context(Lexer::Context::Command);
+        auto tok = lexer.next();
+        REQUIRE(tok.location.line == 2);
+        REQUIRE(tok.location.column == 1);
+    }
+
+    SECTION("a backslash ending the file is a continuation too")
+    {
+        auto lexer = Lexer{"a\\"};
+        REQUIRE(lexer.next().text == "a");
+        REQUIRE(lexer.next().is(TokenType::Eof));
+    }
+
+    SECTION("a backslash and carriage return ending the file are a continuation too")
+    {
+        auto lexer = Lexer{"a\\\r"};
+        REQUIRE(lexer.next().text == "a");
+        REQUIRE(lexer.next().is(TokenType::Eof));
+    }
+
+    SECTION("quoted string crossing a continuation")
+    {
+        auto lexer = Lexer{"\"A \\\nB\""};
+        auto tok = lexer.next();
+        REQUIRE(tok.is(TokenType::String));
+        REQUIRE(tok.text == "\"A   B\"");
+    }
+}
+
 TEST_CASE("Lexer source location", "[lexer]")
 {
     auto lexer = Lexer{"foo\nbar baz", "test.tup"};
