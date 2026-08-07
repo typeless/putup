@@ -7,7 +7,6 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/core/string_utils.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/platform/process.hpp"
 
@@ -112,55 +111,6 @@ auto CommandRunner::merge_options(RunOptions const& options) const -> RunOptions
     }
 
     return merged;
-}
-
-auto parse_command(std::string_view command) -> Vec<StringId>
-{
-    auto& pool = pup::global_pool();
-    auto result = Vec<StringId> {};
-    auto current = Buf {};
-    auto in_single_quote = false;
-    auto in_double_quote = false;
-    auto escape_next = false;
-
-    for (auto c : command) {
-        if (escape_next) {
-            current += c;
-            escape_next = false;
-            continue;
-        }
-
-        if (c == '\\' && !in_single_quote) {
-            escape_next = true;
-            continue;
-        }
-
-        if (c == '\'' && !in_double_quote) {
-            in_single_quote = !in_single_quote;
-            continue;
-        }
-
-        if (c == '"' && !in_single_quote) {
-            in_double_quote = !in_double_quote;
-            continue;
-        }
-
-        if (pup::core::is_space(c) && !in_single_quote && !in_double_quote) {
-            if (!current.empty()) {
-                result.push_back(current.intern(pool));
-                current.clear();
-            }
-            continue;
-        }
-
-        current += c;
-    }
-
-    if (!current.empty()) {
-        result.push_back(current.intern(pool));
-    }
-
-    return result;
 }
 
 auto shell_quote(std::string_view str) -> StringId

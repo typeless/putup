@@ -88,10 +88,6 @@ private:
     auto merge_options(RunOptions const& options) const -> RunOptions;
 };
 
-/// Parse a command string into shell arguments
-[[nodiscard]]
-auto parse_command(std::string_view command) -> Vec<StringId>;
-
 /// Quote a string for shell use
 [[nodiscard]]
 auto shell_quote(std::string_view str) -> StringId;

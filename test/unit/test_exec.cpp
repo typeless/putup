@@ -135,54 +135,6 @@ TEST_CASE("CommandRunner with callback", "[exec]")
 
 #endif // !_WIN32
 
-TEST_CASE("parse_command", "[exec]")
-{
-    SECTION("simple words")
-    {
-        auto args = parse_command("echo hello world");
-        REQUIRE(args.size() == 3);
-        REQUIRE(sv(args[0]) =="echo");
-        REQUIRE(sv(args[1]) =="hello");
-        REQUIRE(sv(args[2]) =="world");
-    }
-
-    SECTION("single quotes")
-    {
-        auto args = parse_command("echo 'hello world'");
-        REQUIRE(args.size() == 2);
-        REQUIRE(sv(args[0]) =="echo");
-        REQUIRE(sv(args[1]) =="hello world");
-    }
-
-    SECTION("double quotes")
-    {
-        auto args = parse_command("echo \"hello world\"");
-        REQUIRE(args.size() == 2);
-        REQUIRE(sv(args[0]) =="echo");
-        REQUIRE(sv(args[1]) =="hello world");
-    }
-
-    SECTION("escaped spaces")
-    {
-        auto args = parse_command("echo hello\\ world");
-        REQUIRE(args.size() == 2);
-        REQUIRE(sv(args[0]) =="echo");
-        REQUIRE(sv(args[1]) =="hello world");
-    }
-
-    SECTION("empty input")
-    {
-        auto args = parse_command("");
-        REQUIRE(args.empty());
-    }
-
-    SECTION("only whitespace")
-    {
-        auto args = parse_command("   ");
-        REQUIRE(args.empty());
-    }
-}
-
 TEST_CASE("shell_quote", "[exec]")
 {
     SECTION("simple string needs no quoting")
