@@ -1,0 +1,1 @@
+#define OWNDEP_VALUE 1

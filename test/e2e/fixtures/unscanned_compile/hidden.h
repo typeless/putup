@@ -1,0 +1,1 @@
+#define HIDDEN_VALUE 1

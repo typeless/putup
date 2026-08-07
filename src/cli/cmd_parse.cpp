@@ -125,6 +125,11 @@ auto parse_single_variant(Options const& opts, std::string_view variant_name) ->
             diagnostics.push_back(std::move(d));
         }
 
+        auto scan_diags = check_unscanned_compiles(ctx.graph().graph, ctx.graph().path_cache);
+        for (auto& d : scan_diags) {
+            diagnostics.push_back(std::move(d));
+        }
+
         auto has_errors = false;
         for (auto const& d : diagnostics) {
             auto severity_str = d.severity == Diagnostic::Error ? "error" : "warning";

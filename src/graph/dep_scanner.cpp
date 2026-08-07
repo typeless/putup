@@ -40,6 +40,16 @@ auto DepScannerRegistry::find_match(CommandInfo const& cmd) const -> DepScanner 
     return nullptr;
 }
 
+auto DepScannerRegistry::reports_own_deps(std::string_view cmd) const -> bool
+{
+    for (auto const& scanner : scanners_) {
+        if (scanner->has_dep_flags(cmd)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
     -> Vec<GeneratedRule>
 {

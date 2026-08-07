@@ -82,6 +82,11 @@ public:
     auto match_and_generate(CommandInfo const& cmd) const
         -> Vec<GeneratedRule>;
 
+    /// Whether any scanner recognizes the command as writing its own depfile, which the
+    /// build reads back from beside the object whether or not a scan was generated.
+    [[nodiscard]]
+    auto reports_own_deps(std::string_view cmd) const -> bool;
+
     [[nodiscard]]
     auto empty() const -> bool
     {

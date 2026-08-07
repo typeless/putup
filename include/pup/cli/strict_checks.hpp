@@ -5,6 +5,7 @@
 
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
+#include "pup/graph/dag.hpp"
 #include "pup/parser/ast.hpp"
 
 #include <cstddef>
@@ -33,6 +34,15 @@ auto check_assignment(
 [[nodiscard]]
 auto check_component_dirs(
     Vec<std::string_view> const& component_dirs
+) -> Vec<Diagnostic>;
+
+/// Report rules that produce object files no dependency scan covers.
+/// Declining to scan is often correct — putup cannot reproduce an arbitrary command's shell
+/// state — but declining in silence leaves the rule's headers unrecorded (#352).
+[[nodiscard]]
+auto check_unscanned_compiles(
+    graph::Graph const& graph,
+    graph::PathCache& cache
 ) -> Vec<Diagnostic>;
 
 } // namespace pup::cli
