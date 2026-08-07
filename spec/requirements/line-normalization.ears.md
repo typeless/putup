@@ -1,18 +1,26 @@
-# Line continuation — requirements
+# Line normalization — requirements
 
-- area: line-continuation
+- area: line-normalization
 - required-legs: none
 
-A Tupfile line may be continued with a trailing backslash. The subject here is what that
-continuation becomes: the bytes it leaves in the text putup stores, runs and re-splits into
-words. See `README.md` for the format and the rules that apply to every area.
+The subject here is what the `Lexer` constructor rewrites before anything tokenizes: a line
+continued with a trailing backslash, and the carriage return of a CRLF line ending. Both are
+arms of one pass, and the subject is the bytes they leave in the text putup stores, runs and
+re-splits into words. See `README.md` for the format and the rules that apply to every area.
 
-This area requires no legs. The continuation is resolved during the lex — a function of the
-Tupfile text — and carries no state across builds.
+This area requires no legs. Normalization is a function of the Tupfile text and carries no
+state across builds.
 
-The rewrite happens once, in the `Lexer` constructor, so the invariant is structural: no token
-text can contain a continuation, and no consumer of a token, a variable value, or a command
-built from either has to allow for an embedded newline.
+The rewrite happens once, in the `Lexer` constructor, so the invariants are structural: no
+token text can contain a continuation or a line-ending carriage return, and no consumer of a
+token, a variable value, or a command built from either has to allow for one. Every arm is
+length-preserving — each rewritten byte becomes a space rather than disappearing — so token
+offsets and the physical-line bookkeeping keep their meaning. (The requirement ids are
+`REQ-CONT-*` for historical reasons; they predate the area's rename and are stable citations.)
+
+The trailing run putup walks is narrower than the one tup trims: tup uses `isspace`, so a
+vertical tab or form feed before the line ending stops putup's walk and leaves the carriage
+returns behind it in place — issue #353.
 
 ---
 
@@ -64,6 +72,19 @@ on, counting each joined line.
 
 putup shall parse a Tupfile containing a continuation to the same rules, variable values and
 paths as the same text with that continuation written out as spaces.
+
+### REQ-EOL-CR
+
+- conformance: tup-conformant
+- reference: tup `src/tup/parser.c:605-610` trims each line's trailing whitespace run, `\r` included
+- discharge: test "Lexer normalizes a CRLF line ending"
+- discharge: test "Parser ignores whitespace at the end of a line"
+- discharge: test "Scenario: A CRLF Tupfile builds what its LF twin builds"
+- discharge: test "Scenario: A CRLF Tupfile names its outputs without the carriage return"
+- discharge: test "Scenario: A CRLF include line resolves"
+
+putup shall replace with a space every carriage return in a line's trailing run of blanks and
+carriage returns, so no token text, variable value or output path carries it.
 
 ## Group: single-line text
 

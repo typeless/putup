@@ -1,0 +1,4 @@
+X = y
+ifeq ($(X),y)
+: foo.c |> echo yes > %o |> %B.o
+endif

@@ -1,0 +1,1 @@
+: foo.c |> echo x > %o |> %B.o

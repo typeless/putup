@@ -12094,3 +12094,78 @@ SCENARIO("compdb reports no argument carrying a newline", "[e2e][show]")
         }
     }
 }
+
+SCENARIO("A CRLF Tupfile builds what its LF twin builds", "[e2e][build]")
+{
+    GIVEN("a project whose assignment line ends in CRLF")
+    {
+        auto f = E2EFixture { "crlf_conditional" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the conditional's rule runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.exists("foo.o"));
+            }
+        }
+    }
+}
+
+SCENARIO("A CRLF Tupfile names its outputs without the carriage return", "[e2e][build]")
+{
+    GIVEN("a rule whose output line ends in CRLF")
+    {
+        auto f = E2EFixture { "crlf_output_name" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the output is named as written")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("foo.o"));
+            }
+
+            THEN("no file carries a carriage return in its name")
+            {
+                REQUIRE(result.success());
+                for (auto const& entry : std::filesystem::recursive_directory_iterator { f.workdir() }) {
+                    auto const name = entry.path().filename().string();
+                    INFO("entry: " << entry.path().string());
+                    REQUIRE(name.find('\r') == std::string::npos);
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A CRLF include line resolves", "[e2e][build]")
+{
+    GIVEN("a Tupfile whose include line ends in CRLF")
+    {
+        auto f = E2EFixture { "crlf_include" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the included file is found and its value used")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("foo.o") == "[1]\n");
+            }
+        }
+    }
+}

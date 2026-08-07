@@ -6,6 +6,7 @@
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/parser.hpp"
 
+#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
@@ -547,17 +548,38 @@ auto render(Vec<PathPattern> const& patterns) -> std::string
     return out;
 }
 
-auto render(Tupfile const& tupfile) -> std::string
+auto render(Vec<std::unique_ptr<Statement>> const& statements) -> std::string;
+
+auto render(Statement const& statement) -> std::string
+{
+    if (auto const* assign = statement.as<Assignment>()) {
+        return render(assign->name) + "=" + render(assign->value) + ";";
+    }
+    if (auto const* rule = statement.as<Rule>()) {
+        return render(rule->inputs) + "|>" + render(rule->command) + "|>" + render(rule->outputs) + ";";
+    }
+    if (auto const* cond = statement.as<Conditional>()) {
+        return "if(" + render(cond->lhs) + "," + render(cond->rhs) + "){" + render(cond->then_body) + "}else{"
+            + render(cond->else_body) + "};";
+    }
+    if (auto const* include = statement.as<Include>()) {
+        return "include(" + render(include->path) + ");";
+    }
+    return "?;";
+}
+
+auto render(Vec<std::unique_ptr<Statement>> const& statements) -> std::string
 {
     auto out = std::string {};
-    for (auto const& statement : tupfile.statements) {
-        if (auto const* assign = statement->as<Assignment>()) {
-            out += render(assign->name) + "=" + render(assign->value) + ";";
-        } else if (auto const* rule = statement->as<Rule>()) {
-            out += render(rule->inputs) + "|>" + render(rule->command) + "|>" + render(rule->outputs) + ";";
-        }
+    for (auto const& statement : statements) {
+        out += render(*statement);
     }
     return out;
+}
+
+auto render(Tupfile const& tupfile) -> std::string
+{
+    return render(tupfile.statements);
 }
 
 auto replace_at(std::string_view text, std::size_t pos, std::size_t len, std::string_view with) -> std::string
@@ -630,4 +652,45 @@ TEST_CASE("Parser continuation equals its spelling in spaces at every position",
             REQUIRE(render(crlf_result.tupfile) == render(parse_tupfile(replace_at(base, pos, 2, "   "), "test.tup").tupfile));
         }
     }
+}
+
+TEST_CASE("Parser ignores whitespace at the end of a line", "[parser][continuation]")
+{
+    // The #349 rewrite spells a line-ending carriage return as a space, so every context has to read a trailing whitespace run as nothing at all.
+    auto const bases = std::vector<std::string> {
+        "X = $(Y)\n",
+        "Y = v\nX = $(Y)\n: foo.c |> echo $(X) > %o |> out/%B.o\n",
+        "X = y\nifeq ($(X),y)\n: foo.c |> echo yes > %o |> %B.o\nelse\n: foo.c |> echo no > %o |> %B.o\nendif\n",
+        ": foo.c bar.c |> gcc -c %f -o %o |> obj/%B.o\n",
+        ": foo.c |> gcc -c \\\n    -Iinc \\\n    %f -o %o |> %B.o\n",
+        "!cc = |> gcc -c %f -o %o |>\n: foo.c |> !cc |> %B.o\n",
+        "include extra.tup\n",
+    };
+    auto const runs = std::vector<std::string> { " ", "\t", "  ", " \t ", "\t\t  ", "\r", " \r", "\t\r", "\r\r " };
+
+    auto cases = 0;
+    for (auto const& base : bases) {
+        auto const expected = parse_tupfile(base, "test.tup");
+        INFO("base: " << base);
+        REQUIRE(expected.success());
+        REQUIRE_FALSE(render(expected.tupfile).empty());
+
+        for (auto const& run : runs) {
+            // A backslash's adjacency to the newline is what makes it a continuation, in tup too, so that position is outside this law rather than an exception to it.
+            auto padded = std::string {};
+            for (auto const c : base) {
+                if (c == '\n' && !padded.empty() && padded.back() != '\\') {
+                    padded += run;
+                }
+                padded += c;
+            }
+            INFO("run: [" << run << "]");
+
+            auto const actual = parse_tupfile(padded, "test.tup");
+            REQUIRE(actual.success());
+            REQUIRE(render(actual.tupfile) == render(expected.tupfile));
+            ++cases;
+        }
+    }
+    REQUIRE(cases == static_cast<int>(bases.size() * runs.size()));
 }
