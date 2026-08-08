@@ -5,6 +5,7 @@
 #include "pup/cli/context.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
@@ -143,9 +144,18 @@ auto check_unscanned_compiles(
     }
 
     auto& pool = global_pool();
+    auto commands = graph::nodes_of_type(graph, NodeType::Command);
 
-    for (auto id : graph::nodes_of_type(graph, NodeType::Command)) {
-        if (graph::get_parent_command(graph, id) != INVALID_NODE_ID) {
+    // A scan node is proof its parent is covered; absence proves nothing, since `parse` installs no registry.
+    auto scanned = NodeIdMap32 {};
+    for (auto id : commands) {
+        if (auto parent = graph::get_parent_command(graph, id); parent != INVALID_NODE_ID) {
+            scanned.set(parent, 1);
+        }
+    }
+
+    for (auto id : commands) {
+        if (graph::get_parent_command(graph, id) != INVALID_NODE_ID || scanned.contains(id)) {
             continue;
         }
 
