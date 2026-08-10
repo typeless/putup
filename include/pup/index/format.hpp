@@ -73,6 +73,16 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 /// Bump when a stale reader would misparse the bytes — any layout change — or wrong-join a key
 /// whose meaning changed; a change that only changes keys no-joins, and one re-run per affected
 /// command repairs it (#333, #335, #343).
+///
+/// Which fields that criterion is about. Recorded `instruction_pattern` and `display` are
+/// display-only: a command's identity is its `key`/`signature`, computed from the graph and stored
+/// separately, and the readers of the recorded text are `cmd_show.cpp`'s index dump (which also
+/// matches it against the user's filter) and `cmd_build.cpp`'s removed-command label — nothing
+/// feeds it into an identity, a join, or change detection, and a carried-forward record copies it
+/// without reading it. `env` is not in that set: it is an execution input, so its write fails
+/// loudly on overflow where the display fields degrade with a marker (#360, #365). Falsifier: any
+/// reader that joins, hashes, or compares recorded instruction or display text against another
+/// record's, or any writer that populates `env`, revisits this disposition at that change.
 inline constexpr auto INDEX_VERSION = std::uint32_t { 22 };
 
 /// The oldest version whose `RawHeader` and `RawFileEntry` bytes mean what today's mean, so a

@@ -751,15 +751,9 @@ Ghost nodes are placeholder nodes for files that don't exist yet during parsing.
 
 **Why edges are preserved**: Unlike Tup (which deletes edges and re-parses dependent Tupfiles after upgrade), pup parses all Tupfiles fresh each build. The dependency edges created when the ghost was first referenced are already correct—they just point to a placeholder that becomes real.
 
-**Validation**: Before build execution, the scheduler validates that no Ghost nodes remain with dependents. An unrealized ghost indicates a missing input file:
+**Validation**: before build execution, `reject_unresolved_ghosts` (`src/cli/cmd_build.cpp`) fails the build for a ghost that something consumes and that nothing put on disk. A ghost nothing consumes is harmless and is left alone; a consumed one backed by a file on disk is a foreign input, not an error.
 
-```cpp
-// scheduler.cpp
-if (node->type == NodeType::Ghost && !graph.get_outputs(id).empty())
-    return error("Missing input file (unresolved ghost): " + path);
-```
-
-**Index serialization**: Ghost nodes are transient—they're either upgraded to Generated during parsing or caught as errors. They're never written to the index.
+**Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Two kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125).
 
 ### GraphBuilder
 
@@ -1026,6 +1020,35 @@ Design principles:
 - Bounds checking on all offset/count fields
 - 32-bit IDs sufficient for ~4B nodes (AOSP has <10M)
 - 32-bit offsets sufficient for 4GB index files
+
+### What a record claims
+
+The binary layout says how the bytes are arranged (the diagram above predates v22). These are the
+rules about what they mean, and they are what decides how a field is written when it cannot be
+written faithfully.
+
+**Display-only fields may degrade (marked) but never fail the record; semantics-bearing fields may
+fail loudly but never degrade silently.** A command's `instruction_pattern` and `display` are read
+only to show a human a command, so an oversized one is truncated with a marker rather than failing
+the write that carries every other command's state (#360). Operand counts are read by change
+detection, and `env` is reserved for execution, so an oversized one aborts the write instead of
+recording a prefix that a later build would compare against and find unchanged (#365).
+`include/pup/index/format.hpp` names which fields are on which side, next to the version-bump
+criterion that depends on it.
+
+**Ownership and currency are separate claims with separate retraction rules.** One record says both
+*which outputs this project produced* and *whether they are up to date*. Currency is retracted on
+evidence — a command is marked as needing to run because something it depends on changed. Ownership
+is retracted only when there is nothing left to own, and a build that cannot attribute a path is
+not entitled to re-answer the question: attribution requires having parsed the directory whose rule
+produces the file, so a scoped build reads ownership from the previous record instead of from what
+is on disk (#369). Absence is a currency fact, not an ownership fact — a missing output is still
+owned, and dropping it from the record's output set would make the file reappearing look like a
+source (#241, #369). Ownership is retracted by deleting what is owned: `remove_stale_outputs`
+deletes an output no live command produces, and only from a directory this build parsed. The same
+rule at the command level governs a reset: `distclean` may discard the record only when nothing it
+owns survives on disk (#373), which `spec/requirements/reset.ears.md` states as a checkable
+requirement — including why `tup.config` is removed regardless.
 
 ### IndexReader
 
