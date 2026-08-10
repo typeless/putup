@@ -7660,6 +7660,106 @@ SCENARIO("A distclean dry run predicts the record it would keep", "[e2e][clean][
     }
 }
 
+SCENARIO("Distcleaning keeps a record whose files it could not remove", "[e2e][clean]")
+{
+    GIVEN("an in-tree project whose generated file sits in a directory that cannot be written")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo x > %o |> out/gen.o\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("out/gen.o"));
+
+        auto const dir = f.workdir() / "out";
+        auto const writable = std::filesystem::status(dir).permissions();
+        std::filesystem::permissions(
+            dir,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace
+        );
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(dir / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(dir / "probe", probe_ec);
+            std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke write permission (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("the project is reset")
+        {
+            auto result = f.distclean({ "-v" });
+            std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
+
+            THEN("the record survives, so the file it owns stays attributable")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                // The removal failure names the file on its own, so only the keep message
+                // witnesses that the record was kept because of it.
+                REQUIRE(combined.find("Keeping the build record") != std::string::npos);
+                REQUIRE(combined.find("rm -rf") != std::string::npos);
+                REQUIRE(combined.find("Project reset complete") == std::string::npos);
+                REQUIRE(f.exists("out/gen.o"));
+                REQUIRE(f.exists(".pup/index"));
+                REQUIRE_FALSE(f.exists("tup.config"));
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("Distcleaning out of tree keeps a record whose files it could not remove", "[e2e][clean][variant]")
+{
+    GIVEN("an out-of-tree project whose generated file sits in a directory that cannot be written")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": |> echo x > %o |> out/gen.o\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        REQUIRE(f.exists("build/out/gen.o"));
+
+        auto const dir = f.workdir() / "build" / "out";
+        auto const writable = std::filesystem::status(dir).permissions();
+        std::filesystem::permissions(
+            dir,
+            std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec,
+            std::filesystem::perm_options::replace
+        );
+        auto probe_ec = std::error_code {};
+        std::filesystem::create_directory(dir / "probe", probe_ec);
+        if (!probe_ec) {
+            std::filesystem::remove(dir / "probe", probe_ec);
+            std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
+            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
+            WARN("cannot revoke write permission (running as root?): scenario not exercised");
+            return;
+        }
+
+        WHEN("the project is reset")
+        {
+            auto result = f.distclean({ "-B", "build", "-v" });
+            std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
+
+            THEN("the record survives there too: the rule is about the leftover, not about being in tree")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("Keeping the build record") != std::string::npos);
+                REQUIRE(combined.find("rm -rf") != std::string::npos);
+                REQUIRE(combined.find("Project reset complete") == std::string::npos);
+                REQUIRE(f.exists("build/out/gen.o"));
+                REQUIRE(f.exists("build/.pup/index"));
+                REQUIRE_FALSE(f.exists("build/tup.config"));
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
 SCENARIO("A record older than the readable window is refused, not misread", "[e2e][shadow][incremental]")
 {
     GIVEN("an in-tree project built once")
