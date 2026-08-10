@@ -154,18 +154,32 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
 
     // Another putup may still read this record, and it is the only description of what the build owned (#300).
     auto record_readable = true;
+    auto surviving_outputs = std::size_t { 0 };
     if (pup::platform::exists(index_path_sv)) {
         auto const prior = pup::index::read_prior_paths(index_path_sv);
         record_readable = prior.kind == pup::index::PriorPaths::Kind::Known;
         auto result = remove_indexed_outputs(prior, index_path_sv, root_sv, mode, variant_name, output_dirs, removed_paths);
         error_count += result.error_count;
+
+        // Over the files still owned, not the reasons the removals gave: a reason at a time is how #373 happened.
+        if (!mode.dry_run) {
+            for (auto path_id : prior.generated) {
+                if (pup::platform::exists(pool.get(pup::path::join(root_sv, pool.get(path_id))))) {
+                    ++surviving_outputs;
+                }
+            }
+        }
     }
 
     auto pup_dir_sv = pool.get(pup::path::join(build_dir_sv, ".pup"));
+    auto record_kept = !record_readable || surviving_outputs > 0;
+    // In tree the build directory is the source tree, so the way out names the record itself.
+    auto escape_sv = ctx->is_in_tree ? pup_dir_sv : build_dir_sv;
     if (!record_readable) {
-        // In tree the build directory is the source tree, so the way out names the record itself.
-        auto escape_sv = ctx->is_in_tree ? pup_dir_sv : build_dir_sv;
         veprint(variant_name, "  {} the build record: a putup that can read it can still remove those files. To reset anyway: rm -rf {}\n", opts.dry_run ? "Would keep" : "Keeping", escape_sv);
+    } else if (surviving_outputs > 0) {
+        // The escape must name the survivors: in tree it removes the record alone, which is this bug.
+        veprint(variant_name, "  Keeping the build record: {} file(s) it owns are still on disk and nothing else can say who made them. Fix that and re-run distclean; to reset anyway: remove those files, then rm -rf {}\n", surviving_outputs, escape_sv);
     } else if (pup::platform::exists(pup_dir_sv)) {
         if (opts.dry_run) {
             vprint(variant_name, "Would remove: {}\n", pup_dir_sv);
@@ -201,12 +215,12 @@ auto distclean_single_variant(Options const& opts, std::string_view variant_name
     if (!opts.dry_run) {
         if (error_count > 0) {
             veprint(variant_name, "Project reset incomplete: {} errors\n", error_count);
-        } else {
+        } else if (!record_kept) {
             vprint(variant_name, "Project reset complete\n");
         }
     }
 
-    return error_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    return error_count > 0 || record_kept ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 } // namespace
