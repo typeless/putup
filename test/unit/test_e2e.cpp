@@ -447,6 +447,42 @@ SCENARIO("Order-only groups ensure build ordering", "[e2e][groups]")
     }
 }
 
+SCENARIO("A build whose command outgrows the record's string entry still converges", "[e2e][build][groups][incremental]")
+{
+    GIVEN("a group whose expanded member list renders past 64 KB in one command")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+
+        auto const pad = std::string(220, 'x');
+        auto tupfile = std::string {};
+        for (auto i = 0; i < 300; ++i) {
+            tupfile += ": |> touch %o |> obj_" + std::to_string(i) + "_" + pad + ".o <objs>\n";
+        }
+        tupfile += ": | <objs> |> echo %<objs> > %o |> linked.txt\n";
+        f.write_file("Tupfile", tupfile);
+        REQUIRE(f.init().success());
+
+        WHEN("it is built and then built again")
+        {
+            auto first = f.build({ "-j4" });
+            auto second = f.build({ "-j4" });
+
+            THEN("the first build records what it ran")
+            {
+                INFO("stdout: " << first.stdout_output << "\nstderr: " << first.stderr_output);
+                REQUIRE(first.success());
+                REQUIRE(f.read_file("linked.txt").size() > 65535);
+            }
+
+            THEN("the second build has nothing to do")
+            {
+                INFO("stdout: " << second.stdout_output << "\nstderr: " << second.stderr_output);
+                REQUIRE(second.is_noop());
+            }
+        }
+    }
+}
+
 SCENARIO("Cross-directory order-only groups", "[e2e][groups]")
 {
     GIVEN("a multi-directory project with cross-dir group reference")

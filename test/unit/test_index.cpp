@@ -728,7 +728,7 @@ TEST_CASE("A record whose declared layout does not fit the file is refused", "[e
 
 TEST_CASE("StringTable overflow handling", "[index]")
 {
-    SECTION("string exceeding 64KB limit fails serialization")
+    SECTION("file name exceeding 64KB limit fails serialization")
     {
         auto index = Index {};
 
@@ -745,7 +745,7 @@ TEST_CASE("StringTable overflow handling", "[index]")
         REQUIRE(global_pool().get(result.error().message).find("64KB") != std::string_view::npos);
     }
 
-    SECTION("string at 64KB limit succeeds")
+    SECTION("file name at 64KB limit succeeds")
     {
         auto index = Index {};
 
@@ -760,6 +760,95 @@ TEST_CASE("StringTable overflow handling", "[index]")
 
         REQUIRE(result.has_value());
     }
+}
+
+TEST_CASE("A command longer than the string table's entry limit is still recorded", "[index]")
+{
+    auto oversized = Buf {};
+    oversized.resize(70000);
+    std::memset(oversized.data(), 'c', 70000);
+
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry {
+        .id = cmd_id,
+        .dir_id = 1,
+        .instruction_pattern = intern(oversized.view()),
+        .display = intern(oversized.view()),
+    });
+
+    auto temp_path = (std::filesystem::temp_directory_path() / "pup_oversized_command_test").string();
+    REQUIRE(write_index(temp_path, index).has_value());
+
+    auto opened = open_index(temp_path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE(restored.has_value());
+
+    auto* cmd = restored->find_command_by_id(cmd_id);
+    REQUIRE(cmd != nullptr);
+
+    SECTION("a command exactly at the entry limit is recorded whole")
+    {
+        auto at_limit = Buf {};
+        at_limit.resize(65535);
+        std::memset(at_limit.data(), 'e', 65535);
+
+        auto exact = Index {};
+        exact.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
+        exact.add_command(CommandEntry { .id = cmd_id, .dir_id = 1, .instruction_pattern = intern(at_limit.view()) });
+
+        auto exact_path = (std::filesystem::temp_directory_path() / "pup_at_limit_command_test").string();
+        REQUIRE(write_index(exact_path, exact).has_value());
+
+        auto exact_opened = open_index(exact_path);
+        REQUIRE(exact_opened.has_value());
+        auto exact_restored = read_index(*exact_opened);
+        REQUIRE(exact_restored.has_value());
+
+        auto const* exact_cmd = exact_restored->find_command_by_id(cmd_id);
+        REQUIRE(exact_cmd != nullptr);
+        REQUIRE(sv(exact_cmd->instruction_pattern) == at_limit.view());
+
+        exact_opened->file.close();
+        std::filesystem::remove(exact_path);
+    }
+
+    SECTION("each display field is recorded, marked as truncated, and within the entry limit")
+    {
+        for (auto field : { cmd->instruction_pattern, cmd->display }) {
+            auto text = sv(field);
+            REQUIRE(text.size() <= 65535);
+            REQUIRE(text.starts_with("cccc"));
+            REQUIRE(text.find("truncated") != std::string_view::npos);
+            REQUIRE(text.find("70000") != std::string_view::npos);
+        }
+    }
+
+    opened->file.close();
+    std::filesystem::remove(temp_path);
+}
+
+TEST_CASE("An environment longer than the string table's entry limit fails the record", "[index]")
+{
+    auto oversized = Buf {};
+    oversized.resize(70000);
+    std::memset(oversized.data(), 'v', 70000);
+
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
+    index.add_command(CommandEntry {
+        .id = node_id::make_command(1),
+        .dir_id = 1,
+        .instruction_pattern = intern("cc %f"),
+        .env = intern(oversized.view()),
+    });
+
+    auto result = serialize_index(index);
+
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(global_pool().get(result.error().message).find("64KB") != std::string_view::npos);
 }
 
 TEST_CASE("StringTable deduplication", "[index]")

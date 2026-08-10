@@ -107,6 +107,17 @@ that names that output.
 putup shall reject a project in which two distinct guard-satisfied commands compute the
 same key.
 
+### REQ-KEY-LENGTH
+
+- leg: invariant
+- conformance: putup-only
+- reference: the obligation exists only because putup's own index format caps a string table entry at 64 KB; upstream has no such entry (#360)
+- discharge: test "A command longer than the string table's entry limit is still recorded"
+- discharge: test "Scenario: A build whose command outgrows the record's string entry still converges"
+
+When a build completes, putup shall record the key and signature of every command it ran,
+whatever the length of that command's rendered text.
+
 ---
 
 ## Group: identity-signature
