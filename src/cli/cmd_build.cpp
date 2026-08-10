@@ -427,7 +427,16 @@ struct ImplicitDepContext {
     /// offered — a pair whose consumer never entered the job set ordered nothing, and crediting it
     /// would let a command reach its own alibi through the absent one's outputs.
     pup::Vec<std::pair<pup::NodeId, pup::NodeId>> const& ordering_hops;
+    /// What the previous record classified as generated, sorted by handle. A build without
+    /// authority over the producing directory cannot answer that question itself (#369).
+    pup::Vec<pup::StringId> const& prior_generated;
 };
+
+/// Whether the previous record classified this path as an output.
+auto was_generated(pup::Vec<pup::StringId> const& prior_generated, pup::StringId path) -> bool
+{
+    return std::binary_search(prior_generated.begin(), prior_generated.end(), path, pup::handle_less);
+}
 
 /// Recursively get or create directory entries in the index.
 /// Returns the NodeId for the directory at dir_path.
@@ -493,7 +502,8 @@ auto get_or_create_dir(
 auto create_implicit_file(
     ImplicitDepContext& ctx,
     std::string_view abs_path,
-    StringId rel_path
+    StringId rel_path,
+    pup::NodeType type
 ) -> pup::NodeId
 {
     auto content_hash = pup::Hash256 {};
@@ -526,7 +536,7 @@ auto create_implicit_file(
         .id = file_id,
         .parent_id = parent_id,
         .src_id = 0,
-        .type = pup::NodeType::File,
+        .type = type,
         // The run that reported this dep already saw it absent, so only its return is news (#281).
         .flags = present ? pup::NodeFlags::None : pup::NodeFlags::AbsenceRouted,
         .name = pool.intern(pup::path::filename(rel_sv)),
@@ -559,7 +569,8 @@ auto serialize_graph_nodes(
     std::string_view config_root,
     std::string_view output_root,
     pup::Vec<pup::StringId> const& deleted_stale,
-    CarriedState const& carried
+    CarriedState const& carried,
+    pup::Vec<pup::StringId> const& prior_generated
 ) -> std::pair<pup::index::Index, PathIdMap>
 {
     auto const& g = state.graph;
@@ -688,6 +699,8 @@ auto serialize_graph_nodes(
             auto& pool = pup::global_pool();
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
 
+            // An out-of-authority output arrives here as a ghost; the record keeps its owner (#369).
+            auto recorded_type = type;
             auto path_id = pup::StringId::Empty;
             auto content_hash = pup::Hash256 {};
             auto file_size = std::uint64_t { 0 };
@@ -696,6 +709,9 @@ auto serialize_graph_nodes(
             if (!node_path.empty()) {
                 auto fs_path = strip_build_root_prefix(node_path, pup::graph::get_build_root_name(g));
                 auto file_path = pool.get(pup::path::join(output_root, fs_path));
+                if (was_generated(prior_generated, pool.intern(fs_path))) {
+                    recorded_type = pup::NodeType::Generated;
+                }
                 if (pup::platform::exists(file_path)) {
                     if (auto hash_result = pup::sha256_file(file_path)) {
                         content_hash = *hash_result;
@@ -712,7 +728,7 @@ auto serialize_graph_nodes(
                 .id = id,
                 .parent_id = pup::graph::get_parent_dir(g, id),
                 .src_id = 0,
-                .type = type,
+                .type = recorded_type,
                 .flags = node_flags,
                 .name = pup::graph::get<pup::graph::Name>(g, id),
                 .path = path_id,
@@ -924,7 +940,12 @@ auto process_implicit_deps(
             auto found = ctx.path_to_id.find(rel_path);
             auto dep_id = found
                 ? *found
-                : create_implicit_file(ctx, abs_path, rel_path);
+                : create_implicit_file(
+                      ctx,
+                      abs_path,
+                      rel_path,
+                      was_generated(ctx.prior_generated, rel_path) ? pup::NodeType::Generated : pup::NodeType::File
+                  );
 
             // Only when nothing orders this command after the file. Ordering is transitive —
             // a codegen emitting one declared and one discovered output orders its consumer
@@ -1184,7 +1205,7 @@ auto preserve_old_implicit_edges(
         auto abs_path = pup::path::is_absolute(old_file_path) ? old_file_path : pool.get(pup::path::join(ctx.source_root, old_file_path));
         auto new_from_id = new_file_id
             ? *new_file_id
-            : create_implicit_file(ctx, abs_path, old_file->path);
+            : create_implicit_file(ctx, abs_path, old_file->path, old_file->type);
 
         if (ctx.added_edges.insert(new_from_id, new_to_id)) {
             ctx.index.add_edge(pup::index::EdgeEntry {
@@ -1566,7 +1587,8 @@ auto build_index(
     pup::Vec<pup::NodeId> const& executed_cmds = {},
     pup::Vec<pup::StringId> const& deleted_stale = {},
     pup::Vec<pup::OrderingEdge> const& enforced_ordering = {},
-    pup::Vec<pup::StringId> const& examined_files = {}
+    pup::Vec<pup::StringId> const& examined_files = {},
+    pup::Vec<pup::StringId> const& prior_generated = {}
 ) -> pup::index::Index
 {
     auto carried = CarriedState { .by_path = {}, .examined = examined_files, .refreshed = {} };
@@ -1584,7 +1606,7 @@ auto build_index(
     std::sort(carried.refreshed.begin(), carried.refreshed.end(), pup::handle_less);
 
     // Serialize file/directory nodes from the build graph
-    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale, carried);
+    auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale, carried, prior_generated);
 
     auto cmd_remap = serialize_command_nodes(state, index, path_to_id, must_rerun_cmds);
 
@@ -1631,6 +1653,7 @@ auto build_index(
         .ordered_memo_deps = ordered_memo_deps,
         .ordered_memo_reached = ordered_memo_reached,
         .ordering_hops = ordering_hops,
+        .prior_generated = prior_generated,
     };
 
     // Process discovered implicit dependencies from compiler output
@@ -2600,7 +2623,8 @@ auto build_single_variant(
             executed_cmds,
             deleted_stale,
             stats.enforced_ordering,
-            examined_files
+            examined_files,
+            ctx.prior_generated()
         ) };
 
         auto index_save_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };

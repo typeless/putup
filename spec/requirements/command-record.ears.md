@@ -480,6 +480,17 @@ If an output putup deleted exists again on disk, then putup shall treat it as ch
 
 putup shall record every output a command declares, whatever their number.
 
+### REQ-OUT-OWNERSHIP
+
+- leg: invariant
+- conformance: putup-only
+- reference: putup re-derives a file's classification from each build's graph, which upstream has no counterpart for — tup's node type lives in its database and changes only by an explicit transition, with no generated→file demotion anywhere (`src/tup/db.c:1042`, `create_name_file.c:740`), so upstream's answer to whether a build that did not look at a producer may retract its output's classification is a structural no (#369)
+- discharge: test "Scenario: A scoped build keeps the record of who owns a generated file it did not parse"
+- discharge: test "Scenario: A scoped build keeps the record of who owns a generated header it discovered"
+
+While a build has no authority over the directory that produces a file, putup shall keep the
+classification the previous record gave that file.
+
 ---
 
 ## Group: group-membership
