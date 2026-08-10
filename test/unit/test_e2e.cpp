@@ -528,6 +528,101 @@ SCENARIO("A carried-forward record stops claiming currency whatever the operand'
     }
 }
 
+SCENARIO("A scoped build keeps the record of who owns a generated file it did not parse", "[e2e][incremental][scope]")
+{
+    GIVEN("a generated file in one directory consumed by a rule in another")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+
+        f.write_file("big/Tupfile", ": |> sh -c 'for i in `seq 1 5`; do echo x > out_$i.txt; done' |> out_1.txt out_2.txt out_3.txt out_4.txt out_5.txt\n");
+        f.write_file("use/extra.txt", "v1\n");
+        f.write_file("use/Tupfile", ": extra.txt ../big/out_1.txt |> cat %f > %o |> combined.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("a build scoped to the consumer runs, with nothing in the producing directory touched")
+        {
+            f.write_file("use/extra.txt", "v2\n");
+            REQUIRE(f.build({ "use/" }).success());
+
+            THEN("the record still calls the consumed file generated, so clean removes it")
+            {
+                auto cleaned = f.clean();
+                INFO("stdout: " << cleaned.stdout_output);
+                REQUIRE(cleaned.success());
+                REQUIRE_FALSE(f.exists("big/out_1.txt"));
+            }
+
+            THEN("a later full build still runs")
+            {
+                auto full = f.build();
+                INFO("stdout: " << full.stdout_output << "\nstderr: " << full.stderr_output);
+                REQUIRE(full.success());
+            }
+        }
+
+        WHEN("the consumed file is overwritten by hand before that scoped build")
+        {
+            f.write_file("big/out_1.txt", "overwritten\n");
+            f.write_file("use/extra.txt", "v2\n");
+            REQUIRE(f.build({ "use/" }).success());
+
+            THEN("overwriting an output does not transfer its ownership, so clean still removes it")
+            {
+                auto cleaned = f.clean();
+                INFO("stdout: " << cleaned.stdout_output);
+                REQUIRE(cleaned.success());
+                REQUIRE_FALSE(f.exists("big/out_1.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A scoped build keeps the record of who owns a generated header it discovered", "[e2e][incremental][scope][implicit]")
+{
+    GIVEN("a compile whose discovered dependency is generated in another directory")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+
+        f.write_file("gen/Tupfile", ": |> echo '#define VERSION 1' > %o |> header.h\n");
+        f.write_file("src/main.c", "#include \"header.h\"\nint main(void) { return VERSION; }\n");
+        f.write_file("src/Tupfile", ": main.c |> cc -MD -I../gen -c %f -o %o |> main.o\n");
+        f.write_file("other/keep.txt", "v1\n");
+        f.write_file("other/Tupfile", ": keep.txt |> cat %f > %o |> other.out\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("gen/header.h"));
+
+        WHEN("the compile re-runs under a scope that excludes the generator")
+        {
+            f.write_file("src/main.c", "#include \"header.h\"\nint main(void) { return VERSION + 0; }\n");
+            REQUIRE(f.build({ "src/" }).success());
+
+            THEN("the record still calls the discovered header generated, so clean removes it")
+            {
+                auto cleaned = f.clean();
+                INFO("stdout: " << cleaned.stdout_output);
+                REQUIRE(cleaned.success());
+                REQUIRE_FALSE(f.exists("gen/header.h"));
+            }
+        }
+
+        WHEN("a scope that excludes both the generator and the compile carries the edge forward")
+        {
+            f.write_file("other/keep.txt", "v2\n");
+            REQUIRE(f.build({ "other/" }).success());
+
+            THEN("the record still calls the carried header generated, so clean removes it")
+            {
+                auto cleaned = f.clean();
+                INFO("stdout: " << cleaned.stdout_output);
+                REQUIRE(cleaned.success());
+                REQUIRE_FALSE(f.exists("gen/header.h"));
+            }
+        }
+    }
+}
+
 SCENARIO("Cross-directory order-only groups", "[e2e][groups]")
 {
     GIVEN("a multi-directory project with cross-dir group reference")

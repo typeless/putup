@@ -51,6 +51,8 @@ struct CarriedState {
 /// Emits one entry per live file-space node so ids stay dense (id == position + 1).
 /// Paths in `deleted_stale` are marked NodeFlags::AbsenceRouted: this build removed them and routed
 /// their absence, so the next build must not read the same stat failure as news.
+/// `prior_generated` is the previous record's output set, sorted by handle: a path this build has
+/// no authority over is classified by that record rather than by what is on disk (#369).
 [[nodiscard]]
 auto serialize_graph_nodes(
     graph::BuildGraph const& state,
@@ -58,7 +60,8 @@ auto serialize_graph_nodes(
     std::string_view config_root,
     std::string_view output_root,
     Vec<StringId> const& deleted_stale = {},
-    CarriedState const& carried = {}
+    CarriedState const& carried = {},
+    Vec<StringId> const& prior_generated = {}
 ) -> std::pair<index::Index, PathIdMap>;
 
 /// Serialize guard-satisfied command nodes to the index with dense ids.

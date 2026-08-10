@@ -109,6 +109,12 @@ public:
     [[nodiscard]]
     auto old_index() const -> index::Index const*;
 
+    /// Paths the previous record classified as outputs and that this build has no authority to
+    /// reclassify, sorted by handle. Empty for a full build, which parses every producer and so
+    /// answers for itself (#369).
+    [[nodiscard]]
+    auto prior_generated() const -> Vec<StringId> const&;
+
     struct Impl;
 
 private:
