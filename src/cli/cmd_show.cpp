@@ -738,7 +738,7 @@ auto cmd_export_index(Options const& opts, std::string_view variant_name) -> int
             dir_sv = pool.get(dir->path);
         }
 
-        print("  c{}  [{}]\n", cmd.id, dir_sv);
+        print("  c{}  [{}]{}\n", cmd.id, dir_sv, cmd.must_rerun ? "  must_rerun" : "");
         print("       cmd: {}\n", cmd_sv);
 
         auto implicit = Vec<StringId> {};
