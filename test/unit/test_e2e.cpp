@@ -483,6 +483,51 @@ SCENARIO("A build whose command outgrows the record's string entry still converg
     }
 }
 
+SCENARIO("A carried-forward record stops claiming currency whatever the operand's position", "[e2e][incremental][scope]")
+{
+    GIVEN("a command with 300 outputs, one of them consumed from another directory")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+
+        auto outputs = std::string {};
+        for (auto i = 1; i <= 300; ++i) {
+            outputs += " out_" + std::to_string(i) + ".txt";
+        }
+        f.write_file("big/Tupfile", ": |> sh -c 'for i in `seq 1 300`; do echo x > out_$i.txt; done' |>" + outputs + "\n");
+        f.write_file("use/Tupfile", ": ../big/out_1.txt ../big/out_300.txt |> cat %f > %o |> combined.txt\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("the 300th output changes behind the build and a build scoped elsewhere carries the record")
+        {
+            f.write_file("big/out_300.txt", "TAMPERED\n");
+            REQUIRE(f.build({ "use/" }).success());
+
+            THEN("the carried record stops claiming that command's outputs are current")
+            {
+                auto shown = f.pup({ "show", "index" });
+                INFO("stdout: " << shown.stdout_output);
+                REQUIRE(shown.success());
+                REQUIRE(shown.stdout_output.find("[big]  must_rerun") != std::string::npos);
+            }
+        }
+
+        WHEN("the 1st output changes instead")
+        {
+            f.write_file("big/out_1.txt", "TAMPERED\n");
+            REQUIRE(f.build({ "use/" }).success());
+
+            THEN("the carried record stops claiming that command's outputs are current")
+            {
+                auto shown = f.pup({ "show", "index" });
+                INFO("stdout: " << shown.stdout_output);
+                REQUIRE(shown.success());
+                REQUIRE(shown.stdout_output.find("[big]  must_rerun") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Cross-directory order-only groups", "[e2e][groups]")
 {
     GIVEN("a multi-directory project with cross-dir group reference")

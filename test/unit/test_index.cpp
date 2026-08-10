@@ -851,6 +851,50 @@ TEST_CASE("An environment longer than the string table's entry limit fails the r
     REQUIRE(global_pool().get(result.error().message).find("64KB") != std::string_view::npos);
 }
 
+TEST_CASE("A command with more than 255 operands records all of them", "[index]")
+{
+    auto constexpr OPERANDS = std::size_t { 300 };
+
+    auto index = Index {};
+    auto inputs = pup::Vec<NodeId> {};
+    auto outputs = pup::Vec<NodeId> {};
+    for (auto i = std::size_t { 0 }; i < OPERANDS; ++i) {
+        auto in_name = Buf {};
+        in_name.fmt("in_{}.c", i);
+        index.add_file(FileEntry { .id = static_cast<NodeId>(index.files().size() + 1), .parent_id = 0, .name = intern(in_name.view()) });
+        inputs.push_back(static_cast<NodeId>(index.files().size()));
+
+        auto out_name = Buf {};
+        out_name.fmt("out_{}.o", i);
+        index.add_file(FileEntry { .id = static_cast<NodeId>(index.files().size() + 1), .parent_id = 0, .type = NodeType::Generated, .name = intern(out_name.view()) });
+        outputs.push_back(static_cast<NodeId>(index.files().size()));
+    }
+
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry {
+        .id = cmd_id,
+        .instruction_pattern = intern("cc %f -o %o"),
+        .inputs = inputs,
+        .outputs = outputs,
+    });
+
+    auto temp_path = (std::filesystem::temp_directory_path() / "pup_many_operands_test").string();
+    REQUIRE(write_index(temp_path, index).has_value());
+
+    auto opened = open_index(temp_path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE(restored.has_value());
+
+    auto const* cmd = restored->find_command_by_id(cmd_id);
+    REQUIRE(cmd != nullptr);
+    REQUIRE(cmd->inputs == inputs);
+    REQUIRE(cmd->outputs == outputs);
+
+    opened->file.close();
+    std::filesystem::remove(temp_path);
+}
+
 TEST_CASE("StringTable deduplication", "[index]")
 {
     SECTION("identical strings are deduplicated")
@@ -1551,6 +1595,41 @@ auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
 }
 
 } // namespace
+
+TEST_CASE("An operand count larger than the record reads as no operands", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1 } });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    for (auto i = std::size_t { 0 }; i < 2 * sizeof(std::uint32_t); ++i) {
+        bytes[hdr->operand_data_offset + i] = std::byte { 0xFF };
+    }
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_operand_count_overflow");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE(restored.has_value());
+
+    auto const* cmd = restored->find_command_by_id(cmd_id);
+    REQUIRE(cmd != nullptr);
+    REQUIRE(cmd->inputs.empty());
+    REQUIRE(cmd->outputs.empty());
+
+    opened->file.close();
+    std::filesystem::remove(path);
+}
 
 TEST_CASE("A record names the paths it recorded even at a version too old to trust", "[index]")
 {

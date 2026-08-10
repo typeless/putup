@@ -313,24 +313,28 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
         return { {}, {} };
     }
 
-    auto const* offset_bytes = data.subspan(table_pos, sizeof(std::uint32_t)).data();
-    auto offset = static_cast<std::uint32_t>(
-        static_cast<std::uint8_t>(offset_bytes[0])
-        | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(offset_bytes[1])) << 8)
-        | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(offset_bytes[2])) << 16)
-        | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(offset_bytes[3])) << 24)
-    );
+    auto read_u32 = [&data](std::size_t at) {
+        auto const* bytes = data.subspan(at, sizeof(std::uint32_t)).data();
+        return static_cast<std::uint32_t>(
+            static_cast<std::uint8_t>(bytes[0])
+            | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[1])) << 8)
+            | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[2])) << 16)
+            | (static_cast<std::uint32_t>(static_cast<std::uint8_t>(bytes[3])) << 24)
+        );
+    };
+
+    auto offset = read_u32(table_pos);
 
     // Read operand record
     auto record_pos = hdr->operand_data_offset + offset;
-    if (record_pos + 2 > f.file.size()) {
+    if (record_pos + 2 * sizeof(std::uint32_t) > f.file.size()) {
         return { {}, {} };
     }
 
-    auto in_count = static_cast<std::uint8_t>(data[record_pos]);
-    auto out_count = static_cast<std::uint8_t>(data[record_pos + 1]);
+    auto in_count = std::size_t { read_u32(record_pos) };
+    auto out_count = std::size_t { read_u32(record_pos + sizeof(std::uint32_t)) };
 
-    auto expected_size = static_cast<std::size_t>(2) + (in_count + out_count) * sizeof(NodeId);
+    auto expected_size = 2 * sizeof(std::uint32_t) + (in_count + out_count) * sizeof(NodeId);
     if (record_pos + expected_size > f.file.size()) {
         return { {}, {} };
     }
@@ -340,28 +344,14 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
     inputs.reserve(in_count);
     outputs.reserve(out_count);
 
-    auto pos = record_pos + 2;
-    for (std::uint8_t i = 0; i < in_count; ++i) {
-        auto const* id_bytes = data.subspan(pos, sizeof(NodeId)).data();
-        auto id = static_cast<NodeId>(
-            static_cast<std::uint8_t>(id_bytes[0])
-            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[1])) << 8)
-            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[2])) << 16)
-            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[3])) << 24)
-        );
-        inputs.push_back(id);
+    auto pos = record_pos + 2 * sizeof(std::uint32_t);
+    for (auto i = std::size_t { 0 }; i < in_count; ++i) {
+        inputs.push_back(static_cast<NodeId>(read_u32(pos)));
         pos += sizeof(NodeId);
     }
 
-    for (std::uint8_t i = 0; i < out_count; ++i) {
-        auto const* id_bytes = data.subspan(pos, sizeof(NodeId)).data();
-        auto id = static_cast<NodeId>(
-            static_cast<std::uint8_t>(id_bytes[0])
-            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[1])) << 8)
-            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[2])) << 16)
-            | (static_cast<NodeId>(static_cast<std::uint8_t>(id_bytes[3])) << 24)
-        );
-        outputs.push_back(id);
+    for (auto i = std::size_t { 0 }; i < out_count; ++i) {
+        outputs.push_back(static_cast<NodeId>(read_u32(pos)));
         pos += sizeof(NodeId);
     }
 

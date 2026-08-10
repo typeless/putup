@@ -1333,6 +1333,7 @@ auto merge_out_of_scope_commands(
                 return true;
             }
         }
+        // Sole witness for non-operand inputs (order-only, group, implicit, sticky); outputs have none, so no edges_from leg.
         for (auto const* edge : old_index.edges_to(cmd.id)) {
             if (dep_state_changed(edge->from)) {
                 return true;
