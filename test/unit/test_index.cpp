@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1626,6 +1627,93 @@ TEST_CASE("An operand count larger than the record reads as no operands", "[inde
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->inputs.empty());
     REQUIRE(cmd->outputs.empty());
+
+    opened->file.close();
+    std::filesystem::remove(path);
+}
+
+// Both wrap tests discriminate only because the position they wrap onto holds something: a wrap
+// landing on zeroes reads as no operands and no name whether or not the addition was widened.
+static_assert(offsetof(RawHeader, file_count) == 8, "the operand wrap test lands on this field");
+static_assert(offsetof(RawFileEntry, name_offset) == 8, "the name wrap test patches this field");
+static_assert(offsetof(RawFileEntry, size) == 16, "the name wrap test plants its string here");
+
+TEST_CASE("An operand offset that wraps reads as no operands", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1 } });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    auto constexpr COUNT_FIELDS_POS = std::uint32_t { offsetof(RawHeader, file_count) };
+    REQUIRE(COUNT_FIELDS_POS < hdr->operand_data_offset);
+    REQUIRE(hdr->file_count > 0);
+    auto const wrapping = static_cast<std::uint32_t>(COUNT_FIELDS_POS - hdr->operand_data_offset);
+    REQUIRE(static_cast<std::uint32_t>(hdr->operand_data_offset + wrapping) == COUNT_FIELDS_POS);
+    std::memcpy(bytes.data() + hdr->operand_table_offset, &wrapping, sizeof(wrapping));
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_operand_offset_wrap");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE(restored.has_value());
+
+    auto const* cmd = restored->find_command_by_id(cmd_id);
+    REQUIRE(cmd != nullptr);
+    REQUIRE(cmd->inputs.empty());
+    REQUIRE(cmd->outputs.empty());
+
+    opened->file.close();
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A name offset that wraps reads as no name", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+
+    // Planted in this entry's `size`, which nothing reads back, so the wrapped read finds a name.
+    auto const planted = hdr->file_offset + offsetof(RawFileEntry, size);
+    REQUIRE(planted < hdr->string_offset);
+    auto constexpr PLANTED_NAME = std::string_view { "ghost!" };
+    auto const planted_length = static_cast<std::uint16_t>(PLANTED_NAME.size());
+    std::memcpy(bytes.data() + planted, &planted_length, sizeof(planted_length));
+    std::memcpy(bytes.data() + planted + sizeof(planted_length), PLANTED_NAME.data(), PLANTED_NAME.size());
+
+    auto const wrapping = static_cast<std::uint32_t>(planted - hdr->string_offset);
+    REQUIRE(static_cast<std::uint32_t>(hdr->string_offset + wrapping) == planted);
+    auto const name_offset_pos = hdr->file_offset + offsetof(RawFileEntry, name_offset);
+    std::memcpy(bytes.data() + name_offset_pos, &wrapping, sizeof(wrapping));
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_name_offset_wrap");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE(restored.has_value());
+
+    REQUIRE_FALSE(restored->files().empty());
+    REQUIRE(sv(restored->files()[0].name) != PLANTED_NAME);
+    REQUIRE(sv(restored->files()[0].name).empty());
 
     opened->file.close();
     std::filesystem::remove(path);

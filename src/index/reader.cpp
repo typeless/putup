@@ -267,7 +267,7 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
     }
 
     // Length-prefixed strings: <u16 length><data>
-    auto const string_start = hdr->string_offset + offset;
+    auto const string_start = std::size_t { hdr->string_offset } + offset;
 
     // Need at least 2 bytes for length prefix
     if (string_start + sizeof(std::uint16_t) > f.file.size()) {
@@ -308,7 +308,7 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
     auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
 
     // Read offset from operand table
-    auto table_pos = hdr->operand_table_offset + cmd_index * sizeof(std::uint32_t);
+    auto table_pos = std::size_t { hdr->operand_table_offset } + cmd_index * sizeof(std::uint32_t);
     if (table_pos + sizeof(std::uint32_t) > f.file.size()) {
         return { {}, {} };
     }
@@ -325,8 +325,8 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
 
     auto offset = read_u32(table_pos);
 
-    // Read operand record
-    auto record_pos = hdr->operand_data_offset + offset;
+    // Widened like every position here: in u32 this sum wraps, and the check below then passes (#372).
+    auto record_pos = std::size_t { hdr->operand_data_offset } + offset;
     if (record_pos + 2 * sizeof(std::uint32_t) > f.file.size()) {
         return { {}, {} };
     }
