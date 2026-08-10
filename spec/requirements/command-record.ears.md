@@ -270,6 +270,15 @@ changed.
 When a command's input set changes, putup shall schedule that command and the commands that
 consume its outputs.
 
+### REQ-INPUT-COMPLETE
+
+- leg: invariant
+- conformance: putup-only
+- reference: the operand stream is putup's own record layout; upstream has no counterpart (#365). The input half has no observable behaviour to discharge against: every operand input also carries an edge, which `any_dep_changed` walks
+- discharge: test "A command with more than 255 operands records all of them"
+
+putup shall record every input a command was built from, whatever their number.
+
 ### REQ-INPUT-PRESERVE
 
 - leg: invariant
@@ -460,6 +469,16 @@ again on a later build for that same deletion.
 - discharge: test "Scenario: A glob consumer of a deleted stale output settles after the healing build"
 
 If an output putup deleted exists again on disk, then putup shall treat it as changed.
+
+### REQ-OUT-COMPLETE
+
+- leg: invariant
+- conformance: putup-only
+- reference: the operand stream is putup's own record layout; upstream has no counterpart (#365)
+- discharge: test "A command with more than 255 operands records all of them"
+- discharge: test "Scenario: A carried-forward record stops claiming currency whatever the operand's position"
+
+putup shall record every output a command declares, whatever their number.
 
 ---
 

@@ -66,9 +66,14 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       nor produced keeps what the last build that looked at it recorded (issue
 ///       #288). A v20 index may already assert currency for a file no build ever
 ///       verified, and no later build detects that, so v20 is not read.
-/// Bump when a stale record would wrong-join — join a key whose meaning changed; a change that
-/// only changes keys no-joins, and one re-run per affected command repairs it (#333, #335, #343).
-inline constexpr auto INDEX_VERSION = std::uint32_t { 21 };
+///  22 - A command's operand counts are u32. v21 wrote them as one byte each and clamped at
+///       255, so a rule with more operands recorded a prefix and the carried-forward record
+///       stopped seeing the rest change (issue #365). A v21 index parses at the wrong offsets
+///       under this layout, so it is not read.
+/// Bump when a stale reader would misparse the bytes — any layout change — or wrong-join a key
+/// whose meaning changed; a change that only changes keys no-joins, and one re-run per affected
+/// command repairs it (#333, #335, #343).
+inline constexpr auto INDEX_VERSION = std::uint32_t { 22 };
 
 /// The oldest version whose `RawHeader` and `RawFileEntry` bytes mean what today's mean, so a
 /// record that old still says which paths it recorded as sources and which as generated even

@@ -235,33 +235,25 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     auto operand_data = Vec<std::byte> {};
     operand_table.reserve(index.commands().size());
 
+    // The 4GB guard below is the only bound on these, and only while each counted operand costs >=1 byte of this stream (#365).
+    auto push_u32 = [&operand_data](std::uint32_t value) {
+        operand_data.push_back(static_cast<std::byte>(value & 0xFF));
+        operand_data.push_back(static_cast<std::byte>((value >> 8) & 0xFF));
+        operand_data.push_back(static_cast<std::byte>((value >> 16) & 0xFF));
+        operand_data.push_back(static_cast<std::byte>((value >> 24) & 0xFF));
+    };
+
     for (auto const& cmd : index.commands()) {
         operand_table.push_back(static_cast<std::uint32_t>(operand_data.size()));
 
-        // Write input count (1 byte, max 255 inputs)
-        auto input_count = std::min(cmd.inputs.size(), std::size_t { 255 });
-        operand_data.push_back(static_cast<std::byte>(input_count));
+        push_u32(static_cast<std::uint32_t>(cmd.inputs.size()));
+        push_u32(static_cast<std::uint32_t>(cmd.outputs.size()));
 
-        // Write output count (1 byte, max 255 outputs)
-        auto output_count = std::min(cmd.outputs.size(), std::size_t { 255 });
-        operand_data.push_back(static_cast<std::byte>(output_count));
-
-        // Write input NodeIds (4 bytes each)
-        for (std::size_t i = 0; i < input_count; ++i) {
-            auto id = cmd.inputs[i];
-            operand_data.push_back(static_cast<std::byte>(id & 0xFF));
-            operand_data.push_back(static_cast<std::byte>((id >> 8) & 0xFF));
-            operand_data.push_back(static_cast<std::byte>((id >> 16) & 0xFF));
-            operand_data.push_back(static_cast<std::byte>((id >> 24) & 0xFF));
+        for (auto id : cmd.inputs) {
+            push_u32(id);
         }
-
-        // Write output NodeIds (4 bytes each)
-        for (std::size_t i = 0; i < output_count; ++i) {
-            auto id = cmd.outputs[i];
-            operand_data.push_back(static_cast<std::byte>(id & 0xFF));
-            operand_data.push_back(static_cast<std::byte>((id >> 8) & 0xFF));
-            operand_data.push_back(static_cast<std::byte>((id >> 16) & 0xFF));
-            operand_data.push_back(static_cast<std::byte>((id >> 24) & 0xFF));
+        for (auto id : cmd.outputs) {
+            push_u32(id);
         }
     }
 
