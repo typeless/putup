@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/writer.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/clock.hpp"
 #include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
@@ -31,6 +32,9 @@ namespace pup::index {
 namespace {
 
 constexpr auto MAX_U32 = std::numeric_limits<std::uint32_t>::max();
+
+/// A string table entry is length-prefixed with a u16, so this is a format constant.
+constexpr auto MAX_STRING_LENGTH = std::size_t { 0xFFFF };
 
 /// String table builder (internal helper)
 ///
@@ -78,7 +82,6 @@ auto StringTable::add(std::string_view str) -> Result<std::uint32_t>
     }
 
     // Validate string length fits in u16
-    auto constexpr MAX_STRING_LENGTH = std::uint16_t { 0xFFFF };
     if (str.size() > MAX_STRING_LENGTH) {
         return make_error<std::uint32_t>(
             ErrorCode::InvalidArgument, "String exceeds 64KB limit"
@@ -179,6 +182,20 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
 
     auto strings = StringTable {};
 
+    // Identity is key/signature, not this text (#360): mark and shorten rather than fail the record.
+    auto add_display = [&strings](std::string_view text) -> Result<std::uint32_t> {
+        if (text.size() <= MAX_STRING_LENGTH) {
+            return strings.add(text);
+        }
+        auto marker = Buf {};
+        marker.fmt("...[truncated, {} bytes total]", text.size());
+        auto kept = MAX_STRING_LENGTH - std::min(marker.view().size(), MAX_STRING_LENGTH);
+        auto projected = Buf {};
+        projected += text.substr(0, kept);
+        projected += marker.view();
+        return strings.add(projected.view().substr(0, MAX_STRING_LENGTH));
+    };
+
     // Build file entries and collect strings
     auto file_entries = Vec<RawFileEntry> {};
     file_entries.reserve(index.files().size());
@@ -198,11 +215,11 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
     command_entries.reserve(index.commands().size());
 
     for (auto const& cmd : index.commands()) {
-        auto instruction_offset = strings.add(pool.get(cmd.instruction_pattern));
+        auto instruction_offset = add_display(pool.get(cmd.instruction_pattern));
         if (!instruction_offset) {
             return pup::unexpected<Error>(instruction_offset.error());
         }
-        auto display_offset = strings.add(pool.get(cmd.display));
+        auto display_offset = add_display(pool.get(cmd.display));
         if (!display_offset) {
             return pup::unexpected<Error>(display_offset.error());
         }
