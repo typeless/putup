@@ -23,6 +23,13 @@ namespace pup::index {
 
 namespace {
 
+/// Not the writer's truncation marker: that one states an event this read did not observe (#381).
+constexpr auto UNREADABLE_DISPLAY = std::string_view { "[unreadable]" };
+
+auto index_get_semantic_string(IndexFile const& f, std::uint32_t offset) -> Result<std::string_view>;
+auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view;
+auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<std::pair<Vec<NodeId>, Vec<NodeId>>>;
+
 template<typename T>
 auto read_raw_entries(
     pup::platform::MappedFile const& file,
@@ -142,12 +149,16 @@ auto read_index(IndexFile const& f) -> Result<Index>
         index.set_save_time_ns(hdr->save_time_ns);
     }
 
-    // Read file entries
+    // A field this read cannot reproduce faithfully makes the whole record unreadable rather than
+    // a weaker claim in its place: an empty name or operand set is something callers act on (#381).
     auto files = index_raw_files(f);
     for (auto i = std::size_t { 0 }; i < files.size(); ++i) {
         auto const& raw = files[i];
-        auto name = index_get_string(f, raw.name_offset);
-        index.add_file(FileEntry::from_raw(raw, name, i));
+        auto name = index_get_semantic_string(f, raw.name_offset);
+        if (!name) {
+            return pup::unexpected<Error>(name.error());
+        }
+        index.add_file(FileEntry::from_raw(raw, *name, i));
     }
 
     // Compute paths from parent chain (after all files loaded)
@@ -159,10 +170,16 @@ auto read_index(IndexFile const& f) -> Result<Index>
         auto const& raw = commands[i];
         auto instruction_pattern = index_get_string(f, raw.cmd_offset);
         auto display = index_get_string(f, raw.display_offset);
-        auto env = index_get_string(f, raw.env_offset);
-        auto [inputs, outputs] = index_get_operands(f, i);
+        auto env = index_get_semantic_string(f, raw.env_offset);
+        if (!env) {
+            return pup::unexpected<Error>(env.error());
+        }
+        auto operands = index_get_operands(f, i);
+        if (!operands) {
+            return pup::unexpected<Error>(operands.error());
+        }
         index.add_command(CommandEntry::from_raw(
-            raw, instruction_pattern, display, env, std::move(inputs), std::move(outputs), i
+            raw, instruction_pattern, display, *env, std::move(operands->first), std::move(operands->second), i
         ));
     }
 
@@ -226,7 +243,11 @@ auto read_prior_paths(std::string_view path) -> PriorPaths
     auto recorded = Index {};
     auto raw = index_raw_files(*file);
     for (auto i = std::size_t { 0 }; i < raw.size(); ++i) {
-        recorded.add_file(FileEntry::from_raw(raw[i], index_get_string(*file, raw[i].name_offset), i));
+        auto name = index_get_semantic_string(*file, raw[i].name_offset);
+        if (!name) {
+            return lost;
+        }
+        recorded.add_file(FileEntry::from_raw(raw[i], *name, i));
     }
     recorded.compute_paths();
 
@@ -259,19 +280,23 @@ auto index_raw_edges(IndexFile const& f) -> std::span<RawEdge const>
     return read_raw_entries<RawEdge>(f.file, hdr, hdr ? hdr->edge_count : 0, hdr ? hdr->edge_offset : 0);
 }
 
-auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view
+namespace {
+
+auto index_get_semantic_string(IndexFile const& f, std::uint32_t offset) -> Result<std::string_view>
 {
     auto const* hdr = index_header(f);
     if (!hdr) {
-        return {};
+        return make_error<std::string_view>(ErrorCode::IndexDamaged, "Index header unreadable");
     }
 
-    // Length-prefixed strings: <u16 length><data>
+    // The string table's own end, not the file's: a string declared past the table but inside the
+    // file is still a string this record does not contain.
+    auto const table_end = std::size_t { hdr->string_offset } + hdr->string_table_size;
     auto const string_start = std::size_t { hdr->string_offset } + offset;
 
-    // Need at least 2 bytes for length prefix
-    if (string_start + sizeof(std::uint16_t) > f.file.size()) {
-        return {};
+    // Length-prefixed strings: <u16 length><data>
+    if (string_start + sizeof(std::uint16_t) > table_end) {
+        return make_error<std::string_view>(ErrorCode::IndexDamaged, "Recorded string starts outside the string table");
     }
 
     auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
@@ -282,27 +307,38 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
         static_cast<std::uint8_t>(len_bytes[0]) | (static_cast<std::uint8_t>(len_bytes[1]) << 8)
     );
 
+    // Offset 0 is the table's empty entry, so this is a value the record states, not a failure.
     if (length == 0) {
-        return {};
+        return std::string_view {};
     }
 
-    // Bounds check string data
     auto const data_start = string_start + sizeof(std::uint16_t);
-    if (data_start + length > f.file.size()) {
-        return {};
+    if (data_start + length > table_end) {
+        return make_error<std::string_view>(ErrorCode::IndexDamaged, "Recorded string runs past the string table");
     }
 
     auto str_bytes = data.subspan(data_start, length);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return { reinterpret_cast<char const*>(str_bytes.data()), length };
+    return std::string_view { reinterpret_cast<char const*>(str_bytes.data()), length };
+}
+
+/// The display side of the same read: text a human is shown degrades to a marker that says so,
+/// where a semantics-bearing field fails the record (#381). One bounds implementation, two
+/// dispositions -- a second copy of the arithmetic is what #372 cost.
+auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view
+{
+    auto text = index_get_semantic_string(f, offset);
+    return text ? *text : UNREADABLE_DISPLAY;
 }
 
 auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
-    -> std::pair<Vec<NodeId>, Vec<NodeId>>
+    -> Result<std::pair<Vec<NodeId>, Vec<NodeId>>>
 {
+    using Operands = std::pair<Vec<NodeId>, Vec<NodeId>>;
+
     auto const* hdr = index_header(f);
     if (!hdr || cmd_index >= hdr->command_count) {
-        return { {}, {} };
+        return make_error<Operands>(ErrorCode::IndexDamaged, "Operand record index outside the command table");
     }
 
     auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
@@ -310,7 +346,7 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
     // Read offset from operand table
     auto table_pos = std::size_t { hdr->operand_table_offset } + cmd_index * sizeof(std::uint32_t);
     if (table_pos + sizeof(std::uint32_t) > f.file.size()) {
-        return { {}, {} };
+        return make_error<Operands>(ErrorCode::IndexDamaged, "Operand table entry outside the file");
     }
 
     auto read_u32 = [&data](std::size_t at) {
@@ -326,17 +362,20 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
     auto offset = read_u32(table_pos);
 
     // Widened like every position here: in u32 this sum wraps, and the check below then passes (#372).
+    // The operand section's own end, like the string table's: the writer lays the string table
+    // directly after this section, so a record declared past it is one this record does not hold.
+    auto const section_end = std::size_t { hdr->string_offset };
     auto record_pos = std::size_t { hdr->operand_data_offset } + offset;
-    if (record_pos + 2 * sizeof(std::uint32_t) > f.file.size()) {
-        return { {}, {} };
+    if (record_pos + 2 * sizeof(std::uint32_t) > section_end) {
+        return make_error<Operands>(ErrorCode::IndexDamaged, "Operand record starts outside the operand section");
     }
 
     auto in_count = std::size_t { read_u32(record_pos) };
     auto out_count = std::size_t { read_u32(record_pos + sizeof(std::uint32_t)) };
 
     auto expected_size = 2 * sizeof(std::uint32_t) + (in_count + out_count) * sizeof(NodeId);
-    if (record_pos + expected_size > f.file.size()) {
-        return { {}, {} };
+    if (record_pos + expected_size > section_end) {
+        return make_error<Operands>(ErrorCode::IndexDamaged, "Operand record runs past the operand section");
     }
 
     auto inputs = Vec<NodeId> {};
@@ -355,8 +394,10 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
         pos += sizeof(NodeId);
     }
 
-    return { std::move(inputs), std::move(outputs) };
+    return Operands { std::move(inputs), std::move(outputs) };
 }
+
+} // namespace
 
 auto index_verify_checksum(IndexFile const& f) -> bool
 {

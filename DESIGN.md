@@ -1036,6 +1036,15 @@ recording a prefix that a later build would compare against and find unchanged (
 `include/pup/index/format.hpp` names which fields are on which side, next to the version-bump
 criterion that depends on it.
 
+**The same rule governs reading the record back.** A reader that cannot faithfully reproduce a
+semantics-bearing field — an operand record or a file name whose declared position fails its bounds
+check — rejects the record as unreadable rather than yielding an empty value, because an empty
+operand set or an empty name is a claim downstream code acts on, not an absence (#293 states this
+per section; this states it per record). Display text degrades on read to a marker that states
+unreadability, never to an empty string: an empty string is a value the record can legitimately
+hold, and rejection follows validation failure, never the value. The falsifier is mechanical — any
+reader path that maps a failed validation to a default value instead of an error is in violation.
+
 **Ownership and currency are separate claims with separate retraction rules.** One record says both
 *which outputs this project produced* and *whether they are up to date*. Currency is retracted on
 evidence — a command is marked as needing to run because something it depends on changed. Ownership
