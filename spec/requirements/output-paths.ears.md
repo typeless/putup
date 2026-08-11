@@ -33,7 +33,7 @@ How far out of the tree a rule may write.
 ### REQ-OUTPUT-INSIDE-HIERARCHY
 
 - conformance: deliberate-deviation
-- reference: upstream rejects the same class in the `PG_OUTSIDE_TUP` branch of `create_output_dirs` (`src/tup/parser.c`) — putup is stricter twice over: upstream re-roots an absolute path that lands inside its hierarchy where putup rejects it (interning it under the build root mirrored the whole path inside the tree, so it never named the file it spelled), and upstream never evaluates an unsatisfied branch at all where putup registers its rules for the phi model and records their outputs
+- reference: upstream rejects the same class in the `PG_OUTSIDE_TUP` branch of `create_output_dirs` (`src/tup/parser.c`) — putup is stricter twice over: upstream re-roots an absolute path that lands inside its hierarchy where putup rejects it (interning it under the build root mirrored the whole path inside the tree, so it never named the file it spelled), and upstream never evaluates an unsatisfied branch at all where putup registers its rules for the phi model and resolves their output paths, which is what brings them within reach of this rejection even though it never classifies them as generated (REQ-OUT-INACTIVE)
 - discharge: test "GraphBuilder rejects an output above the build root"
 - discharge: test "GraphBuilder rejects an output above the build root under an unsatisfied guard"
 - discharge: test "GraphBuilder rejects an absolute output path"

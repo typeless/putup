@@ -2160,7 +2160,10 @@ auto expand_rule(
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
     for (auto output_path : *outputs) {
-        auto output_id = ensure_file_node(ctx.state->graph, output_path, NodeType::Generated);
+        // Generated means "produced by a rule this configuration runs" (#386).
+        auto output_id = ensure_file_node(
+            ctx.state->graph, output_path, is_context_active(ctx) ? NodeType::Generated : NodeType::Ghost
+        );
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
         }

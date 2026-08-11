@@ -285,15 +285,11 @@ auto find_changed_files_with_implicit(
     auto constexpr RACY_CLEAN_THRESHOLD_NS = std::int64_t { 1'000'000'000 };
 
     for (auto const& file : old_index.files()) {
-        auto const is_tracked_ghost = file.type == pup::NodeType::Ghost
-            && file.content_hash != pup::ZERO_HASH && !pup::is_empty(file.path);
-        if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated
-            && !is_tracked_ghost) {
-            continue;
-        }
-
-        // No active rule produces this, so its absence is not a change.
-        if (std::binary_search(inactive_outputs.begin(), inactive_outputs.end(), file.path, pup::handle_less)) {
+        // A ghost recorded with no content is one whose file was absent when the record was
+        // written, not one nothing watches: its appearance is a change like any other (#386).
+        auto const is_ghost = file.type == pup::NodeType::Ghost && !pup::is_empty(file.path);
+        auto const was_absent = is_ghost && file.content_hash == pup::ZERO_HASH;
+        if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated && !is_ghost) {
             continue;
         }
 
@@ -345,6 +341,15 @@ auto find_changed_files_with_implicit(
         }
 
         if (!stat_result) {
+            // Absent then, absent now: nothing happened to report.
+            if (was_absent) {
+                continue;
+            }
+            // No active rule produces this, so its *absence* is not a change; an appearance is,
+            // which is why this skip is reached only once the file is known to be gone.
+            if (std::binary_search(inactive_outputs.begin(), inactive_outputs.end(), file.path, pup::handle_less)) {
+                continue;
+            }
             // Accounted for already: deleted and routed (#213), or read absent by its reader (#281).
             if (pup::has_flag(file.flags, pup::NodeFlags::AbsenceRouted)) {
                 continue;
@@ -712,6 +717,7 @@ auto serialize_graph_nodes(
                 if (was_generated(prior_generated, pool.intern(fs_path))) {
                     recorded_type = pup::NodeType::Generated;
                 }
+                path_id = pool.intern(node_path);
                 if (pup::platform::exists(file_path)) {
                     if (auto hash_result = pup::sha256_file(file_path)) {
                         content_hash = *hash_result;
@@ -720,7 +726,6 @@ auto serialize_graph_nodes(
                         file_size = stat_result->size;
                         mtime_ns = stat_result->mtime_ns;
                     }
-                    path_id = pool.intern(node_path);
                 }
             }
 
@@ -736,6 +741,11 @@ auto serialize_graph_nodes(
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
             });
+            // Like every other file-shaped arm: one path, one entry -- a discovered dependency
+            // naming this path must join this entry rather than mint a second one.
+            if (!node_path.empty()) {
+                path_to_id.insert(pool.intern(node_path), id);
+            }
             break;
         }
         case pup::NodeType::Variable:
@@ -1277,8 +1287,8 @@ auto merge_out_of_scope_commands(
 
     auto new_lookup = index_command_lookup(ctx.index);
 
-    // serialize_graph_nodes registers File/Generated/Directory paths but not
-    // Ghosts; without this the merge would duplicate a ghost's entry by path.
+    // Vestigial since the ghost arm began registering its own path (#386): every entry with a
+    // path is now in path_to_id, so this finds nothing. Kept pending its own removal.
     auto ghost_paths = PathIdMap {};
     for (auto const& file : ctx.index.files()) {
         if (!pup::is_empty(file.path) && !ctx.path_to_id.find(file.path)) {
@@ -1835,9 +1845,10 @@ auto reject_unresolved_ghosts(
     auto build_root_name = pup::graph::get_build_root_name(g);
 
     for (auto id : pup::graph::nodes_of_type(g, pup::NodeType::Ghost)) {
+        // Guard-satisfied consumers only, like every other command walk here (#386).
         auto consumed = false;
         pup::graph::edges_for_each(
-            g, id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&consumed](pup::NodeId) { consumed = true; }
+            g, id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&](pup::NodeId consumer) { consumed = consumed || pup::graph::is_guard_satisfied(g, consumer); }
         );
         if (!consumed) {
             continue;

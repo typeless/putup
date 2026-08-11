@@ -8,9 +8,12 @@
 #include "pup/parser/eval.hpp"
 #include "pup/parser/parser.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <string>
+#include <vector>
 
 using namespace pup;
 using namespace pup::graph;
@@ -1757,6 +1760,75 @@ TEST_CASE("GraphBuilder statically false branch does not claim outputs", "[build
     );
 
     REQUIRE(result.has_value());
+}
+
+namespace {
+
+auto names_of_type(pup::graph::BuildGraph const& bs, NodeType type) -> std::vector<std::string>
+{
+    auto names = std::vector<std::string> {};
+    for (auto id : nodes_of_type(bs.graph, type)) {
+        names.emplace_back(sv(get<Name>(bs.graph, id)));
+    }
+    return names;
+}
+
+auto add_source(BuilderTestFixture const& fixture, pup::graph::BuildGraph& bs, std::string_view source)
+    -> pup::Result<void>
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(source, fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+
+    return add_tupfile(bs, parse_result.tupfile, ctx, builder_state);
+}
+
+} // namespace
+
+TEST_CASE("GraphBuilder inactive branch does not generate its declared output", "[builder][conditional]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+
+    REQUIRE(add_source(fixture, bs, "ifeq (@(FOO),y)\n: |> echo gen > %o |> out.txt\nendif\n").has_value());
+
+    auto generated = names_of_type(bs, NodeType::Generated);
+    CHECK(std::find(generated.begin(), generated.end(), "out.txt") == generated.end());
+    auto ghosts = names_of_type(bs, NodeType::Ghost);
+    CHECK(std::find(ghosts.begin(), ghosts.end(), "out.txt") != ghosts.end());
+}
+
+TEST_CASE("GraphBuilder generates an output the taken branch of a phi declares", "[builder][conditional][phi]")
+{
+    // Whichever branch is parsed second, the inactive one must not undo the active one.
+    auto const taken_first = GENERATE(true, false);
+
+    auto fixture = BuilderTestFixture {};
+    auto bs = make_build_graph();
+
+    REQUIRE(add_source(
+        fixture,
+        bs,
+        taken_first
+            ? "ifeq (@(FOO),y)\n: |> echo gen > %o |> out.txt\nelse\n: |> echo alt > %o |> out.txt\nendif\n"
+            : "ifneq (@(FOO),y)\n: |> echo gen > %o |> out.txt\nelse\n: |> echo alt > %o |> out.txt\nendif\n"
+    )
+                .has_value());
+
+    auto generated = names_of_type(bs, NodeType::Generated);
+    CHECK(std::find(generated.begin(), generated.end(), "out.txt") != generated.end());
 }
 
 namespace {
