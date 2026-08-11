@@ -1559,7 +1559,9 @@ auto index_with_every_node_type() -> Index
 }
 
 /// A record of random shape: every node type, chains that terminate because a parent is always
-/// an earlier entry, and empty names so entries without a path occur too.
+/// an earlier entry, and empty names so entries without a path occur too. Names are unique per
+/// entry because a writer never gives one path two entries, and a reader now rejects a record
+/// that does (#382).
 auto random_index(std::uint32_t seed) -> Index
 {
     auto const types = std::array {
@@ -1576,7 +1578,7 @@ auto random_index(std::uint32_t seed) -> Index
             .id = static_cast<NodeId>(i + 1),
             .parent_id = parent,
             .type = types[rng() % types.size()],
-            .name = (rng() % 8 == 0) ? StringId::Empty : intern("n" + std::to_string(rng() % 100)),
+            .name = (rng() % 8 == 0) ? StringId::Empty : intern("n" + std::to_string(i)),
         });
     }
     index.compute_paths();
@@ -1808,6 +1810,79 @@ TEST_CASE("A record names the paths it recorded even at a version too old to tru
     }
 
     std::filesystem::remove(path);
+}
+
+TEST_CASE("A record that classifies one path two ways is unreadable", "[index]")
+{
+    // The three lists partition the file table, so one path in two of them proves the record
+    // holds two entries for it -- a state its own writer forbids (#382).
+    auto const pairs = std::array {
+        std::pair { NodeType::File, NodeType::Generated },
+        std::pair { NodeType::File, NodeType::Ghost },
+        std::pair { NodeType::Generated, NodeType::Ghost },
+    };
+
+    for (auto const& [first, second] : pairs) {
+        INFO("types=" << static_cast<int>(first) << "," << static_cast<int>(second));
+        auto index = Index {};
+        index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = first, .name = intern("both.txt") });
+        index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = second, .name = intern("both.txt") });
+        index.compute_paths();
+
+        auto const recovered = prior_paths(index);
+        REQUIRE(recovered.kind == PriorPaths::Kind::Lost);
+        REQUIRE(recovered.sources.empty());
+        REQUIRE(recovered.generated.empty());
+        REQUIRE(recovered.unowned.empty());
+
+        auto const path = temp_index_path("pup_prior_contradiction");
+        REQUIRE(write_index(path, index).has_value());
+        REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
+        std::filesystem::remove(path);
+    }
+}
+
+TEST_CASE("A record that names one path twice with one type is unreadable", "[index]")
+{
+    // The same rule from inside a single list: two entries for one path, whichever list they
+    // land in. Crafted bytes are not bound by the writer's funnel (#382).
+    for (auto const type : { NodeType::File, NodeType::Generated, NodeType::Ghost }) {
+        INFO("type=" << static_cast<int>(type));
+        auto index = Index {};
+        index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(FileEntry { .id = 2, .parent_id = 1, .type = type, .name = intern("twice.txt") });
+        index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = type, .name = intern("twice.txt") });
+        index.compute_paths();
+
+        auto const recovered = prior_paths(index);
+        REQUIRE(recovered.kind == PriorPaths::Kind::Lost);
+        REQUIRE(recovered.sources.empty());
+        REQUIRE(recovered.generated.empty());
+        REQUIRE(recovered.unowned.empty());
+
+        auto const path = temp_index_path("pup_prior_repeat");
+        REQUIRE(write_index(path, index).has_value());
+        REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
+        std::filesystem::remove(path);
+    }
+}
+
+TEST_CASE("A record that names one path once in each of two directories is readable", "[index]")
+{
+    // The positive control for the rejection above: same basename, different paths, which is
+    // what an out-of-tree build records for a source and the output that shadows it.
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("a") });
+    index.add_file(FileEntry { .id = 2, .type = NodeType::Directory, .name = intern("build") });
+    index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("bar.txt") });
+    index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = intern("bar.txt") });
+    index.compute_paths();
+
+    auto const recovered = prior_paths(index);
+    REQUIRE(recovered.kind == PriorPaths::Kind::Known);
+    REQUIRE(recovered.sources.size() == 1);
+    REQUIRE(recovered.generated.size() == 1);
 }
 
 TEST_CASE("Absence of a record is not the same answer as an unreadable one", "[index]")

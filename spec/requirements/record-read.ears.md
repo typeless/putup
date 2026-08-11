@@ -3,11 +3,13 @@
 - area: record-read
 - required-legs: none
 
-The subject here is what the reader does when a record's declared positions do not hold up. Every
-offset in the index is a number the record itself supplies, so a reader validates before it trusts;
-the question this area settles is what happens at the moment a check fails. It is a property of one
-read, not of state carried between builds, so this area declares no legs. See `README.md` for the
-format and the rules that apply to every area.
+The subject here is what the reader does when a record's declared positions do not hold up, or when
+what it reads at them repeats or contradicts itself. Every offset in the index is a number the
+record itself supplies, so a reader validates before it trusts; a value in range can still be
+wrong, and the one form of wrongness a reader can see unaided is a claim the record's other claims
+deny. The question this area settles is what happens at the moment either check fails. It is a
+property of one read, not of state carried between builds, so this area declares no legs. See
+`README.md` for the format and the rules that apply to every area.
 
 A record is trusted whole or not at all. A field this reader cannot faithfully reproduce is not
 recoverable by substituting a default: an empty operand set and an empty file name are claims
@@ -39,6 +41,18 @@ What a failed validation does to the record.
 
 If a semantics-bearing field's declared position fails its bounds check, then putup shall report the
 record as unreadable rather than returning an empty value in that field's place.
+
+### REQ-READ-REJECT-SELF-CONTRADICTION
+
+- conformance: putup-only
+- reference: upstream keeps classification in a database keyed by directory and name rather than re-deriving it per read, so a record naming one path twice is not a state it can hold; the check has no upstream counterpart
+- discharge: test "A record that classifies one path two ways is unreadable"
+- discharge: test "A record that names one path twice with one type is unreadable"
+- discharge: test "A record that names one path once in each of two directories is readable"
+- discharge: test "Scenario: A source and the out-of-tree output shadowing it are one record clean can read"
+
+If a record names one path in more than one entry, whether classified alike or as more than one of
+source, generated, or produced-by-no-rule, then putup shall report that record as unreadable.
 
 ### REQ-READ-EMPTY-IS-A-VALUE
 
