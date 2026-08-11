@@ -80,10 +80,11 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 /// matches it against the user's filter) and `cmd_build.cpp`'s removed-command label — nothing
 /// feeds it into an identity, a join, or change detection, and a carried-forward record copies the
 /// decoded text -- so a marker a read substituted for damaged bytes can become recorded text, which
-/// is display degrading once more rather than a new claim. `env` is not in that set: it is an execution input, so its write fails
-/// loudly on overflow where the display fields degrade with a marker (#360, #365). Falsifier: any
-/// reader that joins, hashes, or compares recorded instruction or display text against another
-/// record's, or any writer that populates `env`, revisits this disposition at that change.
+/// is display degrading once more rather than a new claim. `env` is not in that set: it is an
+/// execution input, so its write fails loudly on overflow where the display fields degrade with a
+/// marker (#360, #365). Falsifier: any reader that joins, hashes, or compares recorded instruction
+/// or display text against another record's, or any writer that populates `env`, revisits this
+/// disposition at that change.
 ///
 /// `RawFileEntry::name_offset` is semantics-bearing on the same terms: `read_prior_paths` composes
 /// it into the paths `clean`/`distclean` delete and `reject_shadowed_sources` refuses a build over,
