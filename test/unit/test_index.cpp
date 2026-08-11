@@ -1597,7 +1597,7 @@ auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
 
 } // namespace
 
-TEST_CASE("An operand count larger than the record reads as no operands", "[index]")
+TEST_CASE("An operand count larger than the record makes it unreadable", "[index]")
 {
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
@@ -1621,24 +1621,20 @@ TEST_CASE("An operand count larger than the record reads as no operands", "[inde
     auto opened = open_index(path);
     REQUIRE(opened.has_value());
     auto restored = read_index(*opened);
-    REQUIRE(restored.has_value());
-
-    auto const* cmd = restored->find_command_by_id(cmd_id);
-    REQUIRE(cmd != nullptr);
-    REQUIRE(cmd->inputs.empty());
-    REQUIRE(cmd->outputs.empty());
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
 
     opened->file.close();
     std::filesystem::remove(path);
 }
 
 // Both wrap tests discriminate only because the position they wrap onto holds something: a wrap
-// landing on zeroes reads as no operands and no name whether or not the addition was widened.
+// landing on zeroes would be rejected for the wrong reason, not for the wrap the test is about.
 static_assert(offsetof(RawHeader, file_count) == 8, "the operand wrap test lands on this field");
 static_assert(offsetof(RawFileEntry, name_offset) == 8, "the name wrap test patches this field");
 static_assert(offsetof(RawFileEntry, size) == 16, "the name wrap test plants its string here");
 
-TEST_CASE("An operand offset that wraps reads as no operands", "[index]")
+TEST_CASE("An operand offset that wraps makes the record unreadable", "[index]")
 {
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
@@ -1665,18 +1661,14 @@ TEST_CASE("An operand offset that wraps reads as no operands", "[index]")
     auto opened = open_index(path);
     REQUIRE(opened.has_value());
     auto restored = read_index(*opened);
-    REQUIRE(restored.has_value());
-
-    auto const* cmd = restored->find_command_by_id(cmd_id);
-    REQUIRE(cmd != nullptr);
-    REQUIRE(cmd->inputs.empty());
-    REQUIRE(cmd->outputs.empty());
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
 
     opened->file.close();
     std::filesystem::remove(path);
 }
 
-TEST_CASE("A name offset that wraps reads as no name", "[index]")
+TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
 {
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
@@ -1709,13 +1701,76 @@ TEST_CASE("A name offset that wraps reads as no name", "[index]")
     auto opened = open_index(path);
     REQUIRE(opened.has_value());
     auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    // The record that names it is unreadable, so the recovery read must not answer for it either.
+    opened->file.close();
+    REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
+
+    std::filesystem::remove(path);
+}
+
+/// Whole-record rejection is safe only because each reader's validation scope is its read scope:
+/// the recovery slice reads names, so operand damage elsewhere leaves it Known (#291).
+TEST_CASE("A corrupt operand record still leaves the recorded paths readable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1 }, .outputs = { 2 } });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    for (auto i = std::size_t { 0 }; i < 2 * sizeof(std::uint32_t); ++i) {
+        bytes[hdr->operand_data_offset + i] = std::byte { 0xFF };
+    }
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_operand_damage_prior_paths");
+    write_bytes(path, bytes);
+
+    auto const damaged = read_index(path);
+    REQUIRE_FALSE(damaged.has_value());
+    REQUIRE(damaged.error().code == ErrorCode::IndexDamaged);
+
+    auto const prior = read_prior_paths(path);
+    REQUIRE(prior.kind == PriorPaths::Kind::Known);
+    REQUIRE(prior.sources.size() == 1);
+    REQUIRE(prior.generated.size() == 1);
+    REQUIRE(sv(prior.generated[0]) == "main.o");
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("An empty recorded string is a value rather than a failure", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    auto cmd_id = node_id::make_command(1);
+    // env is semantics-bearing and empty here, which is exactly the value a failure must not mimic.
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .display = StringId::Empty, .env = StringId::Empty, .inputs = { 1 } });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto const path = temp_index_path("pup_empty_string_is_a_value");
+    write_bytes(path, *data);
+
+    auto restored = read_index(path);
     REQUIRE(restored.has_value());
 
-    REQUIRE_FALSE(restored->files().empty());
-    REQUIRE(sv(restored->files()[0].name) != PLANTED_NAME);
-    REQUIRE(sv(restored->files()[0].name).empty());
+    auto const* cmd = restored->find_command_by_id(cmd_id);
+    REQUIRE(cmd != nullptr);
+    REQUIRE(sv(cmd->env).empty());
+    REQUIRE(sv(cmd->display).empty());
+    REQUIRE(sv(cmd->instruction_pattern) == "cc %f");
 
-    opened->file.close();
     std::filesystem::remove(path);
 }
 
