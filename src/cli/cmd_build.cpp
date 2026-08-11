@@ -1735,11 +1735,12 @@ auto reject_shadowed_sources(
     auto& pool = pup::global_pool();
     auto build_root_name = pup::graph::get_build_root_name(g);
 
-    // Only in-tree builds can destroy anything: out-of-tree, %o resolves under the build
-    // root, so a rule whose output path collides with a committed file writes beside it
-    // rather than over it. The collision is still confusing there -- the source becomes
-    // unreadable through that path -- but it is not data loss, and rejecting on it fails
-    // builds that cannot hurt anyone (a second build dir sees the first one's artifacts).
+    // Only in-tree builds can destroy anything, now that no output may leave the build
+    // hierarchy (#385): out-of-tree, %o resolves under the build root, so a rule whose output
+    // path collides with a committed file writes beside it rather than over it. The collision
+    // is still confusing there -- the source becomes unreadable through that path -- but it is
+    // not data loss, and rejecting on it fails builds that cannot hurt anyone (a second build
+    // dir sees the first one's artifacts).
     if (!build_root_name.empty()) {
         return {};
     }

@@ -952,6 +952,21 @@ auto expand_outputs(
 
             auto full_output_path_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv))));
 
+            // Guards do not gate this, and an absolute path is rejected rather than re-rooted (#385).
+            auto const absolute = pup::path::is_absolute(full_output_path_sv);
+            if (absolute || full_output_path_sv == ".." || full_output_path_sv.starts_with("../")) {
+                auto msg = Buf {};
+                msg.fmt(
+                    absolute
+                        ? "{}:{}: Unable to write to an absolute path, outside the build hierarchy: {} (an output is named relative to its Tupfile)"
+                        : "{}:{}: Unable to write to a file outside of the build hierarchy: {}",
+                    str(ctx.current_file),
+                    pattern.location.line,
+                    output_path_sv
+                );
+                return make_error<Vec<PathId>>(ErrorCode::InvalidPattern, msg.view());
+            }
+
             result.push_back(ctx.state->graph.paths.intern_path(full_output_path_sv, pool, PathId::BuildRoot));
         }
     }

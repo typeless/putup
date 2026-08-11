@@ -859,6 +859,24 @@ Output paths can use `..` to write files outside the current directory:
 
 Output paths are relative to the Tupfile's location in the output tree (for variant builds) or the source tree (for in-tree builds).
 
+An output may not leave the build hierarchy. A rule whose output resolves above the build root is
+rejected while the Tupfile is read, and so is an absolute path — including one that points back into
+the tree, which never named the file it spelled:
+
+```tup
+# Error: Unable to write to a file outside of the build hierarchy: ../escape.txt
+: |> echo x > %o |> ../escape.txt
+
+# Error: Unable to write to a file outside of the build hierarchy: /srv/out.txt
+: |> echo x > %o |> /srv/out.txt
+```
+
+A rule under a config condition is checked whether or not the condition holds, because its outputs
+are recorded either way.
+
+Outputs that stay inside the tree are recorded by where they land, so `sub/../gen.txt` and `gen.txt`
+name one file.
+
 **Display Text:**
 
 Custom display text replaces the command in output:
