@@ -55,3 +55,16 @@ as the field's value rather than treating it as a failed read.
 
 Where a record's operand data fails validation, putup shall still recover the paths its file table
 records, because that read examines the file table alone.
+
+## Group: announcement
+
+What the build says about a record it could not load.
+
+### REQ-READ-ANNOUNCE-DAMAGE
+
+- conformance: putup-only
+- discharge: test "Scenario: A damaged record says so instead of rebuilding in silence"
+- discharge: test "Scenario: An index from an unsupported version rebuilds without calling it damage"
+
+If the record a build would load is damaged, then putup shall announce the damage; if its version is
+merely outside the readable window, putup shall not call it damage.
