@@ -964,7 +964,7 @@ auto expand_outputs(
                     pattern.location.line,
                     output_path_sv
                 );
-                return make_error<Vec<PathId>>(ErrorCode::InvalidPattern, msg.view());
+                return make_error<Vec<PathId>>(ErrorCode::ParseError, msg.view());
             }
 
             result.push_back(ctx.state->graph.paths.intern_path(full_output_path_sv, pool, PathId::BuildRoot));
