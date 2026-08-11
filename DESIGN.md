@@ -665,7 +665,7 @@ class BuildGraph {
 
 **Path storage model**: Nodes store only their basename in `name`. Full paths are reconstructed by walking the `parent_dir` chain via `get_full_path()`, which caches results for efficiency.
 
-**Node creation**: All file/directory/ghost/generated nodes are created through `ensure_file_node(graph, path_id, type)`, which takes a grounded `PathId` and walks the PathPool trie to create intermediate directory nodes as needed. It deduplicates via `path_to_node` (PathId→NodeId map) and handles type upgrades (Ghost→Generated). The builder's `resolve_input_node` performs filesystem probing and heuristics to determine the correct root (SourceRoot vs BuildRoot) and NodeType, then delegates to `ensure_file_node` for actual node creation.
+**Node creation**: All file/directory/ghost/generated nodes are created through `ensure_file_node(graph, path_id, type)`, which takes a grounded `PathId` and walks the PathPool trie to create intermediate directory nodes as needed. It deduplicates via `path_to_node` (PathId→NodeId map) and handles type upgrades (Ghost→Generated). The builder's `resolve_input_node` performs filesystem probing and heuristics to determine the correct root (SourceRoot vs BuildRoot) and NodeType, then delegates to `ensure_file_node` for actual node creation. Membership of `NodeType::Generated` is not only a classification others copy: two sites branch on it as *evidence* — grounding, where `is_seeded_generated` decides which root an input path binds to, and admission, where change detection decides which recorded entries it watches. Any change to what `Generated` means has to re-derive both, or a path silently changes which node it resolves to (#386).
 
 **Graph operations:**
 
@@ -753,7 +753,7 @@ Ghost nodes are placeholder nodes for files that don't exist yet during parsing.
 
 **Validation**: before build execution, `reject_unresolved_ghosts` (`src/cli/cmd_build.cpp`) fails the build for a ghost that something consumes and that nothing put on disk. A ghost nothing consumes is harmless and is left alone; a consumed one backed by a file on disk is a foreign input, not an error.
 
-**Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Two kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125).
+**Index serialization**: every live ghost node gets a record entry, because ids stay dense (id == position + 1). Three kinds carry meaning there. A consumed ghost backed by a file no rule produces is a foreign input — the variant's `tup.config` is the standing example — recorded with its content so change detection can see it change. And a path this build has no authority over, an output whose producing directory a scoped build never parsed, arrives here as a ghost too: a ghost is the graph's own encoding of "referenced, awaiting its producer", which is what such a path is from this build's point of view. The record then re-asserts its previous owner rather than downgrading it to a source (#369) — the entry is written back as `Generated` from the previous record's output set, and `merge_out_of_scope_commands` carries its producing command forward and re-attaches the output edge (#125). The third kind is a path declared only by rules whose guards are unsatisfied: `Generated` means produced by a rule this configuration runs, so an inactive branch's declared output rests as a ghost rather than reclassifying whatever is at that path (#386). Alone among ghosts it can carry a producer edge, and turning the branch back off after a build that ran it routes through the same #369 re-assertion, which is what keeps the build's ownership of a file it genuinely made.
 
 ### GraphBuilder
 
@@ -1058,6 +1058,14 @@ deletes an output no live command produces, and only from a directory this build
 rule at the command level governs a reset: `distclean` may discard the record only when nothing it
 owns survives on disk (#373), which `spec/requirements/reset.ears.md` states as a checkable
 requirement — including why `tup.config` is removed regardless.
+
+**A record never holds two entries for one path.** The graph's one-path-one-node invariant is the
+record's too, and it is the writer's to keep: every file-shaped serialization arm registers its
+path, so a discovered dependency naming a path joins the entry that already describes it instead of
+minting a second one with a second type. The ghost arm was the exception until #386 — the entries it
+wrote were unreachable by path, so a depfile naming the same path produced a record claiming that
+path twice. With every arm conforming, the predicate is decidable by the writer alone, which is what
+makes it worth stating here rather than checking on read.
 
 ### IndexReader
 

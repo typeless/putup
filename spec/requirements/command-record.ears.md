@@ -491,6 +491,19 @@ putup shall record every output a command declares, whatever their number.
 While a build has no authority over the directory that produces a file, putup shall keep the
 classification the previous record gave that file.
 
+### REQ-OUT-INACTIVE
+
+- leg: invariant
+- conformance: deliberate-deviation
+- reference: upstream never evaluates an unsatisfied branch, so its rules declare nothing and the question does not arise (`src/tup/parser.c` skips the block); putup registers them for the phi model and must therefore say what their outputs are, and answers that a classification names what this configuration produces (#386)
+- discharge: test "Scenario: clean leaves a source file an inactive branch merely declares"
+- discharge: test "Scenario: A glob skips a path only an inactive branch declares"
+- discharge: test "GraphBuilder inactive branch does not generate its declared output"
+- discharge: test "GraphBuilder generates an output the taken branch of a phi declares"
+
+Where a command sits in an inactive conditional branch, putup shall not record its declared
+outputs as generated files.
+
 ---
 
 ## Group: group-membership

@@ -3439,6 +3439,182 @@ SCENARIO("distclean does not report a reset it could not perform", "[e2e][clean]
     }
 }
 
+SCENARIO("clean leaves a source file an inactive branch merely declares", "[e2e][clean][conditionals]")
+{
+    GIVEN("a committed source whose path an unbuilt conditional branch names as an output")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "ifeq (@(FOO),y)\n: |> cp src.txt %o |> foo.txt\nendif\n");
+        f.write_file("src.txt", "hello\n");
+        f.write_file("foo.txt", "I AM A COMMITTED SOURCE FILE\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("clean removes what the record says the build owns")
+        {
+            auto result = f.clean({ "-v" });
+
+            THEN("the source file is still there")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(f.exists("foo.txt"));
+                REQUIRE(f.read_file("foo.txt") == "I AM A COMMITTED SOURCE FILE\n");
+                REQUIRE(result.stdout_output.find("Removed: foo.txt") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Editing a source file an inactive branch names re-runs its consumer", "[e2e][incremental][conditionals]")
+{
+    GIVEN("a committed source that an unbuilt branch declares and an active rule consumes")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file(
+            "Tupfile",
+            "ifeq (@(FOO),y)\n: |> cp src.txt %o |> foo.txt\nendif\n"
+            ": foo.txt |> cat %f > %o |> out.txt\n"
+        );
+        f.write_file("src.txt", "hello\n");
+        f.write_file("foo.txt", "first\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("out.txt") == "first\n");
+
+        WHEN("the source file is edited")
+        {
+            f.write_file("foo.txt", "second\n");
+            auto result = f.build();
+
+            THEN("the rule that consumes it runs again")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "second\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A file appearing where only an inactive branch declared it re-runs its discoverer", "[e2e][incremental][implicit][conditionals]")
+{
+    GIVEN("a path an inactive branch declares and an active command discovers")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("b");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", "ifdef FOO\n: |> echo produced > %o |> p.txt\nendif\n");
+        f.write_file("b/Tupfile", ": gen.sh |> sh gen.sh %o |> c.o\n");
+        f.write_file(
+            "b/gen.sh",
+            "out=$1\n"
+            "dep=\"${out%.o}.d\"\n"
+            "if [ -f ../a/p.txt ]; then cat ../a/p.txt > \"$out\"; else echo missing > \"$out\"; fi\n"
+            "printf '%s: ../a/p.txt\\n' \"$out\" > \"$dep\"\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("b/c.o") == "missing\n");
+
+        WHEN("the file is created by hand")
+        {
+            f.write_file("a/p.txt", "hand-made\n");
+            auto result = f.build();
+
+            THEN("the command that discovered the path runs again")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b/c.o") == "hand-made\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A glob skips a path only an inactive branch declares", "[e2e][build][glob][conditionals]")
+{
+    GIVEN("a glob rule beside a conditional branch that is not taken")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file(
+            "Tupfile",
+            "ifeq (@(FOO),y)\n: |> echo x > %o |> bar.txt\nendif\n"
+            ": foreach *.txt |> cat %f > %o |> %B.out\n"
+        );
+        f.write_file("src.txt", "hello\n");
+
+        WHEN("the project is built")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("only the file that exists is expanded")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("src.out"));
+                REQUIRE_FALSE(f.exists("bar.out"));
+                REQUIRE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A subdirectory an inactive branch would write into is not generated", "[e2e][build][conditionals]")
+{
+    GIVEN("a committed source in a subdirectory an unbuilt branch names as an output")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("sub");
+        f.write_file("Tupfile", "ifeq (@(FOO),y)\n: |> cp src.txt %o |> sub/foo.txt\nendif\n");
+        f.write_file("src.txt", "hello\n");
+        f.write_file("sub/foo.txt", "I AM A COMMITTED SOURCE FILE\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("clean removes what the record says the build owns")
+        {
+            auto result = f.clean({ "-v" });
+
+            THEN("neither the source nor its directory is removed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(f.exists("sub/foo.txt"));
+                REQUIRE(f.read_file("sub/foo.txt") == "I AM A COMMITTED SOURCE FILE\n");
+                REQUIRE(f.is_directory("sub"));
+            }
+        }
+    }
+}
+
+SCENARIO("Turning a branch off keeps ownership of what it built", "[e2e][build][conditionals]")
+{
+    // Ownership survives the branch going inactive only via the record's carry-forward (#369).
+    GIVEN("an output produced while its branch was active")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "ifeq (@(FOO),y)\n: |> cp src.txt %o |> foo.txt\nendif\n");
+        f.write_file("src.txt", "hello\n");
+        REQUIRE(f.init().success());
+        REQUIRE(f.build({ "-D", "FOO=y" }).success());
+        REQUIRE(f.exists("foo.txt"));
+
+        WHEN("the branch is turned off again")
+        {
+            auto result = f.build({ "-v" });
+
+            THEN("the build deletes the output it owned rather than abandoning it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("foo.txt"));
+                REQUIRE(result.stdout_output.find("Removed stale: foo.txt") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A stale output that cannot even be queried keeps its record", "[e2e][incremental][stale]")
 {
     // The rule lives in the readable root Tupfile so its directory stays authoritative;
