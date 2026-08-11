@@ -7706,6 +7706,83 @@ SCENARIO("A damaged record says so instead of rebuilding in silence", "[e2e][inc
     }
 }
 
+SCENARIO("A rule writing above the build root fails the build instead of overwriting the file there", "[e2e][build][hierarchy]")
+{
+    GIVEN("an out-of-tree project whose rule writes a path that climbs out of the build directory")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.write_file("src.txt", "GENERATED\n");
+        f.write_file("victim.txt", "A COMMITTED SOURCE\n");
+        REQUIRE(f.pup({ "configure", "-B", "bld" }).success());
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> ../victim.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto const result = f.build({ "-B", "bld" });
+
+            THEN("the build fails and the file that was already there is untouched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("hierarchy") != std::string::npos);
+                REQUIRE(f.read_file("victim.txt") == "A COMMITTED SOURCE\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A parent reference inside the tree is recorded canonically", "[e2e][build][hierarchy]")
+{
+    GIVEN("an in-tree project whose subdirectory rule writes into its parent")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "");
+        f.mkdir("sub");
+        f.write_file("sub/Tupfile", ": src.txt |> cp %f %o |> ../gen.txt\n");
+        f.write_file("sub/src.txt", "SEED\n");
+
+        WHEN("the project is built")
+        {
+            auto const result = f.build();
+
+            THEN("it builds, and the record names the output by where it landed")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("gen.txt"));
+
+                auto const bytes = index_bytes(f);
+                auto const* hdr = reinterpret_cast<pup::index::RawHeader const*>(bytes.data());
+                auto name_at = [&bytes, hdr](std::uint32_t offset) {
+                    auto const at = std::size_t { hdr->string_offset } + offset;
+                    auto length = std::uint16_t {};
+                    std::memcpy(&length, bytes.data() + at, sizeof(length));
+                    return std::string { reinterpret_cast<char const*>(bytes.data()) + at + sizeof(length), length };
+                };
+
+                auto generated = std::vector<std::string> {};
+                auto parent_refs = 0;
+                for (auto i = std::uint32_t { 0 }; i < hdr->file_count; ++i) {
+                    auto entry = pup::index::RawFileEntry {};
+                    std::memcpy(&entry, bytes.data() + hdr->file_offset + i * sizeof(entry), sizeof(entry));
+                    auto const name = name_at(entry.name_offset);
+                    if (name == "..") {
+                        ++parent_refs;
+                    }
+                    if (entry.type == static_cast<std::uint8_t>(pup::NodeType::Generated)) {
+                        generated.push_back(name);
+                    }
+                }
+
+                REQUIRE(parent_refs == 0);
+                REQUIRE(generated == std::vector<std::string> { "gen.txt" });
+            }
+        }
+    }
+}
+
 SCENARIO("An index from an unsupported version rebuilds without calling it damage", "[e2e][incremental]")
 {
     GIVEN("an in-tree project built once, with a record a newer putup wrote")

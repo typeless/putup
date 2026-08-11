@@ -1978,6 +1978,89 @@ TEST_CASE("GraphBuilder accepts config-distinguished commands in the configure p
     CHECK(result.has_value());
 }
 
+TEST_CASE("GraphBuilder rejects an output above the build root", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> echo x > %o |> ../escape.txt\n");
+
+    REQUIRE_FALSE(result.has_value());
+    auto msg = result.error().msg();
+    CHECK(msg.find("outside") != std::string_view::npos);
+    CHECK(msg.find("hierarchy") != std::string_view::npos);
+    CHECK(msg.find("../escape.txt") != std::string_view::npos);
+    CHECK(msg.find("Tupfile") != std::string_view::npos);
+}
+
+/// Unlike `error` and the empty-command check, this one does not wait for the branch to be
+/// satisfied: a guarded rule still registers for the phi model, so its output reaches the
+/// record whatever the guard said (issue #385).
+TEST_CASE("GraphBuilder rejects an output above the build root under an unsatisfied guard", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+    auto config = VarDb {};
+    config.set("FOO", "n");
+
+    auto result = add_tupfile_from_source(
+        fixture, "ifeq (@(FOO),y)\n: |> echo x > %o |> ../escape.txt\nendif\n", &config
+    );
+
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("hierarchy") != std::string_view::npos);
+}
+
+/// An absolute output never named the file it spells: the path is interned under the build root,
+/// so it built a mirror of itself inside the tree. Rejected rather than re-rooted, where upstream
+/// re-roots the ones that land inside its hierarchy (#385).
+TEST_CASE("GraphBuilder rejects an absolute output path", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto const outside = std::string { ": |> echo x > %o |> /pup-hierarchy-escape.txt\n" };
+    auto rejected_outside = add_tupfile_from_source(fixture, outside);
+    REQUIRE_FALSE(rejected_outside.has_value());
+    CHECK(rejected_outside.error().msg().find("hierarchy") != std::string_view::npos);
+
+    // The spelling that points back into the tree is rejected too: today it resolves to a mirror
+    // of the absolute path under the build root, not to the file it names.
+    auto const inside = ": |> echo x > %o |> " + fixture.root_str() + "/gen.txt\n";
+    auto rejected_inside = add_tupfile_from_source(fixture, inside);
+    REQUIRE_FALSE(rejected_inside.has_value());
+    CHECK(rejected_inside.error().msg().find("hierarchy") != std::string_view::npos);
+}
+
+TEST_CASE("GraphBuilder accepts a parent reference that stays inside the tree", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+    fixture.create_file("src/input.c");
+
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(": input.c |> cp %f %o |> ../gen.txt\n", fixture.tupfile_path("src"));
+    REQUIRE(parse_result.success());
+
+    auto result = add_tupfile(bs, parse_result.tupfile, ctx, builder_state);
+    REQUIRE(result.has_value());
+
+    // The name the record carries, which is what a cross-check against the source list compares.
+    auto generated = nodes_of_type(bs.graph, NodeType::Generated);
+    REQUIRE(generated.size() == 1);
+    CHECK(sv(get<Name>(bs.graph, generated[0])) == "gen.txt");
+    CHECK(sv(get_full_path(bs.graph, generated[0])) == "gen.txt");
+}
+
 TEST_CASE("GraphBuilder accepts identical text under complementary guards", "[builder][identity][phi]")
 {
     auto fixture = BuilderTestFixture {};
