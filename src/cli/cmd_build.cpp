@@ -1756,11 +1756,12 @@ auto reject_shadowed_sources(
     }
 
     // What the previous build's record settles. `Known`: a path it recorded as a source File is
-    // a source whatever is on disk now, and everything else -- notably a generated file it does
-    // not mention, which is what a scoped build leaves behind for out-of-scope outputs -- is not
-    // decidable from here and is left alone. `NeverBuilt`: nothing we produced can be on disk
-    // yet, so anything sitting at an output's path is a source. `Lost`: a build happened here
-    // and putup cannot tell either way, which is the only case that says so out loud.
+    // a source whatever is on disk now, and a path it recorded while producing nothing at it is
+    // owned by nobody (#389); absence stays undecidable -- a generated file it does not mention
+    // is what a scoped build leaves behind for out-of-scope outputs -- which is why the test
+    // below is positive. `NeverBuilt`: nothing we produced can be on disk yet, so anything
+    // sitting at an output's path is a source. `Lost`: a build happened here and putup cannot
+    // tell either way, which is the only case that says so out loud.
     auto const known = prior.kind == pup::index::PriorPaths::Kind::Known;
     auto shadowed = pup::Vec<StringId> {};
 
@@ -1796,8 +1797,10 @@ auto reject_shadowed_sources(
             }
 
             auto rel_id = pool.intern(rel_sv);
-            if (known
-                && !std::binary_search(prior.sources.begin(), prior.sources.end(), rel_id, pup::handle_less)) {
+            auto const recorded = [&](pup::Vec<StringId> const& paths) {
+                return std::binary_search(paths.begin(), paths.end(), rel_id, pup::handle_less);
+            };
+            if (known && !recorded(prior.sources) && !recorded(prior.unowned)) {
                 continue;
             }
 
@@ -1816,7 +1819,7 @@ auto reject_shadowed_sources(
     err.append(
         prior.kind == pup::index::PriorPaths::Kind::Lost
             ? "A previous build's record for this tree cannot be read, so putup cannot tell which of these files that build produced:\n"
-            : "Attempting to create files that already exist as source files:\n"
+            : "Attempting to create files the build does not own:\n"
     );
     for (auto id : shadowed) {
         err.fmt("  {}\n", pool.get(id));

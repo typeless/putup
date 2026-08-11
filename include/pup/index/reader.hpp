@@ -37,9 +37,9 @@ auto read_index(IndexFile const& f) -> Result<Index>;
 auto read_index(std::string_view path) -> Result<Index>;
 
 /// What a previous build's record says about the paths in this tree: which ones it recorded as
-/// sources, and which ones it produced. A version bump retracts the record's currency; #291 was
-/// it retracting this along with it, leaving the next build to call its own outputs checked-in
-/// source files.
+/// sources, which ones it produced, and which ones it observed while claiming neither. A version
+/// bump retracts the record's currency; #291 was it retracting this along with it, leaving the
+/// next build to call its own outputs checked-in source files.
 struct PriorPaths {
     enum class Kind : std::uint8_t {
         NeverBuilt, ///< No record at all, so nothing this project produced can be on disk yet
@@ -50,6 +50,7 @@ struct PriorPaths {
     Kind kind = Kind::NeverBuilt;
     Vec<StringId> sources;   ///< Sorted; empty unless kind == Known
     Vec<StringId> generated; ///< Sorted; empty unless kind == Known
+    Vec<StringId> unowned;   ///< Sorted; empty unless kind == Known. Recorded, produced by no rule
 };
 
 /// Classify the paths an already-loaded record holds.

@@ -1067,6 +1067,16 @@ wrote were unreachable by path, so a depfile naming the same path produced a rec
 path twice. With every arm conforming, the predicate is decidable by the writer alone, which is what
 makes it worth stating here rather than checking on read.
 
+**A reader that decides a destructive action reads the record totally.** Every projection of the
+file table disposes of every node type explicitly, because the types it declines to mention become
+paths its caller cannot see: `prior_paths` kept sources and generated files and dropped the rest
+through a silent `else`, so a path the record held while producing nothing at it — the answer that
+describes a checked-in file, a foreign input, or a file written where putup had deleted its own
+output — reached no reader, and the guard against overwriting such a file could not fire (#389).
+The projection is now an exhaustive `switch`, so the next node type is a compile error rather than
+another path nobody can see. What the guard then does with the three lists is a behavioural rule
+and lives in `spec/requirements/source-protection.ears.md`, not here.
+
 ### IndexReader
 
 Memory-mapped for efficiency:
