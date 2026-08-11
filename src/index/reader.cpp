@@ -97,7 +97,7 @@ auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> R
         return make_error<IndexFile>(ErrorCode::InvalidFormat, "Unsupported index version");
     }
     if (!declared_layout_fits(result.file.size(), *hdr)) {
-        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Index sections do not fit the file");
+        return make_error<IndexFile>(ErrorCode::IndexDamaged, "Index sections do not fit the file");
     }
     // What makes the bytes worth reading at all: that they are the ones a putup wrote, not a file
     // that merely starts with the right four and lays its sections out plausibly (#294).
