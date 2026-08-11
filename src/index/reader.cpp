@@ -206,31 +206,49 @@ auto read_index(std::string_view path) -> Result<Index>
 
 auto prior_paths(Index const& index) -> PriorPaths
 {
-    auto result = PriorPaths { .kind = PriorPaths::Kind::Known, .sources = {}, .generated = {} };
+    auto result = PriorPaths { .kind = PriorPaths::Kind::Known, .sources = {}, .generated = {}, .unowned = {} };
 
     for (auto const& file : index.files()) {
         if (pup::is_empty(file.path)) {
             continue;
         }
-        if (file.type == NodeType::File) {
+        // Total by construction: a reader that decides whether to overwrite a file must not
+        // consume a projection that drops an entry type silently (#389).
+        switch (file.type) {
+        case NodeType::File:
             result.sources.push_back(file.path);
-        } else if (file.type == NodeType::Generated) {
+            break;
+        case NodeType::Generated:
             result.generated.push_back(file.path);
+            break;
+        case NodeType::Ghost:
+            result.unowned.push_back(file.path);
+            break;
+        case NodeType::Command:
+        case NodeType::Directory:
+        case NodeType::Variable:
+        case NodeType::Group:
+        case NodeType::GeneratedDir:
+        case NodeType::Root:
+        case NodeType::Condition:
+        case NodeType::Phi:
+            break;
         }
     }
 
     std::sort(result.sources.begin(), result.sources.end(), pup::handle_less);
     std::sort(result.generated.begin(), result.generated.end(), pup::handle_less);
+    std::sort(result.unowned.begin(), result.unowned.end(), pup::handle_less);
     return result;
 }
 
 auto read_prior_paths(std::string_view path) -> PriorPaths
 {
     if (!pup::platform::exists(path)) {
-        return PriorPaths { .kind = PriorPaths::Kind::NeverBuilt, .sources = {}, .generated = {} };
+        return PriorPaths { .kind = PriorPaths::Kind::NeverBuilt, .sources = {}, .generated = {}, .unowned = {} };
     }
 
-    auto lost = PriorPaths { .kind = PriorPaths::Kind::Lost, .sources = {}, .generated = {} };
+    auto lost = PriorPaths { .kind = PriorPaths::Kind::Lost, .sources = {}, .generated = {}, .unowned = {} };
 
     auto file = open_index_in_window(path, INDEX_LAYOUT_FLOOR);
     if (!file) {

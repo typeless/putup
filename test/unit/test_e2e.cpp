@@ -3465,6 +3465,72 @@ SCENARIO("clean leaves a source file an inactive branch merely declares", "[e2e]
     }
 }
 
+SCENARIO("A build refuses to overwrite a file the record does not attribute to a rule", "[e2e][build][conditionals]")
+{
+    // Whether a previous build happened must not change the answer: the record is what the
+    // guard reads, and none of these three sequences gives it a claim on the file.
+    GIVEN("a conditional branch whose output path holds a file no rule has produced")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", "ifeq (@(FOO),y)\n: |> cp src.txt %o |> foo.txt\nendif\n");
+        f.write_file("src.txt", "hello\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the branch is turned on after a build that ran with it off")
+        {
+            f.write_file("foo.txt", "I AM A COMMITTED SOURCE FILE\n");
+            REQUIRE(f.build().is_noop());
+            auto result = f.build({ "-D", "FOO=y" });
+
+            THEN("the build refuses, names the file, and leaves it untouched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(f.read_file("foo.txt") == "I AM A COMMITTED SOURCE FILE\n");
+                REQUIRE(combined.find("does not own") != std::string::npos);
+                REQUIRE(combined.find("foo.txt") != std::string::npos);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+
+        WHEN("the branch is turned on with no previous build")
+        {
+            f.write_file("foo.txt", "I AM A COMMITTED SOURCE FILE\n");
+            auto result = f.build({ "-D", "FOO=y" });
+
+            THEN("the build refuses, names the file, and leaves it untouched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(f.read_file("foo.txt") == "I AM A COMMITTED SOURCE FILE\n");
+                REQUIRE(combined.find("does not own") != std::string::npos);
+                REQUIRE(combined.find("foo.txt") != std::string::npos);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+
+        WHEN("the file is created after a build that recorded the path as absent")
+        {
+            REQUIRE(f.build().is_noop());
+            f.write_file("foo.txt", "HAND MADE, PRECIOUS\n");
+            auto result = f.build({ "-D", "FOO=y" });
+
+            THEN("the build refuses, names the file, and leaves it untouched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(f.read_file("foo.txt") == "HAND MADE, PRECIOUS\n");
+                REQUIRE(combined.find("does not own") != std::string::npos);
+                REQUIRE(combined.find("foo.txt") != std::string::npos);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
 SCENARIO("Editing a source file an inactive branch names re-runs its consumer", "[e2e][incremental][conditionals]")
 {
     GIVEN("a committed source that an unbuilt branch declares and an active rule consumes")
