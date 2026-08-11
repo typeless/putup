@@ -56,6 +56,9 @@ auto remove_indexed_outputs(
 {
     auto result = RemoveResult {};
 
+    // Deleting has no recomputation behind it, so this asks the strongest check its inputs afford:
+    // a record read whole and consistent with itself, since no parse is available here to ask who
+    // produces a path (#382).
     if (prior.kind != pup::index::PriorPaths::Kind::Known) {
         veprint(variant_name, "Error: the build record at {} cannot be read, so the files this build produced cannot be named.\n", index_path);
         veprint(variant_name, "  Remove them by hand, or use a putup that can read this record.\n");

@@ -1064,8 +1064,9 @@ record's too, and it is the writer's to keep: every file-shaped serialization ar
 path, so a discovered dependency naming a path joins the entry that already describes it instead of
 minting a second one with a second type. The ghost arm was the exception until #386 — the entries it
 wrote were unreachable by path, so a depfile naming the same path produced a record claiming that
-path twice. With every arm conforming, the predicate is decidable by the writer alone, which is what
-makes it worth stating here rather than checking on read.
+path twice. With every arm conforming, the predicate is decidable by the writer alone — and the
+reader still enforces it before deleting, because a writer bug is exactly the case a record cannot
+rule out about itself (#382).
 
 **A reader that decides a destructive action reads the record totally.** Every projection of the
 file table disposes of every node type explicitly, because the types it declines to mention become
@@ -1076,6 +1077,18 @@ output — reached no reader, and the guard against overwriting such a file coul
 The projection is now an exhaustive `switch`, so the next node type is a compile error rather than
 another path nobody can see. What the guard then does with the three lists is a behavioural rule
 and lives in `spec/requirements/source-protection.ears.md`, not here.
+
+**Deletion is the one action with no recomputation behind it, so before acting the reader demands
+the strongest check its inputs afford.** With only the record in hand, that is self-consistency of
+the classification it is about to act on — never "independence", which one record cannot contain:
+one writer, one file table, and the projections of it are not witnesses to each other. So
+`prior_paths` refuses a record naming one path twice, whether in one of its lists or across two,
+which is the read-side enforcement of the one-entry-per-path rule above; `clean` and `distclean`
+then report a record they cannot read rather than composing a path from it. What the check cannot
+see is a wrong name that resolves to a string no file entry claims — it rejects a record that
+contradicts its own classification, not every wrong name. The same principle predicts the stale-output sweep's
+different checks: running with a live graph, the strongest check its inputs afford is reachability
+from a producing command, which `clean` has no parse to answer.
 
 ### IndexReader
 

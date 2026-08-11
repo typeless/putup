@@ -239,6 +239,35 @@ auto prior_paths(Index const& index) -> PriorPaths
     std::sort(result.sources.begin(), result.sources.end(), pup::handle_less);
     std::sort(result.generated.begin(), result.generated.end(), pup::handle_less);
     std::sort(result.unowned.begin(), result.unowned.end(), pup::handle_less);
+
+    // Each entry feeds one list, so a path appearing twice -- in one list or across two -- is a
+    // record holding two entries for one path, the state its own writer forbids, and this is the
+    // last check available before an irreversible action (#382). Compared as stored: an
+    // out-of-tree record legitimately holds one file as "a/bar.txt" and "build/a/bar.txt", which
+    // stripping a prefix would collapse.
+    auto const repeats = [](Vec<StringId> const& paths) {
+        return std::adjacent_find(paths.begin(), paths.end()) != paths.end();
+    };
+    auto const overlaps = [](Vec<StringId> const& lhs, Vec<StringId> const& rhs) {
+        auto l = lhs.begin();
+        auto r = rhs.begin();
+        while (l != lhs.end() && r != rhs.end()) {
+            if (pup::handle_less(*l, *r)) {
+                ++l;
+            } else if (pup::handle_less(*r, *l)) {
+                ++r;
+            } else {
+                return true;
+            }
+        }
+        return false;
+    };
+    if (repeats(result.sources) || repeats(result.generated) || repeats(result.unowned)
+        || overlaps(result.sources, result.generated) || overlaps(result.sources, result.unowned)
+        || overlaps(result.generated, result.unowned)) {
+        return PriorPaths { .kind = PriorPaths::Kind::Lost, .sources = {}, .generated = {}, .unowned = {} };
+    }
+
     return result;
 }
 

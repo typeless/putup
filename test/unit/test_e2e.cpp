@@ -3465,6 +3465,38 @@ SCENARIO("clean leaves a source file an inactive branch merely declares", "[e2e]
     }
 }
 
+SCENARIO("A source and the out-of-tree output shadowing it are one record clean can read", "[e2e][clean][out-of-tree]")
+{
+    // The regression pin for comparing recorded paths as stored: this record holds one file as
+    // both a source and an output, and only their spellings tell them apart (#382).
+    GIVEN("a build whose output shadows a committed source of the same name")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("a");
+        f.mkdir("z");
+        f.write_file("Tupfile", "# no rules at the root\n");
+        f.write_file("a/Tupfile", ": bar.txt |> cat %f > %o |> a.out\n");
+        f.write_file("z/Tupfile", ": |> echo GEN > %o |> ../a/bar.txt\n");
+        f.write_file("a/bar.txt", "COMMITTED SOURCE\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        WHEN("clean removes what the record says the build produced")
+        {
+            auto result = f.clean({ "-B", "build", "-v" });
+
+            THEN("it succeeds, removes the output, and leaves the source")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a/bar.txt") == "COMMITTED SOURCE\n");
+                REQUIRE_FALSE(f.exists("build/a/bar.txt"));
+            }
+        }
+    }
+}
+
 SCENARIO("A build refuses to overwrite a file the record does not attribute to a rule", "[e2e][build][conditionals]")
 {
     // Whether a previous build happened must not change the answer: the record is what the
