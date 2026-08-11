@@ -26,6 +26,8 @@ enum class ErrorCode {
     IndexVersionMismatch,
     IndexChecksumMismatch,
     IndexTruncated,
+    // A code that conflates damage with an expected-benign outcome forces every caller to choose between noise and silence.
+    IndexDamaged,
 
     // Parser errors
     ParseError,

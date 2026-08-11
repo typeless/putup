@@ -662,6 +662,8 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
         // full rebuild, which reads as a first build (#294).
         if (index_result.error().code == pup::ErrorCode::IndexChecksumMismatch) {
             eprint("Warning: the build record at {} failed its checksum, so this build cannot use it.\n", index_path_sv);
+        } else if (index_result.error().code == pup::ErrorCode::IndexDamaged) {
+            eprint("Warning: the build record at {} is damaged, so this build cannot use it: {}\n", index_path_sv, index_result.error().msg());
         }
         return result;
     }

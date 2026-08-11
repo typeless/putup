@@ -7378,6 +7378,23 @@ auto truncate_index(E2EFixture const& f, std::uintmax_t size) -> void
     std::filesystem::resize_file(f.workdir() / ".pup" / "index", size);
 }
 
+/// Damage the record the way only its own header can say: a section declared past the end of the
+/// file, re-signed so the checksum still passes and the layout check is what refuses it.
+auto damage_index_layout(E2EFixture const& f) -> void
+{
+    auto bytes = index_bytes(f);
+    REQUIRE(bytes.size() > sizeof(pup::index::RawHeader) + sizeof(pup::index::RawFooter));
+
+    auto* hdr = reinterpret_cast<pup::index::RawHeader*>(bytes.data());
+    hdr->file_offset = static_cast<std::uint32_t>(bytes.size());
+
+    auto const content_size = bytes.size() - sizeof(pup::index::RawFooter);
+    auto const checksum = pup::sha256(std::span<std::byte const> { bytes.data(), content_size });
+    std::memcpy(bytes.data() + content_size, checksum.data(), checksum.size());
+
+    write_index_bytes(f, bytes);
+}
+
 /// Everything a record says about *what* the build is, with the two fields that say *when* it
 /// happened left out: the header's save_time_ns and each file's mtime_ns are wall-clock
 /// observations, so two builds minutes apart differ there by design. Section bounds come from the
@@ -7655,6 +7672,61 @@ SCENARIO("A distclean dry run predicts the record it would keep", "[e2e][clean][
                 REQUIRE(reset.stdout_output.find("Would remove: ") != std::string::npos);
                 REQUIRE(reset.stdout_output.find(".pup\n") == std::string::npos);
                 REQUIRE(f.exists(".pup/index"));
+            }
+        }
+    }
+}
+
+SCENARIO("A damaged record says so instead of rebuilding in silence", "[e2e][incremental]")
+{
+    GIVEN("an in-tree project built once, whose record declares a section past the end of the file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        damage_index_layout(f);
+        // Without this the shadow guard speaks first: an output on disk with no readable record
+        // is the #291 refusal, which would pass this scenario for the wrong reason.
+        f.remove_file("out.txt");
+
+        WHEN("the next build loads that record")
+        {
+            auto const result = f.build();
+
+            THEN("it names the damage rather than reading as a first build")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("is damaged") != std::string::npos);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("An index from an unsupported version rebuilds without calling it damage", "[e2e][incremental]")
+{
+    GIVEN("an in-tree project built once, with a record a newer putup wrote")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        stamp_index_version(f, pup::index::INDEX_VERSION + 1);
+        f.remove_file("out.txt");
+
+        WHEN("the next build loads that record")
+        {
+            auto const result = f.build();
+
+            THEN("it stays quiet: a version outside the window is expected, not damage")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("is damaged") == std::string::npos);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.txt"));
             }
         }
     }
