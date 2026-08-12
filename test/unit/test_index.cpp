@@ -648,21 +648,6 @@ TEST_CASE("Index reader validation", "[e2e][index]")
         REQUIRE_FALSE(result.has_value());
     }
 
-    SECTION("is_valid_index")
-    {
-        REQUIRE_FALSE(is_valid_index("/nonexistent"));
-
-        // Create a valid index
-        auto index = Index {};
-        index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
-
-        auto temp_path = (std::filesystem::temp_directory_path() / "pup_valid_test").string();
-                (void)write_index(temp_path, index);
-
-        REQUIRE(is_valid_index(temp_path));
-
-        std::filesystem::remove(temp_path);
-    }
 }
 
 TEST_CASE("A record whose declared layout does not fit the file is refused", "[e2e][index]")

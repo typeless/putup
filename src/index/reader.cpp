@@ -123,19 +123,6 @@ auto open_index(std::string_view path) -> Result<IndexFile>
     return open_index_in_window(path, INDEX_VERSION);
 }
 
-auto is_valid_index(std::string_view path) -> bool
-{
-    auto file = pup::platform::MappedFile::open(path);
-    if (!file || file->size() < sizeof(RawHeader)) {
-        return false;
-    }
-
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto const* header = reinterpret_cast<RawHeader const*>(file->data());
-    return std::memcmp(header->magic.data(), INDEX_MAGIC.data(), 4) == 0
-        && header->version == INDEX_VERSION;
-}
-
 auto read_index(IndexFile const& f) -> Result<Index>
 {
     if (!index_is_open(f)) {
