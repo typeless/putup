@@ -64,27 +64,25 @@ auto DepScannerRegistry::match_and_generate(CommandInfo const& cmd) const
             continue;
         }
 
-        auto dep_cmd = scanner->build_dep_command(cmd);
-        if (!dep_cmd) {
-            continue;
-        }
-
         auto spec = scanner->dep_spec();
 
-        auto outputs = Vec<GeneratedOutput> {};
-        if (spec.output_mode == DepOutputMode::Stdout) {
-            outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty });
-        }
+        for (auto const& scan : scanner->build_dep_scans(cmd)) {
+            auto outputs = Vec<GeneratedOutput> {};
+            if (spec.output_mode == DepOutputMode::Stdout) {
+                outputs.push_back({ .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty });
+            }
 
-        result.push_back(GeneratedRule {
-            .inputs = cmd.inputs,
-            .order_only_inputs = cmd.order_only_inputs,
-            .command = *dep_cmd,
-            .display = make_dep_display(cmd.inputs),
-            .outputs = std::move(outputs),
-            .action = OutputAction::InjectImplicitDeps,
-            .parent_command = cmd.node_id,
-        });
+            result.push_back(GeneratedRule {
+                .inputs = cmd.inputs,
+                .order_only_inputs = cmd.order_only_inputs,
+                .command = scan.command,
+                .display = make_dep_display(cmd.inputs),
+                .outputs = std::move(outputs),
+                .action = OutputAction::InjectImplicitDeps,
+                .parent_command = cmd.node_id,
+                .covered_object = scan.object,
+            });
+        }
     }
 
     return result;

@@ -22,9 +22,9 @@ silence leaves a rule whose headers are never recorded, which is why the last re
 exists.
 
 The unit that narrowness is measured in is the invocation: a command's control operators divide it
-into invocations, and a scan may draw a word only from one it can reproduce. A redirection is not
-such a divider — it hands its target to the same program — though the scan still carries no flag
-from beyond it.
+into invocations, each gets its own scan, and a scan may draw a word only from the invocation it
+reproduces. A redirection is not such a divider — it hands its target to the same program — though
+the scan still carries no flag from beyond it.
 
 Two classes escape the report. A compile-and-link command with no `-c` produces an executable
 rather than an object file, so the output-shaped trigger cannot see it (the `HOSTCC` generator
@@ -43,37 +43,42 @@ Which commands a scan is generated for.
 - conformance: putup-only
 - discharge: test "GccScanner rejects compound shell commands"
 - discharge: test "GccScanner compiler wrapper handling"
-- discharge: test "GccScanner refuses a command whose later invocation changes directory"
-- discharge: test "GccScanner refuses a command whose later invocation is not a compile"
-- discharge: test "matches_gcc_compile refuses a link whose later invocation compiles"
-- discharge: test "ClangClScanner refuses a later invocation that is not a compile"
+- discharge: test "GccScanner scans the prefix before a directory change"
+- discharge: test "GccScanner scans the prefix before an invocation that is not a compile"
+- discharge: test "matches_gcc_compile refuses a command whose first invocation is not a compile"
+- discharge: test "A command whose first invocation is not a compile is scanned nowhere"
+- discharge: test "ClangClScanner scans the prefix before an invocation that is not a compile"
 
-Where a command runs any invocation that is not a compile putup recognizes, whether a loop, a
+Where a command runs an invocation that is not a compile putup recognizes, whether a loop, a
 directory change, an environment assignment, a link or any other program, putup shall generate no
-dependency scan for that command, because the scan runs from the rule's directory with the rest of
-the command stripped and would preprocess in a state the compile never had.
+dependency scan for that invocation or for any that follows it, because the scan runs from the
+rule's directory with the rest of the command stripped and past such an invocation would
+preprocess in a state the compile never had.
 
-### REQ-SCAN-FLAG-SOURCE
+### REQ-SCAN-PER-INVOCATION
 
 - conformance: putup-only
-- discharge: test "GccScanner takes flags from the invocation it scans, sources from all of them"
+- discharge: test "GccScanner scans each compile of an all-compile command with its own flags"
 
-Where a command runs more than one invocation and every one of them is a compile putup recognizes,
-putup shall build one scan carrying the source-file words of all of them; that scan takes its flags
-from the first invocation alone, which issue #355 records as a limitation rather than a behaviour a
-later invocation may rely on.
+Where a command's leading invocations are compiles putup recognizes, putup shall build one scan per
+such invocation, each carrying that invocation's own flags and its own source-file words, because
+each one preprocesses a different translation unit and the object it writes is covered only by a
+scan derived from it.
 
 ## Group: reporting
 
-What putup says about a rule it did not scan. Per rule the reporting is binary — scanned, or
-reported unscanned — so no scan decision may create a state this group cannot express, such as a
-rule scanned in part; widening what a scan may cover means widening this group first.
+What putup says about an object it did not scan. The unit is the object, not the rule: per object
+the reporting is binary — covered by a scan derived from the compile that writes it, or reported
+unscanned — so a rule scanned in part is not a state this group must express, only what a reader
+sees when some of a rule's objects are named.
 
 ### REQ-SCAN-REPORT-UNSCANNED
 
 - conformance: putup-only
 - discharge: test "Scenario: A compile-shaped rule with no dependency scan is reported"
+- discharge: test "Scenario: An object no scanned invocation writes is reported beside its scanned sibling"
 
-When a rule's declared outputs include an object file, no scan is generated for its command,
-and its command carries no depfile flag anywhere in its text, putup shall name that object and
-the rule's Tupfile under `parse`, and report how many such rules exist under a build.
+When a rule declares an object file that no generated scan covers — every object it declares,
+where no scan at all is generated — and the rule's command carries no depfile flag anywhere in its
+text, putup shall name that object and the rule's Tupfile under `parse`, and report how many such
+objects exist under a build.

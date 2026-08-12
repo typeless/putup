@@ -121,17 +121,26 @@ auto compiler_index(std::span<std::string_view const> invocation) -> std::option
     return idx;
 }
 
-/// A scan reproduces one invocation from the rule's directory, so it may carry a word only from a
-/// command whose invocations are all compiles it recognizes (#356).
-auto every_invocation_is_a_compile(std::span<std::span<std::string_view const> const> invocations) -> bool
+auto is_recognized_compile(std::span<std::string_view const> invocation) -> bool
 {
-    return std::ranges::all_of(invocations, [](auto invocation) {
-        auto idx = compiler_index(invocation);
-        if (!idx) {
-            return false;
-        }
-        return std::ranges::any_of(invocation.subspan(*idx + 1), [](auto w) { return w == "-c"; });
-    });
+    auto idx = compiler_index(invocation);
+    if (!idx) {
+        return false;
+    }
+    return std::ranges::any_of(invocation.subspan(*idx + 1), [](auto w) { return w == "-c"; });
+}
+
+/// The leading invocations a scan can reproduce from the rule's directory: one that is not a
+/// compile may change the directory or the environment, so it and everything after it are out of
+/// reach (#356).
+auto compile_prefix(std::span<std::span<std::string_view const> const> invocations)
+    -> std::span<std::span<std::string_view const> const>
+{
+    auto length = std::size_t { 0 };
+    while (length < invocations.size() && is_recognized_compile(invocations[length])) {
+        ++length;
+    }
+    return invocations.first(length);
 }
 
 auto command_words(std::string_view command) -> Vec<std::string_view>
@@ -154,7 +163,7 @@ auto matches_gcc_compile(std::string_view command) -> bool
     }
 
     auto invocations = split_invocations(std::span { words.data(), words.size() });
-    return every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() });
+    return !compile_prefix(std::span { invocations.data(), invocations.size() }).empty();
 }
 
 auto GccScanner::matches(CommandInfo const& cmd) const -> bool
@@ -184,106 +193,111 @@ auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
     return false;
 }
 
-auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<StringId>
+auto GccScanner::build_dep_scans(CommandInfo const& cmd) const -> Vec<DepScan>
 {
     auto& pool = global_pool();
     auto words = command_words(pool.get(cmd.command));
     if (words.empty()) {
-        return std::nullopt;
+        return {};
     }
 
+    auto scans = Vec<DepScan> {};
     auto invocations = split_invocations(std::span { words.data(), words.size() });
-    if (!every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() })) {
-        return std::nullopt;
-    }
 
-    auto const first = invocations[0];
-    auto compiler_idx = compiler_index(first);
-    if (!compiler_idx) {
-        return std::nullopt;
-    }
-
-    auto dep_cmd = Buf {};
-
-    for (auto i = std::size_t { 0 }; i <= *compiler_idx; ++i) {
-        if (i > 0) {
-            dep_cmd += ' ';
-        }
-        dep_cmd += first[i];
-    }
-
-    dep_cmd += " -M";
-
-    auto pending = std::optional<SeparateArg> {};
-    auto redirected = false;
-    auto source_files = Vec<std::string_view> {};
-    for (auto i = *compiler_idx + 1; i < first.size(); ++i) {
-        // A redirection hands its target to this same invocation, so the words after it are not
-        // flags the scan may carry.
-        if (is_flag_barrier(first[i])) {
-            redirected = true;
-            pending.reset();
+    for (auto invocation : compile_prefix(std::span { invocations.data(), invocations.size() })) {
+        auto compiler_idx = compiler_index(invocation);
+        if (!compiler_idx) {
             continue;
         }
 
-        if (redirected) {
-            if (is_source_file(first[i])) {
-                source_files.push_back(first[i]);
+        auto dep_cmd = Buf {};
+
+        for (auto i = std::size_t { 0 }; i <= *compiler_idx; ++i) {
+            if (i > 0) {
+                dep_cmd += ' ';
             }
-            continue;
+            dep_cmd += invocation[i];
         }
 
-        if (pending) {
-            append_separate_arg_into(dep_cmd, first[i], *pending);
-            pending.reset();
-            continue;
-        }
+        dep_cmd += " -M";
 
-        auto w = first[i];
+        auto pending = std::optional<SeparateArg> {};
+        auto redirected = false;
+        auto source_files = Vec<std::string_view> {};
+        auto object = std::string_view {};
+        for (auto i = *compiler_idx + 1; i < invocation.size(); ++i) {
+            // A redirection hands its target to this same invocation, so the words after it are not
+            // flags the scan may carry.
+            if (is_flag_barrier(invocation[i])) {
+                redirected = true;
+                pending.reset();
+                continue;
+            }
 
-        if (w == "-c") {
-            continue;
-        }
+            if (redirected) {
+                if (is_source_file(invocation[i])) {
+                    source_files.push_back(invocation[i]);
+                }
+                continue;
+            }
 
-        if (w == "-o") {
-            ++i;
-            continue;
-        }
+            if (pending) {
+                append_separate_arg_into(dep_cmd, invocation[i], *pending);
+                pending.reset();
+                continue;
+            }
 
-        if (is_scan_hazard(w)) {
-            continue;
-        }
+            auto w = invocation[i];
 
-        if (is_source_file(w)) {
-            source_files.push_back(w);
-            continue;
-        }
+            if (w == "-c") {
+                continue;
+            }
 
-        dep_cmd += ' ';
-        auto norm = Buf {};
-        normalize_flag_path_into(norm, w);
-        shell_quote_into(dep_cmd, norm.view());
-        pending = separate_arg(w);
-    }
+            if (w == "-o") {
+                ++i;
+                if (i < invocation.size()) {
+                    object = invocation[i];
+                }
+                continue;
+            }
 
-    for (auto later = std::size_t { 1 }; later < invocations.size(); ++later) {
-        for (auto w : invocations[later]) {
+            if (w.starts_with("-o") && w.size() > 2) {
+                object = w.substr(2);
+                continue;
+            }
+
+            if (is_scan_hazard(w)) {
+                continue;
+            }
+
             if (is_source_file(w)) {
                 source_files.push_back(w);
+                continue;
             }
+
+            dep_cmd += ' ';
+            auto norm = Buf {};
+            normalize_flag_path_into(norm, w);
+            shell_quote_into(dep_cmd, norm.view());
+            pending = separate_arg(w);
         }
+
+        if (source_files.empty()) {
+            continue;
+        }
+
+        for (auto src : source_files) {
+            dep_cmd += ' ';
+            shell_quote_into(dep_cmd, src);
+        }
+
+        scans.push_back(DepScan {
+            .command = pool.intern(dep_cmd.view()),
+            .object = pool.intern(object),
+        });
     }
 
-    if (source_files.empty()) {
-        return std::nullopt;
-    }
-
-    for (auto src : source_files) {
-        dep_cmd += ' ';
-        shell_quote_into(dep_cmd, src);
-    }
-
-    return pool.intern(dep_cmd.view());
+    return scans;
 }
 
 auto GccScanner::dep_spec() const -> DepSpec

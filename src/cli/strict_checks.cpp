@@ -5,7 +5,6 @@
 #include "pup/cli/context.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
-#include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/vec.hpp"
@@ -13,6 +12,7 @@
 #include "pup/parser/ast.hpp"
 #include "pup/platform/file_io.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <string_view>
 #include <variant>
@@ -146,33 +146,25 @@ auto check_unscanned_compiles(
     auto& pool = global_pool();
     auto commands = graph::nodes_of_type(graph, NodeType::Command);
 
-    // A scan node is proof its parent is covered; absence proves nothing, since `parse` installs no registry.
-    auto scanned = NodeIdMap32 {};
     for (auto id : commands) {
-        if (auto parent = graph::get_parent_command(graph, id); parent != INVALID_NODE_ID) {
-            scanned.set(parent, 1);
-        }
-    }
-
-    for (auto id : commands) {
-        if (graph::get_parent_command(graph, id) != INVALID_NODE_ID || scanned.contains(id)) {
+        if (graph::get_parent_command(graph, id) != INVALID_NODE_ID) {
             continue;
         }
 
-        auto object = std::string_view {};
+        auto objects = Vec<StringId> {};
         for (auto out_id : graph::get_outputs(graph, id)) {
-            auto sv = pool.get(graph::get_full_path(graph, out_id));
-            if (auto ext = pup::path::extension(sv); ext == ".o" || ext == ".obj") {
-                object = sv;
-                break;
+            auto full = graph::get_full_path(graph, out_id);
+            if (auto ext = pup::path::extension(pool.get(full)); ext == ".o" || ext == ".obj") {
+                objects.push_back(full);
             }
         }
-        if (object.empty()) {
+        if (objects.empty()) {
             continue;
         }
 
         auto text = graph::expand_instruction(graph, id, cache);
         auto source_dir = graph::get<graph::SourceDir>(graph, id);
+        auto dir = pool.get(source_dir);
 
         // The build reads a depfile from beside the object whether or not a scan exists,
         // so a compile that writes its own is covered without one.
@@ -186,22 +178,36 @@ auto check_unscanned_compiles(
         cmd_info.node_id = id;
         cmd_info.command = text;
         cmd_info.working_dir = source_dir;
-        if (!registry->match_and_generate(cmd_info).empty()) {
-            continue;
+
+        // The output word is relative to the rule's directory, the same as the compile resolves it,
+        // so joining it there is what puts it in the declared output's space.
+        auto covered = Vec<StringId> {};
+        for (auto const& rule : registry->match_and_generate(cmd_info)) {
+            if (rule.covered_object == StringId::Empty) {
+                continue;
+            }
+            covered.push_back(pup::path::normalize(
+                pool.get(pup::path::join(dir.empty() ? "." : dir, pool.get(rule.covered_object)))
+            ));
         }
 
-        auto dir = pool.get(source_dir);
-        auto buf = Buf {};
-        buf.fmt("no dependency scan for '{}': putup recognizes no compile it can reproduce in "
-                "this command, so any header this rule reads goes unrecorded. Harmless if it "
-                "preprocesses none — an assembler, a copy, a partial link.",
-                object);
-        result.push_back(make_diag(
-            pool.get(pup::path::join(dir.empty() ? "." : dir, "Tupfile")),
-            0,
-            Diagnostic::Warning,
-            buf.view()
-        ));
+        for (auto object : objects) {
+            if (std::ranges::find(covered, object) != covered.end()) {
+                continue;
+            }
+
+            auto buf = Buf {};
+            buf.fmt("no dependency scan for '{}': putup recognizes no compile it can reproduce in "
+                    "this command, so any header this rule reads goes unrecorded. Harmless if it "
+                    "preprocesses none — an assembler, a copy, a partial link.",
+                    pool.get(object));
+            result.push_back(make_diag(
+                pool.get(pup::path::join(dir.empty() ? "." : dir, "Tupfile")),
+                0,
+                Diagnostic::Warning,
+                buf.view()
+            ));
+        }
     }
 
     return result;

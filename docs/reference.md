@@ -1979,10 +1979,14 @@ the scan itself are left out:
   substitution a second time, on results the compile never saw. A `-D` whose value is
   a command substitution is therefore invisible to the scan.
 
-A rule that runs several compiles in one command (`gcc -c a.c … && gcc -c b.c …`) is
-scanned once: the scan takes its flags from the first invocation and its sources from
-all of them, so every source is covered but a flag that only the later invocation
-carries is not. A redirection (`> log`, `2>&1`) ends the invocation the same way.
+A rule that runs several compiles in one command (`gcc -c a.c … && gcc -c b.c …`) gets
+one scan per compile, each carrying that invocation's own flags and sources. Scanning
+stops at the first invocation putup cannot reproduce from the rule's directory — a
+directory change, an environment assignment, a link, any other program — because past
+it the scan would preprocess in a state the compile never had; that invocation and
+every one after it go unscanned, and `parse` names each object they leave uncovered.
+A redirection (`> log`, `2>&1`) divides no invocation, though the scan carries no flag
+from beyond it.
 
 Flags whose argument putup recognizes (GNU driver): `-I`, `-isystem`, `-iquote`,
 `-include`, `-isysroot`, `--sysroot`, `-D`, `-U`

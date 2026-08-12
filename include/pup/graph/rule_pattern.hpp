@@ -9,7 +9,6 @@
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
-#include <optional>
 #include <string_view>
 
 namespace pup::graph {
@@ -52,16 +51,16 @@ struct GeneratedRule {
     StringId display = StringId::Empty;
     Vec<GeneratedOutput> outputs;
     OutputAction action = OutputAction::Normal;
-    NodeId parent_command = INVALID_NODE_ID; ///< For InjectImplicitDeps
+    NodeId parent_command = INVALID_NODE_ID;   ///< For InjectImplicitDeps
+    StringId covered_object = StringId::Empty; ///< The parent's object this rule records headers for
 };
 
 /// Pattern that generates additional rules when matched
 struct RulePattern {
     bool (*matches)(std::string_view command);
 
-    /// Generate a rule from a matched command
-    /// Returns nullopt if pattern matches but rule shouldn't be generated
-    Function<std::optional<GeneratedRule>(CommandInfo const&)> generate;
+    /// Generate the rules for a matched command; empty if the pattern matches but generates none
+    Function<Vec<GeneratedRule>(CommandInfo const&)> generate;
 };
 
 /// Registry for rule patterns

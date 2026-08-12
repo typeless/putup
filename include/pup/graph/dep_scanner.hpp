@@ -8,7 +8,6 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include <memory>
-#include <optional>
 #include <string_view>
 
 namespace pup::graph {
@@ -21,6 +20,13 @@ enum class DepOutputMode : std::uint8_t {
 /// Specification for dependency extraction
 struct DepSpec {
     DepOutputMode output_mode = DepOutputMode::Stdout;
+};
+
+/// One scan and the object file whose compile it reproduces. The object travels with the scan
+/// because only the scanner's own parse of the invocation can say which one it is.
+struct DepScan {
+    StringId command = StringId::Empty;
+    StringId object = StringId::Empty;
 };
 
 /// Abstract interface for dependency scanners.
@@ -44,12 +50,12 @@ public:
     [[nodiscard]]
     virtual auto has_dep_flags(std::string_view cmd) const -> bool = 0;
 
-    /// Build a command to extract dependencies from the given command.
-    /// Returns nullopt if deps shouldn't be extracted (e.g., already has flags).
+    /// Build the scans that extract dependencies from the given command, one per compile
+    /// invocation it can reproduce. Empty means the command carries no such invocation.
     [[nodiscard]]
-    virtual auto build_dep_command(
+    virtual auto build_dep_scans(
         CommandInfo const& cmd
-    ) const -> std::optional<StringId> = 0;
+    ) const -> Vec<DepScan> = 0;
 
     /// Get the dependency extraction specification
     [[nodiscard]]

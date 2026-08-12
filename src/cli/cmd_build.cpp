@@ -2202,13 +2202,13 @@ auto build_single_variant(
     auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
 
     // One line, not one per rule: a warning that fires on every rule of a green build teaches
-    // everyone to scroll past warnings. The per-rule findings live in `parse`.
+    // everyone to scroll past warnings. The per-object findings live in `parse`.
     if (auto unscanned = check_unscanned_compiles(bs.graph, bs.path_cache); !unscanned.empty()) {
         vprint(
             variant_name,
-            "{} rule{} an object file with no dependency scan; run 'putup parse' for the list.\n",
+            "{} object file{} no dependency scan; run 'putup parse' for the list.\n",
             unscanned.size(),
-            unscanned.size() == 1 ? " produces" : "s produce"
+            unscanned.size() == 1 ? " has" : "s have"
         );
     }
 
