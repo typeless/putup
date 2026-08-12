@@ -1305,6 +1305,82 @@ TEST_CASE("GccScanner takes flags from the invocation it scans, sources from all
     REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M -O2 a.c b.c");
 }
 
+TEST_CASE("GccScanner refuses a command whose later invocation changes directory", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+    auto dep_cmd = scanner.build_dep_command(
+        gcc_compile(70, "gcc -c a.c -o a.o && cd sub && gcc -c b.c -o b.o")
+    );
+
+    REQUIRE(!dep_cmd.has_value());
+}
+
+TEST_CASE("GccScanner refuses a command whose later invocation is not a compile", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("a later invocation that deletes a file contributes no source")
+    {
+        auto dep_cmd = scanner.build_dep_command(gcc_compile(71, "gcc -c a.c -o a.o && rm junk.c"));
+        REQUIRE(!dep_cmd.has_value());
+    }
+
+    SECTION("a later invocation that copies files contributes neither operand")
+    {
+        auto dep_cmd = scanner.build_dep_command(gcc_compile(72, "gcc -c a.c -o a.o && cp b.c x.c"));
+        REQUIRE(!dep_cmd.has_value());
+    }
+}
+
+TEST_CASE("A separator with nothing after it begins no invocation", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("a trailing terminator")
+    {
+        auto dep_cmd = scanner.build_dep_command(gcc_compile(74, "gcc -c a.c -o a.o ;"));
+        REQUIRE(dep_cmd.has_value());
+        REQUIRE(pup::global_pool().get(*dep_cmd) == "gcc -M a.c");
+    }
+
+    SECTION("a trailing backgrounding operator")
+    {
+        REQUIRE(scanners::matches_gcc_compile("gcc -c a.c -o a.o &"));
+    }
+
+    SECTION("a leading separator still forfeits the scan")
+    {
+        REQUIRE(!scanners::matches_gcc_compile("; gcc -c a.c -o a.o"));
+    }
+}
+
+TEST_CASE("matches_gcc_compile refuses a command whose later invocation is not a compile", "[dep_scanner][gcc]")
+{
+    // The diagnostic consumes the matcher and the scan consumes the builder; a rule they answer
+    // differently about is a rule reported as covered and scanned wrongly.
+    REQUIRE(!scanners::matches_gcc_compile("gcc -c a.c -o a.o && rm junk.c"));
+}
+
+TEST_CASE("matches_gcc_compile refuses a link whose later invocation compiles", "[dep_scanner][gcc]")
+{
+    REQUIRE(!scanners::matches_gcc_compile("gcc -o prog main.c && gcc -c helper.c"));
+}
+
+TEST_CASE("matches_clang_cl_compile refuses a link whose later invocation compiles", "[dep_scanner][clang_cl]")
+{
+    REQUIRE(!scanners::matches_clang_cl_compile("clang-cl foo.obj -o foo.exe && clang-cl -c bar.cpp"));
+}
+
+TEST_CASE("ClangClScanner refuses a later invocation that is not a compile", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+    auto dep_cmd = scanner.build_dep_command(
+        clang_cl_compile(73, "clang-cl -c a.cpp -o a.obj && cd sub && clang-cl -c b.cpp -o b.obj")
+    );
+
+    REQUIRE(!dep_cmd.has_value());
+}
+
 TEST_CASE("a line continuation never reaches the scan command", "[dep_scanner]")
 {
     SECTION("a continuation the command text kept is not a word the scan carries")

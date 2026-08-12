@@ -11114,6 +11114,51 @@ SCENARIO("Check level controls convention enforcement", "[e2e][strict]")
     }
 }
 
+SCENARIO("A rule whose second compile runs elsewhere is reported instead of scanned wrongly", "[e2e][strict][depscan]")
+{
+    // The scan runs from the Tupfile's directory, so a source word taken from an invocation that
+    // ran in sub/ resolves against a same-named file here -- deps recorded for a file the rule
+    // never compiled (#356).
+    GIVEN("a rule that compiles here and then again after a cd, with a same-named source in both")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.mkdir("sub");
+        f.write_file("a.c", "#include \"root.h\"\nint a(void){return 0;}\n");
+        f.write_file("b.c", "#include \"decoy.h\"\nint decoy(void){return 0;}\n");
+        f.write_file("sub/b.c", "#include \"subonly.h\"\nint b(void){return 1;}\n");
+        f.write_file("root.h", "#define R 1\n");
+        f.write_file("decoy.h", "#define D 1\n");
+        f.write_file("sub/subonly.h", "#define S 1\n");
+        f.write_file("Tupfile", ": a.c |> gcc -c a.c -o a.o && cd sub && gcc -c b.c -o b.o |> a.o sub/b.o\n");
+        REQUIRE(f.build().success());
+
+        WHEN("parse reports on the rule")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("it names the object rather than leaving the rule looking covered")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
+                REQUIRE(result.stderr_output.find("a.o") != std::string::npos);
+            }
+        }
+
+        WHEN("the source that only the Tupfile directory's copy includes is edited")
+        {
+            f.write_file("decoy.h", "#define D 2\n");
+            auto const result = f.build();
+
+            THEN("the rule does not rebuild, because it never compiled that file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("Nothing to do") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][strict][depscan]")
 {
     // The scan is declined correctly — putup cannot reproduce the prefix's shell state — but

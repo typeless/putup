@@ -21,11 +21,10 @@ changes neither and the scan keeps it. Declining is therefore correct — but de
 silence leaves a rule whose headers are never recorded, which is why the last requirement here
 exists.
 
-That narrowness is enforced at the *front* of a command only. Once a scan is generated, source
-words are folded in from every later invocation without asking what ran between them, so a
-command whose second invocation changes directory can still contribute a source to a scan that
-will not find it — issue #356. `REQ-SCAN-FLAG-SOURCE` below records that folding as it is
-today, not as it should be.
+The unit that narrowness is measured in is the invocation: a command's control operators divide it
+into invocations, and a scan may draw a word only from one it can reproduce. A redirection is not
+such a divider — it hands its target to the same program — though the scan still carries no flag
+from beyond it.
 
 Two classes escape the report. A compile-and-link command with no `-c` produces an executable
 rather than an object file, so the output-shaped trigger cannot see it (the `HOSTCC` generator
@@ -39,29 +38,36 @@ unrelated word spelling one silences the report for that rule.
 
 Which commands a scan is generated for.
 
-### REQ-SCAN-UNREPRODUCIBLE-PREFIX
+### REQ-SCAN-UNREPRODUCIBLE-INVOCATION
 
 - conformance: putup-only
 - discharge: test "GccScanner rejects compound shell commands"
 - discharge: test "GccScanner compiler wrapper handling"
+- discharge: test "GccScanner refuses a command whose later invocation changes directory"
+- discharge: test "GccScanner refuses a command whose later invocation is not a compile"
+- discharge: test "matches_gcc_compile refuses a link whose later invocation compiles"
+- discharge: test "ClangClScanner refuses a later invocation that is not a compile"
 
-Where any word other than a recognized compiler wrapper precedes a command's compiler, such as
-a loop, a directory change or an environment assignment, putup shall generate no dependency
-scan for that command, because the scan runs without that word and would preprocess in a state
-the compile never had.
+Where a command runs any invocation that is not a compile putup recognizes, whether a loop, a
+directory change, an environment assignment, a link or any other program, putup shall generate no
+dependency scan for that command, because the scan runs from the rule's directory with the rest of
+the command stripped and would preprocess in a state the compile never had.
 
 ### REQ-SCAN-FLAG-SOURCE
 
 - conformance: putup-only
 - discharge: test "GccScanner takes flags from the invocation it scans, sources from all of them"
 
-Where a command runs more than one invocation, putup shall build the scan from the flags of the
-first invocation only, and from the source-file words of every invocation, whether or not the
-later ones run a compiler.
+Where a command runs more than one invocation and every one of them is a compile putup recognizes,
+putup shall build one scan carrying the source-file words of all of them; that scan takes its flags
+from the first invocation alone, which issue #355 records as a limitation rather than a behaviour a
+later invocation may rely on.
 
 ## Group: reporting
 
-What putup says about a rule it did not scan.
+What putup says about a rule it did not scan. Per rule the reporting is binary — scanned, or
+reported unscanned — so no scan decision may create a state this group cannot express, such as a
+rule scanned in part; widening what a scan may cover means widening this group first.
 
 ### REQ-SCAN-REPORT-UNSCANNED
 

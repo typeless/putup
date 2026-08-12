@@ -121,6 +121,19 @@ auto compiler_index(std::span<std::string_view const> invocation) -> std::option
     return idx;
 }
 
+/// A scan reproduces one invocation from the rule's directory, so it may carry a word only from a
+/// command whose invocations are all compiles it recognizes (#356).
+auto every_invocation_is_a_compile(std::span<std::span<std::string_view const> const> invocations) -> bool
+{
+    return std::ranges::all_of(invocations, [](auto invocation) {
+        auto idx = compiler_index(invocation);
+        if (!idx) {
+            return false;
+        }
+        return std::ranges::any_of(invocation.subspan(*idx + 1), [](auto w) { return w == "-c"; });
+    });
+}
+
 auto command_words(std::string_view command) -> Vec<std::string_view>
 {
     auto& pool = global_pool();
@@ -141,17 +154,7 @@ auto matches_gcc_compile(std::string_view command) -> bool
     }
 
     auto invocations = split_invocations(std::span { words.data(), words.size() });
-    auto compiler_idx = compiler_index(invocations[0]);
-    if (!compiler_idx) {
-        return false;
-    }
-
-    for (auto i = *compiler_idx + 1; i < words.size(); ++i) {
-        if (words[i] == "-c") {
-            return true;
-        }
-    }
-    return false;
+    return every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() });
 }
 
 auto GccScanner::matches(CommandInfo const& cmd) const -> bool
@@ -190,6 +193,10 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
     }
 
     auto invocations = split_invocations(std::span { words.data(), words.size() });
+    if (!every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() })) {
+        return std::nullopt;
+    }
+
     auto const first = invocations[0];
     auto compiler_idx = compiler_index(first);
     if (!compiler_idx) {

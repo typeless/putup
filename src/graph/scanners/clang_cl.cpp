@@ -133,6 +133,19 @@ auto driver_index(std::span<std::string_view const> invocation) -> std::optional
     return idx;
 }
 
+/// A scan reproduces one invocation from the rule's directory, so it may carry a word only from a
+/// command whose invocations are all compiles it recognizes (#356).
+auto every_invocation_is_a_compile(std::span<std::span<std::string_view const> const> invocations) -> bool
+{
+    return std::ranges::all_of(invocations, [](auto invocation) {
+        auto idx = driver_index(invocation);
+        if (!idx) {
+            return false;
+        }
+        return std::ranges::any_of(invocation.subspan(*idx + 1), is_compile_flag);
+    });
+}
+
 auto command_words(std::string_view command) -> Vec<std::string_view>
 {
     auto& pool = global_pool();
@@ -153,17 +166,7 @@ auto matches_clang_cl_compile(std::string_view command) -> bool
     }
 
     auto invocations = split_invocations(std::span { words.data(), words.size() });
-    auto driver_idx = driver_index(invocations[0]);
-    if (!driver_idx) {
-        return false;
-    }
-
-    for (auto i = *driver_idx + 1; i < words.size(); ++i) {
-        if (is_compile_flag(words[i])) {
-            return true;
-        }
-    }
-    return false;
+    return every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() });
 }
 
 auto ClangClScanner::matches(CommandInfo const& cmd) const -> bool
@@ -194,6 +197,10 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
     }
 
     auto invocations = split_invocations(std::span { words.data(), words.size() });
+    if (!every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() })) {
+        return std::nullopt;
+    }
+
     auto const first = invocations[0];
     auto driver_idx = driver_index(first);
     if (!driver_idx) {
