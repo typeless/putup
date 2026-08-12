@@ -11114,7 +11114,7 @@ SCENARIO("Check level controls convention enforcement", "[e2e][strict]")
     }
 }
 
-SCENARIO("A rule whose second compile runs elsewhere is reported instead of scanned wrongly", "[e2e][strict][depscan]")
+SCENARIO("The object of a compile that runs elsewhere is reported instead of scanned wrongly", "[e2e][strict][depscan]")
 {
     // The scan runs from the Tupfile's directory, so a source word taken from an invocation that
     // ran in sub/ resolves against a same-named file here -- deps recorded for a file the rule
@@ -11136,11 +11136,12 @@ SCENARIO("A rule whose second compile runs elsewhere is reported instead of scan
         {
             auto result = f.pup({ "parse" });
 
-            THEN("it names the object rather than leaving the rule looking covered")
+            THEN("it names the unreachable object and leaves the reproducible one scanned")
             {
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
-                REQUIRE(result.stderr_output.find("a.o") != std::string::npos);
+                REQUIRE(result.stderr_output.find("sub/b.o") != std::string::npos);
+                REQUIRE(result.stderr_output.find("'a.o'") == std::string::npos);
             }
         }
 
@@ -11154,6 +11155,74 @@ SCENARIO("A rule whose second compile runs elsewhere is reported instead of scan
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("Nothing to do") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("An object no scanned invocation writes is reported beside its scanned sibling", "[e2e][strict][depscan]")
+{
+    GIVEN("a rule whose compile prefix covers one declared object and whose tail covers the other")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "#include \"a.h\"\nint a(void){return 0;}\n");
+        f.write_file("a.h", "#define A 1\n");
+        f.write_file("Tupfile", ": a.c |> gcc -c a.c -o a.o && cp a.o b.o |> a.o b.o\n");
+
+        WHEN("parse reports on the rule")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("the copied object is named and the compiled one is not")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
+                REQUIRE(result.stderr_output.find("'b.o'") != std::string::npos);
+                REQUIRE(result.stderr_output.find("'a.o'") == std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a scanned rule in a subdirectory whose output word points into a variant directory")
+    {
+        // %o one directory down expands to '../../build/src/lib/a.o' -- the word resolves against
+        // the rule's own directory and back into the variant, which a root-level rule never shows.
+        auto f = E2EFixture { "variant_config_input" };
+        f.mkdir("src/lib");
+        f.write_file("src/lib/a.c", "#include \"a.h\"\nint a(void){return 0;}\n");
+        f.write_file("src/lib/a.h", "#define A 1\n");
+        f.write_file("src/lib/Tupfile", ": foreach *.c |> gcc -c %f -o %o |> %B.o\n");
+        f.mkdir("build");
+        f.write_file("build/tup.config", "");
+
+        WHEN("parse reports on the rule")
+        {
+            auto result = f.pup({ "parse", "-B", "build" });
+
+            THEN("the scanned object is not named")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("no dependency scan") == std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a single-invocation rule declaring an object its compile never writes")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "int a(void){return 0;}\n");
+        f.write_file("Tupfile", ": a.c |> gcc -c a.c -o a.o |> a.o b.o\n");
+
+        WHEN("parse reports on the rule")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("the object attributable to no compile is named even though a scan exists")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("'b.o'") != std::string::npos);
+                REQUIRE(result.stderr_output.find("'a.o'") == std::string::npos);
             }
         }
     }
@@ -11204,7 +11273,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                REQUIRE(result.stdout_output.find("1 rule produces an object file with no dependency scan") != std::string::npos);
+                REQUIRE(result.stdout_output.find("1 object file has no dependency scan") != std::string::npos);
                 REQUIRE(result.stdout_output.find("hidden.o") == std::string::npos);
             }
 

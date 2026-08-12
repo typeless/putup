@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "pup/core/string_id.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
 
@@ -21,8 +20,8 @@ public:
     [[nodiscard]]
     auto has_dep_flags(std::string_view cmd) const -> bool override;
     [[nodiscard]]
-    auto build_dep_command(CommandInfo const& cmd) const
-        -> std::optional<StringId> override;
+    auto build_dep_scans(CommandInfo const& cmd) const
+        -> Vec<DepScan> override;
     [[nodiscard]]
     auto dep_spec() const -> DepSpec override;
     [[nodiscard]]

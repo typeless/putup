@@ -879,7 +879,7 @@ Scanners detect compiler commands and generate dependency extraction commands:
 class DepScanner {
     virtual auto matches(CommandInfo const&) const -> bool = 0;
     virtual auto has_dep_flags(std::string_view) const -> bool = 0;
-    virtual auto build_dep_command(CommandInfo const&) -> std::optional<StringId> = 0;
+    virtual auto build_dep_scans(CommandInfo const&) -> Vec<DepScan> = 0;
 };
 
 class DepScannerRegistry {
@@ -891,15 +891,17 @@ class DepScannerRegistry {
 The `GccScanner` implementation handles GCC, Clang, and compatible compilers.
 
 **What a scan may cover.** A scan runs from the rule's directory with the rest of the command
-stripped, so it may carry a word only from an invocation it can reproduce, and it can reproduce an
-invocation only when it and every invocation before it is a compile the scanner recognizes.
-Refusal is decidable from the token stream; anything finer requires modeling the shell. A
-redirection ends what the scan may read from an invocation but divides no invocation — only a
-control operator starts a new one. Two
-consequences bind every future change here. Per rule, reporting is binary — scanned, or reported
-unscanned — so no encoding may create a scan state the reporter cannot express; widen the reporter
-first. And `matches` and `build_dep_command` answer through one criterion, because the unscanned
-report consumes the production predicate rather than a re-derivation of it.
+stripped, so it may carry a word only from the invocation it reproduces, and it can reproduce an
+invocation only when it and every invocation before it is a compile the scanner recognizes — one
+scan per invocation of that leading prefix. Refusal is decidable from the token stream; anything
+finer requires modeling the shell. A redirection ends what the scan may read from an invocation
+but divides no invocation — only a control operator starts a new one. Three consequences bind
+every future change here. A scan travels with the object it covers, because only the scanner's
+parse of the invocation can say which one it is: anything a consumer must attribute rides inside
+`DepScan`, never beside it. Per object, reporting is binary — covered, or reported unscanned — so
+no encoding may create a scan state the reporter cannot express; widen the reporter first. And
+`matches` and `build_dep_scans` answer through one criterion, because the unscanned report
+consumes the production predicate rather than a re-derivation of it.
 
 ### Generation Flow
 

@@ -9,7 +9,6 @@
 #include "pup/core/vec.hpp"
 #include "pup/graph/dep_scanner.hpp"
 #include "pup/graph/scanners/gcc.hpp"
-#include <optional>
 #include <utility>
 
 namespace pup::graph {
@@ -30,8 +29,8 @@ auto RulePatternRegistry::match_and_generate(CommandInfo const& cmd) const
             continue;
         }
 
-        if (auto rule = pattern.generate(cmd)) {
-            result.push_back(std::move(*rule));
+        for (auto& rule : pattern.generate(cmd)) {
+            result.push_back(std::move(rule));
         }
     }
 
@@ -43,27 +42,27 @@ auto make_gcc_depfile_pattern() -> RulePattern
     return RulePattern {
         .matches = scanners::matches_gcc_compile,
 
-        .generate = [](CommandInfo const& cmd) -> std::optional<GeneratedRule> {
+        .generate = [](CommandInfo const& cmd) -> Vec<GeneratedRule> {
             static auto const scanner = scanners::GccScanner {};
 
+            auto result = Vec<GeneratedRule> {};
             if (scanner.has_dep_flags(global_pool().get(cmd.command))) {
-                return std::nullopt;
+                return result;
             }
 
-            auto dep_cmd = scanner.build_dep_command(cmd);
-            if (!dep_cmd) {
-                return std::nullopt;
+            for (auto const& scan : scanner.build_dep_scans(cmd)) {
+                result.push_back(GeneratedRule {
+                    .inputs = cmd.inputs,
+                    .order_only_inputs = cmd.order_only_inputs,
+                    .command = scan.command,
+                    .display = make_dep_display(cmd.inputs),
+                    .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty } },
+                    .action = OutputAction::InjectImplicitDeps,
+                    .parent_command = cmd.node_id,
+                    .covered_object = scan.object,
+                });
             }
-
-            return GeneratedRule {
-                .inputs = cmd.inputs,
-                .order_only_inputs = cmd.order_only_inputs,
-                .command = *dep_cmd,
-                .display = make_dep_display(cmd.inputs),
-                .outputs = { { .type = GeneratedOutput::Type::Stdout, .path = StringId::Empty } },
-                .action = OutputAction::InjectImplicitDeps,
-                .parent_command = cmd.node_id,
-            };
+            return result;
         },
     };
 }

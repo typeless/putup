@@ -133,17 +133,26 @@ auto driver_index(std::span<std::string_view const> invocation) -> std::optional
     return idx;
 }
 
-/// A scan reproduces one invocation from the rule's directory, so it may carry a word only from a
-/// command whose invocations are all compiles it recognizes (#356).
-auto every_invocation_is_a_compile(std::span<std::span<std::string_view const> const> invocations) -> bool
+auto is_recognized_compile(std::span<std::string_view const> invocation) -> bool
 {
-    return std::ranges::all_of(invocations, [](auto invocation) {
-        auto idx = driver_index(invocation);
-        if (!idx) {
-            return false;
-        }
-        return std::ranges::any_of(invocation.subspan(*idx + 1), is_compile_flag);
-    });
+    auto idx = driver_index(invocation);
+    if (!idx) {
+        return false;
+    }
+    return std::ranges::any_of(invocation.subspan(*idx + 1), is_compile_flag);
+}
+
+/// The leading invocations a scan can reproduce from the rule's directory: one that is not a
+/// compile may change the directory or the environment, so it and everything after it are out of
+/// reach (#356).
+auto compile_prefix(std::span<std::span<std::string_view const> const> invocations)
+    -> std::span<std::span<std::string_view const> const>
+{
+    auto length = std::size_t { 0 };
+    while (length < invocations.size() && is_recognized_compile(invocations[length])) {
+        ++length;
+    }
+    return invocations.first(length);
 }
 
 auto command_words(std::string_view command) -> Vec<std::string_view>
@@ -166,7 +175,7 @@ auto matches_clang_cl_compile(std::string_view command) -> bool
     }
 
     auto invocations = split_invocations(std::span { words.data(), words.size() });
-    return every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() });
+    return !compile_prefix(std::span { invocations.data(), invocations.size() }).empty();
 }
 
 auto ClangClScanner::matches(CommandInfo const& cmd) const -> bool
@@ -188,113 +197,120 @@ auto ClangClScanner::has_dep_flags(std::string_view cmd) const -> bool
     return false;
 }
 
-auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<StringId>
+auto ClangClScanner::build_dep_scans(CommandInfo const& cmd) const -> Vec<DepScan>
 {
     auto& pool = global_pool();
     auto words = command_words(pool.get(cmd.command));
     if (words.empty()) {
-        return std::nullopt;
+        return {};
     }
 
+    auto scans = Vec<DepScan> {};
     auto invocations = split_invocations(std::span { words.data(), words.size() });
-    if (!every_invocation_is_a_compile(std::span { invocations.data(), invocations.size() })) {
-        return std::nullopt;
-    }
 
-    auto const first = invocations[0];
-    auto driver_idx = driver_index(first);
-    if (!driver_idx) {
-        return std::nullopt;
-    }
+    for (auto invocation : compile_prefix(std::span { invocations.data(), invocations.size() })) {
+        auto driver_idx = driver_index(invocation);
+        if (!driver_idx) {
+            continue;
+        }
 
-    auto dep_cmd = Buf {};
-    for (auto i = std::size_t { 0 }; i <= *driver_idx; ++i) {
-        if (i > 0) {
+        auto dep_cmd = Buf {};
+        for (auto i = std::size_t { 0 }; i <= *driver_idx; ++i) {
+            if (i > 0) {
+                dep_cmd += ' ';
+            }
+            dep_cmd += invocation[i];
+        }
+
+        dep_cmd += " /clang:-M";
+
+        auto pending = std::optional<SeparateArg> {};
+        auto redirected = false;
+        auto source_files = Vec<std::string_view> {};
+        auto object = std::string_view {};
+        for (auto i = *driver_idx + 1; i < invocation.size(); ++i) {
+            auto w = invocation[i];
+
+            // A redirection hands its target to this same invocation, so the words after it are not
+            // flags the scan may carry.
+            if (is_flag_barrier(w)) {
+                redirected = true;
+                pending.reset();
+                continue;
+            }
+
+            if (redirected) {
+                if (is_source_file(w)) {
+                    source_files.push_back(w);
+                }
+                continue;
+            }
+
+            if (pending) {
+                append_separate_arg_into(dep_cmd, w, *pending);
+                pending.reset();
+                continue;
+            }
+
+            if (is_compile_flag(w)) {
+                continue;
+            }
+
+            if (w == "-o") {
+                ++i;
+                if (i < invocation.size()) {
+                    object = invocation[i];
+                }
+                continue;
+            }
+
+            if (w.starts_with("/Fo") || w.starts_with("-Fo")) {
+                object = w.substr(3);
+                continue;
+            }
+
+            if (w.starts_with("-o") && w.size() > 2) {
+                object = w.substr(2);
+                continue;
+            }
+
+            // /link hands everything after it to the linker, source words included.
+            if (w == "/link") {
+                break;
+            }
+
+            if (is_scan_hazard(w)) {
+                continue;
+            }
+
+            if (is_source_file(w)) {
+                source_files.push_back(w);
+                continue;
+            }
+
             dep_cmd += ' ';
+            auto norm = Buf {};
+            normalize_flag_path_into(norm, w);
+            shell_quote_into(dep_cmd, norm.view());
+            pending = separate_arg(w);
         }
-        dep_cmd += first[i];
+
+        if (source_files.empty()) {
+            continue;
+        }
+
+        for (auto src : source_files) {
+            dep_cmd += ' ';
+            shell_quote_into(dep_cmd, src);
+        }
+
+        scans.push_back(DepScan {
+            .command = pool.intern(dep_cmd.view()),
+            .object = pool.intern(object),
+        });
     }
 
-    dep_cmd += " /clang:-M";
-
-    auto pending = std::optional<SeparateArg> {};
-    auto linker_tail = false;
-    auto redirected = false;
-    auto source_files = Vec<std::string_view> {};
-    for (auto i = *driver_idx + 1; i < first.size(); ++i) {
-        auto w = first[i];
-
-        // A redirection hands its target to this same invocation, so the words after it are not
-        // flags the scan may carry.
-        if (is_flag_barrier(w)) {
-            redirected = true;
-            pending.reset();
-            continue;
-        }
-
-        if (redirected) {
-            if (is_source_file(w)) {
-                source_files.push_back(w);
-            }
-            continue;
-        }
-
-        if (pending) {
-            append_separate_arg_into(dep_cmd, w, *pending);
-            pending.reset();
-            continue;
-        }
-
-        if (is_compile_flag(w)) {
-            continue;
-        }
-
-        if (w == "-o") {
-            ++i;
-            continue;
-        }
-
-        // /link hands everything after it to the linker, source words included -- and the rest of
-        // the command with it, so no later invocation contributes one either.
-        if (w == "/link") {
-            linker_tail = true;
-            break;
-        }
-
-        if (is_scan_hazard(w)) {
-            continue;
-        }
-
-        if (is_source_file(w)) {
-            source_files.push_back(w);
-            continue;
-        }
-
-        dep_cmd += ' ';
-        auto norm = Buf {};
-        normalize_flag_path_into(norm, w);
-        shell_quote_into(dep_cmd, norm.view());
-        pending = separate_arg(w);
-    }
-
-    for (auto later = std::size_t { 1 }; !linker_tail && later < invocations.size(); ++later) {
-        for (auto w : invocations[later]) {
-            if (is_source_file(w)) {
-                source_files.push_back(w);
-            }
-        }
-    }
-
-    if (source_files.empty()) {
-        return std::nullopt;
-    }
-
-    for (auto src : source_files) {
-        dep_cmd += ' ';
-        shell_quote_into(dep_cmd, src);
-    }
-
-    return pool.intern(dep_cmd.view());
+    return scans;
 }
 
 auto ClangClScanner::dep_spec() const -> DepSpec
