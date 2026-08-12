@@ -24,10 +24,6 @@ struct IndexFile {
 [[nodiscard]]
 auto open_index(std::string_view path) -> Result<IndexFile>;
 
-/// Check if a file is a valid index file (checks magic and version)
-[[nodiscard]]
-auto is_valid_index(std::string_view path) -> bool;
-
 /// Read the entire index into memory
 [[nodiscard]]
 auto read_index(IndexFile const& f) -> Result<Index>;
