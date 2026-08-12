@@ -7980,6 +7980,65 @@ SCENARIO("A damaged record says so instead of rebuilding in silence", "[e2e][inc
     }
 }
 
+SCENARIO("A record too short to hold a header says so instead of rebuilding in silence", "[e2e][incremental]")
+{
+    GIVEN("an in-tree project built once, whose record is then cut below header and footer")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+        // Below sizeof(RawHeader) + sizeof(RawFooter): above it the declared-layout row answers
+        // first and this would pin the wrong rejection.
+        truncate_index(f, 40);
+        // Without this the shadow guard speaks first, as in the layout scenario above.
+        f.remove_file("out.txt");
+
+        WHEN("the next build loads that record")
+        {
+            auto const result = f.build();
+
+            THEN("it names the damage rather than reading as a first build")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("is damaged") != std::string::npos);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A record that cannot be opened is announced without being called damage", "[e2e][incremental]")
+{
+    GIVEN("an in-tree project built once, with a directory standing where its record belongs")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
+        f.write_file("src.txt", "ORIGINAL\n");
+        REQUIRE(f.build().success());
+
+        auto const index_path = f.workdir() / ".pup" / "index";
+        std::filesystem::remove(index_path);
+        std::filesystem::create_directory(index_path);
+        f.remove_file("out.txt");
+
+        WHEN("the next build tries to load it")
+        {
+            auto const result = f.build();
+
+            THEN("it says the record could not be read, and does not claim the record is damaged")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("could not be read") != std::string::npos);
+                REQUIRE(result.stderr_output.find("damaged") == std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A rule writing above the build root fails the build instead of overwriting the file there", "[e2e][build][hierarchy]")
 {
     GIVEN("an out-of-tree project whose rule writes a path that climbs out of the build directory")

@@ -1599,6 +1599,72 @@ auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
 
 } // namespace
 
+TEST_CASE("A record too short to hold a header is damage rather than a format this reader skips", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    bytes.resize(sizeof(RawHeader) + sizeof(RawFooter) - 1);
+
+    auto const path = temp_index_path("pup_record_too_short");
+    write_bytes(path, bytes);
+
+    auto const opened = open_index(path);
+    REQUIRE_FALSE(opened.has_value());
+    REQUIRE(opened.error().code == ErrorCode::IndexDamaged);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A file that does not carry the index magic is damage", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // No re-signing: the magic check runs before the checksum, so this is the arm under test.
+    for (auto i = std::size_t { 0 }; i < INDEX_MAGIC.size(); ++i) {
+        bytes[i] = std::byte { 'X' };
+    }
+
+    auto const path = temp_index_path("pup_record_foreign_magic");
+    write_bytes(path, bytes);
+
+    auto const opened = open_index(path);
+    REQUIRE_FALSE(opened.has_value());
+    REQUIRE(opened.error().code == ErrorCode::IndexDamaged);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A record from a version outside the window is a version mismatch rather than damage", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    stamp_version(bytes, INDEX_VERSION + 1);
+
+    auto const path = temp_index_path("pup_record_future_version");
+    write_bytes(path, bytes);
+
+    auto const opened = open_index(path);
+    REQUIRE_FALSE(opened.has_value());
+    REQUIRE(opened.error().code == ErrorCode::IndexVersionMismatch);
+
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("An operand count larger than the record makes it unreadable", "[index]")
 {
     auto index = Index {};

@@ -92,16 +92,17 @@ auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> R
 
     result.file = std::move(*file_result);
 
+    // Damage before version: neither a sub-header file nor foreign magic is a record of any version (#383).
     if (result.file.size() < sizeof(RawHeader) + sizeof(RawFooter)) {
-        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Index file too small");
+        return make_error<IndexFile>(ErrorCode::IndexDamaged, "Index file too small");
     }
 
     auto const* hdr = index_header(result);
     if (!hdr || std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) != 0) {
-        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Invalid index file magic");
+        return make_error<IndexFile>(ErrorCode::IndexDamaged, "Invalid index file magic");
     }
     if (hdr->version < min_version || hdr->version > INDEX_VERSION) {
-        return make_error<IndexFile>(ErrorCode::InvalidFormat, "Unsupported index version");
+        return make_error<IndexFile>(ErrorCode::IndexVersionMismatch, "Unsupported index version");
     }
     if (!declared_layout_fits(result.file.size(), *hdr)) {
         return make_error<IndexFile>(ErrorCode::IndexDamaged, "Index sections do not fit the file");

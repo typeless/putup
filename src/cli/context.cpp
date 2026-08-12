@@ -660,10 +660,20 @@ auto load_old_index(std::string_view output_root, bool verbose) -> IndexLoadResu
         // Not fatal here -- what this build can still do depends on what is on disk, and the
         // guard that knows decides (#291). Said out loud because the alternative is a silent
         // full rebuild, which reads as a first build (#294).
-        if (index_result.error().code == pup::ErrorCode::IndexChecksumMismatch) {
+        // Silence is the enumerated case, so a rejection added later announces unless deliberately excused (#383).
+        switch (index_result.error().code) {
+        case pup::ErrorCode::IndexVersionMismatch:
+            break;
+        case pup::ErrorCode::IndexChecksumMismatch:
             eprint("Warning: the build record at {} failed its checksum, so this build cannot use it.\n", index_path_sv);
-        } else if (index_result.error().code == pup::ErrorCode::IndexDamaged) {
+            break;
+        case pup::ErrorCode::IndexDamaged:
             eprint("Warning: the build record at {} is damaged, so this build cannot use it: {}\n", index_path_sv, index_result.error().msg());
+            break;
+        default:
+            // Not damage: the bytes may be intact and the path or its permissions the problem.
+            eprint("Warning: the build record at {} could not be read, so this build cannot use it: {}\n", index_path_sv, index_result.error().msg());
+            break;
         }
         return result;
     }

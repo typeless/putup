@@ -20,12 +20,12 @@ enum class ErrorCode {
     AlreadyExists,
     PermissionDenied,
     IoError,
+    InvalidState,
 
     // Index errors
     IndexCorrupted,
     IndexVersionMismatch,
     IndexChecksumMismatch,
-    IndexTruncated,
     // A code that conflates damage with an expected-benign outcome forces every caller to choose between noise and silence.
     IndexDamaged,
 
@@ -45,10 +45,6 @@ enum class ErrorCode {
     InvalidNodeId,
     InvalidEdge,
     UnknownMacro,
-
-    // Index errors
-    InvalidFormat,
-    InvalidState,
 
     // Execution errors
     CommandFailed,
