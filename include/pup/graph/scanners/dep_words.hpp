@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/buf.hpp"
+#include "pup/core/vec.hpp"
 
 #include <span>
 #include <string_view>
@@ -50,10 +51,23 @@ auto append_separate_arg_into(Buf& out, std::string_view word, SeparateArg kind)
 [[nodiscard]]
 auto is_blank_word(std::string_view word) -> bool;
 
-/// True for the shell words that end one command and begin another. A scan carries the flags of
-/// the invocation it was built for, so it takes none from what follows one of these.
+/// True for the shell words after which a scan may read no further flags -- a control operator, or
+/// a redirection whose target belongs to the program rather than to the scan.
 [[nodiscard]]
-auto is_command_separator(std::string_view word) -> bool;
+auto is_flag_barrier(std::string_view word) -> bool;
+
+/// True for the shell words that end one program's invocation and begin another's. Narrower than
+/// `is_flag_barrier`: a redirection stops a scan from reading further flags but hands its
+/// target to the same program, so it divides no invocation.
+[[nodiscard]]
+auto is_invocation_separator(std::string_view word) -> bool;
+
+/// The invocations a command's control operators divide its words into, in order. An invocation is
+/// empty where two operators meet or where the command begins with one; a word list with no
+/// operator is one invocation, and a trailing operator adds none. Which of them a scan may draw
+/// from is each scanner's question, but where they begin and end is not, so it is answered here.
+[[nodiscard]]
+auto split_invocations(std::span<std::string_view const> words) -> Vec<std::span<std::string_view const>>;
 
 /// A flag the scan command carries, and what its argument is.
 struct ArgFlag {
