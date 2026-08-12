@@ -117,27 +117,49 @@ auto normalize_flag_path_into(Buf& out, std::string_view flag) -> void
     out += flag;
 }
 
+/// Where the driver stands in one invocation -- first, or behind one recognized wrapper.
+auto driver_index(std::span<std::string_view const> invocation) -> std::optional<std::size_t>
+{
+    if (invocation.empty()) {
+        return std::nullopt;
+    }
+    auto idx = std::size_t { 0 };
+    if (is_compiler_wrapper(program_basename(invocation[0])) && invocation.size() > 1) {
+        idx = 1;
+    }
+    if (!is_clang_cl_name(program_basename(invocation[idx]))) {
+        return std::nullopt;
+    }
+    return idx;
+}
+
+auto command_words(std::string_view command) -> Vec<std::string_view>
+{
+    auto& pool = global_pool();
+    auto words = Vec<std::string_view> {};
+    for (auto id : core::tokenize_shell_command(command)) {
+        words.push_back(pool.get(id));
+    }
+    return words;
+}
+
 } // namespace
 
 auto matches_clang_cl_compile(std::string_view command) -> bool
 {
-    auto word_ids = core::tokenize_shell_command(command);
-    if (word_ids.empty()) {
+    auto words = command_words(command);
+    if (words.empty()) {
         return false;
     }
 
-    auto& pool = global_pool();
-    auto driver_idx = std::size_t { 0 };
-    if (is_compiler_wrapper(program_basename(pool.get(word_ids[0]))) && word_ids.size() > 1) {
-        driver_idx = 1;
-    }
-
-    if (!is_clang_cl_name(program_basename(pool.get(word_ids[driver_idx])))) {
+    auto invocations = split_invocations(std::span { words.data(), words.size() });
+    auto driver_idx = driver_index(invocations[0]);
+    if (!driver_idx) {
         return false;
     }
 
-    for (auto i = driver_idx + 1; i < word_ids.size(); ++i) {
-        if (is_compile_flag(pool.get(word_ids[i]))) {
+    for (auto i = *driver_idx + 1; i < words.size(); ++i) {
+        if (is_compile_flag(words[i])) {
             return true;
         }
     }
@@ -166,49 +188,44 @@ auto ClangClScanner::has_dep_flags(std::string_view cmd) const -> bool
 auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<StringId>
 {
     auto& pool = global_pool();
-    auto word_ids = core::tokenize_shell_command(pool.get(cmd.command));
-    if (word_ids.empty()) {
+    auto words = command_words(pool.get(cmd.command));
+    if (words.empty()) {
         return std::nullopt;
     }
 
-    auto words = Vec<std::string_view> {};
-    words.reserve(word_ids.size());
-    for (auto id : word_ids) {
-        words.push_back(pool.get(id));
-    }
-
-    auto driver_idx = std::size_t { 0 };
-    if (is_compiler_wrapper(program_basename(words[0])) && words.size() > 1) {
-        driver_idx = 1;
-    }
-
-    if (!is_clang_cl_name(program_basename(words[driver_idx]))) {
+    auto invocations = split_invocations(std::span { words.data(), words.size() });
+    auto const first = invocations[0];
+    auto driver_idx = driver_index(first);
+    if (!driver_idx) {
         return std::nullopt;
     }
 
     auto dep_cmd = Buf {};
-    for (auto i = std::size_t { 0 }; i <= driver_idx; ++i) {
+    for (auto i = std::size_t { 0 }; i <= *driver_idx; ++i) {
         if (i > 0) {
             dep_cmd += ' ';
         }
-        dep_cmd += words[i];
+        dep_cmd += first[i];
     }
 
     dep_cmd += " /clang:-M";
 
     auto pending = std::optional<SeparateArg> {};
-    auto later_invocation = false;
+    auto linker_tail = false;
+    auto redirected = false;
     auto source_files = Vec<std::string_view> {};
-    for (auto i = driver_idx + 1; i < words.size(); ++i) {
-        auto w = words[i];
+    for (auto i = *driver_idx + 1; i < first.size(); ++i) {
+        auto w = first[i];
 
-        if (is_command_separator(w)) {
-            later_invocation = true;
+        // A redirection hands its target to this same invocation, so the words after it are not
+        // flags the scan may carry.
+        if (is_flag_barrier(w)) {
+            redirected = true;
             pending.reset();
             continue;
         }
 
-        if (later_invocation) {
+        if (redirected) {
             if (is_source_file(w)) {
                 source_files.push_back(w);
             }
@@ -230,8 +247,10 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
             continue;
         }
 
-        // /link hands everything after it to the linker, source words included.
+        // /link hands everything after it to the linker, source words included -- and the rest of
+        // the command with it, so no later invocation contributes one either.
         if (w == "/link") {
+            linker_tail = true;
             break;
         }
 
@@ -249,6 +268,14 @@ auto ClangClScanner::build_dep_command(CommandInfo const& cmd) const -> std::opt
         normalize_flag_path_into(norm, w);
         shell_quote_into(dep_cmd, norm.view());
         pending = separate_arg(w);
+    }
+
+    for (auto later = std::size_t { 1 }; !linker_tail && later < invocations.size(); ++later) {
+        for (auto w : invocations[later]) {
+            if (is_source_file(w)) {
+                source_files.push_back(w);
+            }
+        }
     }
 
     if (source_files.empty()) {

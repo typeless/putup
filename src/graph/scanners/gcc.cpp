@@ -105,27 +105,49 @@ auto is_scan_hazard(std::string_view flag) -> bool
     return is_blank_word(flag) || has_shell_special(flag) || leads_any(hazard_flags, flag);
 }
 
+/// Where the compiler stands in one invocation -- first, or behind one recognized wrapper.
+auto compiler_index(std::span<std::string_view const> invocation) -> std::optional<std::size_t>
+{
+    if (invocation.empty()) {
+        return std::nullopt;
+    }
+    auto idx = std::size_t { 0 };
+    if (is_compiler_wrapper(program_basename(invocation[0])) && invocation.size() > 1) {
+        idx = 1;
+    }
+    if (!is_compiler_name(program_basename(invocation[idx]))) {
+        return std::nullopt;
+    }
+    return idx;
+}
+
+auto command_words(std::string_view command) -> Vec<std::string_view>
+{
+    auto& pool = global_pool();
+    auto words = Vec<std::string_view> {};
+    for (auto id : core::tokenize_shell_command(command)) {
+        words.push_back(pool.get(id));
+    }
+    return words;
+}
+
 } // namespace
 
 auto matches_gcc_compile(std::string_view command) -> bool
 {
-    auto word_ids = core::tokenize_shell_command(command);
-    if (word_ids.empty()) {
+    auto words = command_words(command);
+    if (words.empty()) {
         return false;
     }
 
-    auto& pool = global_pool();
-    auto compiler_idx = std::size_t { 0 };
-    if (is_compiler_wrapper(program_basename(pool.get(word_ids[0]))) && word_ids.size() > 1) {
-        compiler_idx = 1;
-    }
-
-    if (!is_compiler_name(program_basename(pool.get(word_ids[compiler_idx])))) {
+    auto invocations = split_invocations(std::span { words.data(), words.size() });
+    auto compiler_idx = compiler_index(invocations[0]);
+    if (!compiler_idx) {
         return false;
     }
 
-    for (auto i = compiler_idx + 1; i < word_ids.size(); ++i) {
-        if (pool.get(word_ids[i]) == "-c") {
+    for (auto i = *compiler_idx + 1; i < words.size(); ++i) {
+        if (words[i] == "-c") {
             return true;
         }
     }
@@ -162,61 +184,55 @@ auto GccScanner::has_dep_flags(std::string_view cmd) const -> bool
 auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optional<StringId>
 {
     auto& pool = global_pool();
-    auto word_ids = core::tokenize_shell_command(pool.get(cmd.command));
-    if (word_ids.empty()) {
+    auto words = command_words(pool.get(cmd.command));
+    if (words.empty()) {
         return std::nullopt;
     }
 
-    auto words = Vec<std::string_view> {};
-    words.reserve(word_ids.size());
-    for (auto id : word_ids) {
-        words.push_back(pool.get(id));
-    }
-
-    auto compiler_idx = std::size_t { 0 };
-    if (is_compiler_wrapper(program_basename(words[0])) && words.size() > 1) {
-        compiler_idx = 1;
-    }
-
-    if (!is_compiler_name(program_basename(words[compiler_idx]))) {
+    auto invocations = split_invocations(std::span { words.data(), words.size() });
+    auto const first = invocations[0];
+    auto compiler_idx = compiler_index(first);
+    if (!compiler_idx) {
         return std::nullopt;
     }
 
     auto dep_cmd = Buf {};
 
-    for (auto i = std::size_t { 0 }; i <= compiler_idx; ++i) {
+    for (auto i = std::size_t { 0 }; i <= *compiler_idx; ++i) {
         if (i > 0) {
             dep_cmd += ' ';
         }
-        dep_cmd += words[i];
+        dep_cmd += first[i];
     }
 
     dep_cmd += " -M";
 
     auto pending = std::optional<SeparateArg> {};
-    auto later_invocation = false;
+    auto redirected = false;
     auto source_files = Vec<std::string_view> {};
-    for (auto i = compiler_idx + 1; i < words.size(); ++i) {
-        if (is_command_separator(words[i])) {
-            later_invocation = true;
+    for (auto i = *compiler_idx + 1; i < first.size(); ++i) {
+        // A redirection hands its target to this same invocation, so the words after it are not
+        // flags the scan may carry.
+        if (is_flag_barrier(first[i])) {
+            redirected = true;
             pending.reset();
             continue;
         }
 
-        if (later_invocation) {
-            if (is_source_file(words[i])) {
-                source_files.push_back(words[i]);
+        if (redirected) {
+            if (is_source_file(first[i])) {
+                source_files.push_back(first[i]);
             }
             continue;
         }
 
         if (pending) {
-            append_separate_arg_into(dep_cmd, words[i], *pending);
+            append_separate_arg_into(dep_cmd, first[i], *pending);
             pending.reset();
             continue;
         }
 
-        auto w = words[i];
+        auto w = first[i];
 
         if (w == "-c") {
             continue;
@@ -241,6 +257,14 @@ auto GccScanner::build_dep_command(CommandInfo const& cmd) const -> std::optiona
         normalize_flag_path_into(norm, w);
         shell_quote_into(dep_cmd, norm.view());
         pending = separate_arg(w);
+    }
+
+    for (auto later = std::size_t { 1 }; later < invocations.size(); ++later) {
+        for (auto w : invocations[later]) {
+            if (is_source_file(w)) {
+                source_files.push_back(w);
+            }
+        }
     }
 
     if (source_files.empty()) {

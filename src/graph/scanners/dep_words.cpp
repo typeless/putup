@@ -117,14 +117,37 @@ auto is_blank_word(std::string_view word) -> bool
     return word.find_first_not_of(" \t\n\r") == std::string_view::npos;
 }
 
-auto is_command_separator(std::string_view word) -> bool
+auto is_flag_barrier(std::string_view word) -> bool
 {
-    if (word == "&&" || word == "||" || word == ";" || word == "|" || word == "&") {
+    if (is_invocation_separator(word)) {
         return true;
     }
     // A redirection may name its file descriptor first: `>log`, `1>log`, `2>&1`, `3<x`.
     auto rest = word.substr(std::min(word.find_first_not_of("0123456789"), word.size()));
     return rest.starts_with(">") || rest.starts_with("<");
+}
+
+auto is_invocation_separator(std::string_view word) -> bool
+{
+    return word == "&&" || word == "||" || word == ";" || word == "|" || word == "&";
+}
+
+auto split_invocations(std::span<std::string_view const> words) -> Vec<std::span<std::string_view const>>
+{
+    auto result = Vec<std::span<std::string_view const>> {};
+    auto start = std::size_t { 0 };
+    for (auto i = std::size_t { 0 }; i < words.size(); ++i) {
+        if (is_invocation_separator(words[i])) {
+            result.push_back(words.subspan(start, i - start));
+            start = i + 1;
+        }
+    }
+    // An operator with nothing after it ends the last invocation rather than beginning another; one
+    // with nothing before it does begin an empty one, which is a command no scan can reproduce.
+    if (start < words.size() || result.empty()) {
+        result.push_back(words.subspan(start));
+    }
+    return result;
 }
 
 auto find_joined_flag(std::span<ArgFlag const> table, std::string_view word) -> ArgFlag const*
