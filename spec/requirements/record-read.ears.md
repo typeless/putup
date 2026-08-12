@@ -78,7 +78,10 @@ What the build says about a record it could not load.
 
 - conformance: putup-only
 - discharge: test "Scenario: A damaged record says so instead of rebuilding in silence"
+- discharge: test "Scenario: A record too short to hold a header says so instead of rebuilding in silence"
+- discharge: test "Scenario: A record that cannot be opened is announced without being called damage"
 - discharge: test "Scenario: An index from an unsupported version rebuilds without calling it damage"
 
-If the record a build would load is damaged, then putup shall announce the damage; if its version is
-merely outside the readable window, putup shall not call it damage.
+If the record a build would load cannot be loaded, then putup shall announce that and shall call it
+damage wherever the record itself is at fault; if its version is merely outside the readable window,
+putup shall neither announce it nor call it damage.
