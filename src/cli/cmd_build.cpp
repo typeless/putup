@@ -1287,20 +1287,8 @@ auto merge_out_of_scope_commands(
 
     auto new_lookup = index_command_lookup(ctx.index);
 
-    // Vestigial since the ghost arm began registering its own path (#386): every entry with a
-    // path is now in path_to_id, so this finds nothing. Kept pending its own removal.
-    auto ghost_paths = PathIdMap {};
-    for (auto const& file : ctx.index.files()) {
-        if (!pup::is_empty(file.path) && !ctx.path_to_id.find(file.path)) {
-            ghost_paths.insert(file.path, file.id);
-        }
-    }
-
     auto find_new_id_by_path = [&](StringId path) -> pup::NodeId {
         if (auto found = ctx.path_to_id.find(path)) {
-            return *found;
-        }
-        if (auto found = ghost_paths.find(path)) {
             return *found;
         }
         return pup::INVALID_NODE_ID;

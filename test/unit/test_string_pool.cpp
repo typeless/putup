@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cstdio>
@@ -111,4 +112,12 @@ TEST_CASE("StringPool Robin Hood index", "[string_pool]")
         REQUIRE(moved.get(id) == "before_move");
         REQUIRE(moved.find("before_move") == id);
     }
+}
+
+TEST_CASE("Interning the empty string yields the empty handle", "[string_pool]")
+{
+    auto pool = pup::StringPool {};
+    REQUIRE(pup::is_empty(pool.intern("")));
+    REQUIRE_FALSE(pup::is_empty(pool.intern("a")));
+    REQUIRE(pup::is_empty(pool.intern("")));
 }

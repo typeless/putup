@@ -13,6 +13,7 @@ namespace pup {
 enum class StringId : std::uint32_t { Empty = 0 };
 
 /// Check if StringId represents the empty string
+/// Only the empty string interns to Empty, so a guard may test the handle instead (#391).
 [[nodiscard]]
 constexpr auto is_empty(StringId id) -> bool
 {
