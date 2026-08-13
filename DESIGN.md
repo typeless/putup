@@ -877,9 +877,9 @@ Scanners detect compiler commands and generate dependency extraction commands:
 
 ```cpp
 class DepScanner {
-    virtual auto matches(CommandInfo const&) const -> bool = 0;
-    virtual auto has_dep_flags(std::string_view) const -> bool = 0;
-    virtual auto build_dep_scans(CommandInfo const&) -> Vec<DepScan> = 0;
+    virtual auto matches(CommandInfo const&, CommandTokens const&) const -> bool = 0;
+    virtual auto has_dep_flags(CommandTokens const&) const -> bool = 0;
+    virtual auto build_dep_scans(CommandInfo const&, CommandTokens const&) -> Vec<DepScan> = 0;
 };
 
 class DepScannerRegistry {
@@ -889,6 +889,13 @@ class DepScannerRegistry {
 ```
 
 The `GccScanner` implementation handles GCC, Clang, and compatible compilers.
+
+**Derived values share down the stack; only truths cross the build boundary.** `CommandTokens` is
+the command's words and invocation split, derived once per command by `tokenize_command` and read by
+every scanner. It is a stack value passed `const&`, never a member and never on a node: its views
+cannot outlive the frame, so it cannot become a second source of truth about a command. That is the
+same class as `PathCache` and the opposite of anything persisted, which needs an owner and a
+staleness story.
 
 **What a scan may cover.** A scan runs from the rule's directory with the rest of the command
 stripped, so it may carry a word only from the invocation it reproduces, and it can reproduce an

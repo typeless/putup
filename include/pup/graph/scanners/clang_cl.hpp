@@ -16,11 +16,11 @@ namespace pup::graph::scanners {
 class ClangClScanner final : public DepScanner {
 public:
     [[nodiscard]]
-    auto matches(CommandInfo const& cmd) const -> bool override;
+    auto matches(CommandInfo const& cmd, CommandTokens const& tokens) const -> bool override;
     [[nodiscard]]
-    auto has_dep_flags(std::string_view cmd) const -> bool override;
+    auto has_dep_flags(CommandTokens const& tokens) const -> bool override;
     [[nodiscard]]
-    auto build_dep_scans(CommandInfo const& cmd) const
+    auto build_dep_scans(CommandInfo const& cmd, CommandTokens const& tokens) const
         -> Vec<DepScan> override;
     [[nodiscard]]
     auto dep_spec() const -> DepSpec override;

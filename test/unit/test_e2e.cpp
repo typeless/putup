@@ -11143,6 +11143,18 @@ SCENARIO("The object of a compile that runs elsewhere is reported instead of sca
                 REQUIRE(result.stderr_output.find("sub/b.o") != std::string::npos);
                 REQUIRE(result.stderr_output.find("'a.o'") == std::string::npos);
             }
+
+            THEN("it does not claim the command contains no reproducible compile")
+            {
+                // One is standing next to it: a.o's compile is the covered prefix. The report's
+                // unit moved to the object, so its sentence has to speak about the object.
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("in this command") == std::string::npos);
+                REQUIRE(
+                    result.stderr_output.find("no compile putup can reproduce writes")
+                    != std::string::npos
+                );
+            }
         }
 
         WHEN("the source that only the Tupfile directory's copy includes is edited")
