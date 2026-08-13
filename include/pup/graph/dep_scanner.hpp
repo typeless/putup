@@ -8,6 +8,7 @@
 #include "pup/graph/rule_pattern.hpp"
 
 #include <memory>
+#include <span>
 #include <string_view>
 
 namespace pup::graph {
@@ -29,6 +30,49 @@ struct DepScan {
     StringId object = StringId::Empty;
 };
 
+/// A command's words and the invocations they divide into, derived once and read by every scanner.
+/// Obtainable only from `tokenize_command`, so the words can never disagree with the text they came
+/// from; its views die with the frame that built it, which is why it is never stored anywhere.
+class CommandTokens final {
+public:
+    friend auto tokenize_command(StringId text) -> CommandTokens;
+
+    // Copying would leave the copy's invocation spans pointing into the source's word buffer, so
+    // the value moves out of its constructor and is passed by reference from there on.
+    CommandTokens(CommandTokens const&) = delete;
+    auto operator=(CommandTokens const&) -> CommandTokens& = delete;
+    CommandTokens(CommandTokens&&) = default;
+    auto operator=(CommandTokens&&) -> CommandTokens& = default;
+    ~CommandTokens() = default;
+
+    [[nodiscard]]
+    auto text() const -> StringId
+    {
+        return text_;
+    }
+    [[nodiscard]]
+    auto words() const -> std::span<std::string_view const>
+    {
+        return { words_.data(), words_.size() };
+    }
+    [[nodiscard]]
+    auto invocations() const -> std::span<std::span<std::string_view const> const>
+    {
+        return { invocations_.data(), invocations_.size() };
+    }
+
+private:
+    CommandTokens() = default;
+
+    StringId text_ = StringId::Empty;
+    Vec<std::string_view> words_;
+    Vec<std::span<std::string_view const>> invocations_;
+};
+
+/// The one way to obtain a CommandTokens.
+[[nodiscard]]
+auto tokenize_command(StringId text) -> CommandTokens;
+
 /// Abstract interface for dependency scanners.
 /// Implementations detect specific tools (compilers, assemblers, linkers)
 /// and generate commands to extract their implicit dependencies.
@@ -44,17 +88,18 @@ public:
 
     /// Check if this scanner applies to the given command
     [[nodiscard]]
-    virtual auto matches(CommandInfo const& cmd) const -> bool = 0;
+    virtual auto matches(CommandInfo const& cmd, CommandTokens const& tokens) const -> bool = 0;
 
     /// Check if command already has dependency generation enabled
     [[nodiscard]]
-    virtual auto has_dep_flags(std::string_view cmd) const -> bool = 0;
+    virtual auto has_dep_flags(CommandTokens const& tokens) const -> bool = 0;
 
     /// Build the scans that extract dependencies from the given command, one per compile
     /// invocation it can reproduce. Empty means the command carries no such invocation.
     [[nodiscard]]
     virtual auto build_dep_scans(
-        CommandInfo const& cmd
+        CommandInfo const& cmd,
+        CommandTokens const& tokens
     ) const -> Vec<DepScan> = 0;
 
     /// Get the dependency extraction specification
@@ -81,17 +126,17 @@ public:
 
     /// Find a scanner that matches the command (nullptr if none)
     [[nodiscard]]
-    auto find_match(CommandInfo const& cmd) const -> DepScanner const*;
+    auto find_match(CommandInfo const& cmd, CommandTokens const& tokens) const -> DepScanner const*;
 
     /// Generate rules for a command using matching scanners
     [[nodiscard]]
-    auto match_and_generate(CommandInfo const& cmd) const
+    auto match_and_generate(CommandInfo const& cmd, CommandTokens const& tokens) const
         -> Vec<GeneratedRule>;
 
     /// Whether any scanner recognizes the command as writing its own depfile, which the
     /// build reads back from beside the object whether or not a scan was generated.
     [[nodiscard]]
-    auto reports_own_deps(std::string_view cmd) const -> bool;
+    auto reports_own_deps(CommandTokens const& tokens) const -> bool;
 
     [[nodiscard]]
     auto empty() const -> bool

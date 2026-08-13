@@ -7,7 +7,6 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/core/string_utils.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
 
@@ -155,60 +154,35 @@ auto compile_prefix(std::span<std::span<std::string_view const> const> invocatio
     return invocations.first(length);
 }
 
-auto command_words(std::string_view command) -> Vec<std::string_view>
-{
-    auto& pool = global_pool();
-    auto words = Vec<std::string_view> {};
-    for (auto id : core::tokenize_shell_command(command)) {
-        words.push_back(pool.get(id));
-    }
-    return words;
-}
-
 } // namespace
 
 auto matches_clang_cl_compile(std::string_view command) -> bool
 {
-    auto words = command_words(command);
-    if (words.empty()) {
-        return false;
-    }
-
-    auto invocations = split_invocations(std::span { words.data(), words.size() });
-    return !compile_prefix(std::span { invocations.data(), invocations.size() }).empty();
+    auto tokens = tokenize_command(global_pool().intern(command));
+    return !compile_prefix(tokens.invocations()).empty();
 }
 
-auto ClangClScanner::matches(CommandInfo const& cmd) const -> bool
+auto ClangClScanner::matches(CommandInfo const& /*cmd*/, CommandTokens const& tokens) const -> bool
 {
-    return matches_clang_cl_compile(global_pool().get(cmd.command));
+    return !compile_prefix(tokens.invocations()).empty();
 }
 
-auto ClangClScanner::has_dep_flags(std::string_view cmd) const -> bool
+auto ClangClScanner::has_dep_flags(CommandTokens const& tokens) const -> bool
 {
     // Only a pinned -MF counts: /MD and /MT select the CRT here, and a bare
     // -MD writes the depfile to the cwd instead of beside the object.
-    auto& pool = global_pool();
-    for (auto id : core::tokenize_shell_command(cmd)) {
-        auto word = pool.get(id);
-        if (word.starts_with("/clang:-MF") || word.starts_with("-clang:-MF")) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(tokens.words(), [](auto word) {
+        return word.starts_with("/clang:-MF") || word.starts_with("-clang:-MF");
+    });
 }
 
-auto ClangClScanner::build_dep_scans(CommandInfo const& cmd) const -> Vec<DepScan>
+auto ClangClScanner::build_dep_scans(CommandInfo const& /*cmd*/, CommandTokens const& tokens) const
+    -> Vec<DepScan>
 {
     auto& pool = global_pool();
-    auto words = command_words(pool.get(cmd.command));
-    if (words.empty()) {
-        return {};
-    }
-
     auto scans = Vec<DepScan> {};
-    auto invocations = split_invocations(std::span { words.data(), words.size() });
 
-    for (auto invocation : compile_prefix(std::span { invocations.data(), invocations.size() })) {
+    for (auto invocation : compile_prefix(tokens.invocations())) {
         auto driver_idx = driver_index(invocation);
         if (!driver_idx) {
             continue;

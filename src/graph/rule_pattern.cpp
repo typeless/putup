@@ -46,11 +46,12 @@ auto make_gcc_depfile_pattern() -> RulePattern
             static auto const scanner = scanners::GccScanner {};
 
             auto result = Vec<GeneratedRule> {};
-            if (scanner.has_dep_flags(global_pool().get(cmd.command))) {
+            auto tokens = tokenize_command(cmd.command);
+            if (scanner.has_dep_flags(tokens)) {
                 return result;
             }
 
-            for (auto const& scan : scanner.build_dep_scans(cmd)) {
+            for (auto const& scan : scanner.build_dep_scans(cmd, tokens)) {
                 result.push_back(GeneratedRule {
                     .inputs = cmd.inputs,
                     .order_only_inputs = cmd.order_only_inputs,

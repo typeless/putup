@@ -166,9 +166,13 @@ auto check_unscanned_compiles(
         auto source_dir = graph::get<graph::SourceDir>(graph, id);
         auto dir = pool.get(source_dir);
 
+        // Tokenized once here and read by both the suppression test and the predicate: a value
+        // that dies with this frame, never a second source of truth about the command.
+        auto tokens = graph::tokenize_command(text);
+
         // The build reads a depfile from beside the object whether or not a scan exists,
         // so a compile that writes its own is covered without one.
-        if (registry->reports_own_deps(pool.get(text))) {
+        if (registry->reports_own_deps(tokens)) {
             continue;
         }
 
@@ -182,7 +186,7 @@ auto check_unscanned_compiles(
         // The output word is relative to the rule's directory, the same as the compile resolves it,
         // so joining it there is what puts it in the declared output's space.
         auto covered = Vec<StringId> {};
-        for (auto const& rule : registry->match_and_generate(cmd_info)) {
+        for (auto const& rule : registry->match_and_generate(cmd_info, tokens)) {
             if (rule.covered_object == StringId::Empty) {
                 continue;
             }
@@ -197,9 +201,10 @@ auto check_unscanned_compiles(
             }
 
             auto buf = Buf {};
-            buf.fmt("no dependency scan for '{}': putup recognizes no compile it can reproduce in "
-                    "this command, so any header this rule reads goes unrecorded. Harmless if it "
+            buf.fmt("no dependency scan for '{}': no compile putup can reproduce writes '{}', so "
+                    "any header that object's compile reads goes unrecorded. Harmless if it "
                     "preprocesses none — an assembler, a copy, a partial link.",
+                    pool.get(object),
                     pool.get(object));
             result.push_back(make_diag(
                 pool.get(pup::path::join(dir.empty() ? "." : dir, "Tupfile")),

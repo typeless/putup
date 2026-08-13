@@ -34,10 +34,39 @@ auto path(std::string_view s) -> pup::PathId
     return paths.intern_path(s, pup::global_pool(), pup::PathId::BuildRoot);
 }
 
+/// Tokens for a command, built the one legal way. Tests hold them only for the call they make.
+auto tokens_of(CommandInfo const& cmd) -> CommandTokens
+{
+    return tokenize_command(cmd.command);
+}
+
+auto tokens_of(std::string_view command) -> CommandTokens
+{
+    return tokenize_command(pup::global_pool().intern(command));
+}
+
+/// Whether a scanner claims a command, tokenized the one legal way.
+auto scanner_matches(DepScanner const& scanner, CommandInfo const& cmd) -> bool
+{
+    return scanner.matches(cmd, tokens_of(cmd));
+}
+
+/// The scans a command builds and the rules a registry generates, tokenized the one legal way.
+auto scans_of(DepScanner const& scanner, CommandInfo const& cmd) -> pup::Vec<DepScan>
+{
+    return scanner.build_dep_scans(cmd, tokens_of(cmd));
+}
+
+auto generated_for(DepScannerRegistry const& registry, CommandInfo const& cmd)
+    -> pup::Vec<GeneratedRule>
+{
+    return registry.match_and_generate(cmd, tokens_of(cmd));
+}
+
 /// The one scan a command is expected to produce, asserting that it produces exactly one.
 auto only_scan(DepScanner const& scanner, CommandInfo const& cmd) -> DepScan
 {
-    auto scans = scanner.build_dep_scans(cmd);
+    auto scans = scanner.build_dep_scans(cmd, tokens_of(cmd));
     REQUIRE(scans.size() == 1);
     return scans[0];
 }
@@ -85,7 +114,7 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
             .working_dir = intern("."),
         };
 
-        auto const* scanner = registry.find_match(cmd);
+        auto const* scanner = registry.find_match(cmd, tokens_of(cmd));
         REQUIRE(scanner != nullptr);
         REQUIRE(scanner->name() == "gcc");
     }
@@ -102,7 +131,7 @@ TEST_CASE("DepScannerRegistry find_match", "[dep_scanner]")
             .working_dir = intern("."),
         };
 
-        auto const* scanner = registry.find_match(cmd);
+        auto const* scanner = registry.find_match(cmd, tokens_of(cmd));
         REQUIRE(scanner == nullptr);
     }
 }
@@ -124,7 +153,7 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .working_dir = intern("."),
         };
 
-        auto rules = registry.match_and_generate(cmd);
+        auto rules = registry.match_and_generate(cmd, tokens_of(cmd));
         REQUIRE(rules.size() == 1);
         REQUIRE(rules[0].command == intern("gcc -M foo.c"));
         REQUIRE(rules[0].action == OutputAction::InjectImplicitDeps);
@@ -143,7 +172,7 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .working_dir = intern("."),
         };
 
-        auto rules = registry.match_and_generate(cmd);
+        auto rules = registry.match_and_generate(cmd, tokens_of(cmd));
         REQUIRE(rules.empty());
     }
 
@@ -159,7 +188,7 @@ TEST_CASE("DepScannerRegistry match_and_generate", "[dep_scanner]")
             .working_dir = intern("."),
         };
 
-        auto rules = registry.match_and_generate(cmd);
+        auto rules = registry.match_and_generate(cmd, tokens_of(cmd));
         REQUIRE(rules.empty());
     }
 }
@@ -190,7 +219,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
-        REQUIRE(scanner.matches(cmd));
+        REQUIRE(scanner.matches(cmd, tokens_of(cmd)));
     }
 
     SECTION("matches clang compile command")
@@ -204,7 +233,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .outputs = { path("foo.o") },
             .working_dir = intern("."),
         };
-        REQUIRE(scanner.matches(cmd));
+        REQUIRE(scanner.matches(cmd, tokens_of(cmd)));
     }
 
     SECTION("does not match link command")
@@ -218,27 +247,27 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .outputs = { path("foo") },
             .working_dir = intern("."),
         };
-        REQUIRE(!scanner.matches(cmd));
+        REQUIRE(!scanner.matches(cmd, tokens_of(cmd)));
     }
 
     SECTION("has_dep_flags detects -MD")
     {
-        REQUIRE(scanner.has_dep_flags("gcc -MD -c foo.c -o foo.o"));
+        REQUIRE(scanner.has_dep_flags(tokens_of("gcc -MD -c foo.c -o foo.o")));
     }
 
     SECTION("has_dep_flags detects -MMD")
     {
-        REQUIRE(scanner.has_dep_flags("gcc -MMD -c foo.c -o foo.o"));
+        REQUIRE(scanner.has_dep_flags(tokens_of("gcc -MMD -c foo.c -o foo.o")));
     }
 
     SECTION("has_dep_flags detects -MF")
     {
-        REQUIRE(scanner.has_dep_flags("gcc -MF deps.d -c foo.c -o foo.o"));
+        REQUIRE(scanner.has_dep_flags(tokens_of("gcc -MF deps.d -c foo.c -o foo.o")));
     }
 
     SECTION("has_dep_flags returns false for normal compile")
     {
-        REQUIRE(!scanner.has_dep_flags("gcc -c foo.c -o foo.o"));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("gcc -c foo.c -o foo.o")));
     }
 
     SECTION("build_dep_scans returns the scan")
@@ -269,7 +298,7 @@ TEST_CASE("GccScanner interface", "[dep_scanner][gcc]")
             .working_dir = intern("."),
         };
 
-        auto scans = scanner.build_dep_scans(cmd);
+        auto scans = scanner.build_dep_scans(cmd, tokens_of(cmd));
         REQUIRE(scans.empty());
     }
 }
@@ -290,7 +319,7 @@ TEST_CASE("GccScanner compiler wrapper handling", "[dep_scanner][gcc]")
             .working_dir = intern("."),
         };
 
-        REQUIRE(scanner.matches(cmd));
+        REQUIRE(scanner.matches(cmd, tokens_of(cmd)));
         auto scan = only_scan(scanner, cmd);
         REQUIRE(scan.command == intern("ccache gcc -M foo.c"));
     }
@@ -450,7 +479,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .working_dir = intern("."),
         };
 
-        auto scans = scanner.build_dep_scans(cmd);
+        auto scans = scanner.build_dep_scans(cmd, tokens_of(cmd));
         REQUIRE(scans.empty());
     }
 
@@ -466,7 +495,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .working_dir = intern("."),
         };
 
-        auto scans = scanner.build_dep_scans(cmd);
+        auto scans = scanner.build_dep_scans(cmd, tokens_of(cmd));
         REQUIRE(scans.empty());
     }
 
@@ -482,7 +511,7 @@ TEST_CASE("GccScanner rejects compound shell commands", "[dep_scanner][gcc]")
             .working_dir = intern("."),
         };
 
-        auto scans = scanner.build_dep_scans(cmd);
+        auto scans = scanner.build_dep_scans(cmd, tokens_of(cmd));
         REQUIRE(scans.empty());
     }
 }
@@ -503,8 +532,8 @@ TEST_CASE("GccScanner skips commands with no visible source", "[dep_scanner][gcc
             .working_dir = intern("."),
         };
 
-        REQUIRE(scanner.matches(cmd));
-        REQUIRE(scanner.build_dep_scans(cmd).empty());
+        REQUIRE(scanner.matches(cmd, tokens_of(cmd)));
+        REQUIRE(scanner.build_dep_scans(cmd, tokens_of(cmd)).empty());
     }
 }
 
@@ -541,29 +570,29 @@ TEST_CASE("ClangClScanner matching", "[dep_scanner][clang_cl]")
 
     SECTION("matches clang-cl compile with GNU-spelled -c")
     {
-        REQUIRE(scanner.matches(clang_cl_compile(1, "clang-cl /std:c++latest -c foo.cpp -o foo.obj")));
+        REQUIRE(scanner_matches(scanner, clang_cl_compile(1, "clang-cl /std:c++latest -c foo.cpp -o foo.obj")));
     }
 
     SECTION("matches clang-cl compile with cl-spelled /c")
     {
-        REQUIRE(scanner.matches(clang_cl_compile(2, "clang-cl /std:c++latest /c foo.cpp /Fofoo.obj")));
+        REQUIRE(scanner_matches(scanner, clang_cl_compile(2, "clang-cl /std:c++latest /c foo.cpp /Fofoo.obj")));
     }
 
     SECTION("matches versioned and .exe driver names")
     {
-        REQUIRE(scanner.matches(clang_cl_compile(3, "clang-cl-20 -c foo.cpp -o foo.obj")));
-        REQUIRE(scanner.matches(clang_cl_compile(4, "/usr/bin/clang-cl.exe -c foo.cpp -o foo.obj")));
+        REQUIRE(scanner_matches(scanner, clang_cl_compile(3, "clang-cl-20 -c foo.cpp -o foo.obj")));
+        REQUIRE(scanner_matches(scanner, clang_cl_compile(4, "/usr/bin/clang-cl.exe -c foo.cpp -o foo.obj")));
     }
 
     SECTION("does not match a link command")
     {
-        REQUIRE(!scanner.matches(clang_cl_compile(5, "clang-cl foo.obj -o foo.exe")));
+        REQUIRE(!scanner_matches(scanner, clang_cl_compile(5, "clang-cl foo.obj -o foo.exe")));
     }
 
     SECTION("gcc scanner does not claim clang-cl commands")
     {
         auto gcc = scanners::GccScanner {};
-        REQUIRE(!gcc.matches(clang_cl_compile(6, "clang-cl -c foo.cpp -o foo.obj")));
+        REQUIRE(!scanner_matches(gcc, clang_cl_compile(6, "clang-cl -c foo.cpp -o foo.obj")));
     }
 }
 
@@ -573,26 +602,26 @@ TEST_CASE("ClangClScanner dep-flag detection", "[dep_scanner][clang_cl]")
 
     SECTION("detects a depfile whose path is pinned with -MF")
     {
-        REQUIRE(scanner.has_dep_flags("clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj"));
+        REQUIRE(scanner.has_dep_flags(tokens_of("clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj")));
     }
 
     SECTION("bare -MD does not count: the depfile lands in the cwd, not beside the object")
     {
-        REQUIRE(!scanner.has_dep_flags("clang-cl /clang:-MD -c foo.cpp -o foo.obj"));
-        REQUIRE(!scanner.has_dep_flags("clang-cl /clang:-MMD -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl /clang:-MD -c foo.cpp -o foo.obj")));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl /clang:-MMD -c foo.cpp -o foo.obj")));
     }
 
     SECTION("CRT-selection flags are not dep flags")
     {
-        REQUIRE(!scanner.has_dep_flags("clang-cl /MT -c foo.cpp -o foo.obj"));
-        REQUIRE(!scanner.has_dep_flags("clang-cl /MDd -c foo.cpp -o foo.obj"));
-        REQUIRE(!scanner.has_dep_flags("clang-cl -MD -c foo.cpp -o foo.obj"));
-        REQUIRE(!scanner.has_dep_flags("clang-cl -MT -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl /MT -c foo.cpp -o foo.obj")));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl /MDd -c foo.cpp -o foo.obj")));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl -MD -c foo.cpp -o foo.obj")));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl -MT -c foo.cpp -o foo.obj")));
     }
 
     SECTION("plain compile has no dep flags")
     {
-        REQUIRE(!scanner.has_dep_flags("clang-cl /W3 -c foo.cpp -o foo.obj"));
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl /W3 -c foo.cpp -o foo.obj")));
     }
 }
 
@@ -649,7 +678,7 @@ TEST_CASE("ClangClScanner dep command construction", "[dep_scanner][clang_cl]")
 
     SECTION("returns nullopt for a compound shell command")
     {
-        auto scans = scanner.build_dep_scans(clang_cl_compile(6, "cd build && clang-cl -c foo.cpp -o foo.obj"));
+        auto scans = scans_of(scanner, clang_cl_compile(6, "cd build && clang-cl -c foo.cpp -o foo.obj"));
         REQUIRE(scans.empty());
     }
 
@@ -663,7 +692,7 @@ TEST_CASE("ClangClScanner dep command construction", "[dep_scanner][clang_cl]")
 
     SECTION("returns nullopt when no source word is visible")
     {
-        auto scans = scanner.build_dep_scans(clang_cl_compile(7, "clang-cl @srcs.rsp -c -o foo.obj"));
+        auto scans = scans_of(scanner, clang_cl_compile(7, "clang-cl @srcs.rsp -c -o foo.obj"));
         REQUIRE(scans.empty());
     }
 }
@@ -683,7 +712,7 @@ TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]"
 
     SECTION("clang-cl compile gets one dep rule")
     {
-        auto rules = registry.match_and_generate(clang_cl_compile(1, "clang-cl -Isrc -c foo.cpp -o foo.obj"));
+        auto rules = generated_for(registry, clang_cl_compile(1, "clang-cl -Isrc -c foo.cpp -o foo.obj"));
         REQUIRE(rules.size() == 1);
         REQUIRE(rules[0].command == intern("clang-cl /clang:-M -Isrc foo.cpp"));
         REQUIRE(rules[0].action == OutputAction::InjectImplicitDeps);
@@ -692,7 +721,7 @@ TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]"
 
     SECTION("clang-cl compile that already emits a depfile putup can find gets none")
     {
-        auto rules = registry.match_and_generate(
+        auto rules = generated_for(registry,
             clang_cl_compile(2, "clang-cl /clang:-MD /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj")
         );
         REQUIRE(rules.empty());
@@ -700,7 +729,7 @@ TEST_CASE("Registry generates dep rules for clang-cl", "[dep_scanner][clang_cl]"
 
     SECTION("a source-less clang-cl compile gets no rule rather than a failing one")
     {
-        auto rules = registry.match_and_generate(clang_cl_compile(3, "clang-cl @srcs.rsp -c -o foo.obj"));
+        auto rules = generated_for(registry, clang_cl_compile(3, "clang-cl @srcs.rsp -c -o foo.obj"));
         REQUIRE(rules.empty());
     }
 }
@@ -921,7 +950,7 @@ TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner
     SECTION("a gcc compile finds the gcc scanner")
     {
         auto cmd = clang_cl_compile(1, "g++ -c foo.cpp -o foo.o");
-        auto const* scanner = registry->find_match(cmd);
+        auto const* scanner = registry->find_match(cmd, tokens_of(cmd));
         REQUIRE(scanner != nullptr);
         REQUIRE(scanner->name() == "gcc");
     }
@@ -929,7 +958,7 @@ TEST_CASE("Default scanner registry covers both compiler drivers", "[dep_scanner
     SECTION("a clang-cl compile finds the clang-cl scanner")
     {
         auto cmd = clang_cl_compile(2, "clang-cl -c foo.cpp -o foo.obj");
-        auto const* scanner = registry->find_match(cmd);
+        auto const* scanner = registry->find_match(cmd, tokens_of(cmd));
         REQUIRE(scanner != nullptr);
         REQUIRE(scanner->name() == "clang-cl");
     }
@@ -1281,7 +1310,7 @@ TEST_CASE("a scan is the compile without the words that would break it", "[dep_s
 TEST_CASE("GccScanner scans each compile of an all-compile command with its own flags", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};
-    auto scans = scanner.build_dep_scans(
+    auto scans = scans_of(scanner,
         gcc_compile(57, "gcc -O2 -c a.c -o a.o && gcc -c b.c -o b.o")
     );
 
@@ -1295,7 +1324,7 @@ TEST_CASE("GccScanner scans each compile of an all-compile command with its own 
 TEST_CASE("GccScanner scans the prefix before a directory change", "[dep_scanner][gcc]")
 {
     auto scanner = scanners::GccScanner {};
-    auto scans = scanner.build_dep_scans(
+    auto scans = scans_of(scanner,
         gcc_compile(70, "gcc -c a.c -o a.o && cd sub && gcc -c b.c -o b.o")
     );
 
@@ -1310,14 +1339,14 @@ TEST_CASE("GccScanner scans the prefix before an invocation that is not a compil
 
     SECTION("a later invocation that deletes a file contributes no source")
     {
-        auto scans = scanner.build_dep_scans(gcc_compile(71, "gcc -c a.c -o a.o && rm junk.c"));
+        auto scans = scans_of(scanner, gcc_compile(71, "gcc -c a.c -o a.o && rm junk.c"));
         REQUIRE(scans.size() == 1);
         REQUIRE(pup::global_pool().get(scans[0].command) == "gcc -M a.c");
     }
 
     SECTION("a later invocation that copies files contributes neither operand")
     {
-        auto scans = scanner.build_dep_scans(gcc_compile(72, "gcc -c a.c -o a.o && cp b.c x.c"));
+        auto scans = scans_of(scanner, gcc_compile(72, "gcc -c a.c -o a.o && cp b.c x.c"));
         REQUIRE(scans.size() == 1);
         REQUIRE(pup::global_pool().get(scans[0].command) == "gcc -M a.c");
     }
@@ -1347,7 +1376,7 @@ TEST_CASE("A command whose first invocation is not a compile is scanned nowhere"
     // The bound that keeps the prefix rule from becoming scan-everything: an empty prefix, so no
     // later compile is reproducible from the rule's directory either.
     auto scanner = scanners::GccScanner {};
-    REQUIRE(scanner.build_dep_scans(gcc_compile(75, "cd sub && gcc -c a.c -o a.o")).empty());
+    REQUIRE(scans_of(scanner, gcc_compile(75, "cd sub && gcc -c a.c -o a.o")).empty());
 }
 
 TEST_CASE("A separator with nothing after it begins no invocation", "[dep_scanner][gcc]")
@@ -1393,7 +1422,7 @@ TEST_CASE("matches_clang_cl_compile refuses a command whose first invocation is 
 TEST_CASE("ClangClScanner scans the prefix before an invocation that is not a compile", "[dep_scanner][clang_cl]")
 {
     auto scanner = scanners::ClangClScanner {};
-    auto scans = scanner.build_dep_scans(
+    auto scans = scans_of(scanner,
         clang_cl_compile(73, "clang-cl -c a.cpp -o a.obj && cd sub && clang-cl -c b.cpp -o b.obj")
     );
 

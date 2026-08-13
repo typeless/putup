@@ -2131,7 +2131,8 @@ auto expand_rule(
     // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
     auto generated_rules = Vec<GeneratedRule> {};
     if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
-        generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info);
+        auto tokens = tokenize_command(cmd_text);
+        generated_rules = ctx.options.scanner_registry->match_and_generate(cmd_info, tokens);
     } else if (ctx.options.pattern_registry && !ctx.options.pattern_registry->empty()) {
         generated_rules = ctx.options.pattern_registry->match_and_generate(cmd_info);
     }

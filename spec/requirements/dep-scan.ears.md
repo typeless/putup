@@ -70,7 +70,8 @@ scan derived from it.
 What putup says about an object it did not scan. The unit is the object, not the rule: per object
 the reporting is binary — covered by a scan derived from the compile that writes it, or reported
 unscanned — so a rule scanned in part is not a state this group must express, only what a reader
-sees when some of a rule's objects are named.
+sees when some of a rule's objects are named. The report's sentences carry that unit too: each
+speaks about the object it names, not about the command that declares it.
 
 ### REQ-SCAN-REPORT-UNSCANNED
 
