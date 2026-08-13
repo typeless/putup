@@ -62,6 +62,20 @@ auto is_flag_barrier(std::string_view word) -> bool;
 [[nodiscard]]
 auto is_invocation_separator(std::string_view word) -> bool;
 
+/// True for a leading `NAME=VALUE` word the scan keeps in front of the compiler, so the scan
+/// preprocesses under the environment the compile did. A value carrying shell syntax is not one:
+/// `FOO=$(id)` would be evaluated a second time, and `FOO=1;` ends the assignment where putup's
+/// whitespace split did not.
+[[nodiscard]]
+auto is_env_assignment_word(std::string_view word) -> bool;
+
+/// True for an invocation a scan may step over: one that runs nothing, or one running a program
+/// that only writes to its output stream, no word of which carries shell syntax putup's whitespace
+/// split left unresolved. Such an invocation changes neither the directory nor the environment nor
+/// any file a later compile reads, so it need not be reproduced.
+[[nodiscard]]
+auto is_scan_transparent(std::span<std::string_view const> invocation) -> bool;
+
 /// The invocations a command's control operators divide its words into, in order. An invocation is
 /// empty where two operators meet or where the command begins with one; a word list with no
 /// operator is one invocation, and a trailing operator adds none. Which of them a scan may draw

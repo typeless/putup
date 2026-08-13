@@ -11244,7 +11244,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
 {
     // The scan is declined correctly — putup cannot reproduce the prefix's shell state — but
     // declining in silence leaves a rule whose headers are never recorded (#352).
-    GIVEN("a project with a scanned compile, an unscanned compile, and a self-depfiling compile")
+    GIVEN("a project with a scanned compile, an announced compile, an unscanned compile, and a self-depfiling compile")
     {
         auto f = E2EFixture { "unscanned_compile" };
         REQUIRE(f.init().success());
@@ -11253,7 +11253,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
         {
             auto result = f.pup({ "parse" });
 
-            THEN("the unscanned rule is named and the other two are not")
+            THEN("the unscanned rule is named and the other three are not")
             {
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
@@ -11261,6 +11261,7 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
                 REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
                 REQUIRE(result.stderr_output.find("hidden.o") != std::string::npos);
                 REQUIRE(result.stderr_output.find("plain.o") == std::string::npos);
+                REQUIRE(result.stderr_output.find("shown.o") == std::string::npos);
                 REQUIRE(result.stderr_output.find("owndep.o") == std::string::npos);
             }
         }

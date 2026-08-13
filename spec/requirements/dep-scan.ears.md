@@ -16,10 +16,12 @@ accesses instead — so every requirement here is `putup-only` and no citation i
 Recognition is deliberately narrow. putup runs a scan from the rule's directory without the
 rest of the command, so it can only scan a command whose compile it can reproduce in that
 state; a prefix that changes the working directory or the environment makes the reproduction
-false rather than incomplete. A recognized compiler wrapper is the one exception, because it
-changes neither and the scan keeps it. Declining is therefore correct — but declining in
-silence leaves a rule whose headers are never recorded, which is why the last requirement here
-exists.
+false rather than incomplete. What precedes a compile is therefore either reproduced or proven
+inert, and never silently dropped: a recognized compiler wrapper and the compile's own leading
+environment assignments are reproduced, because the scan keeps them; an invocation that runs
+nothing, or only announces, is inert. Anything else is opaque. Declining is therefore correct —
+but declining in silence leaves a rule whose headers are never recorded, which is why the last
+requirement here exists.
 
 The unit that narrowness is measured in is the invocation: a command's control operators divide it
 into invocations, each gets its own scan, and a scan may draw a word only from the invocation it
@@ -49,11 +51,38 @@ Which commands a scan is generated for.
 - discharge: test "A command whose first invocation is not a compile is scanned nowhere"
 - discharge: test "ClangClScanner scans the prefix before an invocation that is not a compile"
 
-Where a command runs an invocation that is not a compile putup recognizes, whether a loop, a
-directory change, an environment assignment, a link or any other program, putup shall generate no
-dependency scan for that invocation or for any that follows it, because the scan runs from the
-rule's directory with the rest of the command stripped and past such an invocation would
-preprocess in a state the compile never had.
+Where a command runs an invocation that is neither a compile putup recognizes nor one it proves
+inert, whether a loop, a directory change, a standalone environment assignment, a link or any
+other program, putup shall generate no dependency scan for that invocation or for any that
+follows it, because the scan runs from the rule's directory with the rest of the command
+stripped and past such an invocation would preprocess in a state the compile never had.
+
+### REQ-SCAN-KEEPS-ASSIGNMENT-PREFIX
+
+- conformance: putup-only
+- discharge: test "GccScanner keeps a leading environment assignment in the scan"
+- discharge: test "ClangClScanner reads the same prefix its sibling does"
+
+Where a compile's own invocation begins with `NAME=VALUE` words carrying no shell syntax putup's
+word split left unresolved, putup shall keep those words in front of the compiler in the scan it builds, because the scan then preprocesses
+under the environment the compile did, including a variable such as `CPATH` that moves the header
+search and that a dropped word would resolve against a path the compile never read; an assignment
+standing as its own invocation scopes to the rest of the command line rather than to one
+invocation, so it is opaque instead.
+
+### REQ-SCAN-TRANSPARENT-INVOCATION
+
+- conformance: putup-only
+- discharge: test "GccScanner scans past an invocation that changes nothing"
+- discharge: test "ClangClScanner reads the same prefix its sibling does"
+- discharge: test "A separator with nothing after it begins no invocation"
+
+Where an invocation before a compile runs nothing, or runs only a program that writes to its
+output stream — `echo`, `true`, `:` — with no word that redirects and no shell syntax putup's word
+split left unresolved, putup shall generate the scans for the compiles after it as if it were
+absent, because such an invocation changes neither the directory, nor the environment, nor any
+file the compile reads; where it redirects, the file it writes may be the very header the compile
+includes, so it is opaque even though its program is one of these.
 
 ### REQ-SCAN-PER-INVOCATION
 

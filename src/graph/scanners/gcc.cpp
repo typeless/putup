@@ -105,15 +105,19 @@ auto is_scan_hazard(std::string_view flag) -> bool
     return is_blank_word(flag) || has_shell_special(flag) || leads_any(hazard_flags, flag);
 }
 
-/// Where the compiler stands in one invocation -- first, or behind one recognized wrapper.
+/// Where the compiler stands in one invocation -- first, or behind leading environment
+/// assignments and one recognized wrapper. The words before it are the scan's to keep.
 auto compiler_index(std::span<std::string_view const> invocation) -> std::optional<std::size_t>
 {
-    if (invocation.empty()) {
+    auto idx = std::size_t { 0 };
+    while (idx < invocation.size() && is_env_assignment_word(invocation[idx])) {
+        ++idx;
+    }
+    if (idx >= invocation.size()) {
         return std::nullopt;
     }
-    auto idx = std::size_t { 0 };
-    if (is_compiler_wrapper(program_basename(invocation[0])) && invocation.size() > 1) {
-        idx = 1;
+    if (is_compiler_wrapper(program_basename(invocation[idx])) && idx + 1 < invocation.size()) {
+        ++idx;
     }
     if (!is_compiler_name(program_basename(invocation[idx]))) {
         return std::nullopt;
@@ -130,15 +134,22 @@ auto is_recognized_compile(std::span<std::string_view const> invocation) -> bool
     return std::ranges::any_of(invocation.subspan(*idx + 1), [](auto w) { return w == "-c"; });
 }
 
-/// The leading invocations a scan can reproduce from the rule's directory: one that is not a
-/// compile may change the directory or the environment, so it and everything after it are out of
-/// reach (#356).
-auto compile_prefix(std::span<std::span<std::string_view const> const> invocations)
+/// The leading invocations a scan can draw from, ending at the last compile in them: an
+/// invocation that is neither a compile nor scan-transparent may change the directory or the
+/// environment, so it and everything after it are out of reach (#356, #352). Ending at the last
+/// compile is what keeps a non-empty prefix and a non-empty scan set the same answer.
+auto scannable_prefix(std::span<std::span<std::string_view const> const> invocations)
     -> std::span<std::span<std::string_view const> const>
 {
     auto length = std::size_t { 0 };
-    while (length < invocations.size() && is_recognized_compile(invocations[length])) {
-        ++length;
+    for (auto i = std::size_t { 0 }; i < invocations.size(); ++i) {
+        if (is_recognized_compile(invocations[i])) {
+            length = i + 1;
+            continue;
+        }
+        if (!is_scan_transparent(invocations[i])) {
+            break;
+        }
     }
     return invocations.first(length);
 }
@@ -148,12 +159,12 @@ auto compile_prefix(std::span<std::span<std::string_view const> const> invocatio
 auto matches_gcc_compile(std::string_view command) -> bool
 {
     auto tokens = tokenize_command(global_pool().intern(command));
-    return !compile_prefix(tokens.invocations()).empty();
+    return !scannable_prefix(tokens.invocations()).empty();
 }
 
 auto GccScanner::matches(CommandInfo const& /*cmd*/, CommandTokens const& tokens) const -> bool
 {
-    return !compile_prefix(tokens.invocations()).empty();
+    return !scannable_prefix(tokens.invocations()).empty();
 }
 
 auto GccScanner::has_dep_flags(CommandTokens const& tokens) const -> bool
@@ -185,7 +196,7 @@ auto GccScanner::build_dep_scans(CommandInfo const& /*cmd*/, CommandTokens const
     auto& pool = global_pool();
     auto scans = Vec<DepScan> {};
 
-    for (auto invocation : compile_prefix(tokens.invocations())) {
+    for (auto invocation : scannable_prefix(tokens.invocations())) {
         auto compiler_idx = compiler_index(invocation);
         if (!compiler_idx) {
             continue;
