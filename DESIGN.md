@@ -899,8 +899,12 @@ staleness story.
 
 **What a scan may cover.** A scan runs from the rule's directory with the rest of the command
 stripped, so it may carry a word only from the invocation it reproduces, and it can reproduce an
-invocation only when it and every invocation before it is a compile the scanner recognizes — one
-scan per invocation of that leading prefix. Refusal is decidable from the token stream; anything
+invocation only when it and every invocation before it is a compile the scanner recognizes or an
+invocation it proves inert — one scan per compile of that leading prefix. **Reproduce or prove
+inert — never silently drop**: what precedes a compile is kept in the scan (the wrapper, the
+compile's own `NAME=VALUE` words) or shown to change nothing the compile reads (an invocation that
+runs nothing, or only announces); a word dropped because it looked harmless is how a scan comes to
+preprocess a tree the compile never saw. Refusal is decidable from the token stream; anything
 finer requires modeling the shell. A redirection ends what the scan may read from an invocation
 but divides no invocation — only a control operator starts a new one. Three consequences bind
 every future change here. A scan travels with the object it covers, because only the scanner's

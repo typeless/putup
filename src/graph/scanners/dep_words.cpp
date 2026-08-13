@@ -69,6 +69,28 @@ auto quote_windows_into(Buf& out, std::string_view s) -> void
     out += '"';
 }
 
+auto is_name_start(char c) -> bool
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+auto is_name_char(char c) -> bool
+{
+    return is_name_start(c) || (c >= '0' && c <= '9');
+}
+
+auto is_transparent_program(std::string_view name) -> bool
+{
+    return name == "echo" || name == "true" || name == ":";
+}
+
+// Words are split on whitespace, so one word can carry shell syntax that was never classified as
+// such -- `FOO=1;` is an assignment the shell ends, `x>f.h` a redirection it never stood alone as.
+auto hides_shell_syntax(std::string_view word) -> bool
+{
+    return has_shell_special(word) || word.find_first_of(";&|<>\n") != std::string_view::npos;
+}
+
 } // namespace
 
 auto is_compiler_wrapper(std::string_view name) -> bool
@@ -132,6 +154,26 @@ auto is_invocation_separator(std::string_view word) -> bool
     return word == "&&" || word == "||" || word == ";" || word == "|" || word == "&";
 }
 
+auto is_env_assignment_word(std::string_view word) -> bool
+{
+    auto eq = word.find('=');
+    if (eq == std::string_view::npos || eq == 0 || !is_name_start(word[0])) {
+        return false;
+    }
+    return std::ranges::all_of(word.substr(0, eq), is_name_char) && !hides_shell_syntax(word);
+}
+
+auto is_scan_transparent(std::span<std::string_view const> invocation) -> bool
+{
+    if (invocation.empty()) {
+        return true;
+    }
+    if (!is_transparent_program(program_basename(invocation[0]))) {
+        return false;
+    }
+    return std::ranges::none_of(invocation, hides_shell_syntax);
+}
+
 auto split_invocations(std::span<std::string_view const> words) -> Vec<std::span<std::string_view const>>
 {
     auto result = Vec<std::span<std::string_view const>> {};
@@ -143,7 +185,7 @@ auto split_invocations(std::span<std::string_view const> words) -> Vec<std::span
         }
     }
     // An operator with nothing after it ends the last invocation rather than beginning another; one
-    // with nothing before it does begin an empty one, which is a command no scan can reproduce.
+    // with nothing before it does begin an empty one, which each scanner classifies for itself.
     if (start < words.size() || result.empty()) {
         result.push_back(words.subspan(start));
     }

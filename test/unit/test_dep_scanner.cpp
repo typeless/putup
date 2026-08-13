@@ -1394,9 +1394,9 @@ TEST_CASE("A separator with nothing after it begins no invocation", "[dep_scanne
         REQUIRE(scanners::matches_gcc_compile("gcc -c a.c -o a.o &"));
     }
 
-    SECTION("a leading separator still forfeits the scan")
+    SECTION("a leading separator begins an invocation that runs nothing")
     {
-        REQUIRE(!scanners::matches_gcc_compile("; gcc -c a.c -o a.o"));
+        REQUIRE(scanners::matches_gcc_compile("; gcc -c a.c -o a.o"));
     }
 }
 
@@ -1429,6 +1429,130 @@ TEST_CASE("ClangClScanner scans the prefix before an invocation that is not a co
     REQUIRE(scans.size() == 1);
     REQUIRE(pup::global_pool().get(scans[0].command) == "clang-cl /clang:-M a.cpp");
     REQUIRE(pup::global_pool().get(scans[0].object) == "a.obj");
+}
+
+TEST_CASE("GccScanner keeps a leading environment assignment in the scan", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("the assignment precedes the compiler in the scan")
+    {
+        auto scan = only_scan(scanner, gcc_compile(80, "FOO=1 gcc -c a.c -o a.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "FOO=1 gcc -M a.c");
+        REQUIRE(pup::global_pool().get(scan.object) == "a.o");
+    }
+
+    SECTION("a variable that moves the header search is kept, not dropped")
+    {
+        // Keeping it is what makes the scan sound: dropping CPATH would search a path the
+        // compile never searched, which is #355's redirection in a new place.
+        auto scan = only_scan(scanner, gcc_compile(81, "CPATH=inc gcc -c a.c -o a.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "CPATH=inc gcc -M a.c");
+    }
+
+    SECTION("every assignment before a wrapper is kept")
+    {
+        auto scan = only_scan(scanner, gcc_compile(82, "A=1 B=2 ccache gcc -c a.c -o a.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "A=1 B=2 ccache gcc -M a.c");
+    }
+
+    SECTION("the matcher answers as the builder does")
+    {
+        REQUIRE(scanners::matches_gcc_compile("FOO=1 gcc -c a.c -o a.o"));
+    }
+
+    SECTION("a standalone assignment is not absorbed")
+    {
+        // The prefix form scopes to one command; the standalone form persists into the rest of
+        // the line, so no scan of a later invocation reproduces it.
+        REQUIRE(!scanners::matches_gcc_compile("FOO=1; gcc -c a.c -o a.o"));
+        REQUIRE(scans_of(scanner, gcc_compile(83, "FOO=1; gcc -c a.c -o a.o")).empty());
+    }
+
+    SECTION("a value the scan's own shell would expand a second time is not absorbed")
+    {
+        REQUIRE(!scanners::matches_gcc_compile("FOO=$(date) gcc -c a.c -o a.o"));
+    }
+}
+
+TEST_CASE("GccScanner scans past an invocation that changes nothing", "[dep_scanner][gcc]")
+{
+    auto scanner = scanners::GccScanner {};
+
+    SECTION("an invocation with no words")
+    {
+        auto scan = only_scan(scanner, gcc_compile(84, "; gcc -c a.c -o a.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M a.c");
+    }
+
+    SECTION("an announcement")
+    {
+        auto scan = only_scan(scanner, gcc_compile(85, "echo building a.c && gcc -c a.c -o a.o"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M a.c");
+    }
+
+    SECTION("the other programs that do nothing")
+    {
+        REQUIRE(scanners::matches_gcc_compile("true && gcc -c a.c -o a.o"));
+        REQUIRE(scanners::matches_gcc_compile(": && gcc -c a.c -o a.o"));
+    }
+
+    SECTION("an announcement that writes a file is opaque")
+    {
+        // The write may create the very header the compile reads.
+        REQUIRE(!scanners::matches_gcc_compile("echo x > f.h && gcc -c f.c -o f.o"));
+        REQUIRE(scans_of(scanner, gcc_compile(86, "echo x >f.h && gcc -c f.c -o f.o")).empty());
+    }
+
+    SECTION("an announcement that runs a program is opaque")
+    {
+        REQUIRE(!scanners::matches_gcc_compile("echo $(gen) && gcc -c a.c -o a.o"));
+    }
+
+    SECTION("a program that is neither compile nor announcement still ends the prefix")
+    {
+        REQUIRE(scans_of(scanner, gcc_compile(87, "cat x && gcc -c a.c -o a.o")).empty());
+    }
+
+    SECTION("a command that only announces is claimed by no scanner")
+    {
+        REQUIRE(!scanners::matches_gcc_compile("echo nothing to do"));
+    }
+
+    SECTION("an announcement after the last compile adds no scan")
+    {
+        auto scans = scans_of(scanner, gcc_compile(88, "gcc -c a.c -o a.o && echo done"));
+        REQUIRE(scans.size() == 1);
+        REQUIRE(pup::global_pool().get(scans[0].command) == "gcc -M a.c");
+    }
+}
+
+TEST_CASE("ClangClScanner reads the same prefix its sibling does", "[dep_scanner][clang_cl]")
+{
+    auto scanner = scanners::ClangClScanner {};
+
+    SECTION("a leading assignment is kept in the scan")
+    {
+        auto scan = only_scan(scanner, clang_cl_compile(89, "INCLUDE=inc clang-cl -c a.cpp -o a.obj"));
+        REQUIRE(pup::global_pool().get(scan.command) == "INCLUDE=inc clang-cl /clang:-M a.cpp");
+        REQUIRE(pup::global_pool().get(scan.object) == "a.obj");
+    }
+
+    SECTION("an announcement does not end the prefix")
+    {
+        auto scan = only_scan(scanner, clang_cl_compile(90, "echo building && clang-cl -c a.cpp -o a.obj"));
+        REQUIRE(pup::global_pool().get(scan.command) == "clang-cl /clang:-M a.cpp");
+    }
+
+    SECTION("an announcement that writes a file is opaque")
+    {
+        REQUIRE(!scanners::matches_clang_cl_compile("echo x > f.h && clang-cl -c f.cpp -o f.obj"));
+    }
+
+    SECTION("a standalone assignment is not absorbed")
+    {
+        REQUIRE(!scanners::matches_clang_cl_compile("FOO=1; clang-cl -c a.cpp -o a.obj"));
+    }
 }
 
 TEST_CASE("a line continuation never reaches the scan command", "[dep_scanner]")

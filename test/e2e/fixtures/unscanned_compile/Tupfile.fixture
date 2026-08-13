@@ -1,6 +1,8 @@
 # scanned: an ordinary compile
 : plain.c |> gcc -c %f -o %o |> %B.o
-# unscanned: the compile is not the command's first invocation
-: hidden.c |> echo building %f && gcc -c %f -o %o |> %B.o
+# scanned: the compile follows an invocation that changes nothing it reads
+: shown.c |> echo building %f && gcc -c %f -o %o |> %B.o
+# unscanned: the compile follows an invocation putup cannot reproduce
+: hidden.c |> cd . && gcc -c %f -o %o |> %B.o
 # not a finding: the compile writes its own depfile
 : owndep.c |> gcc -MD -MF %o.d -c %f -o %o |> %B.o
