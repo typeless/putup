@@ -205,6 +205,25 @@ Error codes are categorized:
 | Graph | CyclicDependency, UnknownMacro |
 | Exec | CommandFailed, MissingInput |
 
+When a consumer filters these codes to decide what a build announces, announcing is the default
+arm's job: enumeration selects the wording of a particular announcement, or excuses an exception
+proven benign, but it is never the condition for being announced at all. The announced set grows
+every time the enum does while the benign set stays closed, so a rejection added later announces
+unless it is deliberately excused, instead of falling silent by omission. `load_old_index`
+(`src/cli/context.cpp`) is the standing example — `IndexVersionMismatch` is the one excused code,
+and the two damage codes appear as arms only to word their warnings — and REQ-READ-ANNOUNCE-DAMAGE
+(`spec/requirements/record-read.ears.md`) pins the observable half. The law ranges over
+announcement filters as a class, meaning those whose default outcome would otherwise be silence;
+a dispatch switch whose every arm acts is not one.
+
+`ErrorCode` is an in-process vocabulary: no value is serialized, mapped back from persisted bytes,
+or emitted as a stable token in machine-read output — the on-disk index carries its own magic,
+version, and layout instead. Enumerators may therefore be added, renamed, or deleted freely, and
+have been: `IndexTruncated` and `InvalidFormat` are both gone from the enum. That freedom lasts
+exactly as long as the in-process boundary holds, and the first code to cross a process or
+persistence boundary joins a compatibility regime like the index format's. Changing the enum under
+an announcement filter is safe by default for the reason above — the default arm announces.
+
 ---
 
 ## Memory Management
@@ -1143,6 +1162,16 @@ Write process:
 2. Compute SHA-256 checksum
 3. Write footer with checksum
 4. Atomic rename to final path
+
+What this buys the reader: the record at `.pup/index` was whole when putup last wrote it, because
+an interrupted write leaves the previous record in place rather than a prefix of the new one. A
+record that fails validation was therefore damaged after it was written, by something other than
+putup's own writer, and the reader is entitled to announce damage instead of suspecting a
+half-finished write of its own. The entitlement is wholeness, not freshness — which whole record
+survives a crash turns on directory-entry durability, which is the filesystem's affair — and it
+covers the files written through `pup::platform::atomic_write`, not putup's outputs generally,
+since build outputs are written by user commands under no such regime. A whole record from outside
+the readable version window is not damage either.
 
 ---
 
