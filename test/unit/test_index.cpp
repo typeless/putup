@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/cli/index_serialize.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/hash.hpp"
@@ -479,7 +481,7 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(data->size() > sizeof(RawHeader) + sizeof(RawFooter));
 
     // Write to temp file and read back
-    auto temp_path = (std::filesystem::temp_directory_path() / "pup_test_index").string();
+    auto temp_path = pup::test::temp_path("pup_test_index").string();
 
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
@@ -615,7 +617,7 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
     });
 
     // Serialize and read back
-    auto temp_path = (std::filesystem::temp_directory_path() / "pup_test_contiguous").string();
+    auto temp_path = pup::test::temp_path("pup_test_contiguous").string();
         auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
@@ -665,7 +667,7 @@ TEST_CASE("A record whose declared layout does not fit the file is refused", "[e
     auto const data = serialize_index(index);
     REQUIRE(data.has_value());
 
-    auto const path = (std::filesystem::temp_directory_path() / "pup_malicious_test").string();
+    auto const path = pup::test::temp_path("pup_malicious_test").string();
     auto const past_end = static_cast<std::uint32_t>(data->size()) + 1000;
     auto const overflowing_count = static_cast<std::uint32_t>(data->size() / sizeof(RawFileEntry)) + 100;
 
@@ -764,7 +766,7 @@ TEST_CASE("A command longer than the string table's entry limit is still recorde
         .display = intern(oversized.view()),
     });
 
-    auto temp_path = (std::filesystem::temp_directory_path() / "pup_oversized_command_test").string();
+    auto temp_path = pup::test::temp_path("pup_oversized_command_test").string();
     REQUIRE(write_index(temp_path, index).has_value());
 
     auto opened = open_index(temp_path);
@@ -785,7 +787,7 @@ TEST_CASE("A command longer than the string table's entry limit is still recorde
         exact.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("dir") });
         exact.add_command(CommandEntry { .id = cmd_id, .dir_id = 1, .instruction_pattern = intern(at_limit.view()) });
 
-        auto exact_path = (std::filesystem::temp_directory_path() / "pup_at_limit_command_test").string();
+        auto exact_path = pup::test::temp_path("pup_at_limit_command_test").string();
         REQUIRE(write_index(exact_path, exact).has_value());
 
         auto exact_opened = open_index(exact_path);
@@ -864,7 +866,7 @@ TEST_CASE("A command with more than 255 operands records all of them", "[index]"
         .outputs = outputs,
     });
 
-    auto temp_path = (std::filesystem::temp_directory_path() / "pup_many_operands_test").string();
+    auto temp_path = pup::test::temp_path("pup_many_operands_test").string();
     REQUIRE(write_index(temp_path, index).has_value());
 
     auto opened = open_index(temp_path);
@@ -1232,7 +1234,7 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     REQUIRE(data.has_value());
 
     // Write and read back
-    auto temp_path = (std::filesystem::temp_directory_path() / "pup_v8_roundtrip_test").string();
+    auto temp_path = pup::test::temp_path("pup_v8_roundtrip_test").string();
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
@@ -1356,7 +1358,7 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
         }
     }
 
-    auto temp_path = (std::filesystem::temp_directory_path() / file_tag).string();
+    auto temp_path = pup::test::temp_path(file_tag).string();
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
@@ -1524,7 +1526,7 @@ auto write_bytes(std::string const& path, Vec<std::byte> const& bytes) -> void
 
 auto temp_index_path(std::string_view stem) -> std::string
 {
-    return (std::filesystem::temp_directory_path() / std::string { stem }).string();
+    return pup::test::temp_path(std::string { stem }).string();
 }
 
 /// A record with one file of every type, laid out under a directory chain so the recovered

@@ -3,12 +3,13 @@
 
 #include "e2e_fixture.hpp"
 
+#include "temp_root.hpp"
+
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 
 #include <cstdlib>
 #include <fstream>
-#include <random>
 
 #include <cstdio>
 
@@ -23,26 +24,6 @@ auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 } // namespace
 
 namespace {
-
-auto generate_temp_dir() -> fs::path
-{
-    auto const* tmpdir = std::getenv("TMPDIR");
-    if (!tmpdir)
-        tmpdir = "/tmp/claude";
-
-    auto base = fs::path { tmpdir };
-    if (!fs::exists(base))
-        fs::create_directories(base);
-
-    // Generate random suffix
-    auto rng = std::random_device {};
-    auto dist = std::uniform_int_distribution<unsigned int> { 0, 0xFFFFFFFF };
-    auto suffix = std::to_string(dist(rng));
-
-    auto result = base / ("e2e_" + suffix);
-    fs::create_directories(result);
-    return result;
-}
 
 auto copy_fixture(fs::path const& src, fs::path const& dst) -> void
 {
@@ -73,7 +54,7 @@ auto copy_fixture(fs::path const& src, fs::path const& dst) -> void
 
 E2EFixture::E2EFixture(std::string_view name)
     : m_name { name }
-    , m_workdir { generate_temp_dir() }
+    , m_workdir { temp_dir("e2e") }
     , m_fixture_dir { get_fixtures_dir() / name }
     , m_pup_binary { get_pup_binary() }
 {
@@ -337,7 +318,7 @@ auto run_shell_fixture(std::string_view name) -> ProcessResult
     }
 
     // Create temp directory
-    auto workdir = generate_temp_dir();
+    auto workdir = temp_dir("e2e");
     copy_fixture(fixture_dir, workdir);
 
     // Copy test.sh too for shell fixtures

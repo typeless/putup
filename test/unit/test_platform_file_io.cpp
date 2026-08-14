@@ -3,6 +3,7 @@
 
 #include "catch_amalgamated.hpp"
 #include "e2e_fixture.hpp"
+#include "temp_root.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
@@ -63,7 +64,7 @@ SCENARIO("MappedFile handles missing files", "[platform][file_io]")
 {
     GIVEN("a path to a non-existent file")
     {
-        auto path = std::string { "/tmp/pup_test_nonexistent_12345.bin" };
+        auto path = pup::test::temp_path("pup_test_nonexistent_12345.bin").string();
 
         WHEN("attempting to memory-map the file")
         {
@@ -181,7 +182,7 @@ namespace {
 class TempDir {
 public:
     explicit TempDir(std::string_view name)
-        : m_path { std::filesystem::temp_directory_path() / (std::string { "pup_walk_" } + std::string { name }) }
+        : m_path { pup::test::temp_path(std::string { "pup_walk_" } + std::string { name }) }
     {
         auto ec = std::error_code {};
         std::filesystem::remove_all(m_path, ec);

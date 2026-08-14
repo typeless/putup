@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
@@ -97,8 +99,8 @@ SCENARIO("run_process respects working directory", "[platform][process]")
     {
         // A plain temp directory is all this needs — no E2EFixture (which
         // requires a putup binary and aborts on runners that lack one).
+        auto workdir = pup::test::temp_dir("pup_run_process_wd") / "subdir";
         auto ec = std::error_code {};
-        auto workdir = std::filesystem::temp_directory_path(ec) / "pup_run_process_wd" / "subdir";
         std::filesystem::create_directories(workdir, ec);
 
         auto opts = make_opts(PWD_CMD);

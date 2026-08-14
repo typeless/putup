@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/parser/glob.hpp"
@@ -28,15 +30,7 @@ public:
     // Test shards run as concurrent processes, so the name must be unique across them.
     TempDir()
     {
-        auto rng = std::random_device {};
-        auto dist = std::uniform_int_distribution<unsigned int> { 0, 0xFFFFFFFF };
-        for (;;) {
-            auto candidate = fs::temp_directory_path() / ("pup_glob_" + std::to_string(dist(rng)));
-            if (fs::create_directory(candidate)) {
-                path_ = candidate;
-                return;
-            }
-        }
+        path_ = pup::test::temp_dir("pup_glob");
     }
 
     ~TempDir()

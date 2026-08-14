@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/cli/strict_checks.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
@@ -142,7 +144,8 @@ TEST_CASE("check_assignment: non-Tuprules file — no diagnostic", "[strict]")
 
 TEST_CASE("check_component_dirs: missing Tupfile.ini — warning", "[strict]")
 {
-    auto dirs = pup::Vec<std::string_view> { "/tmp/nonexistent_dir_for_test" };
+    auto const missing = pup::test::temp_path("nonexistent_dir_for_test").string();
+    auto dirs = pup::Vec<std::string_view> { missing };
     auto diags = check_component_dirs(dirs);
     REQUIRE(diags.size() == 1);
     REQUIRE(diags[0].severity == Diagnostic::Warning);

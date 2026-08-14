@@ -4,6 +4,8 @@
 #ifndef _WIN32
 
 #    include "catch_amalgamated.hpp"
+#    include "temp_root.hpp"
+
 #    include "pup/platform/sys.hpp"
 
 #    include <cerrno>
@@ -45,14 +47,8 @@ struct TempDir {
     std::string path;
 
     TempDir()
+        : path { pup::test::temp_dir("pup_sys_test").string() }
     {
-        auto const* base = std::getenv("TMPDIR");
-        auto tmpl = std::string { base != nullptr ? base : "/tmp" } + "/pup_sys_test_XXXXXX";
-        auto buf = std::vector<char>(tmpl.begin(), tmpl.end());
-        buf.push_back('\0');
-        auto* created = mkdtemp(buf.data());
-        REQUIRE(created != nullptr);
-        path = created;
     }
 
     ~TempDir()

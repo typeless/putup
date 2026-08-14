@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/graph/builder.hpp"
@@ -83,9 +85,7 @@ class BuilderTestFixture {
 public:
     BuilderTestFixture()
     {
-        test_root_ = fs::temp_directory_path()
-            / ("pup_test_builder_" + std::to_string(std::random_device {}()));
-        fs::create_directories(test_root_);
+        test_root_ = pup::test::temp_dir("pup_test_builder");
         fs::create_directories(test_root_ / "src");
         fs::create_directories(test_root_ / "include");
         fs::create_directories(test_root_ / "include" / "generated");
