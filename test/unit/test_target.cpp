@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/cli/target.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
@@ -19,9 +21,8 @@ auto sv(pup::StringId sid) -> std::string_view { return pup::global_pool().get(s
 class TempDir {
 public:
     TempDir()
-        : path_(fs::temp_directory_path() / ("pup_target_test_" + std::to_string(std::rand())))
+        : path_(pup::test::temp_dir("pup_target_test"))
     {
-        fs::create_directories(path_);
     }
 
     ~TempDir()

@@ -2,6 +2,8 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "temp_root.hpp"
+
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/exec/progress_display.hpp"
@@ -12,6 +14,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <thread>
 
 using namespace pup;
@@ -59,12 +62,14 @@ TEST_CASE("CommandRunner basic execution", "[exec]")
 
     SECTION("working directory")
     {
-        auto opts = RunOptions { .working_dir = intern("/tmp") };
+        auto const workdir = pup::test::temp_dir("pup_exec_wd").string();
+        auto opts = RunOptions { .working_dir = intern(workdir) };
         auto result = runner.run("pwd", opts);
         REQUIRE(result.has_value());
         REQUIRE(result->exit_code == 0);
-        // May have trailing newline and/or resolve to /private/tmp on macOS
-        REQUIRE(sv(result->stdout_output).find("tmp") != std::string_view::npos);
+        // The path may come back resolved (/tmp is /private/tmp on macOS), so match the leaf.
+        auto const leaf = std::filesystem::path { workdir }.filename().string();
+        REQUIRE(sv(result->stdout_output).find(leaf) != std::string_view::npos);
     }
 
     SECTION("environment variable")
@@ -408,7 +413,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
             .type = NodeType::Generated,
-            .name = intern("/tmp/test_output.txt"),
+            .name = intern(pup::test::temp_path("test_output.txt").string()),
         });
 
         (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
@@ -458,7 +463,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
             .type = NodeType::Generated,
-            .name = intern("/tmp/test_export_order.txt"),
+            .name = intern(pup::test::temp_path("test_export_order.txt").string()),
         });
 
         (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
@@ -501,7 +506,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
             .type = NodeType::Generated,
-            .name = intern("/tmp/test_output2.txt"),
+            .name = intern(pup::test::temp_path("test_output2.txt").string()),
         });
 
         (void)graph::add_edge(bs.graph, *input_id, *cmd_id);
