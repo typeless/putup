@@ -16,6 +16,9 @@ cc*.s
 /build/
 /build-*/
 
+# Nested test-runner project's generated config
+/test/runner/tup.config
+
 # Tup database
 .tup/
 
