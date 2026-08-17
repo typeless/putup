@@ -45,6 +45,10 @@ auto FileEntry::from_raw(
     if (!names_node_type(raw.type)) {
         return make_error<FileEntry>(ErrorCode::IndexDamaged, "Recorded entry type names no node type");
     }
+    auto const raw_flags = static_cast<std::uint16_t>(get_node_flags(raw));
+    if ((raw_flags & ~READABLE_NODE_FLAGS_MASK) != 0) {
+        return make_error<FileEntry>(ErrorCode::IndexDamaged, "Recorded entry flags carry a bit no flag names");
+    }
     return FileEntry {
         .id = static_cast<NodeId>(array_index + 1),
         .parent_id = raw.parent_id,
@@ -84,8 +88,11 @@ auto CommandEntry::from_raw(
     Vec<NodeId> inputs,
     Vec<NodeId> outputs,
     std::size_t array_index
-) -> CommandEntry
+) -> Result<CommandEntry>
 {
+    if ((raw.flags & ~RECORDED_COMMAND_FLAGS_MASK) != 0U) {
+        return make_error<CommandEntry>(ErrorCode::IndexDamaged, "Recorded command flags carry a bit no flag names");
+    }
     return CommandEntry {
         .id = node_id::make_command(array_index + 1),
         .dir_id = raw.dir_id,

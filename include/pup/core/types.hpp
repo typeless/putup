@@ -144,6 +144,8 @@ enum class LinkRole : std::uint8_t {
 
 /// The one place a new LinkType must be classified: no `default`, so -Wswitch makes
 /// omitting one a build error here instead of a silent exclusion from every mask.
+/// The recovery read consumes this across the whole readable window: retiring an enumerator without
+/// a format bump would need the retired set NodeFlags has and this does not (#399).
 [[nodiscard]]
 constexpr auto link_role(LinkType type) -> LinkRole
 {
@@ -162,6 +164,8 @@ constexpr auto link_role(LinkType type) -> LinkRole
 }
 
 /// A persisted type byte outside its enum is damage, not a value from a future version (#399).
+/// The recovery read consumes this across the whole readable window: retiring an enumerator without
+/// a format bump would need the retired set NodeFlags has and this does not (#399).
 [[nodiscard]]
 constexpr auto names_node_type(std::uint8_t value) -> bool
 {

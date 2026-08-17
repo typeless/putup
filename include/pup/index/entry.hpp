@@ -36,7 +36,8 @@ struct FileEntry {
 
     /// Create from raw format (path must be computed separately from parent chain)
     /// @param array_index 0-based position in file array (ID = array_index + 1)
-    /// @return IndexDamaged if the recorded type byte names no NodeType this build knows
+    /// @return IndexDamaged if the recorded type byte names no NodeType this build knows, or the
+    ///         recorded flags word carries a bit no version in the readable window names
     [[nodiscard]]
     static auto from_raw(
         RawFileEntry const& raw,
@@ -75,6 +76,7 @@ struct CommandEntry {
 
     /// Create from raw format
     /// @param array_index 0-based position in command array (ID = node_id::make_command(array_index + 1))
+    /// @return IndexDamaged if the recorded flags word carries a bit no CommandFlag names
     [[nodiscard]]
     static auto from_raw(
         RawCommandEntry const& raw,
@@ -84,7 +86,7 @@ struct CommandEntry {
         Vec<NodeId> inputs,
         Vec<NodeId> outputs,
         std::size_t array_index
-    ) -> CommandEntry;
+    ) -> Result<CommandEntry>;
 };
 
 /// In-memory edge

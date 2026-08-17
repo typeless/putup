@@ -17,17 +17,24 @@ downstream code acts on — the first feeds change detection, the second the pat
 so a validation failure makes the record unreadable rather than weaker. `DESIGN.md`'s "What a
 record claims" carries the rule and its display-side counterpart.
 
-A recorded type byte that names no enumerator is the same class of failure. Tolerating it has no
-disposition a reader can implement: dropping the entry is the silent-nothing state — an edge that
-joins no mask routes nothing — and substituting a classification is the substitution this area
-already forbids. Nor is it forward compatibility, because the readable window's floor admits only
-versions whose type vocabulary is a prefix of this one's.
+A recorded value naming nothing in its enum or flag vocabulary — an entry or edge type byte, an
+entry or command flags word — is the same class of failure. Tolerating it has no disposition a
+reader can implement: dropping the entry is the silent-nothing state — an edge that joins no mask
+routes nothing — and substituting a classification is the substitution this area already forbids.
+Nor is a value the reader merely ignores harmless, because a read word is written back into a fresh
+record and thereafter looks authentic.
 
-Two boundaries keep that from over-reaching. Rejection follows a failed check, never a value: the
-string table's offset 0 is a legitimate empty string and reads as one. And each reader validates
-what it reads, so the recovery read of the file table (`read_prior_paths`, issue #291) is unaffected
-by damage in sections it never looks at — which is what makes whole-record rejection safe rather
-than a wider outage than the damage warrants.
+Three boundaries keep that from over-reaching. Rejection follows a failed check, never a value: the
+string table's offset 0 is a legitimate empty string and reads as one. Each reader validates what it
+reads, so the recovery read of the file table (`read_prior_paths`, issue #291) is unaffected by
+damage in sections it never looks at — which is what makes whole-record rejection safe rather than a
+wider outage than the damage warrants. And the vocabulary a value is judged against spans every
+version the readable window admits, not today's alone: type vocabularies only ever grew, so the
+floor admits only prefixes of this one's, but a flag bit retired without a format change
+(`NodeFlags` bit 5, index version 13) was legitimate when written and stays readable. That span is
+uniform rather than per-version, because a read word is carried whole into the record the next
+build writes — so a current-version record holding a retired bit is an honest descendant of one
+that predates the retirement, and judging it by today's vocabulary alone would reject its lineage.
 
 Upstream tup keeps its state in a database and delegates this class of decision to SQLite, so it
 has no counterpart and every requirement here is `putup-only`.
@@ -48,15 +55,18 @@ What a failed validation does to the record.
 If a semantics-bearing field's declared position fails its bounds check, then putup shall report the
 record as unreadable rather than returning an empty value in that field's place.
 
-### REQ-READ-REJECT-UNKNOWN-TYPE
+### REQ-READ-REJECT-UNKNOWN-VALUE
 
 - conformance: putup-only
 - discharge: test "A record whose entry carries a type this putup cannot name is unreadable"
 - discharge: test "A record whose edge carries a link type this putup cannot name is unreadable"
 - discharge: test "A record whose edge carries link type zero is unreadable"
+- discharge: test "A record whose entry carries a flag bit this putup cannot name is unreadable"
+- discharge: test "A record whose command carries a flag bit this putup cannot name is unreadable"
+- discharge: test "A record carrying a flag bit retired since it was written stays readable"
 
-If a recorded entry or edge carries a type byte naming no node or link type this putup knows, then
-putup shall report the record as unreadable rather than admitting an entry whose type no observer
+If a recorded entry, edge, or command carries a value no version in the readable window defines,
+then putup shall report the record as unreadable rather than admitting a value no observer
 classifies.
 
 ### REQ-READ-REJECT-SELF-CONTRADICTION

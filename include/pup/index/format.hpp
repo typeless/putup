@@ -180,8 +180,21 @@ constexpr auto flag_category(CommandFlag flag) -> std::string_view
     return {};
 }
 
-// Nothing calls flag_category — the switch is the point, so this is what keeps it compiled.
 static_assert(!flag_category(CommandFlag::MustRerun).empty(), "a flag names a category or it is not a category");
+
+/// Which bits a recorded command flags word may carry. Derived from `flag_category` rather than
+/// written out, so a new flag widens what the reader accepts by the same answer that names it.
+/// No retired term, unlike the node word: commands are read only at exact version (#399).
+inline constexpr auto RECORDED_COMMAND_FLAGS_MASK = [] {
+    auto mask = std::uint32_t { 0 };
+    for (auto bit = 0; bit < 32; ++bit) {
+        auto const flag = static_cast<CommandFlag>(std::uint32_t { 1 } << bit);
+        if (!flag_category(flag).empty()) {
+            mask |= static_cast<std::uint32_t>(flag);
+        }
+    }
+    return mask;
+}();
 
 [[nodiscard]]
 constexpr auto to_underlying(CommandFlag flag) -> std::uint32_t
@@ -227,6 +240,62 @@ struct alignas(8) RawFooter {
 };
 
 static_assert(sizeof(RawFooter) == 32, "RawFooter must be 32 bytes");
+
+/// The one place a new NodeFlags bit must be answered for: -Wswitch makes an unlisted enumerator a
+/// build error, and the reader's validity mask is derived from this switch, so a bit cannot reach
+/// the record without joining it (#399). Single-bit enumerators only: a composite convenience
+/// spelling, if one is ever added, classifies false. The mask derivation below is what keeps this
+/// switch compiled, so it needs no keep-compiled static_assert of its own like `flag_category`'s.
+[[nodiscard]]
+constexpr auto is_recorded_node_flag(NodeFlags flag) -> bool
+{
+    switch (flag) {
+    case NodeFlags::Modified:
+    case NodeFlags::Created:
+    case NodeFlags::AbsenceRouted:
+    case NodeFlags::ConfigDep:
+    case NodeFlags::Transient:
+        return true;
+    case NodeFlags::None:
+        return false;
+    }
+    return false;
+}
+
+inline constexpr auto RECORDED_NODE_FLAGS_MASK = [] {
+    auto mask = std::uint16_t { 0 };
+    for (auto bit = 0; bit < 16; ++bit) {
+        auto const flag = static_cast<NodeFlags>(std::uint16_t { 1 } << bit);
+        if (is_recorded_node_flag(flag)) {
+            mask |= static_cast<std::uint16_t>(flag);
+        }
+    }
+    return mask;
+}();
+
+static_assert(
+    RECORDED_NODE_FLAGS_MASK == 0x1F,
+    "update deliberately with the enum; this is the on-disk vocabulary, not a checksum — and a flag "
+    "retired without a format bump MOVES its bit to RETIRED_NODE_FLAGS_MASK rather than vanishing: "
+    "the recovery read reaches back to INDEX_LAYOUT_FLOOR, so records that carried the bit are still "
+    "readable (#399, fa5deb220)"
+);
+
+/// Bit 5 was NodeFlags::Inactive until it was retired without a format change (fa5deb220, index
+/// version 13), and the recovery read reaches back to INDEX_LAYOUT_FLOOR, so a record that carries
+/// it is old rather than damaged. A retired bit is history and cannot grow by being forgotten.
+inline constexpr auto RETIRED_NODE_FLAGS_MASK = std::uint16_t { 1 << 5 };
+
+static_assert(
+    (RECORDED_NODE_FLAGS_MASK & RETIRED_NODE_FLAGS_MASK) == 0,
+    "a retired bit cannot be reassigned while INDEX_LAYOUT_FLOOR admits records that carried it: an "
+    "old record's stale bit would be read as the new flag's meaning. Reuse the bit only after raising "
+    "the floor past the retirement."
+);
+
+/// Which bits a recorded node flags word may carry, over every version the readers accept.
+inline constexpr auto READABLE_NODE_FLAGS_MASK
+    = static_cast<std::uint16_t>(RECORDED_NODE_FLAGS_MASK | RETIRED_NODE_FLAGS_MASK);
 
 /// Helper to get NodeFlags from entry
 [[nodiscard]]

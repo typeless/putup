@@ -206,16 +206,18 @@ TEST_CASE("CommandEntry conversion", "[index]")
         pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 20 }, 4
     );
 
-    REQUIRE(restored.id == node_id::make_command(5));
-    REQUIRE(restored.dir_id == cmd.dir_id);
-    REQUIRE(restored.instruction_pattern == cmd.instruction_pattern);
-    REQUIRE(restored.display == cmd.display);
-    REQUIRE(restored.env == cmd.env);
-    REQUIRE(restored.key == key);
-    REQUIRE(restored.signature == signature);
-    REQUIRE(restored.must_rerun);
-    REQUIRE(restored.inputs == cmd.inputs);
-    REQUIRE(restored.outputs == cmd.outputs);
+    REQUIRE(restored.has_value());
+
+    REQUIRE(restored->id == node_id::make_command(5));
+    REQUIRE(restored->dir_id == cmd.dir_id);
+    REQUIRE(restored->instruction_pattern == cmd.instruction_pattern);
+    REQUIRE(restored->display == cmd.display);
+    REQUIRE(restored->env == cmd.env);
+    REQUIRE(restored->key == key);
+    REQUIRE(restored->signature == signature);
+    REQUIRE(restored->must_rerun);
+    REQUIRE(restored->inputs == cmd.inputs);
+    REQUIRE(restored->outputs == cmd.outputs);
 }
 
 TEST_CASE("EdgeEntry conversion", "[index]")
@@ -1854,6 +1856,90 @@ TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
     stamp_version(bytes, INDEX_VERSION);
 
     auto const path = temp_index_path("pup_zero_link_type");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    opened->file.close();
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A record whose entry carries a flag bit this putup cannot name is unreadable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, flags_high)] = std::byte { 0x80 };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_unnameable_node_flag");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    opened->file.close();
+    std::filesystem::remove(path);
+}
+
+/// NodeFlags::Inactive occupied bit 5 through index version 13 and was retired without a format
+/// change, so records inside the recovery read's window still carry it.
+TEST_CASE("A record carrying a flag bit retired since it was written stays readable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, flags_low)] = std::byte { 1 << 5 };
+    stamp_version(bytes, 13);
+
+    auto const path = temp_index_path("pup_retired_node_flag");
+    write_bytes(path, bytes);
+
+    REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Known);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A record whose command carries a flag bit this putup cannot name is unreadable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_command(CommandEntry {
+        .id = node_id::make_command(1), .instruction_pattern = intern("cc %f"), .inputs = { 1 }, .outputs = { 2 } });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->command_count > 0);
+    bytes[hdr->command_offset + offsetof(RawCommandEntry, flags) + 3] = std::byte { 0x80 };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_unnameable_command_flag");
     write_bytes(path, bytes);
 
     auto opened = open_index(path);
