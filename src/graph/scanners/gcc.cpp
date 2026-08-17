@@ -7,7 +7,6 @@
 #include "pup/core/global_pool.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/string_pool.hpp"
-#include "pup/core/string_utils.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
 
 #include <algorithm>
@@ -154,6 +153,18 @@ auto scannable_prefix(std::span<std::span<std::string_view const> const> invocat
     return invocations.first(length);
 }
 
+auto is_dep_flag_word(std::string_view word) -> bool
+{
+    if (!word.starts_with("-M")) {
+        return false;
+    }
+    if (word.size() == 2) {
+        return true;
+    }
+    auto const c = word[2];
+    return c == 'D' || c == 'M' || c == 'F' || c == 'G' || c == 'P' || c == 'T' || c == 'Q' || c == 'V';
+}
+
 } // namespace
 
 auto matches_gcc_compile(std::string_view command) -> bool
@@ -169,25 +180,11 @@ auto GccScanner::matches(CommandInfo const& /*cmd*/, CommandTokens const& tokens
 
 auto GccScanner::has_dep_flags(CommandTokens const& tokens) const -> bool
 {
-    auto cmd = global_pool().get(tokens.text());
-    auto pos = std::string_view::size_type { 0 };
-    while ((pos = cmd.find("-M", pos)) != std::string_view::npos) {
-        if (pos > 0 && !pup::core::is_space(cmd[pos - 1])) {
-            ++pos;
-            continue;
-        }
-        auto next_pos = pos + 2;
-        if (next_pos >= cmd.size()) {
-            return true;
-        }
-        auto c = cmd[next_pos];
-        if (c == 'D' || c == 'M' || c == 'F' || c == 'G' || c == 'P' || c == 'T' || c == 'Q' || c == 'V'
-            || pup::core::is_space(c)) {
-            return true;
-        }
-        ++pos;
-    }
-    return false;
+    // The invocations build_dep_scans draws from, gated the same way: the suppression stands for a
+    // compile that writes its own depfile, and nothing else in the command is that compile (#357).
+    return std::ranges::any_of(scannable_prefix(tokens.invocations()), [](auto invocation) {
+        return compiler_index(invocation).has_value() && std::ranges::any_of(invocation, is_dep_flag_word);
+    });
 }
 
 auto GccScanner::build_dep_scans(CommandInfo const& /*cmd*/, CommandTokens const& tokens) const

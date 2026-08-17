@@ -182,8 +182,10 @@ auto ClangClScanner::has_dep_flags(CommandTokens const& tokens) const -> bool
 {
     // Only a pinned -MF counts: /MD and /MT select the CRT here, and a bare
     // -MD writes the depfile to the cwd instead of beside the object.
-    return std::ranges::any_of(tokens.words(), [](auto word) {
-        return word.starts_with("/clang:-MF") || word.starts_with("-clang:-MF");
+    return std::ranges::any_of(scannable_prefix(tokens.invocations()), [](auto invocation) {
+        return driver_index(invocation).has_value() && std::ranges::any_of(invocation, [](auto word) {
+                   return word.starts_with("/clang:-MF") || word.starts_with("-clang:-MF");
+               });
     });
 }
 
