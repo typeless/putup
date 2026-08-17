@@ -170,9 +170,13 @@ auto read_index(IndexFile const& f) -> Result<Index>
         if (!operands) {
             return pup::unexpected<Error>(operands.error());
         }
-        index.add_command(CommandEntry::from_raw(
+        auto command = CommandEntry::from_raw(
             raw, instruction_pattern, display, *env, std::move(operands->first), std::move(operands->second), i
-        ));
+        );
+        if (!command) {
+            return pup::unexpected<Error>(command.error());
+        }
+        index.add_command(std::move(*command));
     }
 
     // Read edges
