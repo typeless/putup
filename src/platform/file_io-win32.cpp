@@ -423,6 +423,10 @@ auto create_directories(std::string_view path) -> Result<void>
     if (path.empty()) {
         return {};
     }
+    // A drive root answers neither success nor ERROR_ALREADY_EXISTS, so never ask (#388).
+    if (is_directory(path)) {
+        return {};
+    }
     auto par = pup::path::parent(path);
     if (!par.empty() && par != path) {
         auto r = create_directories(par);
@@ -433,6 +437,7 @@ auto create_directories(std::string_view path) -> Result<void>
     auto wpath = to_wide(path);
     if (!CreateDirectoryW(wpath.c_str(), nullptr)) {
         auto err = GetLastError();
+        // A file in the way lands here too, so this succeeds where the POSIX half returns -ENOTDIR.
         if (err != ERROR_ALREADY_EXISTS) {
             return make_error<void>(ErrorCode::IoError, make_err_msg("Failed to create directory: ", path, err));
         }
