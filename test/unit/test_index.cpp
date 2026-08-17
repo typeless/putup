@@ -153,14 +153,15 @@ TEST_CASE("FileEntry conversion", "[index]")
 
     // ID is computed from array index (41 + 1 = 42)
     auto restored = FileEntry::from_raw(raw, "main.cpp", 41);
+    REQUIRE(restored.has_value());
 
-    REQUIRE(restored.id == 42);
-    REQUIRE(restored.parent_id == file.parent_id);
-    REQUIRE(restored.type == file.type);
-    REQUIRE(restored.flags == file.flags);
-    REQUIRE(restored.name == file.name);
-    REQUIRE(restored.size == file.size);
-    REQUIRE(restored.content_hash == file.content_hash);
+    REQUIRE(restored->id == 42);
+    REQUIRE(restored->parent_id == file.parent_id);
+    REQUIRE(restored->type == file.type);
+    REQUIRE(restored->flags == file.flags);
+    REQUIRE(restored->name == file.name);
+    REQUIRE(restored->size == file.size);
+    REQUIRE(restored->content_hash == file.content_hash);
 }
 
 TEST_CASE("CommandEntry conversion", "[index]")
@@ -232,10 +233,11 @@ TEST_CASE("EdgeEntry conversion", "[index]")
         REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Sticky));
 
         auto restored = EdgeEntry::from_raw(raw);
+        REQUIRE(restored.has_value());
 
-        REQUIRE(restored.from == edge.from);
-        REQUIRE(restored.to == edge.to);
-        REQUIRE(restored.type == edge.type);
+        REQUIRE(restored->from == edge.from);
+        REQUIRE(restored->to == edge.to);
+        REQUIRE(restored->type == edge.type);
     }
 
     SECTION("Implicit edge (header dependency)")
@@ -253,10 +255,11 @@ TEST_CASE("EdgeEntry conversion", "[index]")
         REQUIRE(raw.type == static_cast<std::uint8_t>(LinkType::Implicit));
 
         auto restored = EdgeEntry::from_raw(raw);
+        REQUIRE(restored.has_value());
 
-        REQUIRE(restored.from == edge.from);
-        REQUIRE(restored.to == edge.to);
-        REQUIRE(restored.type == LinkType::Implicit);
+        REQUIRE(restored->from == edge.from);
+        REQUIRE(restored->to == edge.to);
+        REQUIRE(restored->type == LinkType::Implicit);
     }
 }
 
@@ -1761,6 +1764,103 @@ TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
 
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A record whose entry carries a type this putup cannot name is unreadable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->file_count > 0);
+    auto constexpr UNNAMEABLE_TYPE = static_cast<std::uint8_t>(static_cast<std::uint8_t>(NodeType::Phi) + 1);
+    bytes[hdr->file_offset + offsetof(RawFileEntry, type)] = std::byte { UNNAMEABLE_TYPE };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_unnameable_node_type");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    // The recovery read builds the same entries, so it must not answer for this record either.
+    opened->file.close();
+    REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A record whose edge carries a link type this putup cannot name is unreadable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_edge(EdgeEntry { .from = 1, .to = 2, .type = LinkType::Normal });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->edge_count > 0);
+    auto constexpr UNNAMEABLE_LINK = static_cast<std::uint8_t>(static_cast<std::uint8_t>(LinkType::OrderOnly) + 1);
+    bytes[hdr->edge_offset + offsetof(RawEdge, type)] = std::byte { UNNAMEABLE_LINK };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_unnameable_link_type");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    // Damage in a section the recovery read never looks at leaves the recorded paths readable.
+    opened->file.close();
+    REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Known);
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("main.c") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("main.o") });
+    index.add_edge(EdgeEntry { .from = 1, .to = 2, .type = LinkType::Normal });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    REQUIRE(hdr->edge_count > 0);
+    // LinkType starts at 1, so zero is as unnameable as anything past the last enumerator.
+    bytes[hdr->edge_offset + offsetof(RawEdge, type)] = std::byte { 0 };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_zero_link_type");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+
+    opened->file.close();
     std::filesystem::remove(path);
 }
 

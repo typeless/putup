@@ -6,6 +6,7 @@
 #include "format.hpp"
 #include "pup/core/arena.hpp"
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
@@ -35,12 +36,13 @@ struct FileEntry {
 
     /// Create from raw format (path must be computed separately from parent chain)
     /// @param array_index 0-based position in file array (ID = array_index + 1)
+    /// @return IndexDamaged if the recorded type byte names no NodeType this build knows
     [[nodiscard]]
     static auto from_raw(
         RawFileEntry const& raw,
         std::string_view name_str,
         std::size_t array_index
-    ) -> FileEntry;
+    ) -> Result<FileEntry>;
 };
 
 /// In-memory command entry (v8)
@@ -96,8 +98,9 @@ struct EdgeEntry {
     auto to_raw() const -> RawEdge;
 
     /// Create from raw format
+    /// @return IndexDamaged if the recorded type byte names no LinkType this build knows
     [[nodiscard]]
-    static auto from_raw(RawEdge const& raw) -> EdgeEntry;
+    static auto from_raw(RawEdge const& raw) -> Result<EdgeEntry>;
 };
 
 /// Complete in-memory index

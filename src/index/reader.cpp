@@ -146,7 +146,11 @@ auto read_index(IndexFile const& f) -> Result<Index>
         if (!name) {
             return pup::unexpected<Error>(name.error());
         }
-        index.add_file(FileEntry::from_raw(raw, *name, i));
+        auto entry = FileEntry::from_raw(raw, *name, i);
+        if (!entry) {
+            return pup::unexpected<Error>(entry.error());
+        }
+        index.add_file(*entry);
     }
 
     // Compute paths from parent chain (after all files loaded)
@@ -174,7 +178,11 @@ auto read_index(IndexFile const& f) -> Result<Index>
     // Read edges
     auto edges = index_raw_edges(f);
     for (auto const& raw : edges) {
-        index.add_edge(EdgeEntry::from_raw(raw));
+        auto edge = EdgeEntry::from_raw(raw);
+        if (!edge) {
+            return pup::unexpected<Error>(edge.error());
+        }
+        index.add_edge(*edge);
     }
 
     // Build edge indices for O(1) lookup
@@ -282,7 +290,11 @@ auto read_prior_paths(std::string_view path) -> PriorPaths
         if (!name) {
             return lost;
         }
-        recorded.add_file(FileEntry::from_raw(raw[i], *name, i));
+        auto entry = FileEntry::from_raw(raw[i], *name, i);
+        if (!entry) {
+            return lost;
+        }
+        recorded.add_file(*entry);
     }
     recorded.compute_paths();
 
