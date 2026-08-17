@@ -17,6 +17,15 @@ requirement. Upstream tup answers both in its parser, which is the enforcement p
 follows — establishing the rule once, where the path is read, rather than at each site that later
 acts on a recorded path.
 
+"Resolves" is answered by the platform's own path law, which is the only sense the phrase ever had.
+A backslash separates on Windows and is an ordinary character in a POSIX filename, so `..\victim.txt`
+names a location above the build root on one and a single file on the other, and both answers are
+this area's (issue #388). The same divergence already held for `C:\victim.txt`; what #388 added was
+the spellings that carry no `/` at all — `..\`, the UNC `\\host\share\`, and the drive-relative
+`C:victim.txt` — each of which reached the record unrecognised until `pup::path` was taught the
+separator and root forms the platform's own file APIs already use. Both sides of the divergence are
+pinned, because a rule pinned on one platform reads as a defect report against the other.
+
 The second is which path is recorded. Every reader downstream — the deletion pass, the source-shadow
 guard, the record's own source/generated split — compares recorded paths against each other, and two
 spellings of one file defeat all of them. So an output is recorded by where it lands, not by how it
@@ -38,6 +47,9 @@ How far out of the tree a rule may write.
 - discharge: test "GraphBuilder rejects an output above the build root under an unsatisfied guard"
 - discharge: test "GraphBuilder rejects an absolute output path"
 - discharge: test "Scenario: A rule writing above the build root fails the build instead of overwriting the file there"
+- discharge: test "GraphBuilder rejects a backslash escape on Windows and names the file on POSIX"
+- discharge: test "GraphBuilder rejects a UNC output on Windows and names the file on POSIX"
+- discharge: test "GraphBuilder rejects a drive-relative output on Windows and names the file on POSIX"
 
 If a rule declares an output whose path does not resolve to a location inside the build root, then
 putup shall reject the Tupfile and name that path, whether or not the rule's guards are satisfied.
@@ -52,6 +64,7 @@ Which of a path's spellings the record carries.
 - reference: upstream resolves each path element to a directory node rather than comparing strings, which has the same effect; not read closely enough to claim equivalence
 - discharge: test "GraphBuilder accepts a parent reference that stays inside the tree"
 - discharge: test "Scenario: A parent reference inside the tree is recorded canonically"
+- discharge: test "GraphBuilder records a backslash output as two components on Windows and one on POSIX"
 
 While recording a rule's output, putup shall record the path the output resolves to rather than the
 path as the rule spelled it.

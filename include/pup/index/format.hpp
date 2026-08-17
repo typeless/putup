@@ -89,7 +89,7 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 /// `RawFileEntry::name_offset` is semantics-bearing on the same terms: `read_prior_paths` composes
 /// it into the paths `clean`/`distclean` delete and `reject_shadowed_sources` refuses a build over,
 /// so a name this reader cannot reproduce fails the record rather than reading as empty (#381).
-inline constexpr auto INDEX_VERSION = std::uint32_t { 22 };
+inline constexpr auto INDEX_VERSION = std::uint32_t { 23 };
 
 /// The oldest version whose `RawHeader` and `RawFileEntry` bytes mean what today's mean, so a
 /// record that old still says which paths it recorded as sources and which as generated even
