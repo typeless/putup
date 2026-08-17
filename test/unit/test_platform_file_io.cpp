@@ -632,3 +632,46 @@ SCENARIO("canonical resolves a symlinked prefix before cancelling what follows i
     }
 }
 #endif
+
+/// Untagged so Windows CI, which filters `~[e2e]~[shell]`, is where this runs: a root always
+/// exists, and only there does asking the OS to create one fail the build (#388).
+TEST_CASE("create_directories succeeds for what already exists", "[platform][file_io]")
+{
+    auto const cwd_id = pup::platform::current_directory();
+    REQUIRE(cwd_id.has_value());
+    auto const cwd = std::string { pup::global_pool().get(*cwd_id) };
+
+    SECTION("an existing directory")
+    {
+        CHECK(create_directories(cwd).has_value());
+    }
+
+    SECTION("the root the directory sits under")
+    {
+        auto root = std::string_view { cwd };
+        while (!pup::path::is_root(root)) {
+            auto const par = pup::path::parent(root);
+            if (par.empty() || par == root) {
+                break;
+            }
+            root = par;
+        }
+        REQUIRE(pup::path::is_root(root));
+        INFO("root: " << root);
+        CHECK(create_directories(root).has_value());
+    }
+
+#ifdef _WIN32
+    SECTION("a backslash-spelled directory whose parent walk reaches the root")
+    {
+        auto spelled = cwd;
+        for (auto& c : spelled) {
+            if (c == '/') {
+                c = '\\';
+            }
+        }
+        INFO("spelled: " << spelled);
+        CHECK(create_directories(spelled).has_value());
+    }
+#endif
+}
