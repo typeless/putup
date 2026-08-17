@@ -1352,6 +1352,76 @@ TEST_CASE("GccScanner scans the prefix before an invocation that is not a compil
     }
 }
 
+TEST_CASE("A depfile flag outside the scannable prefix suppresses nothing", "[dep_scanner]")
+{
+    // The suppression stands for a compile that writes its own depfile, so it may only read the
+    // invocations a scan would have been built from (#357).
+    SECTION("gcc reads no flag past the last compile")
+    {
+        auto scanner = scanners::GccScanner {};
+        REQUIRE(!scanner.has_dep_flags(tokens_of("gcc -c foo.c -o foo.o && echo -MD")));
+    }
+
+    SECTION("gcc reads no flag when the prefix is empty")
+    {
+        auto scanner = scanners::GccScanner {};
+        REQUIRE(!scanner.has_dep_flags(tokens_of("cd sub && gcc -MD -c foo.c -o foo.o")));
+    }
+
+    SECTION("clang-cl reads no flag past the last compile")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        REQUIRE(!scanner.has_dep_flags(tokens_of("clang-cl -c foo.cpp -o foo.obj && echo /clang:-MFfoo.obj.d")));
+    }
+
+    SECTION("clang-cl reads no flag when the prefix is empty")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        REQUIRE(!scanner.has_dep_flags(tokens_of("cd sub && clang-cl /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj")));
+    }
+
+    SECTION("gcc reads no flag from an invocation that runs no compiler")
+    {
+        auto scanner = scanners::GccScanner {};
+        REQUIRE(!scanner.has_dep_flags(tokens_of("echo -MD && gcc -c foo.c -o foo.o")));
+    }
+
+    SECTION("clang-cl reads no flag from an invocation that runs no compiler")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        REQUIRE(!scanner.has_dep_flags(tokens_of("echo /clang:-MFfoo.obj.d && clang-cl -c foo.cpp -o foo.obj")));
+    }
+
+    SECTION("an announcing invocation hides no uncovered sibling object")
+    {
+        auto scanner = scanners::GccScanner {};
+        REQUIRE(!scanner.has_dep_flags(
+            tokens_of("echo -MD && gcc -c a.c -o a.o && cd . && gcc -c b.c -o b.o")
+        ));
+    }
+}
+
+TEST_CASE("A depfile flag inside the scannable prefix still suppresses", "[dep_scanner]")
+{
+    SECTION("gcc reads a flag behind an invocation that changes nothing")
+    {
+        auto scanner = scanners::GccScanner {};
+        REQUIRE(scanner.has_dep_flags(tokens_of("echo building && gcc -MD -c foo.c -o foo.o")));
+    }
+
+    SECTION("gcc reads a flag in an earlier compile of an all-compile command")
+    {
+        auto scanner = scanners::GccScanner {};
+        REQUIRE(scanner.has_dep_flags(tokens_of("gcc -MD -c a.c -o a.o && gcc -c b.c -o b.o")));
+    }
+
+    SECTION("clang-cl reads a flag behind an invocation that changes nothing")
+    {
+        auto scanner = scanners::ClangClScanner {};
+        REQUIRE(scanner.has_dep_flags(tokens_of("echo building && clang-cl /clang:-MFfoo.obj.d -c foo.cpp -o foo.obj")));
+    }
+}
+
 TEST_CASE("A scan reads the object from either spelling of the output flag", "[dep_scanner]")
 {
     SECTION("gcc's joined form")

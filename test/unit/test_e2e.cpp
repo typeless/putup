@@ -11302,6 +11302,53 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
     }
 }
 
+SCENARIO("A depfile flag the compile never carried hides no unscanned object", "[e2e][strict][depscan]")
+{
+    // The suppression exists for a compile that writes its own depfile; read across the whole
+    // command text it was defeated by any word spelling one, including in a later invocation (#357).
+    GIVEN("a rule that spells a depfile flag after the compile it could not scan")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "#include \"a.h\"\nint a(void){return 0;}\n");
+        f.write_file("a.h", "#define A 1\n");
+        f.write_file("Tupfile", ": a.c |> cd . && gcc -c a.c -o a.o && echo -MD |> a.o\n");
+
+        WHEN("parse reports on the rule")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("the object is still named")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
+                REQUIRE(result.stderr_output.find("a.o") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule whose announcement carries the flag its compile does not")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "#include \"a.h\"\nint a(void){return 0;}\n");
+        f.write_file("a.h", "#define A 1\n");
+        f.write_file("Tupfile", ": a.c |> echo -MD && gcc -c a.c -o a.o && cp a.o b.o |> a.o b.o\n");
+
+        WHEN("parse reports on the rule")
+        {
+            auto result = f.pup({ "parse" });
+
+            THEN("the object no scan covers is still named")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stderr_output.find("no dependency scan") != std::string::npos);
+                REQUIRE(result.stderr_output.find("b.o") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Strict checker exempts the config-tree root in 3-tree builds", "[e2e][strict][out-of-tree-config]")
 {
     GIVEN("a 3-tree project whose config-tree root anchors with '='")

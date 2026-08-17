@@ -28,11 +28,12 @@ into invocations, each gets its own scan, and a scan may draw a word only from t
 reproduces. A redirection is not such a divider — it hands its target to the same program — though
 the scan still carries no flag from beyond it.
 
-Two classes escape the report. A compile-and-link command with no `-c` produces an executable
+One class escapes the report. A compile-and-link command with no `-c` produces an executable
 rather than an object file, so the output-shaped trigger cannot see it (the `HOSTCC` generator
-rules in `examples/bsp/gcc/gmp/Tupfile` are the in-tree instance). And the suppression for a
-command that writes its own depfile tests the whole command text for a depfile flag, so an
-unrelated word spelling one silences the report for that rule.
+rules in `examples/bsp/gcc/gmp/Tupfile` are the in-tree instance). The suppression for a command
+that writes its own depfile reads only the invocations a scan would have been built from, so a
+depfile flag elsewhere — in a later invocation, or behind a prefix that makes the compile
+unreproducible — silences nothing.
 
 ---
 
@@ -107,8 +108,11 @@ speaks about the object it names, not about the command that declares it.
 - conformance: putup-only
 - discharge: test "Scenario: A compile-shaped rule with no dependency scan is reported"
 - discharge: test "Scenario: An object no scanned invocation writes is reported beside its scanned sibling"
+- discharge: test "Scenario: A depfile flag the compile never carried hides no unscanned object"
+- discharge: test "A depfile flag outside the scannable prefix suppresses nothing"
+- discharge: test "A depfile flag inside the scannable prefix still suppresses"
 
 When a rule declares an object file that no generated scan covers — every object it declares,
-where no scan at all is generated — and the rule's command carries no depfile flag anywhere in its
-text, putup shall name that object and the rule's Tupfile under `parse`, and report how many such
-objects exist under a build.
+where no scan at all is generated — and no invocation a scan would have been built from carries a
+depfile flag, putup shall name that object and the rule's Tupfile under `parse`, and report how
+many such objects exist under a build.
