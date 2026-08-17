@@ -2101,6 +2101,87 @@ TEST_CASE("GraphBuilder rejects an absolute output path", "[builder][hierarchy]"
     CHECK(rejected_inside.error().msg().find("hierarchy") != std::string_view::npos);
 }
 
+/// One spelling of the escape per test, each answered by the platform's own path law (#388):
+/// on Windows these name a location outside the build root, on POSIX they name one file whose
+/// name contains a backslash. Pinning only the Windows half would read as a bug report on POSIX.
+TEST_CASE("GraphBuilder rejects a backslash escape on Windows and names the file on POSIX", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> echo x > %o |> ..\\victim.txt\n");
+
+#ifdef _WIN32
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("hierarchy") != std::string_view::npos);
+#else
+    CHECK(result.has_value());
+#endif
+}
+
+TEST_CASE("GraphBuilder rejects a UNC output on Windows and names the file on POSIX", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> echo x > %o |> \\\\host\\share\\victim.txt\n");
+
+#ifdef _WIN32
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("hierarchy") != std::string_view::npos);
+#else
+    CHECK(result.has_value());
+#endif
+}
+
+TEST_CASE("GraphBuilder rejects a drive-relative output on Windows and names the file on POSIX", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto result = add_tupfile_from_source(fixture, ": |> echo x > %o |> C:victim.txt\n");
+
+#ifdef _WIN32
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error().msg().find("hierarchy") != std::string_view::npos);
+#else
+    CHECK(result.has_value());
+#endif
+}
+
+/// The record's key and the file the OS creates were two different paths for every backslash
+/// spelling on Windows: one opaque component here, two components on disk (#388).
+TEST_CASE("GraphBuilder records a backslash output as two components on Windows and one on POSIX", "[builder][hierarchy]")
+{
+    auto fixture = BuilderTestFixture {};
+
+    auto bs = make_build_graph();
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    auto options = BuilderOptions {
+        .source_root = intern(fixture.root_str()),
+        .config_root = intern(fixture.root_str()),
+        .output_root = pup::StringId::Empty,
+        .config_path = pup::StringId::Empty,
+        .expand_globs = false,
+        .validate_inputs = false,
+    };
+    auto builder_state = make_builder(options);
+
+    auto parse_result = parse_tupfile(": |> echo x > %o |> sub\\gen.txt\n", fixture.tupfile_path(""));
+    REQUIRE(parse_result.success());
+
+    REQUIRE(add_tupfile(bs, parse_result.tupfile, ctx, builder_state).has_value());
+
+    auto generated = nodes_of_type(bs.graph, NodeType::Generated);
+    REQUIRE(generated.size() == 1);
+#ifdef _WIN32
+    CHECK(sv(get_full_path(bs.graph, generated[0])) == "sub/gen.txt");
+    CHECK(sv(get<Name>(bs.graph, generated[0])) == "gen.txt");
+#else
+    CHECK(sv(get_full_path(bs.graph, generated[0])) == "sub\\gen.txt");
+    CHECK(sv(get<Name>(bs.graph, generated[0])) == "sub\\gen.txt");
+#endif
+}
+
 TEST_CASE("GraphBuilder accepts a parent reference that stays inside the tree", "[builder][hierarchy]")
 {
     auto fixture = BuilderTestFixture {};

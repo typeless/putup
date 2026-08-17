@@ -17,30 +17,56 @@ namespace pup::path {
 
 namespace {
 
-// The prefix `..` cannot escape and normalization reproduces verbatim: 1 for "/", 3 for "C:/".
+// Windows spells a separator both ways; POSIX spells names with either byte, so `\` is a name byte.
+#ifdef _WIN32
+constexpr auto separators = std::string_view { "/\\" };
+#else
+constexpr auto separators = std::string_view { "/" };
+#endif
+
+auto is_separator(char c) -> bool
+{
+    return separators.find(c) != std::string_view::npos;
+}
+
+// The prefix `..` cannot escape and normalization reproduces verbatim: 1 "/", 3 "C:/", 2 "//" or "C:".
 auto root_length(std::string_view p) -> std::size_t
 {
     if (p.empty()) {
         return 0;
     }
-    if (p[0] == '/') {
-        return 1;
-    }
 #ifdef _WIN32
-    if (p.size() >= 3 && p[1] == ':' && (p[2] == '/' || p[2] == '\\')) {
+    if (p.size() >= 2 && is_separator(p[0]) && is_separator(p[1])) {
+        return 2;
+    }
+    if (p.size() >= 2 && p[1] == ':') {
         auto c = p[0];
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
-            return 3;
+            return (p.size() >= 3 && is_separator(p[2])) ? 3 : 2;
         }
     }
 #endif
+    if (is_separator(p[0])) {
+        return 1;
+    }
     return 0;
+}
+
+// A bare drive prefix names no directory to separate from: "C:x" is not the file "C:/x".
+auto separates_from_child(std::string_view p) -> bool
+{
+    return !p.empty() && (is_separator(p.back()) || (p.back() == ':' && is_root(p)));
 }
 
 auto append_root(Buf& out, std::string_view p, std::size_t root_len) -> void
 {
-    out.append(p.substr(0, root_len - 1));
-    out += '/';
+    auto const root = p.substr(0, root_len);
+    for (auto c : root) {
+        out += is_separator(c) ? '/' : c;
+    }
+    if (!separates_from_child(root)) {
+        out += '/';
+    }
 }
 
 // Used only by relative()'s precondition assertion, which a release build compiles out.
@@ -64,7 +90,7 @@ auto join(std::string_view a, std::string_view b) -> StringId
 
     auto buf = Buf {};
     buf.append(a);
-    if (a.back() != '/') {
+    if (!separates_from_child(a)) {
         buf += '/';
     }
     buf.append(b);
@@ -83,16 +109,16 @@ auto parent(std::string_view p) -> std::string_view
     }
 
     auto end = p.size();
-    while (end > root_len && end > 1 && p[end - 1] == '/') {
+    while (end > root_len && end > 1 && is_separator(p[end - 1])) {
         --end;
     }
     if (end <= root_len) {
         return p.substr(0, root_len);
     }
 
-    auto pos = p.rfind('/', end - 1);
+    auto pos = p.find_last_of(separators, end - 1);
     if (pos == std::string_view::npos) {
-        return {};
+        return p.substr(0, root_len);
     }
     if (pos < root_len) {
         return p.substr(0, root_len);
@@ -105,9 +131,9 @@ auto filename(std::string_view p) -> std::string_view
     if (p.empty()) {
         return {};
     }
-    auto pos = p.rfind('/');
+    auto pos = p.find_last_of(separators);
     if (pos == std::string_view::npos) {
-        return p;
+        return p.substr(root_length(p));
     }
     return p.substr(pos + 1);
 }
@@ -155,6 +181,13 @@ auto is_normal(std::string_view p) -> bool
         return true;
     }
 
+#ifdef _WIN32
+    // normalize emits only '/', so the other separator spelling is by definition not normal.
+    if (p.find('\\') != std::string_view::npos) {
+        return false;
+    }
+#endif
+
     auto const root_len = root_length(p);
     auto const body = p.substr(root_len);
     if (!body.empty() && body.back() == '/') {
@@ -192,7 +225,7 @@ auto normalize(std::string_view p) -> StringId
     auto absolute = root_len != 0;
 
     while (start < p.size()) {
-        auto end = p.find('/', start);
+        auto end = p.find_first_of(separators, start);
         if (end == std::string_view::npos) {
             end = p.size();
         }
@@ -248,7 +281,7 @@ auto relative(std::string_view target, std::string_view base) -> StringId
         auto parts = Vec<std::string_view> {};
         auto start = std::size_t { 0 };
         while (start < p.size()) {
-            auto end = p.find('/', start);
+            auto end = p.find_first_of(separators, start);
             if (end == std::string_view::npos) {
                 end = p.size();
             }

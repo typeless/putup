@@ -176,7 +176,9 @@ TEST_CASE("path::is_root", "[path]")
     REQUIRE(is_root("C:/"));
     REQUIRE(is_root("C:\\"));
     REQUIRE_FALSE(is_root("C:/a"));
-    REQUIRE_FALSE(is_root("C:"));
+    // "C:" is the whole prefix a drive-relative path is rooted on, so it is one (#388).
+    REQUIRE(is_root("C:"));
+    REQUIRE(is_root("//"));
 #endif
 }
 
@@ -305,6 +307,69 @@ TEST_CASE("path::relative", "[path]")
     }
 }
 
+/// A drive prefix is the one root that contains no separator byte, so the splitters cannot honour
+/// it incidentally the way `find_last_of` honours "/", "C:/" and "//". Each function answers for
+/// itself, and on POSIX "C:a" is an ordinary relative name with a colon in it (#388).
+TEST_CASE("path::filename answers a separator-less root", "[path]")
+{
+#ifdef _WIN32
+    REQUIRE(filename("C:a") == "a");
+    REQUIRE(filename("C:") == "");
+#else
+    REQUIRE(filename("C:a") == "C:a");
+    REQUIRE(filename("C:") == "C:");
+#endif
+}
+
+TEST_CASE("path::parent answers a separator-less root", "[path]")
+{
+#ifdef _WIN32
+    REQUIRE(parent("C:a") == "C:");
+#else
+    REQUIRE(parent("C:a") == "");
+#endif
+}
+
+TEST_CASE("path::join answers a separator-less root", "[path]")
+{
+#ifdef _WIN32
+    REQUIRE(sv(join("C:", "a")) == "C:a");
+#else
+    REQUIRE(sv(join("C:", "a")) == "C:/a");
+#endif
+}
+
+/// stem and extension read the name through filename, so the clamp reaches them without their
+/// own edit -- pinned rather than argued.
+TEST_CASE("path::stem and extension answer a separator-less root", "[path]")
+{
+#ifdef _WIN32
+    REQUIRE(stem("C:a.txt") == "a");
+#else
+    REQUIRE(stem("C:a.txt") == "C:a");
+#endif
+    REQUIRE(extension("C:a.txt") == ".txt");
+}
+
+#ifndef _WIN32
+
+/// The other half of the asymmetry #388 settled: a backslash is an ordinary character in a POSIX
+/// filename, so none of these spellings names anything but a file whose name contains one.
+TEST_CASE("path::treats a backslash as an ordinary filename character", "[path][posix]")
+{
+    REQUIRE(sv(normalize("..\\victim.txt")) == "..\\victim.txt");
+    REQUIRE(sv(normalize("a\\b")) == "a\\b");
+    REQUIRE(filename("a\\b") == "a\\b");
+    REQUIRE(parent("a\\b") == "");
+    REQUIRE(is_normal("a\\b"));
+    REQUIRE_FALSE(is_absolute("\\victim.txt"));
+    REQUIRE_FALSE(is_absolute("\\\\host\\share\\x"));
+    REQUIRE_FALSE(is_absolute("C:a"));
+    REQUIRE_FALSE(is_absolute("C:\\a"));
+}
+
+#endif
+
 #ifdef _WIN32
 
 TEST_CASE("path::normalize keeps the drive root", "[path][windows]")
@@ -351,12 +416,87 @@ TEST_CASE("path::normalize keeps the drive root", "[path][windows]")
     }
 }
 
+/// `C:` and `C:a` are rooted on a drive, not under the build root, so they answer this the same
+/// way `C:/a` does; the earlier `REQUIRE_FALSE` pinned the hole #388 was filed for.
 TEST_CASE("path::is_absolute on drive-absolute paths", "[path][windows]")
 {
     REQUIRE(is_absolute("C:/a"));
     REQUIRE(is_absolute("C:\\a"));
-    REQUIRE_FALSE(is_absolute("C:"));
-    REQUIRE_FALSE(is_absolute("C:a"));
+    REQUIRE(is_absolute("C:"));
+    REQUIRE(is_absolute("C:a"));
+}
+
+TEST_CASE("path::normalize reads a backslash as a separator", "[path][windows]")
+{
+    SECTION("between names")
+    {
+        REQUIRE(sv(normalize("a\\b")) == "a/b");
+        REQUIRE(sv(normalize("a\\b/c")) == "a/b/c");
+    }
+
+    SECTION("a parent reference spelled with a backslash resolves")
+    {
+        REQUIRE(sv(normalize("a\\..\\b")) == "b");
+        REQUIRE(sv(normalize("..\\victim.txt")) == "../victim.txt");
+        REQUIRE(sv(normalize("a\\..\\..\\victim.txt")) == "../victim.txt");
+    }
+
+    SECTION("dot segments and repeated separators")
+    {
+        REQUIRE(sv(normalize("a\\.\\\\b")) == "a/b");
+        REQUIRE(sv(normalize("a\\")) == "a");
+    }
+}
+
+TEST_CASE("path::normalize keeps a UNC path rooted", "[path][windows]")
+{
+    REQUIRE(sv(normalize("\\\\host\\share\\victim.txt")) == "//host/share/victim.txt");
+    REQUIRE(sv(normalize("\\\\host\\share")) == "//host/share");
+
+    // Where the parent references resolve to does not matter: staying rooted is what refuses it.
+    REQUIRE(is_absolute(sv(normalize("\\\\host\\share\\..\\..\\victim.txt"))));
+}
+
+TEST_CASE("path::normalize keeps a drive-relative prefix unseparated", "[path][windows]")
+{
+    // "C:a" names a's location on C's own current directory; "C:/a" is a different file.
+    REQUIRE(sv(normalize("C:a\\b")) == "C:a/b");
+    REQUIRE(sv(normalize("C:")) == "C:");
+}
+
+TEST_CASE("path::is_absolute on the remaining Windows root spellings", "[path][windows]")
+{
+    REQUIRE(is_absolute("\\\\host\\share\\x"));
+    REQUIRE(is_absolute("\\victim.txt"));
+    REQUIRE_FALSE(is_absolute("a\\b"));
+    REQUIRE_FALSE(is_absolute("..\\victim.txt"));
+}
+
+TEST_CASE("path::parent and filename read a backslash as a separator", "[path][windows]")
+{
+    REQUIRE(parent("a\\b\\c") == "a\\b");
+    REQUIRE(filename("a\\b\\c") == "c");
+    REQUIRE(stem("a\\b.txt") == "b");
+    REQUIRE(extension("a\\b.txt") == ".txt");
+}
+
+TEST_CASE("path::is_normal rejects a backslash-separated spelling", "[path][windows]")
+{
+    REQUIRE_FALSE(is_normal("a\\b"));
+    REQUIRE_FALSE(is_normal("a\\"));
+    REQUIRE(is_normal("a/b"));
+}
+
+TEST_CASE("path::join does not double a backslash separator", "[path][windows]")
+{
+    REQUIRE(sv(join("a\\", "b")) == "a\\b");
+    REQUIRE(sv(join("x", "\\\\host\\share\\b")) == "\\\\host\\share\\b");
+    REQUIRE(sv(join("x", "C:b")) == "C:b");
+}
+
+TEST_CASE("path::relative reads a backslash as a separator", "[path][windows]")
+{
+    REQUIRE(sv(relative("a/b/c", "a/b")) == "c");
 }
 
 TEST_CASE("path::parent on drive-absolute paths", "[path][windows]")
@@ -396,7 +536,18 @@ auto check_normalize_laws(std::string const& p, std::string_view root) -> void
 
     REQUIRE(once == twice);
 
+    // Splitting a normal path and rejoining it reproduces it. This is what reaches the three
+    // functions that honour a root only by finding a separator inside it (#388).
+    REQUIRE(sv(join(parent(once), filename(once))) == once);
+
     auto const absolute = is_absolute(p);
+
+    // Stated apart from the rejoin above, which cannot see this: join("", x) returns x, so an
+    // under-clamped parent and the whole name it leaves behind cancel exactly (#388).
+    if (absolute) {
+        REQUIRE(is_absolute(parent(once)));
+    }
+
     if (absolute) {
         REQUIRE(is_absolute(once));
         REQUIRE(std::string_view { once }.starts_with(root));
@@ -464,6 +615,18 @@ TEST_CASE("path::normalize obeys its laws", "[path]")
     SECTION("drive-rooted paths")
     {
         check_laws_under_root("C:/");
+    }
+
+    SECTION("drive-relative paths")
+    {
+        check_laws_under_root("C:");
+    }
+
+    // The root a UNC path normalizes onto. The authority that follows it is ordinary components,
+    // which is why the laws are stated against "//" and not against "//host/share" (#388).
+    SECTION("UNC-rooted paths")
+    {
+        check_laws_under_root("//");
     }
 #endif
 }
