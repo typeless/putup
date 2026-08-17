@@ -40,8 +40,11 @@ auto FileEntry::from_raw(
     RawFileEntry const& raw,
     std::string_view name_str,
     std::size_t array_index
-) -> FileEntry
+) -> Result<FileEntry>
 {
+    if (!names_node_type(raw.type)) {
+        return make_error<FileEntry>(ErrorCode::IndexDamaged, "Recorded entry type names no node type");
+    }
     return FileEntry {
         .id = static_cast<NodeId>(array_index + 1),
         .parent_id = raw.parent_id,
@@ -107,8 +110,11 @@ auto EdgeEntry::to_raw() const -> RawEdge
     };
 }
 
-auto EdgeEntry::from_raw(RawEdge const& raw) -> EdgeEntry
+auto EdgeEntry::from_raw(RawEdge const& raw) -> Result<EdgeEntry>
 {
+    if (!names_link_type(raw.type)) {
+        return make_error<EdgeEntry>(ErrorCode::IndexDamaged, "Recorded edge type names no link type");
+    }
     return EdgeEntry {
         .from = raw.from_id,
         .to = raw.to_id,

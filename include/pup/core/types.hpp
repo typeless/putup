@@ -161,6 +161,33 @@ constexpr auto link_role(LinkType type) -> LinkRole
     return LinkRole::Unknown;
 }
 
+/// A persisted type byte outside its enum is damage, not a value from a future version (#399).
+[[nodiscard]]
+constexpr auto names_node_type(std::uint8_t value) -> bool
+{
+    switch (static_cast<NodeType>(value)) {
+    case NodeType::File:
+    case NodeType::Command:
+    case NodeType::Directory:
+    case NodeType::Variable:
+    case NodeType::Generated:
+    case NodeType::Ghost:
+    case NodeType::Group:
+    case NodeType::GeneratedDir:
+    case NodeType::Root:
+    case NodeType::Condition:
+    case NodeType::Phi:
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]]
+constexpr auto names_link_type(std::uint8_t value) -> bool
+{
+    return link_role(static_cast<LinkType>(value)) != LinkRole::Unknown;
+}
+
 /// One command that must run before another, on evidence no edge in the graph carries. A
 /// discovered dependency is recorded only in the index, so both the router that decides who runs
 /// and the scheduler that decides in what order have to be told about it separately (#276, #277).

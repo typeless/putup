@@ -17,6 +17,12 @@ downstream code acts on — the first feeds change detection, the second the pat
 so a validation failure makes the record unreadable rather than weaker. `DESIGN.md`'s "What a
 record claims" carries the rule and its display-side counterpart.
 
+A recorded type byte that names no enumerator is the same class of failure. Tolerating it has no
+disposition a reader can implement: dropping the entry is the silent-nothing state — an edge that
+joins no mask routes nothing — and substituting a classification is the substitution this area
+already forbids. Nor is it forward compatibility, because the readable window's floor admits only
+versions whose type vocabulary is a prefix of this one's.
+
 Two boundaries keep that from over-reaching. Rejection follows a failed check, never a value: the
 string table's offset 0 is a legitimate empty string and reads as one. And each reader validates
 what it reads, so the recovery read of the file table (`read_prior_paths`, issue #291) is unaffected
@@ -41,6 +47,17 @@ What a failed validation does to the record.
 
 If a semantics-bearing field's declared position fails its bounds check, then putup shall report the
 record as unreadable rather than returning an empty value in that field's place.
+
+### REQ-READ-REJECT-UNKNOWN-TYPE
+
+- conformance: putup-only
+- discharge: test "A record whose entry carries a type this putup cannot name is unreadable"
+- discharge: test "A record whose edge carries a link type this putup cannot name is unreadable"
+- discharge: test "A record whose edge carries link type zero is unreadable"
+
+If a recorded entry or edge carries a type byte naming no node or link type this putup knows, then
+putup shall report the record as unreadable rather than admitting an entry whose type no observer
+classifies.
 
 ### REQ-READ-REJECT-SELF-CONTRADICTION
 
