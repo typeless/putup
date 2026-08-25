@@ -31,7 +31,7 @@ What a continuation becomes.
 ### REQ-CONT-SPACES
 
 - conformance: tup-conformant
-- reference: tup `src/tup/parser.c:589-596` overwrites both bytes with spaces before parsing
+- reference: tup `parse_tupfile` overwrites both bytes with spaces before parsing
 - discharge: test "Lexer renders a continuation as spaces"
 
 putup shall replace each byte of a backslash-newline continuation with a space, so a
@@ -40,7 +40,7 @@ continuation renders as two spaces and a backslash-CRLF continuation as three.
 ### REQ-CONT-CRLF
 
 - conformance: tup-conformant
-- reference: tup `src/tup/parser.c:589-593` accepts a `\r` before the newline
+- reference: tup `parse_tupfile` accepts a `\r` before the newline
 - discharge: test "Parser renders a continuation as spaces"
 
 putup shall accept a continuation whose newline is preceded by a carriage return rather than
@@ -49,7 +49,7 @@ reporting a parse error.
 ### REQ-CONT-EOF
 
 - conformance: tup-conformant
-- reference: tup `src/tup/parser.c:543-552` ends the last line at the terminating nul
+- reference: tup `get_newline` ends the last line at the terminating nul
 - discharge: test "Lexer renders a continuation as spaces"
 
 putup shall treat a backslash that ends the file as a continuation, whether or not a carriage
@@ -58,7 +58,7 @@ return follows it and with no newline after either.
 ### REQ-CONT-LINES
 
 - conformance: tup-conformant
-- reference: tup `src/tup/parser.c:589-600` increments its line counter once per joined line
+- reference: tup `parse_tupfile` increments its line counter once per joined line
 - discharge: test "Lexer renders a continuation as spaces"
 
 putup shall report a diagnostic below a continuation against the physical line it is written
@@ -76,7 +76,7 @@ paths as the same text with that continuation written out as spaces.
 ### REQ-EOL-CR
 
 - conformance: tup-conformant
-- reference: tup `src/tup/parser.c:605-610` trims each line's trailing whitespace run, `\r` included
+- reference: tup `parse_tupfile` trims each line's trailing whitespace run, `\r` included
 - discharge: test "Lexer normalizes a CRLF line ending"
 - discharge: test "Parser ignores whitespace at the end of a line"
 - discharge: test "Scenario: A CRLF Tupfile builds what its LF twin builds"

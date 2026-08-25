@@ -46,7 +46,7 @@ Lexer::Lexer(std::string_view source, std::string_view filename)
             continue;
         }
 
-        // Each byte becomes a space, as in tup (parser.c:589-596); the newline's own offset is
+        // Each byte becomes a space, as in tup (parse_tupfile); the newline's own offset is
         // kept so diagnostics below a continuation still name their physical line, as tup's do.
         for (auto n = std::size_t { 0 }; n < continuation; ++n) {
             owned_source_.push_back(' ');

@@ -26,7 +26,7 @@ Where the annotation stands in for the command, and where it must not.
 ### REQ-DISP-SUBST
 
 - conformance: tup-conformant
-- reference: upstream substitutes the display for the entry's name when not verbose (tup/src/tup/entry.c:257)
+- reference: upstream substitutes the display for the entry's name when not verbose (tup `print_tup_entry`)
 - discharge: test "Scenario: A rule's display text stands in for the command in build output"
 
 Where a rule carries a display annotation, putup shall report that rule by its annotation rather
@@ -35,7 +35,7 @@ than by its command text.
 ### REQ-DISP-ABSENT
 
 - conformance: tup-conformant
-- reference: upstream substitutes the display for the entry's name only where one exists (tup/src/tup/entry.c:257); with no annotation the entry's name — the command itself — is what gets reported, so a rule without one is never nameless
+- reference: upstream substitutes the display for the entry's name only where one exists (tup `print_tup_entry`); with no annotation the entry's name — the command itself — is what gets reported, so a rule without one is never nameless
 - discharge: test "Scenario: A rebuild reason names a command that carries no display annotation"
 - discharge: test "Scenario: Removing a group member re-runs the commands that consume the group"
 
@@ -44,7 +44,7 @@ Where a rule carries no display annotation, putup shall report that rule by its 
 ### REQ-DISP-FAIL
 
 - conformance: deliberate-deviation
-- reference: upstream reports a failing command by its display unless --verbose (tup/src/tup/entry.c:257); putup's default output echoes no per-command line, so the failure line is the only record of what ran and an annotation there would name the step rather than the fault
+- reference: upstream reports a failing command by its display unless --verbose (tup `print_tup_entry`); putup's default output echoes no per-command line, so the failure line is the only record of what ran and an annotation there would name the step rather than the fault
 - discharge: test "Scenario: A failing command is reported by its command line, not its display"
 - discharge: test "Scenario: A failing config rule is reported by its command line, not its display"
 
@@ -54,7 +54,7 @@ annotation.
 ### REQ-DISP-VERBOSE
 
 - conformance: deliberate-deviation
-- reference: upstream's --verbose switches from the display back to the real command (tup/src/tup/entry.c:257); putup's -v is its only per-command echo, so switching it would leave an annotation unobservable in build output, and `show script` reports the commands instead
+- reference: upstream's --verbose switches from the display back to the real command (tup `print_tup_entry`); putup's -v is its only per-command echo, so switching it would leave an annotation unobservable in build output, and `show script` reports the commands instead
 - discharge: test "Scenario: A rule's display text stands in for the command in build output"
 
 While reporting each command it runs, putup shall report a rule's annotation rather than the
@@ -69,7 +69,7 @@ What the annotation's text resolves to before it is reported.
 ### REQ-DISP-FLAGS
 
 - conformance: tup-conformant
-- reference: upstream expands the display through the same tup_printf percent expansion as the command (tup/src/tup/parser.c:3563-3567)
+- reference: upstream expands the display through the same tup_printf percent expansion as the command (tup `do_rule`)
 - discharge: test "Scenario: Percent flags inside display text expand against the rule"
 
 putup shall expand percent flags in a display annotation against the rule that declares it.
@@ -77,7 +77,7 @@ putup shall expand percent flags in a display annotation against the rule that d
 ### REQ-DISP-EXPAND-FAIL
 
 - conformance: tup-conformant
-- reference: upstream returns -1 when display expansion fails rather than dropping the display (tup/src/tup/parser.c:3564-3566)
+- reference: upstream returns -1 when display expansion fails rather than dropping the display (tup `do_rule`)
 - discharge: test "Scenario: Percent flags inside display text expand against the rule"
 
 If expanding a display annotation fails, then putup shall report the failure rather than build the
@@ -94,7 +94,7 @@ macro's annotation and discard the rule's.
 ### REQ-DISP-UNTERMINATED
 
 - conformance: tup-conformant
-- reference: upstream makes a missing closing caret a parse-time error, "Missing ending `'^'` flag" (tup/src/tup/parser.c:3431-3472)
+- reference: upstream makes a missing closing caret a parse-time error, "Missing ending `'^'` flag" (tup `split_command_string`)
 - discharge: test "Scenario: An unterminated caret is a parse error, not a shell error"
 
 If a display annotation has no closing `^`, then putup shall reject the Tupfile while parsing it.
@@ -102,7 +102,7 @@ If a display annotation has no closing `^`, then putup shall reject the Tupfile 
 ### REQ-DISP-HEAD
 
 - conformance: deliberate-deviation
-- reference: upstream reads the non-space run after `^` as flags — `t` marks outputs transient, `o` requests output comparison (tup/src/tup/parser.c:3431-3472); putup implements neither, and treating the run as display text would render a flag as a label, honouring nothing and refusing nothing
+- reference: upstream reads the non-space run after `^` as flags — `t` marks outputs transient, `o` requests output comparison (tup `split_command_string`); putup implements neither, and treating the run as display text would render a flag as a label, honouring nothing and refusing nothing
 - discharge: test "Scenario: An upstream caret flag is rejected, not rendered as a label"
 
 Where the characters after `^` are not preceded by a space, putup shall reject the Tupfile rather

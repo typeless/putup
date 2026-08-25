@@ -88,7 +88,7 @@ from the list they read.
 ### REQ-OUTPUT-EXTRA-OWNED
 
 - conformance: tup-conformant
-- reference: upstream's extra-output loop (`src/tup/parser.c:3667-3675`) is identical to its main-output loop (`:3652-3665`) — same `tup_db_create_unique_link`, same removal from `gen_delete_root` and `save_root` — except for the `move_name_list_entry` into the list `%o` expands from
+- reference: upstream's extra-output loop (`do_rule`'s `extra_onl` loop) is identical to its main-output loop (its `onl` loop) — same `tup_db_create_unique_link`, same removal from `gen_delete_root` and `save_root` — except for the `move_name_list_entry` into the list `%o` expands from
 - discharge: test "Scenario: An extra output is owned by its command and removed by clean"
 
 putup shall own an output declared after a second `|` as it owns one declared before it.
@@ -96,7 +96,7 @@ putup shall own an output declared after a second `|` as it owns one declared be
 ### REQ-OUTPUT-EXTRA-NOT-OPERAND
 
 - conformance: tup-conformant
-- reference: `tup.1:439-440` — extra outputs "behave exactly as regular outputs, except they do not appear in the %o flag"
+- reference: tup.1's `extra-outputs` section — extra outputs "behave exactly as regular outputs, except they do not appear in the %o flag"
 - discharge: test "Scenario: An extra output is left out of %o"
 
 putup shall leave an output declared after a second `|` out of the operands `%o` expands to.
@@ -104,7 +104,7 @@ putup shall leave an output declared after a second `|` out of the operands `%o`
 ### REQ-OUTPUT-EXTRA-MACRO-UNION
 
 - conformance: tup-conformant
-- reference: upstream copies a bang macro's extra outputs into a separate list applied alongside the rule's own (`src/tup/parser.c:1861-1867`, both passed to `do_rule_outputs` at `:3542-3545`), where its main outputs are a fallback the rule replaces (`:1857-1860`)
+- reference: upstream copies a bang macro's extra outputs into a separate list applied alongside the rule's own (`parse_bang_rule_internal`, both passed to `do_rule_outputs`), where its main outputs are a fallback the rule replaces
 - discharge: test "Scenario: A bang macro's extra outputs join the rule's own rather than replacing them"
 
 While expanding a bang macro, putup shall add the macro's extra outputs to those the rule declares
@@ -113,7 +113,7 @@ rather than replacing them.
 ### REQ-OUTPUT-EXTRA-NO-OPERAND-FLAG
 
 - conformance: deliberate-deviation
-- reference: upstream expands `%o` and `%O` inside the extra-outputs section, passing the primary outputs as `use_onl` (`src/tup/parser.c:3542`, error text at `:3993`), and `tup.1:534` names the bang-macro linker-map case it exists for; putup refuses the form instead, because its own `%O` returns the filename with its extension where `docs/reference.md:1011` promises it without, so expanding it here would spell a name neither upstream nor putup's documentation predicts (#370)
+- reference: upstream expands `%o` and `%O` inside the extra-outputs section, passing the primary outputs as `use_onl` (`do_rule_outputs`, error text in `tup_printf`), and tup.1's `%O` entry names the bang-macro linker-map case it exists for; putup refuses the form instead, because its own `%O` returns the filename with its extension where `docs/reference.md`'s %-flag table promises it without, so expanding it here would spell a name neither upstream nor putup's documentation predicts (#370)
 - discharge: test "Scenario: A percent-O in an extra outputs section is refused by name"
 
 If a rule spells an extra output with `%o` or `%O`, then putup shall reject the Tupfile and name
