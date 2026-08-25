@@ -972,6 +972,28 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         CHECK(sv(result) == "gcc -c foo.c bar.c -o foo.o");
     }
 
+    SECTION("%o with multiple outputs")
+    {
+        auto bar_o = add_file_node(g, FileNode {
+                                          .type = NodeType::Generated,
+                                          .name = intern("bar.o"),
+                                          .parent_dir = *src_dir,
+                                      });
+        REQUIRE(bar_o.has_value());
+
+        auto node = CommandNode {
+            .source_dir = intern("src"),
+            .instruction_id = intern("gen %f -o %o"),
+            .inputs = { *foo_c },
+            .outputs = { *foo_o, *bar_o },
+        };
+        auto cmd_id = add_command_node(g, std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(g, *cmd_id);
+        CHECK(sv(result) == "gen foo.c -o foo.o bar.o");
+    }
+
     SECTION("%b (basename of first input)")
     {
         auto node = CommandNode {

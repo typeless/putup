@@ -504,7 +504,12 @@ auto expand_pattern(
             buf.append(flags.input_ext);
             break;
         case 'o':
-            buf.append(flags.output);
+            for (std::size_t i = 0; i < flags.all_outputs.size(); ++i) {
+                if (i > 0) {
+                    buf.append(' ');
+                }
+                buf.append(flags.all_outputs[i]);
+            }
             break;
         case 'O':
             buf.append(flags.output_base);

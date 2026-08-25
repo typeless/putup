@@ -931,8 +931,11 @@ auto expand_instruction_impl(
             break;
         }
         case 'o': {
-            if (!cmd->outputs.empty()) {
-                buf += get_operand_path(cmd->outputs[0]);
+            for (std::size_t i = 0; i < cmd->outputs.size(); ++i) {
+                if (i > 0) {
+                    buf += ' ';
+                }
+                buf += get_operand_path(cmd->outputs[i]);
             }
             break;
         }

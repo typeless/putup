@@ -457,8 +457,11 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId
             break;
         }
         case 'o': {
-            if (!cmd.outputs.empty()) {
-                auto const* file = index.find_file_by_id(cmd.outputs[0]);
+            for (std::size_t i = 0; i < cmd.outputs.size(); ++i) {
+                if (i > 0) {
+                    buf += ' ';
+                }
+                auto const* file = index.find_file_by_id(cmd.outputs[i]);
                 if (file) {
                     buf += get_relative_path(file->path);
                 }
