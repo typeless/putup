@@ -406,7 +406,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         // Command that echoes the exported var
         auto cmd_node = graph::CommandNode {
-            .instruction_id = intern("echo $PUP_TEST_EXPORT_VAR"),
+            .instruction_id = intern("echo $PUP_TEST_EXPORT_VAR | tee " + pup::test::temp_path("test_output.txt").string()),
         };
         cmd_node.exported_vars.insert(to_underlying(intern("PUP_TEST_EXPORT_VAR")));
         auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));
@@ -454,7 +454,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         });
 
         auto cmd_node = graph::CommandNode {
-            .instruction_id = intern("echo \"[$PUP_TEST_ORDER_A|$PUP_TEST_ORDER_M|$PUP_TEST_ORDER_Z]\""),
+            .instruction_id = intern("echo \"[$PUP_TEST_ORDER_A|$PUP_TEST_ORDER_M|$PUP_TEST_ORDER_Z]\" | tee " + pup::test::temp_path("test_export_order.txt").string()),
         };
         cmd_node.exported_vars.insert(to_underlying(z_id));
         cmd_node.exported_vars.insert(to_underlying(m_id));
@@ -499,7 +499,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         // Command without exported_vars - var should NOT be in env
         auto cmd_node = graph::CommandNode {
-            .instruction_id = intern("echo ${PUP_TEST_HIDDEN_VAR:-default}"),
+            .instruction_id = intern("echo ${PUP_TEST_HIDDEN_VAR:-default} | tee " + pup::test::temp_path("test_output2.txt").string()),
         };
         // Note: exported_vars is empty
         auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));

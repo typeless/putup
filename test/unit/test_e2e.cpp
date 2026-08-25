@@ -13162,3 +13162,57 @@ SCENARIO("A CRLF include line resolves", "[e2e][build]")
         }
     }
 }
+
+SCENARIO("A command that creates none of its declared outputs names every one of them", "[e2e][build]")
+{
+    GIVEN("a rule declaring two outputs whose command exits zero writing neither")
+    {
+        auto f = E2EFixture { "missing_declared_output" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the build fails")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
+
+            THEN("both outputs that were never written are named")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("expected to write to file 'a.out'") != std::string::npos);
+                REQUIRE(combined.find("expected to write to file 'b.out'") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A command that writes only some of its declared outputs fails the build", "[e2e][build]")
+{
+    GIVEN("a rule declaring two outputs whose command writes the first")
+    {
+        auto f = E2EFixture { "partially_written_outputs" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the build fails naming only the output that was never written")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("expected to write to file 'b.out'") != std::string::npos);
+                REQUIRE(combined.find("expected to write to file 'a.out'") == std::string::npos);
+            }
+        }
+    }
+}
