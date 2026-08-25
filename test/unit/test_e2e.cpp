@@ -13216,3 +13216,206 @@ SCENARIO("A command that writes only some of its declared outputs fails the buil
         }
     }
 }
+
+SCENARIO("An extra output is left out of %o", "[e2e][build]")
+{
+    GIVEN("a rule with one regular output and one extra output")
+    {
+        auto f = E2EFixture { "extra_output_excluded_from_percent_o" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%o names the regular output and not the extra one")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("side.log"));
+                auto const expanded = f.read_file("out.txt");
+                INFO("%o expanded to: " << expanded);
+                REQUIRE(expanded.find("out.txt") != std::string::npos);
+                REQUIRE(expanded.find("side.log") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("An extra output is owned by its command and removed by clean", "[e2e][build]")
+{
+    GIVEN("a rule with one regular output and one extra output")
+    {
+        auto f = E2EFixture { "extra_output_is_tracked" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built and then cleaned")
+        {
+            auto build_result = f.build();
+            INFO("stdout: " << build_result.stdout_output);
+            INFO("stderr: " << build_result.stderr_output);
+            REQUIRE(build_result.success());
+            REQUIRE(f.exists("side.log"));
+
+            auto clean_result = f.clean();
+
+            THEN("the extra output is removed alongside the regular one")
+            {
+                INFO("stdout: " << clean_result.stdout_output);
+                INFO("stderr: " << clean_result.stderr_output);
+                REQUIRE(clean_result.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+                REQUIRE_FALSE(f.exists("side.log"));
+            }
+        }
+    }
+}
+
+SCENARIO("A bang macro's extra outputs join the rule's own rather than replacing them", "[e2e][build]")
+{
+    GIVEN("a bang macro declaring an extra output used by a rule declaring another")
+    {
+        auto f = E2EFixture { "extra_output_macro_and_rule_union" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built and then cleaned")
+        {
+            auto build_result = f.build();
+            INFO("stdout: " << build_result.stdout_output);
+            INFO("stderr: " << build_result.stderr_output);
+            REQUIRE(build_result.success());
+
+            auto clean_result = f.clean();
+
+            THEN("both extra outputs are owned and removed")
+            {
+                INFO("stdout: " << clean_result.stdout_output);
+                INFO("stderr: " << clean_result.stderr_output);
+                REQUIRE(clean_result.success());
+                REQUIRE_FALSE(f.exists("macro.log"));
+                REQUIRE_FALSE(f.exists("rule.log"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O in an extra outputs section is refused by name", "[e2e][build]")
+{
+    GIVEN("a rule whose extra output is spelled with %O")
+    {
+        auto f = E2EFixture { "extra_output_percent_o_refused" };
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected naming the unsupported form")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("not supported in an extra outputs section") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A group directory prefix after an extra outputs section names the group", "[e2e][build][groups]")
+{
+    GIVEN("a rule whose extra outputs section ends in a path prefix for an order-only group")
+    {
+        auto f = E2EFixture { "extra_output_group_dir_prefix" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the prefix is the group's directory rather than a declared output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("side.log"));
+                REQUIRE_FALSE(f.exists("sub"));
+                REQUIRE(f.exists("two.txt"));
+                // An unresolved group only warns, so the silence is what witnesses the prefix moved it.
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("has no members") == std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A carried-forward record notices its extra output changed", "[e2e][build][incremental]")
+{
+    GIVEN("a rule with an extra output consumed by a rule in another directory")
+    {
+        auto f = E2EFixture { "extra_output_merge_rerun" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("a/side.log") == "v1\n");
+
+        WHEN("the extra output is changed behind the build and only the consumer is in scope")
+        {
+            auto before = f.pup({ "show", "index" });
+            REQUIRE(before.stdout_output.find("[a]  must_rerun") == std::string::npos);
+
+            f.write_file("a/side.log", "corrupted\n");
+            auto scoped = f.build({ "b" });
+            INFO("stdout: " << scoped.stdout_output);
+            INFO("stderr: " << scoped.stderr_output);
+            REQUIRE(scoped.success());
+
+            THEN("the out-of-scope producer is carried forward marked for rerun")
+            {
+                auto index = f.pup({ "show", "index" });
+                INFO("index: " << index.stdout_output);
+                REQUIRE(index.stdout_output.find("[a]  must_rerun") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("Declaring another output re-runs the command that writes it", "[e2e][build][incremental]")
+{
+    GIVEN("a built rule whose command writes a file it does not declare")
+    {
+        auto f = E2EFixture { "declared_output_set_identity" };
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+        REQUIRE(f.exists("second.txt"));
+
+        WHEN("the file is added to the rule's outputs without changing the command text")
+        {
+            f.write_file("Tupfile", ": |> sh -c 'echo hi > %1o; echo two > second.txt' |> out.txt second.txt\n");
+            f.remove_file("second.txt");
+            auto result = f.build();
+
+            THEN("the command runs and produces the newly declared output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("second.txt"));
+            }
+        }
+
+        WHEN("the file is added as an extra output, which no command text can name")
+        {
+            f.write_file("Tupfile", ": |> sh -c 'echo hi > %1o; echo two > second.txt' |> out.txt | second.txt\n");
+            f.remove_file("second.txt");
+            auto result = f.build();
+
+            THEN("the command runs and produces it on the very next build")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("second.txt"));
+            }
+        }
+    }
+}

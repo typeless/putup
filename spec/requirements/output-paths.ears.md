@@ -68,3 +68,62 @@ Which of a path's spellings the record carries.
 
 While recording a rule's output, putup shall record the path the output resolves to rather than the
 path as the rule spelled it.
+
+## Group: extra-outputs
+
+Which of a rule's declared outputs the command text is expected to name.
+
+A rule may declare outputs after a second `|`. Upstream calls these extra outputs and tracks them
+exactly as it tracks the first list — same ownership link, same generated-file deletion, same
+overwrite guard — differing in one thing only: they are left out of `%o`. They exist for files a
+command writes whose names never appear in its command line, so absence from `%o` is the whole
+point rather than an omission.
+
+putup keeps a rule's outputs in two places, and the difference falls cleanly between them: every
+declared output gets a command-to-file edge, which is what ownership, deletion, the overwrite
+guard and scheduling all walk, while only the first list becomes the operand vector `%o` expands.
+An extra output is therefore not excluded from `%o` by a rule the expanders apply; it is absent
+from the list they read.
+
+### REQ-OUTPUT-EXTRA-OWNED
+
+- conformance: tup-conformant
+- reference: upstream's extra-output loop (`src/tup/parser.c:3667-3675`) is identical to its main-output loop (`:3652-3665`) — same `tup_db_create_unique_link`, same removal from `gen_delete_root` and `save_root` — except for the `move_name_list_entry` into the list `%o` expands from
+- discharge: test "Scenario: An extra output is owned by its command and removed by clean"
+
+putup shall own an output declared after a second `|` as it owns one declared before it.
+
+### REQ-OUTPUT-EXTRA-NOT-OPERAND
+
+- conformance: tup-conformant
+- reference: `tup.1:439-440` — extra outputs "behave exactly as regular outputs, except they do not appear in the %o flag"
+- discharge: test "Scenario: An extra output is left out of %o"
+
+putup shall leave an output declared after a second `|` out of the operands `%o` expands to.
+
+### REQ-OUTPUT-EXTRA-MACRO-UNION
+
+- conformance: tup-conformant
+- reference: upstream copies a bang macro's extra outputs into a separate list applied alongside the rule's own (`src/tup/parser.c:1861-1867`, both passed to `do_rule_outputs` at `:3542-3545`), where its main outputs are a fallback the rule replaces (`:1857-1860`)
+- discharge: test "Scenario: A bang macro's extra outputs join the rule's own rather than replacing them"
+
+While expanding a bang macro, putup shall add the macro's extra outputs to those the rule declares
+rather than replacing them.
+
+### REQ-OUTPUT-EXTRA-NO-OPERAND-FLAG
+
+- conformance: deliberate-deviation
+- reference: upstream expands `%o` and `%O` inside the extra-outputs section, passing the primary outputs as `use_onl` (`src/tup/parser.c:3542`, error text at `:3993`), and `tup.1:534` names the bang-macro linker-map case it exists for; putup refuses the form instead, because its own `%O` returns the filename with its extension where `docs/reference.md:1011` promises it without, so expanding it here would spell a name neither upstream nor putup's documentation predicts (#370)
+- discharge: test "Scenario: A percent-O in an extra outputs section is refused by name"
+
+If a rule spells an extra output with `%o` or `%O`, then putup shall reject the Tupfile and name
+the unsupported form.
+
+### REQ-OUTPUT-EXTRA-GROUP-DIR
+
+- conformance: unclassified
+- reference: upstream parses the group and its directory prefix from the output section as a whole rather than per list; not read closely enough to claim equivalence
+- discharge: test "Scenario: A group directory prefix after an extra outputs section names the group"
+
+While reading a rule whose order-only group carries a directory prefix, putup shall take that
+prefix from the last output list the rule declared rather than always from the first.

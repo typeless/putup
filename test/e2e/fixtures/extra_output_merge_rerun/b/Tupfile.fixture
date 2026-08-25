@@ -1,0 +1,1 @@
+: ../a/side.log |> sh -c 'cat ../a/side.log > %o' |> two.txt

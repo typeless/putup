@@ -926,7 +926,8 @@ auto lookup_bang_macro(
 auto expand_outputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
-    parser::PatternFlags const& flags
+    parser::PatternFlags const& flags,
+    bool reject_operand_flags
 ) -> Result<Vec<PathId>>
 {
     auto& pool = global_pool();
@@ -946,6 +947,35 @@ auto expand_outputs(
         }
 
         for (auto path_id : *paths) {
+            // Refused rather than guessed: upstream allows it (tup.1:534) but putup's %O contradicts its own docs (#370).
+            if (reject_operand_flags) {
+                auto raw = pool.get(path_id);
+                for (auto i = std::size_t { 0 }; i + 1 < raw.size();) {
+                    if (raw[i] != '%') {
+                        ++i;
+                        continue;
+                    }
+                    if (raw[i + 1] == '%') {
+                        i += 2;
+                        continue;
+                    }
+                    auto j = i + 1;
+                    while (j < raw.size() && raw[j] >= '0' && raw[j] <= '9') {
+                        ++j;
+                    }
+                    if (j < raw.size() && (raw[j] == 'o' || raw[j] == 'O')) {
+                        auto msg = Buf {};
+                        msg.fmt(
+                            "{}:{}: %o and %O are not supported in an extra outputs section yet (#370): {}",
+                            str(ctx.current_file),
+                            pattern.location.line,
+                            raw
+                        );
+                        return make_error<Vec<PathId>>(ErrorCode::ParseError, msg.view());
+                    }
+                    i = j + 1;
+                }
+            }
             auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), flags);
             auto output_path_sv = expanded ? pool.get(*expanded) : pool.get(path_id);
 
@@ -1915,6 +1945,13 @@ auto expand_rule(
                                                               : nullptr;
     auto const& eff_outputs = macro_ptr && rule.outputs.empty() ? macro_ptr->outputs
                                                                 : rule.outputs;
+    // Unioned, not fallback: a macro's extra outputs are side effects its caller cannot restate (tup parser.c:1861).
+    auto eff_extra_outputs = rule.extra_outputs;
+    if (macro_ptr) {
+        for (auto const& pattern : macro_ptr->extra_outputs) {
+            eff_extra_outputs.push_back(pattern);
+        }
+    }
     auto eff_output_group = std::optional<StringId> {};
     if (rule.output_group) {
         eff_output_group = rule.output_group;
@@ -2044,9 +2081,14 @@ auto expand_rule(
     auto display = StringId::Empty;
     auto instruction_pattern = StringId::Empty;
 
-    auto outputs = expand_outputs(ctx, eff_outputs, flags);
+    auto outputs = expand_outputs(ctx, eff_outputs, flags, /*reject_operand_flags=*/false);
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
+    }
+
+    auto extra_outputs = expand_outputs(ctx, eff_extra_outputs, flags, /*reject_operand_flags=*/true);
+    if (!extra_outputs) {
+        return pup::unexpected<Error>(extra_outputs.error());
     }
 
     // Expand command with actual outputs for %o substitution.
@@ -2158,7 +2200,19 @@ auto expand_rule(
 
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
-    for (auto output_path : *outputs) {
+    auto all_declared = Vec<PathId> {};
+    all_declared.reserve(outputs->size() + extra_outputs->size());
+    for (auto p : *outputs) {
+        all_declared.push_back(p);
+    }
+    for (auto p : *extra_outputs) {
+        all_declared.push_back(p);
+    }
+    auto const primary_count = outputs->size();
+    for (auto i = std::size_t { 0 }; i < all_declared.size(); ++i) {
+        auto output_path = all_declared[i];
+        // An extra output is owned exactly like a primary, minus the %o operands and {group} (tup.1:439).
+        auto const is_extra = i >= primary_count;
         // Generated means "produced by a rule this configuration runs" (#386).
         auto output_id = ensure_file_node(
             ctx.state->graph, output_path, is_context_active(ctx) ? NodeType::Generated : NodeType::Ghost
@@ -2196,10 +2250,12 @@ auto expand_rule(
         if (!edge_result) {
             return pup::unexpected<Error>(edge_result.error());
         }
-        output_ids.push_back(*output_id);
+        if (!is_extra) {
+            output_ids.push_back(*output_id);
+        }
 
         // Add to output group {name} if specified
-        if (eff_output_group && is_context_active(ctx)) {
+        if (eff_output_group && !is_extra && is_context_active(ctx)) {
             auto gkey = to_underlying(*eff_output_group);
             ctx.groups.get_or_create(gkey).push_back(*output_id);
         }

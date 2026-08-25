@@ -1352,9 +1352,16 @@ auto merge_out_of_scope_commands(
                 return true;
             }
         }
-        // Sole witness for non-operand inputs (order-only, group, implicit, sticky); outputs have none, so no edges_from leg.
+        // Sole witness for non-operand inputs (order-only, group, implicit, sticky).
         for (auto const* edge : old_index.edges_to(cmd.id)) {
             if (dep_state_changed(edge->from)) {
+                return true;
+            }
+        }
+        // An extra output is owned by its edge alone, so the operand loop above cannot see it (#370).
+        for (auto const* edge : old_index.edges_from(cmd.id)) {
+            auto const* file = old_index.find_file_by_id(edge->to);
+            if (file && file->type == pup::NodeType::Generated && dep_state_changed(edge->to)) {
                 return true;
             }
         }

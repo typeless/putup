@@ -1,0 +1,1 @@
+: |> sh -c 'echo "%o" > out.txt; touch side.log' |> out.txt | side.log
