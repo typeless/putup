@@ -328,14 +328,13 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
 
     // For foreach rules, all_inputs has just one element (the current input)
     auto flags = PatternFlags {
-        .input = "src/foo.c",
         .input_base = "foo.c",
         .input_noext = "foo",
         .input_ext = "c",
-        .output = "build/foo.o",
         .output_base = "foo.o",
         .input_dir = "src",
         .all_inputs = { "src/foo.c" },
+        .all_outputs = { "build/foo.o" },
     };
 
     SECTION("%f - input filename")
@@ -377,14 +376,13 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 
     // For non-foreach rules, all_inputs has all input files
     auto flags = PatternFlags {
-        .input = "a.c",
         .input_base = "a.c",
         .input_noext = "a",
         .input_ext = "c",
-        .output = "out.o",
         .output_base = "out.o",
         .input_dir = "",
         .all_inputs = { "a.c", "b.c", "c.c" },
+        .all_outputs = { "out.o" },
     };
 
     SECTION("%f - all inputs")
@@ -404,6 +402,56 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
     // Note: %i is for order-only inputs, not yet implemented
 }
 
+TEST_CASE("Evaluator pattern expansion - all outputs", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    SECTION("%o - multiple outputs, space separated")
+    {
+        auto flags = PatternFlags {
+            .all_outputs = { "a.o", "b.o", "c.o" },
+        };
+
+        auto result = expand_pattern(ctx, "ar rcs %o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "ar rcs a.o b.o c.o");
+    }
+
+    SECTION("%o - single output")
+    {
+        auto flags = PatternFlags {
+            .all_outputs = { "out.o" },
+        };
+
+        auto result = expand_pattern(ctx, "gcc -o %o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "gcc -o out.o");
+    }
+
+    // tup errors here rather than expanding empty; the divergence is tracked in #418.
+    SECTION("%o - no outputs expands empty")
+    {
+        auto flags = PatternFlags {};
+
+        auto result = expand_pattern(ctx, "touch %o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "touch ");
+    }
+
+    SECTION("%o alongside %f, each covering its whole list")
+    {
+        auto flags = PatternFlags {
+            .all_inputs = { "a.c", "b.c" },
+            .all_outputs = { "a.o", "b.o" },
+        };
+
+        auto result = expand_pattern(ctx, "gen %f -o %o", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "gen a.c b.c -o a.o b.o");
+    }
+}
+
 TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
 {
     auto vars = VarDb {};
@@ -413,7 +461,6 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
     SECTION("%No - N-th output (multiple)")
     {
         auto flags = PatternFlags {
-            .output = "a.o",
             .output_base = "a.o",
             .all_outputs = { "a.o", "b.o", "c.o" },
         };
@@ -426,7 +473,6 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
     SECTION("%No - single output")
     {
         auto flags = PatternFlags {
-            .output = "out.o",
             .output_base = "out.o",
             .all_outputs = { "out.o" },
         };
@@ -450,8 +496,6 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
     SECTION("%No - mixed with other flags")
     {
         auto flags = PatternFlags {
-            .input = "src.c",
-            .output = "a.o",
             .all_inputs = { "src.c" },
             .all_outputs = { "a.o", "b.o" },
         };
@@ -471,7 +515,6 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
     SECTION("%g - simple glob match")
     {
         auto flags = PatternFlags {
-            .input = "hello.c",
             .glob_match = "hello",
         };
         auto result = expand_pattern(ctx,"%g", flags);
@@ -483,7 +526,6 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
     {
         // Pattern: *_test.c, Input: foo_test.c, Match: foo
         auto flags = PatternFlags {
-            .input = "foo_test.c",
             .glob_match = "foo",
         };
         auto result = expand_pattern(ctx,"%g.o", flags);
@@ -494,7 +536,6 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
     SECTION("%g - empty when not set")
     {
         auto flags = PatternFlags {
-            .input = "file.c",
         };
         auto result = expand_pattern(ctx,"%g", flags);
         REQUIRE(result.has_value());
@@ -504,12 +545,11 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
     SECTION("%g - combined with other flags")
     {
         auto flags = PatternFlags {
-            .input = "foo_test.c",
             .input_base = "foo_test.c",
             .input_noext = "foo_test",
-            .output = "foo.o",
             .glob_match = "foo",
             .all_inputs = { "foo_test.c" },
+            .all_outputs = { "foo.o" },
         };
         auto result = expand_pattern(ctx,"compile %f -DNAME=%g -o %o", flags);
         REQUIRE(result.has_value());
@@ -660,9 +700,8 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
     };
 
     auto flags = PatternFlags {
-        .input = "foo.c",
-        .output = "foo.o",
         .all_inputs = { "foo.c" },
+        .all_outputs = { "foo.o" },
     };
 
     SECTION("%<group> expands to group paths")

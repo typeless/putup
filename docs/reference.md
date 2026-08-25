@@ -1007,7 +1007,7 @@ Pattern flags are placeholders expanded at build time.
 |------|-------------|---------|
 | `%f` | All input files | `gcc %f` → `gcc foo.c bar.c` |
 | `%i` | All inputs (alias for %f) | `gcc %i` → `gcc foo.c bar.c` |
-| `%o` | All output files | `-o %o` → `-o foo.o` |
+| `%o` | All output files | `ar rcs %o` → `ar rcs foo.a foo.map` |
 | `%O` | Output basename | `foo.o` → `foo` |
 | `%b` | Basename with extension | `foo.c` → `foo.c` |
 | `%B` | Basename without extension | `foo.c` → `foo` |

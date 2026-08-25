@@ -196,17 +196,15 @@ struct EvalContext {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    std::string_view input = {};            ///< %f - input filename
     std::string_view input_base = {};       ///< %b - input basename (no path)
     std::string_view input_noext = {};      ///< %B - input basename without extension
     std::string_view input_ext = {};        ///< %e - input extension
-    std::string_view output = {};           ///< %o - output filename
     std::string_view output_base = {};      ///< %O - output basename (no path)
     std::string_view input_dir = {};        ///< %d - input directory
     std::string_view glob_match = {};       ///< %g - portion matched by * in foreach glob
     int input_index = 0;                    ///< For %Nf patterns (1-indexed)
-    Vec<std::string_view> all_inputs = {};  ///< All inputs for %Nf expansion
-    Vec<std::string_view> all_outputs = {}; ///< All outputs for %No expansion
+    Vec<std::string_view> all_inputs = {};  ///< All inputs, for %f and %Nf
+    Vec<std::string_view> all_outputs = {}; ///< All outputs, for %o and %No
 };
 
 /// Expand an expression, replacing variable references with values

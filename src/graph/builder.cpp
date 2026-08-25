@@ -870,7 +870,6 @@ auto expand_command(
     }
 
     auto primary_output_sv = cmd_outputs.empty() ? std::string_view {} : str(cmd_outputs[0]);
-    flags.output = primary_output_sv;
     flags.output_base = parser::path_basename(primary_output_sv);
     auto outputs_sv = Vec<std::string_view> {};
     outputs_sv.reserve(cmd_outputs.size());
@@ -1890,7 +1889,6 @@ auto expand_rule(
     }
 
     auto flags = parser::PatternFlags {
-        .input = primary_input_sv,
         .input_base = parser::path_basename(primary_input_sv),
         .input_noext = parser::path_stem(primary_input_sv),
         .input_ext = parser::path_extension(primary_input_sv),

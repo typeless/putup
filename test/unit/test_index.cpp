@@ -964,6 +964,23 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         REQUIRE(sv(result) =="g++ -c src/main.cpp -o build/main.o");
     }
 
+    SECTION("get_command_string with %o covering multiple outputs")
+    {
+        index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.d") });
+        index.compute_paths();
+
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .instruction_pattern = intern("g++ -c %f -o %o"),
+            .inputs = { 3 },
+            .outputs = { 4, 5 },
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(sv(result) == "g++ -c src/main.cpp -o build/main.o build/main.d");
+    }
+
     SECTION("get_command_string with %b (basename)")
     {
         auto cmd = CommandEntry {
