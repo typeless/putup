@@ -947,7 +947,7 @@ auto expand_outputs(
         }
 
         for (auto path_id : *paths) {
-            // Refused rather than guessed: upstream allows it (tup.1:534) but putup's %O contradicts its own docs (#370).
+            // Refused rather than guessed: upstream allows it (tup.1 %O) but putup's %O contradicts its own docs (#370).
             if (reject_operand_flags) {
                 auto raw = pool.get(path_id);
                 for (auto i = std::size_t { 0 }; i + 1 < raw.size();) {
@@ -1945,7 +1945,7 @@ auto expand_rule(
                                                               : nullptr;
     auto const& eff_outputs = macro_ptr && rule.outputs.empty() ? macro_ptr->outputs
                                                                 : rule.outputs;
-    // Unioned, not fallback: a macro's extra outputs are side effects its caller cannot restate (tup parser.c:1861).
+    // Unioned, not fallback: a macro's extra outputs are side effects its caller cannot restate (tup parse_bang_rule_internal).
     auto eff_extra_outputs = rule.extra_outputs;
     if (macro_ptr) {
         for (auto const& pattern : macro_ptr->extra_outputs) {
@@ -2211,7 +2211,7 @@ auto expand_rule(
     auto const primary_count = outputs->size();
     for (auto i = std::size_t { 0 }; i < all_declared.size(); ++i) {
         auto output_path = all_declared[i];
-        // An extra output is owned exactly like a primary, minus the %o operands and {group} (tup.1:439).
+        // An extra output is owned exactly like a primary, minus the %o operands and {group} (tup.1 extra-outputs).
         auto const is_extra = i >= primary_count;
         // Generated means "produced by a rule this configuration runs" (#386).
         auto output_id = ensure_file_node(

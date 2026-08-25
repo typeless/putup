@@ -22,7 +22,7 @@ namespace pup::parser {
 /// - After second '|>': expects outputs, groups
 ///
 /// The constructor rewrites every `\`-newline continuation to spaces (tup's
-/// parser.c:589-596), so no token text can span lines and no consumer of a
+/// parse_tupfile), so no token text can span lines and no consumer of a
 /// token — or of a command built from one — has to allow for an embedded newline.
 class Lexer final {
 public:

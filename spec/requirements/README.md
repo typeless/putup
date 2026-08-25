@@ -78,6 +78,14 @@ Upstream tup is the specification of record.
 `unclassified` today; narrowing that set means reading upstream, and a stated reason beats an
 invented citation.
 
+**Cite upstream by name, never by line number.** A `reference` names the function, symbol, or
+tup.1 section that carries the behaviour — `` `do_rule_outputs` ``, `` `tup_db_write_outputs` ``,
+tup.1's `%O` entry — not `parser.c:3542`. Upstream moves under us: syncing the reference checkout
+shifts line numbers by a few and every pinned citation silently starts pointing at a brace. A
+symbol name survives that, and it says what the reader is looking for instead of merely where it
+sat. Nothing checks what one says — `spec-check` requires a `reference` to be present but never
+reads what it points at — so their accuracy rests entirely on the convention.
+
 ## Two rules no checker can enforce
 
 **A requirement must name one implementation it forbids.** The checker gates form and gates

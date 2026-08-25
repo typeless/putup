@@ -226,7 +226,7 @@ What `%g` names, and where it is resolved.
 ### REQ-GLOB-MATCH-COMMAND
 
 - conformance: unclassified
-- reference: `docs/reference.md:977` documents `%g` as the glob match portion; upstream not read
+- reference: `docs/reference.md` documents `%g` as the glob match portion in its %-flag table; upstream not read
 - discharge: test "Scenario: A foreach rule substitutes %g in its command, not only in its output name"
 
 putup shall substitute a foreach rule's glob match into the rule's command text as well as
