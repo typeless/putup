@@ -174,6 +174,51 @@ auto parse_stdout_depfile(
     }
 }
 
+/// tup catches this in its FUSE layer at write time; without FUSE the declared paths are
+/// known before the command runs, so a stat after it exits carries the same guarantee.
+auto reject_unwritten_outputs(
+    BuildJob const& job,
+    JobResult& result,
+    std::string_view source_root_sv,
+    std::string_view output_root_sv,
+    std::string_view output_root_prefix
+) -> void
+{
+    auto& pool = global_pool();
+
+    auto msg = Buf {};
+    for (auto output_id : job.outputs) {
+        auto output_sv = pool.get(output_id);
+        auto output_path = pup::path::is_absolute(output_sv)
+            ? output_sv
+            : resolve_variant_path(source_root_sv, output_root_sv, output_root_prefix, output_sv);
+        if (pup::platform::exists(output_path)) {
+            continue;
+        }
+        if (!msg.empty()) {
+            msg.append('\n');
+        }
+        msg.append("Error: expected to write to file '");
+        msg.append(output_sv);
+        msg.append("'");
+    }
+    if (msg.empty()) {
+        return;
+    }
+
+    if (!is_empty(result.output)) {
+        auto combined = Buf {};
+        combined.append(pool.get(result.output));
+        combined.append('\n');
+        combined.append(msg.view());
+        result.output = combined.intern(pool);
+    } else {
+        result.output = msg.intern(pool);
+    }
+    result.success = false;
+    result.exit_code = 1;
+}
+
 auto discover_d_file_deps(
     BuildJob const& job,
     JobResult& result,
@@ -732,6 +777,10 @@ auto Scheduler::build_job_list(
 
         // Collect output paths
         graph::edges_for_each(g, id, graph::EdgeDirection::Forward, graph::edge_mask::data_flow, [&](pup::NodeId output_id) {
+            // A group shares the data-flow role but names no file the command writes.
+            if (graph::get<NodeType>(g, output_id) == NodeType::Group) {
+                return;
+            }
             auto output_path = graph::get_full_path(g, output_id, cache);
             if (!output_path.empty()) {
                 job.outputs.push_back(pool.intern(output_path));
@@ -1053,6 +1102,10 @@ auto Scheduler::execute_parallel(
                     result.discovered_deps.push_back(dep_id);
                 }
                 result.deps_for_command = stdout_deps_cmd;
+            }
+
+            if (result.success) {
+                reject_unwritten_outputs(job, result, source_root_sv, output_root_sv, output_root_prefix);
             }
 
             if (result.success) {

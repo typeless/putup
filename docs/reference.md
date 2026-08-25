@@ -820,7 +820,7 @@ Rules define how to transform inputs into outputs.
 - `| order-only` - Dependencies not included in `%f` (still trigger rebuilds)
 - `|>` - Section separator
 - `command` - Shell command to execute
-- `outputs` - Generated files
+- `outputs` - Generated files; the command must create every one of them, or the build fails
 - `{group}` - Optional output group membership
 
 **Examples:**
@@ -2265,6 +2265,22 @@ For variant builds:
 putup configure -B build-debug    # Creates build-debug/tup.config
 putup build-debug                 # Build the variant
 ```
+
+---
+
+**"expected to write to file"**
+
+```
+FAILED: cc -c foo.c -o foo.o
+Error: expected to write to file 'foo.o'
+```
+
+Cause: The command exited successfully without creating a file the rule declares as an output.
+A common source is a command that writes relative to its own working directory while the rule's
+output resolves into the build directory.
+
+Fix: Have the command write to the declared path — `%o` expands to it — or correct the rule's
+output list to name what the command actually produces.
 
 ---
 
