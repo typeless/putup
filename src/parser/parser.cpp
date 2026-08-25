@@ -586,15 +586,17 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
     // Parse order-only output group <name> if present
     // Supports path/<group> syntax where path specifies the group's directory
     if (match(s, TokenType::OpenAngle)) {
-        // Check if last output is a directory prefix (ends with /)
-        if (!body.outputs.empty()) {
-            auto& last = body.outputs.back();
+        // Check if last output is a directory prefix (ends with /); the group follows whichever
+        // output list the rule ended with, so an extras section owns the prefix when it has one.
+        auto& trailing = body.extra_outputs.empty() ? body.outputs : body.extra_outputs;
+        if (!trailing.empty()) {
+            auto& last = trailing.back();
             if (!last.path.parts.empty()) {
                 if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
                     auto lit_sv = global_pool().get(lit->value);
                     if (!lit_sv.empty() && lit_sv.back() == '/') {
                         body.output_order_only_group_dir = std::move(last.path);
-                        body.outputs.pop_back();
+                        trailing.pop_back();
                     }
                 }
             }

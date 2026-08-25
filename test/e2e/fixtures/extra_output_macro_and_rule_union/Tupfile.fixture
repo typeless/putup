@@ -1,0 +1,2 @@
+!gen = |> sh -c 'touch %o macro.log rule.log' |> | macro.log
+: |> !gen |> out.txt | rule.log

@@ -128,11 +128,13 @@ What the command will do: a difference means re-run, not a different rule.
 
 - leg: record
 - conformance: tup-conformant
-- reference: tup parser.c:3573 comment; `tup_db_set_name` + `command_modified`
+- reference: tup parser.c:3573 comment; `tup_db_set_name` + `command_modified`. For the output paths the outcome matches and the mechanism does not: upstream diffs the declared set against the recorded one at parse time (`db.c:6333` `tup_db_write_outputs`, `:6408` `compare_tent_trees`), where a gained output (`:6276`, `:6280`) or a lost one (`:6301`, `:6305`) sets `outputs_differ` and re-runs the command (`:6414`), while putup folds the paths into a hash. One case is left out rather than matched: upstream also treats a changed output GROUP as differing outputs (`db.c:6353-6360`) and re-runs, where putup does not — verified on both sides, and left as it stands because a group carries no content of its own and its edges are rebuilt every parse
 - discharge: test "CommandEntry conversion"
+- discharge: test "Scenario: Declaring another output re-runs the command that writes it"
 
 putup shall record, for each command, a signature derived from its rendered text, its
-source directory, and the value of every sticky variable it read.
+source directory, the paths it declares as outputs, and the value of every sticky variable
+it read.
 
 ### REQ-SIG-COMPARE
 
@@ -440,6 +442,17 @@ putup shall record, for each command, the set of files it declares as outputs.
 
 When a command's declared output set differs from the recorded set, putup shall delete the
 outputs that are no longer declared.
+
+### REQ-OUT-EXTRA-CARRY
+
+- leg: compare
+- conformance: unclassified
+- reference: upstream threads `command_modified` through its extra-outputs call so the rule re-runs at parse time (`src/tup/parser.c:3542`); putup instead compares the carried record's own edges against what this build read, so a change no in-scope rule re-read is left for a later build to find rather than marked here; the two were not read closely enough to claim equivalence
+- discharge: test "Scenario: A carried-forward record notices its extra output changed"
+
+When a command outside a build's scope is carried forward, putup shall mark it for rerun if the
+build read content for an output it owns that differs from the record, including an output
+declared after a second `|`.
 
 ### REQ-OUT-ROUTE
 

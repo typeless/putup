@@ -1089,6 +1089,23 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
     state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
+    // An output the text never names -- every extra output, a %o-less primary -- would otherwise
+    // leave identity unchanged when the declaration changes; sorted for insertion independence.
+    // A dep-scan command's data-flow edge to its parent shares this walk and names no file.
+    auto output_paths = Vec<std::string_view> {};
+    for (auto out_id : get_outputs(graph, cmd_id)) {
+        auto path = get_full_path(graph, out_id, cache);
+        if (path.empty()) {
+            continue;
+        }
+        output_paths.push_back(path);
+    }
+    std::sort(output_paths.begin(), output_paths.end());
+    for (auto path : output_paths) {
+        state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
+        state = sha256_update(state, path);
+    }
+
     // Fold in (name, value-hash) of each Variable node reached via a Sticky edge.
     // This captures vars that affect output without appearing in the rendered text —
     // exported env vars the subprocess reads as $VAR, config vars gating an export, etc.

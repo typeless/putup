@@ -1,0 +1,1 @@
+: |> sh -c 'echo hi > %o' |> out.txt | %O.log

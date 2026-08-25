@@ -1,0 +1,2 @@
+: |> sh -c 'echo hi > %o; echo l > side.log' |> out.txt | side.log sub/<grp>
+: | sub/<grp> |> sh -c 'cat side.log > %o' |> two.txt
