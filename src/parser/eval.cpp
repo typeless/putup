@@ -445,6 +445,12 @@ auto expand_pattern(
             }
 
             if (end < text.size() && text[end] == 'o') {
+                if (flags.section == PatternSection::Outputs) {
+                    return make_error<StringId>(
+                        ErrorCode::ParseError,
+                        "%o can only be used in a command string or extra outputs section"
+                    );
+                }
                 // %No - N-th output file
                 if (num > 0 && static_cast<std::size_t>(num) <= flags.all_outputs.size()) {
                     buf.append(flags.all_outputs[static_cast<std::size_t>(num - 1)]);
@@ -504,6 +510,18 @@ auto expand_pattern(
             buf.append(flags.input_ext);
             break;
         case 'o':
+            if (flags.section == PatternSection::Outputs) {
+                return make_error<StringId>(
+                    ErrorCode::ParseError,
+                    "%o can only be used in a command string or extra outputs section"
+                );
+            }
+            if (flags.all_outputs.empty()) {
+                return make_error<StringId>(
+                    ErrorCode::ParseError,
+                    "%o used in rule pattern and no output files were specified"
+                );
+            }
             for (std::size_t i = 0; i < flags.all_outputs.size(); ++i) {
                 if (i > 0) {
                     buf.append(' ');
@@ -511,9 +529,23 @@ auto expand_pattern(
                 buf.append(flags.all_outputs[i]);
             }
             break;
-        case 'O':
-            buf.append(flags.output_base);
+        case 'O': {
+            if (flags.section == PatternSection::Outputs) {
+                return make_error<StringId>(
+                    ErrorCode::ParseError,
+                    "%O can only be used in the extra outputs section"
+                );
+            }
+            if (flags.all_outputs.size() != 1) {
+                return make_error<StringId>(
+                    ErrorCode::ParseError,
+                    "%O can only be used if there is exactly one output specified"
+                );
+            }
+            auto const primary = flags.all_outputs[0];
+            buf.append(primary.substr(0, primary.size() - pup::path::extension(primary).size()));
             break;
+        }
         case 'd':
             buf.append(flags.input_dir);
             break;

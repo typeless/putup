@@ -1067,7 +1067,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         CHECK(sv(result) == "echo baz");
     }
 
-    SECTION("%O (basename of first output)")
+    SECTION("%O (the one output without its extension)")
     {
         auto node = CommandNode {
             .source_dir = intern("src"),
@@ -1078,7 +1078,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         REQUIRE(cmd_id.has_value());
 
         auto result = expand_instruction(g, *cmd_id);
-        CHECK(sv(result) == "echo foo.o");
+        CHECK(sv(result) == "echo foo");
     }
 
     SECTION("%Nf (N-th input)")

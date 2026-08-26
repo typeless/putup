@@ -940,8 +940,9 @@ auto expand_instruction_impl(
             break;
         }
         case 'O': {
-            if (!cmd->outputs.empty()) {
-                buf += path_basename(get_full_path(graph, cmd->outputs[0], cache));
+            if (cmd->outputs.size() == 1) {
+                auto const only = get_operand_path(cmd->outputs[0]);
+                buf += only.substr(0, only.size() - pup::path::extension(only).size());
             }
             break;
         }

@@ -1,0 +1,1 @@
+: |> sh -c 'echo hi > %o; echo m > sub/out/file.txt.2' |> out/file.txt | sub/%O.txt.2

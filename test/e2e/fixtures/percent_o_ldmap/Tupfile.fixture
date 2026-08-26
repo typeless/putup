@@ -1,0 +1,1 @@
+: |> sh -c 'echo hi > %o; echo map > sub/out.map' |> sub/out.so | %O.map

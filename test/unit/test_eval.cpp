@@ -331,7 +331,6 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
         .input_base = "foo.c",
         .input_noext = "foo",
         .input_ext = "c",
-        .output_base = "foo.o",
         .input_dir = "src",
         .all_inputs = { "src/foo.c" },
         .all_outputs = { "build/foo.o" },
@@ -379,7 +378,6 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
         .input_base = "a.c",
         .input_noext = "a",
         .input_ext = "c",
-        .output_base = "out.o",
         .input_dir = "",
         .all_inputs = { "a.c", "b.c", "c.c" },
         .all_outputs = { "out.o" },
@@ -429,14 +427,12 @@ TEST_CASE("Evaluator pattern expansion - all outputs", "[eval]")
         REQUIRE(sv(*result) == "gcc -o out.o");
     }
 
-    // tup errors here rather than expanding empty; the divergence is tracked in #418.
-    SECTION("%o - no outputs expands empty")
+    SECTION("%o - no outputs is refused")
     {
         auto flags = PatternFlags {};
 
         auto result = expand_pattern(ctx, "touch %o", flags);
-        REQUIRE(result.has_value());
-        REQUIRE(sv(*result) == "touch ");
+        REQUIRE_FALSE(result.has_value());
     }
 
     SECTION("%o alongside %f, each covering its whole list")
@@ -461,7 +457,6 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
     SECTION("%No - N-th output (multiple)")
     {
         auto flags = PatternFlags {
-            .output_base = "a.o",
             .all_outputs = { "a.o", "b.o", "c.o" },
         };
 
@@ -473,7 +468,6 @@ TEST_CASE("Evaluator pattern expansion - numbered outputs", "[eval]")
     SECTION("%No - single output")
     {
         auto flags = PatternFlags {
-            .output_base = "out.o",
             .all_outputs = { "out.o" },
         };
 

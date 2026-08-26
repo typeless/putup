@@ -869,14 +869,13 @@ auto expand_command(
         cmd_outputs.push_back(transform_output_path(tc, str(materialized)));
     }
 
-    auto primary_output_sv = cmd_outputs.empty() ? std::string_view {} : str(cmd_outputs[0]);
-    flags.output_base = parser::path_basename(primary_output_sv);
     auto outputs_sv = Vec<std::string_view> {};
     outputs_sv.reserve(cmd_outputs.size());
     for (auto id : cmd_outputs) {
         outputs_sv.push_back(str(id));
     }
     flags.all_outputs = std::move(outputs_sv);
+    flags.section = parser::PatternSection::Command;
 
     auto pattern_result = parser::expand_pattern(*ctx.eval, pool.get(*expanded), flags);
     if (!pattern_result) {
@@ -889,11 +888,14 @@ auto expand_command(
 /// Returns pointer to the macro definition, or nullptr if command doesn't reference a macro.
 auto lookup_bang_macro(
     BuilderContext& ctx,
-    parser::Expression const& command,
-    parser::PatternFlags const& flags
+    parser::Expression const& command
 ) -> Result<BangMacroDef const*>
 {
-    auto expanded_cmd = expand_command(ctx, command, flags, {});
+    auto literal = parser::expand(*ctx.eval, command);
+    if (!literal) {
+        return pup::unexpected<Error>(literal.error());
+    }
+    auto expanded_cmd = parser::expand(*ctx.eval, global_pool().get(*literal));
     if (!expanded_cmd) {
         return pup::unexpected<Error>(expanded_cmd.error());
     }
@@ -923,15 +925,38 @@ auto lookup_bang_macro(
     return &it->second;
 }
 
+/// One output section's expansion: the interned paths, and the text each was declared as. %O in a
+/// later extra-outputs section names the declared text, since the result is joined with the rule's
+/// directory again -- the full path would double that prefix.
+struct ExpandedOutputs {
+    Vec<PathId> ids;
+    Vec<StringId> declared;
+};
+
+/// Expands one output section. `primary` is the text the rule's primary outputs were declared as
+/// when this is the extra-outputs section, and nullptr when this is the primary section itself --
+/// which is what decides where %o and %O are legal.
 auto expand_outputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags,
-    bool reject_operand_flags
-) -> Result<Vec<PathId>>
+    Vec<StringId> const* primary
+) -> Result<ExpandedOutputs>
 {
     auto& pool = global_pool();
-    auto result = Vec<PathId> {};
+    auto result = ExpandedOutputs {};
+
+    auto section_flags = flags;
+    section_flags.section
+        = primary ? parser::PatternSection::ExtraOutputs : parser::PatternSection::Outputs;
+    auto primary_sv = Vec<std::string_view> {};
+    if (primary) {
+        primary_sv.reserve(primary->size());
+        for (auto id : *primary) {
+            primary_sv.push_back(pool.get(id));
+        }
+    }
+    section_flags.all_outputs = std::move(primary_sv);
 
     for (auto const& pattern : patterns) {
         if (pattern.is_group) {
@@ -947,37 +972,18 @@ auto expand_outputs(
         }
 
         for (auto path_id : *paths) {
-            // Refused rather than guessed: upstream allows it (tup.1 %O) but putup's %O contradicts its own docs (#370).
-            if (reject_operand_flags) {
-                auto raw = pool.get(path_id);
-                for (auto i = std::size_t { 0 }; i + 1 < raw.size();) {
-                    if (raw[i] != '%') {
-                        ++i;
-                        continue;
-                    }
-                    if (raw[i + 1] == '%') {
-                        i += 2;
-                        continue;
-                    }
-                    auto j = i + 1;
-                    while (j < raw.size() && raw[j] >= '0' && raw[j] <= '9') {
-                        ++j;
-                    }
-                    if (j < raw.size() && (raw[j] == 'o' || raw[j] == 'O')) {
-                        auto msg = Buf {};
-                        msg.fmt(
-                            "{}:{}: %o and %O are not supported in an extra outputs section yet (#370): {}",
-                            str(ctx.current_file),
-                            pattern.location.line,
-                            raw
-                        );
-                        return make_error<Vec<PathId>>(ErrorCode::ParseError, msg.view());
-                    }
-                    i = j + 1;
-                }
+            auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), section_flags);
+            if (!expanded) {
+                auto msg = Buf {};
+                msg.fmt(
+                    "{}:{}: {}",
+                    str(ctx.current_file),
+                    pattern.location.line,
+                    str(expanded.error().message)
+                );
+                return make_error<ExpandedOutputs>(ErrorCode::ParseError, msg.view());
             }
-            auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), flags);
-            auto output_path_sv = expanded ? pool.get(*expanded) : pool.get(path_id);
+            auto output_path_sv = pool.get(*expanded);
 
             auto full_output_path_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv))));
 
@@ -993,10 +999,11 @@ auto expand_outputs(
                     pattern.location.line,
                     output_path_sv
                 );
-                return make_error<Vec<PathId>>(ErrorCode::ParseError, msg.view());
+                return make_error<ExpandedOutputs>(ErrorCode::ParseError, msg.view());
             }
 
-            result.push_back(ctx.state->graph.paths.intern_path(full_output_path_sv, pool, PathId::BuildRoot));
+            result.declared.push_back(*expanded);
+            result.ids.push_back(ctx.state->graph.paths.intern_path(full_output_path_sv, pool, PathId::BuildRoot));
         }
     }
 
@@ -1928,7 +1935,7 @@ auto expand_rule(
     };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
-    auto macro_result = lookup_bang_macro(ctx, rule.command, flags);
+    auto macro_result = lookup_bang_macro(ctx, rule.command);
     if (!macro_result) {
         return pup::unexpected<Error>(macro_result.error());
     }
@@ -2081,19 +2088,19 @@ auto expand_rule(
     auto display = StringId::Empty;
     auto instruction_pattern = StringId::Empty;
 
-    auto outputs = expand_outputs(ctx, eff_outputs, flags, /*reject_operand_flags=*/false);
+    auto outputs = expand_outputs(ctx, eff_outputs, flags, /*primary=*/nullptr);
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
     }
 
-    auto extra_outputs = expand_outputs(ctx, eff_extra_outputs, flags, /*reject_operand_flags=*/true);
+    auto extra_outputs = expand_outputs(ctx, eff_extra_outputs, flags, &outputs->declared);
     if (!extra_outputs) {
         return pup::unexpected<Error>(extra_outputs.error());
     }
 
     // Expand command with actual outputs for %o substitution.
     // Also capture instruction (after variable expansion, before pattern substitution).
-    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, &instruction_pattern);
+    auto cmd_result = expand_command(ctx, eff_command, flags, outputs->ids, &instruction_pattern);
     if (!cmd_result) {
         return pup::unexpected<Error>(cmd_result.error());
     }
@@ -2119,7 +2126,7 @@ auto expand_rule(
     }
 
     if (eff_display) {
-        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs);
+        auto disp_result = expand_command(ctx, *eff_display, flags, outputs->ids);
         if (!disp_result) {
             return pup::unexpected<Error>(disp_result.error());
         }
@@ -2164,7 +2171,7 @@ auto expand_rule(
         .display = display,
         .inputs = file_inputs,
         .order_only_inputs = order_only_paths,
-        .outputs = *outputs,
+        .outputs = outputs->ids,
         .working_dir = intern(str(ctx.current_dir)),
     };
 
@@ -2201,14 +2208,14 @@ auto expand_rule(
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
     auto all_declared = Vec<PathId> {};
-    all_declared.reserve(outputs->size() + extra_outputs->size());
-    for (auto p : *outputs) {
+    all_declared.reserve(outputs->ids.size() + extra_outputs->ids.size());
+    for (auto p : outputs->ids) {
         all_declared.push_back(p);
     }
-    for (auto p : *extra_outputs) {
+    for (auto p : extra_outputs->ids) {
         all_declared.push_back(p);
     }
-    auto const primary_count = outputs->size();
+    auto const primary_count = outputs->ids.size();
     for (auto i = std::size_t { 0 }; i < all_declared.size(); ++i) {
         auto output_path = all_declared[i];
         // An extra output is owned exactly like a primary, minus the %o operands and {group} (tup.1 extra-outputs).

@@ -110,14 +110,54 @@ putup shall leave an output declared after a second `|` out of the operands `%o`
 While expanding a bang macro, putup shall add the macro's extra outputs to those the rule declares
 rather than replacing them.
 
-### REQ-OUTPUT-EXTRA-NO-OPERAND-FLAG
+### REQ-OUTPUT-EXTRA-OPERAND-FLAG
+
+- conformance: tup-conformant
+- reference: upstream expands `%o` and `%O` inside the extra-outputs section, passing the primary outputs as `use_onl` (`do_rule_outputs`, error text in `tup_printf`), and `%O` appends the declared path truncated at its last dot rather than its basename — pinned by upstream's own `test/t4162-*.sh`, whose expected failure names `sub/out/file.txt.2` for a primary `out/file.txt` under a `sub/%O.txt.2` extra output; tup.1's `%O` entry describes the same and names the bang-macro linker-map case it exists for, while `tup.1`'s extra-outputs prose calls it a basename, which those tests contradict (#423)
+- discharge: test "Scenario: A percent-O extra output names the primary output without its extension"
+- discharge: test "Scenario: A percent-o extra output names the primary outputs"
+- discharge: test "Scenario: A percent-O extra output keeps the directory the output was declared with"
+
+While expanding an extra output, putup shall expand `%o` to the rule's primary outputs and `%O` to
+its single primary output with the extension removed.
+
+### REQ-OUTPUT-OPERAND-FLAG-PLACEMENT
+
+- conformance: tup-conformant
+- reference: both flags read `tup_printf`'s output name list, which upstream binds for a command string, a display string, and the extra-outputs section, and leaves null for the primary outputs section — `do_rule` passes `&onl` when expanding the command and `do_rule_outputs` passes `use_onl`, null for the primary section only. Upstream leaves it null for input path lists too (`eval_path_list`), so it refuses both flags there; putup instead treats the text as a literal filename, which this requirement does not cover. `%O`'s message names the extra-outputs section alone and so understates where it is accepted; putup keeps upstream's wording rather than correcting it, since that is the text a user searches for
+- discharge: test "Scenario: A percent-O in the outputs section is refused"
+- discharge: test "Scenario: A percent-o in the outputs section is refused"
+- discharge: test "Scenario: A percent-O in a command string names the output without its extension"
+
+If a rule spells `%o` or `%O` in its primary outputs section, then putup shall reject the
+Tupfile.
+
+### REQ-OUTPUT-EXTRA-FLAG-ARITY
+
+- conformance: tup-conformant
+- reference: upstream refuses `%O` unless the rule declares exactly one output (`tup_printf`, `num_entries != 1`), wherever `%O` is accepted, pinned by its own `test/t4163-*.sh`; putup would otherwise have to pick one silently, which is how `%O` came to disagree with its own documentation
+- discharge: test "Scenario: A percent-O with more than one output is refused"
+- discharge: test "Scenario: A percent-O in a command string with more than one output is refused"
+
+If a rule spells `%O` anywhere it is accepted while declaring other than exactly one output, then
+putup shall reject the Tupfile.
+
+### REQ-OUTPUT-OPERAND-FLAG-NO-OUTPUTS
+
+- conformance: tup-conformant
+- reference: upstream refuses `%o` when the bound output name list is empty (`tup_printf`, `num_entries == 0`), in the same switch as the `%O` arity guard; expanding it to nothing instead would run a command whose operand silently vanished
+- discharge: test "Scenario: A percent-o in a rule with no outputs is refused"
+
+If a rule spells `%o` while declaring no outputs, then putup shall reject the Tupfile.
+
+### REQ-OUTPUT-EXTRA-FLAG-NO-EXTENSION
 
 - conformance: deliberate-deviation
-- reference: upstream expands `%o` and `%O` inside the extra-outputs section, passing the primary outputs as `use_onl` (`do_rule_outputs`, error text in `tup_printf`), and tup.1's `%O` entry names the bang-macro linker-map case it exists for; putup refuses the form instead, because its own `%O` returns the filename with its extension where `docs/reference.md`'s %-flag table promises it without, so expanding it here would spell a name neither upstream nor putup's documentation predicts (#370)
-- discharge: test "Scenario: A percent-O in an extra outputs section is refused by name"
+- reference: upstream computes the truncation point by scanning back for a dot at four sites and guards `extlesslen == 0` at three of them (`nl_add_external_path`, `nl_add_bin`, `build_name_list_cb`) but not at the fourth, `do_rule_outputs`, which is the one that computes it for an output name; an output with no dot therefore leaves the length at zero and `%O` expands to nothing, declaring an extra output named for the suffix alone. putup keeps the whole name instead, and takes the extension from the filename rather than the whole path, so a dot in a directory cannot truncate a name that has no extension of its own (#423)
+- discharge: test "Scenario: A percent-O on an output with no extension keeps the whole name"
 
-If a rule spells an extra output with `%o` or `%O`, then putup shall reject the Tupfile and name
-the unsupported form.
+While expanding `%O` for an output whose filename has no extension, putup shall expand it to the
+whole output rather than to nothing.
 
 ### REQ-OUTPUT-EXTRA-GROUP-DIR
 
