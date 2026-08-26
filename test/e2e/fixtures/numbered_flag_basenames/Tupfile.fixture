@@ -1,0 +1,1 @@
+: src/foo.c |> echo F=%1f B=%1b BB=%1B > out.txt |> out.txt

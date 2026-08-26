@@ -1020,8 +1020,16 @@ Pattern flags are placeholders expanded at build time.
 |------|-------------|
 | `%1f` | First input file |
 | `%2f` | Second input file |
+| `%1b` | Basename of the first input |
+| `%1B` | Basename of the first input without its extension |
 | `%1o` | First output file |
 | `%2o` | Second output file |
+
+The number must be at least 1 and below 99 (tup's guard rejects 99 itself, despite its message
+naming the range 1-99), a letter must follow it, and that letter must be one of
+`f`, `b`, `B`, `o` or `i` — anything else is a parse error rather than literal text. A number
+that is in range but names an entry the rule does not have expands to nothing, as in tup.
+`%Ni` (N-th order-only input) is not supported yet and is refused by name; see issue #426.
 
 **Examples:**
 
