@@ -1,0 +1,1 @@
+: |> sh -c 'echo hi > %o; echo map > foo.map' |> foo | %O.map

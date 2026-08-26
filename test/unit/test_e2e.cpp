@@ -13300,23 +13300,178 @@ SCENARIO("A bang macro's extra outputs join the rule's own rather than replacing
     }
 }
 
-SCENARIO("A percent-O in an extra outputs section is refused by name", "[e2e][build]")
+SCENARIO("A percent-O extra output names the primary output without its extension", "[e2e][build]")
 {
-    GIVEN("a rule whose extra output is spelled with %O")
+    GIVEN("a rule whose extra output is spelled with %O, upstream's linker-map idiom")
     {
-        auto f = E2EFixture { "extra_output_percent_o_refused" };
+        auto f = E2EFixture { "percent_o_ldmap" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the extra output keeps the primary output's directory and drops its extension")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("sub/out.map"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O in the outputs section is refused", "[e2e][build]")
+{
+    GIVEN("a rule whose primary output is spelled with %O")
+    {
+        auto f = E2EFixture { "percent_o_in_primary_outputs" };
 
         WHEN("the project is configured")
         {
             auto result = f.init();
 
-            THEN("the Tupfile is rejected naming the unsupported form")
+            THEN("the Tupfile is rejected rather than naming an output after itself")
             {
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 auto const combined = result.stdout_output + result.stderr_output;
-                REQUIRE(combined.find("not supported in an extra outputs section") != std::string::npos);
+                REQUIRE(combined.find("%O can only be used in the extra outputs section") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O in a command string names the output without its extension", "[e2e][build]")
+{
+    GIVEN("a rule whose command spells %O")
+    {
+        auto f = E2EFixture { "percent_o_in_command" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the command writes the file %O names")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.map"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O extra output keeps the directory the output was declared with", "[e2e][build]")
+{
+    GIVEN("a rule in a subdirectory whose output is nested and whose extra output carries a prefix")
+    {
+        auto f = E2EFixture { "percent_o_subdir_declared" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the extra output is named from the declared path, not the path it resolves to")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("d/sub/out/file.txt.2"));
+                REQUIRE_FALSE(f.exists("d/sub/d/out/file.txt.2"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O with more than one output is refused", "[e2e][build]")
+{
+    GIVEN("a rule declaring two outputs and an extra output spelled with %O")
+    {
+        auto f = E2EFixture { "percent_o_multiple_outputs" };
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected rather than silently taking the first output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("exactly one output") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O on an output with no extension keeps the whole name", "[e2e][build]")
+{
+    GIVEN("a rule whose only output has no extension")
+    {
+        auto f = E2EFixture { "percent_o_extensionless" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the extra output is named from the whole output rather than from nothing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("foo.map"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-o extra output names the primary outputs", "[e2e][build]")
+{
+    GIVEN("a rule whose extra output is spelled with %o")
+    {
+        auto f = E2EFixture { "percent_lower_o_in_extras" };
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the extra output is named from the primary output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.exists("out.txt.log"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-o in the outputs section is refused", "[e2e][build]")
+{
+    GIVEN("a rule whose primary output is spelled with %o")
+    {
+        auto f = E2EFixture { "percent_lower_o_in_primary" };
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected rather than declaring an output named from nothing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%o can only be used in a command string or extra outputs section") != std::string::npos);
             }
         }
     }
@@ -13415,6 +13570,56 @@ SCENARIO("Declaring another output re-runs the command that writes it", "[e2e][b
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
                 REQUIRE(f.exists("second.txt"));
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-o in a rule with no outputs is refused", "[e2e][build]")
+{
+    GIVEN("a rule whose command spells %o but which declares no outputs")
+    {
+        auto f = E2EFixture { "percent_o_no_outputs" };
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected rather than running a command with the flag dropped")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(
+                    combined.find("%o used in rule pattern and no output files were specified")
+                    != std::string::npos
+                );
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-O in a command string with more than one output is refused", "[e2e][build]")
+{
+    GIVEN("a rule whose command spells %O while the rule declares two outputs")
+    {
+        auto f = E2EFixture { "percent_o_arity_in_command" };
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the arity rule applies outside an extra outputs section too")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(
+                    combined.find("%O can only be used if there is exactly one output specified")
+                    != std::string::npos
+                );
             }
         }
     }

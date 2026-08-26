@@ -1007,8 +1007,8 @@ Pattern flags are placeholders expanded at build time.
 |------|-------------|---------|
 | `%f` | All input files | `gcc %f` → `gcc foo.c bar.c` |
 | `%i` | All inputs (alias for %f) | `gcc %i` → `gcc foo.c bar.c` |
-| `%o` | All output files | `ar rcs %o` → `ar rcs foo.a foo.map` |
-| `%O` | Output basename | `foo.o` → `foo` |
+| `%o` | All output files; the rule must declare at least one | `ar rcs %o` → `ar rcs foo.a foo.map` |
+| `%O` | The output without its extension, keeping its directory — command string or extra outputs section, and only with exactly one output | `sub/foo.so` → `sub/foo` |
 | `%b` | Basename with extension | `foo.c` → `foo.c` |
 | `%B` | Basename without extension | `foo.c` → `foo` |
 | `%e` | Extension only (foreach) | `foo.c` → `c` |
@@ -2834,8 +2834,8 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 
 | Flag | Description |
 |------|-------------|
-| `%o` | All outputs |
-| `%O` | Output basename (without extension) |
+| `%o` | All outputs, and the rule must declare at least one — command string or extra outputs section |
+| `%O` | The one output without its extension, keeping its directory — not in the outputs section |
 
 **Numbered Flags:**
 

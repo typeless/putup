@@ -1,0 +1,1 @@
+: |> sh -c 'echo a > %1o; echo b > %2o; echo m > a.map' |> a.txt b.txt | %O.map
