@@ -13624,3 +13624,26 @@ SCENARIO("A percent-O in a command string with more than one output is refused",
         }
     }
 }
+
+SCENARIO("Numbered input flags name the basename and the basename without extension", "[e2e][build]")
+{
+    GIVEN("a rule whose input sits in a subdirectory and whose command spells %1f, %1b and %1B")
+    {
+        auto f = E2EFixture { "numbered_flag_basenames" };
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("each flag expands to its own spelling of the input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "F=src/foo.c B=foo.c BB=foo\n");
+            }
+        }
+    }
+}

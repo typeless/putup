@@ -364,7 +364,77 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
         REQUIRE(sv(*result) == "src/foo.c");
     }
 
+    SECTION("%Nb - basename of the N-th input")
+    {
+        auto result = expand_pattern(ctx,"%1b", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "foo.c");
+    }
+
+    SECTION("%NB - basename of the N-th input without its extension")
+    {
+        auto result = expand_pattern(ctx,"%1B", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "foo");
+    }
+
     // Note: %i is for order-only inputs, not yet implemented
+}
+
+TEST_CASE("A numbered flag outside one to ninety-nine is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto flags = PatternFlags { .all_inputs = { "a.c" } };
+
+    auto const below = expand_pattern(ctx, "%0f", flags);
+    REQUIRE_FALSE(below.has_value());
+    REQUIRE(sv(below.error().message).find("Expected number from 1-99") != std::string_view::npos);
+
+    auto const above = expand_pattern(ctx, "%200f", flags);
+    REQUIRE_FALSE(above.has_value());
+    REQUIRE(sv(above.error().message).find("Expected number from 1-99") != std::string_view::npos);
+
+    REQUIRE_FALSE(expand_pattern(ctx, "%99f", flags).has_value());
+    REQUIRE(expand_pattern(ctx, "%98f", flags).has_value());
+
+    auto const numbered_t = expand_pattern(ctx, "%0t", flags);
+    REQUIRE_FALSE(numbered_t.has_value());
+    REQUIRE(sv(numbered_t.error().message).find("Expected number from 1-99") != std::string_view::npos);
+}
+
+TEST_CASE("A numbered flag with no letter after its number is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto flags = PatternFlags { .all_inputs = { "a.c" } };
+
+    auto const refused = expand_pattern(ctx, "echo %1", flags);
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(sv(refused.error().message).find("Unfinished") != std::string_view::npos);
+}
+
+TEST_CASE("A numbered flag with an unknown letter is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto flags = PatternFlags { .all_inputs = { "a.c" } };
+
+    auto const refused = expand_pattern(ctx, "%1z", flags);
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(sv(refused.error().message).find("Expected 'f', 'b', 'B', 'o', or 'i'") != std::string_view::npos);
+    REQUIRE_FALSE(expand_pattern(ctx, "%1t", flags).has_value());
+}
+
+TEST_CASE("A numbered order-only input flag is refused as unsupported", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto flags = PatternFlags { .all_inputs = { "a.c" } };
+
+    auto const refused = expand_pattern(ctx, "%1i", flags);
+    REQUIRE_FALSE(refused.has_value());
+    REQUIRE(sv(refused.error().message).find("#426") != std::string_view::npos);
 }
 
 TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")

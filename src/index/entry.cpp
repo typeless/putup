@@ -2,9 +2,11 @@
 // Copyright (c) 2024 Putup authors
 
 #include "pup/index/entry.hpp"
+
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/node_id_map.hpp"
+#include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
@@ -388,18 +390,30 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId
             auto const* end_ptr = tmpl.data() + end;
             std::from_chars(start_ptr, end_ptr, num);
 
-            if (end < tmpl.size() && tmpl[end] == 'f') {
+            auto const letter = end < tmpl.size() ? tmpl[end] : '\0';
+
+            if (letter == 'f' || letter == 'b' || letter == 'B') {
                 if (num > 0 && static_cast<std::size_t>(num) <= cmd.inputs.size()) {
                     auto const* file = index.find_file_by_id(cmd.inputs[static_cast<std::size_t>(num - 1)]);
                     if (file) {
-                        buf += get_relative_path(file->path);
+                        auto const input = get_relative_path(file->path);
+                        if (letter == 'f') {
+                            buf += input;
+                        } else {
+                            auto const base = pup::path::filename(input);
+                            if (letter == 'b') {
+                                buf += base;
+                            } else {
+                                buf += base.substr(0, base.size() - pup::path::extension(base).size());
+                            }
+                        }
                     }
                 }
                 pos = end + 1;
                 continue;
             }
 
-            if (end < tmpl.size() && tmpl[end] == 'o') {
+            if (letter == 'o') {
                 if (num > 0 && static_cast<std::size_t>(num) <= cmd.outputs.size()) {
                     auto const* file = index.find_file_by_id(cmd.outputs[static_cast<std::size_t>(num - 1)]);
                     if (file) {

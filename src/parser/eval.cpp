@@ -435,34 +435,62 @@ auto expand_pattern(
             auto const* end_ptr = text.data() + end;
             std::from_chars(start_ptr, end_ptr, num);
 
-            if (end < text.size() && text[end] == 'f') {
-                // %Nf - N-th input file
-                if (num > 0 && static_cast<std::size_t>(num) <= flags.all_inputs.size()) {
-                    buf.append(flags.all_inputs[static_cast<std::size_t>(num - 1)]);
+            if (num <= 0 || num >= 99) {
+                auto msg = Buf {};
+                msg.fmt("Expected number from 1-99 (base 10) for %-flag, but got {}", num);
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
+            }
+            if (end >= text.size()) {
+                auto msg = Buf {};
+                msg.fmt("Unfinished %{}-flag at the end of the string '{}'", num, text);
+                return make_error<StringId>(ErrorCode::ParseError, msg.view());
+            }
+
+            auto const index = static_cast<std::size_t>(num - 1);
+            auto const letter = text[end];
+
+            if (letter == 'f' || letter == 'b' || letter == 'B') {
+                if (index < flags.all_inputs.size()) {
+                    auto const input = flags.all_inputs[index];
+                    if (letter == 'f') {
+                        buf.append(input);
+                    } else {
+                        auto const base = pup::path::filename(input);
+                        if (letter == 'b') {
+                            buf.append(base);
+                        } else {
+                            buf.append(base.substr(0, base.size() - pup::path::extension(base).size()));
+                        }
+                    }
                 }
                 pos = end + 1;
                 continue;
             }
 
-            if (end < text.size() && text[end] == 'o') {
+            if (letter == 'o') {
                 if (flags.section == PatternSection::Outputs) {
                     return make_error<StringId>(
                         ErrorCode::ParseError,
                         "%o can only be used in a command string or extra outputs section"
                     );
                 }
-                // %No - N-th output file
-                if (num > 0 && static_cast<std::size_t>(num) <= flags.all_outputs.size()) {
-                    buf.append(flags.all_outputs[static_cast<std::size_t>(num - 1)]);
+                if (index < flags.all_outputs.size()) {
+                    buf.append(flags.all_outputs[index]);
                 }
                 pos = end + 1;
                 continue;
             }
 
-            // Not a valid pattern, output as-is
-            buf.append('%');
-            pos = percent + 1;
-            continue;
+            if (letter == 'i') {
+                return make_error<StringId>(
+                    ErrorCode::ParseError,
+                    "%Ni is not supported yet (#426)"
+                );
+            }
+
+            auto msg = Buf {};
+            msg.fmt("Expected 'f', 'b', 'B', 'o', or 'i' after number in %{}-flag, but got '{}'", num, letter);
+            return make_error<StringId>(ErrorCode::ParseError, msg.view());
         }
 
         // Check for %<group> pattern
