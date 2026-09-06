@@ -12574,6 +12574,72 @@ auto count_occurrences(std::string const& haystack, std::string const& needle) -
 
 } // namespace
 
+SCENARIO("A directory refused on a later parse round explains why it was refused", "[e2e][incremental][keep-going]")
+{
+    GIVEN("a generated file that forces a second parse round and refuses gamma only on that round")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/Tupfile", ": foreach *.txt |> cp %f %o |> %B.out\n");
+        f.write_file("beta/Tupfile", ": |> echo hi > %o |> ../gamma/g.txt\n");
+        f.write_file("gamma/Tupfile", ": foreach *.txt |> cp %f %o |> %B.out\n: |> echo x > %o |> g.out\n");
+        f.write_file("zeta/Tupfile", "error zeta-broken\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build", "-k" }).success());
+
+        WHEN("a keep-going build runs")
+        {
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("both directories are refused")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("gamma") != std::string::npos);
+                REQUIRE(combined.find("zeta") != std::string::npos);
+            }
+
+            THEN("the error that refused gamma on the second round is reported")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("g.out") != std::string::npos);
+            }
+
+            THEN("the error carried over from the first round is not repeated")
+            {
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(count_occurrences(result.stderr_output, "zeta-broken") == 1);
+            }
+        }
+    }
+}
+
+SCENARIO("Two directories that fail the same way are each reported", "[e2e][keep-going]")
+{
+    GIVEN("two directories whose Tupfiles produce the same error text")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/Tupfile", "include missing.tup\n");
+        f.write_file("beta/Tupfile", "include missing.tup\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build", "-k" }).success());
+
+        WHEN("a keep-going build runs")
+        {
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("the error is reported once per directory, not once per message")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(count_occurrences(result.stderr_output, "Include file not found") == 2);
+            }
+        }
+    }
+}
+
 SCENARIO("Evaluation failure in a directory parsed on demand is reported once", "[e2e][incremental]")
 {
     GIVEN("alpha depending on a group provided by beta, fully built")

@@ -164,6 +164,7 @@ struct TupfileParseState {
     Vec<StringId> failed;
     Vec<StringId> refused;
     std::size_t errors_printed = 0;
+    Vec<StringId> errors_reported;
     // Append-only paged vectors: push_back preserves references to existing
     // elements, which is critical because recursive Tupfile parsing holds
     // VarDb pointers across calls that may insert new entries.
@@ -608,9 +609,17 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     sorted_erase(ctx.state.parsing, normalized_dir);
 
     if (!result) {
-        // Nested demand-driven parses print their own errors; the watermark keeps each printed once.
         for (auto i = ctx.state.errors_printed; i < ctx.builder_state.errors.size(); ++i) {
-            eprint("error: {}\n", global_pool().get(ctx.builder_state.errors[i]));
+            auto message = global_pool().get(ctx.builder_state.errors[i]);
+            auto key = Buf {};
+            key.append(normalized_dir);
+            key.append('\0');
+            key.append(message);
+            if (sorted_contains(ctx.state.errors_reported, key.view())) {
+                continue;
+            }
+            sorted_insert(ctx.state.errors_reported, key.view());
+            eprint("error: {}\n", message);
         }
         ctx.state.errors_printed = ctx.builder_state.errors.size();
         sorted_insert(ctx.state.failed, normalized_dir);
@@ -1047,6 +1056,7 @@ auto build_context(
         ctx.impl_->state.parsing.clear();
         ctx.impl_->state.failed.clear();
         ctx.impl_->state.refused.clear();
+        ctx.impl_->state.errors_printed = 0;
     }
 
     auto finalized = graph::finalize_graph(ctx.impl_->graph, builder_state);
