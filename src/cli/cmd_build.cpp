@@ -2521,10 +2521,6 @@ auto build_single_variant(
             progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
             auto output = pup::exec::render_tty(progress, variant_name);
             pup::exec::display_progress(output, prev_lines);
-        } else if (!opts.verbose && !opts.dry_run) {
-            progress = pup::exec::job_completed(std::move(progress), job.id, job_result.success);
-            print("\r{} ", pup::global_pool().get(pup::exec::render_simple(progress, variant_name)));
-            flush(Stream::Out);
         }
     });
 
@@ -2603,8 +2599,6 @@ auto build_single_variant(
 
     if (use_tty_progress) {
         pup::exec::finalize_progress(prev_lines);
-    } else if (!opts.verbose && !opts.dry_run) {
-        print("\n");
     }
 
     if (!build_result) {

@@ -16,6 +16,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/terminal.hpp"
 #include "pup/exec/scheduler.hpp"
 #include "pup/graph/dag.hpp"
 #include "pup/platform/file_io.hpp"
@@ -197,8 +198,10 @@ auto configure_single_variant(
         }
     });
 
+    auto use_tty_progress = pup::stdout_is_tty() && !opts.verbose;
+
     scheduler.on_progress([&](std::size_t done, std::size_t total) {
-        if (!opts.verbose) {
+        if (use_tty_progress) {
             print("\r[{}] [{}/{}] ", variant_name, done, total);
             flush(Stream::Out);
         }
@@ -206,7 +209,7 @@ auto configure_single_variant(
 
     auto build_result = scheduler.build(ctx.graph(), &all_commands);
 
-    if (!opts.verbose) {
+    if (use_tty_progress) {
         print("\n");
     }
 

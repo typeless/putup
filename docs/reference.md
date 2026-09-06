@@ -138,7 +138,7 @@ During builds, putup shows ninja-style progress output on TTY terminals:
 - Time format: `M:SS` (minutes:seconds)
 - Display updates in-place using terminal control sequences
 
-For non-TTY output (pipes, files), a simpler `[done/total]` format is used.
+When stdout is not a terminal — a pipe, a file, a CI log — no progress is printed; `-v` reports each command as it runs.
 
 **Examples:**
 ```bash
