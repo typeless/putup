@@ -96,9 +96,14 @@ public:
     auto parsed_dirs() const -> Vec<StringId> const&;
     /// Directories discovered to contain a Tupfile this run, whether or not the
     /// parse of that Tupfile succeeded. A dir in this set but not parsed_dirs()
-    /// failed to parse or was skipped by the scope filter.
+    /// is in refused_dirs() or was skipped by the scope filter.
     [[nodiscard]]
     auto available_dirs() const -> Vec<StringId> const&;
+    /// Directories whose Tupfile this run refused: unreadable, unparseable, or
+    /// failing to evaluate. Non-empty only under keep-going, since without it
+    /// the first refusal ends the parse and no context is returned.
+    [[nodiscard]]
+    auto refused_dirs() const -> Vec<StringId> const&;
     /// Nested-project roots pruned from discovery this run: subtrees this build
     /// has no authority over, so their commands and outputs must be preserved.
     [[nodiscard]]
