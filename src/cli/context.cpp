@@ -411,6 +411,14 @@ auto make_eval_failed_error(std::string_view dir) -> pup::Error
     };
 }
 
+auto make_already_refused_error(std::string_view dir) -> pup::Error
+{
+    return pup::Error {
+        pup::ErrorCode::ParseError,
+        make_err("Tupfile already refused in ", dir)
+    };
+}
+
 struct ParseContext {
     TupfileParseState& state;
     pup::graph::Builder& builder_state;
@@ -487,7 +495,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     }
 
     if (sorted_contains(ctx.state.failed, normalized_dir)) {
-        return pup::unexpected<pup::Error>(make_eval_failed_error(normalized_dir));
+        return pup::unexpected<pup::Error>(make_already_refused_error(normalized_dir));
     }
 
     if (sorted_contains(ctx.state.parsing, normalized_dir)) {
@@ -508,6 +516,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     auto source = read_file(tupfile_path_sv);
     if (!source) {
         sorted_erase(ctx.state.parsing, normalized_dir);
+        sorted_insert(ctx.state.failed, normalized_dir);
         sorted_insert(ctx.state.refused, normalized_dir);
         return pup::unexpected<pup::Error>(make_read_error(tupfile_path_sv));
     }
@@ -516,6 +525,7 @@ auto parse_directory(std::string_view rel_dir, ParseContext& ctx) -> pup::Result
     auto parse_result = pup::parser::parse_tupfile(source_sv, tupfile_path_sv);
     if (!parse_result.success()) {
         sorted_erase(ctx.state.parsing, normalized_dir);
+        sorted_insert(ctx.state.failed, normalized_dir);
         sorted_insert(ctx.state.refused, normalized_dir);
         auto tp = Buf {};
         tp.append(tupfile_path_sv);
@@ -1006,6 +1016,8 @@ auto build_context(
             .on_statement = &ctx_opts.on_statement,
         };
 
+        auto const failed_before = ctx.impl_->state.failed.size();
+
         // Parse to a fixpoint: a group reference under a nested project root
         // composes that subtree into the available set mid-pass, and the new
         // dirs need a pass of their own.
@@ -1033,30 +1045,48 @@ auto build_context(
             }
         }
 
-        // The configure pass parses only the root config, so a partial match set there
-        // is intended rather than a traversal artefact.
-        if (ctx_opts.root_config_only) {
-            break;
-        }
+        auto const new_refusals = ctx.impl_->state.failed.size() != failed_before;
 
-        auto stable = graph::check_glob_stability(ctx.impl_->graph, builder_state);
-        if (stable) {
-            break;
-        }
-        if (round + 1 == max_parse_rounds) {
-            return unexpected<Error>(stable.error());
-        }
+        if (!new_refusals) {
+            // The configure pass parses only the root config, so a partial match set there
+            // is intended rather than a traversal artefact.
+            if (ctx_opts.root_config_only) {
+                break;
+            }
 
-        generated_seed = graph::collect_generated_paths(ctx.impl_->graph);
+            auto stable = graph::check_glob_stability(ctx.impl_->graph, builder_state);
+            if (stable) {
+                break;
+            }
+            if (round + 1 == max_parse_rounds) {
+                return unexpected<Error>(stable.error());
+            }
+
+            generated_seed = graph::collect_generated_paths(ctx.impl_->graph);
+        } else if (round + 1 == max_parse_rounds) {
+            auto unsettled = Buf {};
+            unsettled.append("Parse-round budget exhausted with directories still refused: ");
+            auto first = true;
+            for (auto dir_id : ctx.impl_->state.refused) {
+                if (!first) {
+                    unsettled.append(", ");
+                }
+                first = false;
+                unsettled.append(pool.get(dir_id));
+            }
+            return unexpected<Error>(Error { ErrorCode::ParseError, unsettled.view() });
+        }
 
         auto build_root_name = pool.intern(graph::get_build_root_name(ctx.impl_->graph.graph));
         ctx.impl_->graph = graph::make_build_graph();
         graph::set_build_root_name(ctx.impl_->graph, pool.get(build_root_name));
         ctx.impl_->state.parsed.clear();
         ctx.impl_->state.parsing.clear();
-        ctx.impl_->state.failed.clear();
-        ctx.impl_->state.refused.clear();
         ctx.impl_->state.errors_printed = 0;
+        if (!new_refusals) {
+            ctx.impl_->state.failed.clear();
+            ctx.impl_->state.refused.clear();
+        }
     }
 
     auto finalized = graph::finalize_graph(ctx.impl_->graph, builder_state);
