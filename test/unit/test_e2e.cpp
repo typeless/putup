@@ -12611,6 +12611,14 @@ SCENARIO("A directory refused on a later parse round explains why it was refused
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(count_occurrences(result.stderr_output, "zeta-broken") == 1);
             }
+
+            THEN("none of the rules the refused directory declared ran")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists("build/gamma/g.out"));
+                REQUIRE(result.stderr_output.find("Syntax error") == std::string::npos);
+            }
         }
     }
 }
@@ -12725,6 +12733,255 @@ SCENARIO("Evaluation failure in a directory parsed on demand is reported once", 
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(f.exists("build/beta/b.out"));
                 REQUIRE(count_occurrences(result.stderr_output, "broken") == 1);
+            }
+        }
+    }
+}
+
+SCENARIO("A directory refused mid-evaluation runs none of the rules it declared", "[e2e][keep-going]")
+{
+    GIVEN("a built project whose alpha directory parses cleanly")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        WHEN("beta declares a rule and then fails to evaluate under keep-going")
+        {
+            f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+            f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\nerror later-error\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("the rule beta declared before the failure did not run")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists("build/beta/b.out"));
+            }
+
+            THEN("alpha's output is untouched")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(f.exists("build/alpha/a.out"));
+            }
+
+            THEN("the evaluation error is reported once and the build fails")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("later-error") != std::string::npos);
+                REQUIRE(count_occurrences(result.stderr_output, "later-error") == 1);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("directories were refused") != std::string::npos);
+                REQUIRE_FALSE(result.success());
+            }
+
+            AND_WHEN("beta's Tupfile is repaired and a build runs")
+            {
+                f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+                auto result2 = f.build({ "-B", "build" });
+
+                THEN("the rule that never ran runs now")
+                {
+                    INFO("stdout: " << result2.stdout_output);
+                    INFO("stderr: " << result2.stderr_output);
+                    REQUIRE(result2.success());
+                    REQUIRE(f.exists("build/beta/b.out"));
+                }
+            }
+        }
+    }
+}
+
+SCENARIO("A refused directory's half-declared rule does not reach the shell", "[e2e][keep-going]")
+{
+    GIVEN("a configured project whose alpha directory owns a.out")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/Tupfile", ": |> echo a > %o |> a.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+
+        WHEN("gamma declares a rule claiming alpha's output and then fails to evaluate")
+        {
+            f.write_file("gamma/Tupfile", ": |> echo x > %o |> ../alpha/a.out\nerror later-error\n");
+            auto result = f.build({ "-B", "build", "-k", "--rerun" });
+
+            THEN("the ownership conflict that refused the directory is reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("already owned") != std::string::npos);
+            }
+
+            THEN("no half-declared command reaches the shell")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("Syntax error") == std::string::npos);
+                REQUIRE(result.stdout_output.find("FAILED: echo x > ") == std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED: echo x > ") == std::string::npos);
+            }
+
+            THEN("alpha's rule produced alpha's output and the build fails")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.read_file("build/alpha/a.out").find("a") != std::string::npos);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A refused directory's config rule does not run under configure", "[e2e][keep-going]")
+{
+    GIVEN("a directory that declares a config-generating rule and then fails to evaluate")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("gamma/Tupfile", ": |> echo CONFIG_X=y > %o |> tup.config\nerror later-error\n");
+
+        WHEN("configure runs with keep-going")
+        {
+            auto result = f.pup({ "configure", "-B", "build", "-k" });
+
+            THEN("the refused directory's config rule did not run")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists("build/gamma/tup.config"));
+            }
+
+            THEN("no config-generating rule is found")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stdout_output.find("No config-generating rules found") != std::string::npos);
+            }
+
+            THEN("configure still exits zero")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A refused directory does not stop a sibling's new rule running", "[e2e][keep-going]")
+{
+    GIVEN("a built project whose alpha directory parses cleanly")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+
+        WHEN("alpha gains a rule in the same run that beta is written broken")
+        {
+            f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n: a.c |> cp %f %o |> a2.out\n");
+            f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+            f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\nerror later-error\n");
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("alpha's new rule ran")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(f.exists("build/alpha/a2.out"));
+            }
+
+            THEN("beta's rule did not run and the build fails")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists("build/beta/b.out"));
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A rule consuming a refused directory's output fails the build", "[e2e][keep-going]")
+{
+    GIVEN("alpha consuming an output declared by a gamma that fails to evaluate")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("gamma/Tupfile", ": |> echo x > %o |> g.out\nerror later-error\n");
+        f.write_file("alpha/Tupfile", ": ../gamma/g.out |> cat %f > %o |> a.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build", "-k" }).success());
+
+        WHEN("a keep-going build runs")
+        {
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("the consumer's input is an unresolved ghost")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("Missing input file (unresolved ghost)") != std::string::npos);
+            }
+
+            THEN("the consumer's rule did not run and the build fails")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(f.exists("build/alpha/a.out"));
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A directory that fails to parse is read once however often it is requested", "[e2e][keep-going]")
+{
+    GIVEN("alpha referencing a group in a gamma whose Tupfile does not parse")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("gamma/Tupfile", ": |> echo g > %o |> g.out <grp>\n");
+        f.write_file("alpha/Tupfile", ": | ../gamma/<grp> |> echo a > %o |> a.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        f.write_file("gamma/Tupfile", ":::: garbage (((\n");
+
+        WHEN("a keep-going build runs")
+        {
+            auto result = f.build({ "-B", "build", "-k", "--rerun" });
+
+            THEN("the syntax error is reported once, not once per request")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(count_occurrences(result.stderr_output, "Expected '|>' before command") == 1);
+            }
+
+            THEN("gamma is refused and the build fails")
+            {
+                INFO("stderr: " << result.stderr_output);
+                auto const reported = result.stdout_output.find("directories were refused") != std::string::npos
+                    || result.stderr_output.find("directories were refused") != std::string::npos;
+                REQUIRE(reported);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+
+        WHEN("a build without keep-going runs")
+        {
+            auto result = f.build({ "-B", "build", "--rerun" });
+
+            THEN("the failure names refusal rather than evaluation")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.stderr_output.find("Tupfile evaluation failed") == std::string::npos);
+                REQUIRE_FALSE(result.success());
             }
         }
     }
