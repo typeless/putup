@@ -5865,6 +5865,65 @@ SCENARIO("Explicit multi-variant with -B flags", "[e2e][multi-variant]")
     }
 }
 
+SCENARIO("A multi-variant run fails when one variant's command fails", "[e2e][multi-variant]")
+{
+    GIVEN("two variants whose shared rule fails only under DEBUG")
+    {
+        auto f = E2EFixture { "multi_variant" };
+
+        f.mkdir("build-debug");
+        f.mkdir("build-release");
+        f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
+        f.write_file("build-release/tup.config", "");
+        f.write_file("Tupfile",
+            "ifeq (@(DEBUG),y)\n"
+            ": |> sh -c \"exit 1\" > %o |> out.txt\n"
+            "else\n"
+            ": |> echo ok > %o |> out.txt\n"
+            "endif\n");
+
+        REQUIRE(f.pup({ "configure", "build-*" }).success());
+
+        WHEN("both variants are built in one run")
+        {
+            auto result = f.build({ "-B", "build-debug", "-B", "build-release" });
+
+            THEN("the run fails, even though the other variant succeeded")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(f.read_file("build-release/out.txt") == "ok\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A command killed by a signal fails the build", "[e2e][build]")
+{
+    GIVEN("a rule whose command kills itself with a signal")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("selfkill.sh", "kill -9 $$\n");
+        f.write_file("Tupfile", ": |> exec sh ./selfkill.sh |>\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the build runs")
+        {
+            auto result = f.build();
+
+            THEN("the build fails rather than counting the signalled command as done")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("FAILED: exec sh ./selfkill.sh") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Single -B flag still works", "[e2e][multi-variant]")
 {
     GIVEN("a project with multiple variant directories")
