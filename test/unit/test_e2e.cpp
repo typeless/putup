@@ -184,6 +184,121 @@ SCENARIO("A rule's display text stands in for the command in build output", "[e2
     }
 }
 
+SCENARIO("A build whose output is not a terminal prints no progress counter", "[e2e][build][progress]")
+{
+    GIVEN("a project with several commands to run")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": |> echo a > %o |> a.txt\n"
+            ": |> echo b > %o |> b.txt\n"
+            ": |> echo c > %o |> c.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("its stdout is a pipe rather than a terminal")
+        {
+            auto result = f.build({});
+            REQUIRE(result.success());
+
+            THEN("no per-command progress reaches the captured output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("[1/3]") == std::string::npos);
+                REQUIRE(result.stdout_output.find("[2/3]") == std::string::npos);
+                REQUIRE(result.stdout_output.find("[3/3]") == std::string::npos);
+                REQUIRE(result.stdout_output.find('\r') == std::string::npos);
+            }
+
+            THEN("the completion summary still reports the work")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("Build completed") != std::string::npos);
+            }
+
+            THEN("the summary is the only line the build reports")
+            {
+                INFO("stdout: " << result.stdout_output);
+                auto reported = std::vector<std::string> {};
+                auto stream = std::istringstream { result.stdout_output };
+                for (auto line = std::string {}; std::getline(stream, line);) {
+                    if (line.empty() || line.find("Initialized pup in") != std::string::npos) {
+                        continue;
+                    }
+                    reported.push_back(line);
+                }
+                REQUIRE(reported.size() == 1);
+                REQUIRE(reported.front().starts_with("[.] Build completed: 3 commands in "));
+            }
+        }
+    }
+}
+
+SCENARIO("A configure whose output is not a terminal prints no progress counter", "[e2e][configure][progress]")
+{
+    GIVEN("a project whose configure runs a config-generating rule")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.remove_file("Tupfile");
+        f.mkdir("configs");
+        f.write_file("configs/Tupfile", ": |> echo CONFIG_X=y > %o |> tup.config\n");
+
+        WHEN("its stdout is a pipe rather than a terminal")
+        {
+            auto result = f.pup({ "configure", "-B", "build" });
+            REQUIRE(result.success());
+
+            THEN("no per-command progress reaches the captured output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("[1/1]") == std::string::npos);
+                REQUIRE(result.stdout_output.find('\r') == std::string::npos);
+            }
+
+            THEN("the config rule still ran and is still reported")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("Configure completed") != std::string::npos);
+                REQUIRE(f.exists("build/tup.config"));
+            }
+        }
+    }
+}
+
+SCENARIO("A failing build whose output is not a terminal prints no progress counter", "[e2e][build][progress]")
+{
+    GIVEN("a project where one of two commands fails")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            ": |> echo a > %o |> a.txt\n"
+            ": |> sh -c \"echo boom >&2; exit 1\" > %o |> b.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("its stdout is a pipe rather than a terminal")
+        {
+            auto result = f.build({ "-k" });
+            REQUIRE_FALSE(result.success());
+
+            THEN("no per-command progress reaches the captured output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                REQUIRE(result.stdout_output.find("[1/") == std::string::npos);
+                REQUIRE(result.stdout_output.find("[2/") == std::string::npos);
+                REQUIRE(result.stdout_output.find('\r') == std::string::npos);
+            }
+
+            THEN("the failure is still reported by its command line")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("FAILED: sh -c") != std::string::npos);
+                REQUIRE(combined.find("boom") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Percent flags inside display text expand against the rule", "[e2e][build][display]")
 {
     GIVEN("a rule whose display annotation names its output and stem")

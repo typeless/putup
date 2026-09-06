@@ -542,13 +542,6 @@ TEST_CASE("format_duration renders M:SS with zero-padded seconds", "[exec][progr
     REQUIRE(sv(format_duration(std::chrono::milliseconds { 754 * 1000 })) == "12:34");
 }
 
-TEST_CASE("render_simple counts done over total", "[exec][progress]")
-{
-    auto state = ProgressState { .total = 10, .completed = 3, .failed = 1 };
-    REQUIRE(sv(render_simple(state)) == "[4/10]");
-    REQUIRE(sv(render_simple(state, "host")) == "[host] [4/10]");
-}
-
 TEST_CASE("render_tty prefixes percent and counts", "[exec][progress]")
 {
     auto state = ProgressState { .total = 4, .completed = 2 };

@@ -55,10 +55,6 @@ auto job_completed(ProgressState state, NodeId id, bool success) -> ProgressStat
 [[nodiscard]]
 auto render_tty(ProgressState const& state, std::string_view variant = {}) -> ProgressOutput;
 
-/// Render progress for non-TTY (single line)
-[[nodiscard]]
-auto render_simple(ProgressState const& state, std::string_view variant = {}) -> StringId;
-
 /// Format duration as M:SS
 [[nodiscard]]
 auto format_duration(std::chrono::milliseconds ms) -> StringId;

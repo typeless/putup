@@ -123,21 +123,6 @@ auto render_tty(ProgressState const& state, std::string_view variant) -> Progres
     return result;
 }
 
-auto render_simple(ProgressState const& state, std::string_view variant) -> StringId
-{
-    auto out = Buf {};
-    auto done = state.completed + state.failed;
-
-    if (!variant.empty()) {
-        out += '[';
-        out += variant;
-        out += "] ";
-    }
-    out.fmt("[{}/{}]", done, state.total);
-
-    return out.intern(global_pool());
-}
-
 auto format_duration(std::chrono::milliseconds ms) -> StringId
 {
     auto secs = static_cast<std::size_t>(ms.count() / 1000);
