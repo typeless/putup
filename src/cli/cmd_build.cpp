@@ -166,6 +166,19 @@ auto veprint(std::string_view variant_name, std::string_view pattern, Args const
     eprint(pattern, args...);
 }
 
+auto report_refused_dirs(std::string_view variant_name, Vec<StringId> const& refused) -> void
+{
+    auto& pool = global_pool();
+    auto list = Buf {};
+    for (auto dir_id : refused) {
+        if (!list.empty()) {
+            list.append(", ");
+        }
+        list.append(pool.get(dir_id));
+    }
+    veprint(variant_name, "Build failed: {} directories were refused: {}\n", refused.size(), list.view());
+}
+
 auto is_tupfile(std::string_view path) -> bool
 {
     return path.ends_with("/Tupfile") || path.ends_with("/Tuprules.tup")
@@ -2204,6 +2217,7 @@ auto build_single_variant(
     }
 
     auto& ctx = *result;
+    auto const refused_dir_count = std::size_t { ctx.refused_dirs().size() };
     auto& bs = ctx.graph();
     // No early exit on an empty graph: having nothing to run is not having nothing to clean up (#231).
     auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
@@ -2397,11 +2411,15 @@ auto build_single_variant(
 
         // A retired record is not "nothing to do": only the write below persists the retirement (#245).
         if (changed_files.empty() && forced_cmds.empty() && !retired_commands) {
-            vprint(variant_name, "Nothing to do (up to date).\n");
+            if (refused_dir_count > 0) {
+                report_refused_dirs(variant_name, ctx.refused_dirs());
+            } else {
+                vprint(variant_name, "Nothing to do (up to date).\n");
+            }
             if (opts.stat) {
                 print_stats(idx, index_path, num_commands, 0, variant_start);
             }
-            return EXIT_SUCCESS;
+            return refused_dir_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
         }
 
         use_incremental = true;
@@ -2600,7 +2618,9 @@ auto build_single_variant(
     }
 
     if (stats.completed_jobs == 0 && stats.failed_jobs == 0) {
-        vprint(variant_name, "Nothing to do.\n");
+        if (refused_dir_count == 0) {
+            vprint(variant_name, "Nothing to do.\n");
+        }
     } else if (stats.failed_jobs > 0) {
         // Ahead of the dry-run branch so that a scheduler which ever fails a dry job reports it.
         vprint(variant_name, "Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
@@ -2609,6 +2629,10 @@ auto build_single_variant(
         vprint(variant_name, "Would run: {} commands\n", stats.completed_jobs);
     } else {
         vprint(variant_name, "Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
+    }
+
+    if (refused_dir_count > 0) {
+        report_refused_dirs(variant_name, ctx.refused_dirs());
     }
 
     auto final_index = std::optional<pup::index::Index> {};
@@ -2662,7 +2686,7 @@ auto build_single_variant(
     }
 
     // A build owes a record of what it ran: without one the next build cannot tell it happened.
-    return stats.failed_jobs > 0 || !index_saved ? EXIT_FAILURE : EXIT_SUCCESS;
+    return stats.failed_jobs > 0 || !index_saved || refused_dir_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 } // anonymous namespace

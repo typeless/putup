@@ -3202,7 +3202,7 @@ SCENARIO("A directory that failed to parse keeps the record of what it produced"
         WHEN("a keep-going build runs past the parse failure and the rule is then dropped")
         {
             f.write_file("b/Tupfile", "include nope.tup\n");
-            REQUIRE(f.build({ "-k" }).success());
+            REQUIRE_FALSE(f.build({ "-k" }).success());
             f.write_file("b/Tupfile", "# no rules\n");
             auto result = f.build({ "-v" });
 
@@ -12352,6 +12352,13 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to parse", 
             {
                 REQUIRE(f.exists("build/alpha/a.out"));
             }
+
+            THEN("the build does not report success")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
         }
     }
 }
@@ -12387,6 +12394,13 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to evaluate
             {
                 REQUIRE(result.stderr_output.find("broken") != std::string::npos);
             }
+
+            THEN("the build does not report success")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
         }
 
         WHEN("beta's Tupfile uses an unknown bang macro and a keep-going build runs")
@@ -12404,6 +12418,13 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to evaluate
             THEN("the evaluation error is reported")
             {
                 REQUIRE(result.stderr_output.find("nope") != std::string::npos);
+            }
+
+            THEN("the build does not report success")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
             }
         }
 
@@ -12423,6 +12444,13 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to evaluate
             {
                 REQUIRE(result.stderr_output.find("missing.tup") != std::string::npos);
             }
+
+            THEN("the build does not report success")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
         }
 
         WHEN("beta's Tupfile uses an unknown bang macro and a verbose keep-going build runs")
@@ -12440,6 +12468,94 @@ SCENARIO("keep-going build preserves outputs of a Tupfile that fails to evaluate
             THEN("the evaluation error is reported")
             {
                 REQUIRE(result.stderr_output.find("nope") != std::string::npos);
+            }
+
+            THEN("the build does not report success")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
+        }
+    }
+}
+
+SCENARIO("A keep-going build that refused a directory does not report it up to date", "[e2e][incremental][keep-going]")
+{
+    GIVEN("a fully-built two-directory project whose beta stops evaluating")
+    {
+        auto f = E2EFixture { "scoped_stale" };
+        f.write_file("alpha/a.c", "int a(void) { return 1; }\n");
+        f.write_file("alpha/Tupfile", ": a.c |> cp %f %o |> a.out\n");
+        f.write_file("beta/b.c", "int b(void) { return 2; }\n");
+        f.write_file("beta/Tupfile", ": b.c |> cp %f %o |> b.out\n");
+        f.write_file("build/tup.config", "");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        REQUIRE(f.build({ "-B", "build" }).success());
+        f.write_file("beta/Tupfile", "include missing.tup\n: b.c |> cp %f %o |> b.out\n");
+
+        WHEN("a keep-going build runs")
+        {
+            auto result = f.build({ "-B", "build", "-k" });
+
+            THEN("it fails rather than reporting there was nothing to do")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("Nothing to do") == std::string::npos);
+            }
+
+            AND_WHEN("a second keep-going build runs with nothing changed")
+            {
+                auto again = f.build({ "-B", "build", "-k" });
+
+                THEN("it fails too, rather than reporting the tree up to date")
+                {
+                    INFO("stdout: " << again.stdout_output);
+                    INFO("stderr: " << again.stderr_output);
+                    REQUIRE_FALSE(again.success());
+                    REQUIRE(again.stdout_output.find("up to date") == std::string::npos);
+                }
+            }
+        }
+
+        WHEN("the directory that stopped evaluating is excluded")
+        {
+            auto result = f.build({ "-B", "build", "-k", "-x", "beta" });
+
+            THEN("the build succeeds, because nothing refused a directory this build asked for")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+            }
+        }
+
+        WHEN("alpha asks for beta through a group and the build is scoped to alpha")
+        {
+            f.write_file("alpha/Tupfile", ": a.c | ../beta/<grp> |> cp %f %o |> a.out\n");
+            f.write_file("beta/Tupfile", "error broken\n: b.c |> cp %f %o |> b.out <grp>\n");
+            auto result = f.build({ "-B", "build", "-k", "alpha" });
+
+            THEN("it fails, because the group reference asked for beta")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+            }
+
+            AND_WHEN("beta is excluded rather than the build being scoped")
+            {
+                auto excluded = f.build({ "-B", "build", "-k", "-x", "beta" });
+
+                THEN("it fails too, since excluding beta does not unask for its group")
+                {
+                    INFO("stdout: " << excluded.stdout_output);
+                    INFO("stderr: " << excluded.stderr_output);
+                    REQUIRE_FALSE(excluded.success());
+                }
             }
         }
     }
@@ -12510,6 +12626,13 @@ SCENARIO("Evaluation failure in a directory parsed on demand is reported once", 
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(count_occurrences(result.stderr_output, "broken") == 1);
                 REQUIRE(result.stderr_output.find("already owned") == std::string::npos);
+            }
+
+            THEN("the build fails")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
             }
         }
 
