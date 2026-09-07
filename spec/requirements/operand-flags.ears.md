@@ -88,3 +88,12 @@ reference through as text rather than splice the group's members.
 
 When a rule's inputs section names a group, putup shall make that reference an operand at the
 position it was written.
+
+### REQ-OPERAND-RECORDED-COMMAND-FOLDS-THROUGH-THE-FUNNEL
+
+- conformance: putup-only
+- reference: upstream has no requirement of this shape because it has nothing to reconcile — `tup_printf` expands a command once and stores the finished string, so there is one expander and no second reader to disagree with it. putup defers expansion so a template can be shared, which buys that sharing at the price of one expander per place a command is reconstructed: the parser's, the scheduler's, and a third inside the index that re-read the recorded template with a scanner of its own. That third one had already drifted — it spelled `%O` as the output's basename with its extension kept, the reading `output-paths` rejects, because the change that gave `%O` upstream's meaning could not see a copy the compiler never pointed at. Folding every site through one total switch over the atom kinds makes the next such change a compile error rather than a silent third answer
+- discharge: test "Scenario: A recorded command and a graph command expand a template the same way"
+
+When putup reconstructs a command from its recorded template, putup shall produce the command
+string the graph produces for that same command.

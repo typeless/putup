@@ -164,6 +164,15 @@ auto extension(std::string_view p) -> std::string_view
     return name.substr(dot);
 }
 
+auto bare_extension(std::string_view p) -> std::string_view
+{
+    auto ext = extension(p);
+    if (!ext.empty() && ext[0] == '.') {
+        ext.remove_prefix(1);
+    }
+    return ext;
+}
+
 auto is_absolute(std::string_view p) -> bool
 {
     return root_length(p) != 0;
