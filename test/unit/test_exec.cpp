@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "instruction_support.hpp"
 #include "temp_root.hpp"
 
 #include "pup/core/global_pool.hpp"
@@ -195,7 +196,7 @@ TEST_CASE("Scheduler basic operation", "[exec]")
 
         auto cmd_id = graph::add_command_node(bs.graph, graph::CommandNode {
             .display = intern("CAT input.txt"),
-            .instruction_id = intern("cat input.txt > output.txt"),
+            .instruction = pup::test::instruction("cat input.txt > output.txt"),
         });
 
         auto output_id = graph::add_file_node(bs.graph, graph::FileNode {
@@ -233,10 +234,10 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         auto b_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("b.c") });
 
         auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc -c a.c -o a.o"),
+            .instruction = pup::test::instruction("gcc -c a.c -o a.o"),
         });
         auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc -c b.c -o b.o"),
+            .instruction = pup::test::instruction("gcc -c b.c -o b.o"),
         });
 
         auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
@@ -263,11 +264,11 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
 
         auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("a.c") });
         auto compile_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc -c a.c -o a.o"),
+            .instruction = pup::test::instruction("gcc -c a.c -o a.o"),
         });
         auto a_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
         auto link_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc a.o -o a.out"),
+            .instruction = pup::test::instruction("gcc a.o -o a.out"),
         });
         auto a_out = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("a.out") });
 
@@ -297,15 +298,15 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
 
         auto a_c = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("main.c") });
         auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc -c main.c -o main.o"),
+            .instruction = pup::test::instruction("gcc -c main.c -o main.o"),
         });
         auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc -c main.c -o main_opt.o"),
+            .instruction = pup::test::instruction("gcc -c main.c -o main_opt.o"),
         });
         auto main_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("main.o") });
         auto main_opt_o = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("main_opt.o") });
         auto link_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc main.o main_opt.o -o app"),
+            .instruction = pup::test::instruction("gcc main.o main_opt.o -o app"),
         });
         auto app = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("app") });
 
@@ -335,9 +336,9 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         auto bs = graph::make_build_graph();
 
         auto src = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("lib.c") });
-        auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -O0 lib.c -o lib_debug.o") });
-        auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -O2 lib.c -o lib_opt.o") });
-        auto cmd3 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction_id = intern("gcc -c -Os lib.c -o lib_size.o") });
+        auto cmd1 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction = pup::test::instruction("gcc -c -O0 lib.c -o lib_debug.o") });
+        auto cmd2 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction = pup::test::instruction("gcc -c -O2 lib.c -o lib_opt.o") });
+        auto cmd3 = graph::add_command_node(bs.graph, graph::CommandNode { .instruction = pup::test::instruction("gcc -c -Os lib.c -o lib_size.o") });
         auto out1 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_debug.o") });
         auto out2 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_opt.o") });
         auto out3 = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("lib_size.o") });
@@ -370,7 +371,7 @@ TEST_CASE("Scheduler parallel dependencies", "[exec]")
         auto b_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("b.o") });
         auto c_o = graph::add_file_node(bs.graph, graph::FileNode { .name = intern("c.o") });
         auto link_cmd = graph::add_command_node(bs.graph, graph::CommandNode {
-            .instruction_id = intern("gcc a.o b.o c.o -o program"),
+            .instruction = pup::test::instruction("gcc a.o b.o c.o -o program"),
         });
         auto program = graph::add_file_node(bs.graph, graph::FileNode { .type = NodeType::Generated, .name = intern("program") });
 
@@ -406,7 +407,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         // Command that echoes the exported var
         auto cmd_node = graph::CommandNode {
-            .instruction_id = intern("echo $PUP_TEST_EXPORT_VAR | tee " + pup::test::temp_path("test_output.txt").string()),
+            .instruction = pup::test::instruction("echo $PUP_TEST_EXPORT_VAR | tee " + pup::test::temp_path("test_output.txt").string()),
         };
         cmd_node.exported_vars.insert(to_underlying(intern("PUP_TEST_EXPORT_VAR")));
         auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));
@@ -454,7 +455,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
         });
 
         auto cmd_node = graph::CommandNode {
-            .instruction_id = intern("echo \"[$PUP_TEST_ORDER_A|$PUP_TEST_ORDER_M|$PUP_TEST_ORDER_Z]\" | tee " + pup::test::temp_path("test_export_order.txt").string()),
+            .instruction = pup::test::instruction("echo \"[$PUP_TEST_ORDER_A|$PUP_TEST_ORDER_M|$PUP_TEST_ORDER_Z]\" | tee " + pup::test::temp_path("test_export_order.txt").string()),
         };
         cmd_node.exported_vars.insert(to_underlying(z_id));
         cmd_node.exported_vars.insert(to_underlying(m_id));
@@ -499,7 +500,7 @@ TEST_CASE("Scheduler exported_vars", "[exec]")
 
         // Command without exported_vars - var should NOT be in env
         auto cmd_node = graph::CommandNode {
-            .instruction_id = intern("echo ${PUP_TEST_HIDDEN_VAR:-default} | tee " + pup::test::temp_path("test_output2.txt").string()),
+            .instruction = pup::test::instruction("echo ${PUP_TEST_HIDDEN_VAR:-default} | tee " + pup::test::temp_path("test_output2.txt").string()),
         };
         // Note: exported_vars is empty
         auto cmd_id = graph::add_command_node(bs.graph, std::move(cmd_node));

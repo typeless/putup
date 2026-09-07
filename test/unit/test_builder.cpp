@@ -1920,7 +1920,7 @@ TEST_CASE("GraphBuilder inactive branch rules expand branch-local assignments", 
 
     auto found = false;
     for (std::size_t i = 0; i < bs.graph.commands.size(); ++i) {
-        auto instruction = sv(bs.graph.commands[i].instruction_id);
+        auto instruction = sv(pup::render_instruction(bs.graph.commands[i].instruction));
         if (instruction.find("branchval") != std::string_view::npos) {
             found = true;
         }

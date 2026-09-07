@@ -4,6 +4,7 @@
 #pragma once
 
 #include "pup/core/arena.hpp"
+#include "pup/core/instruction.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path_id.hpp"
 #include "pup/core/path_pool.hpp"
@@ -59,13 +60,13 @@ struct Guard {
 /// Command node - represents build commands
 /// Note: Type is determined by node_id::is_command(), not a stored field.
 /// Command string is reconstructed on demand via expand_instruction() from
-/// instruction_id + explicit operand NodeIds (inputs/outputs).
+/// instruction atoms + explicit operand NodeIds (inputs/outputs).
 struct CommandNode {
     NodeId id = 0;
 
-    StringId display = StringId::Empty;        ///< Display text (from ^ ^ markers, interned)
-    StringId source_dir = StringId::Empty;     ///< Tupfile directory (relative to root, interned)
-    StringId instruction_id = StringId::Empty; ///< Instruction pattern (e.g. "gcc -c %f -o %o")
+    StringId display = StringId::Empty;    ///< Display text (from ^ ^ markers, interned)
+    StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
+    Instruction instruction = {};          ///< Instruction atoms (e.g. "gcc -c %f -o %o")
 
     Vec<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion
     Vec<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion

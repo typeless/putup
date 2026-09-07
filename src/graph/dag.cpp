@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -411,7 +410,8 @@ auto get<SourceDir>(Graph const& graph, NodeId id) -> StringId
 template<>
 auto get<InstructionPattern>(Graph const& graph, NodeId id) -> StringId
 {
-    return read_command_field(graph, id, &CommandNode::instruction_id, StringId::Empty);
+    auto const* cmd = get_command_node(graph, id);
+    return cmd ? render_instruction(cmd->instruction) : StringId::Empty;
 }
 
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>
@@ -820,6 +820,116 @@ auto path_extension(std::string_view name) -> std::string_view
 
 /// Core expansion logic parameterized on the path resolver.
 template<typename PathResolver>
+struct ExecSite {
+    Graph const& graph;
+    CommandNode const* cmd;
+    PathCache& cache;
+    std::string_view source_dir;
+    PathResolver const& get_operand_path;
+
+    auto operand_name(NodeId id) const -> std::string_view
+    {
+        return global_pool().get(get<Name>(graph, id));
+    }
+
+    auto append_literal(Buf& buf, StringId text) const -> void { buf += global_pool().get(text); }
+
+    auto append_group_ref(Buf& buf, StringId name) const -> void
+    {
+        buf += "%<";
+        buf += global_pool().get(name);
+        buf += '>';
+    }
+
+    auto append_all_inputs(Buf& buf) const -> void
+    {
+        for (std::size_t i = 0; i < cmd->inputs.size(); ++i) {
+            if (i > 0) {
+                buf += ' ';
+            }
+            buf += get_operand_path(cmd->inputs[i]);
+        }
+    }
+
+    auto append_input_base(Buf& buf) const -> void
+    {
+        if (!cmd->inputs.empty()) {
+            buf += path_basename(get_full_path(graph, cmd->inputs[0], cache));
+        }
+    }
+
+    auto append_input_noext(Buf& buf) const -> void
+    {
+        if (!cmd->inputs.empty()) {
+            buf += path_stem(operand_name(cmd->inputs[0]));
+        }
+    }
+
+    auto append_input_ext(Buf& buf) const -> void
+    {
+        if (!cmd->inputs.empty()) {
+            buf += path_extension(operand_name(cmd->inputs[0]));
+        }
+    }
+
+    auto append_all_outputs(Buf& buf) const -> void
+    {
+        for (std::size_t i = 0; i < cmd->outputs.size(); ++i) {
+            if (i > 0) {
+                buf += ' ';
+            }
+            buf += get_operand_path(cmd->outputs[i]);
+        }
+    }
+
+    auto append_output_noext(Buf& buf) const -> void
+    {
+        if (cmd->outputs.size() == 1) {
+            auto const only = get_operand_path(cmd->outputs[0]);
+            buf += only.substr(0, only.size() - pup::path::extension(only).size());
+        }
+    }
+
+    auto append_input_dir(Buf& buf) const -> void
+    {
+        if (source_dir.empty()) {
+            return;
+        }
+        auto const slash = source_dir.rfind('/');
+        buf += slash != std::string_view::npos ? source_dir.substr(slash + 1) : source_dir;
+    }
+
+    auto append_nth_input(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < cmd->inputs.size()) {
+            buf += get_operand_path(cmd->inputs[index]);
+        }
+    }
+
+    auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < cmd->inputs.size()) {
+            buf += pup::path::filename(get_operand_path(cmd->inputs[index]));
+        }
+    }
+
+    auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < cmd->inputs.size()) {
+            auto const base = pup::path::filename(get_operand_path(cmd->inputs[index]));
+            buf += base.substr(0, base.size() - pup::path::extension(base).size());
+        }
+    }
+
+    auto append_nth_output(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < cmd->outputs.size()) {
+            buf += get_operand_path(cmd->outputs[index]);
+        }
+    }
+};
+
+template<typename PathResolver>
 auto expand_instruction_impl(
     Graph const& graph,
     NodeId cmd_id,
@@ -832,151 +942,20 @@ auto expand_instruction_impl(
         return StringId::Empty;
     }
 
-    auto pattern = global_pool().get(cmd->instruction_id);
-    if (pattern.empty()) {
+    if (cmd->instruction.empty()) {
         return StringId::Empty;
     }
 
-    auto source_dir = global_pool().get(cmd->source_dir);
-
-    auto get_operand_name = [&](NodeId id) -> std::string_view {
-        return global_pool().get(get<Name>(graph, id));
-    };
-
-    auto buf = Buf {};
-    auto pos = std::size_t { 0 };
-
-    while (pos < pattern.size()) {
-        auto percent = pattern.find('%', pos);
-        if (percent == std::string_view::npos) {
-            buf += pattern.substr(pos);
-            break;
+    return fold_instruction(
+        cmd->instruction,
+        ExecSite<PathResolver> {
+            graph,
+            cmd,
+            cache,
+            global_pool().get(cmd->source_dir),
+            get_operand_path,
         }
-
-        buf += pattern.substr(pos, percent - pos);
-
-        if (percent + 1 >= pattern.size()) {
-            buf += '%';
-            pos = percent + 1;
-            continue;
-        }
-
-        auto flag = pattern[percent + 1];
-        pos = percent + 2;
-
-        if (flag == '%') {
-            buf += '%';
-            continue;
-        }
-
-        if (flag >= '0' && flag <= '9') {
-            auto end = pos;
-            while (end < pattern.size() && pattern[end] >= '0' && pattern[end] <= '9') {
-                ++end;
-            }
-
-            auto num = 0;
-            auto const* start_ptr = pattern.data() + percent + 1;
-            auto const* end_ptr = pattern.data() + end;
-            std::from_chars(start_ptr, end_ptr, num);
-
-            auto const letter = end < pattern.size() ? pattern[end] : '\0';
-
-            if (letter == 'f' || letter == 'b' || letter == 'B') {
-                if (num > 0 && static_cast<std::size_t>(num) <= cmd->inputs.size()) {
-                    auto const input = get_operand_path(cmd->inputs[static_cast<std::size_t>(num - 1)]);
-                    if (letter == 'f') {
-                        buf += input;
-                    } else {
-                        auto const base = pup::path::filename(input);
-                        if (letter == 'b') {
-                            buf += base;
-                        } else {
-                            buf += base.substr(0, base.size() - pup::path::extension(base).size());
-                        }
-                    }
-                }
-                pos = end + 1;
-                continue;
-            }
-
-            if (letter == 'o') {
-                if (num > 0 && static_cast<std::size_t>(num) <= cmd->outputs.size()) {
-                    buf += get_operand_path(cmd->outputs[static_cast<std::size_t>(num - 1)]);
-                }
-                pos = end + 1;
-                continue;
-            }
-
-            buf += '%';
-            pos = percent + 1;
-            continue;
-        }
-
-        switch (flag) {
-        case 'f':
-        case 'i': {
-            for (std::size_t i = 0; i < cmd->inputs.size(); ++i) {
-                if (i > 0) {
-                    buf += ' ';
-                }
-                buf += get_operand_path(cmd->inputs[i]);
-            }
-            break;
-        }
-        case 'b': {
-            if (!cmd->inputs.empty()) {
-                buf += path_basename(get_full_path(graph, cmd->inputs[0], cache));
-            }
-            break;
-        }
-        case 'B': {
-            if (!cmd->inputs.empty()) {
-                buf += path_stem(get_operand_name(cmd->inputs[0]));
-            }
-            break;
-        }
-        case 'e': {
-            if (!cmd->inputs.empty()) {
-                buf += path_extension(get_operand_name(cmd->inputs[0]));
-            }
-            break;
-        }
-        case 'o': {
-            for (std::size_t i = 0; i < cmd->outputs.size(); ++i) {
-                if (i > 0) {
-                    buf += ' ';
-                }
-                buf += get_operand_path(cmd->outputs[i]);
-            }
-            break;
-        }
-        case 'O': {
-            if (cmd->outputs.size() == 1) {
-                auto const only = get_operand_path(cmd->outputs[0]);
-                buf += only.substr(0, only.size() - pup::path::extension(only).size());
-            }
-            break;
-        }
-        case 'd': {
-            if (!source_dir.empty()) {
-                auto slash = source_dir.rfind('/');
-                if (slash != std::string_view::npos) {
-                    buf += source_dir.substr(slash + 1);
-                } else {
-                    buf += source_dir;
-                }
-            }
-            break;
-        }
-        default:
-            buf += '%';
-            buf += flag;
-            break;
-        }
-    }
-
-    return buf.intern(global_pool());
+    );
 }
 
 auto expand_instruction(Graph const& graph, NodeId cmd_id, PathCache& cache) -> StringId

@@ -499,7 +499,7 @@ auto get_or_create_group_node(
 auto create_command_node(
     BuilderContext& ctx,
     Builder& state,
-    std::string_view instruction,
+    Instruction instruction,
     std::string_view display
 ) -> Result<NodeId>
 {
@@ -509,7 +509,7 @@ auto create_command_node(
     auto node = CommandNode {
         .display = intern(display),
         .source_dir = ctx.current_dir,
-        .instruction_id = intern(instruction),
+        .instruction = std::move(instruction),
         .exported_vars = std::move(exported),
         .guards = ctx.condition_stack,
     };
@@ -813,29 +813,28 @@ auto apply_exclusions(
 // §7 — Input/output expansion
 // ---------------------------------------------------------------------------
 
-/// Resolve %g only, leaving every other flag for the graph-time expander: %g is the
-/// one flag not derivable from a command's operands, so it cannot be expanded later.
-auto substitute_glob_match(std::string_view text, std::string_view match) -> StringId
+/// Generated command text is not a Tupfile template: every byte is literal except a
+/// %<group> marker, which pass 2 still has to resolve.
+auto atoms_from_generated_text(std::string_view text) -> Instruction
 {
-    auto buf = Buf {};
+    auto builder = InstructionBuilder {};
     auto pos = std::size_t { 0 };
     while (pos < text.size()) {
-        auto percent = text.find('%', pos);
-        if (percent == std::string_view::npos || percent + 1 >= text.size()) {
-            buf.append(text.substr(pos));
+        auto const marker = text.find("%<", pos);
+        if (marker == std::string_view::npos) {
+            builder.literal(text.substr(pos));
             break;
         }
-        buf.append(text.substr(pos, percent - pos));
-        auto flag = text[percent + 1];
-        if (flag == 'g') {
-            buf.append(match);
-        } else {
-            buf.append('%');
-            buf.append(flag);
+        auto const close = text.find('>', marker + 2);
+        if (close == std::string_view::npos) {
+            builder.literal(text.substr(pos));
+            break;
         }
-        pos = percent + 2;
+        builder.literal(text.substr(pos, marker - pos));
+        builder.group_ref(text.substr(marker + 2, close - marker - 2));
+        pos = close + 1;
     }
-    return buf.intern(global_pool());
+    return builder.take();
 }
 
 auto expand_command(
@@ -843,7 +842,7 @@ auto expand_command(
     parser::Expression const& cmd,
     parser::PatternFlags flags,
     Vec<PathId> const& outputs,
-    StringId* out_instruction = nullptr
+    Instruction* out_instruction = nullptr
 ) -> Result<StringId>
 {
     auto& pool = global_pool();
@@ -855,10 +854,6 @@ auto expand_command(
     auto expanded = parser::expand(*ctx.eval, pool.get(*literal));
     if (!expanded) {
         return pup::unexpected<Error>(expanded.error());
-    }
-
-    if (out_instruction) {
-        *out_instruction = substitute_glob_match(pool.get(*expanded), flags.glob_match);
     }
 
     auto tc = make_transform_context(ctx);
@@ -877,11 +872,15 @@ auto expand_command(
     flags.all_outputs = std::move(outputs_sv);
     flags.section = parser::PatternSection::Command;
 
-    auto pattern_result = parser::expand_pattern(*ctx.eval, pool.get(*expanded), flags);
-    if (!pattern_result) {
-        return pup::unexpected<Error>(pattern_result.error());
+    auto atoms = parser::expand_pattern_atoms(*ctx.eval, pool.get(*expanded), flags);
+    if (!atoms) {
+        return pup::unexpected<Error>(atoms.error());
     }
-    return *pattern_result;
+    auto text = parser::fold_pattern_atoms(*ctx.eval, *atoms, flags);
+    if (out_instruction) {
+        *out_instruction = std::move(*atoms);
+    }
+    return text;
 }
 
 /// Lookup a bang macro from the expanded command text.
@@ -1840,7 +1839,7 @@ auto process_generated_rules(
 {
     auto& pool = global_pool();
     for (auto const& gen_rule : generated_rules) {
-        auto gen_cmd_id = create_command_node(ctx, state, pool.get(gen_rule.command), pool.get(gen_rule.display));
+        auto gen_cmd_id = create_command_node(ctx, state, atoms_from_generated_text(pool.get(gen_rule.command)), pool.get(gen_rule.display));
         if (!gen_cmd_id) {
             continue;
         }
@@ -1913,9 +1912,8 @@ auto expand_rule(
     }
 
     auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
-    auto current_dir_name = is_empty(ctx.current_dir)
-        ? std::string_view { "." }
-        : pup::path::filename(str(ctx.current_dir));
+    auto current_dir_name
+        = is_empty(ctx.current_dir) ? std::string_view {} : pup::path::filename(str(ctx.current_dir));
     auto glob_match_id = is_empty(glob_pattern) ? StringId::Empty
                                                 : parser::glob_match_extract(str(glob_pattern), primary_input_sv);
 
@@ -2086,7 +2084,7 @@ auto expand_rule(
 
     auto cmd_text = StringId::Empty;
     auto display = StringId::Empty;
-    auto instruction_pattern = StringId::Empty;
+    auto instruction_pattern = Instruction {};
 
     auto outputs = expand_outputs(ctx, eff_outputs, flags, /*primary=*/nullptr);
     if (!outputs) {
@@ -2153,14 +2151,7 @@ auto expand_rule(
         }
     }
 
-    auto instr_sv = str(instruction_pattern);
-    auto has_group_pattern = instr_sv.find("%<") != std::string_view::npos
-        || instr_sv.find("%{") != std::string_view::npos;
-    auto final_instruction = is_empty(instruction_pattern) || has_group_pattern
-        ? cmd_text
-        : instruction_pattern;
-
-    auto cmd_id = create_command_node(ctx, state, str(final_instruction), str(display));
+    auto cmd_id = create_command_node(ctx, state, std::move(instruction_pattern), str(display));
     if (!cmd_id) {
         return pup::unexpected<Error>(cmd_id.error());
     }
@@ -2818,8 +2809,14 @@ auto finalize_graph(
         if (!cmd_node) {
             continue;
         }
-        auto cmd_sv = str(cmd_node->instruction_id);
-        if (cmd_sv.find(pattern_sv) == std::string_view::npos) {
+        auto has_group_atom = false;
+        for (auto const& atom : cmd_node->instruction) {
+            if (atom.kind() == AtomKind::GroupRef && atom.text() == name_id) {
+                has_group_atom = true;
+                break;
+            }
+        }
+        if (!has_group_atom) {
             continue;
         }
 
@@ -2854,17 +2851,17 @@ auto finalize_graph(
         }
 
         {
-            auto result = Buf {};
-            auto pos = cmd_sv.find(pattern_sv);
-            std::size_t last = 0;
-            while (pos != std::string_view::npos) {
-                result += cmd_sv.substr(last, pos - last);
-                result += replacement.view();
-                last = pos + pattern_sv.size();
-                pos = cmd_sv.find(pattern_sv, last);
+            auto const replacement_id = intern(replacement.view());
+            auto rewritten = Instruction {};
+            rewritten.reserve(cmd_node->instruction.size());
+            for (auto const& atom : cmd_node->instruction) {
+                if (atom.kind() == AtomKind::GroupRef && atom.text() == name_id) {
+                    rewritten.push_back(Atom::literal(replacement_id));
+                } else {
+                    rewritten.push_back(atom);
+                }
             }
-            result += cmd_sv.substr(last);
-            cmd_node->instruction_id = intern(result.view());
+            cmd_node->instruction = std::move(rewritten);
         }
 
         auto display_sv = str(cmd_node->display);

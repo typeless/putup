@@ -7,6 +7,7 @@
 #include "pup/core/buf.hpp"
 #include "pup/core/expected.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/instruction.hpp"
 #include "pup/core/platform.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
@@ -388,28 +389,115 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>
     return buf.intern(pool);
 }
 
-auto expand_pattern(
+namespace {
+
+struct ParseSite {
+    EvalContext& ctx;
+    PatternFlags const& flags;
+
+    auto append_literal(Buf& buf, StringId text) const -> void { buf.append(global_pool().get(text)); }
+
+    auto append_group_ref(Buf& buf, StringId name) const -> void
+    {
+        if (!ctx.resolve_order_only_group) {
+            return;
+        }
+        auto paths = ctx.resolve_order_only_group(global_pool().get(name));
+        for (std::size_t i = 0; i < paths.size(); ++i) {
+            if (i > 0) {
+                buf.append(' ');
+            }
+            buf.append(global_pool().get(paths[i]));
+        }
+    }
+
+    auto append_all_inputs(Buf& buf) const -> void
+    {
+        for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
+            if (i > 0) {
+                buf.append(' ');
+            }
+            buf.append(flags.all_inputs[i]);
+        }
+    }
+
+    auto append_input_base(Buf& buf) const -> void { buf.append(flags.input_base); }
+
+    auto append_input_noext(Buf& buf) const -> void { buf.append(flags.input_noext); }
+
+    auto append_input_ext(Buf& buf) const -> void { buf.append(flags.input_ext); }
+
+    auto append_all_outputs(Buf& buf) const -> void
+    {
+        for (std::size_t i = 0; i < flags.all_outputs.size(); ++i) {
+            if (i > 0) {
+                buf.append(' ');
+            }
+            buf.append(flags.all_outputs[i]);
+        }
+    }
+
+    auto append_output_noext(Buf& buf) const -> void
+    {
+        auto const primary = flags.all_outputs[0];
+        buf.append(primary.substr(0, primary.size() - pup::path::extension(primary).size()));
+    }
+
+    auto append_input_dir(Buf& buf) const -> void { buf.append(flags.input_dir); }
+
+    auto append_nth_input(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < flags.all_inputs.size()) {
+            buf.append(flags.all_inputs[index]);
+        }
+    }
+
+    auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < flags.all_inputs.size()) {
+            buf.append(pup::path::filename(flags.all_inputs[index]));
+        }
+    }
+
+    auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < flags.all_inputs.size()) {
+            auto const base = pup::path::filename(flags.all_inputs[index]);
+            buf.append(base.substr(0, base.size() - pup::path::extension(base).size()));
+        }
+    }
+
+    auto append_nth_output(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < flags.all_outputs.size()) {
+            buf.append(flags.all_outputs[index]);
+        }
+    }
+};
+
+} // namespace
+
+auto expand_pattern_atoms(
     EvalContext& ctx,
     std::string_view text,
     PatternFlags const& flags
-) -> Result<StringId>
+) -> Result<Instruction>
 {
-    auto& pool = global_pool();
-    auto buf = Buf {};
+    auto builder = InstructionBuilder {};
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
         auto percent = text.find('%', pos);
 
         if (percent == std::string_view::npos) {
-            buf.append(text.substr(pos));
+            builder.literal(text.substr(pos));
             break;
         }
 
-        buf.append(text.substr(pos, percent - pos));
+        builder.literal(text.substr(pos, percent - pos));
 
         if (percent + 1 >= text.size()) {
-            buf.append('%');
+            builder.literal('%');
             pos = percent + 1;
             continue;
         }
@@ -417,13 +505,11 @@ auto expand_pattern(
         auto flag = text[percent + 1];
         pos = percent + 2;
 
-        // Check for %% escape
         if (flag == '%') {
-            buf.append('%');
+            builder.literal('%');
             continue;
         }
 
-        // Check for %Nf pattern (N-th input)
         if (flag >= '0' && flag <= '9') {
             auto end = pos;
             while (end < text.size() && text[end] >= '0' && text[end] <= '9') {
@@ -438,51 +524,34 @@ auto expand_pattern(
             if (num <= 0 || num >= 99) {
                 auto msg = Buf {};
                 msg.fmt("Expected number from 1-99 (base 10) for %-flag, but got {}", num);
-                return make_error<StringId>(ErrorCode::ParseError, msg.view());
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
             }
             if (end >= text.size()) {
                 auto msg = Buf {};
                 msg.fmt("Unfinished %{}-flag at the end of the string '{}'", num, text);
-                return make_error<StringId>(ErrorCode::ParseError, msg.view());
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
             }
 
-            auto const index = static_cast<std::size_t>(num - 1);
             auto const letter = text[end];
 
-            if (letter == 'f' || letter == 'b' || letter == 'B') {
-                if (index < flags.all_inputs.size()) {
-                    auto const input = flags.all_inputs[index];
-                    if (letter == 'f') {
-                        buf.append(input);
-                    } else {
-                        auto const base = pup::path::filename(input);
-                        if (letter == 'b') {
-                            buf.append(base);
-                        } else {
-                            buf.append(base.substr(0, base.size() - pup::path::extension(base).size()));
-                        }
-                    }
-                }
-                pos = end + 1;
-                continue;
-            }
-
-            if (letter == 'o') {
-                if (flags.section == PatternSection::Outputs) {
-                    return make_error<StringId>(
+            if (letter == 'f' || letter == 'b' || letter == 'B' || letter == 'o') {
+                if (letter == 'o' && flags.section == PatternSection::Outputs) {
+                    return make_error<Instruction>(
                         ErrorCode::ParseError,
                         "%o can only be used in a command string or extra outputs section"
                     );
                 }
-                if (index < flags.all_outputs.size()) {
-                    buf.append(flags.all_outputs[index]);
-                }
+                auto const kind = letter == 'f' ? AtomKind::NthInput
+                    : letter == 'b'             ? AtomKind::NthInputBase
+                    : letter == 'B'             ? AtomKind::NthInputNoExt
+                                                : AtomKind::NthOutput;
+                builder.nth(kind, num);
                 pos = end + 1;
                 continue;
             }
 
             if (letter == 'i') {
-                return make_error<StringId>(
+                return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%Ni is not supported yet (#426)"
                 );
@@ -490,114 +559,106 @@ auto expand_pattern(
 
             auto msg = Buf {};
             msg.fmt("Expected 'f', 'b', 'B', 'o', or 'i' after number in %{}-flag, but got '{}'", num, letter);
-            return make_error<StringId>(ErrorCode::ParseError, msg.view());
+            return make_error<Instruction>(ErrorCode::ParseError, msg.view());
         }
 
-        // Check for %<group> pattern
         if (flag == '<') {
             auto end = text.find('>', pos);
             if (end == std::string_view::npos) {
-                // No closing '>', output as-is
-                buf.append("%<");
+                builder.literal("%<");
                 continue;
             }
-            auto group_name = text.substr(pos, end - pos);
+            auto const group_name = text.substr(pos, end - pos);
             pos = end + 1;
-
-            // Resolve order-only group to paths via callback
-            if (ctx.resolve_order_only_group) {
-                auto paths = ctx.resolve_order_only_group(group_name);
-                for (std::size_t i = 0; i < paths.size(); ++i) {
-                    if (i > 0) {
-                        buf.append(' ');
-                    }
-                    buf.append(pool.get(paths[i]));
-                }
+            if (!ctx.resolve_order_only_group || ctx.resolve_order_only_group(group_name).empty()) {
+                continue;
             }
+            builder.group_ref(group_name);
             continue;
         }
 
-        // Standard pattern flags
         switch (flag) {
         case 'f':
-            // %f - all inputs space-separated
-            for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
-                if (i > 0) {
-                    buf.append(' ');
-                }
-                buf.append(flags.all_inputs[i]);
-            }
+            builder.flag(AtomKind::AllInputs);
+            break;
+        case 'i':
+            builder.flag(AtomKind::AllInputsAlias);
             break;
         case 'b':
-            buf.append(flags.input_base);
+            builder.flag(AtomKind::InputBase);
             break;
         case 'B':
-            buf.append(flags.input_noext);
+            builder.flag(AtomKind::InputNoExt);
             break;
         case 'e':
-            buf.append(flags.input_ext);
+            builder.flag(AtomKind::InputExt);
             break;
         case 'o':
             if (flags.section == PatternSection::Outputs) {
-                return make_error<StringId>(
+                return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%o can only be used in a command string or extra outputs section"
                 );
             }
             if (flags.all_outputs.empty()) {
-                return make_error<StringId>(
+                return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%o used in rule pattern and no output files were specified"
                 );
             }
-            for (std::size_t i = 0; i < flags.all_outputs.size(); ++i) {
-                if (i > 0) {
-                    buf.append(' ');
-                }
-                buf.append(flags.all_outputs[i]);
-            }
+            builder.flag(AtomKind::AllOutputs);
             break;
-        case 'O': {
+        case 'O':
             if (flags.section == PatternSection::Outputs) {
-                return make_error<StringId>(
+                return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%O can only be used in the extra outputs section"
                 );
             }
             if (flags.all_outputs.size() != 1) {
-                return make_error<StringId>(
+                return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%O can only be used if there is exactly one output specified"
                 );
             }
-            auto const primary = flags.all_outputs[0];
-            buf.append(primary.substr(0, primary.size() - pup::path::extension(primary).size()));
+            builder.flag(AtomKind::OutputNoExt);
             break;
-        }
         case 'd':
-            buf.append(flags.input_dir);
+            builder.flag(AtomKind::InputDir);
             break;
         case 'g':
-            buf.append(flags.glob_match);
-            break;
-        case 'i':
-            // %i - all inputs space-separated
-            for (std::size_t i = 0; i < flags.all_inputs.size(); ++i) {
-                if (i > 0) {
-                    buf.append(' ');
-                }
-                buf.append(flags.all_inputs[i]);
-            }
+            builder.literal(flags.glob_match);
             break;
         default:
-            // Unknown flag, keep as-is
-            buf.append('%');
-            buf.append(flag);
+            builder.literal('%');
+            builder.literal(flag);
             break;
         }
     }
 
-    return buf.intern(pool);
+    return builder.take();
+}
+
+auto fold_pattern_atoms(
+    EvalContext& ctx,
+    Instruction const& atoms,
+    PatternFlags const& flags
+) -> StringId
+{
+    return fold_instruction(atoms, ParseSite { ctx, flags });
+}
+
+auto expand_pattern(
+    EvalContext& ctx,
+    std::string_view text,
+    PatternFlags const& flags
+) -> Result<StringId>
+{
+    auto atoms = expand_pattern_atoms(ctx, text, flags);
+    if (!atoms) {
+        return pup::unexpected<Error> { atoms.error() };
+    }
+    return fold_pattern_atoms(ctx, *atoms, flags);
 }
 
 auto expand_path(
