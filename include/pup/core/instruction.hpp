@@ -5,6 +5,7 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/vec.hpp"
 
@@ -99,6 +100,11 @@ private:
 /// Renders atoms back to the v24 template spelling. A literal's own '%' is escaped,
 /// so rendered text re-parses to the same atoms.
 auto render_instruction(Instruction const& atoms) -> StringId;
+
+/// The inverse of render_instruction: reads a recorded template back into atoms so a
+/// recorded command expands through the same funnel a parsed one does. Refuses the
+/// numbered spellings the funnel refuses, so no atom exists that the funnel would not mint.
+auto parse_instruction(std::string_view text) -> Result<Instruction>;
 
 template<typename Site>
 auto fold_instruction(Instruction const& atoms, Site const& site) -> StringId
