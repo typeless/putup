@@ -55,3 +55,26 @@ shall reject the Tupfile.
 - discharge: test "A numbered order-only input flag is refused as unsupported"
 
 If a rule spells `%Ni`, then putup shall reject the Tupfile naming the issue that tracks it.
+
+## Group: splices
+
+### REQ-OPERAND-SPLICED-TEXT-NOT-RESCANNED
+
+- conformance: tup-conformant
+- reference: upstream expands a command exactly once, in `tup_printf`, and stores the expanded string; its group splice runs later in the updater as a bare `strstr` replace over that stored text with no second scan (tup `tup_printf`, tup `updater.c` group substitution), so a member path or glob match carrying a `%` is never read as a flag. putup defers expansion so the index can store instruction text once per distinct template, which gave it a second scan upstream does not have; recording the instruction as validated atoms restores upstream's single-expansion guarantee without giving up that sharing
+- discharge: test "Scenario: A group member whose name carries a percent flag reaches its consumer whole"
+- discharge: test "Scenario: A percent escape in a group rule is not expanded a second time"
+- discharge: test "Scenario: A glob match containing a percent flag expands once, not twice"
+- discharge: test "Scenario: A dependency scan resolves its parent's group reference"
+
+When text that names a file is spliced into a recorded instruction, putup shall not expand a
+`%`-flag spelled by that text.
+
+### REQ-OPERAND-ESCAPED-GROUP-MARKER-INERT
+
+- conformance: deliberate-deviation
+- reference: upstream's group splice is a `strstr` over the string `tup_printf` already expanded (tup `updater.c` group substitution), so a `%%<name>` that `tup_printf` reduced to `%<name>` is indistinguishable from one the author wrote, and upstream splices it. That indistinguishability is the same second scan REQ-OPERAND-SPLICED-TEXT-NOT-RESCANNED removes: an escape exists to say the byte is not a flag introducer, and honouring it for `%%f` while revoking it for `%%<name>` would leave the escape meaning one thing per flag letter. putup resolves a group reference only where the funnel recorded one, so `%%<name>` reaches the shell as the six bytes the author escaped
+- discharge: test "Scenario: A percent escape in a group rule is not expanded a second time"
+
+When a rule escapes a percent that would otherwise open a group reference, putup shall pass the
+reference through as text rather than splice the group's members.

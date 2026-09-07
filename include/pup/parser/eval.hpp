@@ -5,6 +5,7 @@
 
 #include "ast.hpp"
 #include "pup/core/function.hpp"
+#include "pup/core/instruction.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
@@ -221,6 +222,23 @@ auto expand(EvalContext& ctx, Expression const& expr) -> Result<StringId>;
 /// Expand a string with variable references
 [[nodiscard]]
 auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>;
+
+/// Build the atom sequence for a pattern, refusing every flag the accept table refuses.
+/// This is the only producer of flag atoms, so text spliced in later cannot become a flag.
+[[nodiscard]]
+auto expand_pattern_atoms(
+    EvalContext& ctx,
+    std::string_view text,
+    PatternFlags const& flags
+) -> Result<Instruction>;
+
+/// Resolve an atom sequence against the flags that produced it.
+[[nodiscard]]
+auto fold_pattern_atoms(
+    EvalContext& ctx,
+    Instruction const& atoms,
+    PatternFlags const& flags
+) -> StringId;
 
 /// Expand pattern flags (%f, %o, %B, etc.) in a string
 [[nodiscard]]

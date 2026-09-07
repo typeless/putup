@@ -2,6 +2,7 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "instruction_support.hpp"
 #include "temp_root.hpp"
 
 #include "pup/cli/index_serialize.hpp"
@@ -1429,7 +1430,7 @@ TEST_CASE("graph-to-index roundtrip keeps every node and edge endpoint", "[index
     auto group = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Group, .name = intern("objs") });
     auto ghost = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Ghost, .name = intern("missing.h") });
     auto out = pup::graph::add_file_node(g, pup::graph::FileNode { .type = NodeType::Generated, .name = intern("a.o") });
-    auto cmd = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction_id = intern("cc a.c") });
+    auto cmd = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cc a.c") });
 
     REQUIRE(root.has_value());
     REQUIRE(nameless.has_value());
@@ -1503,7 +1504,7 @@ TEST_CASE("graph-to-index roundtrip holds for randomized graphs", "[index]")
             default:
                 break;
             }
-            auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction_id = intern("cmd" + std::to_string(i)), .guards = std::move(guards) });
+            auto id = pup::graph::add_command_node(g, pup::graph::CommandNode { .instruction = pup::test::instruction("cmd" + std::to_string(i)), .guards = std::move(guards) });
             REQUIRE(id.has_value());
             cmd_ids.push_back(*id);
         }

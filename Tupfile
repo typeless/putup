@@ -8,6 +8,7 @@ srcs-y  = src/core/arena.cpp
 srcs-y += src/core/hash.cpp
 srcs-y += src/core/id_array.cpp
 srcs-y += src/core/id_bitset.cpp
+srcs-y += src/core/instruction.cpp
 srcs-y += src/core/layout.cpp
 srcs-y += src/core/metrics.cpp
 srcs-y += src/core/path.cpp

@@ -8,6 +8,7 @@
 #include "pup/cli/output.hpp"
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/instruction.hpp"
 #include "pup/core/layout.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
@@ -571,16 +572,17 @@ auto cmd_export_instructions(Options const& opts, std::string_view variant_name)
     auto& ctx = *result;
     auto const& graph = ctx.graph().graph;
 
-    // Build instruction usage map: instruction_id -> list of command IDs using it
+    // Build instruction usage map: rendered instruction -> list of command IDs using it
     auto instruction_usage = Vec<std::pair<StringId, Vec<NodeId>>> {};
 
     for (auto const& cmd : graph.commands) {
-        if (!is_empty(cmd.instruction_id)) {
-            auto pos = std::lower_bound(instruction_usage.begin(), instruction_usage.end(), cmd.instruction_id, [](auto const& p, auto const& k) { return pup::handle_less(p.first, k); });
-            if (pos != instruction_usage.end() && pos->first == cmd.instruction_id) {
+        auto const rendered = pup::render_instruction(cmd.instruction);
+        if (!is_empty(rendered)) {
+            auto pos = std::lower_bound(instruction_usage.begin(), instruction_usage.end(), rendered, [](auto const& p, auto const& k) { return pup::handle_less(p.first, k); });
+            if (pos != instruction_usage.end() && pos->first == rendered) {
                 pos->second.push_back(cmd.id);
             } else {
-                instruction_usage.insert(pos, std::pair<StringId, Vec<NodeId>> { cmd.instruction_id, { cmd.id } });
+                instruction_usage.insert(pos, std::pair<StringId, Vec<NodeId>> { rendered, { cmd.id } });
             }
         }
     }

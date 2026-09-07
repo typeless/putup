@@ -36,6 +36,7 @@ test-srcs-y += test_e2e.cpp
 test-srcs-y += test_eval.cpp
 test-srcs-y += test_exec.cpp
 test-srcs-y += test_glob.cpp
+test-srcs-y += test_instruction.cpp
 test-srcs-y += test_graph.cpp
 test-srcs-y += test_arena.cpp
 test-srcs-y += test_hash.cpp
