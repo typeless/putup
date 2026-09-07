@@ -5,6 +5,7 @@
 
 #include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
+#include "pup/core/instruction.hpp"
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/path.hpp"
 #include "pup/core/path_utils.hpp"
@@ -16,7 +17,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -310,23 +310,121 @@ auto Index::clear() -> void
 
 namespace {
 
-auto get_basename(std::string_view path) -> std::string_view
-{
-    auto pos = path.rfind('/');
-    return pos == std::string_view::npos ? path : path.substr(pos + 1);
-}
+class IndexSite final {
+public:
+    IndexSite(Index const& index, CommandEntry const& cmd, std::string_view source_dir)
+        : m_index { index }
+        , m_cmd { cmd }
+        , m_source_dir { source_dir }
+        , m_source_to_root { global_pool().get(pup::compute_source_to_root(source_dir)) }
+    {
+    }
 
-auto get_stem(std::string_view name) -> std::string_view
-{
-    auto pos = name.rfind('.');
-    return pos == std::string_view::npos ? name : name.substr(0, pos);
-}
+    auto append_literal(Buf& buf, StringId text) const -> void { buf += global_pool().get(text); }
 
-auto get_extension(std::string_view name) -> std::string_view
-{
-    auto pos = name.rfind('.');
-    return pos == std::string_view::npos ? std::string_view {} : name.substr(pos + 1);
-}
+    auto append_group_ref(Buf& buf, StringId name) const -> void
+    {
+        buf += "%<";
+        buf += global_pool().get(name);
+        buf += '>';
+    }
+
+    auto append_all_inputs(Buf& buf) const -> void { append_all(buf, m_cmd.inputs); }
+
+    auto append_input_base(Buf& buf) const -> void
+    {
+        if (!m_cmd.inputs.empty()) {
+            buf += pup::path::filename(operand_path(m_cmd.inputs[0]));
+        }
+    }
+
+    auto append_input_noext(Buf& buf) const -> void
+    {
+        if (!m_cmd.inputs.empty()) {
+            buf += pup::path::stem(operand_path(m_cmd.inputs[0]));
+        }
+    }
+
+    auto append_input_ext(Buf& buf) const -> void
+    {
+        if (!m_cmd.inputs.empty()) {
+            buf += pup::path::bare_extension(operand_path(m_cmd.inputs[0]));
+        }
+    }
+
+    auto append_all_outputs(Buf& buf) const -> void { append_all(buf, m_cmd.outputs); }
+
+    auto append_output_noext(Buf& buf) const -> void
+    {
+        if (m_cmd.outputs.size() == 1) {
+            auto const only = operand_path(m_cmd.outputs[0]);
+            buf += only.substr(0, only.size() - pup::path::extension(only).size());
+        }
+    }
+
+    auto append_input_dir(Buf& buf) const -> void
+    {
+        if (m_source_dir.empty()) {
+            return;
+        }
+        auto const slash = m_source_dir.rfind('/');
+        buf += slash != std::string_view::npos ? m_source_dir.substr(slash + 1) : m_source_dir;
+    }
+
+    auto append_nth_input(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < m_cmd.inputs.size()) {
+            buf += operand_path(m_cmd.inputs[index]);
+        }
+    }
+
+    auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < m_cmd.inputs.size()) {
+            buf += pup::path::filename(operand_path(m_cmd.inputs[index]));
+        }
+    }
+
+    auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < m_cmd.inputs.size()) {
+            buf += pup::path::stem(operand_path(m_cmd.inputs[index]));
+        }
+    }
+
+    auto append_nth_output(Buf& buf, std::size_t index) const -> void
+    {
+        if (index < m_cmd.outputs.size()) {
+            buf += operand_path(m_cmd.outputs[index]);
+        }
+    }
+
+private:
+    auto operand_path(NodeId id) const -> std::string_view
+    {
+        auto const* file = m_index.find_file_by_id(id);
+        if (!file) {
+            return {};
+        }
+        auto& pool = global_pool();
+        return pool.get(pup::make_source_relative(pool.get(file->path), m_source_to_root, m_source_dir));
+    }
+
+    auto append_all(Buf& buf, Vec<NodeId> const& ids) const -> void
+    {
+        for (std::size_t i = 0; i < ids.size(); ++i) {
+            if (i > 0) {
+                buf += ' ';
+            }
+            buf += operand_path(ids[i]);
+        }
+    }
+
+    Index const& m_index;
+    CommandEntry const& m_cmd;
+    std::string_view m_source_dir;
+    std::string_view m_source_to_root;
+};
 
 } // namespace
 
@@ -346,170 +444,11 @@ auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId
         }
     }
 
-    auto source_to_root = pool.get(pup::compute_source_to_root(source_dir));
-
-    auto get_relative_path = [&source_dir, &source_to_root, &pool](StringId path_id) {
-        return pool.get(pup::make_source_relative(pool.get(path_id), source_to_root, source_dir));
-    };
-
-    auto buf = Buf {};
-    auto pos = std::size_t { 0 };
-
-    while (pos < tmpl.size()) {
-        auto percent = tmpl.find('%', pos);
-
-        if (percent == std::string_view::npos) {
-            buf += tmpl.substr(pos);
-            break;
-        }
-
-        buf += tmpl.substr(pos, percent - pos);
-
-        if (percent + 1 >= tmpl.size()) {
-            buf += '%';
-            pos = percent + 1;
-            continue;
-        }
-
-        auto flag = tmpl[percent + 1];
-        pos = percent + 2;
-
-        if (flag == '%') {
-            buf += '%';
-            continue;
-        }
-
-        if (flag >= '0' && flag <= '9') {
-            auto end = pos;
-            while (end < tmpl.size() && tmpl[end] >= '0' && tmpl[end] <= '9') {
-                ++end;
-            }
-
-            auto num = 0;
-            auto const* start_ptr = tmpl.data() + percent + 1;
-            auto const* end_ptr = tmpl.data() + end;
-            std::from_chars(start_ptr, end_ptr, num);
-
-            auto const letter = end < tmpl.size() ? tmpl[end] : '\0';
-
-            if (letter == 'f' || letter == 'b' || letter == 'B') {
-                if (num > 0 && static_cast<std::size_t>(num) <= cmd.inputs.size()) {
-                    auto const* file = index.find_file_by_id(cmd.inputs[static_cast<std::size_t>(num - 1)]);
-                    if (file) {
-                        auto const input = get_relative_path(file->path);
-                        if (letter == 'f') {
-                            buf += input;
-                        } else {
-                            auto const base = pup::path::filename(input);
-                            if (letter == 'b') {
-                                buf += base;
-                            } else {
-                                buf += base.substr(0, base.size() - pup::path::extension(base).size());
-                            }
-                        }
-                    }
-                }
-                pos = end + 1;
-                continue;
-            }
-
-            if (letter == 'o') {
-                if (num > 0 && static_cast<std::size_t>(num) <= cmd.outputs.size()) {
-                    auto const* file = index.find_file_by_id(cmd.outputs[static_cast<std::size_t>(num - 1)]);
-                    if (file) {
-                        buf += get_relative_path(file->path);
-                    }
-                }
-                pos = end + 1;
-                continue;
-            }
-
-            buf += '%';
-            pos = percent + 1;
-            continue;
-        }
-
-        switch (flag) {
-        case 'f':
-        case 'i': {
-            for (std::size_t i = 0; i < cmd.inputs.size(); ++i) {
-                if (i > 0) {
-                    buf += ' ';
-                }
-                auto const* file = index.find_file_by_id(cmd.inputs[i]);
-                if (file) {
-                    buf += get_relative_path(file->path);
-                }
-            }
-            break;
-        }
-        case 'b': {
-            if (!cmd.inputs.empty()) {
-                auto const* file = index.find_file_by_id(cmd.inputs[0]);
-                if (file) {
-                    buf += get_basename(pool.get(file->path));
-                }
-            }
-            break;
-        }
-        case 'B': {
-            if (!cmd.inputs.empty()) {
-                auto const* file = index.find_file_by_id(cmd.inputs[0]);
-                if (file) {
-                    buf += get_stem(pool.get(file->name));
-                }
-            }
-            break;
-        }
-        case 'e': {
-            if (!cmd.inputs.empty()) {
-                auto const* file = index.find_file_by_id(cmd.inputs[0]);
-                if (file) {
-                    buf += get_extension(pool.get(file->name));
-                }
-            }
-            break;
-        }
-        case 'o': {
-            for (std::size_t i = 0; i < cmd.outputs.size(); ++i) {
-                if (i > 0) {
-                    buf += ' ';
-                }
-                auto const* file = index.find_file_by_id(cmd.outputs[i]);
-                if (file) {
-                    buf += get_relative_path(file->path);
-                }
-            }
-            break;
-        }
-        case 'O': {
-            if (!cmd.outputs.empty()) {
-                auto const* file = index.find_file_by_id(cmd.outputs[0]);
-                if (file) {
-                    buf += get_basename(pool.get(file->path));
-                }
-            }
-            break;
-        }
-        case 'd': {
-            if (!source_dir.empty()) {
-                auto slash = source_dir.rfind('/');
-                if (slash != std::string_view::npos) {
-                    buf += source_dir.substr(slash + 1);
-                } else {
-                    buf += source_dir;
-                }
-            }
-            break;
-        }
-        default:
-            buf += '%';
-            buf += flag;
-            break;
-        }
+    auto atoms = parse_instruction(tmpl);
+    if (!atoms) {
+        return cmd.instruction_pattern;
     }
-
-    return buf.intern(pool);
+    return fold_instruction(*atoms, IndexSite { index, cmd, source_dir });
 }
 
 auto FilesByPath::find(StringId path) const -> FileEntry const*

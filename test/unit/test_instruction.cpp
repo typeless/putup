@@ -193,7 +193,7 @@ SCENARIO("A rendered instruction re-parses to the same atoms", "[instruction][pr
                 }
                 auto const atoms = builder.take();
                 auto const rendered = render_instruction(atoms);
-                auto reparsed = pup::test::parse_instruction_text(global_pool().get(rendered));
+                auto reparsed = pup::parse_instruction(global_pool().get(rendered));
 
                 auto const ok = reparsed.has_value() && atoms_equal(atoms, *reparsed);
                 if (!ok) {

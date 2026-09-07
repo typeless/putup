@@ -361,11 +361,7 @@ auto path_stem(std::string_view path) -> std::string_view
 
 auto path_extension(std::string_view path) -> std::string_view
 {
-    auto ext = pup::path::extension(path);
-    if (!ext.empty() && ext[0] == '.') {
-        ext.remove_prefix(1);
-    }
-    return ext;
+    return pup::path::bare_extension(path);
 }
 
 auto path_directory(std::string_view path) -> std::string_view

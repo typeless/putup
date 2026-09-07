@@ -41,6 +41,10 @@ auto stem(std::string_view p) -> std::string_view;
 [[nodiscard]]
 auto extension(std::string_view p) -> std::string_view;
 
+/// Get the file extension without its leading dot — the spelling `%e` expands to.
+[[nodiscard]]
+auto bare_extension(std::string_view p) -> std::string_view;
+
 /// Check if a path is absolute.
 [[nodiscard]]
 auto is_absolute(std::string_view p) -> bool;

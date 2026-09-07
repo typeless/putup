@@ -1041,6 +1041,37 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         REQUIRE(sv(result) =="g++ -c src/main.cpp src/util.cpp -o build/main.o");
     }
 
+    SECTION("get_command_string with %O names the one output without its extension")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .instruction_pattern = intern("link %f -o %O"),
+            .inputs = { 3 },
+            .outputs = { 4 },
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(sv(result) == "link src/main.cpp -o build/main");
+    }
+
+    SECTION("get_command_string with %O expands to nothing when a rule declares two outputs")
+    {
+        index.add_file(FileEntry { .id = 5, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.d") });
+        index.compute_paths();
+
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .instruction_pattern = intern("link %f -o %O"),
+            .inputs = { 3 },
+            .outputs = { 4, 5 },
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
+        REQUIRE(sv(result) == "link src/main.cpp -o ");
+    }
+
     SECTION("get_command_string with %Nf (N-th input)")
     {
         index.add_file(FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern("util.cpp") });
@@ -2304,5 +2335,136 @@ TEST_CASE("Keying the index under construction by path answers the same however 
         map.insert(paths[3], NodeId { 999 });
         REQUIRE(map.find(paths[3]) == NodeId { 999 });
         REQUIRE(map.entries.size() == paths.size());
+    }
+}
+
+SCENARIO("A recorded command and a graph command expand a template the same way", "[index][instruction][property]")
+{
+    GIVEN("one command expressed both as a graph node and as an index record")
+    {
+        auto bs = graph::make_build_graph();
+        auto& g = bs.graph;
+
+        auto src_dir = graph::add_file_node(g, graph::FileNode { .type = NodeType::Directory, .name = intern("src") });
+        auto build_dir = graph::add_file_node(g, graph::FileNode { .type = NodeType::Directory, .name = intern("build") });
+        REQUIRE(src_dir.has_value());
+        REQUIRE(build_dir.has_value());
+
+        auto foo_c = graph::add_file_node(g, graph::FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+        auto bar_c = graph::add_file_node(g, graph::FileNode { .name = intern("bar.c"), .parent_dir = *src_dir });
+        auto dotfile = graph::add_file_node(g, graph::FileNode { .name = intern(".bashrc"), .parent_dir = *src_dir });
+        auto foo_o = graph::add_file_node(
+            g, graph::FileNode { .type = NodeType::Generated, .name = intern("foo.o"), .parent_dir = *build_dir }
+        );
+        auto foo_d = graph::add_file_node(
+            g, graph::FileNode { .type = NodeType::Generated, .name = intern("foo.d"), .parent_dir = *build_dir }
+        );
+        auto noext = graph::add_file_node(
+            g, graph::FileNode { .type = NodeType::Generated, .name = intern("image"), .parent_dir = *build_dir }
+        );
+        REQUIRE(foo_c.has_value());
+        REQUIRE(bar_c.has_value());
+        REQUIRE(dotfile.has_value());
+        REQUIRE(foo_o.has_value());
+        REQUIRE(foo_d.has_value());
+        REQUIRE(noext.has_value());
+
+        auto index = index::Index {};
+        index.add_file(index::FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
+        index.add_file(index::FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
+        index.add_file(index::FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("foo.c") });
+        index.add_file(index::FileEntry { .id = 4, .parent_id = 1, .type = NodeType::File, .name = intern("bar.c") });
+        index.add_file(index::FileEntry { .id = 5, .parent_id = 1, .type = NodeType::File, .name = intern(".bashrc") });
+        index.add_file(index::FileEntry { .id = 6, .parent_id = 2, .type = NodeType::Generated, .name = intern("foo.o") });
+        index.add_file(index::FileEntry { .id = 7, .parent_id = 2, .type = NodeType::Generated, .name = intern("foo.d") });
+        index.add_file(index::FileEntry { .id = 8, .parent_id = 2, .type = NodeType::Generated, .name = intern("image") });
+        index.compute_paths();
+
+        struct Operands {
+            std::string_view what;
+            std::vector<NodeId> graph_inputs;
+            std::vector<NodeId> graph_outputs;
+            std::vector<NodeId> index_inputs;
+            std::vector<NodeId> index_outputs;
+            StringId source_dir;
+            NodeId dir_id;
+        };
+
+        auto const cases = std::vector<Operands> {
+            { "two inputs one output", { *foo_c, *bar_c }, { *foo_o }, { 3, 4 }, { 6 }, intern("src"), 1 },
+            { "a dotfile as the first input", { *dotfile, *foo_c }, { *foo_o }, { 5, 3 }, { 6 }, intern("src"), 1 },
+            { "an output with no extension", { *foo_c }, { *noext }, { 3 }, { 8 }, intern("src"), 1 },
+            { "two outputs", { *foo_c }, { *foo_o, *foo_d }, { 3 }, { 6, 7 }, intern("src"), 1 },
+            { "no inputs", {}, { *foo_o }, {}, { 6 }, intern("src"), 1 },
+            { "no outputs", { *foo_c }, {}, { 3 }, {}, intern("src"), 1 },
+            { "a command at the project root", { *foo_c }, { *foo_o }, { 3 }, { 6 }, StringId::Empty, 0 },
+        };
+
+        auto const templates = std::vector<std::string_view> {
+            "cc -c %f -o %o",
+            "cc %1f %2f -o %1o",
+            "echo %b %B %e",
+            "echo %O",
+            "echo %d",
+            "echo %i",
+            "echo %f%%literal",
+            "echo a%1bb%2Bc",
+            "link %f -o %O",
+            "echo %3f",
+            "echo %2o",
+            "echo %<gen> %f",
+        };
+
+        WHEN("each template is expanded at the exec site and at the index site")
+        {
+            auto disagreements = std::vector<std::string> {};
+
+            for (auto const& operands : cases) {
+                for (auto const& tmpl : templates) {
+                    auto node = graph::CommandNode {
+                        .source_dir = operands.source_dir,
+                        .instruction = pup::test::instruction(tmpl),
+                    };
+                    for (auto id : operands.graph_inputs) {
+                        node.inputs.push_back(id);
+                    }
+                    for (auto id : operands.graph_outputs) {
+                        node.outputs.push_back(id);
+                    }
+                    auto cmd_id = graph::add_command_node(g, std::move(node));
+                    REQUIRE(cmd_id.has_value());
+
+                    auto record = index::CommandEntry {
+                        .id = *cmd_id,
+                        .dir_id = operands.dir_id,
+                        .instruction_pattern = render_instruction(pup::test::instruction(tmpl)),
+                    };
+                    for (auto id : operands.index_inputs) {
+                        record.inputs.push_back(id);
+                    }
+                    for (auto id : operands.index_outputs) {
+                        record.outputs.push_back(id);
+                    }
+                    index.add_command(record);
+
+                    auto const from_graph
+                        = std::string { std::string_view { sv(graph::expand_instruction(g, *cmd_id)) } };
+                    auto const from_index
+                        = std::string { std::string_view { sv(index::get_command_string(index, record)) } };
+                    if (from_graph != from_index) {
+                        disagreements.push_back(
+                            std::string { operands.what } + " / " + std::string { tmpl } + ": graph='" + from_graph
+                            + "' index='" + from_index + "'"
+                        );
+                    }
+                }
+            }
+
+            THEN("both sites produce the same command")
+            {
+                INFO("disagreements: " << (disagreements.empty() ? std::string { "none" } : disagreements[0]));
+                CHECK(disagreements.empty());
+            }
+        }
     }
 }

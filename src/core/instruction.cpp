@@ -8,6 +8,8 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 
+#include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
@@ -66,6 +68,46 @@ auto letter_of(AtomKind kind) -> char
         return '\0';
     }
     return '\0';
+}
+
+auto kind_for_letter(char letter, bool numbered) -> AtomKind
+{
+    if (numbered) {
+        switch (letter) {
+        case 'f':
+            return AtomKind::NthInput;
+        case 'b':
+            return AtomKind::NthInputBase;
+        case 'B':
+            return AtomKind::NthInputNoExt;
+        default:
+            return AtomKind::NthOutput;
+        }
+    }
+    switch (letter) {
+    case 'f':
+        return AtomKind::AllInputs;
+    case 'i':
+        return AtomKind::AllInputsAlias;
+    case 'b':
+        return AtomKind::InputBase;
+    case 'B':
+        return AtomKind::InputNoExt;
+    case 'e':
+        return AtomKind::InputExt;
+    case 'o':
+        return AtomKind::AllOutputs;
+    case 'O':
+        return AtomKind::OutputNoExt;
+    default:
+        return AtomKind::InputDir;
+    }
+}
+
+auto is_unnumbered_flag(char letter) -> bool
+{
+    return letter == 'f' || letter == 'i' || letter == 'b' || letter == 'B' || letter == 'e'
+        || letter == 'o' || letter == 'O' || letter == 'd';
 }
 
 } // namespace
@@ -163,6 +205,83 @@ auto render_instruction(Instruction const& atoms) -> StringId
         }
     }
     return buf.intern(global_pool());
+}
+
+auto parse_instruction(std::string_view text) -> Result<Instruction>
+{
+    auto builder = InstructionBuilder {};
+    auto pos = std::size_t { 0 };
+
+    while (pos < text.size()) {
+        auto const percent = text.find('%', pos);
+        if (percent == std::string_view::npos) {
+            builder.literal(text.substr(pos));
+            break;
+        }
+        builder.literal(text.substr(pos, percent - pos));
+
+        if (percent + 1 >= text.size()) {
+            builder.literal('%');
+            pos = percent + 1;
+            continue;
+        }
+
+        auto const flag = text[percent + 1];
+        pos = percent + 2;
+
+        if (flag == '%') {
+            builder.literal('%');
+            continue;
+        }
+
+        if (flag >= '0' && flag <= '9') {
+            auto end = pos;
+            while (end < text.size() && text[end] >= '0' && text[end] <= '9') {
+                ++end;
+            }
+            auto num = 0;
+            std::from_chars(text.data() + percent + 1, text.data() + end, num);
+            if (end >= text.size()) {
+                auto msg = Buf {};
+                msg.fmt("Unfinished %{}-flag at the end of the string '{}'", num, text);
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            }
+            auto const letter = text[end];
+            if (letter != 'f' && letter != 'b' && letter != 'B' && letter != 'o') {
+                auto msg = Buf {};
+                msg.fmt("Expected 'f', 'b', 'B', 'o', or 'i' after number in %{}-flag, but got '{}'", num, letter);
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            }
+            if (!builder.nth(kind_for_letter(letter, true), num)) {
+                auto msg = Buf {};
+                msg.fmt("Expected number from 1-99 (base 10) for %-flag, but got {}", num);
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            }
+            pos = end + 1;
+            continue;
+        }
+
+        if (flag == '<') {
+            auto const end = text.find('>', pos);
+            if (end == std::string_view::npos) {
+                builder.literal("%<");
+                continue;
+            }
+            builder.group_ref(text.substr(pos, end - pos));
+            pos = end + 1;
+            continue;
+        }
+
+        if (is_unnumbered_flag(flag)) {
+            builder.flag(kind_for_letter(flag, false));
+            continue;
+        }
+
+        builder.literal('%');
+        builder.literal(flag);
+    }
+
+    return builder.take();
 }
 
 } // namespace pup
