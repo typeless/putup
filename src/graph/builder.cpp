@@ -496,6 +496,26 @@ auto get_or_create_group_node(
     return result;
 }
 
+auto group_operand_spelling(std::string_view reference) -> StringId
+{
+    return reference.starts_with("./") ? intern(reference.substr(2)) : intern(reference);
+}
+
+auto resolve_group_operand_node(
+    BuilderContext& ctx,
+    Builder& state,
+    std::string_view reference
+) -> Result<NodeId>
+{
+    auto parsed = parse_group_reference(reference, str(ctx.current_dir), str(ctx.options.source_root));
+    if (!parsed) {
+        auto msg = Buf {};
+        msg.fmt("Malformed group reference in inputs: '{}'", reference);
+        return make_error<NodeId>(ErrorCode::ParseError, msg.view());
+    }
+    return get_or_create_group_node(ctx, state, str(parsed->group_dir), parsed->group_name);
+}
+
 auto create_command_node(
     BuilderContext& ctx,
     Builder& state,
@@ -1895,20 +1915,32 @@ auto expand_rule(
     ctx.used_env_vars.clear();
 
     auto glob_pattern = StringId::Empty;
+    auto operands = Vec<RuleInput> {};
     auto file_inputs = Vec<StringId> {};
     for (auto const& inp : inputs) {
-        if (inp.kind == RuleInput::Kind::Pattern) {
+        switch (inp.kind) {
+        case RuleInput::Kind::Pattern:
             glob_pattern = inp.value;
-        } else {
+            break;
+        case RuleInput::Kind::File:
+            operands.push_back(inp);
             file_inputs.push_back(inp.value);
+            break;
+        case RuleInput::Kind::GroupRef:
+            operands.push_back(inp);
+            break;
         }
     }
 
     auto tc = make_transform_context(ctx);
     auto cmd_inputs = Vec<StringId> {};
-    cmd_inputs.reserve(file_inputs.size());
-    for (auto inp : file_inputs) {
-        cmd_inputs.push_back(transform_input_path(*ctx.state, tc, str(inp)));
+    cmd_inputs.reserve(operands.size());
+    for (auto const& inp : operands) {
+        cmd_inputs.push_back(
+            inp.kind == RuleInput::Kind::GroupRef
+                ? group_operand_spelling(str(inp.value))
+                : transform_input_path(*ctx.state, tc, str(inp.value))
+        );
     }
 
     auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
@@ -2178,14 +2210,17 @@ auto expand_rule(
     process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);
 
     // Create edges from inputs to command and collect operand NodeIds
-    // Use file_inputs (excludes glob patterns which aren't valid paths)
-    // Skip group references - they are handled by deferred edge resolution (order-only)
     auto input_ids = Vec<NodeId> {};
-    for (auto input : file_inputs) {
-        if (is_order_only_group_reference(str(input))) {
+    for (auto const& inp : operands) {
+        if (inp.kind == RuleInput::Kind::GroupRef) {
+            auto group_id = resolve_group_operand_node(ctx, state, str(inp.value));
+            if (!group_id) {
+                return pup::unexpected<Error>(group_id.error());
+            }
+            input_ids.push_back(*group_id);
             continue;
         }
-        auto input_id = resolve_input_node(ctx, str(input));
+        auto input_id = resolve_input_node(ctx, str(inp.value));
         if (!input_id) {
             return pup::unexpected<Error>(input_id.error());
         }

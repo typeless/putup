@@ -957,6 +957,78 @@ SCENARIO("Variant tup.config as a rule input retriggers on config change", "[e2e
     }
 }
 
+SCENARIO("A group reference in the inputs section is an operand the scan agrees with", "[e2e][groups][depscan]")
+{
+    GIVEN("a rule naming a group before two sources and compiling the second operand")
+    {
+        auto f = E2EFixture { "group_input_not_operand" };
+        f.write_file("a.c", "#include \"ha.h\"\nint fa(void) { return A; }\n");
+        f.write_file("b.c", "#include \"hb.h\"\nint main(void) { return B; }\n");
+        f.write_file("ha.h", "#define A 0\n");
+        f.write_file("hb.h", "#define B 0\n");
+        f.write_file(
+            "Tupfile",
+            ": |> echo hi > %o |> gen.h <hdrs>\n"
+            ": <hdrs> a.c b.c |> gcc -c %2f -o %o |> o.o\n"
+        );
+        REQUIRE(f.init().success());
+        REQUIRE(f.build().success());
+
+        WHEN("the recorded command and its implicit dependencies are read")
+        {
+            auto const index = f.pup({ "show", "index" });
+            REQUIRE(index.success());
+
+            THEN("the group holds the first operand and the scan followed what was compiled")
+            {
+                INFO("index: " << index.stdout_output);
+                REQUIRE(index.stdout_output.find("gcc -c a.c") != std::string::npos);
+                REQUIRE(index.stdout_output.find("gcc -M a.c") != std::string::npos);
+                REQUIRE(index.stdout_output.find("ha.h") != std::string::npos);
+            }
+        }
+
+        WHEN("the header of the compiled file changes")
+        {
+            f.write_file("ha.h", "#define A 7\n");
+
+            THEN("the object is rebuilt rather than left stale")
+            {
+                REQUIRE_FALSE(f.build().is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("A group reference in the inputs section expands the same way at both sites", "[e2e][groups]")
+{
+    GIVEN("a rule whose display and command spell the same operand flag")
+    {
+        auto f = E2EFixture { "group_input_not_operand" };
+        f.write_file("a.c", "x\n");
+        f.write_file(
+            "Tupfile",
+            ": |> echo hi > %o |> gen.h <hdrs>\n"
+            ": a.c <hdrs> |> ^ D=[%f]^ echo 'A=[%f]' > %o |> out.txt\n"
+        );
+        REQUIRE(f.init().success());
+
+        WHEN("the rule runs")
+        {
+            auto const result = f.build({ "-v" });
+            REQUIRE(result.success());
+
+            THEN("the displayed operand list and the executed operand list agree")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("out.txt: " << f.read_file("out.txt"));
+                REQUIRE(f.read_file("out.txt") == "A=[a.c <hdrs>]\n");
+                REQUIRE(result.stdout_output.find("D=[a.c <hdrs>]") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
 {
     GIVEN("a Tupfile with group reference in inputs section (before |)")
@@ -8692,16 +8764,18 @@ SCENARIO("An exclusion does not erase a group reference or the pattern it filter
         auto f = E2EFixture { "glob_mixed_space" };
         f.mkdir("sub");
         f.write_file("sub/Tupfile", ": |> echo g > %o |> gen.h | <hdrs>\n");
-        f.write_file("Tupfile", ": sub/<hdrs> sub/*.c !sub/* |> echo F=[%f] > %o |> out.txt\n");
+        f.write_file("Tupfile", ": sub/<hdrs> sub/*.c !sub/* |> echo 'F=[%f]' > %o |> out.txt\n");
         REQUIRE(f.init().success());
 
         WHEN("built with an exclusion that also matches those non-file entries")
         {
             REQUIRE(f.build().success());
 
-            THEN("the rule still runs")
+            THEN("the rule still runs and the group reference survives as an operand")
             {
                 REQUIRE(f.exists("out.txt"));
+                INFO("out.txt: " << f.read_file("out.txt"));
+                REQUIRE(f.read_file("out.txt").find("sub/<hdrs>") != std::string::npos);
             }
         }
     }

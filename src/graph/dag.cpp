@@ -832,6 +832,23 @@ struct ExecSite {
         return global_pool().get(get<Name>(graph, id));
     }
 
+    auto operand_path(NodeId id) const -> std::string_view
+    {
+        auto const* node = get_file_node(graph, id);
+        if (!node || node->type != NodeType::Group) {
+            return get_operand_path(id);
+        }
+        auto const dir = get_operand_path(node->parent_dir);
+        if (dir.empty()) {
+            return operand_name(id);
+        }
+        auto spelled = Buf {};
+        spelled += dir;
+        spelled += '/';
+        spelled += operand_name(id);
+        return global_pool().get(spelled.intern(global_pool()));
+    }
+
     auto append_literal(Buf& buf, StringId text) const -> void { buf += global_pool().get(text); }
 
     auto append_group_ref(Buf& buf, StringId name) const -> void
@@ -847,14 +864,14 @@ struct ExecSite {
             if (i > 0) {
                 buf += ' ';
             }
-            buf += get_operand_path(cmd->inputs[i]);
+            buf += operand_path(cmd->inputs[i]);
         }
     }
 
     auto append_input_base(Buf& buf) const -> void
     {
         if (!cmd->inputs.empty()) {
-            buf += path_basename(get_full_path(graph, cmd->inputs[0], cache));
+            buf += path_basename(operand_path(cmd->inputs[0]));
         }
     }
 
@@ -902,21 +919,21 @@ struct ExecSite {
     auto append_nth_input(Buf& buf, std::size_t index) const -> void
     {
         if (index < cmd->inputs.size()) {
-            buf += get_operand_path(cmd->inputs[index]);
+            buf += operand_path(cmd->inputs[index]);
         }
     }
 
     auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
     {
         if (index < cmd->inputs.size()) {
-            buf += pup::path::filename(get_operand_path(cmd->inputs[index]));
+            buf += pup::path::filename(operand_path(cmd->inputs[index]));
         }
     }
 
     auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
     {
         if (index < cmd->inputs.size()) {
-            auto const base = pup::path::filename(get_operand_path(cmd->inputs[index]));
+            auto const base = pup::path::filename(operand_path(cmd->inputs[index]));
             buf += base.substr(0, base.size() - pup::path::extension(base).size());
         }
     }

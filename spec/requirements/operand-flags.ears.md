@@ -78,3 +78,13 @@ When text that names a file is spliced into a recorded instruction, putup shall 
 
 When a rule escapes a percent that would otherwise open a group reference, putup shall pass the
 reference through as text rather than splice the group's members.
+
+### REQ-OPERAND-GROUP-IS-AN-OPERAND
+
+- conformance: tup-conformant
+- reference: upstream carries a group named in a rule's inputs section on the same input name list as the files (tup `parser.c`, the input branch that creates a `TUP_NODE_GROUP` tent for a bracketed name), and `tup_printf` reads that one list, so the group holds the position it was written and is spelled as written. Running tup on `: <hdrs> a.c sub/<shdrs> b.c` writes `N1=[<hdrs>] N2=[a.c] N3=[sub/<shdrs>] N4=[b.c] ALL=[<hdrs> a.c sub/<shdrs> b.c]`, and on `: <hdrs> a.c b.c |> gcc -c %2f -o %o |> o.o` it compiles `a.c`. putup built two operand lists that disagreed about this, one including the group and one not, so its generated dependency scan read a different file than its compile compiled (#448). The group's dependency stays order-only either way: that edge comes from a separate walk, not from the operand list
+- discharge: test "Scenario: A group reference in the inputs section is an operand the scan agrees with"
+- discharge: test "Scenario: A group reference in the inputs section expands the same way at both sites"
+
+When a rule's inputs section names a group, putup shall make that reference an operand at the
+position it was written.
