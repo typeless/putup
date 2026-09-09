@@ -5,6 +5,7 @@
 
 #include "pup/core/vec.hpp"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -60,6 +61,7 @@ public:
             }
             list.m_starts.push_back(static_cast<std::uint32_t>(next));
         }
+        assert(list.m_starts.front() == 0 && list.m_starts.back() == list.m_ids.size());
         return list;
     }
 

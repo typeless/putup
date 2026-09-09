@@ -14564,6 +14564,146 @@ SCENARIO("A numbered output flag names every operand of its output token", "[e2e
     }
 }
 
+SCENARIO("An input named twice is one operand and empties its second token", "[e2e][build]")
+{
+    GIVEN("a rule naming the same file as its first and third input")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("c.c", "");
+        f.write_file("Tupfile",
+            ": a.c a.c b.c c.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f] N4=[%4f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the first occurrence survives and the second token holds nothing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(
+                    f.read_file("out.txt")
+                    == "ALL=[a.c b.c c.c] N1=[a.c] N2=[] N3=[b.c] N4=[c.c]\n"
+                );
+            }
+        }
+    }
+}
+
+SCENARIO("A group named twice in the inputs section is one operand", "[e2e][build][groups]")
+{
+    GIVEN("a rule naming the same group as its first and third input")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile",
+            ": |> echo h > %o |> gen.h <hdrs>\n"
+            ": <hdrs> a.c <hdrs> b.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f] N4=[%4f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the group is pruned like any other repeated input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(
+                    f.read_file("out.txt")
+                    == "ALL=[<hdrs> a.c b.c] N1=[<hdrs>] N2=[a.c] N3=[] N4=[b.c]\n"
+                );
+            }
+        }
+    }
+}
+
+SCENARIO("A group named two ways is one operand", "[e2e][build][groups]")
+{
+    GIVEN("a rule naming the same group plainly and through a leading dot")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile",
+            ": |> echo h > %o |> gen.h <hdrs>\n"
+            ": <hdrs> ./<hdrs> a.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the two spellings are the same group, so the second names nothing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "ALL=[<hdrs> a.c] N1=[<hdrs>] N2=[] N3=[a.c]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A group named two ways from a subdirectory is one operand", "[e2e][build][groups]")
+{
+    GIVEN("a subdirectory rule naming its own group plainly and through a parent hop")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("sub/a.c", "");
+        f.write_file("sub/Tupfile",
+            ": |> echo h > %o |> gen.h <g>\n"
+            ": <g> ../sub/<g> a.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("both spellings name one group, so only the first token owns it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(
+                    f.read_file("sub/out.txt") == "ALL=[sub/<g> a.c] N1=[sub/<g>] N2=[] N3=[a.c]\n"
+                );
+            }
+        }
+    }
+}
+
+SCENARIO("An input named two ways is one operand", "[e2e][build]")
+{
+    GIVEN("a rule naming the same file once plainly and once through a leading dot")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile",
+            ": a.c ./a.c b.c |> echo 'ALL=[%f] N1=[%1f] N2=[%2f] N3=[%3f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the two spellings are the same input, so the second names nothing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "ALL=[a.c b.c] N1=[a.c] N2=[] N3=[b.c]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Numbered input flags name the basename and the basename without extension", "[e2e][build]")
 {
     GIVEN("a rule whose input sits in a subdirectory and whose command spells %1f, %1b and %1B")

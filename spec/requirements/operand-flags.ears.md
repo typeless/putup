@@ -49,6 +49,19 @@ number of the token it was written as rather than renumbering it for its own ite
 If a rule spells `%No`, then putup shall expand it to every operand of the N-th output token,
 joined by single spaces.
 
+### REQ-OPERAND-DUPLICATE-INPUT-PRUNED
+
+- conformance: tup-conformant
+- reference: upstream prunes a rule's input list to one entry per resolved node before it expands anything (`make_name_list_unique`, called once on the rule's inputs and before both the foreach split and `!`-macro resolution). It removes the later entry rather than blanking it, and never renumbers, so the token that named it keeps its number and names nothing. putup keys on the operand's normalized path instead of the resolved node, since nodes do not exist at that point; the two agree on every spelling of one path but not on two paths resolving to one node. They also differ on an input outside the project: upstream gives an external path no `tup_entry` (`nl_add_external_path`) and `make_name_list_unique` skips every entry without one, so `: /etc/hostname /etc/hostname a.c` keeps both, while putup prunes the second. Measured against tup: `: a.c a.c b.c c.c` writes `ALL=[a.c b.c c.c] N1=[a.c] N2=[] N3=[b.c] N4=[c.c]` (#449)
+- discharge: test "Scenario: An input named twice is one operand and empties its second token"
+- discharge: test "Scenario: An input named two ways is one operand"
+- discharge: test "Scenario: A group named twice in the inputs section is one operand"
+- discharge: test "Scenario: A group named two ways is one operand"
+- discharge: test "Scenario: A group named two ways from a subdirectory is one operand"
+
+When a rule names one input more than once, putup shall keep the first and leave the tokens
+that named the rest holding nothing.
+
 ## Group: refusals
 
 ### REQ-OPERAND-NUMBERED-RANGE
