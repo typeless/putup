@@ -29,7 +29,6 @@
 #include "pup/platform/file_io.hpp"
 
 #include <cstdint>
-#include <cstdio>
 
 #include <algorithm>
 #include <array>
@@ -156,6 +155,23 @@ auto parse_group_reference(
     auto dir_part = path.substr(0, lt_pos);
     auto group_dir = normalize_group_dir(dir_part, current_dir, source_root);
     return GroupReference { group_name, group_dir };
+}
+
+/// Spell a group reference as the canonical key both operand producers agree on.
+auto group_reference_value(std::string_view group_dir, std::string_view group_name) -> StringId
+{
+    auto ref_buf = Buf {};
+    if (group_dir.empty()) {
+        ref_buf += '<';
+        ref_buf += group_name;
+        ref_buf += '>';
+    } else {
+        ref_buf += group_dir;
+        ref_buf += "/<";
+        ref_buf += group_name;
+        ref_buf += '>';
+    }
+    return ref_buf.intern(global_pool());
 }
 
 /// Normalize a path that may point to the output directory to its canonical form.
@@ -1097,20 +1113,10 @@ auto expand_inputs(
                 group_dir = is_empty(ctx.current_dir) ? intern(".") : ctx.current_dir;
             }
 
-            auto group_name_sv = str(pattern.group_name);
-            auto ref_buf = Buf {};
-            auto group_dir_sv = str(group_dir);
-            if (group_dir_sv.empty()) {
-                ref_buf += '<';
-                ref_buf += group_name_sv;
-                ref_buf += '>';
-            } else {
-                ref_buf += group_dir_sv;
-                ref_buf += "/<";
-                ref_buf += group_name_sv;
-                ref_buf += '>';
-            }
-            result.push_back(RuleInput { RuleInput::Kind::GroupRef, ref_buf.intern(pool) });
+            result.push_back(RuleInput {
+                RuleInput::Kind::GroupRef,
+                group_reference_value(str(group_dir), str(pattern.group_name)),
+            });
             continue;
         }
 
@@ -1124,7 +1130,10 @@ auto expand_inputs(
             auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
                 request_demand_driven_parse(*ctx.eval, str(group_ref->group_dir));
-                result.push_back(RuleInput { RuleInput::Kind::GroupRef, path_id });
+                result.push_back(RuleInput {
+                    RuleInput::Kind::GroupRef,
+                    group_reference_value(str(group_ref->group_dir), group_ref->group_name),
+                });
                 continue;
             }
             auto project_relative = is_empty(ctx.current_dir) ? path_sv : pool.get(pup::path::join(str(ctx.current_dir), path_sv));
@@ -2381,6 +2390,28 @@ auto expand_rule(
     return {};
 }
 
+/// Prunes an input a rule names more than once, keeping the first occurrence where it was written.
+/// Numbers belong to tokens and nothing renumbers, so the pruned operand's token is left owning
+/// one operand fewer -- and a token that named nothing else now names nothing at all.
+///
+/// The key is the operand's normalized path rather than the node it resolves to, which is what
+/// upstream keys on: nodes do not exist yet here, and this has to run before the foreach split,
+/// as upstream's does. `file_input` has already normalized and stripped the build prefix, so the
+/// two agree on every spelling of a path -- but not on two paths that only resolve to one node.
+auto prune_duplicate_inputs(Vec<RuleInput>& operands) -> void
+{
+    auto seen = SortedIdVec {};
+    auto kept = Vec<RuleInput> {};
+    kept.reserve(operands.size());
+    for (auto const& inp : operands) {
+        if (inp.kind != RuleInput::Kind::Pattern && !seen.insert(to_underlying(inp.value))) {
+            continue;
+        }
+        kept.push_back(inp);
+    }
+    operands = std::move(kept);
+}
+
 auto process_rule(
     BuilderContext& ctx,
     Builder& state,
@@ -2401,6 +2432,8 @@ auto process_rule(
     // - rule.inputs.empty() means no input pattern was specified (": |> cmd")
     // - inputs->empty() means the pattern(s) evaluated to no files
     // Only skip if pattern was specified but produced nothing
+    prune_duplicate_inputs(inputs->operands);
+
     if (!rule.foreach_ && !rule.inputs.empty() && inputs->operands.empty()) {
         return {};
     }
