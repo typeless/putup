@@ -22,6 +22,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <variant>
 
@@ -392,6 +393,7 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>
 namespace {
 
 struct ParseSite {
+public:
     EvalContext& ctx;
     PatternFlags const& flags;
 
@@ -445,32 +447,41 @@ struct ParseSite {
 
     auto append_input_dir(Buf& buf) const -> void { buf.append(flags.input_dir); }
 
-    auto append_nth_input(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < flags.all_inputs.size()) {
-            buf.append(flags.all_inputs[index]);
-        }
+        append_token(buf, flags.all_inputs.token(token), [](std::string_view p) { return p; });
     }
 
-    auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < flags.all_inputs.size()) {
-            buf.append(pup::path::filename(flags.all_inputs[index]));
-        }
+        append_token(buf, flags.all_inputs.token(token), [](std::string_view p) {
+            return pup::path::filename(p);
+        });
     }
 
-    auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < flags.all_inputs.size()) {
-            auto const base = pup::path::filename(flags.all_inputs[index]);
-            buf.append(base.substr(0, base.size() - pup::path::extension(base).size()));
-        }
+        append_token(buf, flags.all_inputs.token(token), [](std::string_view p) {
+            auto const base = pup::path::filename(p);
+            return base.substr(0, base.size() - pup::path::extension(base).size());
+        });
     }
 
-    auto append_nth_output(Buf& buf, std::size_t index) const -> void
+    auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < flags.all_outputs.size()) {
-            buf.append(flags.all_outputs[index]);
+        append_token(buf, flags.all_outputs.token(token), [](std::string_view p) { return p; });
+    }
+
+private:
+    template<typename Spelling>
+    static auto append_token(Buf& buf, std::span<std::string_view const> operands, Spelling spell)
+        -> void
+    {
+        for (auto i = std::size_t { 0 }; i < operands.size(); ++i) {
+            if (i > 0) {
+                buf.append(' ');
+            }
+            buf.append(spell(operands[i]));
         }
     }
 };

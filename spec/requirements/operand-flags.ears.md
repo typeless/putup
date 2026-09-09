@@ -12,12 +12,42 @@ so those are collected here.
 
 ### REQ-OPERAND-NUMBERED-INPUT-SPELLINGS
 
-- conformance: deliberate-deviation
-- reference: upstream selects the name list by letter and then the spelling within it (`tup_printf`, the `%N`-flag branch): `f`, `b` and `B` all read the input list, and the append distinguishes the whole path from the basename and from the basename with its extension removed. putup matches upstream on that spelling but not on which entries a number selects: upstream numbers the input *tokens* (`get_path_list` assigns one order id per whitespace-separated path and a glob's matches inherit their token's), then appends every entry carrying that id, so `%1f` on a globbed token names all of its matches; putup numbers the flattened file list and names one file. Pre-existing for `%Nf` and `%No` and extended here to `%Nb` and `%NB` rather than introduced (#429)
+- conformance: tup-conformant
+- reference: upstream selects the name list by letter and then the spelling within it (`tup_printf`, the `%N`-flag branch): `f`, `b` and `B` all read the input list, and the append distinguishes the whole path from the basename and from the basename with its extension removed. It appends every entry carrying the order id the number names, joined by single spaces (#429)
 - discharge: test "Scenario: Numbered input flags name the basename and the basename without extension"
+- discharge: test "Scenario: A numbered input flag names every operand of its token"
 
-If a rule spells `%Nf`, `%Nb` or `%NB`, then putup shall expand it to the N-th input's whole
-path, its basename, or its basename without its extension respectively.
+If a rule spells `%Nf`, `%Nb` or `%NB`, then putup shall expand it to every operand of the N-th
+input token, spelled as its whole path, its basename, or its basename without its extension
+respectively and joined by single spaces.
+
+### REQ-OPERAND-NUMBER-NAMES-A-WRITTEN-TOKEN
+
+- conformance: tup-conformant
+- reference: upstream numbers the whitespace-separated tokens of a rule's input list rather than the operands they expand to (`get_path_list` assigns one order id per token, before variable expansion), copies that id onto every entry the token produces (`eval_path_list` for a variable's words, `build_name_list_cb` for a glob's matches, `nl_add_bin` for a bin's members), and never renumbers. Measured against tup: `: $(EMPTY) $(SRCS) a.c` with `SRCS = a.c b.c` writes `N1=[] N2=[a.c b.c]` (#429)
+- discharge: test "Scenario: A numbered input flag names every operand of its token"
+- discharge: test "Scenario: A token that expands to nothing still consumes its number"
+
+putup shall give a rule's number to the token it was written as, so that a token expanding to
+several operands answers to one number and a token expanding to none still holds its own.
+
+### REQ-OPERAND-NUMBER-SURVIVES-FOREACH
+
+- conformance: tup-conformant
+- reference: upstream's foreach loop shallow-copies one name list entry into the per-iteration list with its order id intact (`execute_rule`), so a number names nothing on the iterations whose operand came from a different token. Measured against tup: `: foreach d1.in d2.in` writes `N1=[d1.in] N2=[]` for the first iteration and `N1=[] N2=[d2.in]` for the second (#429)
+- discharge: test "Scenario: An operand keeps its token number through a foreach split"
+
+When a foreach rule expands to one command per input, putup shall keep each operand under the
+number of the token it was written as rather than renumbering it for its own iteration.
+
+### REQ-OPERAND-NUMBERED-OUTPUT-SPELLING
+
+- conformance: tup-conformant
+- reference: upstream builds the output list with the same tokenizer it builds the input list with (`parse_output_pattern` calls `get_path_list`), on its own counter starting at one, and `%No` selects from it exactly as `%Nf` selects from the inputs (`tup_printf`, the `%N`-flag branch). Measured against tup: `|> out.txt $(OUTS)` with `OUTS = p.txt q.txt` writes `O1=[out.txt] O2=[p.txt q.txt]` (#429)
+- discharge: test "Scenario: A numbered output flag names every operand of its output token"
+
+If a rule spells `%No`, then putup shall expand it to every operand of the N-th output token,
+joined by single spaces.
 
 ## Group: refusals
 

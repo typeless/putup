@@ -8,6 +8,7 @@
 #include "pup/core/node_id_map.hpp"
 #include "pup/core/result.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 
@@ -63,8 +64,8 @@ struct CommandEntry {
     /// carried this record past a change to one of its deps without re-running it.
     bool must_rerun = false;
 
-    Vec<NodeId> inputs = {};  ///< Input file operands (for %f expansion)
-    Vec<NodeId> outputs = {}; ///< Output file operands (for %o expansion)
+    TokenList<NodeId> inputs = {};  ///< Input file operands (for %f expansion), grouped by written token
+    TokenList<NodeId> outputs = {}; ///< Output file operands (for %o expansion), grouped by written token
 
     /// Convert to raw format for serialization
     [[nodiscard]]
@@ -83,8 +84,8 @@ struct CommandEntry {
         std::string_view instruction_pattern,
         std::string_view display_str,
         std::string_view env_str,
-        Vec<NodeId> inputs,
-        Vec<NodeId> outputs,
+        TokenList<NodeId> inputs,
+        TokenList<NodeId> outputs,
         std::size_t array_index
     ) -> Result<CommandEntry>;
 };

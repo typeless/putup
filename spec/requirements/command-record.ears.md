@@ -281,6 +281,17 @@ consume its outputs.
 
 putup shall record every input a command was built from, whatever their number.
 
+### REQ-INPUT-TOKEN-BOUNDARY
+
+- leg: invariant
+- conformance: putup-only
+- reference: the operand stream is putup's own record layout; upstream has no counterpart (#365). Upstream re-parses the Tupfile to recover which token an operand came from, so it has nothing to record; putup reconstructs a command from its record instead, and a record holding the operands without their grouping reconstructs every numbered flag wrong (#429)
+- discharge: test "A command's operand tokens survive the record"
+- discharge: test "An operand boundary that does not span its operands makes the record unreadable"
+
+putup shall record which written token each of a command's operands came from, so that a
+reconstructed command spells a numbered flag the way the rule that built it did.
+
 ### REQ-INPUT-PRESERVE
 
 - leg: invariant

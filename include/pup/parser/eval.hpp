@@ -9,6 +9,7 @@
 #include "pup/core/result.hpp"
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
+#include "pup/core/token_list.hpp"
 #include "pup/core/vec.hpp"
 
 #include <string_view>
@@ -209,9 +210,8 @@ struct PatternFlags {
     std::string_view input_ext = {};                  ///< %e - input extension
     std::string_view input_dir = {};                  ///< %d - input directory
     std::string_view glob_match = {};                 ///< %g - portion matched by * in foreach glob
-    int input_index = 0;                              ///< For %Nf patterns (1-indexed)
-    Vec<std::string_view> all_inputs = {};            ///< All inputs, for %f and %Nf
-    Vec<std::string_view> all_outputs = {};           ///< All outputs, for %o, %No and %O
+    TokenList<std::string_view> all_inputs = {};      ///< All inputs, for %f and %Nf, grouped by written token
+    TokenList<std::string_view> all_outputs = {};     ///< All outputs, for %o, %No and %O, grouped by written token
     PatternSection section = PatternSection::Command; ///< decides where %o and %O are legal
 };
 
