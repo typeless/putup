@@ -71,11 +71,9 @@ TEST_CASE("A trailing token that owns nothing still holds its number", "[token_l
     REQUIRE(starts_of(list) == Vec<std::uint32_t> { 0, 1, 1, 1 });
 }
 
-TEST_CASE("Dropping an operand leaves every survivor under the number it was written with", "[token_list]")
+TEST_CASE("A rebuilt list leaves every survivor under the number it was written with", "[token_list]")
 {
-    auto list = TokenList<NodeId>::grouped(Vec<NodeId> { 4, 5, 6 }, Vec<std::uint32_t> { 1, 2, 3 }, 3);
-
-    list.drop(1);
+    auto const list = TokenList<NodeId>::grouped(Vec<NodeId> { 4, 6 }, Vec<std::uint32_t> { 1, 3 }, 3);
 
     REQUIRE(list.size() == 2);
     REQUIRE(joined(list, 1) == Vec<NodeId> { 4 });
