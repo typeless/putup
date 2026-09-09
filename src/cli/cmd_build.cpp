@@ -1407,19 +1407,24 @@ auto merge_out_of_scope_commands(
         }
 
         auto resolve_operands = [&](pup::TokenList<pup::NodeId> const& old_ids) {
-            auto resolved = old_ids;
-            auto at = std::size_t { 0 };
-            for (auto old_id : old_ids) {
-                auto id = resolve_file(old_id);
-                if (id == pup::INVALID_NODE_ID) {
-                    unresolved = true;
-                    resolved.drop(at);
-                    continue;
+            auto kept_ids = pup::Vec<pup::NodeId> {};
+            auto kept_tokens = pup::Vec<std::uint32_t> {};
+            kept_ids.reserve(old_ids.size());
+            kept_tokens.reserve(old_ids.size());
+            for (auto token = std::uint32_t { 1 }; token <= old_ids.token_count(); ++token) {
+                for (auto old_id : old_ids.token(token)) {
+                    auto id = resolve_file(old_id);
+                    if (id == pup::INVALID_NODE_ID) {
+                        unresolved = true;
+                        continue;
+                    }
+                    kept_ids.push_back(id);
+                    kept_tokens.push_back(token);
                 }
-                resolved.replace(at, id);
-                ++at;
             }
-            return resolved;
+            return pup::TokenList<pup::NodeId>::grouped(
+                std::move(kept_ids), kept_tokens, old_ids.token_count()
+            );
         };
         auto new_inputs = resolve_operands(cmd.inputs);
         auto new_outputs = resolve_operands(cmd.outputs);

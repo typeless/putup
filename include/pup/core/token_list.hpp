@@ -84,29 +84,6 @@ public:
         return list;
     }
 
-    /// Drops one operand, leaving every survivor under the number it was written with -- so a token
-    /// that loses its last operand renders empty rather than taking the next token's operands.
-    auto drop(std::size_t index) -> void
-    {
-        if (index >= m_ids.size()) {
-            return;
-        }
-        m_ids.erase(m_ids.begin() + static_cast<std::ptrdiff_t>(index));
-        for (auto& start : m_starts) {
-            if (start > index) {
-                --start;
-            }
-        }
-    }
-
-    /// Puts a different operand in one slot, leaving the grouping alone.
-    auto replace(std::size_t index, T value) -> void
-    {
-        if (index < m_ids.size()) {
-            m_ids[index] = std::move(value);
-        }
-    }
-
     /// The operands of the `number`-th written token, empty when that token owns none or was never
     /// written. 1-based, as a rule spells it.
     [[nodiscard]]
