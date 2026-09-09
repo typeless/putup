@@ -14458,6 +14458,112 @@ SCENARIO("A percent-O in a command string with more than one output is refused",
     }
 }
 
+SCENARIO("A numbered input flag names every operand of its token", "[e2e][build]")
+{
+    GIVEN("a rule whose first input is a glob matching two files")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("z.h", "");
+        f.write_file("Tupfile", ": *.c z.h |> echo 'N1=[%1f] N2=[%2f] N3=[%3f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the first number names both of the glob's matches and the second names the next written token")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "N1=[a.c b.c] N2=[z.h] N3=[]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A token that expands to nothing still consumes its number", "[e2e][build]")
+{
+    GIVEN("a rule whose first input is a variable that expands to nothing")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile",
+            "EMPTY =\n"
+            "SRCS = a.c b.c\n"
+            ": $(EMPTY) $(SRCS) |> echo 'N1=[%1f] N2=[%2f]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the empty token holds number one and the variable's words share number two")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "N1=[] N2=[a.c b.c]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("An operand keeps its token number through a foreach split", "[e2e][build]")
+{
+    GIVEN("a foreach rule over two written input tokens")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("d1.in", "");
+        f.write_file("d2.in", "");
+        f.write_file("Tupfile",
+            ": foreach d1.in d2.in |> echo 'N1=[%1f] N2=[%2f]' > %o |> %B.out\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("each iteration answers only to the number its own input was written under")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("d1.out") == "N1=[d1.in] N2=[]\n");
+                REQUIRE(f.read_file("d2.out") == "N1=[] N2=[d2.in]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A numbered output flag names every operand of its output token", "[e2e][build]")
+{
+    GIVEN("a rule whose second output token is a variable naming two files")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("Tupfile",
+            "OUTS = p.txt q.txt\n"
+            ": |> echo 'O1=[%1o] O2=[%2o] O3=[%3o]' > out.txt; touch p.txt q.txt |> out.txt $(OUTS)\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the second number names both of that token's outputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "O1=[out.txt] O2=[p.txt q.txt] O3=[]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Numbered input flags name the basename and the basename without extension", "[e2e][build]")
 {
     GIVEN("a rule whose input sits in a subdirectory and whose command spells %1f, %1b and %1B")

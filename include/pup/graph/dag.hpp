@@ -13,6 +13,7 @@
 #include "pup/core/stable_vec.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
@@ -68,8 +69,8 @@ struct CommandNode {
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
     Instruction instruction = {};          ///< Instruction atoms (e.g. "gcc -c %f -o %o")
 
-    Vec<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion
-    Vec<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion
+    TokenList<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion, grouped by written token
+    TokenList<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion, grouped by written token
 
     SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
 
@@ -213,11 +214,11 @@ struct view_storage;
 
 template<>
 struct view_storage<Inputs> {
-    using type = Vec<NodeId>;
+    using type = TokenList<NodeId>;
 };
 template<>
 struct view_storage<Outputs> {
-    using type = Vec<NodeId>;
+    using type = TokenList<NodeId>;
 };
 template<>
 struct view_storage<ExportedVars> {

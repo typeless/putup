@@ -311,17 +311,17 @@ auto get_parent_dir(Graph const& graph, NodeId id) -> NodeId
 }
 
 template<>
-auto view<Inputs>(Graph const& graph, NodeId id) -> Vec<NodeId> const&
+auto view<Inputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
 {
-    static auto const empty = Vec<NodeId> {};
+    static auto const empty = TokenList<NodeId> {};
     auto const* node = get_command_node(graph, id);
     return node ? node->inputs : empty;
 }
 
 template<>
-auto view<Outputs>(Graph const& graph, NodeId id) -> Vec<NodeId> const&
+auto view<Outputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
 {
-    static auto const empty = Vec<NodeId> {};
+    static auto const empty = TokenList<NodeId> {};
     auto const* node = get_command_node(graph, id);
     return node ? node->outputs : empty;
 }
@@ -912,32 +912,41 @@ struct ExecSite {
         buf += slash != std::string_view::npos ? source_dir.substr(slash + 1) : source_dir;
     }
 
-    auto append_nth_input(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < cmd->inputs.size()) {
-            buf += operand_path(cmd->inputs[index]);
-        }
+        append_token(buf, cmd->inputs.token(token), [this](NodeId id) { return operand_path(id); });
     }
 
-    auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < cmd->inputs.size()) {
-            buf += pup::path::filename(operand_path(cmd->inputs[index]));
-        }
+        append_token(buf, cmd->inputs.token(token), [this](NodeId id) {
+            return pup::path::filename(operand_path(id));
+        });
     }
 
-    auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < cmd->inputs.size()) {
-            auto const base = pup::path::filename(operand_path(cmd->inputs[index]));
-            buf += base.substr(0, base.size() - pup::path::extension(base).size());
-        }
+        append_token(buf, cmd->inputs.token(token), [this](NodeId id) {
+            auto const base = pup::path::filename(operand_path(id));
+            return base.substr(0, base.size() - pup::path::extension(base).size());
+        });
     }
 
-    auto append_nth_output(Buf& buf, std::size_t index) const -> void
+    auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < cmd->outputs.size()) {
-            buf += get_operand_path(cmd->outputs[index]);
+        append_token(buf, cmd->outputs.token(token), [this](NodeId id) {
+            return get_operand_path(id);
+        });
+    }
+
+    template<typename Spelling>
+    static auto append_token(Buf& buf, std::span<NodeId const> operands, Spelling spell) -> void
+    {
+        for (auto i = std::size_t { 0 }; i < operands.size(); ++i) {
+            if (i > 0) {
+                buf += ' ';
+            }
+            buf += spell(operands[i]);
         }
     }
 };

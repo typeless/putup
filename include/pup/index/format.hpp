@@ -89,7 +89,7 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 /// `RawFileEntry::name_offset` is semantics-bearing on the same terms: `read_prior_paths` composes
 /// it into the paths `clean`/`distclean` delete and `reject_shadowed_sources` refuses a build over,
 /// so a name this reader cannot reproduce fails the record rather than reading as empty (#381).
-inline constexpr auto INDEX_VERSION = std::uint32_t { 24 };
+inline constexpr auto INDEX_VERSION = std::uint32_t { 25 };
 
 /// The oldest version whose `RawHeader` and `RawFileEntry` bytes mean what today's mean, so a
 /// record that old still says which paths it recorded as sources and which as generated even
@@ -220,6 +220,42 @@ static_assert(
     "and route it (collect_affected_commands) — before updating this number. A category carried "
     "as a bit in `flags` changes no size and will not trip this assert: CommandFlag::MustRerun "
     "landed that way, which is why every flag has to name its category in flag_category"
+);
+
+/// The fixed-size head of one command's operand record, in 32-bit words: the counts that say how
+/// many variable-length words follow it. Writer and reader both derive their arithmetic from this
+/// name, and the switch below is exhaustive under -Wswitch, so a widened record does not compile
+/// until every new word has named the category of recorded state it carries -- which is the
+/// conversation `sizeof(RawCommandEntry)` cannot start, because operands are not in that struct.
+enum class OperandRecordWord : std::size_t {
+    InputCount = 0,
+    OutputCount = 1,
+    InputTokenCount = 2,
+    OutputTokenCount = 3,
+};
+
+[[nodiscard]]
+constexpr auto operand_word_category(OperandRecordWord word) -> std::string_view
+{
+    switch (word) {
+    case OperandRecordWord::InputCount:
+        return "inputs";
+    case OperandRecordWord::OutputCount:
+        return "outputs";
+    case OperandRecordWord::InputTokenCount:
+    case OperandRecordWord::OutputTokenCount:
+        return "operand-tokens";
+    }
+    return {};
+}
+
+inline constexpr auto OPERAND_RECORD_HEAD_WORDS = std::size_t { 4 };
+
+static_assert(
+    !operand_word_category(static_cast<OperandRecordWord>(OPERAND_RECORD_HEAD_WORDS - 1)).empty(),
+    "the operand record grew a head word that names no category: bump INDEX_VERSION, and wire the "
+    "new state's three legs -- record it in writer.cpp and reader.cpp, compare it where staleness "
+    "is decided, and route it -- before widening this number"
 );
 
 /// Raw edge entry (16 bytes)

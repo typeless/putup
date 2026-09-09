@@ -22,6 +22,7 @@
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/terminal.hpp"
+#include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/exec/progress_display.hpp"
@@ -1405,20 +1406,23 @@ auto merge_out_of_scope_commands(
             }
         }
 
-        auto resolve_operands = [&](pup::Vec<pup::NodeId> const& old_ids, pup::Vec<pup::NodeId>& out) -> void {
+        auto resolve_operands = [&](pup::TokenList<pup::NodeId> const& old_ids) {
+            auto resolved = old_ids;
+            auto at = std::size_t { 0 };
             for (auto old_id : old_ids) {
                 auto id = resolve_file(old_id);
                 if (id == pup::INVALID_NODE_ID) {
                     unresolved = true;
+                    resolved.drop(at);
                     continue;
                 }
-                out.push_back(id);
+                resolved.replace(at, id);
+                ++at;
             }
+            return resolved;
         };
-        auto new_inputs = pup::Vec<pup::NodeId> {};
-        auto new_outputs = pup::Vec<pup::NodeId> {};
-        resolve_operands(cmd.inputs, new_inputs);
-        resolve_operands(cmd.outputs, new_outputs);
+        auto new_inputs = resolve_operands(cmd.inputs);
+        auto new_outputs = resolve_operands(cmd.outputs);
         // An operand it could not carry means the record no longer describes what ran, so it
         // keeps its outputs but stops claiming they are current.
         must_rerun = must_rerun || unresolved;

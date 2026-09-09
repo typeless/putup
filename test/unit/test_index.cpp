@@ -889,6 +889,52 @@ TEST_CASE("A command with more than 255 operands records all of them", "[index]"
     std::filesystem::remove(temp_path);
 }
 
+TEST_CASE("A command's operand tokens survive the record", "[index]")
+{
+    auto index = Index {};
+    for (auto i = 1; i <= 5; ++i) {
+        auto name = Buf {};
+        name.fmt("f{}.c", i);
+        index.add_file(FileEntry { .id = static_cast<NodeId>(i), .parent_id = 0, .name = intern(name.view()) });
+    }
+
+    auto const inputs = pup::TokenList<NodeId>::grouped(
+        pup::Vec<NodeId> { 1, 2, 3 }, pup::Vec<std::uint32_t> { 1, 2, 2 }, 3
+    );
+    auto const outputs = pup::TokenList<NodeId>::grouped(
+        pup::Vec<NodeId> { 4, 5 }, pup::Vec<std::uint32_t> { 2, 2 }, 2
+    );
+
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry {
+        .id = cmd_id,
+        .instruction_pattern = intern("cc %2f -o %2o"),
+        .inputs = inputs,
+        .outputs = outputs,
+    });
+
+    auto temp_path = pup::test::temp_path("pup_operand_tokens_test").string();
+    REQUIRE(write_index(temp_path, index).has_value());
+
+    auto opened = open_index(temp_path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE(restored.has_value());
+
+    auto const* cmd = restored->find_command_by_id(cmd_id);
+    REQUIRE(cmd != nullptr);
+    REQUIRE(cmd->inputs == inputs);
+    REQUIRE(cmd->outputs == outputs);
+    REQUIRE(cmd->inputs.token_count() == 3);
+    REQUIRE(cmd->inputs.token(1).size() == 1);
+    REQUIRE(cmd->inputs.token(2).size() == 2);
+    REQUIRE(cmd->inputs.token(3).empty());
+    REQUIRE(cmd->outputs.token(2).size() == 2);
+
+    opened->file.close();
+    std::filesystem::remove(temp_path);
+}
+
 TEST_CASE("StringTable deduplication", "[index]")
 {
     SECTION("identical strings are deduplicated")
@@ -1737,6 +1783,42 @@ TEST_CASE("An operand count larger than the record makes it unreadable", "[index
     std::filesystem::remove(path);
 }
 
+TEST_CASE("An operand boundary that does not span its operands makes the record unreadable", "[index]")
+{
+    auto index = Index {};
+    index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
+    index.add_file(FileEntry { .id = 2, .parent_id = 0, .name = intern("util.c") });
+    auto cmd_id = node_id::make_command(1);
+    index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .inputs = { 1, 2 } });
+
+    auto data = serialize_index(index);
+    REQUIRE(data.has_value());
+
+    auto bytes = *data;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
+    auto constexpr OPERAND_IDS = std::size_t { 2 };
+    auto constexpr BOUNDARY_OFFSETS_BEFORE_THE_CLOSING_ONE = std::size_t { 2 };
+    auto const input_boundary_closing_offset = std::size_t { hdr->operand_data_offset }
+        + (OPERAND_RECORD_HEAD_WORDS + OPERAND_IDS + BOUNDARY_OFFSETS_BEFORE_THE_CLOSING_ONE)
+            * sizeof(std::uint32_t);
+    bytes[input_boundary_closing_offset] = std::byte { 0x01 };
+    stamp_version(bytes, INDEX_VERSION);
+
+    auto const path = temp_index_path("pup_operand_boundary_short");
+    write_bytes(path, bytes);
+
+    auto opened = open_index(path);
+    REQUIRE(opened.has_value());
+    auto restored = read_index(*opened);
+    REQUIRE_FALSE(restored.has_value());
+    REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
+    REQUIRE(sv(restored.error().message).find("tokens") != std::string_view::npos);
+
+    opened->file.close();
+    std::filesystem::remove(path);
+}
+
 // Both wrap tests discriminate only because the position they wrap onto holds something: a wrap
 // landing on zeroes would be rejected for the wrong reason, not for the wrap the test is about.
 static_assert(offsetof(RawHeader, file_count) == 8, "the operand wrap test lands on this field");
@@ -2388,6 +2470,30 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
             std::vector<NodeId> index_outputs;
             StringId source_dir;
             NodeId dir_id;
+            /// The written token each operand came from, and how many tokens the rule spelled.
+            /// An empty layout means one token per operand, which is what a rule spelling every
+            /// operand as its own word produces.
+            std::vector<std::uint32_t> input_tokens = {};
+            std::uint32_t input_token_count = 0;
+            std::vector<std::uint32_t> output_tokens = {};
+            std::uint32_t output_token_count = 0;
+        };
+
+        auto grouped = [](std::vector<NodeId> const& ids,
+                          std::vector<std::uint32_t> const& tokens,
+                          std::uint32_t token_count) {
+            auto vec = Vec<NodeId> {};
+            for (auto id : ids) {
+                vec.push_back(id);
+            }
+            if (token_count == 0) {
+                return pup::TokenList<NodeId> { std::move(vec) };
+            }
+            auto of = Vec<std::uint32_t> {};
+            for (auto t : tokens) {
+                of.push_back(t);
+            }
+            return pup::TokenList<NodeId>::grouped(std::move(vec), of, token_count);
         };
 
         auto const cases = std::vector<Operands> {
@@ -2398,6 +2504,18 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
             { "no inputs", {}, { *foo_o }, {}, { 6 }, intern("src"), 1 },
             { "no outputs", { *foo_c }, {}, { 3 }, {}, intern("src"), 1 },
             { "a command at the project root", { *foo_c }, { *foo_o }, { 3 }, { 6 }, StringId::Empty, 0 },
+            { "one token owning two inputs",
+                { *foo_c, *bar_c }, { *foo_o }, { 3, 4 }, { 6 }, intern("src"), 1,
+                { 1, 1 }, 1, {}, 0 },
+            { "a leading token that owns nothing",
+                { *foo_c, *bar_c }, { *foo_o }, { 3, 4 }, { 6 }, intern("src"), 1,
+                { 2, 3 }, 3, {}, 0 },
+            { "a trailing token that owns nothing",
+                { *foo_c }, { *foo_o }, { 3 }, { 6 }, intern("src"), 1,
+                { 1 }, 3, {}, 0 },
+            { "one token owning two outputs",
+                { *foo_c }, { *foo_o, *foo_d }, { 3 }, { 6, 7 }, intern("src"), 1,
+                {}, 0, { 2, 2 }, 2 },
         };
 
         auto const templates = std::vector<std::string_view> {
@@ -2425,12 +2543,12 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                         .source_dir = operands.source_dir,
                         .instruction = pup::test::instruction(tmpl),
                     };
-                    for (auto id : operands.graph_inputs) {
-                        node.inputs.push_back(id);
-                    }
-                    for (auto id : operands.graph_outputs) {
-                        node.outputs.push_back(id);
-                    }
+                    node.inputs = grouped(
+                        operands.graph_inputs, operands.input_tokens, operands.input_token_count
+                    );
+                    node.outputs = grouped(
+                        operands.graph_outputs, operands.output_tokens, operands.output_token_count
+                    );
                     auto cmd_id = graph::add_command_node(g, std::move(node));
                     REQUIRE(cmd_id.has_value());
 
@@ -2439,12 +2557,12 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                         .dir_id = operands.dir_id,
                         .instruction_pattern = render_instruction(pup::test::instruction(tmpl)),
                     };
-                    for (auto id : operands.index_inputs) {
-                        record.inputs.push_back(id);
-                    }
-                    for (auto id : operands.index_outputs) {
-                        record.outputs.push_back(id);
-                    }
+                    record.inputs = grouped(
+                        operands.index_inputs, operands.input_tokens, operands.input_token_count
+                    );
+                    record.outputs = grouped(
+                        operands.index_outputs, operands.output_tokens, operands.output_token_count
+                    );
                     index.add_command(record);
 
                     auto const from_graph

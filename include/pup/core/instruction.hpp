@@ -141,16 +141,16 @@ auto fold_instruction(Instruction const& atoms, Site const& site) -> StringId
             site.append_input_dir(buf);
             break;
         case AtomKind::NthInput:
-            site.append_nth_input(buf, atom.operand() - 1U);
+            site.append_nth_input(buf, atom.operand());
             break;
         case AtomKind::NthInputBase:
-            site.append_nth_input_base(buf, atom.operand() - 1U);
+            site.append_nth_input_base(buf, atom.operand());
             break;
         case AtomKind::NthInputNoExt:
-            site.append_nth_input_noext(buf, atom.operand() - 1U);
+            site.append_nth_input_noext(buf, atom.operand());
             break;
         case AtomKind::NthOutput:
-            site.append_nth_output(buf, atom.operand() - 1U);
+            site.append_nth_output(buf, atom.operand());
             break;
         }
     }

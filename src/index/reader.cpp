@@ -5,6 +5,7 @@
 #include "pup/core/expected.hpp"
 #include "pup/core/hash.hpp"
 #include "pup/core/result.hpp"
+#include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/index/entry.hpp"
@@ -28,7 +29,8 @@ constexpr auto UNREADABLE_DISPLAY = std::string_view { "[unreadable]" };
 
 auto index_get_semantic_string(IndexFile const& f, std::uint32_t offset) -> Result<std::string_view>;
 auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view;
-auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<std::pair<Vec<NodeId>, Vec<NodeId>>>;
+auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
+    -> Result<std::pair<TokenList<NodeId>, TokenList<NodeId>>>;
 
 template<typename T>
 auto read_raw_entries(
@@ -383,9 +385,9 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
 }
 
 auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
-    -> Result<std::pair<Vec<NodeId>, Vec<NodeId>>>
+    -> Result<std::pair<TokenList<NodeId>, TokenList<NodeId>>>
 {
-    using Operands = std::pair<Vec<NodeId>, Vec<NodeId>>;
+    using Operands = std::pair<TokenList<NodeId>, TokenList<NodeId>>;
 
     auto const* hdr = index_header(f);
     if (!hdr || cmd_index >= hdr->command_count) {
@@ -417,35 +419,49 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
     // directly after this section, so a record declared past it is one this record does not hold.
     auto const section_end = std::size_t { hdr->string_offset };
     auto record_pos = std::size_t { hdr->operand_data_offset } + offset;
-    if (record_pos + 2 * sizeof(std::uint32_t) > section_end) {
+    if (record_pos + OPERAND_RECORD_HEAD_WORDS * sizeof(std::uint32_t) > section_end) {
         return make_error<Operands>(ErrorCode::IndexDamaged, "Operand record starts outside the operand section");
     }
 
     auto in_count = std::size_t { read_u32(record_pos) };
     auto out_count = std::size_t { read_u32(record_pos + sizeof(std::uint32_t)) };
+    auto in_tokens = std::size_t { read_u32(record_pos + 2 * sizeof(std::uint32_t)) };
+    auto out_tokens = std::size_t { read_u32(record_pos + 3 * sizeof(std::uint32_t)) };
 
-    auto expected_size = 2 * sizeof(std::uint32_t) + (in_count + out_count) * sizeof(NodeId);
+    auto const in_boundary_words = in_tokens + 1;
+    auto const out_boundary_words = out_tokens + 1;
+    auto expected_size = OPERAND_RECORD_HEAD_WORDS * sizeof(std::uint32_t)
+        + (in_count + out_count) * sizeof(NodeId)
+        + (in_boundary_words + out_boundary_words) * sizeof(std::uint32_t);
     if (record_pos + expected_size > section_end) {
         return make_error<Operands>(ErrorCode::IndexDamaged, "Operand record runs past the operand section");
     }
 
-    auto inputs = Vec<NodeId> {};
-    auto outputs = Vec<NodeId> {};
-    inputs.reserve(in_count);
-    outputs.reserve(out_count);
+    auto pos = record_pos + OPERAND_RECORD_HEAD_WORDS * sizeof(std::uint32_t);
+    auto take = [&pos, &read_u32](std::size_t count) {
+        auto values = Vec<std::uint32_t> {};
+        values.reserve(count);
+        for (auto i = std::size_t { 0 }; i < count; ++i) {
+            values.push_back(read_u32(pos));
+            pos += sizeof(std::uint32_t);
+        }
+        return values;
+    };
 
-    auto pos = record_pos + 2 * sizeof(std::uint32_t);
-    for (auto i = std::size_t { 0 }; i < in_count; ++i) {
-        inputs.push_back(static_cast<NodeId>(read_u32(pos)));
-        pos += sizeof(NodeId);
+    auto input_ids = take(in_count);
+    auto output_ids = take(out_count);
+    auto input_starts = take(in_boundary_words);
+    auto output_starts = take(out_boundary_words);
+
+    auto inputs = TokenList<NodeId>::from_starts(std::move(input_ids), std::move(input_starts));
+    auto outputs = TokenList<NodeId>::from_starts(std::move(output_ids), std::move(output_starts));
+    if (!inputs || !outputs) {
+        return make_error<Operands>(
+            ErrorCode::IndexDamaged, "Operand record groups its operands into tokens it does not span"
+        );
     }
 
-    for (auto i = std::size_t { 0 }; i < out_count; ++i) {
-        outputs.push_back(static_cast<NodeId>(read_u32(pos)));
-        pos += sizeof(NodeId);
-    }
-
-    return Operands { std::move(inputs), std::move(outputs) };
+    return Operands { std::move(*inputs), std::move(*outputs) };
 }
 
 } // namespace

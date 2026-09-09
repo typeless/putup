@@ -13,6 +13,7 @@
 #include "pup/core/sorted_id_vec.hpp"
 #include "pup/core/string_id.hpp"
 #include "pup/core/string_pool.hpp"
+#include "pup/core/token_list.hpp"
 #include "pup/core/types.hpp"
 #include "pup/core/vec.hpp"
 #include "pup/graph/dag.hpp"
@@ -699,6 +700,7 @@ struct RuleInput {
 
     Kind kind;
     StringId value;
+    std::uint32_t token = 0;
 };
 
 /// The only way to build a Kind::File: takes a project-relative path and puts it
@@ -857,11 +859,21 @@ auto atoms_from_generated_text(std::string_view text) -> Instruction
     return builder.take();
 }
 
+/// One output section's expansion: the interned paths, and the text each was declared as. %O in a
+/// later extra-outputs section names the declared text, since the result is joined with the rule's
+/// directory again -- the full path would double that prefix.
+struct ExpandedOutputs {
+    Vec<PathId> ids;
+    Vec<StringId> declared;
+    Vec<std::uint32_t> tokens;     ///< For each id, the number of the written token it came from
+    std::uint32_t token_count = 0; ///< How many tokens the section spelled, empty ones included
+};
+
 auto expand_command(
     BuilderContext& ctx,
     parser::Expression const& cmd,
     parser::PatternFlags flags,
-    Vec<PathId> const& outputs,
+    ExpandedOutputs const& outputs,
     Instruction* out_instruction = nullptr
 ) -> Result<StringId>
 {
@@ -878,8 +890,8 @@ auto expand_command(
 
     auto tc = make_transform_context(ctx);
     auto cmd_outputs = Vec<StringId> {};
-    cmd_outputs.reserve(outputs.size());
-    for (auto out : outputs) {
+    cmd_outputs.reserve(outputs.ids.size());
+    for (auto out : outputs.ids) {
         auto materialized = materialize_path(ctx.state->graph, out);
         cmd_outputs.push_back(transform_output_path(tc, str(materialized)));
     }
@@ -889,7 +901,9 @@ auto expand_command(
     for (auto id : cmd_outputs) {
         outputs_sv.push_back(str(id));
     }
-    flags.all_outputs = std::move(outputs_sv);
+    flags.all_outputs = TokenList<std::string_view>::grouped(
+        std::move(outputs_sv), outputs.tokens, outputs.token_count
+    );
     flags.section = parser::PatternSection::Command;
 
     auto atoms = parser::expand_pattern_atoms(*ctx.eval, pool.get(*expanded), flags);
@@ -944,14 +958,6 @@ auto lookup_bang_macro(
     return &it->second;
 }
 
-/// One output section's expansion: the interned paths, and the text each was declared as. %O in a
-/// later extra-outputs section names the declared text, since the result is joined with the rule's
-/// directory again -- the full path would double that prefix.
-struct ExpandedOutputs {
-    Vec<PathId> ids;
-    Vec<StringId> declared;
-};
-
 /// Expands one output section. `primary` is the text the rule's primary outputs were declared as
 /// when this is the extra-outputs section, and nullptr when this is the primary section itself --
 /// which is what decides where %o and %O are legal.
@@ -959,7 +965,7 @@ auto expand_outputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns,
     parser::PatternFlags const& flags,
-    Vec<StringId> const* primary
+    ExpandedOutputs const* primary
 ) -> Result<ExpandedOutputs>
 {
     auto& pool = global_pool();
@@ -970,14 +976,18 @@ auto expand_outputs(
         = primary ? parser::PatternSection::ExtraOutputs : parser::PatternSection::Outputs;
     auto primary_sv = Vec<std::string_view> {};
     if (primary) {
-        primary_sv.reserve(primary->size());
-        for (auto id : *primary) {
+        primary_sv.reserve(primary->declared.size());
+        for (auto id : primary->declared) {
             primary_sv.push_back(pool.get(id));
         }
     }
-    section_flags.all_outputs = std::move(primary_sv);
+    section_flags.all_outputs = primary ? TokenList<std::string_view>::grouped(
+                                              std::move(primary_sv), primary->tokens, primary->token_count
+                                          )
+                                        : TokenList<std::string_view> {};
 
     for (auto const& pattern : patterns) {
+        ++result.token_count;
         if (pattern.is_group) {
             continue;
         }
@@ -1022,6 +1032,7 @@ auto expand_outputs(
             }
 
             result.declared.push_back(*expanded);
+            result.tokens.push_back(result.token_count);
             result.ids.push_back(ctx.state->graph.paths.intern_path(full_output_path_sv, pool, PathId::BuildRoot));
         }
     }
@@ -1029,15 +1040,33 @@ auto expand_outputs(
     return result;
 }
 
+/// A rule's input list as it was written: the operands it expanded to, and how many whitespace-
+/// separated tokens produced them. A number names a token, so a token that expanded to nothing
+/// still has to be counted.
+struct TokenizedInputs {
+    Vec<RuleInput> operands;
+    std::uint32_t token_count = 0;
+};
+
 auto expand_inputs(
     BuilderContext& ctx,
     Vec<parser::PathPattern> const& patterns
-) -> Result<Vec<RuleInput>>
+) -> Result<TokenizedInputs>
 {
     auto& pool = global_pool();
     auto result = Vec<RuleInput> {};
+    auto token = std::uint32_t { 0 };
+    auto token_start = std::size_t { 0 };
+    auto close_token = [&result, &token_start, &token] {
+        for (auto i = token_start; i < result.size(); ++i) {
+            result[i].token = token;
+        }
+        token_start = result.size();
+    };
 
     for (auto const& pattern : patterns) {
+        close_token();
+        ++token;
         if (pattern.is_exclusion || pattern.is_output_exclusion) {
             continue;
         }
@@ -1118,9 +1147,10 @@ auto expand_inputs(
         }
     }
 
+    close_token();
     apply_exclusions(ctx, patterns, result);
 
-    return result;
+    return TokenizedInputs { std::move(result), token };
 }
 
 // ---------------------------------------------------------------------------
@@ -1908,7 +1938,8 @@ auto expand_rule(
     BuilderContext& ctx,
     Builder& state,
     parser::Rule const& rule,
-    Vec<RuleInput> const& inputs
+    Vec<RuleInput> const& inputs,
+    std::uint32_t token_count
 ) -> Result<void>
 {
     ctx.used_config_vars.clear();
@@ -1916,6 +1947,7 @@ auto expand_rule(
 
     auto glob_pattern = StringId::Empty;
     auto operands = Vec<RuleInput> {};
+    auto operand_tokens = Vec<std::uint32_t> {};
     auto file_inputs = Vec<StringId> {};
     for (auto const& inp : inputs) {
         switch (inp.kind) {
@@ -1924,10 +1956,12 @@ auto expand_rule(
             break;
         case RuleInput::Kind::File:
             operands.push_back(inp);
+            operand_tokens.push_back(inp.token);
             file_inputs.push_back(inp.value);
             break;
         case RuleInput::Kind::GroupRef:
             operands.push_back(inp);
+            operand_tokens.push_back(inp.token);
             break;
         }
     }
@@ -1954,6 +1988,9 @@ auto expand_rule(
     for (auto id : cmd_inputs) {
         all_inputs_sv.push_back(str(id));
     }
+    auto const input_tokens = TokenList<std::string_view>::grouped(
+        std::move(all_inputs_sv), operand_tokens, token_count
+    );
 
     auto flags = parser::PatternFlags {
         .input_base = parser::path_basename(primary_input_sv),
@@ -1961,7 +1998,7 @@ auto expand_rule(
         .input_ext = parser::path_extension(primary_input_sv),
         .input_dir = current_dir_name,
         .glob_match = str(glob_match_id),
-        .all_inputs = std::move(all_inputs_sv),
+        .all_inputs = input_tokens,
     };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
@@ -2123,14 +2160,14 @@ auto expand_rule(
         return pup::unexpected<Error>(outputs.error());
     }
 
-    auto extra_outputs = expand_outputs(ctx, eff_extra_outputs, flags, &outputs->declared);
+    auto extra_outputs = expand_outputs(ctx, eff_extra_outputs, flags, &*outputs);
     if (!extra_outputs) {
         return pup::unexpected<Error>(extra_outputs.error());
     }
 
     // Expand command with actual outputs for %o substitution.
     // Also capture instruction (after variable expansion, before pattern substitution).
-    auto cmd_result = expand_command(ctx, eff_command, flags, outputs->ids, &instruction_pattern);
+    auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, &instruction_pattern);
     if (!cmd_result) {
         return pup::unexpected<Error>(cmd_result.error());
     }
@@ -2156,7 +2193,7 @@ auto expand_rule(
     }
 
     if (eff_display) {
-        auto disp_result = expand_command(ctx, *eff_display, flags, outputs->ids);
+        auto disp_result = expand_command(ctx, *eff_display, flags, *outputs);
         if (!disp_result) {
             return pup::unexpected<Error>(disp_result.error());
         }
@@ -2176,8 +2213,8 @@ auto expand_rule(
     if (!order_only_file_patterns.empty()) {
         auto order_inputs = expand_inputs(ctx, order_only_file_patterns);
         if (order_inputs) {
-            order_only_paths.reserve(order_inputs->size());
-            for (auto const& inp : *order_inputs) {
+            order_only_paths.reserve(order_inputs->operands.size());
+            for (auto const& inp : order_inputs->operands) {
                 order_only_paths.push_back(inp.value);
             }
         }
@@ -2233,6 +2270,7 @@ auto expand_rule(
 
     // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
+    auto output_operand_tokens = Vec<std::uint32_t> {};
     auto all_declared = Vec<PathId> {};
     all_declared.reserve(outputs->ids.size() + extra_outputs->ids.size());
     for (auto p : outputs->ids) {
@@ -2285,6 +2323,7 @@ auto expand_rule(
         }
         if (!is_extra) {
             output_ids.push_back(*output_id);
+            output_operand_tokens.push_back(outputs->tokens[i]);
         }
 
         // Add to output group {name} if specified
@@ -2318,8 +2357,10 @@ auto expand_rule(
 
     // Store explicit operands on the command node for expand_instruction()
     if (auto* cmd = get_command_node(ctx.state->graph, *cmd_id)) {
-        cmd->inputs = std::move(input_ids);
-        cmd->outputs = std::move(output_ids);
+        cmd->inputs = TokenList<NodeId>::grouped(std::move(input_ids), operand_tokens, token_count);
+        cmd->outputs = TokenList<NodeId>::grouped(
+            std::move(output_ids), output_operand_tokens, outputs->token_count
+        );
     }
 
     // Create order-only edges from the pre-expanded paths
@@ -2351,7 +2392,7 @@ auto process_rule(
     apply_pending_weak_assignments(ctx, state);
 
     // Expand input patterns
-    auto inputs = Result<Vec<RuleInput>> { expand_inputs(ctx, rule.inputs) };
+    auto inputs = Result<TokenizedInputs> { expand_inputs(ctx, rule.inputs) };
     if (!inputs) {
         return pup::unexpected<Error>(inputs.error());
     }
@@ -2360,14 +2401,14 @@ auto process_rule(
     // - rule.inputs.empty() means no input pattern was specified (": |> cmd")
     // - inputs->empty() means the pattern(s) evaluated to no files
     // Only skip if pattern was specified but produced nothing
-    if (!rule.foreach_ && !rule.inputs.empty() && inputs->empty()) {
+    if (!rule.foreach_ && !rule.inputs.empty() && inputs->operands.empty()) {
         return {};
     }
 
     if (rule.foreach_) {
         auto patterns = Vec<RuleInput> {};
         auto files = Vec<RuleInput> {};
-        for (auto const& inp : *inputs) {
+        for (auto const& inp : inputs->operands) {
             if (inp.kind == RuleInput::Kind::Pattern) {
                 patterns.push_back(inp);
             } else {
@@ -2379,14 +2420,14 @@ auto process_rule(
         for (auto const& file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
-            auto result = expand_rule(ctx, state, rule, iter_inputs);
+            auto result = expand_rule(ctx, state, rule, iter_inputs, inputs->token_count);
             if (!result) {
                 return pup::unexpected<Error>(result.error());
             }
         }
     } else {
         // Normal rule: single command for all inputs
-        auto result = expand_rule(ctx, state, rule, *inputs);
+        auto result = expand_rule(ctx, state, rule, inputs->operands, inputs->token_count);
         if (!result) {
             return pup::unexpected<Error>(result.error());
         }

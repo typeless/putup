@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <utility>
 
@@ -87,8 +88,8 @@ auto CommandEntry::from_raw(
     std::string_view instruction_pattern,
     std::string_view display_str,
     std::string_view env_str,
-    Vec<NodeId> inputs,
-    Vec<NodeId> outputs,
+    TokenList<NodeId> inputs,
+    TokenList<NodeId> outputs,
     std::size_t array_index
 ) -> Result<CommandEntry>
 {
@@ -371,31 +372,38 @@ public:
         buf += slash != std::string_view::npos ? m_source_dir.substr(slash + 1) : m_source_dir;
     }
 
-    auto append_nth_input(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < m_cmd.inputs.size()) {
-            buf += operand_path(m_cmd.inputs[index]);
-        }
+        append_token(buf, m_cmd.inputs.token(token), [this](NodeId id) { return operand_path(id); });
     }
 
-    auto append_nth_input_base(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < m_cmd.inputs.size()) {
-            buf += pup::path::filename(operand_path(m_cmd.inputs[index]));
-        }
+        append_token(buf, m_cmd.inputs.token(token), [this](NodeId id) {
+            return pup::path::filename(operand_path(id));
+        });
     }
 
-    auto append_nth_input_noext(Buf& buf, std::size_t index) const -> void
+    auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < m_cmd.inputs.size()) {
-            buf += pup::path::stem(operand_path(m_cmd.inputs[index]));
-        }
+        append_token(buf, m_cmd.inputs.token(token), [this](NodeId id) {
+            return pup::path::stem(operand_path(id));
+        });
     }
 
-    auto append_nth_output(Buf& buf, std::size_t index) const -> void
+    auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
     {
-        if (index < m_cmd.outputs.size()) {
-            buf += operand_path(m_cmd.outputs[index]);
+        append_token(buf, m_cmd.outputs.token(token), [this](NodeId id) { return operand_path(id); });
+    }
+
+    template<typename Spelling>
+    static auto append_token(Buf& buf, std::span<NodeId const> operands, Spelling spell) -> void
+    {
+        for (auto i = std::size_t { 0 }; i < operands.size(); ++i) {
+            if (i > 0) {
+                buf += ' ';
+            }
+            buf += spell(operands[i]);
         }
     }
 
@@ -410,7 +418,7 @@ private:
         return pool.get(pup::make_source_relative(pool.get(file->path), m_source_to_root, m_source_dir));
     }
 
-    auto append_all(Buf& buf, Vec<NodeId> const& ids) const -> void
+    auto append_all(Buf& buf, TokenList<NodeId> const& ids) const -> void
     {
         for (std::size_t i = 0; i < ids.size(); ++i) {
             if (i > 0) {
