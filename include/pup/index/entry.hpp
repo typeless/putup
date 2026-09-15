@@ -64,7 +64,7 @@ struct CommandEntry {
     /// carried this record past a change to one of its deps without re-running it.
     bool must_rerun = false;
 
-    TokenList<NodeId> inputs = {};  ///< Input file operands (for %f expansion), grouped by written token
+    TokenList<NodeId> inputs = {};  ///< Input file operands (for %f, %b and %B expansion), grouped by written token
     TokenList<NodeId> outputs = {}; ///< Output file operands (for %o expansion), grouped by written token
 
     /// Convert to raw format for serialization

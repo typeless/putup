@@ -328,8 +328,6 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
 
     // For foreach rules, all_inputs has just one element (the current input)
     auto flags = PatternFlags {
-        .input_base = "foo.c",
-        .input_noext = "foo",
         .input_ext = "c",
         .input_dir = "src",
         .all_inputs = { "src/foo.c" },
@@ -445,8 +443,6 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 
     // For non-foreach rules, all_inputs has all input files
     auto flags = PatternFlags {
-        .input_base = "a.c",
-        .input_noext = "a",
         .input_ext = "c",
         .input_dir = "",
         .all_inputs = { "a.c", "b.c", "c.c" },
@@ -465,6 +461,13 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
         auto result = expand_pattern(ctx,"%1f %2f %3f", flags);
         REQUIRE(result.has_value());
         REQUIRE(sv(*result) == "a.c b.c c.c");
+    }
+
+    SECTION("%b and %B - every input")
+    {
+        auto result = expand_pattern(ctx, "%b|%B", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "a.c b.c c.c|a b c");
     }
 
     // Note: %i is for order-only inputs, not yet implemented
@@ -609,8 +612,6 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
     SECTION("%g - combined with other flags")
     {
         auto flags = PatternFlags {
-            .input_base = "foo_test.c",
-            .input_noext = "foo_test",
             .glob_match = "foo",
             .all_inputs = { "foo_test.c" },
             .all_outputs = { "foo.o" },

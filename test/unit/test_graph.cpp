@@ -992,7 +992,7 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         CHECK(sv(result) == "gen foo.c -o foo.o bar.o");
     }
 
-    SECTION("%b (basename of first input)")
+    SECTION("%b (basename of the one input)")
     {
         auto node = CommandNode {
             .source_dir = intern("src"),
@@ -1006,7 +1006,21 @@ TEST_CASE("expand_instruction reconstructs command from operands", "[graph][inst
         CHECK(sv(result) == "echo foo.c");
     }
 
-    SECTION("%B (stem of first input)")
+    SECTION("%b and %B name every input")
+    {
+        auto node = CommandNode {
+            .source_dir = intern("src"),
+            .instruction = pup::test::instruction("echo %b %B"),
+            .inputs = { *foo_c, *bar_c },
+        };
+        auto cmd_id = add_command_node(g, std::move(node));
+        REQUIRE(cmd_id.has_value());
+
+        auto result = expand_instruction(g, *cmd_id);
+        CHECK(sv(result) == "echo foo.c bar.c foo bar");
+    }
+
+    SECTION("%B (stem of the one input)")
     {
         auto node = CommandNode {
             .source_dir = intern("src"),

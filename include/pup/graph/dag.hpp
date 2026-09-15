@@ -69,7 +69,7 @@ struct CommandNode {
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
     Instruction instruction = {};          ///< Instruction atoms (e.g. "gcc -c %f -o %o")
 
-    TokenList<NodeId> inputs = {};  ///< Operand file NodeIds for %f expansion, grouped by written token
+    TokenList<NodeId> inputs = {};  ///< Operand file NodeIds for %f, %b and %B expansion, grouped by written token
     TokenList<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion, grouped by written token
 
     SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)

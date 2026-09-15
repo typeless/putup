@@ -2002,8 +2002,6 @@ auto expand_rule(
     );
 
     auto flags = parser::PatternFlags {
-        .input_base = parser::path_basename(primary_input_sv),
-        .input_noext = parser::path_stem(primary_input_sv),
         .input_ext = parser::path_extension(primary_input_sv),
         .input_dir = current_dir_name,
         .glob_match = str(glob_match_id),

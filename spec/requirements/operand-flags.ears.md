@@ -5,8 +5,8 @@
 
 The subject here is the numbered `%N`-flags a rule may spell, and what each names. The
 unnumbered flags that decide where a rule writes are the subject of `output-paths`, which also
-holds `%o` and `%O`; a numbered input flag names a spelling of an input rather than a location,
-so those are collected here.
+holds `%o` and `%O`; `%b`, `%B` and the numbered input flags name a spelling of an input rather
+than a location, so those are collected here.
 
 ## Group: spellings
 
@@ -20,6 +20,17 @@ so those are collected here.
 If a rule spells `%Nf`, `%Nb` or `%NB`, then putup shall expand it to every operand of the N-th
 input token, spelled as its whole path, its basename, or its basename without its extension
 respectively and joined by single spaces.
+
+### REQ-OPERAND-UNNUMBERED-INPUT-SPELLINGS
+
+- conformance: tup-conformant
+- reference: upstream's `%b` and `%B` walk the one input name list `%f` walks (`tup_printf`, the `b` and `B` branches: `TAILQ_FOREACH` over the entries, appending `nle->base` with its whole length or its extension-less length, joined by single spaces), so a rule with several inputs spells every one of them; a foreach rule hands `tup_printf` a one-entry list per iteration, which is why the two readings agree there. Measured against tup: `: *.c sub/dd.tar.gz <g> a.c` with `a.c` and `bb.c` present writes `b=[a.c bb.c dd.tar.gz <g>] B=[a bb dd.tar <g>]`. putup spelled only the first input (#414)
+- discharge: test "Scenario: A basename flag names every input, not only the first"
+- discharge: test "Evaluator pattern expansion - multiple inputs"
+
+If a rule spells `%b` or `%B`, then putup shall expand it to every input operand of the command,
+spelled as its basename or its basename without its extension respectively and joined by single
+spaces.
 
 ### REQ-OPERAND-NUMBER-NAMES-A-WRITTEN-TOKEN
 

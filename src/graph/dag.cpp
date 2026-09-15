@@ -797,16 +797,6 @@ auto get_build_root_name(Graph const& graph) -> std::string_view
 
 namespace {
 
-auto path_basename(std::string_view path) -> std::string_view
-{
-    return pup::path::filename(path);
-}
-
-auto path_stem(std::string_view name) -> std::string_view
-{
-    return pup::path::stem(name);
-}
-
 auto path_extension(std::string_view name) -> std::string_view
 {
     return pup::path::bare_extension(name);
@@ -866,16 +856,12 @@ struct ExecSite {
 
     auto append_input_base(Buf& buf) const -> void
     {
-        if (!cmd->inputs.empty()) {
-            buf += path_basename(operand_path(cmd->inputs[0]));
-        }
+        append_token(buf, cmd->inputs.ids(), [this](NodeId id) { return basename_of(id); });
     }
 
     auto append_input_noext(Buf& buf) const -> void
     {
-        if (!cmd->inputs.empty()) {
-            buf += path_stem(operand_name(cmd->inputs[0]));
-        }
+        append_token(buf, cmd->inputs.ids(), [this](NodeId id) { return basename_without_extension_of(id); });
     }
 
     auto append_input_ext(Buf& buf) const -> void
@@ -919,17 +905,21 @@ struct ExecSite {
 
     auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, cmd->inputs.token(token), [this](NodeId id) {
-            return pup::path::filename(operand_path(id));
-        });
+        append_token(buf, cmd->inputs.token(token), [this](NodeId id) { return basename_of(id); });
     }
 
     auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
         append_token(buf, cmd->inputs.token(token), [this](NodeId id) {
-            auto const base = pup::path::filename(operand_path(id));
-            return base.substr(0, base.size() - pup::path::extension(base).size());
+            return basename_without_extension_of(id);
         });
+    }
+
+    auto basename_of(NodeId id) const -> std::string_view { return pup::path::filename(operand_path(id)); }
+
+    auto basename_without_extension_of(NodeId id) const -> std::string_view
+    {
+        return pup::path::stem(operand_path(id));
     }
 
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
