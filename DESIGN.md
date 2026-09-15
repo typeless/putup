@@ -485,7 +485,7 @@ struct EvalContext {
 | `%O` | Output basename | `main` |
 | `%b` | Basename with ext, every input | `main.c util.c` |
 | `%B` | Basename no ext, every input | `main util` |
-| `%e` | Extension | `c` |
+| `%e` | Extension (foreach, file must have one) | `c` |
 | `%d` | Directory | `src` |
 | `%Nf` | Nth input | `%1f` → first input |
 
@@ -806,7 +806,7 @@ Rule { inputs: ["*.c"], outputs: ["%B.o"], foreach: true }
     ├── Build PatternFlags once:
     │   - Transform inputs to Tupfile-relative paths
     │   - Extract glob_match (%g) from pattern + primary input
-    │   - Populate input fields (%f, %b, %B read the input list; %e, %g the primary input)
+    │   - Populate input fields (%f, %b, %B read the input list; %g the primary input; %e the primary input of a foreach rule, refused elsewhere)
     │
     ├── expand_outputs() with PatternFlags
     │   %B.o → main.o

@@ -32,6 +32,15 @@ If a rule spells `%b` or `%B`, then putup shall expand it to every input operand
 spelled as its basename or its basename without its extension respectively and joined by single
 spaces.
 
+### REQ-OPERAND-EXTENSION-SPELLING
+
+- conformance: tup-conformant
+- reference: upstream's extension is the filename's text after its last dot, which is empty for a name that ends in a dot (`do_rule`, from `extlessbaselen`; `tup_printf`, the `%e` branch). Measured against tup: a foreach rule over `a.c`, `a.tar.gz` and `trail.` writes `e=[c]`, `e=[gz]` and `e=[]` (#453)
+- discharge: test "Scenario: A percent-e in a foreach rule names each file's last extension"
+
+While expanding `%e` in a foreach rule, putup shall expand it to the text after the last dot in
+the current file's name.
+
 ### REQ-OPERAND-NUMBER-NAMES-A-WRITTEN-TOKEN
 
 - conformance: tup-conformant
@@ -109,6 +118,17 @@ shall reject the Tupfile.
 - discharge: test "A numbered order-only input flag is refused as unsupported"
 
 If a rule spells `%Ni`, then putup shall reject the Tupfile naming the issue that tracks it.
+
+### REQ-OPERAND-EXTENSION-FOREACH-ONLY
+
+- conformance: tup-conformant
+- reference: upstream binds an extension only for a foreach rule whose file's name has an extension -- a dot after its first character, so `.hidden` has none and `trail.` has an empty one -- and refuses `%e` wherever it finds none bound, naming the input when the rule has exactly one and saying it is not a foreach rule otherwise (`tup_printf`, the `%e` branch; the extension is set in `do_rule` only when `extlessbaselen != baselen`). A group operand has no dot of its own and is refused the same way. putup expanded `%e` to the first input's extension in any rule, or to nothing, so a rule that could never have a single extension ran with one picked for it; measured against tup for a rule over one and several inputs, a bang macro's output, a display string, a name whose only dot leads it, a file with no dot under a directory with one, and a group. Upstream also expands order-only inputs through the same function and refuses `%e` there; putup does not expand flags in that section at all (#425), so this requirement covers the command, display and output sections only (#453)
+- discharge: test "Scenario: A percent-e in a rule that is not foreach is refused"
+- discharge: test "Scenario: A percent-e in a foreach rule over a file with no extension is refused"
+- discharge: test "Evaluator pattern expansion - %e with no extension bound is refused"
+
+If a rule spells `%e` in its command, display or outputs and it is not a foreach rule, or its
+current file's name has no extension, then putup shall reject the Tupfile.
 
 ## Group: splices
 

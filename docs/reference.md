@@ -1011,7 +1011,7 @@ Pattern flags are placeholders expanded at build time.
 | `%O` | The output without its extension, keeping its directory — command string or extra outputs section, and only with exactly one output | `sub/foo.so` → `sub/foo` |
 | `%b` | Basename of every input, with extension | `src/foo.c bar.c` → `foo.c bar.c` |
 | `%B` | Basename of every input, without extension | `src/foo.c bar.c` → `foo bar` |
-| `%e` | Extension only (foreach) | `foo.c` → `c` |
+| `%e` | Extension of the current file — foreach rules only, and only for files that have one | `foo.c` → `c` |
 | `%d` | Directory name | `src/foo.c` → `src` |
 | `%g` | Glob match portion (foreach) | `*_test.c` + `foo_test.c` → `foo` |
 
@@ -2834,7 +2834,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%i` | All inputs (alias) | `foo.c bar.c` | `foo.c bar.c` |
 | `%b` | Basename with ext, every input | `src/foo.c bar.c` | `foo.c bar.c` |
 | `%B` | Basename no ext, every input | `src/foo.c bar.c` | `foo bar` |
-| `%e` | Extension only | `foo.c` | `c` |
+| `%e` | Extension (foreach, file must have one) | `foo.c` | `c` |
 | `%d` | Directory | `src/foo.c` | `src` |
 | `%g` | Glob match (foreach) | `*_test.c` + `foo_test.c` | `foo` |
 

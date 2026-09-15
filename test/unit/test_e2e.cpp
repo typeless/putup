@@ -14733,6 +14733,176 @@ SCENARIO("A basename flag names every input, not only the first", "[e2e][build]"
     }
 }
 
+SCENARIO("A percent-e in a rule that is not foreach is refused", "[e2e][build]")
+{
+    GIVEN("a rule over one input whose command spells %e")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": a.c |> echo 'e=[%e]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected naming the one input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%e is only valid with a foreach rule for files that have extensions") != std::string::npos);
+                REQUIRE(combined.find(" -- Path: 'a.c'") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+    }
+
+    GIVEN("a rule over several inputs whose command spells %e")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile", ": *.c |> echo 'e=[%e]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected as not a foreach rule")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%e is only valid with a foreach rule for files that have extensions") != std::string::npos);
+                REQUIRE(combined.find(" -- This does not appear to be a foreach rule") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a bang macro whose output spells %e, used by a rule that is not foreach")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", "!m = |> cp %f %o |> out.%e\n: a.c |> !m |>\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected naming the one input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%e is only valid with a foreach rule for files that have extensions") != std::string::npos);
+                REQUIRE(combined.find(" -- Path: 'a.c'") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-e in a foreach rule over a file with no extension is refused", "[e2e][build]")
+{
+    GIVEN("a foreach rule over a file whose directory has a dot but whose name has none")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("sub.d/Makefile", "");
+        f.write_file("Tupfile", ": foreach sub.d/Makefile |> echo 'e=[%e]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected naming that file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%e is only valid with a foreach rule for files that have extensions") != std::string::npos);
+                REQUIRE(combined.find(" -- Path: 'sub.d/Makefile'") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a foreach rule over a file whose only dot leads its name")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file(".hidden", "");
+        f.write_file("Tupfile", ": foreach .hidden |> echo 'e=[%e]' > %o |> hidden.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected naming that file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%e is only valid with a foreach rule for files that have extensions") != std::string::npos);
+                REQUIRE(combined.find(" -- Path: '.hidden'") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a foreach rule over a group whose display spells %e")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile",
+            ": a.c |> cp %f %o |> gen.x <g>\n"
+            ": foreach <g> |> ^ X %e^ echo hi > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected naming the group, which has no extension of its own")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%e is only valid with a foreach rule for files that have extensions") != std::string::npos);
+                REQUIRE(combined.find(" -- Path: '<g>'") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-e in a foreach rule names each file's last extension", "[e2e][build]")
+{
+    GIVEN("a foreach rule over a file with one dot, one with two, and one with a trailing dot")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("d.tar.gz", "");
+        f.write_file("trail.", "");
+        f.write_file("Tupfile", ": foreach a.c d.tar.gz trail. |> echo 'e=[%e]' > %o |> %b.out\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%e is the text after the last dot, empty for the trailing dot")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.c.out") == "e=[c]\n");
+                REQUIRE(f.read_file("d.tar.gz.out") == "e=[gz]\n");
+                REQUIRE(f.read_file("trail..out") == "e=[]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Numbered input flags name the basename and the basename without extension", "[e2e][build]")
 {
     GIVEN("a rule whose input sits in a subdirectory and whose command spells %1f, %1b and %1B")
