@@ -2002,7 +2002,9 @@ auto expand_rule(
     );
 
     auto flags = parser::PatternFlags {
-        .input_ext = parser::path_extension(primary_input_sv),
+        .input_ext = rule.foreach_ && !pup::path::extension(primary_input_sv).empty()
+            ? std::optional { parser::path_extension(primary_input_sv) }
+            : std::nullopt,
         .input_dir = current_dir_name,
         .glob_match = str(glob_match_id),
         .all_inputs = input_tokens,

@@ -443,7 +443,6 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
 
     // For non-foreach rules, all_inputs has all input files
     auto flags = PatternFlags {
-        .input_ext = "c",
         .input_dir = "",
         .all_inputs = { "a.c", "b.c", "c.c" },
         .all_outputs = { "out.o" },
@@ -471,6 +470,40 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
     }
 
     // Note: %i is for order-only inputs, not yet implemented
+}
+
+TEST_CASE("Evaluator pattern expansion - %e with no extension bound is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    SECTION("one input names it")
+    {
+        auto flags = PatternFlags { .all_inputs = { "a.c" } };
+
+        auto result = expand_pattern(ctx, "echo %e", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%e is only valid with a foreach rule for files that have extensions") != std::string_view::npos);
+        REQUIRE(sv(result.error().message).find(" -- Path: 'a.c'") != std::string_view::npos);
+    }
+
+    SECTION("several inputs say it is not a foreach rule")
+    {
+        auto flags = PatternFlags { .all_inputs = { "a.c", "b.c" } };
+
+        auto result = expand_pattern(ctx, "echo %e", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find(" -- This does not appear to be a foreach rule") != std::string_view::npos);
+    }
+
+    SECTION("an empty extension that is bound still expands")
+    {
+        auto flags = PatternFlags { .input_ext = "", .all_inputs = { "trail." } };
+
+        auto result = expand_pattern(ctx, "e=[%e]", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "e=[]");
+    }
 }
 
 TEST_CASE("Evaluator pattern expansion - all outputs", "[eval]")

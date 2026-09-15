@@ -12,6 +12,7 @@
 #include "pup/core/token_list.hpp"
 #include "pup/core/vec.hpp"
 
+#include <optional>
 #include <string_view>
 
 namespace pup {
@@ -205,7 +206,7 @@ enum class PatternSection {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    std::string_view input_ext = {};                  ///< %e - input extension
+    std::optional<std::string_view> input_ext = {};   ///< %e - the current foreach file's extension, absent outside foreach or when its name has no extension
     std::string_view input_dir = {};                  ///< %d - input directory
     std::string_view glob_match = {};                 ///< %g - portion matched by * in foreach glob
     TokenList<std::string_view> all_inputs = {};      ///< All inputs, for %f, %b, %B and their numbered forms, grouped by written token

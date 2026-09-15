@@ -433,7 +433,7 @@ public:
         append_token(buf, flags.all_inputs.ids(), basename_without_extension_of);
     }
 
-    auto append_input_ext(Buf& buf) const -> void { buf.append(flags.input_ext); }
+    auto append_input_ext(Buf& buf) const -> void { buf.append(flags.input_ext.value_or(std::string_view {})); }
 
     auto append_all_outputs(Buf& buf) const -> void
     {
@@ -607,6 +607,15 @@ auto expand_pattern_atoms(
             builder.flag(AtomKind::InputNoExt);
             break;
         case 'e':
+            if (!flags.input_ext) {
+                auto msg = Buf {};
+                if (flags.all_inputs.size() == 1) {
+                    msg.fmt("%e is only valid with a foreach rule for files that have extensions\n -- Path: '{}'", flags.all_inputs[0]);
+                } else {
+                    msg.fmt("%e is only valid with a foreach rule for files that have extensions\n -- This does not appear to be a foreach rule");
+                }
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            }
             builder.flag(AtomKind::InputExt);
             break;
         case 'o':
