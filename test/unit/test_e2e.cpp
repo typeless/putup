@@ -14704,6 +14704,35 @@ SCENARIO("An input named two ways is one operand", "[e2e][build]")
     }
 }
 
+SCENARIO("A basename flag names every input, not only the first", "[e2e][build]")
+{
+    GIVEN("a rule whose inputs are a glob, a nested file with two dots, a group and a repeat")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("bb.c", "");
+        f.write_file("sub/dd.tar.gz", "");
+        f.write_file("Tupfile",
+            ": |> echo h > %o |> gen.h <g>\n"
+            ": *.c sub/dd.tar.gz <g> a.c |> echo 'b=[%b] B=[%B] f=[%f] 3b=[%3b] 4B=[%4B]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%b and %B spell every operand the way %f lists them")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt")
+                    == "b=[a.c bb.c dd.tar.gz <g>] B=[a bb dd.tar <g>] f=[a.c bb.c sub/dd.tar.gz <g>] 3b=[<g>] 4B=[]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Numbered input flags name the basename and the basename without extension", "[e2e][build]")
 {
     GIVEN("a rule whose input sits in a subdirectory and whose command spells %1f, %1b and %1B")

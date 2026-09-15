@@ -205,12 +205,10 @@ enum class PatternSection {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    std::string_view input_base = {};                 ///< %b - input basename (no path)
-    std::string_view input_noext = {};                ///< %B - input basename without extension
     std::string_view input_ext = {};                  ///< %e - input extension
     std::string_view input_dir = {};                  ///< %d - input directory
     std::string_view glob_match = {};                 ///< %g - portion matched by * in foreach glob
-    TokenList<std::string_view> all_inputs = {};      ///< All inputs, for %f and %Nf, grouped by written token
+    TokenList<std::string_view> all_inputs = {};      ///< All inputs, for %f, %b, %B and their numbered forms, grouped by written token
     TokenList<std::string_view> all_outputs = {};     ///< All outputs, for %o, %No and %O, grouped by written token
     PatternSection section = PatternSection::Command; ///< decides where %o and %O are legal
 };

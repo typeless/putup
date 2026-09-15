@@ -423,9 +423,15 @@ public:
         }
     }
 
-    auto append_input_base(Buf& buf) const -> void { buf.append(flags.input_base); }
+    auto append_input_base(Buf& buf) const -> void
+    {
+        append_token(buf, flags.all_inputs.ids(), basename_of);
+    }
 
-    auto append_input_noext(Buf& buf) const -> void { buf.append(flags.input_noext); }
+    auto append_input_noext(Buf& buf) const -> void
+    {
+        append_token(buf, flags.all_inputs.ids(), basename_without_extension_of);
+    }
 
     auto append_input_ext(Buf& buf) const -> void { buf.append(flags.input_ext); }
 
@@ -454,17 +460,12 @@ public:
 
     auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, flags.all_inputs.token(token), [](std::string_view p) {
-            return pup::path::filename(p);
-        });
+        append_token(buf, flags.all_inputs.token(token), basename_of);
     }
 
     auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, flags.all_inputs.token(token), [](std::string_view p) {
-            auto const base = pup::path::filename(p);
-            return base.substr(0, base.size() - pup::path::extension(base).size());
-        });
+        append_token(buf, flags.all_inputs.token(token), basename_without_extension_of);
     }
 
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
@@ -473,6 +474,10 @@ public:
     }
 
 private:
+    static auto basename_of(std::string_view p) -> std::string_view { return pup::path::filename(p); }
+
+    static auto basename_without_extension_of(std::string_view p) -> std::string_view { return pup::path::stem(p); }
+
     template<typename Spelling>
     static auto append_token(Buf& buf, std::span<std::string_view const> operands, Spelling spell)
         -> void

@@ -334,16 +334,12 @@ public:
 
     auto append_input_base(Buf& buf) const -> void
     {
-        if (!m_cmd.inputs.empty()) {
-            buf += pup::path::filename(operand_path(m_cmd.inputs[0]));
-        }
+        append_token(buf, m_cmd.inputs.ids(), [this](NodeId id) { return basename_of(id); });
     }
 
     auto append_input_noext(Buf& buf) const -> void
     {
-        if (!m_cmd.inputs.empty()) {
-            buf += pup::path::stem(operand_path(m_cmd.inputs[0]));
-        }
+        append_token(buf, m_cmd.inputs.ids(), [this](NodeId id) { return basename_without_extension_of(id); });
     }
 
     auto append_input_ext(Buf& buf) const -> void
@@ -379,16 +375,21 @@ public:
 
     auto append_nth_input_base(Buf& buf, std::uint32_t token) const -> void
     {
-        append_token(buf, m_cmd.inputs.token(token), [this](NodeId id) {
-            return pup::path::filename(operand_path(id));
-        });
+        append_token(buf, m_cmd.inputs.token(token), [this](NodeId id) { return basename_of(id); });
     }
 
     auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
         append_token(buf, m_cmd.inputs.token(token), [this](NodeId id) {
-            return pup::path::stem(operand_path(id));
+            return basename_without_extension_of(id);
         });
+    }
+
+    auto basename_of(NodeId id) const -> std::string_view { return pup::path::filename(operand_path(id)); }
+
+    auto basename_without_extension_of(NodeId id) const -> std::string_view
+    {
+        return pup::path::stem(operand_path(id));
     }
 
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
