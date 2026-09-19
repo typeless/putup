@@ -70,6 +70,9 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 ///       255, so a rule with more operands recorded a prefix and the carried-forward record
 ///       stopped seeing the rest change (issue #365). A v21 index parses at the wrong offsets
 ///       under this layout, so it is not read.
+///  26 - A command's operand record carries a third list, the rule's own order-only operands
+///       `%i` and `%Ni` spell, grouped by written token like the other two; before it `%i`
+///       spelled the inputs (issue #461). A v25 record has no head words for it, so it is not read.
 /// Bump when a stale reader would misparse the bytes — any layout change — or wrong-join a key
 /// whose meaning changed; a change that only changes keys no-joins, and one re-run per affected
 /// command repairs it (#333, #335, #343).
@@ -89,7 +92,7 @@ inline constexpr auto INDEX_MAGIC = std::array<char, 4> { 'P', 'U', 'P', 'I' };
 /// `RawFileEntry::name_offset` is semantics-bearing on the same terms: `read_prior_paths` composes
 /// it into the paths `clean`/`distclean` delete and `reject_shadowed_sources` refuses a build over,
 /// so a name this reader cannot reproduce fails the record rather than reading as empty (#381).
-inline constexpr auto INDEX_VERSION = std::uint32_t { 25 };
+inline constexpr auto INDEX_VERSION = std::uint32_t { 26 };
 
 /// The oldest version whose `RawHeader` and `RawFileEntry` bytes mean what today's mean, so a
 /// record that old still says which paths it recorded as sources and which as generated even
@@ -232,6 +235,8 @@ enum class OperandRecordWord : std::size_t {
     OutputCount = 1,
     InputTokenCount = 2,
     OutputTokenCount = 3,
+    OrderOnlyInputCount = 4,
+    OrderOnlyInputTokenCount = 5,
 };
 
 [[nodiscard]]
@@ -242,14 +247,17 @@ constexpr auto operand_word_category(OperandRecordWord word) -> std::string_view
         return "inputs";
     case OperandRecordWord::OutputCount:
         return "outputs";
+    case OperandRecordWord::OrderOnlyInputCount:
+        return "order-only-inputs";
     case OperandRecordWord::InputTokenCount:
     case OperandRecordWord::OutputTokenCount:
+    case OperandRecordWord::OrderOnlyInputTokenCount:
         return "operand-tokens";
     }
     return {};
 }
 
-inline constexpr auto OPERAND_RECORD_HEAD_WORDS = std::size_t { 4 };
+inline constexpr auto OPERAND_RECORD_HEAD_WORDS = std::size_t { 6 };
 
 static_assert(
     !operand_word_category(static_cast<OperandRecordWord>(OPERAND_RECORD_HEAD_WORDS - 1)).empty(),

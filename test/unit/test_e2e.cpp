@@ -15119,6 +15119,394 @@ SCENARIO("A percent-f, percent-b or percent-B in a rule with no inputs is refuse
     }
 }
 
+SCENARIO("A percent-i spells the rule's order-only inputs", "[e2e][build]")
+{
+    GIVEN("a rule naming two order-only inputs")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("y.h", "");
+        f.write_file("Tupfile", ": a.c | z.h y.h |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells them in written order")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "i=[z.h y.h]\n");
+            }
+        }
+
+        WHEN("the project is built twice")
+        {
+            REQUIRE(f.build().success());
+            auto result = f.build();
+
+            THEN("the second build has nothing to do")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.is_noop());
+            }
+        }
+    }
+
+    GIVEN("a glob and a group in the order-only list")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("z.h", "");
+        f.write_file("y.h", "");
+        f.write_file("Tupfile", ": b.c |> cp %f %o |> b.out <grp>\n: a.c | *.h <grp> |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "i=[y.h z.h <grp>]\n");
+            }
+        }
+    }
+
+    GIVEN("a group another directory produces")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.mkdir("sub");
+        f.write_file("sub/s.h", "");
+        f.write_file("Tupfile", ": a.c | sub/<grp> |> echo 'i=[%i]' > %o |> out.txt\n");
+        f.write_file("sub/Tupfile", ": foreach s.h |> cp %f %o |> %B.out <grp>\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "i=[sub/<grp>]\n");
+            }
+        }
+    }
+
+    GIVEN("a foreach rule")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("z.h", "");
+        f.write_file("Tupfile", ": foreach a.c b.c | z.h |> echo 'i=[%i] f=[%f]' > %o |> %B.out\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("b.out") == "i=[z.h] f=[b.c]\n");
+            }
+        }
+    }
+
+    GIVEN("a bang macro with its own order-only inputs, called by a rule with its own")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("y.h", "");
+        f.write_file("Tupfile", "!m = | y.h |> echo 'i=[%i]' > %o |>\n: a.c | z.h |> !m |> out.txt\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "i=[z.h]\n");
+            }
+        }
+    }
+
+    GIVEN("a numbered flag over glob tokens")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("y.h", "");
+        f.mkdir("sub");
+        f.write_file("sub/s.h", "");
+        f.write_file("Tupfile", ": a.c | *.h sub/*.h |> echo 'i=[%2i]' > %o |> out.txt\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "i=[sub/s.h]\n");
+            }
+        }
+    }
+
+    GIVEN("an order-only input another rule generates")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile", ": b.c |> cp %f %o |> gen.h\n: a.c | gen.h |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "i=[gen.h]\n");
+            }
+        }
+    }
+
+    GIVEN("a rule in a subdirectory naming its parent's file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("z.h", "");
+        f.mkdir("sub");
+        f.write_file("sub/a.c", "");
+        f.write_file("Tupfile", "");
+        f.write_file("sub/Tupfile", ": a.c | ../z.h |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the flag spells the order-only inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("sub/out.txt") == "i=[../z.h]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-i in a rule with no order-only inputs or outside a command is refused", "[e2e][build]")
+{
+    GIVEN("a rule with inputs but no order-only inputs whose command spells %i")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": a.c |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i used in rule pattern and no order-only input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs at all whose command spells %i")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i used in rule pattern and no order-only input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a bang macro whose own order-only inputs are the only ones")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("Tupfile", "!m = | z.h |> echo 'i=[%i]' > %o |>\n: a.c |> !m |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i used in rule pattern and no order-only input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a group written in the inputs section")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile", ": b.c |> cp %f %o |> b.out <grp>\n: a.c <grp> |> echo 'i=[%i]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i used in rule pattern and no order-only input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a display string spelling %i in a rule with no order-only inputs")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": a.c |> ^ DISP[%i]^ echo x > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i used in rule pattern and no order-only input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("an output name spelling %i")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("Tupfile", ": a.c | z.h |> echo x > %o |> %i.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i is only valid in a command string") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("an extra output name spelling %i")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("Tupfile", ": a.c | z.h |> echo x > %o; touch %i.txt |> out.txt | %i.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%i is only valid in a command string") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("an output name spelling %1i")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("z.h", "");
+        f.write_file("Tupfile", ": a.c | z.h |> echo x > %o |> %1i.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%1i is only valid in a command string") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A percent-g in a rule with no inputs or several is refused", "[e2e][build]")
 {
     GIVEN("a rule with no inputs whose command spells %g")

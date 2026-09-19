@@ -23,12 +23,13 @@ auto is_nth(AtomKind kind) -> bool
     case AtomKind::NthInput:
     case AtomKind::NthInputBase:
     case AtomKind::NthInputNoExt:
+    case AtomKind::NthOrderOnlyInput:
     case AtomKind::NthOutput:
         return true;
     case AtomKind::Literal:
     case AtomKind::GroupRef:
     case AtomKind::AllInputs:
-    case AtomKind::AllInputsAlias:
+    case AtomKind::OrderOnlyInputs:
     case AtomKind::InputBase:
     case AtomKind::InputNoExt:
     case AtomKind::InputExt:
@@ -46,7 +47,8 @@ auto letter_of(AtomKind kind) -> char
     case AtomKind::AllInputs:
     case AtomKind::NthInput:
         return 'f';
-    case AtomKind::AllInputsAlias:
+    case AtomKind::OrderOnlyInputs:
+    case AtomKind::NthOrderOnlyInput:
         return 'i';
     case AtomKind::InputBase:
     case AtomKind::NthInputBase:
@@ -80,6 +82,8 @@ auto kind_for_letter(char letter, bool numbered) -> AtomKind
             return AtomKind::NthInputBase;
         case 'B':
             return AtomKind::NthInputNoExt;
+        case 'i':
+            return AtomKind::NthOrderOnlyInput;
         default:
             return AtomKind::NthOutput;
         }
@@ -88,7 +92,7 @@ auto kind_for_letter(char letter, bool numbered) -> AtomKind
     case 'f':
         return AtomKind::AllInputs;
     case 'i':
-        return AtomKind::AllInputsAlias;
+        return AtomKind::OrderOnlyInputs;
     case 'b':
         return AtomKind::InputBase;
     case 'B':
@@ -183,7 +187,7 @@ auto render_instruction(Instruction const& atoms) -> StringId
             buf.append('>');
             break;
         case AtomKind::AllInputs:
-        case AtomKind::AllInputsAlias:
+        case AtomKind::OrderOnlyInputs:
         case AtomKind::InputBase:
         case AtomKind::InputNoExt:
         case AtomKind::InputExt:
@@ -193,6 +197,7 @@ auto render_instruction(Instruction const& atoms) -> StringId
         case AtomKind::NthInput:
         case AtomKind::NthInputBase:
         case AtomKind::NthInputNoExt:
+        case AtomKind::NthOrderOnlyInput:
         case AtomKind::NthOutput:
             buf.append('%');
             if (is_nth(atom.kind())) {
@@ -247,7 +252,7 @@ auto parse_instruction(std::string_view text) -> Result<Instruction>
                 return make_error<Instruction>(ErrorCode::ParseError, msg.view());
             }
             auto const letter = text[end];
-            if (letter != 'f' && letter != 'b' && letter != 'B' && letter != 'o') {
+            if (letter != 'f' && letter != 'b' && letter != 'B' && letter != 'o' && letter != 'i') {
                 auto msg = Buf {};
                 msg.fmt("Expected 'f', 'b', 'B', 'o', or 'i' after number in %{}-flag, but got '{}'", num, letter);
                 return make_error<Instruction>(ErrorCode::ParseError, msg.view());

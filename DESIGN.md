@@ -480,7 +480,7 @@ struct EvalContext {
 | Flag | Meaning | Example |
 |------|---------|---------|
 | `%f` | All inputs | `main.c util.c` |
-| `%i` | All inputs (alias) | `main.c util.c` |
+| `%i` | Order-only inputs | `config.h` |
 | `%o` | All outputs | `main.o` |
 | `%O` | Output basename | `main` |
 | `%b` | Basename with ext, every input | `main.c util.c` |
@@ -488,6 +488,7 @@ struct EvalContext {
 | `%e` | Extension (foreach, file must have one) | `c` |
 | `%d` | Directory | `src` |
 | `%Nf` | Nth input | `%1f` → first input |
+| `%Ni` | Nth order-only input | `%1i` → first order-only input |
 
 **Expansion pipeline:**
 
@@ -1037,7 +1038,7 @@ The index uses **instruction-based command storage** for significant space savin
 
 **Instruction deduplication**: Bang macros like `!cc = |> $(CC) -c %f -o %o |>` produce the same instruction for all source files. With 1000 C files, instead of storing 1000 nearly-identical command strings, v8 stores 1 instruction + 1000 operand records.
 
-**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction_id` (the pattern) plus explicit `inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
+**Lazy reconstruction**: Full command strings are computed on demand via `expand_instruction()`, which substitutes operand paths into the instruction pattern. CommandNode stores `instruction_id` (the pattern) plus explicit `inputs`/`order_only_inputs`/`outputs` operand vectors. This keeps index loading fast and avoids storing redundant expanded strings.
 
 Version history:
 - v1: Initial format with full path strings

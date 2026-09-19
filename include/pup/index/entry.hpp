@@ -64,8 +64,9 @@ struct CommandEntry {
     /// carried this record past a change to one of its deps without re-running it.
     bool must_rerun = false;
 
-    TokenList<NodeId> inputs = {};  ///< Input file operands (for %f, %b and %B expansion), grouped by written token
-    TokenList<NodeId> outputs = {}; ///< Output file operands (for %o expansion), grouped by written token
+    TokenList<NodeId> inputs = {};            ///< Input file operands (for %f, %b and %B expansion), grouped by written token
+    TokenList<NodeId> order_only_inputs = {}; ///< The rule's own order-only operands (for %i expansion), grouped by written token
+    TokenList<NodeId> outputs = {};           ///< Output file operands (for %o expansion), grouped by written token
 
     /// Convert to raw format for serialization
     [[nodiscard]]
@@ -85,6 +86,7 @@ struct CommandEntry {
         std::string_view display_str,
         std::string_view env_str,
         TokenList<NodeId> inputs,
+        TokenList<NodeId> order_only_inputs,
         TokenList<NodeId> outputs,
         std::size_t array_index
     ) -> Result<CommandEntry>;

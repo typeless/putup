@@ -187,6 +187,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
         .signature = signature,
         .must_rerun = true,
         .inputs = { 10 },
+        .order_only_inputs = { 30 },
         .outputs = { 20 },
     };
 
@@ -204,7 +205,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     auto& pool = global_pool();
     auto restored = CommandEntry::from_raw(
         raw, pool.get(cmd.instruction_pattern), pool.get(cmd.display), pool.get(cmd.env),
-        pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 20 }, 4
+        pup::Vec<NodeId> { 10 }, pup::Vec<NodeId> { 30 }, pup::Vec<NodeId> { 20 }, 4
     );
 
     REQUIRE(restored.has_value());
@@ -218,6 +219,7 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(restored->signature == signature);
     REQUIRE(restored->must_rerun);
     REQUIRE(restored->inputs == cmd.inputs);
+    REQUIRE(restored->order_only_inputs == cmd.order_only_inputs);
     REQUIRE(restored->outputs == cmd.outputs);
 }
 
@@ -905,11 +907,16 @@ TEST_CASE("A command's operand tokens survive the record", "[index]")
         pup::Vec<NodeId> { 4, 5 }, pup::Vec<std::uint32_t> { 2, 2 }, 2
     );
 
+    auto const order_only_inputs = pup::TokenList<NodeId>::grouped(
+        pup::Vec<NodeId> { 5, 1 }, pup::Vec<std::uint32_t> { 1, 3 }, 3
+    );
+
     auto cmd_id = node_id::make_command(1);
     index.add_command(CommandEntry {
         .id = cmd_id,
-        .instruction_pattern = intern("cc %2f -o %2o"),
+        .instruction_pattern = intern("cc %2f -o %2o %i"),
         .inputs = inputs,
+        .order_only_inputs = order_only_inputs,
         .outputs = outputs,
     });
 
@@ -930,6 +937,10 @@ TEST_CASE("A command's operand tokens survive the record", "[index]")
     REQUIRE(cmd->inputs.token(2).size() == 2);
     REQUIRE(cmd->inputs.token(3).empty());
     REQUIRE(cmd->outputs.token(2).size() == 2);
+    REQUIRE(cmd->order_only_inputs == order_only_inputs);
+    REQUIRE(cmd->order_only_inputs.token(1).size() == 1);
+    REQUIRE(cmd->order_only_inputs.token(2).empty());
+    REQUIRE(cmd->order_only_inputs.token(3).size() == 1);
 
     opened->file.close();
     std::filesystem::remove(temp_path);
@@ -2477,6 +2488,10 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
             std::uint32_t input_token_count = 0;
             std::vector<std::uint32_t> output_tokens = {};
             std::uint32_t output_token_count = 0;
+            std::vector<NodeId> graph_order_only = {};
+            std::vector<NodeId> index_order_only = {};
+            std::vector<std::uint32_t> order_only_tokens = {};
+            std::uint32_t order_only_token_count = 0;
         };
 
         auto grouped = [](std::vector<NodeId> const& ids,
@@ -2516,6 +2531,12 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
             { "one token owning two outputs",
                 { *foo_c }, { *foo_o, *foo_d }, { 3 }, { 6, 7 }, intern("src"), 1,
                 {}, 0, { 2, 2 }, 2 },
+            { "an order-only input beside the inputs",
+                { *foo_c }, { *foo_o }, { 3 }, { 6 }, intern("src"), 1,
+                {}, 0, {}, 0, { *bar_c }, { 4 } },
+            { "one token owning two order-only inputs and a trailing token owning none",
+                { *foo_c }, { *foo_o }, { 3 }, { 6 }, intern("src"), 1,
+                {}, 0, {}, 0, { *bar_c, *dotfile }, { 4, 5 }, { 1, 1 }, 2 },
         };
 
         auto const templates = std::vector<std::string_view> {
@@ -2525,6 +2546,7 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
             "echo %O",
             "echo %d",
             "echo %i",
+            "echo %1i %2i",
             "echo %f%%literal",
             "echo a%1bb%2Bc",
             "link %f -o %O",
@@ -2549,6 +2571,9 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                     node.outputs = grouped(
                         operands.graph_outputs, operands.output_tokens, operands.output_token_count
                     );
+                    node.order_only_inputs = grouped(
+                        operands.graph_order_only, operands.order_only_tokens, operands.order_only_token_count
+                    );
                     auto cmd_id = graph::add_command_node(g, std::move(node));
                     REQUIRE(cmd_id.has_value());
 
@@ -2562,6 +2587,9 @@ SCENARIO("A recorded command and a graph command expand a template the same way"
                     );
                     record.outputs = grouped(
                         operands.index_outputs, operands.output_tokens, operands.output_token_count
+                    );
+                    record.order_only_inputs = grouped(
+                        operands.index_order_only, operands.order_only_tokens, operands.order_only_token_count
                     );
                     index.add_command(record);
 

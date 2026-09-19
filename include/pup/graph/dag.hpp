@@ -61,7 +61,7 @@ struct Guard {
 /// Command node - represents build commands
 /// Note: Type is determined by node_id::is_command(), not a stored field.
 /// Command string is reconstructed on demand via expand_instruction() from
-/// instruction atoms + explicit operand NodeIds (inputs/outputs).
+/// instruction atoms + explicit operand NodeIds (inputs/order-only inputs/outputs).
 struct CommandNode {
     NodeId id = 0;
 
@@ -69,8 +69,9 @@ struct CommandNode {
     StringId source_dir = StringId::Empty; ///< Tupfile directory (relative to root, interned)
     Instruction instruction = {};          ///< Instruction atoms (e.g. "gcc -c %f -o %o")
 
-    TokenList<NodeId> inputs = {};  ///< Operand file NodeIds for %f, %b and %B expansion, grouped by written token
-    TokenList<NodeId> outputs = {}; ///< Operand file NodeIds for %o expansion, grouped by written token
+    TokenList<NodeId> inputs = {};            ///< Operand file NodeIds for %f, %b and %B expansion, grouped by written token
+    TokenList<NodeId> order_only_inputs = {}; ///< The rule's own order-only operands for %i expansion, grouped by written token
+    TokenList<NodeId> outputs = {};           ///< Operand file NodeIds for %o expansion, grouped by written token
 
     SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
 
@@ -205,6 +206,7 @@ auto get(Graph const& graph, NodeId id) -> typename get_storage<Tag>::type;
 
 /// Role tags for composite-property access via view<Tag>.
 struct Inputs { };
+struct OrderOnlyInputs { };
 struct Outputs { };
 struct ExportedVars { };
 
@@ -214,6 +216,10 @@ struct view_storage;
 
 template<>
 struct view_storage<Inputs> {
+    using type = TokenList<NodeId>;
+};
+template<>
+struct view_storage<OrderOnlyInputs> {
     using type = TokenList<NodeId>;
 };
 template<>

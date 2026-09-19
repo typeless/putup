@@ -18,7 +18,7 @@ enum class AtomKind : std::uint8_t {
     Literal,
     GroupRef,
     AllInputs,
-    AllInputsAlias,
+    OrderOnlyInputs,
     InputBase,
     InputNoExt,
     InputExt,
@@ -28,6 +28,7 @@ enum class AtomKind : std::uint8_t {
     NthInput,
     NthInputBase,
     NthInputNoExt,
+    NthOrderOnlyInput,
     NthOutput,
 };
 
@@ -119,8 +120,10 @@ auto fold_instruction(Instruction const& atoms, Site const& site) -> StringId
             site.append_group_ref(buf, atom.text());
             break;
         case AtomKind::AllInputs:
-        case AtomKind::AllInputsAlias:
             site.append_all_inputs(buf);
+            break;
+        case AtomKind::OrderOnlyInputs:
+            site.append_order_only_inputs(buf);
             break;
         case AtomKind::InputBase:
             site.append_input_base(buf);
@@ -148,6 +151,9 @@ auto fold_instruction(Instruction const& atoms, Site const& site) -> StringId
             break;
         case AtomKind::NthInputNoExt:
             site.append_nth_input_noext(buf, atom.operand());
+            break;
+        case AtomKind::NthOrderOnlyInput:
+            site.append_nth_order_only_input(buf, atom.operand());
             break;
         case AtomKind::NthOutput:
             site.append_nth_output(buf, atom.operand());
