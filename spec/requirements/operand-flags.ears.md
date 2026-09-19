@@ -150,6 +150,16 @@ If a rule spells `%Ni`, then putup shall reject the Tupfile naming the issue tha
 If a rule spells `%e` in its command, display or outputs and it is not a foreach rule, or its
 current file's name has no extension, then putup shall reject the Tupfile.
 
+### REQ-OPERAND-INPUT-FLAGS-NO-INPUTS
+
+- conformance: tup-conformant
+- reference: upstream refuses `%f`, `%b` and `%B` when the input name list is empty, each with its own message naming the letter (`tup_printf`, the `f`, `b` and `B` branches, guarded on `nl->num_entries == 0`), in the same function as the `%o` guard that REQ-OUTPUT-OPERAND-FLAG-NO-OUTPUTS conforms to. A rule reaches the guard with an empty list when its input section was written empty or holds only order-only inputs, or, upstream only, through a bang macro's `.EMPTY` variant, which putup does not parse (#468); otherwise a non-empty section that matched nothing generates no command (REQ-GLOB-NO-MATCH-NO-COMMAND). The numbered forms never refuse: `%1f` over no inputs expands to nothing. putup expanded all three to nothing and ran the command with the operand gone; measured against tup for a rule with no inputs spelling `%f`, `%b` or `%B` in its command, `%f` in its output name and in its display string, a rule whose only inputs are order-only, and a bang macro's command, all refused with the same message, and for `%1f`, a group as the only input, a foreach over a glob that matched nothing, a glob that matched nothing in a rule that is not foreach, and an input section that is one empty variable, which build the same (#460)
+- discharge: test "Scenario: A percent-f, percent-b or percent-B in a rule with no inputs is refused"
+- discharge: test "Evaluator pattern expansion - %f, %b and %B with no inputs are refused"
+
+If a rule spells `%f`, `%b` or `%B` in its command, display or outputs and it has no inputs,
+then putup shall reject the Tupfile.
+
 ### REQ-OPERAND-GLOB-MATCH-SINGLE-GLOB-INPUT
 
 - conformance: tup-conformant

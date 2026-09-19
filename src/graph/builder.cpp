@@ -2443,7 +2443,10 @@ auto process_rule(
     // Only skip if pattern was specified but produced nothing
     prune_duplicate_inputs(inputs->operands);
 
-    if (!rule.foreach_ && !rule.inputs.empty() && inputs->operands.empty()) {
+    auto const only_patterns = std::ranges::all_of(inputs->operands, [](RuleInput const& inp) {
+        return inp.kind == RuleInput::Kind::Pattern;
+    });
+    if (!rule.foreach_ && !rule.inputs.empty() && only_patterns) {
         return {};
     }
 

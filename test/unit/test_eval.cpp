@@ -506,6 +506,41 @@ TEST_CASE("Evaluator pattern expansion - %e with no extension bound is refused",
     }
 }
 
+TEST_CASE("Evaluator pattern expansion - %f, %b and %B with no inputs are refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto flags = PatternFlags { .all_outputs = { "out.txt" } };
+
+    SECTION("%f")
+    {
+        auto result = expand_pattern(ctx, "echo %f > %o", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%f used in rule pattern and no input files were specified") != std::string_view::npos);
+    }
+
+    SECTION("%b")
+    {
+        auto result = expand_pattern(ctx, "echo %b > %o", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%b used in rule pattern and no input files were specified") != std::string_view::npos);
+    }
+
+    SECTION("%B")
+    {
+        auto result = expand_pattern(ctx, "echo %B > %o", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%B used in rule pattern and no input files were specified") != std::string_view::npos);
+    }
+
+    SECTION("a numbered input flag over no inputs still expands to nothing")
+    {
+        auto result = expand_pattern(ctx, "f=[%1f]", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "f=[]");
+    }
+}
+
 TEST_CASE("Evaluator pattern expansion - all outputs", "[eval]")
 {
     auto vars = VarDb {};
