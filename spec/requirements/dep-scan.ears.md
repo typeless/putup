@@ -51,6 +51,7 @@ Which commands a scan is generated for.
 - discharge: test "matches_gcc_compile refuses a command whose first invocation is not a compile"
 - discharge: test "A command whose first invocation is not a compile is scanned nowhere"
 - discharge: test "ClangClScanner scans the prefix before an invocation that is not a compile"
+- discharge: test "Scenario: The object of a compile that runs elsewhere is reported instead of scanned wrongly"
 
 Where a command runs an invocation that is neither a compile putup recognizes nor one it proves
 inert, whether a loop, a directory change, a standalone environment assignment, a link or any
@@ -95,6 +96,17 @@ such invocation, each carrying that invocation's own flags and its own source-fi
 each one preprocesses a different translation unit and the object it writes is covered only by a
 scan derived from it.
 
+### REQ-SCAN-CARRIES-COMPILE-WORDS
+
+- conformance: putup-only
+- discharge: test "Scenario: A header the compile reads only under -O2 is tracked"
+- discharge: test "Scenario: Implicit deps survive a flag whose path is a separate word"
+
+Where putup builds a scan from a compile's invocation, putup shall carry the compile's flags into
+the scan, a flag whose path stands as a word of its own together with that word, rather than
+preprocessing the translation unit under a reduced flag set that resolves the other arm of an
+include the compile gated on a flag such as `-O2`.
+
 ## Group: reporting
 
 What putup says about an object it did not scan. The unit is the object, not the rule: per object
@@ -111,8 +123,36 @@ speaks about the object it names, not about the command that declares it.
 - discharge: test "Scenario: A depfile flag the compile never carried hides no unscanned object"
 - discharge: test "A depfile flag outside the scannable prefix suppresses nothing"
 - discharge: test "A depfile flag inside the scannable prefix still suppresses"
+- discharge: test "Scenario: The object of a compile that runs elsewhere is reported instead of scanned wrongly"
 
 When a rule declares an object file that no generated scan covers — every object it declares,
 where no scan at all is generated — and no invocation a scan would have been built from carries a
 depfile flag, putup shall name that object and the rule's Tupfile under `parse`, and report how
 many such objects exist under a build.
+
+## Group: scan-results
+
+What putup does with what a scan printed. A scan is a command putup wrote itself, so its output is
+a contract rather than a report: putup knows the rule it asked for, and anything else the driver
+printed is not a dependency. The one dependency that looks unusable is the one outside the source
+tree; it is recorded, not dropped, and #305 was filed on the assumption of the opposite.
+
+### REQ-SCAN-REJECTS-FOREIGN-OUTPUT
+
+- conformance: putup-only
+- discharge: test "Scenario: A dep scan that prints anything but its rule fails the build"
+
+If a scan writes anything ahead of the make rule it was generated to produce, then putup shall
+fail the build and name the scan's command rather than record what it read, because a note line
+taken for a dependency path names a file that does not exist, and a dependency that never stats
+leaves the compile it feeds out of date at every build from then on.
+
+### REQ-SCAN-OUTSIDE-TREE-ABSOLUTE
+
+- conformance: putup-only
+- discharge: test "Scenario: A dependency outside the source tree is recorded rather than dropped"
+
+Where a dependency a scan reports resolves outside the source tree, putup shall record it under
+its absolute path rather than skip it, because a header under a sysroot or a toolchain prefix is
+one the compile read like any other, and dropping it — the arm a relativize-or-skip reading of the
+path would take — leaves the compile silently stale after a toolchain change.

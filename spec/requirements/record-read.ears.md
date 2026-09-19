@@ -3,8 +3,8 @@
 - area: record-read
 - required-legs: none
 
-The subject here is what the reader does when a record's declared positions do not hold up, or when
-what it reads at them repeats or contradicts itself. Every offset in the index is a number the
+The subject here is what the reader does when a record's declared positions do not hold up, when its
+bytes do not match the checksum it carries, or when what it reads at them repeats or contradicts itself. Every offset in the index is a number the
 record itself supplies, so a reader validates before it trusts; a value in range can still be
 wrong, and the one form of wrongness a reader can see unaided is a claim the record's other claims
 deny. The question this area settles is what happens at the moment either check fails. It is a
@@ -96,6 +96,14 @@ as the field's value rather than treating it as a failed read.
 
 Where a record's operand data fails validation, putup shall still recover the paths its file table
 records, because that read examines the file table alone.
+
+### REQ-READ-REJECT-FOREIGN-CONTENT
+
+- conformance: putup-only
+- discharge: test "Scenario: A build record that is not putup's own is refused out loud"
+
+If a record's contents do not match the checksum it carries, then putup shall report the record as
+unreadable rather than reading the sections whose declared positions validated.
 
 ## Group: announcement
 
