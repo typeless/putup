@@ -319,6 +319,14 @@ auto view<Inputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
 }
 
 template<>
+auto view<OrderOnlyInputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
+{
+    static auto const empty = TokenList<NodeId> {};
+    auto const* node = get_command_node(graph, id);
+    return node ? node->order_only_inputs : empty;
+}
+
+template<>
 auto view<Outputs>(Graph const& graph, NodeId id) -> TokenList<NodeId> const&
 {
     static auto const empty = TokenList<NodeId> {};
@@ -854,6 +862,11 @@ struct ExecSite {
         }
     }
 
+    auto append_order_only_inputs(Buf& buf) const -> void
+    {
+        append_token(buf, cmd->order_only_inputs.ids(), [this](NodeId id) { return operand_path(id); });
+    }
+
     auto append_input_base(Buf& buf) const -> void
     {
         append_token(buf, cmd->inputs.ids(), [this](NodeId id) { return basename_of(id); });
@@ -913,6 +926,11 @@ struct ExecSite {
         append_token(buf, cmd->inputs.token(token), [this](NodeId id) {
             return basename_without_extension_of(id);
         });
+    }
+
+    auto append_nth_order_only_input(Buf& buf, std::uint32_t token) const -> void
+    {
+        append_token(buf, cmd->order_only_inputs.token(token), [this](NodeId id) { return operand_path(id); });
     }
 
     auto basename_of(NodeId id) const -> std::string_view { return pup::path::filename(operand_path(id)); }

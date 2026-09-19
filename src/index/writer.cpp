@@ -250,6 +250,8 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
         push_u32(static_cast<std::uint32_t>(cmd.outputs.size()));
         push_u32(cmd.inputs.token_count());
         push_u32(cmd.outputs.token_count());
+        push_u32(static_cast<std::uint32_t>(cmd.order_only_inputs.size()));
+        push_u32(cmd.order_only_inputs.token_count());
 
         for (auto id : cmd.inputs) {
             push_u32(id);
@@ -257,10 +259,16 @@ auto serialize_index(Index const& index) -> Result<Vec<std::byte>>
         for (auto id : cmd.outputs) {
             push_u32(id);
         }
+        for (auto id : cmd.order_only_inputs) {
+            push_u32(id);
+        }
         for (auto start : cmd.inputs.starts()) {
             push_u32(start);
         }
         for (auto start : cmd.outputs.starts()) {
+            push_u32(start);
+        }
+        for (auto start : cmd.order_only_inputs.starts()) {
             push_u32(start);
         }
     }

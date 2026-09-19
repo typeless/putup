@@ -1949,6 +1949,26 @@ auto process_generated_rules(
     }
 }
 
+/// How a command spells an operand: a file Tupfile-relative in the rule's one path space, a group
+/// as its reference. The same spelling `%f` and `%i` render at exec time from the operand's node.
+auto spell_operands(
+    BuilderContext& ctx,
+    PathTransformContext const& tc,
+    Vec<RuleInput> const& operands
+) -> Vec<std::string_view>
+{
+    auto spelled = Vec<std::string_view> {};
+    spelled.reserve(operands.size());
+    for (auto const& inp : operands) {
+        spelled.push_back(str(
+            inp.kind == RuleInput::Kind::GroupRef
+                ? group_operand_spelling(str(inp.value))
+                : transform_input_path(*ctx.state, tc, str(inp.value))
+        ));
+    }
+    return spelled;
+}
+
 auto expand_rule(
     BuilderContext& ctx,
     Builder& state,
@@ -1979,29 +1999,24 @@ auto expand_rule(
         }
     }
 
-    auto tc = make_transform_context(ctx);
-    auto cmd_inputs = Vec<StringId> {};
-    cmd_inputs.reserve(operands.size());
-    for (auto const& inp : operands) {
-        cmd_inputs.push_back(
-            inp.kind == RuleInput::Kind::GroupRef
-                ? group_operand_spelling(str(inp.value))
-                : transform_input_path(*ctx.state, tc, str(inp.value))
-        );
+    auto rule_order_only = expand_inputs(ctx, rule.order_only_inputs);
+    if (!rule_order_only) {
+        return pup::unexpected<Error>(rule_order_only.error());
+    }
+    auto order_only_operands = Vec<RuleInput> {};
+    auto order_only_tokens = Vec<std::uint32_t> {};
+    for (auto const& inp : rule_order_only->operands) {
+        if (inp.kind != RuleInput::Kind::Pattern) {
+            order_only_operands.push_back(inp);
+            order_only_tokens.push_back(inp.token);
+        }
     }
 
-    auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
+    auto tc = make_transform_context(ctx);
+    auto cmd_inputs = spell_operands(ctx, tc, operands);
+    auto const primary_input_sv = cmd_inputs.empty() ? std::string_view {} : cmd_inputs[0];
     auto current_dir_name
         = is_empty(ctx.current_dir) ? std::string_view {} : pup::path::filename(str(ctx.current_dir));
-
-    auto all_inputs_sv = Vec<std::string_view> {};
-    all_inputs_sv.reserve(cmd_inputs.size());
-    for (auto id : cmd_inputs) {
-        all_inputs_sv.push_back(str(id));
-    }
-    auto const input_tokens = TokenList<std::string_view>::grouped(
-        std::move(all_inputs_sv), operand_tokens, token_count
-    );
 
     auto flags = parser::PatternFlags {
         .input_ext = rule.foreach_ && !pup::path::extension(primary_input_sv).empty()
@@ -2011,7 +2026,10 @@ auto expand_rule(
         .glob_match = operands.empty() || is_empty(operands[0].glob)
             ? std::nullopt
             : std::optional { str(parser::glob_match_extract(str(operands[0].glob), primary_input_sv)) },
-        .all_inputs = input_tokens,
+        .all_inputs = TokenList<std::string_view>::grouped(std::move(cmd_inputs), operand_tokens, token_count),
+        .order_only_inputs = TokenList<std::string_view>::grouped(
+            spell_operands(ctx, tc, order_only_operands), order_only_tokens, rule_order_only->token_count
+        ),
     };
 
     // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
@@ -2213,25 +2231,24 @@ auto expand_rule(
         display = *disp_result;
     }
 
-    // Expand non-group order-only inputs. Typed groups (<name>) are already handled
-    // by the pre-resolution loop above — their NodeIds are in deferred_group_vec.
-    // Expression-based group refs may still slip through expand_inputs (rare).
-    auto order_only_file_patterns = Vec<parser::PathPattern> {};
-    for (auto const& p : all_order_only) {
-        if (!p.is_order_only_group) {
-            order_only_file_patterns.push_back(p);
-        }
-    }
     auto order_only_paths = Vec<StringId> {};
-    if (!order_only_file_patterns.empty()) {
-        auto order_inputs = expand_inputs(ctx, order_only_file_patterns);
-        if (order_inputs) {
-            order_only_paths.reserve(order_inputs->operands.size());
-            for (auto const& inp : order_inputs->operands) {
-                order_only_paths.push_back(inp.value);
+    auto macro_order_only_paths = Vec<StringId> {};
+    auto collect_order_only_paths = [](Vec<StringId>& into, TokenizedInputs const& expanded) {
+        for (auto const& inp : expanded.operands) {
+            if (inp.kind != RuleInput::Kind::GroupRef) {
+                into.push_back(inp.value);
             }
         }
+    };
+    collect_order_only_paths(order_only_paths, *rule_order_only);
+    if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
+        auto macro_order_only = expand_inputs(ctx, macro_ptr->order_only_inputs);
+        if (!macro_order_only) {
+            return pup::unexpected<Error>(macro_order_only.error());
+        }
+        collect_order_only_paths(macro_order_only_paths, *macro_order_only);
     }
+    order_only_paths.insert(order_only_paths.end(), macro_order_only_paths.begin(), macro_order_only_paths.end());
 
     auto cmd_id = create_command_node(ctx, state, std::move(instruction_pattern), str(display));
     if (!cmd_id) {
@@ -2368,9 +2385,31 @@ auto expand_rule(
         }
     }
 
+    auto order_only_ids = Vec<NodeId> {};
+    order_only_ids.reserve(order_only_operands.size());
+    for (auto const& inp : order_only_operands) {
+        if (inp.kind == RuleInput::Kind::GroupRef) {
+            auto group_id = resolve_group_operand_node(ctx, state, str(inp.value));
+            if (!group_id) {
+                return pup::unexpected<Error>(group_id.error());
+            }
+            order_only_ids.push_back(*group_id);
+            continue;
+        }
+        auto file_id = resolve_input_node(ctx, str(inp.value));
+        if (!file_id) {
+            return pup::unexpected<Error>(file_id.error());
+        }
+        (void)add_edge(ctx.state->graph, *file_id, *cmd_id, LinkType::OrderOnly);
+        order_only_ids.push_back(*file_id);
+    }
+
     // Store explicit operands on the command node for expand_instruction()
     if (auto* cmd = get_command_node(ctx.state->graph, *cmd_id)) {
         cmd->inputs = TokenList<NodeId>::grouped(std::move(input_ids), operand_tokens, token_count);
+        cmd->order_only_inputs = TokenList<NodeId>::grouped(
+            std::move(order_only_ids), order_only_tokens, rule_order_only->token_count
+        );
         cmd->outputs = TokenList<NodeId>::grouped(
             std::move(output_ids), output_operand_tokens, outputs->token_count
         );
@@ -2378,7 +2417,7 @@ auto expand_rule(
 
     // Create order-only edges from the pre-expanded paths
     // Skip group references (deferred edge creation) and glob patterns (not valid paths)
-    for (auto oi : order_only_paths) {
+    for (auto oi : macro_order_only_paths) {
         auto oi_sv = str(oi);
         if (is_order_only_group_reference(oi_sv) || parser::has_glob_chars(oi_sv)) {
             continue;

@@ -423,6 +423,11 @@ public:
         }
     }
 
+    auto append_order_only_inputs(Buf& buf) const -> void
+    {
+        append_token(buf, flags.order_only_inputs.ids(), [](std::string_view p) { return p; });
+    }
+
     auto append_input_base(Buf& buf) const -> void
     {
         append_token(buf, flags.all_inputs.ids(), basename_of);
@@ -466,6 +471,11 @@ public:
     auto append_nth_input_noext(Buf& buf, std::uint32_t token) const -> void
     {
         append_token(buf, flags.all_inputs.token(token), basename_without_extension_of);
+    }
+
+    auto append_nth_order_only_input(Buf& buf, std::uint32_t token) const -> void
+    {
+        append_token(buf, flags.order_only_inputs.token(token), [](std::string_view p) { return p; });
     }
 
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void
@@ -550,27 +560,26 @@ auto expand_pattern_atoms(
 
             auto const letter = text[end];
 
-            if (letter == 'f' || letter == 'b' || letter == 'B' || letter == 'o') {
+            if (letter == 'f' || letter == 'b' || letter == 'B' || letter == 'o' || letter == 'i') {
                 if (letter == 'o' && flags.section == PatternSection::Outputs) {
                     return make_error<Instruction>(
                         ErrorCode::ParseError,
                         "%o can only be used in a command string or extra outputs section"
                     );
                 }
+                if (letter == 'i' && flags.section != PatternSection::Command) {
+                    auto msg = Buf {};
+                    msg.fmt("%{}i is only valid in a command string", num);
+                    return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+                }
                 auto const kind = letter == 'f' ? AtomKind::NthInput
                     : letter == 'b'             ? AtomKind::NthInputBase
                     : letter == 'B'             ? AtomKind::NthInputNoExt
+                    : letter == 'i'             ? AtomKind::NthOrderOnlyInput
                                                 : AtomKind::NthOutput;
                 builder.nth(kind, num);
                 pos = end + 1;
                 continue;
-            }
-
-            if (letter == 'i') {
-                return make_error<Instruction>(
-                    ErrorCode::ParseError,
-                    "%Ni is not supported yet (#426)"
-                );
             }
 
             auto msg = Buf {};
@@ -609,7 +618,16 @@ auto expand_pattern_atoms(
             );
             break;
         case 'i':
-            builder.flag(AtomKind::AllInputsAlias);
+            if (flags.section != PatternSection::Command) {
+                return make_error<Instruction>(ErrorCode::ParseError, "%i is only valid in a command string");
+            }
+            if (flags.order_only_inputs.empty()) {
+                return make_error<Instruction>(
+                    ErrorCode::ParseError,
+                    "%i used in rule pattern and no order-only input files were specified"
+                );
+            }
+            builder.flag(AtomKind::OrderOnlyInputs);
             break;
         case 'e':
             if (!flags.input_ext) {

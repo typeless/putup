@@ -1006,7 +1006,7 @@ Pattern flags are placeholders expanded at build time.
 | Flag | Description | Example |
 |------|-------------|---------|
 | `%f` | All input files; the rule must have at least one | `gcc %f` → `gcc foo.c bar.c` |
-| `%i` | All inputs (alias for %f) | `gcc %i` → `gcc foo.c bar.c` |
+| `%i` | The order-only inputs written after `\|`; the rule must have at least one, and only a command or display string may spell it | `: a.c \| z.h y.h \|> cat %i` → `cat z.h y.h` |
 | `%o` | All output files; the rule must declare at least one | `ar rcs %o` → `ar rcs foo.a foo.map` |
 | `%O` | The output without its extension, keeping its directory — command string or extra outputs section, and only with exactly one output | `sub/foo.so` → `sub/foo` |
 | `%b` | Basename of every input, with extension; the rule must have at least one | `src/foo.c bar.c` → `foo.c bar.c` |
@@ -1022,6 +1022,7 @@ Pattern flags are placeholders expanded at build time.
 | `%2f` | Second input file |
 | `%1b` | Basename of the first input |
 | `%1B` | Basename of the first input without its extension |
+| `%1i` | First order-only input |
 | `%1o` | First output file |
 | `%2o` | Second output file |
 
@@ -1029,7 +1030,6 @@ The number must be at least 1 and below 99 (tup's guard rejects 99 itself, despi
 naming the range 1-99), a letter must follow it, and that letter must be one of
 `f`, `b`, `B`, `o` or `i` — anything else is a parse error rather than literal text. A number
 that is in range but names an entry the rule does not have expands to nothing, as in tup.
-`%Ni` (N-th order-only input) is not supported yet and is refused by name; see issue #426.
 
 **Examples:**
 
@@ -2831,7 +2831,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | Flag | Description | Example Input | Result |
 |------|-------------|---------------|--------|
 | `%f` | All inputs (rule must have one) | `foo.c bar.c` | `foo.c bar.c` |
-| `%i` | All inputs (alias) | `foo.c bar.c` | `foo.c bar.c` |
+| `%i` | Order-only inputs (rule must have one; command or display string only) | `a.c \| z.h y.h` | `z.h y.h` |
 | `%b` | Basename with ext, every input (rule must have one) | `src/foo.c bar.c` | `foo.c bar.c` |
 | `%B` | Basename no ext, every input (rule must have one) | `src/foo.c bar.c` | `foo bar` |
 | `%e` | Extension (foreach, file must have one) | `foo.c` | `c` |
@@ -2852,6 +2852,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%1f` | First input |
 | `%2f` | Second input |
 | `%3f` | Third input (etc.) |
+| `%1i` | First order-only input |
 | `%1o` | First output |
 | `%2o` | Second output |
 | `%3o` | Third output (etc.) |

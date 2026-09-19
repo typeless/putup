@@ -89,6 +89,18 @@ number of the token it was written as rather than renumbering it for its own ite
 If a rule spells `%No`, then putup shall expand it to every operand of the N-th output token,
 joined by single spaces.
 
+### REQ-OPERAND-ORDER-ONLY-INPUT-SPELLING
+
+- conformance: tup-conformant
+- reference: upstream passes the rule's own order-only name list to `tup_printf` as its own argument for the command and display strings (`do_rule`, `&r->order_only_inputs`; a bang macro's `bang_oo_inputs` are kept apart and never passed), and the `%i` branch walks that list appending `nle->path`, joined by single spaces; the `%N`-flag branch selects from the same list by order id. The list is built by the tokenizer the input list is built by, so a group is one entry spelled as its reference, a bin is its members, a glob its sorted matches, and a path named twice is two entries. Measured against tup: `: a.c | y.h z.h |>` writes `i=[y.h z.h]`; `| *.h sub/*.h` writes `i=[y.h z.h sub/s.h]` and `%2i` writes `sub/s.h`; `| <grp>` writes `i=[<grp>]` and `| sub/<grp>` writes `i=[sub/<grp>]`; `| {bn}` writes the bin's member; `| z.h z.h` writes `i=[z.h z.h]`; a rule in `sub/` writing `| ../z.h` writes `i=[../z.h]`; `!m = | y.h |> echo %i` called by `: a.c | z.h |> !m` writes `i=[z.h]`, and `!m = |> echo %2i` called by `: a.c | y.h z.h |> !m` writes `z.h`; `%2i` over one order-only input, and `%1i` over none, write nothing; a display string spells it too. putup spelled `%i` as the inputs, the same text as `%f`, at every expansion site, and refused `%Ni` as unsupported (#461)
+- discharge: test "Scenario: A percent-i spells the rule's order-only inputs"
+- discharge: test "Evaluator pattern expansion - %i spells the order-only inputs"
+
+If a rule spells `%i` in its command or display string, then putup shall expand it to every
+order-only operand the rule itself wrote after `|`, spelled as `%f` spells an input and joined by
+single spaces; and `%Ni` to every operand of the N-th such token, or to nothing when the token
+does not exist.
+
 ### REQ-OPERAND-DUPLICATE-INPUT-PRUNED
 
 - conformance: tup-conformant
@@ -131,13 +143,25 @@ Tupfile.
 If a rule spells a `%N`-flag whose letter is not one of `f`, `b`, `B`, `o` or `i`, then putup
 shall reject the Tupfile.
 
-### REQ-OPERAND-NUMBERED-ORDER-ONLY-UNSUPPORTED
+### REQ-OPERAND-ORDER-ONLY-FLAG-COMMAND-ONLY
 
-- conformance: deliberate-deviation
-- reference: upstream expands `%Ni` to the N-th order-only input in a command string and refuses it elsewhere (`tup_printf`, the `%N`-flag branch, which is passed a null order-only list outside a command). putup does not bind that list yet and refuses `%Ni` everywhere, naming the issue; the alternative was to keep emitting it as literal text into a command line or a filename, which is the silent failure this area exists to end (#426)
-- discharge: test "A numbered order-only input flag is refused as unsupported"
+- conformance: tup-conformant
+- reference: upstream passes a null order-only list to `tup_printf` for an output pattern and an input path (`parse_output_pattern`, `eval_path_list`), and both the `%i` branch and the `%N`-flag branch refuse on it with `%i is only valid in a command string`, the numbered one naming its number. Measured against tup: `|> %i.txt`, `|> out.txt | %i.txt` and `|> %1i.txt` are refused; `^ DISP[%i]^` is not (#461)
+- discharge: test "Scenario: A percent-i in a rule with no order-only inputs or outside a command is refused"
+- discharge: test "Evaluator pattern expansion - %i with no order-only inputs or outside a command is refused"
 
-If a rule spells `%Ni`, then putup shall reject the Tupfile naming the issue that tracks it.
+If a rule spells `%i` or `%Ni` in its outputs or extra outputs, then putup shall reject the
+Tupfile.
+
+### REQ-OPERAND-ORDER-ONLY-FLAG-NO-ORDER-ONLY-INPUTS
+
+- conformance: tup-conformant
+- reference: upstream refuses `%i` when the order-only name list is empty with `%i used in rule pattern and no order-only input files were specified` (`tup_printf`, the `i` branch, guarded on `ooinput_nl->num_entries == 0`), in the same function as the `%f` guard REQ-OPERAND-INPUT-FLAGS-NO-INPUTS conforms to; the numbered form never refuses, `%1i` over no order-only inputs expanding to nothing like `%1f`. The list is the rule's own, so a bang macro's order-only inputs do not fill it, and neither does a group written in the inputs section, which upstream treats as order-only for dependencies but not for `%i`. Measured against tup: a rule with inputs and none order-only, a rule with no inputs at all, `!m = | z.h |> echo %i` called by `: a.c |> !m`, `: a.c <grp> |> echo %i`, and a display string in a rule with no order-only inputs, all refused with the same message; `%1i` over none builds. putup expanded `%i` to the inputs and built (#461)
+- discharge: test "Scenario: A percent-i in a rule with no order-only inputs or outside a command is refused"
+- discharge: test "Evaluator pattern expansion - %i with no order-only inputs or outside a command is refused"
+
+If a rule spells `%i` in its command or display string and it wrote no order-only inputs after
+`|`, then putup shall reject the Tupfile.
 
 ### REQ-OPERAND-EXTENSION-FOREACH-ONLY
 

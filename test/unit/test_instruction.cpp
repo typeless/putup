@@ -44,6 +44,7 @@ struct RecordingSite {
         buf.append(">");
     }
     auto append_all_inputs(Buf& buf) const -> void { note(buf, "all_inputs"); }
+    auto append_order_only_inputs(Buf& buf) const -> void { note(buf, "order_only_inputs"); }
     auto append_input_base(Buf& buf) const -> void { note(buf, "input_base"); }
     auto append_input_noext(Buf& buf) const -> void { note(buf, "input_noext"); }
     auto append_input_ext(Buf& buf) const -> void { note(buf, "input_ext"); }
@@ -53,6 +54,7 @@ struct RecordingSite {
     auto append_nth_input(Buf& buf, std::size_t i) const -> void { note_nth(buf, "nth_input", i); }
     auto append_nth_input_base(Buf& buf, std::size_t i) const -> void { note_nth(buf, "nth_input_base", i); }
     auto append_nth_input_noext(Buf& buf, std::size_t i) const -> void { note_nth(buf, "nth_input_noext", i); }
+    auto append_nth_order_only_input(Buf& buf, std::size_t i) const -> void { note_nth(buf, "nth_order_only_input", i); }
     auto append_nth_output(Buf& buf, std::size_t i) const -> void { note_nth(buf, "nth_output", i); }
 
 private:
@@ -155,12 +157,13 @@ SCENARIO("A rendered instruction re-parses to the same atoms", "[instruction][pr
             "gcc -c ", " -o ", "%", "%%", "a%1fb.c", "echo ", " > ", "", "üñ", "%<not-a-group",
         };
         auto const plain = std::vector<AtomKind> {
-            AtomKind::AllInputs, AtomKind::AllInputsAlias, AtomKind::InputBase,
+            AtomKind::AllInputs, AtomKind::OrderOnlyInputs, AtomKind::InputBase,
             AtomKind::InputNoExt, AtomKind::InputExt, AtomKind::AllOutputs,
             AtomKind::OutputNoExt, AtomKind::InputDir,
         };
         auto const numbered = std::vector<AtomKind> {
-            AtomKind::NthInput, AtomKind::NthInputBase, AtomKind::NthInputNoExt, AtomKind::NthOutput,
+            AtomKind::NthInput, AtomKind::NthInputBase, AtomKind::NthInputNoExt, AtomKind::NthOrderOnlyInput,
+            AtomKind::NthOutput,
         };
         auto const groups = std::vector<std::string_view> { "gen", "gen-headers", "objs" };
 

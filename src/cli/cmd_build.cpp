@@ -816,6 +816,7 @@ auto serialize_command_nodes(
         }
 
         auto inputs = pup::graph::view<pup::graph::Inputs>(g, id);
+        auto order_only_inputs = pup::graph::view<pup::graph::OrderOnlyInputs>(g, id);
         auto outputs = pup::graph::view<pup::graph::Outputs>(g, id);
         auto& pool = pup::global_pool();
 
@@ -837,6 +838,7 @@ auto serialize_command_nodes(
             .signature = pup::graph::compute_command_signature(g, id, state.path_cache),
             .must_rerun = must_rerun_cmds.contains(id),
             .inputs = std::move(inputs),
+            .order_only_inputs = std::move(order_only_inputs),
             .outputs = std::move(outputs),
         };
         index.add_command(std::move(entry));
@@ -1427,6 +1429,7 @@ auto merge_out_of_scope_commands(
             );
         };
         auto new_inputs = resolve_operands(cmd.inputs);
+        auto new_order_only_inputs = resolve_operands(cmd.order_only_inputs);
         auto new_outputs = resolve_operands(cmd.outputs);
         // An operand it could not carry means the record no longer describes what ran, so it
         // keeps its outputs but stops claiming they are current.
@@ -1443,6 +1446,7 @@ auto merge_out_of_scope_commands(
             .signature = cmd.signature,
             .must_rerun = must_rerun,
             .inputs = std::move(new_inputs),
+            .order_only_inputs = std::move(new_order_only_inputs),
             .outputs = std::move(new_outputs),
         });
         old_to_new_cmd.set(cmd.id, new_cmd_id);

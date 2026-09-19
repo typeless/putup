@@ -89,6 +89,7 @@ auto CommandEntry::from_raw(
     std::string_view display_str,
     std::string_view env_str,
     TokenList<NodeId> inputs,
+    TokenList<NodeId> order_only_inputs,
     TokenList<NodeId> outputs,
     std::size_t array_index
 ) -> Result<CommandEntry>
@@ -106,6 +107,7 @@ auto CommandEntry::from_raw(
         .signature = raw.signature,
         .must_rerun = (raw.flags & to_underlying(CommandFlag::MustRerun)) != 0U,
         .inputs = std::move(inputs),
+        .order_only_inputs = std::move(order_only_inputs),
         .outputs = std::move(outputs),
     };
 }
@@ -332,6 +334,8 @@ public:
 
     auto append_all_inputs(Buf& buf) const -> void { append_all(buf, m_cmd.inputs); }
 
+    auto append_order_only_inputs(Buf& buf) const -> void { append_all(buf, m_cmd.order_only_inputs); }
+
     auto append_input_base(Buf& buf) const -> void
     {
         append_token(buf, m_cmd.inputs.ids(), [this](NodeId id) { return basename_of(id); });
@@ -390,6 +394,11 @@ public:
     auto basename_without_extension_of(NodeId id) const -> std::string_view
     {
         return pup::path::stem(operand_path(id));
+    }
+
+    auto append_nth_order_only_input(Buf& buf, std::uint32_t token) const -> void
+    {
+        append_token(buf, m_cmd.order_only_inputs.token(token), [this](NodeId id) { return operand_path(id); });
     }
 
     auto append_nth_output(Buf& buf, std::uint32_t token) const -> void

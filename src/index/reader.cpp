@@ -29,8 +29,13 @@ constexpr auto UNREADABLE_DISPLAY = std::string_view { "[unreadable]" };
 
 auto index_get_semantic_string(IndexFile const& f, std::uint32_t offset) -> Result<std::string_view>;
 auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_view;
-auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
-    -> Result<std::pair<TokenList<NodeId>, TokenList<NodeId>>>;
+struct Operands {
+    TokenList<NodeId> inputs;
+    TokenList<NodeId> order_only_inputs;
+    TokenList<NodeId> outputs;
+};
+
+auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<Operands>;
 
 template<typename T>
 auto read_raw_entries(
@@ -173,7 +178,14 @@ auto read_index(IndexFile const& f) -> Result<Index>
             return pup::unexpected<Error>(operands.error());
         }
         auto command = CommandEntry::from_raw(
-            raw, instruction_pattern, display, *env, std::move(operands->first), std::move(operands->second), i
+            raw,
+            instruction_pattern,
+            display,
+            *env,
+            std::move(operands->inputs),
+            std::move(operands->order_only_inputs),
+            std::move(operands->outputs),
+            i
         );
         if (!command) {
             return pup::unexpected<Error>(command.error());
@@ -384,10 +396,8 @@ auto index_get_string(IndexFile const& f, std::uint32_t offset) -> std::string_v
     return text ? *text : UNREADABLE_DISPLAY;
 }
 
-auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
-    -> Result<std::pair<TokenList<NodeId>, TokenList<NodeId>>>
+auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<Operands>
 {
-    using Operands = std::pair<TokenList<NodeId>, TokenList<NodeId>>;
 
     auto const* hdr = index_header(f);
     if (!hdr || cmd_index >= hdr->command_count) {
@@ -427,12 +437,15 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
     auto out_count = std::size_t { read_u32(record_pos + sizeof(std::uint32_t)) };
     auto in_tokens = std::size_t { read_u32(record_pos + 2 * sizeof(std::uint32_t)) };
     auto out_tokens = std::size_t { read_u32(record_pos + 3 * sizeof(std::uint32_t)) };
+    auto oo_count = std::size_t { read_u32(record_pos + 4 * sizeof(std::uint32_t)) };
+    auto oo_tokens = std::size_t { read_u32(record_pos + 5 * sizeof(std::uint32_t)) };
 
     auto const in_boundary_words = in_tokens + 1;
     auto const out_boundary_words = out_tokens + 1;
+    auto const oo_boundary_words = oo_tokens + 1;
     auto expected_size = OPERAND_RECORD_HEAD_WORDS * sizeof(std::uint32_t)
-        + (in_count + out_count) * sizeof(NodeId)
-        + (in_boundary_words + out_boundary_words) * sizeof(std::uint32_t);
+        + (in_count + out_count + oo_count) * sizeof(NodeId)
+        + (in_boundary_words + out_boundary_words + oo_boundary_words) * sizeof(std::uint32_t);
     if (record_pos + expected_size > section_end) {
         return make_error<Operands>(ErrorCode::IndexDamaged, "Operand record runs past the operand section");
     }
@@ -450,18 +463,21 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index)
 
     auto input_ids = take(in_count);
     auto output_ids = take(out_count);
+    auto order_only_ids = take(oo_count);
     auto input_starts = take(in_boundary_words);
     auto output_starts = take(out_boundary_words);
+    auto order_only_starts = take(oo_boundary_words);
 
     auto inputs = TokenList<NodeId>::from_starts(std::move(input_ids), std::move(input_starts));
     auto outputs = TokenList<NodeId>::from_starts(std::move(output_ids), std::move(output_starts));
-    if (!inputs || !outputs) {
+    auto order_only_inputs = TokenList<NodeId>::from_starts(std::move(order_only_ids), std::move(order_only_starts));
+    if (!inputs || !outputs || !order_only_inputs) {
         return make_error<Operands>(
             ErrorCode::IndexDamaged, "Operand record groups its operands into tokens it does not span"
         );
     }
 
-    return Operands { std::move(*inputs), std::move(*outputs) };
+    return Operands { std::move(*inputs), std::move(*order_only_inputs), std::move(*outputs) };
 }
 
 } // namespace

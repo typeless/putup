@@ -206,12 +206,13 @@ enum class PatternSection {
 
 /// Pattern flags for command/output expansion
 struct PatternFlags {
-    std::optional<std::string_view> input_ext = {};   ///< %e - the current foreach file's extension, absent outside foreach or when its name has no extension
-    std::string_view input_dir = {};                  ///< %d - input directory
-    std::optional<std::string_view> glob_match = {};  ///< %g - the text the input's glob matched, absent when no glob produced it
-    TokenList<std::string_view> all_inputs = {};      ///< All inputs, for %f, %b, %B and their numbered forms, grouped by written token
-    TokenList<std::string_view> all_outputs = {};     ///< All outputs, for %o, %No and %O, grouped by written token
-    PatternSection section = PatternSection::Command; ///< decides where %o and %O are legal
+    std::optional<std::string_view> input_ext = {};     ///< %e - the current foreach file's extension, absent outside foreach or when its name has no extension
+    std::string_view input_dir = {};                    ///< %d - input directory
+    std::optional<std::string_view> glob_match = {};    ///< %g - the text the input's glob matched, absent when no glob produced it
+    TokenList<std::string_view> all_inputs = {};        ///< All inputs, for %f, %b, %B and their numbered forms, grouped by written token
+    TokenList<std::string_view> order_only_inputs = {}; ///< The rule's own order-only inputs, for %i and %Ni, grouped by written token
+    TokenList<std::string_view> all_outputs = {};       ///< All outputs, for %o, %No and %O, grouped by written token
+    PatternSection section = PatternSection::Command;   ///< decides where %o and %O are legal
 };
 
 /// Expand an expression, replacing variable references with values

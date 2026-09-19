@@ -376,7 +376,6 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
         REQUIRE(sv(*result) == "foo");
     }
 
-    // Note: %i is for order-only inputs, not yet implemented
 }
 
 TEST_CASE("A numbered flag outside one to ninety-nine is refused", "[eval]")
@@ -424,15 +423,94 @@ TEST_CASE("A numbered flag with an unknown letter is refused", "[eval]")
     REQUIRE_FALSE(expand_pattern(ctx, "%1t", flags).has_value());
 }
 
-TEST_CASE("A numbered order-only input flag is refused as unsupported", "[eval]")
+TEST_CASE("Evaluator pattern expansion - %i spells the order-only inputs", "[eval]")
 {
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
-    auto flags = PatternFlags { .all_inputs = { "a.c" } };
+    auto flags = PatternFlags {
+        .all_inputs = { "a.c" },
+        .order_only_inputs = pup::TokenList<std::string_view>::grouped({ "z.h", "y.h", "sub/s.h" }, { 1, 2, 2 }, 2),
+    };
 
-    auto const refused = expand_pattern(ctx, "%1i", flags);
-    REQUIRE_FALSE(refused.has_value());
-    REQUIRE(sv(refused.error().message).find("#426") != std::string_view::npos);
+    SECTION("%i - every order-only input, in written order")
+    {
+        auto result = expand_pattern(ctx, "i=[%i] f=[%f]", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "i=[z.h y.h sub/s.h] f=[a.c]");
+    }
+
+    SECTION("%Ni - the order-only inputs of the N-th written token")
+    {
+        auto result = expand_pattern(ctx, "%1i|%2i", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "z.h|y.h sub/s.h");
+    }
+
+    SECTION("a numbered order-only flag past the last written token expands to nothing")
+    {
+        auto result = expand_pattern(ctx, "i=[%3i]", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "i=[]");
+    }
+}
+
+TEST_CASE("Evaluator pattern expansion - %i with no order-only inputs or outside a command is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    SECTION("%i over no order-only inputs")
+    {
+        auto flags = PatternFlags { .all_inputs = { "a.c" }, .all_outputs = { "out.txt" } };
+        auto result = expand_pattern(ctx, "echo %i > %o", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%i used in rule pattern and no order-only input files were specified") != std::string_view::npos);
+    }
+
+    SECTION("a numbered order-only flag over no order-only inputs still expands to nothing")
+    {
+        auto flags = PatternFlags { .all_inputs = { "a.c" }, .all_outputs = { "out.txt" } };
+        auto result = expand_pattern(ctx, "i=[%1i]", flags);
+        REQUIRE(result.has_value());
+        REQUIRE(sv(*result) == "i=[]");
+    }
+
+    SECTION("%i in the outputs section")
+    {
+        auto flags = PatternFlags {
+            .all_inputs = { "a.c" },
+            .order_only_inputs = { "z.h" },
+            .section = PatternSection::Outputs,
+        };
+        auto result = expand_pattern(ctx, "%i.txt", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%i is only valid in a command string") != std::string_view::npos);
+    }
+
+    SECTION("%Ni in the outputs section")
+    {
+        auto flags = PatternFlags {
+            .all_inputs = { "a.c" },
+            .order_only_inputs = { "z.h" },
+            .section = PatternSection::Outputs,
+        };
+        auto result = expand_pattern(ctx, "%1i.txt", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%1i is only valid in a command string") != std::string_view::npos);
+    }
+
+    SECTION("%i in the extra outputs section")
+    {
+        auto flags = PatternFlags {
+            .all_inputs = { "a.c" },
+            .order_only_inputs = { "z.h" },
+            .all_outputs = { "out.txt" },
+            .section = PatternSection::ExtraOutputs,
+        };
+        auto result = expand_pattern(ctx, "%i.txt", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%i is only valid in a command string") != std::string_view::npos);
+    }
 }
 
 TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
@@ -469,7 +547,6 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
         REQUIRE(sv(*result) == "a.c b.c c.c|a b c");
     }
 
-    // Note: %i is for order-only inputs, not yet implemented
 }
 
 TEST_CASE("Evaluator pattern expansion - %e with no extension bound is refused", "[eval]")
