@@ -210,11 +210,6 @@ static_assert(
     "a flag's value is on-disk format, not implementation: changing one needs an INDEX_VERSION bump"
 );
 
-// Widening this record adds a category of recorded state, and a category is only useful once all
-// three of its legs exist: written here, compared where staleness is decided, and routed so the
-// commands that depend on it are scheduled. A category with a missing leg is a silent wrong build,
-// which is the shape #189 catalogues — so the size is fixed deliberately, to stop a new field
-// reaching the index before someone has answered for all three.
 static_assert(
     sizeof(RawCommandEntry) == 88,
     "RawCommandEntry changed size: bump INDEX_VERSION, and wire the new state's three legs "
@@ -358,4 +353,4 @@ inline auto set_node_flags(RawFileEntry& entry, NodeFlags flags) -> void
     entry.flags_high = static_cast<std::uint8_t>(value >> 8);
 }
 
-} // namespace pup::index
+}

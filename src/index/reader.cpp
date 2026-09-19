@@ -81,8 +81,6 @@ auto declared_layout_fits(std::size_t file_size, RawHeader const& hdr) -> bool
         && fits(hdr.edge_offset, std::uint64_t { hdr.edge_count } * sizeof(RawEdge))
         && fits(hdr.operand_table_offset, std::uint64_t { hdr.command_count } * sizeof(std::uint32_t))
         && fits(hdr.string_offset, hdr.string_table_size)
-        // Operand data is the only section whose size the header does not carry: it runs from
-        // its own offset to the string table.
         && hdr.operand_data_offset <= hdr.string_offset;
 }
 
@@ -99,7 +97,6 @@ auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> R
 
     result.file = std::move(*file_result);
 
-    // Damage before version: neither a sub-header file nor foreign magic is a record of any version (#383).
     if (result.file.size() < sizeof(RawHeader) + sizeof(RawFooter)) {
         return make_error<IndexFile>(ErrorCode::IndexDamaged, "Index file too small");
     }
@@ -114,8 +111,6 @@ auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> R
     if (!declared_layout_fits(result.file.size(), *hdr)) {
         return make_error<IndexFile>(ErrorCode::IndexDamaged, "Index sections do not fit the file");
     }
-    // What makes the bytes worth reading at all: that they are the ones a putup wrote, not a file
-    // that merely starts with the right four and lays its sections out plausibly (#294).
     if (!index_verify_checksum(result)) {
         return make_error<IndexFile>(ErrorCode::IndexChecksumMismatch, "Build record failed its checksum");
     }
@@ -123,7 +118,7 @@ auto open_index_in_window(std::string_view path, std::uint32_t min_version) -> R
     return result;
 }
 
-} // namespace
+}
 
 auto open_index(std::string_view path) -> Result<IndexFile>
 {
@@ -138,14 +133,11 @@ auto read_index(IndexFile const& f) -> Result<Index>
 
     auto index = Index {};
 
-    // Read save_time_ns from header
     auto const* hdr = index_header(f);
     if (hdr) {
         index.set_save_time_ns(hdr->save_time_ns);
     }
 
-    // A field this read cannot reproduce faithfully makes the whole record unreadable rather than
-    // a weaker claim in its place: an empty name or operand set is something callers act on (#381).
     auto files = index_raw_files(f);
     for (auto i = std::size_t { 0 }; i < files.size(); ++i) {
         auto const& raw = files[i];
@@ -160,10 +152,8 @@ auto read_index(IndexFile const& f) -> Result<Index>
         index.add_file(*entry);
     }
 
-    // Compute paths from parent chain (after all files loaded)
     index.compute_paths();
 
-    // Read command entries (v8: instruction + operands)
     auto commands = index_raw_commands(f);
     for (auto i = std::size_t { 0 }; i < commands.size(); ++i) {
         auto const& raw = commands[i];
@@ -193,7 +183,6 @@ auto read_index(IndexFile const& f) -> Result<Index>
         index.add_command(std::move(*command));
     }
 
-    // Read edges
     auto edges = index_raw_edges(f);
     for (auto const& raw : edges) {
         auto edge = EdgeEntry::from_raw(raw);
@@ -203,7 +192,6 @@ auto read_index(IndexFile const& f) -> Result<Index>
         index.add_edge(*edge);
     }
 
-    // Build edge indices for O(1) lookup
     index.build_edge_indices();
 
     return index;
@@ -226,8 +214,6 @@ auto prior_paths(Index const& index) -> PriorPaths
         if (pup::is_empty(file.path)) {
             continue;
         }
-        // Total by construction: a reader that decides whether to overwrite a file must not
-        // consume a projection that drops an entry type silently (#389).
         switch (file.type) {
         case NodeType::File:
             result.sources.push_back(file.path);
@@ -254,11 +240,6 @@ auto prior_paths(Index const& index) -> PriorPaths
     std::sort(result.generated.begin(), result.generated.end(), pup::handle_less);
     std::sort(result.unowned.begin(), result.unowned.end(), pup::handle_less);
 
-    // Each entry feeds one list, so a path appearing twice -- in one list or across two -- is a
-    // record holding two entries for one path, the state its own writer forbids, and this is the
-    // last check available before an irreversible action (#382). Compared as stored: an
-    // out-of-tree record legitimately holds one file as "a/bar.txt" and "build/a/bar.txt", which
-    // stripping a prefix would collapse.
     auto const repeats = [](Vec<StringId> const& paths) {
         return std::adjacent_find(paths.begin(), paths.end()) != paths.end();
     };
@@ -298,9 +279,6 @@ auto read_prior_paths(std::string_view path) -> PriorPaths
         return lost;
     }
 
-    // The file table and nothing else. Everything a version bump invalidates -- command
-    // identities, signatures, recorded currency -- stays unread, so it cannot reach a caller
-    // through this return type.
     auto recorded = Index {};
     auto raw = index_raw_files(*file);
     for (auto i = std::size_t { 0 }; i < raw.size(); ++i) {
@@ -354,25 +332,20 @@ auto index_get_semantic_string(IndexFile const& f, std::uint32_t offset) -> Resu
         return make_error<std::string_view>(ErrorCode::IndexDamaged, "Index header unreadable");
     }
 
-    // The string table's own end, not the file's: a string declared past the table but inside the
-    // file is still a string this record does not contain.
     auto const table_end = std::size_t { hdr->string_offset } + hdr->string_table_size;
     auto const string_start = std::size_t { hdr->string_offset } + offset;
 
-    // Length-prefixed strings: <u16 length><data>
     if (string_start + sizeof(std::uint16_t) > table_end) {
         return make_error<std::string_view>(ErrorCode::IndexDamaged, "Recorded string starts outside the string table");
     }
 
     auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
 
-    // Read u16 length (little-endian)
     auto const* len_bytes = data.subspan(string_start, sizeof(std::uint16_t)).data();
     auto const length = static_cast<std::uint16_t>(
         static_cast<std::uint8_t>(len_bytes[0]) | (static_cast<std::uint8_t>(len_bytes[1]) << 8)
     );
 
-    // Offset 0 is the table's empty entry, so this is a value the record states, not a failure.
     if (length == 0) {
         return std::string_view {};
     }
@@ -406,7 +379,6 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<Ope
 
     auto data = std::span<std::byte const> { f.file.data(), f.file.size() };
 
-    // Read offset from operand table
     auto table_pos = std::size_t { hdr->operand_table_offset } + cmd_index * sizeof(std::uint32_t);
     if (table_pos + sizeof(std::uint32_t) > f.file.size()) {
         return make_error<Operands>(ErrorCode::IndexDamaged, "Operand table entry outside the file");
@@ -424,9 +396,6 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<Ope
 
     auto offset = read_u32(table_pos);
 
-    // Widened like every position here: in u32 this sum wraps, and the check below then passes (#372).
-    // The operand section's own end, like the string table's: the writer lays the string table
-    // directly after this section, so a record declared past it is one this record does not hold.
     auto const section_end = std::size_t { hdr->string_offset };
     auto record_pos = std::size_t { hdr->operand_data_offset } + offset;
     if (record_pos + OPERAND_RECORD_HEAD_WORDS * sizeof(std::uint32_t) > section_end) {
@@ -480,7 +449,7 @@ auto index_get_operands(IndexFile const& f, std::size_t cmd_index) -> Result<Ope
     return Operands { std::move(*inputs), std::move(*order_only_inputs), std::move(*outputs) };
 }
 
-} // namespace
+}
 
 auto index_verify_checksum(IndexFile const& f) -> bool
 {
@@ -499,4 +468,4 @@ auto index_verify_checksum(IndexFile const& f) -> bool
     return computed == footer->checksum;
 }
 
-} // namespace pup::index
+}

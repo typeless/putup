@@ -75,13 +75,10 @@ struct CommandNode {
 
     SortedIdVec exported_vars = {}; ///< Env vars to export to command (interned StringIds)
 
-    // For generated rules (auto-generated from pattern matching)
     std::optional<GeneratedOutput> generated_output = {}; ///< Output specification
     OutputAction output_action = {};                      ///< What to do with output
     NodeId parent_command = INVALID_NODE_ID;              ///< Parent command for InjectImplicitDeps
 
-    // Condition guards - command executes only if ALL guards are satisfied
-    // For nested conditionals, this accumulates all enclosing conditions
     Vec<Guard> guards = {};
 };
 
@@ -118,12 +115,8 @@ struct Graph {
     NodeIdArenaIndex edges_to_index;
     NodeIdArenaIndex edges_from_index;
 
-    // Node lookup indices
     Vec<SortedPairVec> dir_children; ///< Per-directory name→NodeId index (indexed by parent dir)
 
-    // Structured path algebra
-    // mutable: memoized interning cache, written on the (const) read path.
-    // Single-threaded access only — not safe to share across threads.
     mutable PathPool paths;     ///< Interning trie of (parent PathId, basename StringId) entries
     SortedPairVec path_to_node; ///< Resolve: PathId → NodeId (reverse of FileNode::path_id)
 
@@ -343,7 +336,7 @@ inline constexpr auto parsed_consumers = static_cast<LinkTypeMask>(consumers & ~
 /// The half only the index carries: a discovered dependency is never parsed from a Tupfile,
 /// so its consumer has no graph edge to cascade over and must be routed on every change.
 inline constexpr auto discovered_consumers = link_type_bit(LinkType::Implicit);
-} // namespace edge_mask
+}
 
 /// Visit neighbor ids by direction and type mask without materializing a Vec.
 /// The allocation-free form for hot traversals (topo sort, reachability).
@@ -491,16 +484,10 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void;
 [[nodiscard]]
 auto get_build_root_name(Graph const& graph) -> std::string_view;
 
-// =============================================================================
-// BuildGraph - thin data carrier (replaces BuildGraph over time)
-// =============================================================================
-
 /// Simple aggregate holding the graph and its path cache.
 /// Replaces BuildGraph as a thin data carrier with no methods.
 struct BuildGraph {
     Graph graph;
-    // mutable: memoization written by get_full_path on the (const) read path.
-    // Single-threaded access only — not safe to share across threads.
     mutable PathCache path_cache;
 };
 
@@ -544,4 +531,4 @@ auto collect_upstream_files(
 /// Set build root name and clear path cache
 auto set_build_root_name(BuildGraph& state, std::string_view name) -> void;
 
-} // namespace pup::graph
+}

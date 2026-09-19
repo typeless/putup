@@ -100,7 +100,7 @@ auto describe(Instruction const& atoms) -> std::string
     return out;
 }
 
-} // namespace
+}
 
 SCENARIO("Text appended as a literal never expands", "[instruction]")
 {

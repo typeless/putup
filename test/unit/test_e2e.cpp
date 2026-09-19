@@ -27,9 +27,6 @@
 
 using namespace pup::test;
 
-// The assertion most incremental scenarios rest on, so it has to be exact: a substring test
-// for "0 commands" also accepts every multiple of ten, and a quiescence check that can pass
-// while a build ran hides the very defects those scenarios exist to catch (#234).
 TEST_CASE("is_noop accepts only a build that ran nothing", "[e2e-fixture]")
 {
     auto result_with = [](std::string out) { return PupResult { .exit_code = 0, .stdout_output = std::move(out), .stderr_output = {} }; };
@@ -49,10 +46,6 @@ TEST_CASE("is_noop accepts only a build that ran nothing", "[e2e-fixture]")
         REQUIRE_FALSE(result_with("[.] Build completed: 30 commands (2 failed) in 3ms\n").is_noop());
     }
 }
-
-// =============================================================================
-// Build Verification Tests
-// =============================================================================
 
 SCENARIO("Building a simple C project", "[e2e][build]")
 {
@@ -83,8 +76,8 @@ SCENARIO("Building a simple C project", "[e2e][build]")
 
         WHEN("built again without changes")
         {
-            (void)f.build();         // first build
-            auto result = f.build(); // second build
+            (void)f.build();
+            auto result = f.build();
 
             THEN("nothing is rebuilt")
             {
@@ -324,8 +317,6 @@ SCENARIO("Percent flags inside display text expand against the rule", "[e2e][bui
 
 SCENARIO("An unterminated caret is a parse error, not a shell error", "[e2e][build][display]")
 {
-    // Upstream rejects this at parse time; falling through left the ^ in the command text,
-    // so the rule died mid-build as "sh: ^: not found" — blamed on the tool, not the typo (#217).
     GIVEN("a rule whose display annotation is never closed")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -351,8 +342,6 @@ SCENARIO("An unterminated caret is a parse error, not a shell error", "[e2e][bui
 
 SCENARIO("An upstream caret flag is rejected, not rendered as a label", "[e2e][build][display]")
 {
-    // tup reads the non-space run after ^ as flags (t, o); putup implements neither, and
-    // printing "t" as the rule's label honours nothing and refuses nothing (#217).
     GIVEN("a rule using upstream's caret-flag form")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -375,7 +364,6 @@ SCENARIO("An upstream caret flag is rejected, not rendered as a label", "[e2e][b
 
 SCENARIO("A failing command is reported by its command line, not its display", "[e2e][build][display]")
 {
-    // The display names the step, not what broke, and this is the only line a build prints of what actually ran.
     GIVEN("an annotated rule whose command fails")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -427,7 +415,6 @@ SCENARIO("A failing config rule is reported by its command line, not its display
 
 SCENARIO("A bang macro's display wins over one written on the rule", "[e2e][build][display][bang]")
 {
-    // Outputs and groups resolve rule-over-macro; display is the one field that goes the other way, because the macro owns the command the display names.
     GIVEN("a macro carrying a display, applied by a rule that also carries one")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -511,7 +498,6 @@ SCENARIO("Order-only groups ensure build ordering", "[e2e][groups]")
 
             THEN("percent-group pattern expands in command body")
             {
-                // %<gen-headers> in command body should expand to config.h
                 auto content = f.read_file("headers.txt");
                 REQUIRE(content.find("config.h") != std::string::npos);
             }
@@ -537,8 +523,6 @@ SCENARIO("Order-only groups ensure build ordering", "[e2e][groups]")
         WHEN("the generator script is modified to output a new value")
         {
             (void)f.build({ "-j1" });
-            // Modify gen_config.sh which outputs config.h
-            // This tests: gen_config.sh -> config.h -> (order-only) -> main.o -> program
             f.write_file("gen_config.sh", "#!/bin/sh\necho '#define CONFIG_VALUE 99'\n");
             auto result = f.build({ "-j1" });
 
@@ -772,7 +756,6 @@ SCENARIO("Cross-directory order-only groups", "[e2e][groups]")
 
             THEN("percent-group expands cross-directory group in command")
             {
-                // %<gen-headers> should expand to ../include/version.h
                 auto content = f.read_file("src/headers.txt");
                 REQUIRE(content.find("VERSION") != std::string::npos);
             }
@@ -812,10 +795,6 @@ SCENARIO("Bang macro order-only groups trigger demand-driven parsing", "[e2e][bu
 {
     GIVEN("a project with a bang macro that references an order-only group in another directory")
     {
-        // This test verifies that order-only group references embedded in bang macros
-        // correctly trigger demand-driven parsing of the directory containing the group.
-        // Bug: the group reference in !cc = | $(TOROOT)/include/<gen-headers> |> ...
-        // was not triggering parsing of include/Tupfile before looking up the group.
         auto f = E2EFixture { "groups_bang_macro_cross_dir" };
         REQUIRE(f.init().success());
 
@@ -866,12 +845,6 @@ SCENARIO("Bang macro order-only groups work in variant builds", "[e2e][variant][
 {
     GIVEN("a project with a bang macro that references an order-only group across directories")
     {
-        // This test verifies that order-only group references in bang macros work correctly
-        // in variant builds. The bug was that DEP (implicit dep scanning) commands were not
-        // inheriting the order-only edges from their parent compile commands when using
-        // bang macros with TOROOT-based group references like:
-        //   !cc = | $(TOROOT)/include/<gen-headers> |> ...
-        // This caused DEP commands to run before headers were generated.
         auto f = E2EFixture { "groups_bang_macro_variant" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_CC=gcc\n");
@@ -920,7 +893,6 @@ SCENARIO("Groups defined in included files are visible", "[e2e][groups]")
 
             THEN("percent-group expands group from included file in command")
             {
-                // %<gen-headers> should expand to config.h (defined in gen.tup)
                 auto content = f.read_file("headers.txt");
                 REQUIRE(content.find("CONFIG_VALUE") != std::string::npos);
             }
@@ -1033,8 +1005,6 @@ SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
 {
     GIVEN("a Tupfile with group reference in inputs section (before |)")
     {
-        // This tests the spos pattern: $(ROOT)/modules/<json-headers> |> cat %<json-headers>
-        // Group references are order-only even when in regular inputs section
         auto f = E2EFixture { "groups_in_inputs" };
         REQUIRE(f.init().success());
 
@@ -1055,7 +1025,6 @@ SCENARIO("Group references in regular inputs expand correctly", "[e2e][groups]")
 
             THEN("percent-group in command expands to all group members")
             {
-                // %<json-headers> should expand to mod1.header and mod2.header
                 auto content = f.read_file("output/headers.txt");
                 REQUIRE(content.find("mod1") != std::string::npos);
                 REQUIRE(content.find("mod2") != std::string::npos);
@@ -1139,10 +1108,6 @@ SCENARIO("Dollar-dollar escapes to literal dollar in shell commands", "[e2e][bui
         }
     }
 }
-
-// =============================================================================
-// Incremental Build Tests
-// =============================================================================
 
 SCENARIO("Incremental rebuilds detect header changes", "[e2e][incremental]")
 {
@@ -1276,7 +1241,6 @@ SCENARIO("Editing an output-less command re-runs it", "[e2e][incremental]")
 
 SCENARIO("A Tupfile edit that changes no command re-runs nothing", "[e2e][incremental][identity]")
 {
-    // Complement of "Editing an output-less command re-runs it". The rule needs an output: the Sticky route propagates a command's outputs, so an output-less one cannot exhibit this at all (#225).
     GIVEN("a built project whose rebuild is stable")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -1517,7 +1481,6 @@ SCENARIO("Fine-grained config variable tracking with indirect usage", "[e2e][inc
 
                 THEN("rebuild occurs even though command uses $(MYFLAGS) not @(OPT)")
                 {
-                    // THIS IS THE KEY ASSERTION - currently fails
                     REQUIRE(result.success());
                     REQUIRE_FALSE(result.is_noop());
                 }
@@ -1561,7 +1524,6 @@ SCENARIO("SoftSet with config var only records deps when effective", "[e2e][incr
     {
         auto f = E2EFixture { "config_var_softset" };
         f.mkdir("build");
-        // Pre-set MYFLAGS so ?= is ineffective
         f.write_file("Tuprules.tup", "MYFLAGS = -DLEVEL=99\n");
         f.write_file("build/tup.config", "CONFIG_OPT=1\nCONFIG_OTHER=x\n");
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
@@ -1589,11 +1551,9 @@ SCENARIO("WeakSet with config var records deps only for winning assignment", "[e
     {
         auto f = E2EFixture { "config_var_weakset" };
         f.mkdir("build");
-        // OPT2=5 wins (last ??= assignment), OPT1=1 is ignored
         f.write_file("build/tup.config", "CONFIG_OPT1=1\nCONFIG_OPT2=5\n");
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
-        // Should use OPT2 (last wins)
         REQUIRE(f.run("build/program").stdout_output == "Level: 5\n");
         REQUIRE(f.build({ "-B", "build" }).is_noop());
 
@@ -1635,8 +1595,6 @@ SCENARIO("Touch does not trigger unnecessary rebuild", "[e2e][incremental]")
 
         WHEN("a source file is touched without content change")
         {
-            // Touch updates mtime but not content
-            // Use absolute path to touch since it's not in workdir
             auto result = f.run("/usr/bin/touch", { "hello.c" });
             REQUIRE(result.success());
 
@@ -1687,8 +1645,6 @@ SCENARIO("Partial failure with -k saves successful outputs", "[e2e][keep-going]"
 
                 THEN("only the fixed command runs, not the already-successful one")
                 {
-                    // The output should show only bad.c being compiled, not good.c
-                    // If good.c is recompiled, the bug is present
                     REQUIRE(result2.stdout_output.find("good.c") == std::string::npos);
                     REQUIRE(result2.stdout_output.find("bad.c") != std::string::npos);
                 }
@@ -1716,8 +1672,6 @@ SCENARIO("A build record that is not putup's own is refused out loud", "[e2e][in
             }
             REQUIRE(bytes.size() > 128);
 
-            // Mid-file: past the header putup already validates, ahead of the footer, so nothing
-            // but the checksum can notice.
             auto const pos = bytes.size() / 2;
             bytes[pos] = static_cast<char>(bytes[pos] ^ 0x01);
             {
@@ -1732,9 +1686,6 @@ SCENARIO("A build record that is not putup's own is refused out loud", "[e2e][in
                 REQUIRE(result.stderr_output.find("failed its checksum") != std::string::npos);
             }
 
-            // With the record refused, nothing left says which files on disk this project
-            // produced, and #291's rule is that putup does not guess -- so the build stops and
-            // names them rather than treating its own outputs as checked-in sources.
             THEN("it refuses rather than claim outputs it can no longer prove are its own")
             {
                 REQUIRE_FALSE(result.success());
@@ -1780,8 +1731,6 @@ SCENARIO("A build records one entry per path", "[e2e][index]")
                 REQUIRE(std::ranges::any_of(paths, [](auto p) { return p.starts_with("/"); }));
             }
 
-            // The directory walk creates an entry and registers it for the next lookup; register
-            // anything but what it created and the next chain re-creates it (#325).
             THEN("no two entries answer to the same path")
             {
                 auto const dup = std::adjacent_find(paths.begin(), paths.end());
@@ -1831,8 +1780,6 @@ SCENARIO("Implicit dependencies track header changes", "[e2e][incremental]")
 
 SCENARIO("A dependency outside the source tree is recorded rather than dropped", "[e2e][incremental][implicit]")
 {
-    // The arms that drop a discovered dep sit above an else that keeps the out-of-tree ones as
-    // absolute paths. Nothing pinned that, and #305 was filed on the assumption it drops them.
     GIVEN("a compile whose depfile names system headers")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -1865,8 +1812,6 @@ SCENARIO("A dependency outside the source tree is recorded rather than dropped",
 
 SCENARIO("A changed header re-runs the output-less command that read it", "[e2e][incremental][implicit]")
 {
-    // Routing a discovered dep pushes the reading command's outputs, so a command with none was
-    // reached and then dropped. A compile gate is the shape that has no outputs on purpose (#228).
     GIVEN("an output-less compile gate that reads a header")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -1908,9 +1853,6 @@ SCENARIO("A changed header re-runs the output-less command that read it", "[e2e]
 
 SCENARIO("A scoped build sees a declared input outside the scope change", "[e2e][incremental][scope]")
 {
-    // Detection skips out-of-scope files unless a bypass covers them, and the bypass admitted
-    // Implicit and Sticky edges but not Normal — so a plainly declared source input was the one
-    // kind of dependency a scoped build could not see (#200).
     GIVEN("a rule in a subdirectory declaring a source file above it")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -1941,9 +1883,6 @@ SCENARIO("A scoped build sees a declared input outside the scope change", "[e2e]
 
 SCENARIO("A command that raced its discovered dependency runs again", "[e2e][incremental][implicit]")
 {
-    // Nothing orders a consumer against a producer it only discovers, so it can read the file
-    // before it exists. The dep is then recorded from a post-run stat — as already satisfied —
-    // and no later build re-runs it, leaving the output permanently wrong (#274).
     GIVEN("a consumer that discovers a generated file with nothing ordering the two")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -1989,9 +1928,6 @@ SCENARIO("A command that raced its discovered dependency runs again", "[e2e][inc
 
 SCENARIO("A consumer ordered through a sibling output is not taxed for discovering the other", "[e2e][incremental][implicit]")
 {
-    // Codegen emitting one declared and one discovered output: the consumer is ordered through
-    // the declared one, so it cannot have raced the discovered one. Marking it anyway doubles
-    // every codegen rebuild — the shape a two-hop ordering check cannot see (#274).
     GIVEN("a generator producing a source the consumer declares and a header it only discovers")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2022,9 +1958,6 @@ SCENARIO("A consumer ordered through a sibling output is not taxed for discoveri
 
 SCENARIO("A discovered dependency orders its consumer on a later build", "[e2e][incremental][implicit]")
 {
-    // A discovery is index-only, so it orders nothing: every later build that runs both the
-    // producer and the consumer races them again, and the consumer is taxed with an extra run
-    // to catch up. The previous build's discovery is what the scheduler orders by now (#276).
     GIVEN("a settled project whose consumer only discovers what the other produces")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2075,11 +2008,6 @@ SCENARIO("A discovered dependency orders its consumer on a later build", "[e2e][
 
 SCENARIO("A recorded discovery that the rules now contradict does not stall the build", "[e2e][incremental][implicit]")
 {
-    // The ordering carried from the last build is stale by construction: the rules can since
-    // have turned the discovered file's producer into a consumer of the discoverer's output.
-    // The rules are this build's truth, so the contradiction retracts the carried ordering —
-    // taking it as binding leaves both commands waiting for each other, and a scheduler with
-    // nothing runnable and nothing running reports the build complete having run neither (#276).
     GIVEN("a settled project where one command discovers what the other produces")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2139,8 +2067,6 @@ SCENARIO("A recorded discovery that the rules now contradict does not stall the 
 
 SCENARIO("A discovery whose producing rule is gone orders nothing", "[e2e][incremental][implicit]")
 {
-    // Ordering carried from the last build names a producer by the file it produces, so a rule
-    // that has since stopped producing it names nothing and the consumer waits for no one (#276).
     GIVEN("a settled project whose consumer discovers a generated file")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2193,10 +2119,6 @@ SCENARIO("A discovery whose producing rule is gone orders nothing", "[e2e][incre
 
 SCENARIO("Ordering the scheduler did not enforce does not excuse a race", "[e2e][incremental][implicit]")
 {
-    // A carried ordering is only real for a pair this build actually scheduled: the consumer may
-    // be quiescent and absent from the job set, and then nothing enforced it. Crediting it anyway
-    // lets a command reach its own excuse through the missing one's outputs, and the race it did
-    // commit goes unmarked — the permanently wrong output #274 exists to prevent (#276).
     GIVEN("a settled project whose quiescent consumer bridges a producer to a third command")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2266,10 +2188,6 @@ SCENARIO("Ordering the scheduler did not enforce does not excuse a race", "[e2e]
 
 SCENARIO("A producer's own input change reaches the consumer that only discovered it", "[e2e][incremental][implicit]")
 {
-    // The affected cascade walks graph edges from the pre-build changed set, and a discovered
-    // dependency has none; the file is not known changed until its producer has run, and the
-    // index then stamps it from a post-run stat. So the consumer was never scheduled at all and
-    // its output stayed wrong while the build reported the tree up to date (#277).
     GIVEN("a settled project whose consumer only discovers what the other produces")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2343,9 +2261,6 @@ SCENARIO("A producer's own input change reaches the consumer that only discovere
 
 SCENARIO("A producer's input change reaches a chain of discovered consumers", "[e2e][incremental][implicit]")
 {
-    // Routing a discovered consumer makes its own outputs change, so whatever discovered those
-    // must follow. Expanding the recorded pairs once rather than inside the cascade's fixpoint
-    // would reach the first consumer and stop (#277).
     GIVEN("a settled chain where each link only discovers the one before it")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2406,9 +2321,6 @@ SCENARIO("A producer's input change reaches a chain of discovered consumers", "[
 
 SCENARIO("A producer's input change reaches an output-less discovered consumer", "[e2e][incremental][implicit]")
 {
-    // The cascade marks the consumer command node itself, so a reader with no output path is
-    // reached the same way one with outputs is; routing through outputs instead would drop it,
-    // the shape #228 had on the comparison route (#284).
     GIVEN("a settled gate that declares no outputs and only discovered the generated header")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2421,8 +2333,6 @@ SCENARIO("A producer's input change reaches an output-less discovered consumer",
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
 
-        // The gate's dep scan must see the header to record it; introduced together they race
-        // and the discovery is silently empty.
         f.write_file("b/Tupfile", ": gate.c |> gcc -c %f -o /dev/null |>\n");
         f.write_file(
             "b/gate.c",
@@ -2453,9 +2363,6 @@ SCENARIO("A producer's input change reaches an output-less discovered consumer",
 
 SCENARIO("A discovered consumer re-runs for a producer that rewrites the same bytes", "[e2e][incremental][implicit]")
 {
-    // Membership routes, not content: the consumer re-runs because its producer ran, exactly as
-    // a declared consumer does. Pinned so the pessimism is a decision rather than a surprise, and
-    // so that it costs one run per producer run and not one per build (#277).
     GIVEN("a settled project whose producer writes constant output from a changing input")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2505,10 +2412,6 @@ SCENARIO("A discovered consumer re-runs for a producer that rewrites the same by
 
 SCENARIO("A dependency absent when it was recorded settles rather than re-running forever", "[e2e][incremental][implicit]")
 {
-    // A command may report reading a file that is not there -- a conditional include that
-    // resolved to nothing. Reading the same stat failure as news every build re-runs the command
-    // forever for output that cannot change, which is the loop the campaign exists to kill. tup
-    // records the absence as a ghost and settles, and re-runs only if the file appears (#281).
     GIVEN("a consumer whose dependency report names a file that does not exist")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2538,8 +2441,6 @@ SCENARIO("A dependency absent when it was recorded settles rather than re-runnin
 
 SCENARIO("A dependency that was absent when recorded still re-runs its reader when it appears", "[e2e][incremental][implicit]")
 {
-    // What settling must not cost: the absence is recorded as zero size, zero mtime and a zero
-    // hash, and a file arriving has to be read as a change against all three (#281).
     GIVEN("a settled consumer whose dependency report names a file that does not exist")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2579,7 +2480,6 @@ SCENARIO("A dependency that was absent when recorded still re-runs its reader wh
 
         WHEN("the named file appears empty")
         {
-            // Size and mtime match the sentinel zeros, so only the recorded hash separates it.
             f.write_file("h.txt", "");
             REQUIRE(f.build().success());
 
@@ -2605,8 +2505,6 @@ SCENARIO("A dependency that was absent when recorded still re-runs its reader wh
 
 SCENARIO("A deleted dependency a command still reports re-runs it once", "[e2e][incremental][implicit]")
 {
-    // The deletion is a real change and must reach the reader, but the run that follows records
-    // the file as absent -- so the build after it has nothing new to say and must settle (#281).
     GIVEN("a settled consumer whose dependency is then deleted")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2651,9 +2549,6 @@ SCENARIO("A deleted dependency a command still reports re-runs it once", "[e2e][
 
 SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2e][incremental][implicit]")
 {
-    // The merge copies an out-of-scope file's entry verbatim. Run before the discovered deps,
-    // that copy shadowed the fresh one, so a carried NodeFlags::AbsenceRouted discharged the next
-    // real deletion as "already routed" and the consumer never ran again (#237).
     GIVEN("a guarded producer, a consumer that discovers its output, and an out-of-scope declarer")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2672,10 +2567,6 @@ SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2
         );
         f.write_file("d/Tupfile", ": ../a/p.txt |> cp %f %o |> o.copy\n");
         f.write_file("tup.config", "CONFIG_FOO=y\n");
-        // Nothing orders these two commands on a first build — b/ depends on a/p.txt only by
-        // discovery — so c.o's content here is whichever won, and asserting it raced on CI.
-        // gen.sh writes the .d either way, so the dependency is recorded regardless, which is
-        // all the steps below need.
         REQUIRE(f.build().success());
 
         WHEN("the guard is turned off, the output is recreated by hand, and then deleted again")
@@ -2703,7 +2594,6 @@ SCENARIO("A recreated dependency does not carry its deletion mark forward", "[e2
 
 SCENARIO("A build whose discovered dependency was deleted quiesces", "[e2e][incremental][implicit]")
 {
-    // The command re-runs and rediscovers nothing, which the carry logic could not tell from "did not run", so the dead edge and its file entry came back every build (#224).
     GIVEN("a rule whose command reports its own dependencies")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -2746,9 +2636,6 @@ SCENARIO("A build whose discovered dependency was deleted quiesces", "[e2e][incr
 
 SCENARIO("Implicit deps survive identical rules in sibling directories", "[e2e][incremental][identity]")
 {
-    // Command text is Tupfile-relative, so these two rules render the same string.
-    // If identity ignores the directory they collide, and one directory's header
-    // edges get attached to the other's command.
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("two directories whose rules and sources are byte-identical")
@@ -2784,7 +2671,6 @@ SCENARIO("Implicit deps survive identical rules in sibling directories", "[e2e][
 
 SCENARIO("A header the compile reads only under -O2 is tracked", "[e2e][incremental]")
 {
-    // A scan without the compile's flags resolves the other branch and records the wrong header.
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("a source whose include is gated on __OPTIMIZE__")
@@ -2847,7 +2733,6 @@ SCENARIO("A dep scan that prints nothing fails the build", "[e2e][incremental]")
 
 SCENARIO("A dep scan that prints anything but its rule fails the build", "[e2e][incremental]")
 {
-    // Chatter parsed as dependencies never stats, so the command would re-run for ever.
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("a compiler whose scan prints a note before its rule")
@@ -2875,7 +2760,6 @@ SCENARIO("A dep scan that prints anything but its rule fails the build", "[e2e][
 
 SCENARIO("Implicit deps survive a flag whose path is a separate word", "[e2e][incremental]")
 {
-    // A flag's path reaches the scan whichever spelling carries it, or the scan has no input file.
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("a compile whose sysroot is spelled as two words")
@@ -2911,7 +2795,6 @@ SCENARIO("Implicit deps survive a flag whose path is a separate word", "[e2e][in
 
 SCENARIO("Implicit deps cover every source of a multi-source command", "[e2e][incremental]")
 {
-    // gcc -M emits one rule per source; stopping at the first leaves b.h untracked and the program silently stale
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("a command compiling two sources with a header each")
@@ -2946,13 +2829,6 @@ SCENARIO("Implicit deps cover every source of a multi-source command", "[e2e][in
 
 SCENARIO("Implicit deps survive command-id shift from a removed source", "[e2e][incremental][idshift]")
 {
-    // Implicit (header→command) edges discovered last build are carried forward for
-    // commands that don't rebuild. If that carry-forward keys on the command's array
-    // position (NodeId), removing a glob-matched source whose command was created
-    // earlier shifts every later command's id down — and the carried edge gets
-    // misattributed to whatever command now occupies the old id. A later edit to the
-    // header then rebuilds the wrong unit and leaves the real output stale. The
-    // carry-forward must key on the command's structural identity, stable across shifts.
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("a project where m_a.o has a discovered header dep and m_b.o is a removable unit")
@@ -2965,8 +2841,6 @@ SCENARIO("Implicit deps survive command-id shift from a removed source", "[e2e][
 
         WHEN("the earlier-created unit is removed (shifting m_a's command id down), then m_a.h changes")
         {
-            // No Tupfile edit: the glob drops m_b.c. m_a.c is not recompiled this build,
-            // so its m_a.h dependency must be carried forward — at the new command id.
             f.remove_file("m_b.c");
             REQUIRE(f.build().success());
             REQUIRE(f.run("program").stdout_output == "A1\n");
@@ -3015,7 +2889,7 @@ SCENARIO("New source file triggers rebuild", "[e2e][incremental]")
 
                 THEN("the original file is not recompiled")
                 {
-                    REQUIRE_FALSE(result.is_noop()); // mul.o was built
+                    REQUIRE_FALSE(result.is_noop());
                 }
             }
         }
@@ -3123,9 +2997,6 @@ SCENARIO("A scoped build does not blind the next full build", "[e2e][incremental
 
 SCENARIO("A build run from a subdirectory does not stamp an out-of-scope change as current", "[e2e][incremental][scope]")
 {
-    // A cwd-derived scope parses the whole project but detects only its own directory, while the
-    // record leg re-hashed every graph file: a/src.txt was recorded current on the strength of a
-    // stat nothing consumed, so the next full build compared v2 against v2 forever (#288).
     GIVEN("two independent directories, settled")
     {
         auto f = E2EFixture { "scoped_out_of_scope_edit" };
@@ -3154,8 +3025,6 @@ SCENARIO("A build run from a subdirectory does not stamp an out-of-scope change 
 
 SCENARIO("A build with --all-deps does not stamp an out-of-scope change as current", "[e2e][incremental][scope]")
 {
-    // -a empties parse_scopes for the same reason cwd scoping does, so it reaches #288 by the
-    // same door: everything is parsed, only the scope is detected, everything is recorded.
     GIVEN("two independent directories, settled")
     {
         auto f = E2EFixture { "scoped_out_of_scope_edit" };
@@ -3184,8 +3053,6 @@ SCENARIO("A build with --all-deps does not stamp an out-of-scope change as curre
 
 SCENARIO("A file added while building from a subdirectory is still built", "[e2e][incremental][scope]")
 {
-    // The other side of #288's fix: carrying an unexamined file's recorded state forward must not
-    // become "record nothing", or a file first seen by a scoped build would never be built.
     GIVEN("a settled project whose other directory globs its sources")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -3223,7 +3090,6 @@ SCENARIO("Removed source file triggers stale output cleanup", "[e2e][incremental
     {
         auto f = E2EFixture { "new_file_detection" };
 
-        // Add second file
         f.write_file("mul.c", "int mul(int a, int b) { return a * b; }\n");
 
         REQUIRE(f.init().success());
@@ -3469,7 +3335,6 @@ SCENARIO("A stale output that cannot be deleted fails the build and keeps its re
         if (!probe_ec) {
             std::filesystem::remove(dir / "probe", probe_ec);
             std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke write permission (running as root?): scenario not exercised");
             return;
         }
@@ -3551,7 +3416,6 @@ SCENARIO("clean does not count an empty directory it could not remove", "[e2e][c
         if (!probe_ec) {
             std::filesystem::remove(root / "probe", probe_ec);
             std::filesystem::permissions(root, writable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke write permission (running as root?): scenario not exercised");
             return;
         }
@@ -3571,7 +3435,6 @@ SCENARIO("clean does not count an empty directory it could not remove", "[e2e][c
                 REQUIRE(combined.find("Failed to remove directory") != std::string::npos);
                 REQUIRE(combined.find("0 directories") != std::string::npos);
                 REQUIRE_FALSE(result.success());
-                // The platform message already names the path; the caller must not repeat it.
                 auto const dir_name = std::string { "/out:" };
                 auto first = combined.find(dir_name);
                 REQUIRE(first != std::string::npos);
@@ -3602,7 +3465,6 @@ SCENARIO("distclean does not report a reset it could not perform", "[e2e][clean]
         if (!probe_ec) {
             std::filesystem::remove(root / "probe", probe_ec);
             std::filesystem::permissions(root, writable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke write permission (running as root?): scenario not exercised");
             return;
         }
@@ -3654,8 +3516,6 @@ SCENARIO("clean leaves a source file an inactive branch merely declares", "[e2e]
 
 SCENARIO("A source and the out-of-tree output shadowing it are one record clean can read", "[e2e][clean][out-of-tree]")
 {
-    // The regression pin for comparing recorded paths as stored: this record holds one file as
-    // both a source and an output, and only their spellings tell them apart (#382).
     GIVEN("a build whose output shadows a committed source of the same name")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -3686,8 +3546,6 @@ SCENARIO("A source and the out-of-tree output shadowing it are one record clean 
 
 SCENARIO("A build refuses to overwrite a file the record does not attribute to a rule", "[e2e][build][conditionals]")
 {
-    // Whether a previous build happened must not change the answer: the record is what the
-    // guard reads, and none of these three sequences gives it a claim on the file.
     GIVEN("a conditional branch whose output path holds a file no rule has produced")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -3875,7 +3733,6 @@ SCENARIO("A subdirectory an inactive branch would write into is not generated", 
 
 SCENARIO("Turning a branch off keeps ownership of what it built", "[e2e][build][conditionals]")
 {
-    // Ownership survives the branch going inactive only via the record's carry-forward (#369).
     GIVEN("an output produced while its branch was active")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -3902,8 +3759,6 @@ SCENARIO("Turning a branch off keeps ownership of what it built", "[e2e][build][
 
 SCENARIO("A stale output that cannot even be queried keeps its record", "[e2e][incremental][stale]")
 {
-    // The rule lives in the readable root Tupfile so its directory stays authoritative;
-    // only the output's directory is locked, which is what reaches the exists() guard.
     GIVEN("a removed rule whose output sits in a directory that cannot be read")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -3922,7 +3777,6 @@ SCENARIO("A stale output that cannot even be queried keeps its record", "[e2e][i
         if (!probe_ec) {
             std::filesystem::remove(dir / "probe", probe_ec);
             std::filesystem::permissions(dir, readable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke directory permissions (running as root?): scenario not exercised");
             return;
         }
@@ -4140,7 +3994,7 @@ SCENARIO("Removed source file cleans stale output in variant build", "[e2e][incr
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/add.o"));
         REQUIRE(f.exists("build/mul.o"));
-        REQUIRE_FALSE(f.exists("add.o")); // Not in source dir
+        REQUIRE_FALSE(f.exists("add.o"));
 
         WHEN("a source file is removed")
         {
@@ -4161,9 +4015,6 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
 {
     GIVEN("a variant build with cross-directory dependencies")
     {
-        // scoped_build has: app -> lib cross-directory dep
-        // app/Tupfile is parsed first (alphabetically), references ../lib/foo.o
-        // This may create Ghost nodes, testing the ID contiguity fix
         auto f = E2EFixture { "scoped_build" };
         f.mkdir("build");
         f.write_file("build/tup.config", "");
@@ -4181,7 +4032,6 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
 
             WHEN("source file content is modified without size change")
             {
-                // Modify "42" to "99" - same size (2 chars), different content
                 auto original = f.read_file("lib/foo.c");
                 auto pos = original.find("42");
                 REQUIRE(pos != std::string::npos);
@@ -4199,10 +4049,6 @@ SCENARIO("Source file content change triggers rebuild in variant build", "[e2e][
         }
     }
 }
-
-// =============================================================================
-// Scoped Build Tests
-// =============================================================================
 
 SCENARIO("Scoped build skips changes outside scope", "[e2e][incremental][scope]")
 {
@@ -4344,7 +4190,6 @@ SCENARIO("Explicit target path sets scope", "[e2e][incremental][scope]")
             THEN("only the lib scope is checked and rebuilt")
             {
                 REQUIRE(result.success());
-                // lib/foo.c change detected and rebuilt
                 REQUIRE(result.stdout_output.find("foo.o") != std::string::npos);
             }
         }
@@ -4361,14 +4206,12 @@ SCENARIO("Tupfile changes detected regardless of scope", "[e2e][incremental][sco
 
         WHEN("a Tupfile outside scope is modified")
         {
-            // A comment would not do: an edit leaving every command's text identical is correctly a no-op (#225), so the mutation has to change a command.
             f.write_file("app/Tupfile", ": main.c ../lib/foo.o |> gcc %f -o %o -DEXTRA=1 |> app\n");
             auto result = f.run_pup_in_dir("lib", { "-v" });
 
             THEN("the change is detected and triggers rebuild")
             {
                 REQUIRE(result.success());
-                // Tupfile change causes dependent app to rebuild
                 REQUIRE_FALSE(result.is_noop());
             }
         }
@@ -4432,10 +4275,6 @@ SCENARIO("Scoped build with -a checks upstream deps (mma behavior)", "[e2e][incr
     }
 }
 
-// =============================================================================
-// Cross-Directory Scoped Build with -a (all-deps) Tests
-// =============================================================================
-
 SCENARIO("Fresh scoped build with -a succeeds for cross-directory deps", "[e2e][scope]")
 {
     GIVEN("a project with producer/consumer cross-directory dependencies")
@@ -4484,12 +4323,10 @@ SCENARIO("Fresh scoped build WITHOUT -a fails for cross-directory deps", "[e2e][
 
 SCENARIO("A file that cannot be hashed is named in a warning", "[e2e][incremental]")
 {
-    // The only signal a user gets when content hashing fails; it had no test at all (#204).
     GIVEN("a source file that cannot be read")
     {
         auto f = E2EFixture { "glob_mixed_space" };
         f.write_file("in.txt", "hello\n");
-        // The command must not read in.txt, or it fails before putup ever hashes it.
         f.write_file("Tupfile", ": in.txt |> echo done > %o |> out.o\n");
         REQUIRE(f.init().success());
         REQUIRE(f.build().success());
@@ -4500,7 +4337,6 @@ SCENARIO("A file that cannot be hashed is named in a warning", "[e2e][incrementa
         auto probe = std::ifstream { victim };
         if (probe.good()) {
             std::filesystem::permissions(victim, readable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke read permission (running as root?): scenario not exercised");
             return;
         }
@@ -4628,10 +4464,6 @@ SCENARIO("Incremental -a scoped build detects upstream changes", "[e2e][incremen
     }
 }
 
-// =============================================================================
-// Clean/Distclean Tests
-// =============================================================================
-
 SCENARIO("Clean removes generated files but preserves sources", "[e2e][clean]")
 {
     GIVEN("a built project")
@@ -4724,7 +4556,7 @@ SCENARIO("Clean works for out-of-tree builds", "[e2e][clean][variant]")
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/hello.o"));
-        REQUIRE_FALSE(f.exists("hello.o")); // Not in source dir
+        REQUIRE_FALSE(f.exists("hello.o"));
 
         WHEN("pup clean -B build is executed")
         {
@@ -4844,7 +4676,7 @@ SCENARIO("Distclean with no index still removes .pup", "[e2e][clean]")
     GIVEN("a project with .pup directory but no index")
     {
         auto f = E2EFixture { "distclean_no_index" };
-        f.mkdir(".pup"); // Manually create .pup (simulates interrupted build)
+        f.mkdir(".pup");
         REQUIRE(f.exists(".pup"));
 
         WHEN("pup distclean is executed")
@@ -4917,10 +4749,6 @@ SCENARIO("Distclean works when running from build directory", "[e2e][clean][vari
     }
 }
 
-// =============================================================================
-// Variant Build Tests
-// =============================================================================
-
 SCENARIO("Out-of-tree builds place outputs in build directory", "[e2e][variant]")
 {
     GIVEN("a configured out_of_tree project")
@@ -4980,7 +4808,6 @@ SCENARIO("Variant build with generated header has correct incremental behavior",
 
         WHEN("modifying the generated header content")
         {
-            // Modify the Tupfile to change the generated content
             f.write_file("Tupfile", "# Modified to generate different header\n"
                                     ": |> echo '#define VERSION 2' > %o |> version.h\n"
                                     "CFLAGS = -MD -I$(TUP_VARIANT_OUTPUTDIR)\n"
@@ -5005,13 +4832,6 @@ SCENARIO("Variant build with generated header has correct incremental behavior",
 
 SCENARIO("Order-only deps on generated outputs resolve correctly in variants", "[e2e][variant][incremental]")
 {
-    // This tests the bug where order-only deps using plain paths (e.g., "include/foo.h")
-    // created duplicate File nodes instead of reusing Generated nodes.
-    // Pattern from busybox:
-    //   : |> ... |> include/applets.h  # output becomes build/include/applets.h
-    //   : | include/applets.h |> ...   # should resolve to build/include/applets.h
-    // Bug: the order-only dep created a File node at "include/applets.h" instead
-    // of reusing the Generated node at "build/include/applets.h".
     GIVEN("a variant build with output and order-only dep using same path")
     {
         auto f = E2EFixture { "variant_cross_dir_order_only" };
@@ -5037,12 +4857,6 @@ SCENARIO("Order-only deps on generated outputs resolve correctly in variants", "
 
 SCENARIO("Variant outputs are automatically mapped to build directory", "[e2e][variant]")
 {
-    // This tests that output paths are automatically mapped to the variant directory.
-    // Pattern from busybox:
-    //   Root Tupfile: : |> ... |> include/header.h  # should become build/include/header.h
-    //   src/Tupfile:  | $(B)/include/header.h       # references build/include/header.h
-    // Without automatic mapping, the output creates a node at "include/header.h" (source),
-    // but the dependency references "build/include/header.h" (variant) - creating two nodes.
     GIVEN("a variant build with S/B convention like busybox")
     {
         auto f = E2EFixture { "variant_auto_output" };
@@ -5074,8 +4888,6 @@ SCENARIO("Variant outputs are automatically mapped to build directory", "[e2e][v
 
             THEN("rebuild is a no-op (no ghost nodes)")
             {
-                // If output was mapped incorrectly, there would be a ghost node
-                // at build/include/header.h that never gets satisfied
                 auto rebuild = f.build({ "-B", "build" });
                 INFO("rebuild stdout: " << rebuild.stdout_output);
                 REQUIRE(rebuild.success());
@@ -5087,11 +4899,6 @@ SCENARIO("Variant outputs are automatically mapped to build directory", "[e2e][v
 
 SCENARIO("Cross-directory regular inputs work in variant builds", "[e2e][variant]")
 {
-    // Similar to order-only test but with regular input dependency
-    // This tests that Ghost->Generated upgrade preserves edges
-    // aaa_consumer is parsed first (alphabetically), creates Ghost for ../zzz_producer/helper.c
-    // zzz_producer is parsed later, upgrades Ghost to Generated
-    // The edge from aaa_consumer's command to the generated file must be preserved
     GIVEN("a variant build with generated file as regular input from another dir")
     {
         auto f = E2EFixture { "variant_cross_dir_regular_input" };
@@ -5202,7 +5009,7 @@ SCENARIO("Subdirectory builds with cross-directory dependencies", "[e2e][variant
 
         WHEN("header in different directory is modified")
         {
-            (void)f.build(); // First build
+            (void)f.build();
             f.write_file("include/config.h", "#define CONFIG_VALUE 100\n");
             auto result = f.build();
 
@@ -5227,7 +5034,6 @@ SCENARIO("Variant-only files are found via generalized path resolution", "[e2e][
         auto f = E2EFixture { "variant_fallback" };
         f.mkdir("build");
         f.write_file("build/tup.config", "# Variant config\n");
-        // Create config.txt ONLY in the variant directory, not in source
         f.write_file("build/config.txt", "variant-only-content\n");
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
@@ -5250,10 +5056,6 @@ SCENARIO("Variant-only files are found via generalized path resolution", "[e2e][
         }
     }
 }
-
-// =============================================================================
-// Shell Fixture Tests (wrapped)
-// =============================================================================
 
 SCENARIO("Conditionals test via shell fixture", "[e2e][shell]")
 {
@@ -5282,10 +5084,6 @@ SCENARIO("Self-host test via shell fixture", "[e2e][shell]")
 }
 
 
-// Regression guard: when a source's already-tracked header is edited to
-// transitively include a new header, pup must record the new transitive
-// header and rebuild on subsequent edits to it. Fixed by binding dep-scan
-// command dirty-status to its parent compile (collect_affected_commands).
 SCENARIO("Transitive implicit-dep header tracking", "[e2e][shell][incremental]")
 {
     WHEN("the header_dep_transitive shell fixture runs")
@@ -5300,10 +5098,6 @@ SCENARIO("Transitive implicit-dep header tracking", "[e2e][shell][incremental]")
         }
     }
 }
-
-// =============================================================================
-// Show Command Tests
-// =============================================================================
 
 SCENARIO("Show graph shows only declared deps by default", "[e2e][show]")
 {
@@ -5471,7 +5265,6 @@ SCENARIO("Show index dumps implicit-dep edges from the on-disk index", "[e2e][sh
                 REQUIRE(result.success());
                 REQUIRE(result.stdout_output.find("Files:") != std::string::npos);
                 REQUIRE(result.stdout_output.find("Commands with implicit/sticky deps:") != std::string::npos);
-                // No per-command section in summary mode
                 REQUIRE(result.stdout_output.find("Commands (with implicit/sticky edges):") == std::string::npos);
             }
         }
@@ -5608,7 +5401,6 @@ SCENARIO("Show script generates shell build script", "[e2e][show]")
         auto f = E2EFixture { "simple_c" };
         REQUIRE(f.init().success());
 
-        // Add required script config variables
         f.append_file("tup.config",
             "CONFIG_SCRIPT_PROLOGUE=#!/bin/sh\\nset -ex\\ncd \"$(dirname \"$0\")\"\n"
             "CONFIG_SCRIPT_RUN=(cd \"%DIR\" && %CMD)\n"
@@ -5711,10 +5503,6 @@ SCENARIO("Show with unknown format fails", "[e2e][show]")
     }
 }
 
-// =============================================================================
-// Layout Detection Tests
-// =============================================================================
-
 SCENARIO("Layout detection finds build directory via tup.config", "[e2e][layout]")
 {
     GIVEN("a project with build/tup.config")
@@ -5790,12 +5578,10 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
         auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
         auto f = E2EFixture { "implicit_deps" };
 
-        // Create empty .pup at source root (simulating stale directory)
         f.mkdir(".pup");
         REQUIRE(f.exists(".pup"));
         REQUIRE_FALSE(f.exists(".pup/index"));
 
-        // Configure and build to build/ which creates build/.pup/index
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         REQUIRE(f.build({ "-B", "build" }).success());
         REQUIRE(f.exists("build/.pup/index"));
@@ -5824,17 +5610,12 @@ SCENARIO("Layout detection prefers build/.pup with index over empty source .pup"
     }
 }
 
-// =============================================================================
-// Multi-Variant Build Tests
-// =============================================================================
-
 SCENARIO("Multi-variant glob selection builds all matching variants", "[e2e][multi-variant]")
 {
     GIVEN("a project with multiple variant directories")
     {
         auto f = E2EFixture { "multi_variant" };
 
-        // Create two variant directories with tup.config
         f.mkdir("build-debug");
         f.mkdir("build-release");
         f.write_file("build-debug/tup.config", "CONFIG_DEBUG=y\n");
@@ -6270,10 +6051,6 @@ SCENARIO("Multi-variant parse", "[e2e][multi-variant]")
     }
 }
 
-// =============================================================================
-// Unified Target Tests
-// =============================================================================
-
 SCENARIO("Unified targets - path-based variant selection", "[e2e][target]")
 {
     GIVEN("a project with build-debug and build-release variants")
@@ -6451,15 +6228,12 @@ SCENARIO("Unified targets - single output file target", "[e2e][target]")
 
         WHEN("pup build-debug/hello is run after full build")
         {
-            // First do a full build so the output exists
             REQUIRE(f.build({ "-B", "build-debug" }).success());
             REQUIRE(f.is_executable("build-debug/hello"));
 
-            // Remove the output to force rebuild
             f.remove_file("build-debug/hello");
             REQUIRE_FALSE(f.exists("build-debug/hello"));
 
-            // Build just the single output
             auto result = f.pup({ "build-debug/hello" });
 
             THEN("only that output is rebuilt")
@@ -6508,11 +6282,9 @@ SCENARIO("Unified targets - B flag with output target", "[e2e][target]")
 
         WHEN("pup -B build-debug build-debug/hello rebuilds deleted output")
         {
-            // First do a full build
             REQUIRE(f.build({ "-B", "build-debug" }).success());
             REQUIRE(f.is_executable("build-debug/hello"));
 
-            // Remove output and rebuild with -B + output target
             f.remove_file("build-debug/hello");
             REQUIRE_FALSE(f.exists("build-debug/hello"));
 
@@ -6526,10 +6298,6 @@ SCENARIO("Unified targets - B flag with output target", "[e2e][target]")
         }
     }
 }
-
-// =============================================================================
-// Target-based build (from scratch) tests
-// =============================================================================
 
 SCENARIO("Target-based build from scratch", "[e2e][target]")
 {
@@ -6598,10 +6366,6 @@ SCENARIO("Target-based build with variant", "[e2e][target][variant]")
     }
 }
 
-// =============================================================================
-// Scoped tup.config tests
-// =============================================================================
-
 SCENARIO("Subdir merges parent and local config", "[e2e][scoped-config]")
 {
     GIVEN("a project with root and sub configs defining different vars")
@@ -6638,7 +6402,6 @@ SCENARIO("Subdir inherits from parent when no local config", "[e2e][scoped-confi
         f.mkdir("build/sub/deep");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
-        // NO build/sub/deep/tup.config
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
@@ -6661,7 +6424,6 @@ SCENARIO("Root config used when no intermediate configs", "[e2e][scoped-config]"
         auto f = E2EFixture { "scoped_config" };
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
-        // NO build/sub/tup.config - should inherit from root
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
@@ -6684,7 +6446,7 @@ SCENARIO("Empty subdir config does not block parent merge", "[e2e][scoped-config
         auto f = E2EFixture { "scoped_config" };
         f.mkdir("build/sub");
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
-        f.write_file("build/sub/tup.config", ""); // Empty — parent vars merge through
+        f.write_file("build/sub/tup.config", "");
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup builds the project")
@@ -6732,7 +6494,6 @@ SCENARIO("Multi-level config merge", "[e2e][scoped-config]")
         f.write_file("build/tup.config", "CONFIG_ROOT_VAR=from_root\n");
         f.write_file("build/sub/tup.config", "CONFIG_SUB_VAR=from_sub\n");
         f.write_file("build/sub/deep/tup.config", "CONFIG_DEEP_VAR=from_deep\n");
-        // Custom Tupfile to test all three vars at the deep level
         f.write_file("sub/deep/Tupfile",
             ": |> echo \"@(ROOT_VAR)\" > %o |> root_from_deep.txt\n"
             ": |> echo \"@(SUB_VAR)\" > %o |> sub_from_deep.txt\n"
@@ -6799,10 +6560,6 @@ SCENARIO("-D config overrides win over all config files", "[e2e][scoped-config]"
         }
     }
 }
-
-// =============================================================================
-// pup configure command tests
-// =============================================================================
 
 SCENARIO("Configure executes config-generating rules only", "[e2e][configure]")
 {
@@ -6883,7 +6640,6 @@ SCENARIO("Configure uses root tup.config only", "[e2e][configure]")
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
-        // NO build/configs/tup.config
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
 
         WHEN("pup configure runs")
@@ -6909,7 +6665,6 @@ SCENARIO("Configure does not write index", "[e2e][configure]")
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
-        // Remove index if it was created by init
         f.remove_file("build/.pup/index");
         REQUIRE_FALSE(f.exists("build/.pup/index"));
 
@@ -6933,7 +6688,6 @@ SCENARIO("Configure does not create .pup directory", "[e2e][configure]")
         auto f = E2EFixture { "configure_cmd" };
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=board-xyz\n");
-        // Do NOT call init - no .pup directory exists
         REQUIRE_FALSE(f.exists("build/.pup"));
 
         WHEN("pup configure runs")
@@ -6965,7 +6719,6 @@ SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
             auto configure_result = f.pup({ "configure", "-B", "build" });
             REQUIRE(configure_result.success());
 
-            // Verify config content immediately after configure
             REQUIRE(f.exists("build/configs/tup.config"));
             auto config_content = f.read_file("build/configs/tup.config");
             REQUIRE(config_content.find("hello-world") != std::string::npos);
@@ -6982,10 +6735,6 @@ SCENARIO("Full two-stage build with pup configure", "[e2e][configure]")
 
 SCENARIO("Configure handles config rule depending on non-config rule", "[e2e][configure][deps]")
 {
-    // Bug: passing only config-output commands as a filter ignores their dependencies.
-    // If a config rule depends on an intermediate file produced by a non-config rule,
-    // the dependency is not run, causing the config rule to fail.
-
     GIVEN("a project where config rule depends on intermediate file")
     {
         auto f = E2EFixture { "configure_deps" };
@@ -7001,8 +6750,6 @@ SCENARIO("Configure handles config rule depending on non-config rule", "[e2e][co
             {
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
-                // This test documents the expected behavior:
-                // Configure should run BOTH the intermediate rule AND the config rule
                 REQUIRE(result.success());
                 REQUIRE(f.exists("build/configs/tup.config"));
             }
@@ -7018,7 +6765,6 @@ SCENARIO("Configure works with empty .pup directory (no index)", "[e2e][configur
         f.mkdir("build");
         f.write_file("build/tup.config", "");
 
-        // Create empty .pup directory (simulating interrupted init or manual mkdir)
         f.mkdir("build/.pup");
         REQUIRE(f.exists("build/.pup"));
         REQUIRE_FALSE(f.exists("build/.pup/index"));
@@ -7066,8 +6812,6 @@ SCENARIO("A configure that cannot write tup.config does not report creating it",
     {
         auto f = E2EFixture { "simple_c" };
         REQUIRE(f.init().success());
-        // A file where the directory must go beats the exists() guard on tup.config itself,
-        // and needs no permission bits, so the scenario runs under root too.
         f.write_file("blocked", "");
 
         WHEN("configure is run against it")
@@ -7157,11 +6901,8 @@ SCENARIO("Config selection persists across multiple builds", "[e2e][configure]")
 {
     GIVEN("a project with config selected via tup.config")
     {
-        // Use simple_c fixture which has no config-generating rules
         auto f = E2EFixture { "simple_c" };
         f.mkdir("build");
-        // Write config that would be selected via environment variable
-        // (e.g., user sets CONFIG_BOARD=my-board based on env var)
         f.write_file("build/tup.config", "CONFIG_OPT=fast\nCONFIG_DEBUG=0\n");
 
         WHEN("pup configure runs and then pup build runs multiple times")
@@ -7171,20 +6912,17 @@ SCENARIO("Config selection persists across multiple builds", "[e2e][configure]")
             INFO("configure stderr: " << configure_result.stderr_output);
             REQUIRE(configure_result.success());
 
-            // First build
             auto build1 = f.build({ "-B", "build" });
             INFO("build1 stdout: " << build1.stdout_output);
             INFO("build1 stderr: " << build1.stderr_output);
             REQUIRE(build1.success());
             REQUIRE(f.is_executable("build/hello"));
 
-            // Second build should succeed
             auto build2 = f.build({ "-B", "build" });
             INFO("build2 stdout: " << build2.stdout_output);
             INFO("build2 stderr: " << build2.stderr_output);
             REQUIRE(build2.success());
 
-            // Third build should be no-op (nothing changed)
             auto build3 = f.build({ "-B", "build" });
             INFO("build3 stdout: " << build3.stdout_output);
             INFO("build3 stderr: " << build3.stderr_output);
@@ -7193,7 +6931,6 @@ SCENARIO("Config selection persists across multiple builds", "[e2e][configure]")
 
             THEN("builds are stable and config persists")
             {
-                // Config file should still exist with original values
                 auto config = f.read_file("build/tup.config");
                 REQUIRE(config.find("CONFIG_OPT=fast") != std::string::npos);
                 REQUIRE(config.find("CONFIG_DEBUG=0") != std::string::npos);
@@ -7210,7 +6947,6 @@ SCENARIO("Build skips config-generating rules", "[e2e][configure][build]")
         f.mkdir("build");
         f.write_file("build/tup.config", "CONFIG_MACHINE=test-value\n");
 
-        // Run configure first
         REQUIRE(f.pup({ "configure", "-B", "build" }).success());
         auto config_after_configure = f.read_file("build/configs/tup.config");
         REQUIRE(config_after_configure.find("test-value") != std::string::npos);
@@ -7224,7 +6960,6 @@ SCENARIO("Build skips config-generating rules", "[e2e][configure][build]")
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.success());
-                // Config should be unchanged from configure
                 auto config_after_build = f.read_file("build/configs/tup.config");
                 REQUIRE(config_after_build == config_after_configure);
             }
@@ -7432,10 +7167,6 @@ SCENARIO("configure handles mixed copy-rule + auto-gen configs", "[e2e][configur
     }
 }
 
-// =============================================================================
-// Duplicate Output Detection Tests
-// =============================================================================
-
 SCENARIO("Duplicate output detection", "[e2e][duplicate]")
 {
     GIVEN("a Tupfile with two rules producing the same output")
@@ -7513,8 +7244,6 @@ SCENARIO("A build aborted before a command could run does not record it as done"
             f.write_file("gate", "");
             REQUIRE_FALSE(f.build({ "-j1" }).success());
 
-            // Self-validating: the point of the scenario is that an abort leaves commands
-            // it meant to run un-run, so it must witness one before asserting what follows.
             auto stranded = 0;
             for (auto i = 1; i <= 8; ++i) {
                 if (f.read_file("o" + std::to_string(i) + ".txt") == "v1\n") {
@@ -7596,8 +7325,6 @@ SCENARIO("A build that cannot save its record does not report success", "[e2e][i
         auto f = E2EFixture { "glob_mixed_space" };
         f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
         f.write_file("src.txt", "ORIGINAL\n");
-        // Renaming onto a directory fails for root too, so this needs no permission bits and
-        // no skip guard, unlike the scenarios that revoke write access to a directory.
         f.mkdir(".pup/index");
 
         WHEN("the project is built")
@@ -7647,9 +7374,6 @@ SCENARIO("A command that failed is re-run on the next build", "[e2e][incremental
 
 SCENARIO("A failed command's consumer runs once the command succeeds", "[e2e][incremental][failure]")
 {
-    // The consumer's output already exists holding V1, so nothing schedules the consumer except
-    // propagation from the producer's re-run. Routing the retry through forced_cmds instead of
-    // changed_outputs leaves final.txt at V1 forever, which is what this pins.
     GIVEN("a built producer/consumer pair whose producer then fails after writing partial output")
     {
         auto f = E2EFixture { "failed_command" };
@@ -7952,10 +7676,8 @@ auto index_shape(std::vector<std::byte> const& bytes) -> std::vector<std::byte>
     return shape;
 }
 
-} // namespace
+}
 
-// Determinism of construction, not of reload: two builds that never saw each other's work must
-// record the same project. Answering this by reading the code is what #298's consult had to do.
 SCENARIO("Two builds of one tree record the same thing", "[e2e][index][determinism]")
 {
     GIVEN("the same project built twice from scratch, in trees that share nothing")
@@ -7980,9 +7702,6 @@ SCENARIO("Two builds of one tree record the same thing", "[e2e][index][determini
                 REQUIRE(index_shape(a) == index_shape(b));
             }
 
-            // A record whose sections are identical but whose lengths are not would mean the
-            // masking above is hiding a difference rather than excluding a timestamp; a shape
-            // that covers only the header would mean it is comparing almost nothing.
             THEN("they are the same size, and the comparison covers the record")
             {
                 REQUIRE(a.size() == b.size());
@@ -7990,8 +7709,6 @@ SCENARIO("Two builds of one tree record the same thing", "[e2e][index][determini
             }
         }
 
-        // The weaker property the incremental suite leans on, asserted here because it costs one
-        // build: a run that does nothing must not rewrite what the record says either.
         WHEN("one of them is rebuilt with nothing to do")
         {
             auto const before = index_bytes(first);
@@ -8154,7 +7871,6 @@ SCENARIO("A record distclean kept can still name the files it owns", "[e2e][clea
 
         WHEN("a putup whose window covers that record cleans the project")
         {
-            // The same bytes, a reader that accepts them: what keeping the record buys.
             stamp_index_version(f, pup::index::INDEX_VERSION);
             auto cleaned = f.clean();
 
@@ -8206,8 +7922,6 @@ SCENARIO("A damaged record says so instead of rebuilding in silence", "[e2e][inc
         f.write_file("src.txt", "ORIGINAL\n");
         REQUIRE(f.build().success());
         damage_index_layout(f);
-        // Without this the shadow guard speaks first: an output on disk with no readable record
-        // is the #291 refusal, which would pass this scenario for the wrong reason.
         f.remove_file("out.txt");
 
         WHEN("the next build loads that record")
@@ -8234,10 +7948,7 @@ SCENARIO("A record too short to hold a header says so instead of rebuilding in s
         f.write_file("Tupfile", ": src.txt |> cp %f %o |> out.txt\n");
         f.write_file("src.txt", "ORIGINAL\n");
         REQUIRE(f.build().success());
-        // Below sizeof(RawHeader) + sizeof(RawFooter): above it the declared-layout row answers
-        // first and this would pin the wrong rejection.
         truncate_index(f, 40);
-        // Without this the shadow guard speaks first, as in the layout scenario above.
         f.remove_file("out.txt");
 
         WHEN("the next build loads that record")
@@ -8410,7 +8121,6 @@ SCENARIO("Distcleaning keeps a record whose files it could not remove", "[e2e][c
         if (!probe_ec) {
             std::filesystem::remove(dir / "probe", probe_ec);
             std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke write permission (running as root?): scenario not exercised");
             return;
         }
@@ -8425,8 +8135,6 @@ SCENARIO("Distcleaning keeps a record whose files it could not remove", "[e2e][c
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
                 auto combined = result.stdout_output + result.stderr_output;
-                // The removal failure names the file on its own, so only the keep message
-                // witnesses that the record was kept because of it.
                 REQUIRE(combined.find("Keeping the build record") != std::string::npos);
                 REQUIRE(combined.find("rm -rf") != std::string::npos);
                 REQUIRE(combined.find("Project reset complete") == std::string::npos);
@@ -8461,7 +8169,6 @@ SCENARIO("Distcleaning out of tree keeps a record whose files it could not remov
         if (!probe_ec) {
             std::filesystem::remove(dir / "probe", probe_ec);
             std::filesystem::permissions(dir, writable, std::filesystem::perm_options::replace);
-            // Not SKIP: the suite is built -fno-exceptions, where Catch2 aborts the process instead.
             WARN("cannot revoke write permission (running as root?): scenario not exercised");
             return;
         }
@@ -8600,8 +8307,6 @@ SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2
                 INFO("AAA: " << from_aaa);
                 INFO("zz:  " << from_zz);
                 REQUIRE(from_aaa == from_zz);
-                // Pins both halves and the canonical order: equality alone would still
-                // hold if the filesystem half stopped contributing entirely.
                 REQUIRE(from_aaa == "GEN\nKEEP\n");
             }
         }
@@ -8610,10 +8315,6 @@ SCENARIO("A glob's %f order does not depend on the build directory's name", "[e2
 
 SCENARIO("Out-of-tree, a generated file shadowing a source is one glob match and the source survives", "[e2e][glob][pathspace]")
 {
-    // Out-of-tree the output lands under the build root, so the committed file is shadowed
-    // rather than overwritten -- confusing, but not data loss, which is why #194's rejection
-    // is limited to in-tree builds. What #191 guarantees here is that the file is one match
-    // rather than two.
     GIVEN("a generated file whose name also exists as a checked-in source")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -9116,8 +8817,6 @@ SCENARIO("Deleting a stale output re-runs its order-only consumer in the same bu
 
 SCENARIO("A glob consumer of a deleted stale output settles after the healing build", "[e2e][stale][order-only]")
 {
-    // The heal in build 2 is #212 and is deliberately better than tup, which runs the consumer
-    // zero times; only the third build is the defect (#213).
     GIVEN("a consumer that reaches a generated file through an order-only glob")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -9164,7 +8863,6 @@ SCENARIO("A glob consumer of a deleted stale output settles after the healing bu
 
 SCENARIO("A rule still naming a deleted stale output is rejected rather than re-run", "[e2e][stale][order-only]")
 {
-    // The first rebuild is #212's routed heal; the defect is the build after it, which re-detects the file putup itself deleted (#213).
     GIVEN("a consumer whose order-only input was generated by a rule that has been dropped")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -9197,7 +8895,6 @@ SCENARIO("A rule still naming a deleted stale output is rejected rather than re-
 
 SCENARIO("Removing a group member re-runs the commands that consume the group", "[e2e][stale][order-only][group]")
 {
-    // The rule vanishes with its glob match, never by a Tupfile edit: an edit rebuilds a surviving member, and a rebuilt member reaches the consumer over the live graph, masking the removal (#169).
     GIVEN("a consumer that depends on a group order-only and reads the directory for members")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -9224,9 +8921,7 @@ SCENARIO("Removing a group member re-runs the commands that consume the group", 
                 REQUIRE(f.read_file("b/listing.txt").find("two.o") == std::string::npos);
                 REQUIRE(f.read_file("b/listing.txt").find("one.o") != std::string::npos);
                 INFO("stdout: " << result.stdout_output);
-                // Names the consuming command too, which an unannotated rule did not (#229).
                 REQUIRE(result.stdout_output.find("Removed input: a/two.o (ls ../a") != std::string::npos);
-                // The removed foreach instance, not the pattern its sibling also matches.
                 REQUIRE(result.stdout_output.find("Removed command: cp two.txt two.o (in a)") != std::string::npos);
             }
         }
@@ -9235,7 +8930,6 @@ SCENARIO("Removing a group member re-runs the commands that consume the group", 
 
 SCENARIO("Removing a group member schedules nothing when the group's only consumer is guarded off", "[e2e][stale][order-only][group]")
 {
-    // Edges into a guard-unsatisfied command are dropped when the index is written, so the walk finding nothing here is the correct answer and not a missed route.
     GIVEN("a group whose only consumer sits in an inactive conditional")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -9326,10 +9020,6 @@ endif
     }
 }
 
-// =============================================================================
-// Platform Conditional Tests
-// =============================================================================
-
 SCENARIO("TUP_PLATFORM env var controls platform conditionals", "[e2e][platform]")
 {
     GIVEN("a Tupfile with platform-conditional rules")
@@ -9348,7 +9038,6 @@ SCENARIO("TUP_PLATFORM env var controls platform conditionals", "[e2e][platform]
                 REQUIRE(result.success());
                 REQUIRE(f.exists("posix.txt"));
                 REQUIRE_FALSE(f.exists("win32.txt"));
-                // Content should be the platform name (linux, macosx, etc.)
                 REQUIRE_FALSE(f.read_file("posix.txt").empty());
             }
         }
@@ -9380,12 +9069,6 @@ SCENARIO("TUP_PLATFORM env var controls platform conditionals", "[e2e][platform]
 SCENARIO("Env var change in a conditional rebuilds the affected branch",
     "[e2e][platform][incremental][platform-incremental]")
 {
-    // Both branches of `ifeq ($(TUP_PLATFORM),...)` produce the same output file with
-    // distinct content; the platform string does not appear in either command's text.
-    // So the only signal that an env-driven branch flip occurred is a sticky edge from
-    // the env Variable node to the guarded commands (the condition_env_vars path,
-    // symmetric to condition_config_vars). Without it, change detection sees no changed
-    // file and no changed identity, reports "Nothing to do", and the output stays stale.
     GIVEN("a project whose active branch is selected by an env-sourced $(TUP_PLATFORM) condition")
     {
         auto f = E2EFixture { "platform_conditional_incremental" };
@@ -9394,7 +9077,7 @@ SCENARIO("Env var change in a conditional rebuilds the affected branch",
             REQUIRE(f.init().success());
             REQUIRE(f.build().success());
             REQUIRE(f.read_file("result.txt") == "WINBUILD\n");
-            REQUIRE(f.build().is_noop()); // stable under no change
+            REQUIRE(f.build().is_noop());
         }
 
         WHEN("the env var flips, selecting the other branch")
@@ -9449,7 +9132,6 @@ SCENARIO("Imported env vars persist across builds", "[e2e][import]")
 
         WHEN("rebuilding without env var set")
         {
-            // MY_VAR not in environment (EnvGuard out of scope)
             auto result = f.build();
 
             THEN("cached value is used, no rebuild triggered")
@@ -9504,11 +9186,6 @@ SCENARIO("Imported env vars with equals in value", "[e2e][import]")
 
 SCENARIO("Exported env var consumed via subprocess environment triggers rebuild", "[e2e][import][envdep]")
 {
-    // The command consumes MY_GREETING through the inherited environment (bare $VAR
-    // in the shell), NOT via $(VAR) substitution. So the rendered command string is
-    // byte-identical across values: a string-keyed change detector cannot see the
-    // change. Correctness requires the command's identity to fold in the values of
-    // the vars it depends on (here, the exported MY_GREETING).
     GIVEN("a project already built with an exported env var the shell reads from the environment")
     {
         auto f = E2EFixture { "env_dep_subprocess" };
@@ -9517,7 +9194,7 @@ SCENARIO("Exported env var consumed via subprocess environment triggers rebuild"
             REQUIRE(f.init().success());
             REQUIRE(f.build().success());
             REQUIRE(f.read_file("out.txt") == "hello\n");
-            REQUIRE(f.build().is_noop()); // stable under no change
+            REQUIRE(f.build().is_noop());
         }
 
         WHEN("the exported env var changes (command text stays byte-identical)")
@@ -9717,10 +9394,6 @@ SCENARIO("Only commands using changed env var rebuild", "[e2e][import]")
     }
 }
 
-// =============================================================================
-// Conditional Assignment Operators Tests
-// =============================================================================
-
 SCENARIO("?= soft assignment - first wins", "[e2e][assignment]")
 {
     GIVEN("a Tupfile with multiple ?= assignments")
@@ -9769,7 +9442,6 @@ SCENARIO("?= soft assignment - = takes precedence", "[e2e][assignment]")
     }
 }
 
-// Use ?\?= in strings to avoid trigraph interpretation (??= -> #)
 SCENARIO("?\?= weak assignment - last wins", "[e2e][assignment]")
 {
     GIVEN("a Tupfile with multiple ?\?= assignments")
@@ -9941,10 +9613,6 @@ SCENARIO("import ?= default reverts when env is unset on warm index", "[e2e][imp
     }
 }
 
-// =============================================================================
-// Error Handling Tests
-// =============================================================================
-
 SCENARIO("Cyclic dependency detection", "[e2e][error]")
 {
     GIVEN("a project with circular dependencies")
@@ -9988,10 +9656,6 @@ SCENARIO("Missing include file detection", "[e2e][error]")
     }
 }
 
-// =============================================================================
-// Out-of-Tree Configuration Tests (3-tree builds)
-// =============================================================================
-
 SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[e2e][out-of-tree-config]")
 {
     GIVEN("a project with separate source, config, and build directories")
@@ -10001,7 +9665,6 @@ SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[
         auto config_dir = f.workdir() / "config";
         auto build_dir = f.workdir() / "build";
 
-        // Create build directory with tup.config
         f.mkdir("build");
         f.write_file("build/tup.config", "");
 
@@ -10024,7 +9687,6 @@ SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[
 
             THEN("Tupfiles are discovered from config directory")
             {
-                // Should find Tupfiles in config/, not source/
                 REQUIRE(result.stdout_output.find("config/Tupfile") != std::string::npos);
             }
         }
@@ -10058,7 +9720,6 @@ SCENARIO("Out-of-tree configuration with separate source/config/build trees", "[
 
             THEN("source directory remains pristine")
             {
-                // No .pup or build artifacts in source
                 REQUIRE_FALSE(f.exists("source/.pup"));
                 REQUIRE_FALSE(f.exists("source/main.o"));
             }
@@ -10112,10 +9773,6 @@ SCENARIO("Cross-directory groups in 3-tree builds", "[e2e][out-of-tree-config][g
 {
     GIVEN("a 3-tree project with cross-directory group references via variables")
     {
-        // Mirrors the GCC example pattern:
-        //   root Tuprules.tup: S = $(TUP_CWD); LIB_DIR = gcc
-        //   gcc/Tuprules.tup:  S ?= $(TUP_CWD); LIB_DIR ?= .; macros use $(S)/$(LIB_DIR)/<group>
-        //   gcc/Tupfile:       produces <gen-headers>, consumes via macros
         auto f = E2EFixture { "groups_cross_dir_3tree" };
         auto source_dir = f.workdir() / "source";
         auto config_dir = f.workdir() / "config";
@@ -10183,11 +9840,9 @@ SCENARIO("Out-of-tree configuration with TUP_SRCDIR and TUP_OUTDIR variables", "
         auto build_debug = f.workdir() / "build-debug";
         auto build_release = f.workdir() / "build-release";
 
-        // Create build directories
         f.mkdir("build-debug");
         f.mkdir("build-release");
 
-        // Create debug tup.config
         f.write_file("build-debug/tup.config", "CONFIG_CFLAGS=-g -O0\n");
         f.write_file("build-release/tup.config", "CONFIG_CFLAGS=-O2\n");
 
@@ -10296,7 +9951,6 @@ SCENARIO("Config tree inside source tree", "[e2e][out-of-tree-config]")
 
             THEN("globs resolve against source root, not config root")
             {
-                // main.c lives in source_dir, not source_dir/tupfiles, so a rule for its object exists only if the glob matched it there.
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.stdout_output.find("main.o") != std::string::npos);
             }
@@ -10352,37 +10006,10 @@ SCENARIO("Config tree inside source tree", "[e2e][out-of-tree-config]")
 
 SCENARIO("Cross-project order-only dependency resolution", "[e2e][out-of-tree-config][variant]")
 {
-    // This tests the bug where order-only deps using $(B) paths in 3-tree builds
-    // create Ghost nodes instead of resolving to existing Generated nodes.
-    // Pattern from busybox:
-    //   root/Tupfile:    : |> ... |> include/autoconf.h  # output at build/include/autoconf.h
-    //   applets/Tupfile: : main.c | $(B)/include/autoconf.h |> ...
-    //
-    // The bug manifests when:
-    // 1. source and output are in completely different filesystem trees
-    // 2. build_root_name has N levels of "../" (e.g., "../../../../tmp/build")
-    // 3. From a subdirectory, $(B) normalizes to N-1 levels of "../"
-    //    because one "../" cancels with the subdirectory name
-    // 4. strip_build_prefix() fails to match the different prefix depths
-    //
-    // Example with busybox:
-    //   source = /home/user/src/busybox
-    //   output = /tmp/build
-    //   build_root_name = ../../../../tmp/build (5 levels up from source)
-    //   From applets/: $(B) = TUP_VARIANT_OUTPUTDIR/..
-    //     = ../../../../tmp/build/applets/.. = ../../../tmp/build (4 levels)
-    //   strip_build_prefix("../../../tmp/build/include/x.h", "../../../../tmp/build")
-    //   FAILS - prefixes don't match due to depth difference!
     GIVEN("a 3-tree project with asymmetric directory depths")
     {
         auto f = E2EFixture { "cross_project_order_only" };
 
-        // Create asymmetric setup: source at 3 levels deep, output at 1 level
-        // source_root = workdir/a/b/c/source (3 dirs deep)
-        // output_root = workdir/out (1 dir deep)
-        // build_root_name = relative(out, a/b/c/source) = ../../../../out (4 ../)
-        // From consumer/: $(B) expands and normalizes to ../../../out (3 ../)
-        // The prefix mismatch causes strip_build_prefix to fail
         auto source_dir = f.workdir() / "a" / "b" / "c" / "source";
         auto config_dir = f.workdir() / "a" / "b" / "c" / "config";
         auto build_dir = f.workdir() / "out";
@@ -10392,7 +10019,6 @@ SCENARIO("Cross-project order-only dependency resolution", "[e2e][out-of-tree-co
         f.mkdir("out");
         f.write_file("out/tup.config", "");
 
-        // Copy fixture files to the asymmetric locations
         f.write_file("a/b/c/source/consumer/main.c", f.read_file("source/consumer/main.c"));
         f.write_file("a/b/c/config/Tupfile.ini", "");
         f.write_file("a/b/c/config/Tuprules.tup", f.read_file("config/Tuprules.tup"));
@@ -10437,10 +10063,8 @@ SCENARIO("Cross-project order-only dependency resolution", "[e2e][out-of-tree-co
 
             THEN("header generation is scheduled before compilation")
             {
-                // Find positions in output
                 auto gen_pos = result.stdout_output.find("generated.h");
                 auto gcc_pos = result.stdout_output.find("gcc");
-                // Header generation should appear before gcc compilation
                 REQUIRE(gen_pos != std::string::npos);
                 REQUIRE(gcc_pos != std::string::npos);
                 REQUIRE(gen_pos < gcc_pos);
@@ -10448,10 +10072,6 @@ SCENARIO("Cross-project order-only dependency resolution", "[e2e][out-of-tree-co
         }
     }
 }
-
-// =============================================================================
-// Show Var Command Tests
-// =============================================================================
 
 SCENARIO("show var displays variable assignments", "[e2e][show][var]")
 {
@@ -10527,10 +10147,6 @@ SCENARIO("show var displays variable assignments", "[e2e][show][var]")
         }
     }
 }
-
-// =============================================================================
-// Phi-Node Model Tests (Conditional Stability)
-// =============================================================================
 
 SCENARIO("Phi-node model processes both conditional branches", "[e2e][phi]")
 {
@@ -10614,9 +10230,8 @@ endif
         WHEN("toggled to BUILD=release")
         {
             REQUIRE(f.pup({ "configure", "-B", "build" }).success());
-            (void)f.build({ "-B", "build", "-j1" }); // First build with debug
+            (void)f.build({ "-B", "build", "-j1" });
 
-            // Toggle to release
             f.write_file("build/tup.config", "CONFIG_BUILD=release\n");
             auto result = f.build({ "-B", "build", "-j1" });
 
@@ -11369,10 +10984,6 @@ SCENARIO("Rules with empty input patterns are skipped", "[e2e][empty-input]")
     }
 }
 
-// =============================================================================
-// Incremental Build Command String Mismatch Tests
-// =============================================================================
-
 SCENARIO("include_rules includes all Tuprules.tup from root to leaf", "[e2e][build]")
 {
     GIVEN("a project with Tuprules.tup at root and in a subdirectory")
@@ -11393,11 +11004,8 @@ SCENARIO("include_rules includes all Tuprules.tup from root to leaf", "[e2e][bui
                 auto content = f.read_file("sub/result.txt");
                 INFO("result.txt: " << content);
 
-                // ROOT comes from root Tuprules.tup (TUP_CWD = .. from sub/)
                 REQUIRE(content.find("..") != std::string::npos);
-                // CC = gcc (root sets it first, sub's ?= doesn't override)
                 REQUIRE(content.find("gcc") != std::string::npos);
-                // SUBVAR comes from sub/Tuprules.tup
                 REQUIRE(content.find("from_sub") != std::string::npos);
             }
         }
@@ -11406,10 +11014,6 @@ SCENARIO("include_rules includes all Tuprules.tup from root to leaf", "[e2e][bui
 
 SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e][incremental][variant]")
 {
-    // This tests the command string matching between graph and index.
-    // Pattern from spos: Tupfile at include/generated/ referencing ../data.txt
-    // Bug: Index uses std::filesystem::relative() while graph uses make_source_relative()
-    // These produce different paths for cross-directory references.
     GIVEN("a variant build with sibling directory input")
     {
         auto f = E2EFixture { "sibling_dir_inputs" };
@@ -11437,10 +11041,6 @@ SCENARIO("Sibling directory inputs work with incremental variant builds", "[e2e]
         }
     }
 }
-
-// =============================================================================
-// Strict Convention Checker Tests
-// =============================================================================
 
 SCENARIO("Check level controls convention enforcement", "[e2e][strict]")
 {
@@ -11503,9 +11103,6 @@ SCENARIO("Check level controls convention enforcement", "[e2e][strict]")
 
 SCENARIO("The object of a compile that runs elsewhere is reported instead of scanned wrongly", "[e2e][strict][depscan]")
 {
-    // The scan runs from the Tupfile's directory, so a source word taken from an invocation that
-    // ran in sub/ resolves against a same-named file here -- deps recorded for a file the rule
-    // never compiled (#356).
     GIVEN("a rule that compiles here and then again after a cd, with a same-named source in both")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -11533,8 +11130,6 @@ SCENARIO("The object of a compile that runs elsewhere is reported instead of sca
 
             THEN("it does not claim the command contains no reproducible compile")
             {
-                // One is standing next to it: a.o's compile is the covered prefix. The report's
-                // unit moved to the object, so its sentence has to speak about the object.
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE(result.stderr_output.find("in this command") == std::string::npos);
                 REQUIRE(
@@ -11584,8 +11179,6 @@ SCENARIO("An object no scanned invocation writes is reported beside its scanned 
 
     GIVEN("a scanned rule in a subdirectory whose output word points into a variant directory")
     {
-        // %o one directory down expands to '../../build/src/lib/a.o' -- the word resolves against
-        // the rule's own directory and back into the variant, which a root-level rule never shows.
         auto f = E2EFixture { "variant_config_input" };
         f.mkdir("src/lib");
         f.write_file("src/lib/a.c", "#include \"a.h\"\nint a(void){return 0;}\n");
@@ -11629,8 +11222,6 @@ SCENARIO("An object no scanned invocation writes is reported beside its scanned 
 
 SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][strict][depscan]")
 {
-    // The scan is declined correctly — putup cannot reproduce the prefix's shell state — but
-    // declining in silence leaves a rule whose headers are never recorded (#352).
     GIVEN("a project with a scanned compile, an announced compile, an unscanned compile, and a self-depfiling compile")
     {
         auto f = E2EFixture { "unscanned_compile" };
@@ -11691,8 +11282,6 @@ SCENARIO("A compile-shaped rule with no dependency scan is reported", "[e2e][str
 
 SCENARIO("A depfile flag the compile never carried hides no unscanned object", "[e2e][strict][depscan]")
 {
-    // The suppression exists for a compile that writes its own depfile; read across the whole
-    // command text it was defeated by any word spelling one, including in a later invocation (#357).
     GIVEN("a rule that spells a depfile flag after the compile it could not scan")
     {
         auto f = E2EFixture { "glob_mixed_space" };
@@ -11769,10 +11358,6 @@ SCENARIO("Strict checker exempts the config-tree root in 3-tree builds", "[e2e][
     }
 }
 
-// =============================================================================
-// Scoped Build Implicit Dependency Tests
-// =============================================================================
-
 SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental][scope]")
 {
     GIVEN("a project with headers outside the source scope")
@@ -11780,7 +11365,6 @@ SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental
         auto f = E2EFixture { "scoped_implicit_dep" };
         REQUIRE(f.init().success());
 
-        // Initial build (full, unscoped)
         auto first = f.build();
         INFO("first build stdout: " << first.stdout_output);
         INFO("first build stderr: " << first.stderr_output);
@@ -11789,10 +11373,8 @@ SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental
 
         WHEN("header outside scope is modified and scoped build runs")
         {
-            // Modify the header (outside the src/ scope)
             f.write_file("include/header.h", "#define VERSION 2\n");
 
-            // Scoped build: only src/ directory
             auto result = f.pup({ "src" });
 
             THEN("the change is detected and the file is rebuilt")
@@ -11806,20 +11388,6 @@ SCENARIO("Scoped build detects header changes outside scope", "[e2e][incremental
     }
 }
 
-// Reproducer for the real-world bug noted in CLAUDE.md:
-//   "Header-dep tracking can miss across variants — editing a widely-included
-//    SDK header may re-link with stale .o files and produce a binary newer
-//    than the header but functionally older."
-//
-// Differs from the single-scope test above in two ways:
-//   - multi-arg scoped invocation (mirrors `pup src/fubon ... ios` pattern)
-//   - multiple TUs in different scope dirs all transitively reach the same
-//     out-of-scope header, AND a downstream link rule consumes their .o files
-//
-// The strict assertion checks that ALL three .o files (alpha.o, beta.o,
-// main.o) are present AND the binary's hash changes after the header bump,
-// catching both the "noop" mode and the "rebuild some-but-not-all + relink
-// with stale .o" mode of the bug.
 SCENARIO("Scoped build with multiple scopes detects out-of-scope header changes",
     "[e2e][incremental][scope][multi-scope]")
 {
@@ -11837,15 +11405,12 @@ SCENARIO("Scoped build with multiple scopes detects out-of-scope header changes"
         REQUIRE(f.exists("app/main.o"));
         REQUIRE(f.exists("app/app"));
 
-        // Capture the linked binary's content so we can detect stale-link bugs
-        // even if pup claims "rebuilt".
         auto const binary_before = f.read_file("app/app");
 
         WHEN("the shared header is modified and the same scoped build re-runs")
         {
             f.write_file("include/lib/shared.h", "#define VERSION 2\n");
 
-            // Multi-arg scoped invocation mirroring the real-world reproducer.
             auto result = f.pup({ "src/alpha", "src/beta", "app" });
 
             THEN("pup picks up the change and the link reflects the new VERSION")
@@ -11855,10 +11420,6 @@ SCENARIO("Scoped build with multiple scopes detects out-of-scope header changes"
                 REQUIRE(result.success());
                 REQUIRE_FALSE(result.is_noop());
 
-                // Strict check: the linked binary must differ from the pre-edit
-                // version. If pup recompiled only some .o files and re-linked
-                // with stale others, the binary would be byte-identical or only
-                // partially updated — either way still buggy.
                 auto const binary_after = f.read_file("app/app");
                 REQUIRE(binary_before != binary_after);
             }
@@ -11866,9 +11427,6 @@ SCENARIO("Scoped build with multiple scopes detects out-of-scope header changes"
     }
 }
 
-// Same shape as above but with the build done out-of-tree under build/<variant>,
-// invoked with -B. Variants share the source tree but have independent indices
-// — a fix in one variant's index must not let the other re-link with stale .o.
 SCENARIO("Out-of-tree variant build picks up out-of-scope header changes",
     "[e2e][incremental][scope][multi-scope][variant]")
 {
@@ -11904,9 +11462,6 @@ SCENARIO("Out-of-tree variant build picks up out-of-scope header changes",
     }
 }
 
-// Probes the scoped-initial-build axis: when the FIRST build is already
-// scoped (rather than full), is the index populated correctly enough that
-// a subsequent header edit propagates through the linked binary?
 SCENARIO("Scoped rebuild after a SCOPED initial multi-scope build",
     "[e2e][incremental][scope][multi-scope]")
 {
@@ -11944,10 +11499,6 @@ SCENARIO("Scoped rebuild after a SCOPED initial multi-scope build",
     }
 }
 
-// Probes the repeated-scoped-invocation axis: full build, then a no-op
-// scoped pass, then a real edit + scoped rebuild. Mirrors the production
-// pattern where developers run the same scoped command many times across
-// a session before the edit that exposes the bug.
 SCENARIO("Header edit after a noop scoped pass still propagates to the linked binary",
     "[e2e][incremental][scope][multi-scope]")
 {
@@ -11989,10 +11540,6 @@ SCENARIO("Header edit after a noop scoped pass still propagates to the linked bi
     }
 }
 
-// =============================================================================
-// Target Build No-Op Tests
-// =============================================================================
-
 SCENARIO("Target build stabilizes to no-op", "[e2e][incremental][target]")
 {
     GIVEN("a project with two independent targets")
@@ -12000,7 +11547,6 @@ SCENARIO("Target build stabilizes to no-op", "[e2e][incremental][target]")
         auto f = E2EFixture { "target_noop" };
         REQUIRE(f.init().success());
 
-        // Full build — both targets
         auto first = f.build();
         INFO("first build: " << first.stdout_output);
         REQUIRE(first.success());
@@ -12009,12 +11555,10 @@ SCENARIO("Target build stabilizes to no-op", "[e2e][incremental][target]")
 
         WHEN("target build runs for prog_a, then runs again")
         {
-            // First target build — may rebuild some commands
             auto target1 = f.pup({ "prog_a" });
             INFO("target build 1: " << target1.stdout_output);
             REQUIRE(target1.success());
 
-            // Second target build — must be no-op
             auto target2 = f.pup({ "prog_a" });
 
             THEN("the second target build is a no-op")
@@ -12030,15 +11574,6 @@ SCENARIO("Target build stabilizes to no-op", "[e2e][incremental][target]")
 
 SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-of-tree-config]")
 {
-    // Reproduces GCC BSP pattern where:
-    //   1. Library archive uses order-only group: %<objs> in command
-    //   2. Consumer links the library via $(B)/$(LIB_DIR)/libmath.a
-    //
-    // The group pattern forces has_group_pattern=true, so final_instruction
-    // becomes cmd_text (parse-time %o expansion). Output PathIds must be
-    // BuildRoot-grounded so materialize_path() prepends the build root
-    // prefix. Without grounding, %o becomes "libmath.a" (bare filename)
-    // instead of "../../build/zzz_lib/libmath.a".
     GIVEN("a 3-tree project with order-only groups in archive command")
     {
         auto f = E2EFixture { "3tree_cross_subdir_output" };
@@ -12071,15 +11606,12 @@ SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-o
             {
                 INFO("stdout: " << result.stdout_output);
                 REQUIRE(result.success());
-                // The fixture's display is "AR %o", so the word after it is the rendered %o: a bare "libmath.a" is the bug, meaning the archive was written to the source tree.
                 auto ar_pos = result.stdout_output.find("AR ");
                 REQUIRE(ar_pos != std::string::npos);
-                auto output_start = ar_pos + 3; // strlen("AR ")
-                // Bounded to the line: %o is the last word on it, and the next line begins "[build]", which would satisfy the check below on its own.
+                auto output_start = ar_pos + 3;
                 auto output_end = result.stdout_output.find_first_of(" \n", output_start);
                 auto output_arg = result.stdout_output.substr(output_start, output_end - output_start);
                 INFO("archive output arg: " << output_arg);
-                // %o must point to the build directory, not be a bare filename
                 REQUIRE(output_arg.find("build") != std::string::npos);
             }
         }
@@ -12111,10 +11643,6 @@ SCENARIO("3-tree: group pattern %o must include build root prefix", "[e2e][out-o
         }
     }
 }
-
-// =============================================================================
-// Build Statistics Report
-// =============================================================================
 
 namespace {
 
@@ -12187,7 +11715,7 @@ auto parse_phase_report(std::string const& output) -> PhaseReport
     return report;
 }
 
-} // namespace
+}
 
 SCENARIO("Build statistics account for the whole build", "[e2e][stat]")
 {
@@ -12343,14 +11871,8 @@ endif
     }
 }
 
-// =============================================================================
-// Scoped build must not delete out-of-scope outputs (issue #122)
-// =============================================================================
-
 namespace {
 
-// A two-directory project (alpha, beta) plus a root-level rule, fully built in
-// build/. Each rule just copies its source, so outputs are trivially checkable.
 auto build_scoped_stale_project(E2EFixture& f) -> void
 {
     f.write_file("r.c", "int r(void) { return 0; }\n");
@@ -12367,7 +11889,7 @@ auto build_scoped_stale_project(E2EFixture& f) -> void
     REQUIRE(f.exists("build/beta/b.out"));
 }
 
-} // namespace
+}
 
 SCENARIO("Scoped build preserves outputs of directories outside the scope", "[e2e][incremental][scope]")
 {
@@ -12900,7 +12422,7 @@ auto count_occurrences(std::string const& haystack, std::string const& needle) -
     return n;
 }
 
-} // namespace
+}
 
 SCENARIO("A directory refused on a later parse round explains why it was refused", "[e2e][incremental][keep-going]")
 {
@@ -13758,8 +13280,6 @@ SCENARIO("A glob over generated files is path-ordered and stable across builds",
             REQUIRE(f.read_file("matches.txt") == "alpha.gen mike.gen zeta.gen\n");
         }
 
-        // The generated files exist on disk from here on, so a filesystem glob can
-        // now see what only the graph could see during the first build.
         WHEN("the unchanged project is rebuilt")
         {
             auto second = f.build();
@@ -13860,9 +13380,6 @@ SCENARIO("Imported values survive in the cache whatever order the imports are de
 
 SCENARIO("A continuation without a space before it builds and is scanned", "[e2e][incremental]")
 {
-    // Upstream tup rewrites `\`+newline to spaces, so the command runs as `gcc -c foo.c`;
-    // keeping the two bytes made the shell splice them into `-cfoo.c` and hid the compile
-    // from the dep scanner.
     auto env = EnvGuard { "PUP_IMPLICIT_DEPS", "1" };
 
     GIVEN("a rule whose continuation carries no space before the backslash")
@@ -14329,7 +13846,6 @@ SCENARIO("A group directory prefix after an extra outputs section names the grou
                 REQUIRE(f.exists("side.log"));
                 REQUIRE_FALSE(f.exists("sub"));
                 REQUIRE(f.exists("two.txt"));
-                // An unresolved group only warns, so the silence is what witnesses the prefix moved it.
                 auto const combined = result.stdout_output + result.stderr_output;
                 REQUIRE(combined.find("has no members") == std::string::npos);
             }

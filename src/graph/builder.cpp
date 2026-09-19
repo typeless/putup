@@ -41,17 +41,12 @@
 
 namespace pup::graph {
 
-// Graph-module-internal functions (defined in dag.cpp, not in public header)
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
 auto get_command_node(Graph& graph, NodeId id) -> CommandNode*;
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
 auto get_condition_node(Graph const& graph, NodeId id) -> ConditionNode const*;
 
 namespace {
-// ---------------------------------------------------------------------------
-// §1 — Inline helpers
-// ---------------------------------------------------------------------------
-
 auto str(StringId id) -> std::string_view { return global_pool().get(id); }
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 
@@ -72,10 +67,6 @@ struct ScopeGuard {
 
 template<typename F>
 ScopeGuard(F) -> ScopeGuard<F>;
-
-// ---------------------------------------------------------------------------
-// §2 — Path primitives
-// ---------------------------------------------------------------------------
 
 /// Strip trailing slashes from a path string
 auto strip_trailing_slashes(std::string_view s) -> std::string_view
@@ -214,10 +205,6 @@ auto request_demand_driven_parse(
     }
 }
 
-// ---------------------------------------------------------------------------
-// §3 — Path transform context
-// ---------------------------------------------------------------------------
-
 /// Context for transforming paths to Tupfile-relative coordinates.
 ///
 /// Commands execute from the Tupfile's source directory, so all paths in commands
@@ -338,21 +325,6 @@ auto transform_output_path(
     return pup::make_source_relative(out, str(tc.source_to_root), str(tc.current_dir_id));
 }
 
-// ---------------------------------------------------------------------------
-// §4 — Node resolution and creation
-// ---------------------------------------------------------------------------
-
-// ============================================================================
-// Node-Traversal Path Resolution
-// ============================================================================
-// Path resolution uses graph traversal instead of string manipulation:
-// - ".." → walk to parent node
-// - "name" → find/create child node
-//
-// This naturally unifies input and output path resolution because both traverse
-// to the same node when the paths are equivalent (e.g., $(B)/include/header.h
-// from an input and the variant-mapped output both resolve to the same node).
-
 /// Was this path generated outside this parse — by a previous round, or by a directory this
 /// build never parsed? Both lists are canonical and sorted, so the lookup is the same shape as
 /// the graph's own.
@@ -371,15 +343,8 @@ auto resolve_input_node(
     std::string_view path
 ) -> Result<NodeId>
 {
-    // Input paths are already source-relative from expand_inputs() which normalizes them
-    // by combining with current_dir. No further normalization needed here.
-
-    // Track whether the path originally had the build prefix or pointed to output_root.
-    // This indicates the path should reference a generated file, not a source file.
     auto had_build_prefix = false;
 
-    // For variant builds, paths like "build/include/header.h" (from $(B)/include/header.h)
-    // already have the build root prefix. Strip it to get source-relative paths.
     auto build_root_name = get_build_root_name(ctx.state->graph);
     auto normalized_path = global_pool().get(pup::strip_path_prefix(path, build_root_name));
     if (normalized_path != path) {
@@ -396,49 +361,35 @@ auto resolve_input_node(
         }
     }
 
-    // A seeded match names a file a later directory will generate; without this it would
-    // resolve to a source-side Ghost and the producer's output would become a second node.
     if (!had_build_prefix && is_seeded_generated(ctx, normalized_path)) {
         had_build_prefix = true;
     }
 
-    // With BUILD_ROOT_ID model:
-    // - Source files are under SOURCE_ROOT_ID (0) at source-relative paths
-    // - Generated/Ghost files are under BUILD_ROOT_ID at source-relative paths
-
     auto& pool = global_pool();
 
-    // First check if node exists under BUILD_ROOT_ID (generated files)
     if (auto build_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::BuildRoot)) {
         if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*build_path))) {
             return NodeId { *hit };
         }
     }
 
-    // If path had build prefix, it's referencing a generated file. Even if a source file
-    // exists at the same path, create a Ghost node under BUILD_ROOT_ID so it can be
-    // upgraded to Generated when the output rule is processed.
     if (had_build_prefix) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
         return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
     }
 
-    // Check under SOURCE_ROOT_ID (source files)
     if (auto source_path = ctx.state->graph.paths.find_path(normalized_path, pool, PathId::SourceRoot)) {
         if (auto const* hit = ctx.state->graph.path_to_node.find(to_underlying(*source_path))) {
             return NodeId { *hit };
         }
     }
 
-    // Node doesn't exist - check filesystem to determine type
     auto source_path = pool.get(pup::path::join(str(ctx.options.source_root), normalized_path));
     if (pup::platform::exists(source_path)) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
         return ensure_file_node(ctx.state->graph, path_id, NodeType::File);
     }
 
-    // In 3-tree builds, files may live in config_root (alongside Tupfiles) rather than
-    // source_root. Check config_root as a fallback for source file resolution.
     if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
         auto config_path_sv = pool.get(pup::path::join(str(ctx.options.config_root), normalized_path));
         if (pup::platform::exists(config_path_sv)) {
@@ -447,14 +398,12 @@ auto resolve_input_node(
         }
     }
 
-    // Check if file exists in build directory (e.g., tup.config, or already-generated files)
     auto build_path_sv = pool.get(pup::path::join(str(ctx.options.output_root), normalized_path));
     if (pup::platform::exists(build_path_sv)) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
         return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
     }
 
-    // File doesn't exist anywhere - create Ghost node under BUILD_ROOT_ID
     auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::BuildRoot);
     return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
 }
@@ -479,7 +428,6 @@ auto get_or_create_group_node(
         return *cached;
     }
 
-    // Get or create parent directory node
     auto dir_path_id = ctx.state->graph.paths.intern_path(directory, global_pool(), PathId::SourceRoot);
     auto parent_id_result = ensure_file_node(ctx.state->graph, dir_path_id, NodeType::Directory);
     if (!parent_id_result) {
@@ -487,8 +435,6 @@ auto get_or_create_group_node(
     }
     auto parent_id = *parent_id_result;
 
-    // Check if group node already exists in graph (e.g., from previous Tupfile)
-    // Group nodes are stored with angle-bracket name like "<gen-headers>"
     auto gb = Buf {};
     gb += '<';
     gb += name;
@@ -499,7 +445,6 @@ auto get_or_create_group_node(
         return *existing;
     }
 
-    // Create new group node
     auto node = FileNode {
         .type = NodeType::Group,
         .name = intern(group_basename),
@@ -558,12 +503,10 @@ auto create_command_node(
 
     auto cmd_id = *cmd_id_result;
 
-    // Add sticky edges from Tupfile and included files to this command
     for (auto src_id : ctx.sticky_sources) {
         (void)add_edge(ctx.state->graph, src_id, cmd_id, LinkType::Sticky);
     }
 
-    // Add sticky edges from used config variables (fine-grained dependency tracking)
     auto const* cv = ctx.used_config_vars.data();
     for (std::size_t i = 0, n = ctx.used_config_vars.size(); i < n; ++i) {
         auto const* node_id = state.config_var_nodes.find(cv[i]);
@@ -572,7 +515,6 @@ auto create_command_node(
         }
     }
 
-    // Add sticky edges from condition config variables (phi-node model)
     auto const* ccv = ctx.condition_config_vars.data();
     for (std::size_t i = 0, n = ctx.condition_config_vars.size(); i < n; ++i) {
         auto const* node_id = state.config_var_nodes.find(ccv[i]);
@@ -581,8 +523,6 @@ auto create_command_node(
         }
     }
 
-    // Add sticky edges from condition env variables (symmetric to condition_config_vars
-    // — so an env-driven guard flip changes every guarded command's identity).
     auto const* cev = ctx.condition_env_vars.data();
     for (std::size_t i = 0, n = ctx.condition_env_vars.size(); i < n; ++i) {
         auto const* node_id = state.imported_env_var_nodes.find(cev[i]);
@@ -591,7 +531,6 @@ auto create_command_node(
         }
     }
 
-    // Add sticky edges from used imported env variables (fine-grained dependency tracking)
     auto const* uev = ctx.used_env_vars.data();
     for (std::size_t i = 0, n = ctx.used_env_vars.size(); i < n; ++i) {
         auto const* node_id = state.imported_env_var_nodes.find(uev[i]);
@@ -600,12 +539,6 @@ auto create_command_node(
         }
     }
 
-    // Add sticky edges from exported env variables. An exported var reaches the
-    // command's subprocess environment (read as bare $VAR) and so affects its output
-    // even when it never appears in the command text. Recording it as a sticky edge
-    // makes that dependency explicit and folds its value into the command identity,
-    // so a change to the var triggers a rebuild. (process_export guarantees every
-    // exported var has a value node.)
     auto const* exv = ctx.exported_vars.data();
     for (std::size_t i = 0, n = ctx.exported_vars.size(); i < n; ++i) {
         auto const* node_id = state.imported_env_var_nodes.find(exv[i]);
@@ -616,10 +549,6 @@ auto create_command_node(
 
     return cmd_id;
 }
-
-// ---------------------------------------------------------------------------
-// §5 — Condition model
-// ---------------------------------------------------------------------------
 
 /// Check if all guards in the condition stack are satisfied (current context is active)
 /// Returns true if no guards or all guards match their expected polarity
@@ -704,10 +633,6 @@ auto format_condition_expr(parser::EvalContext& eval, parser::Conditional const&
     return buf.intern(global_pool());
 }
 
-// ---------------------------------------------------------------------------
-// §6 — Glob expansion
-// ---------------------------------------------------------------------------
-
 /// One entry of a rule's expanded input list; not every entry names a file.
 struct RuleInput {
     enum class Kind { File,
@@ -756,8 +681,6 @@ auto expand_glob_pattern(
         }
     }
 
-    // Unconditional: the generated half of the match set would otherwise depend on
-    // how far the parse fixpoint has progressed.
     auto pattern_dir = pup::path::parent(path);
     auto abs_pattern_dir_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), pattern_dir))));
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir_sv);
@@ -776,8 +699,6 @@ auto expand_glob_pattern(
         }
     }
 
-    // A file this round has not reached yet, but a previous round proved the project
-    // generates. Without it the match set is a function of where the parse has got to.
     for (auto seeded : ctx.options.generated_seed) {
         if (glob.matches(pool.get(seeded))) {
             matches.push_back(RuleInput { RuleInput::Kind::File, seeded });
@@ -788,7 +709,6 @@ auto expand_glob_pattern(
         match.glob = pattern_id;
     }
 
-    // Sorting and deduping across two path spaces would order by where the build tree lives.
     std::ranges::sort(matches, {}, [&pool](RuleInput const& in) { return pool.get(in.value); });
     matches.erase(
         std::unique(matches.begin(), matches.end(), [](RuleInput const& a, RuleInput const& b) { return a.value == b.value; }),
@@ -829,7 +749,6 @@ auto apply_exclusions(
         for (auto excl_id : *paths) {
             auto excl = pool.get(excl_id);
             if (ctx.options.expand_globs && parser::has_glob_chars(excl)) {
-                // Matched against the merged list, not re-expanded against disk: generated matches are not on disk.
                 auto pattern_id = is_empty(ctx.current_dir) ? pup::path::normalize(excl) : pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), excl)));
                 auto glob = parser::Glob { pool.get(pattern_id) };
                 for (auto it = result.begin(); it != result.end();) {
@@ -852,10 +771,6 @@ auto apply_exclusions(
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// §7 — Input/output expansion
-// ---------------------------------------------------------------------------
 
 /// Generated command text is not a Tupfile template: every byte is literal except a
 /// %<group> marker, which pass 2 still has to resolve.
@@ -1038,7 +953,6 @@ auto expand_outputs(
 
             auto full_output_path_sv = pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), output_path_sv))));
 
-            // Guards do not gate this, and an absolute path is rejected rather than re-rooted (#385).
             auto const absolute = pup::path::is_absolute(full_output_path_sv);
             if (absolute || full_output_path_sv == ".." || full_output_path_sv.starts_with("../")) {
                 auto msg = Buf {};
@@ -1168,11 +1082,6 @@ auto expand_inputs(
     return TokenizedInputs { std::move(result), token };
 }
 
-// ---------------------------------------------------------------------------
-// §8 — Include/import/export
-// ---------------------------------------------------------------------------
-
-// Forward declaration (mutual recursion: include_single_file → process_statement → process_conditional → process_statement)
 auto process_statement(
     BuilderContext& ctx,
     Builder& state,
@@ -1249,9 +1158,6 @@ auto include_single_file(
     bool is_rules
 ) -> Result<void>
 {
-    // A file joins each conditional context at most once: the same include in
-    // the same guard stack is redundant, but a later include under different
-    // guards is a distinct contribution (issue #91).
     auto context_key = Buf {};
     context_key.fmt("{}", include_path);
     for (auto const& guard : ctx.condition_stack) {
@@ -1345,10 +1251,6 @@ auto apply_pending_weak_assignments(BuilderContext& ctx, Builder& state) -> void
     }
     ctx.pending_weak_assignments.clear();
 }
-
-// ---------------------------------------------------------------------------
-// §9 — Directive processors
-// ---------------------------------------------------------------------------
 
 /// Find or create a `NodeType::Variable` node under the env-var directory for the
 /// given env var name and value. Updates the existing node's name and content_hash
@@ -1457,13 +1359,9 @@ auto process_export(
     parser::Export const& exp
 ) -> Result<void>
 {
-    // Per tup manual: "adds the environment variable VARIABLE to the export
-    // list for future :-rules"
     auto var_name_sv = str(exp.var_name);
     ctx.exported_vars.insert(to_underlying(intern(var_name_sv)));
 
-    // An exported var reaches the command's subprocess environment, so its value
-    // is part of the command's identity even when the Tupfile never reads it.
     auto name_buf = Buf {};
     name_buf += var_name_sv;
     auto const* env_val = pup::platform::get_env(name_buf.c_str());
@@ -1479,38 +1377,27 @@ auto process_import(
     parser::Import const& imp
 ) -> Result<void>
 {
-    // Per tup manual: "sets a variable inside the Tupfile that has the value
-    // of the environment variable"
     auto var_name_sv = str(imp.var_name);
     auto value_id = StringId::Empty;
 
-    // Need null-terminated string for getenv
     auto name_buf = Buf {};
     name_buf += var_name_sv;
 
-    // 1. Try environment first
     if (auto const* env_val = pup::platform::get_env(name_buf.c_str())) {
         value_id = intern(env_val);
-    }
-    // 2. If the author wrote `?= default`, that default is the explicit
-    //    revert-target for the env-unset case and wins over the cache.
-    else if (imp.default_value) {
+    } else if (imp.default_value) {
         auto expanded = parser::expand(*ctx.eval, *imp.default_value);
         if (!expanded) {
             return pup::unexpected<Error>(expanded.error());
         }
         value_id = *expanded;
-    }
-    // 3. No env, no default — fall back to the cached value from the previous
-    //    build so plain `import VAR` stays stable across shell sessions that
-    //    forget to re-export the variable.
-    else if (auto it = std::lower_bound(
-                 state.options.cached_env_vars.begin(),
-                 state.options.cached_env_vars.end(),
-                 var_name_sv,
-                 [](auto const& p, std::string_view k) { return str(p.first) < k; }
-             );
-             it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
+    } else if (auto it = std::lower_bound(
+                   state.options.cached_env_vars.begin(),
+                   state.options.cached_env_vars.end(),
+                   var_name_sv,
+                   [](auto const& p, std::string_view k) { return str(p.first) < k; }
+               );
+               it != state.options.cached_env_vars.end() && str(it->first) == var_name_sv) {
         value_id = it->second;
     }
 
@@ -1522,7 +1409,6 @@ auto process_import(
         ctx.vars->set(var_name_sv, value_sv);
     }
 
-    // Track this as an imported variable for fine-grained dependency tracking
     auto var_name_id = to_underlying(intern(var_name_sv));
     state.imported_var_names.insert(var_name_id);
 
@@ -1559,19 +1445,14 @@ auto process_assignment(
     parser::Assignment const& assign
 ) -> Result<void>
 {
-    // Evaluate the variable name (may contain variable refs like foo-$(BAR))
     auto name = parser::expand(*ctx.eval, assign.name);
     if (!name) {
         return pup::unexpected<Error>(name.error());
     }
 
-    // Save current tracking state and clear for value expansion
-    // This lets us capture which config/env vars are used in the RHS
-    // SortedIdVec moved-from state is empty, so no explicit clear() needed
     auto saved_config_vars = std::move(ctx.used_config_vars);
     auto saved_env_vars = std::move(ctx.used_env_vars);
 
-    // Evaluate the value - callbacks will populate used_*_vars
     auto value = parser::expand(*ctx.eval, assign.value);
     if (!value) {
         ctx.used_config_vars = std::move(saved_config_vars);
@@ -1579,19 +1460,14 @@ auto process_assignment(
         return pup::unexpected<Error>(value.error());
     }
 
-    // Capture the dependencies from RHS expansion. The value also depends on
-    // every condition guarding this assignment: reaching it required those
-    // config/env reads.
     auto captured_config_deps = std::move(ctx.used_config_vars);
     auto captured_env_deps = std::move(ctx.used_env_vars);
     captured_config_deps.merge_from(ctx.condition_config_vars);
     captured_env_deps.merge_from(ctx.condition_env_vars);
 
-    // Restore tracking state
     ctx.used_config_vars = std::move(saved_config_vars);
     ctx.used_env_vars = std::move(saved_env_vars);
 
-    // Config variables are read-only (loaded from tup.config), so only Regular and Node are writable
     auto* db = ctx.eval->vars;
     if (assign.var_kind == parser::VarRef::Kind::Node) {
         db = ctx.eval->node_vars;
@@ -1711,26 +1587,18 @@ auto process_conditional(
     parser::Conditional const& cond
 ) -> Result<void>
 {
-    // Save and clear used_*_vars to capture which vars the condition uses.
-    // Env vars are tracked symmetrically with config vars so that an env-driven
-    // guard flip (e.g. `ifeq ($(TUP_PLATFORM),win32)`) folds into the identity of
-    // every command in the conditional block.
     auto saved_config_vars = std::move(ctx.used_config_vars);
     auto saved_used_env_vars = std::move(ctx.used_env_vars);
 
-    // Evaluate condition value - this may use config vars like @(MODE) or env vars
     auto condition_true = parser::evaluate_condition(*ctx.eval, cond);
 
-    // Capture vars used in the condition expression
     auto condition_vars = std::move(ctx.used_config_vars);
     auto condition_env_vars_used = std::move(ctx.used_env_vars);
     ctx.used_config_vars = std::move(saved_config_vars);
     ctx.used_env_vars = std::move(saved_used_env_vars);
 
-    // Save condition_*_vars, then merge in condition-specific vars
     auto saved_condition_vars = std::move(ctx.condition_config_vars);
     auto saved_condition_env_vars = std::move(ctx.condition_env_vars);
-    // Rebuild: copy saved entries + merge condition_vars
     auto const* d = saved_condition_vars.data();
     for (std::size_t i = 0, n = saved_condition_vars.size(); i < n; ++i) {
         ctx.condition_config_vars.insert(d[i]);
@@ -1746,8 +1614,6 @@ auto process_conditional(
         ctx.condition_env_vars = std::move(saved_condition_env_vars);
     });
 
-    // Guards exist only for conditions that can flip without a Tupfile edit
-    // (config or env reads recorded): static conditionals are textual like tup.
     auto is_static = condition_vars.empty() && condition_env_vars_used.empty();
     if (is_static) {
         auto active = is_context_active(ctx);
@@ -1764,7 +1630,6 @@ auto process_conditional(
         return {};
     }
 
-    // Create condition node for phi-node model
     auto cond_expr = format_condition_expr(*ctx.eval, cond);
     auto cond_node = ConditionNode {
         .expression = cond_expr,
@@ -1777,7 +1642,6 @@ auto process_conditional(
     }
     auto cond_id = *cond_id_result;
 
-    // Helper to process a branch with given polarity
     auto process_branch = [&](
                               Vec<std::unique_ptr<parser::Statement>> const& body,
                               bool polarity,
@@ -1786,9 +1650,6 @@ auto process_conditional(
         ctx.condition_stack.push_back(Guard { .condition = cond_id, .polarity = polarity });
         auto pop_guard = ScopeGuard([&] { ctx.condition_stack.pop_back(); });
 
-        // Macro defs and assignments in an inactive branch serve only that
-        // branch's guarded rules; the active world after endif must not see
-        // them.
         auto saved_macros = is_active ? decltype(ctx.macros) {} : ctx.macros;
         auto restore_macros = ScopeGuard([&] {
             if (!is_active) {
@@ -1826,13 +1687,11 @@ auto process_conditional(
         return {};
     };
 
-    // Process THEN branch (polarity=true means "condition must be true")
     auto then_result = process_branch(cond.then_body, true, condition_true);
     if (!then_result) {
         return pup::unexpected<Error>(then_result.error());
     }
 
-    // Process ELSE branch (polarity=false means "condition must be false")
     auto else_result = process_branch(cond.else_body, false, !condition_true);
     if (!else_result) {
         return pup::unexpected<Error>(else_result.error());
@@ -1866,10 +1725,6 @@ auto process_include(
     }
     return include_single_file(ctx, state, include_root, str(*resolved), false);
 }
-
-// ---------------------------------------------------------------------------
-// §10 — Rule expansion
-// ---------------------------------------------------------------------------
 
 /// Store deferred order-only edges from groups to a command.
 /// Groups can't be resolved to edges immediately because group membership
@@ -1909,7 +1764,6 @@ auto process_generated_rules(
             continue;
         }
 
-        // Create edges from inputs to generated command and collect operands
         auto gen_input_ids = Vec<NodeId> {};
         for (auto input_id_val : gen_rule.inputs) {
             auto input_id = resolve_input_node(ctx, pool.get(input_id_val));
@@ -1919,7 +1773,6 @@ auto process_generated_rules(
             }
         }
 
-        // Create order-only file edges (group refs filtered out upstream)
         for (auto oi_id : gen_rule.order_only_inputs) {
             auto oi = pool.get(oi_id);
             if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
@@ -1931,15 +1784,10 @@ auto process_generated_rules(
             }
         }
 
-        // Propagate parent's group dependencies to this generated command
         add_deferred_group_edges(state, deferred_groups, *gen_cmd_id);
 
-        // Add edge from generated command to parent command (dep-scan runs before compile)
         (void)add_edge(ctx.state->graph, *gen_cmd_id, parent_cmd_id);
 
-        // Store generated rule info and operands on the node.
-        // outputs intentionally left empty: generated rules are dep-scan commands
-        // whose output is captured via generated_output, not %o expansion.
         if (auto* node = get_command_node(ctx.state->graph, *gen_cmd_id)) {
             node->generated_output = gen_rule.outputs.empty() ? GeneratedOutput {} : gen_rule.outputs[0];
             node->output_action = gen_rule.action;
@@ -2032,25 +1880,18 @@ auto expand_rule(
         ),
     };
 
-    // Early macro lookup - needed to process macro's order_only_inputs for demand-driven parsing
     auto macro_result = lookup_bang_macro(ctx, rule.command);
     if (!macro_result) {
         return pup::unexpected<Error>(macro_result.error());
     }
     auto macro_ptr = *macro_result;
 
-    // Resolve effective fields: merge rule + macro once.
-    // - command/display: macro wins (it IS the command template)
-    // - outputs: macro fills in only if rule has none
-    // - groups: rule wins, macro is fallback
-    // - order-only inputs: concatenated (handled below via all_order_only)
     auto const& eff_command = macro_ptr ? macro_ptr->command : rule.command;
     auto const* eff_display = macro_ptr && macro_ptr->display ? &*macro_ptr->display
         : rule.display                                        ? &*rule.display
                                                               : nullptr;
     auto const& eff_outputs = macro_ptr && rule.outputs.empty() ? macro_ptr->outputs
                                                                 : rule.outputs;
-    // Unioned, not fallback: a macro's extra outputs are side effects its caller cannot restate (tup parse_bang_rule_internal).
     auto eff_extra_outputs = rule.extra_outputs;
     if (macro_ptr) {
         for (auto const& pattern : macro_ptr->extra_outputs) {
@@ -2073,24 +1914,16 @@ auto expand_rule(
         : macro_ptr && macro_ptr->output_order_only_group_dir       ? &*macro_ptr->output_order_only_group_dir
                                                                     : nullptr;
 
-    // Pre-resolve order-only group references so %<group> can expand them in commands
-    // This handles cross-directory groups like: | ../include/<gen-headers> |> cat %<gen-headers>
-    // Stores known group names (sorted); the resolver constructs %<name> on the fly.
     auto rule_order_only_group_names = SortedIdVec {};
 
-    // Track group NodeIds for deferred edge creation
-    // Groups are first-class nodes; edges created after all Tupfiles are parsed
     auto deferred_group_ids = NodeIdMap32 {};
     auto deferred_group_vec = Vec<NodeId> {};
 
-    // Merge rule + macro order-only inputs once (reused for group pre-resolution and expansion)
     auto all_order_only = rule.order_only_inputs;
     if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
         all_order_only.insert(all_order_only.end(), macro_ptr->order_only_inputs.begin(), macro_ptr->order_only_inputs.end());
     }
 
-    // Check all inputs (regular + order-only) for group references.
-    // In tup, <group> references are always order-only even when in the inputs section.
     auto all_inputs = Vec<parser::PathPattern> {};
     all_inputs.insert(all_inputs.end(), rule.inputs.begin(), rule.inputs.end());
     all_inputs.insert(all_inputs.end(), all_order_only.begin(), all_order_only.end());
@@ -2145,9 +1978,6 @@ auto expand_rule(
         }
     }
 
-    // Override resolve_order_only_group for this rule's command expansion.
-    // All %<group> patterns are preserved literally for deferred resolution.
-    // ScopeGuard ensures restoration even on early returns.
     auto original_resolver = std::move(ctx.eval->resolve_order_only_group);
     auto resolver_guard = ScopeGuard([&] { ctx.eval->resolve_order_only_group = std::move(original_resolver); });
     ctx.eval->resolve_order_only_group = [&rule_order_only_group_names, &deferred_group_ids, &deferred_group_vec, &ctx, &state](std::string_view name
@@ -2186,7 +2016,7 @@ auto expand_rule(
     auto display = StringId::Empty;
     auto instruction_pattern = Instruction {};
 
-    auto outputs = expand_outputs(ctx, eff_outputs, flags, /*primary=*/nullptr);
+    auto outputs = expand_outputs(ctx, eff_outputs, flags, nullptr);
     if (!outputs) {
         return pup::unexpected<Error>(outputs.error());
     }
@@ -2196,8 +2026,6 @@ auto expand_rule(
         return pup::unexpected<Error>(extra_outputs.error());
     }
 
-    // Expand command with actual outputs for %o substitution.
-    // Also capture instruction (after variable expansion, before pattern substitution).
     auto cmd_result = expand_command(ctx, eff_command, flags, *outputs, &instruction_pattern);
     if (!cmd_result) {
         return pup::unexpected<Error>(cmd_result.error());
@@ -2265,7 +2093,6 @@ auto expand_rule(
         .working_dir = intern(str(ctx.current_dir)),
     };
 
-    // Use scanner_registry (new modular approach) if available, fall back to pattern_registry
     auto generated_rules = Vec<GeneratedRule> {};
     if (ctx.options.scanner_registry && !ctx.options.scanner_registry->empty()) {
         auto tokens = tokenize_command(cmd_text);
@@ -2276,7 +2103,6 @@ auto expand_rule(
 
     process_generated_rules(ctx, state, generated_rules, *cmd_id, deferred_group_vec);
 
-    // Create edges from inputs to command and collect operand NodeIds
     auto input_ids = Vec<NodeId> {};
     for (auto const& inp : operands) {
         if (inp.kind == RuleInput::Kind::GroupRef) {
@@ -2298,7 +2124,6 @@ auto expand_rule(
         input_ids.push_back(*input_id);
     }
 
-    // Create edges from command to outputs and collect operand NodeIds
     auto output_ids = Vec<NodeId> {};
     auto output_operand_tokens = Vec<std::uint32_t> {};
     auto all_declared = Vec<PathId> {};
@@ -2312,9 +2137,7 @@ auto expand_rule(
     auto const primary_count = outputs->ids.size();
     for (auto i = std::size_t { 0 }; i < all_declared.size(); ++i) {
         auto output_path = all_declared[i];
-        // An extra output is owned exactly like a primary, minus the %o operands and {group} (tup.1 extra-outputs).
         auto const is_extra = i >= primary_count;
-        // Generated means "produced by a rule this configuration runs" (#386).
         auto output_id = ensure_file_node(
             ctx.state->graph, output_path, is_context_active(ctx) ? NodeType::Generated : NodeType::Ghost
         );
@@ -2322,14 +2145,10 @@ auto expand_rule(
             return pup::unexpected<Error>(output_id.error());
         }
 
-        // Check for duplicate output - another command already produces this file
         auto output_inputs = get_inputs(ctx.state->graph, *output_id);
         if (!output_inputs.empty()) {
             for (auto existing_id : output_inputs) {
                 if (node_id::is_command(existing_id)) {
-                    // Check if this is a phi-node case (complementary guards)
-                    // Allow multiple commands producing the same output if they have
-                    // mutually exclusive guards (same condition, opposite polarity)
                     auto const* existing_cmd = get_command_node(ctx.state->graph, existing_id);
                     if (existing_cmd && are_guards_mutually_exclusive(existing_cmd->guards, ctx.condition_stack)) {
                         continue;
@@ -2356,13 +2175,11 @@ auto expand_rule(
             output_operand_tokens.push_back(outputs->tokens[i]);
         }
 
-        // Add to output group {name} if specified
         if (eff_output_group && !is_extra && is_context_active(ctx)) {
             auto gkey = to_underlying(*eff_output_group);
             ctx.groups.get_or_create(gkey).push_back(*output_id);
         }
 
-        // Add to order-only group <name> if specified
         if (eff_output_oo_group && is_context_active(ctx)) {
             auto dir = StringId::Empty;
 
@@ -2379,7 +2196,6 @@ auto expand_rule(
 
             auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*eff_output_oo_group));
             if (group_id_result) {
-                // Add edge: file → group (file is member of group)
                 (void)add_edge(ctx.state->graph, *output_id, *group_id_result, LinkType::Group);
             }
         }
@@ -2404,7 +2220,6 @@ auto expand_rule(
         order_only_ids.push_back(*file_id);
     }
 
-    // Store explicit operands on the command node for expand_instruction()
     if (auto* cmd = get_command_node(ctx.state->graph, *cmd_id)) {
         cmd->inputs = TokenList<NodeId>::grouped(std::move(input_ids), operand_tokens, token_count);
         cmd->order_only_inputs = TokenList<NodeId>::grouped(
@@ -2415,8 +2230,6 @@ auto expand_rule(
         );
     }
 
-    // Create order-only edges from the pre-expanded paths
-    // Skip group references (deferred edge creation) and glob patterns (not valid paths)
     for (auto oi : macro_order_only_paths) {
         auto oi_sv = str(oi);
         if (is_order_only_group_reference(oi_sv) || parser::has_glob_chars(oi_sv)) {
@@ -2466,20 +2279,13 @@ auto process_rule(
     parser::Rule const& rule
 ) -> Result<void>
 {
-    // Apply any pending weak assignments (??=) before expanding commands
-    // This ensures ??= assignments that precede rules take effect
     apply_pending_weak_assignments(ctx, state);
 
-    // Expand input patterns
     auto inputs = Result<TokenizedInputs> { expand_inputs(ctx, rule.inputs) };
     if (!inputs) {
         return pup::unexpected<Error>(inputs.error());
     }
 
-    // Skip rules where input pattern evaluated to empty (tup behavior)
-    // - rule.inputs.empty() means no input pattern was specified (": |> cmd")
-    // - inputs->empty() means the pattern(s) evaluated to no files
-    // Only skip if pattern was specified but produced nothing
     prune_duplicate_inputs(inputs->operands);
 
     auto const only_patterns = std::ranges::all_of(inputs->operands, [](RuleInput const& inp) {
@@ -2500,7 +2306,6 @@ auto process_rule(
             }
         }
 
-        // Foreach rule: create one command per file, include patterns for %g
         for (auto const& file : files) {
             auto iter_inputs = patterns;
             iter_inputs.push_back(file);
@@ -2510,7 +2315,6 @@ auto process_rule(
             }
         }
     } else {
-        // Normal rule: single command for all inputs
         auto result = expand_rule(ctx, state, rule, inputs->operands, inputs->token_count);
         if (!result) {
             return pup::unexpected<Error>(result.error());
@@ -2566,11 +2370,7 @@ auto process_statement(
     return {};
 }
 
-} // anonymous namespace
-
-// ---------------------------------------------------------------------------
-// §11 — Public API
-// ---------------------------------------------------------------------------
+}
 
 auto make_builder(BuilderOptions opts) -> Builder
 {
@@ -2586,10 +2386,6 @@ auto add_tupfile(
     Builder& state
 ) -> Result<void>
 {
-    // Compute current_dir relative to config_root (where Tupfiles live)
-    // In 3-tree builds, config_root differs from source_root, but the directory
-    // structure mirrors the source tree, so this relative path is used for both
-    // config lookup and source file glob expansion.
     auto const& tupfile_root = is_empty(state.options.config_root)
         ? str(state.options.source_root)
         : str(state.options.config_root);
@@ -2608,8 +2404,6 @@ auto add_tupfile(
         .current_file = tupfile.filename,
     };
 
-    // Create Tupfile node and add to sticky_sources for dependency tracking
-    // For 3-tree builds, store relative to config_root (Tupfile's actual location)
     auto tupfile_rel = global_pool().get(pup::path::relative(tupfile_filename_sv, tupfile_root));
     auto tupfile_path_id = ctx.state->graph.paths.intern_path(tupfile_rel, global_pool(), PathId::SourceRoot);
     auto tupfile_node_result = ensure_file_node(ctx.state->graph, tupfile_path_id, NodeType::File);
@@ -2617,11 +2411,7 @@ auto add_tupfile(
         ctx.sticky_sources.push_back(*tupfile_node_result);
     }
 
-    // Create Variable nodes for fine-grained config dependency tracking
-    // Each config variable becomes a node so commands only depend on variables they use
-    // Only create nodes once (first Tupfile); subsequent Tupfiles reuse existing nodes
     if (eval.config_vars && state.config_var_nodes.empty()) {
-        // Get config directory for Variable node parent (typically the -B directory)
         auto config_dir_id = NodeId { 0 };
         if (!is_empty(state.options.config_path)) {
             auto config_parent = pup::path::parent(str(state.options.config_path));
@@ -2661,14 +2451,10 @@ auto add_tupfile(
         }
     }
 
-    // Create/find virtual $ directory for imported env vars (like tup's env_dt)
-    // Only initialize once; subsequent Tupfiles reuse existing nodes
     if (state.env_var_dir_id == INVALID_NODE_ID) {
-        // Check if $ directory already exists in graph (from same build session)
         if (auto existing = find_by_dir_name(build_state.graph, NodeId { 0 }, "$")) {
             state.env_var_dir_id = *existing;
         } else {
-            // Create new $ directory under root
             auto env_dir_node = FileNode {
                 .type = NodeType::Directory,
                 .name = intern("$"),
@@ -2681,9 +2467,6 @@ auto add_tupfile(
         }
     }
 
-    // Toolchain fingerprint: CONFIG_TRACKED_TOOLS lists tools the build's outputs
-    // depend on that appear in no rule's inputs. Their resolved (path, size, mtime)
-    // fold into every command's identity, so an in-place tool upgrade rebuilds.
     if (state.toolchain_node_id == INVALID_NODE_ID && eval.config_vars) {
         auto tracked = eval.config_vars->get("TRACKED_TOOLS");
         if (!tracked.empty()) {
@@ -2710,18 +2493,12 @@ auto add_tupfile(
         ctx.sticky_sources.push_back(state.toolchain_node_id);
     }
 
-    // Thread string pool into EvalContext for StringId lookups
     eval.string_pool = &global_pool();
 
-    // Set up callback to track which config variables are used during expansion
     eval.on_config_var_used = [&ctx](std::string_view name) {
         ctx.used_config_vars.insert(to_underlying(intern(name)));
     };
 
-    // Set up callback to track which imported env variables are used during expansion.
-    // Also ensure an env Variable node exists for any env var that resolves from the
-    // environment, so TUP_PLATFORM/TUP_ARCH (auto-resolved, not via `import`) get the
-    // same tracking node as explicitly imported vars and fold into command identity.
     eval.imported_vars = &state.imported_var_names;
     eval.on_env_var_used = [&ctx, &state](std::string_view name) {
         ctx.used_env_vars.insert(to_underlying(intern(name)));
@@ -2732,11 +2509,9 @@ auto add_tupfile(
         }
     };
 
-    // Wire up transitive dependency trackers for variable tracking
     eval.var_config_deps = &state.var_config_deps;
     eval.var_env_deps = &state.var_env_deps;
 
-    // Set up resolve_group callback for {group} pattern expansion
     eval.resolve_group = [&ctx](std::string_view name
                          ) -> Vec<StringId> {
         auto gkey = to_underlying(intern(name));
@@ -2754,9 +2529,6 @@ auto add_tupfile(
         return paths;
     };
 
-    // Set up resolve_order_only_group callback for %<group> pattern expansion in commands
-    // This is for local group references (no directory prefix) - uses current directory
-    // Groups are first-class nodes; lookup via graph edges (file → group)
     eval.resolve_order_only_group = [&ctx, &state](std::string_view name
                                     ) -> Vec<StringId> {
         auto dir = is_empty(ctx.current_dir) ? std::string_view { "." } : str(ctx.current_dir);
@@ -2794,10 +2566,8 @@ auto add_tupfile(
         }
     }
 
-    // Apply pending weak assignments (??=) - last wins
     apply_pending_weak_assignments(ctx, state);
 
-    // Copy errors and warnings
     for (auto& err : ctx.errors) {
         state.errors.push_back(std::move(err));
     }
@@ -2914,9 +2684,6 @@ auto finalize_graph(
 {
     auto& g = build_state.graph;
 
-    // Pass 1: Create graph edges and accumulate members per (command, group_name).
-    // Same-named groups from different directories contribute to the same replacement.
-    // Key: packed (command_id << 32 | interned_group_name)
     auto pack_key = [](NodeId cmd, std::uint32_t name_id) -> std::uint64_t {
         return (static_cast<std::uint64_t>(cmd) << 32) | name_id;
     };
@@ -2954,7 +2721,6 @@ auto finalize_graph(
         }
     }
 
-    // Pass 2: Replace %<group> patterns with the full accumulated member lists.
     for (auto const& [key, members] : accumulated) {
         auto command_id = static_cast<NodeId>(key >> 32);
         auto name_id = static_cast<StringId>(key & 0xFFFFFFFF);
@@ -3042,13 +2808,10 @@ auto finalize_graph(
 
     state.deferred_edges.clear();
 
-    // The configure pass runs before tup.config exists, so rendered text does not yet
-    // distinguish anything and a key collision there means nothing; it schedules only the
-    // config-generating rules anyway. Last, because pass 2 rewrites command text.
     if (!state.options.reject_empty_commands) {
         return {};
     }
     return reject_ambiguous_keys(build_state);
 }
 
-} // namespace pup::graph
+}

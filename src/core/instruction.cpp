@@ -114,7 +114,7 @@ auto is_unnumbered_flag(char letter) -> bool
         || letter == 'o' || letter == 'O' || letter == 'd';
 }
 
-} // namespace
+}
 
 auto InstructionBuilder::flush() -> void
 {
@@ -289,4 +289,4 @@ auto parse_instruction(std::string_view text) -> Result<Instruction>
     return builder.take();
 }
 
-} // namespace pup
+}
