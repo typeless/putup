@@ -805,8 +805,8 @@ Rule { inputs: ["*.c"], outputs: ["%B.o"], foreach: true }
     │
     ├── Build PatternFlags once:
     │   - Transform inputs to Tupfile-relative paths
-    │   - Extract glob_match (%g) from pattern + primary input
-    │   - Populate input fields (%f, %b, %B read the input list; %g the primary input; %e the primary input of a foreach rule, refused elsewhere)
+    │   - Extract glob_match (%g) from the primary input and the glob that produced it
+    │   - Populate input fields (%f, %b, %B read the input list; %g the one input and the glob that produced it; %e the primary input of a foreach rule; both refused elsewhere)
     │
     ├── expand_outputs() with PatternFlags
     │   %B.o → main.o
@@ -1622,7 +1622,7 @@ the same root.
 
 2. **PatternFlags construction** (in `expand_rule`):
    - Inputs transformed to Tupfile-relative paths
-   - Glob match (`%g`) extracted from pattern + primary input
+   - Glob match (`%g`) extracted from the primary input and the glob that produced it, absent when none did
    - Single PatternFlags built and reused for both outputs and command
 
 3. **Output expansion** (`expand_outputs`):

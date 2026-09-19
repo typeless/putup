@@ -616,6 +616,7 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
     {
         auto flags = PatternFlags {
             .glob_match = "hello",
+            .all_inputs = { "hello.c" },
         };
         auto result = expand_pattern(ctx,"%g", flags);
         REQUIRE(result.has_value());
@@ -627,19 +628,22 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         // Pattern: *_test.c, Input: foo_test.c, Match: foo
         auto flags = PatternFlags {
             .glob_match = "foo",
+            .all_inputs = { "foo_test.c" },
         };
         auto result = expand_pattern(ctx,"%g.o", flags);
         REQUIRE(result.has_value());
         REQUIRE(sv(*result) == "foo.o");
     }
 
-    SECTION("%g - empty when not set")
+    SECTION("%g - an empty match that is bound still expands")
     {
         auto flags = PatternFlags {
+            .glob_match = "",
+            .all_inputs = { "a.c" },
         };
-        auto result = expand_pattern(ctx,"%g", flags);
+        auto result = expand_pattern(ctx,"g=[%g]", flags);
         REQUIRE(result.has_value());
-        REQUIRE(sv(*result) == "");
+        REQUIRE(sv(*result) == "g=[]");
     }
 
     SECTION("%g - combined with other flags")
@@ -652,6 +656,39 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
         auto result = expand_pattern(ctx,"compile %f -DNAME=%g -o %o", flags);
         REQUIRE(result.has_value());
         REQUIRE(sv(*result) == "compile foo_test.c -DNAME=foo -o foo.o");
+    }
+}
+
+TEST_CASE("Evaluator pattern expansion - %g with no single glob input is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+
+    SECTION("no inputs")
+    {
+        auto flags = PatternFlags { .glob_match = "a" };
+
+        auto result = expand_pattern(ctx, "%g", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%g used in rule pattern and no input files were specified") != std::string_view::npos);
+    }
+
+    SECTION("several inputs")
+    {
+        auto flags = PatternFlags { .glob_match = "a", .all_inputs = { "a.c", "b.c" } };
+
+        auto result = expand_pattern(ctx, "%g", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%g is only valid with one file") != std::string_view::npos);
+    }
+
+    SECTION("one input and no glob bound")
+    {
+        auto flags = PatternFlags { .all_inputs = { "a.c" } };
+
+        auto result = expand_pattern(ctx, "%g", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("%g flag found no globs") != std::string_view::npos);
     }
 }
 
