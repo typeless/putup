@@ -14903,6 +14903,222 @@ SCENARIO("A percent-e in a foreach rule names each file's last extension", "[e2e
     }
 }
 
+SCENARIO("A rule whose glob matches nothing produces no command", "[e2e][build][glob]")
+{
+    GIVEN("a rule over a glob that matches no file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": *.none |> echo hi > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("the build succeeds and the rule's output is not written")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+    }
+
+    GIVEN("a rule over a glob that matches no file whose command spells %f")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": *.none |> echo 'f=[%f]' > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("the build succeeds and the rule's output is not written")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+    }
+
+    GIVEN("a rule over a glob that matches no file beside a named file, the complement the skip must leave alone")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": *.none a.c |> echo 'f=[%f]' > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            REQUIRE(f.init().success());
+            auto result = f.build();
+
+            THEN("the rule runs over the named file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "f=[a.c]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-f, percent-b or percent-B in a rule with no inputs is refused", "[e2e][build]")
+{
+    GIVEN("a rule with no inputs whose command spells %f")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> echo 'f=[%f]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%f used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs whose command spells %b")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> echo 'b=[%b]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%b used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs whose command spells %B")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> echo 'B=[%B]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%B used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs whose output spells %f")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> touch %o |> %f.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%f used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs whose display string spells %f")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> ^ show %f^ echo hi > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%f used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule whose only inputs are order-only")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": | a.c |> echo 'f=[%f]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%f used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs whose bang macro spells %b")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", "!m = |> echo 'b=[%b]' > %o |>\n: |> !m |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%b used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A percent-g in a rule with no inputs or several is refused", "[e2e][build]")
 {
     GIVEN("a rule with no inputs whose command spells %g")

@@ -816,7 +816,7 @@ Rules define how to transform inputs into outputs.
 **Components:**
 - `:` - Rule start marker
 - `foreach` - Optional; creates one command per input file
-- `inputs` - Source files (globs allowed)
+- `inputs` - Source files (globs allowed); a rule whose written inputs match no file and name no group produces no command, while a rule written with no inputs runs once
 - `| order-only` - Dependencies not included in `%f` (still trigger rebuilds)
 - `|>` - Section separator
 - `command` - Shell command to execute
@@ -1005,12 +1005,12 @@ Pattern flags are placeholders expanded at build time.
 
 | Flag | Description | Example |
 |------|-------------|---------|
-| `%f` | All input files | `gcc %f` → `gcc foo.c bar.c` |
+| `%f` | All input files; the rule must have at least one | `gcc %f` → `gcc foo.c bar.c` |
 | `%i` | All inputs (alias for %f) | `gcc %i` → `gcc foo.c bar.c` |
 | `%o` | All output files; the rule must declare at least one | `ar rcs %o` → `ar rcs foo.a foo.map` |
 | `%O` | The output without its extension, keeping its directory — command string or extra outputs section, and only with exactly one output | `sub/foo.so` → `sub/foo` |
-| `%b` | Basename of every input, with extension | `src/foo.c bar.c` → `foo.c bar.c` |
-| `%B` | Basename of every input, without extension | `src/foo.c bar.c` → `foo bar` |
+| `%b` | Basename of every input, with extension; the rule must have at least one | `src/foo.c bar.c` → `foo.c bar.c` |
+| `%B` | Basename of every input, without extension; the rule must have at least one | `src/foo.c bar.c` → `foo bar` |
 | `%e` | Extension of the current file — foreach rules only, and only for files that have one | `foo.c` → `c` |
 | `%d` | Directory name | `src/foo.c` → `src` |
 | `%g` | Text the glob matched — rules with exactly one input, and only when a glob produced it | `*_test.c` + `foo_test.c` → `foo` |
@@ -2830,10 +2830,10 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 
 | Flag | Description | Example Input | Result |
 |------|-------------|---------------|--------|
-| `%f` | All inputs | `foo.c bar.c` | `foo.c bar.c` |
+| `%f` | All inputs (rule must have one) | `foo.c bar.c` | `foo.c bar.c` |
 | `%i` | All inputs (alias) | `foo.c bar.c` | `foo.c bar.c` |
-| `%b` | Basename with ext, every input | `src/foo.c bar.c` | `foo.c bar.c` |
-| `%B` | Basename no ext, every input | `src/foo.c bar.c` | `foo bar` |
+| `%b` | Basename with ext, every input (rule must have one) | `src/foo.c bar.c` | `foo.c bar.c` |
+| `%B` | Basename no ext, every input (rule must have one) | `src/foo.c bar.c` | `foo bar` |
 | `%e` | Extension (foreach, file must have one) | `foo.c` | `c` |
 | `%d` | Directory | `src/foo.c` | `src` |
 | `%g` | Glob match (one glob-produced input) | `*_test.c` + `foo_test.c` | `foo` |

@@ -119,6 +119,16 @@ once.
 putup shall expand a glob to the same match set whatever order the project's Tupfiles were
 parsed in.
 
+### REQ-GLOB-NO-MATCH-NO-COMMAND
+
+- conformance: tup-conformant
+- reference: upstream runs a rule only when its expanded input list is non-empty or its input section was written empty (`execute_rule`, `r->inputs.num_entries > 0 || r->empty_input`), so `: *.o |> ld %f |>` with no objects generates no command while `: |> script |>` runs once; the test is on the user's text, so a section that is one variable evaluating to nothing also generates none. Measured against tup over `a.c` alone: `: *.none |> echo hi > %o |> out.txt` and the same rule spelling `%f` write nothing and exit zero, `SRCS =` / `: $(SRCS) |>` writes nothing, and `: *.none a.c |>` runs over `a.c`. putup meant to skip the same case but counted the glob's own placeholder operand as an input, so the rule ran with every input flag expanded to nothing; the guard now counts operands that name a file or a group, which is also what lets a rule over a glob that matches only files another directory generates pass its first parse and be re-parsed at the fixpoint rather than refused; a producer later in the same Tupfile is #470, where the fixpoint runs a rule upstream never runs. Two upstream cases this guard does not reproduce: a bang macro with a `!name.EMPTY` variant runs that variant over the empty match (`execute_rule`, the t2066 branch), and putup parses no such variant (#468); a glob whose directory does not exist is refused upstream and is an empty match here (#469) (#463)
+- discharge: test "Scenario: A rule whose glob matches nothing produces no command"
+- discharge: test "Scenario: A glob's match set does not depend on the producing directory's name"
+
+If a rule is not foreach, its input section is written non-empty, and no input operand names a
+file or a group after expansion, then putup shall generate no command for it.
+
 ---
 
 ## Group: ordering

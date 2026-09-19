@@ -595,16 +595,21 @@ auto expand_pattern_atoms(
 
         switch (flag) {
         case 'f':
-            builder.flag(AtomKind::AllInputs);
+        case 'b':
+        case 'B':
+            if (flags.all_inputs.empty()) {
+                auto msg = Buf {};
+                msg.fmt("%{} used in rule pattern and no input files were specified", flag);
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+            }
+            builder.flag(
+                flag == 'f'       ? AtomKind::AllInputs
+                    : flag == 'b' ? AtomKind::InputBase
+                                  : AtomKind::InputNoExt
+            );
             break;
         case 'i':
             builder.flag(AtomKind::AllInputsAlias);
-            break;
-        case 'b':
-            builder.flag(AtomKind::InputBase);
-            break;
-        case 'B':
-            builder.flag(AtomKind::InputNoExt);
             break;
         case 'e':
             if (!flags.input_ext) {
