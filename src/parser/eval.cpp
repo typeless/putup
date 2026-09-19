@@ -28,10 +28,6 @@
 
 namespace pup::parser {
 
-// =============================================================================
-// VarDb
-// =============================================================================
-
 VarDb::VarDb(VarDb const& other)
 {
     for (auto [key, value] : other.entries_) {
@@ -115,13 +111,8 @@ auto VarDb::clear() -> void
     entries_.clear();
 }
 
-// =============================================================================
-// VarContext lookup functions
-// =============================================================================
-
 auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::Kind kind) -> VarLookupResult
 {
-    // Context-computed special variables (highest priority) - NOT overridable
     if (name == builtin_vars::TUP_CWD && !ctx.tup_cwd.empty()) {
         return { ctx.tup_cwd, VarBank::Builtin };
     }
@@ -138,17 +129,13 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
         return { ctx.tup_outdir, VarBank::Builtin };
     }
 
-    // TUP_PLATFORM and TUP_ARCH: env > config > context > default
-    // For Config kind, env still takes priority, then config is checked.
     if (name == builtin_vars::TUP_PLATFORM) {
         if (auto const* env = pup::platform::get_env("TUP_PLATFORM"); env && *env) {
             return { std::string_view { env }, VarBank::Env };
         }
-        // For Config kind or if config has the value, use config
         if (ctx.config && ctx.config->contains(name)) {
             return { ctx.config->get(name), VarBank::Config };
         }
-        // Only use context value for Regular kind (not Config)
         if (kind != VarRef::Kind::Config && !ctx.tup_platform.empty()) {
             return { ctx.tup_platform, VarBank::Builtin };
         }
@@ -158,18 +145,15 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
         if (auto const* env = pup::platform::get_env("TUP_ARCH"); env && *env) {
             return { std::string_view { env }, VarBank::Env };
         }
-        // For Config kind or if config has the value, use config
         if (ctx.config && ctx.config->contains(name)) {
             return { ctx.config->get(name), VarBank::Config };
         }
-        // Only use context value for Regular kind (not Config)
         if (kind != VarRef::Kind::Config && !ctx.tup_arch.empty()) {
             return { ctx.tup_arch, VarBank::Builtin };
         }
         return { std::string_view { pup::ARCH }, VarBank::Builtin };
     }
 
-    // Kind-specific lookup
     switch (kind) {
     case VarRef::Kind::Config:
         if (ctx.config && ctx.config->contains(name)) {
@@ -184,9 +168,7 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
         break;
 
     case VarRef::Kind::Regular:
-        // Regular variables have priority over config
         if (ctx.vars && ctx.vars->contains(name)) {
-            // Check if this is an imported env var
             if (ctx.imported_vars && ctx.string_pool) {
                 auto id = ctx.string_pool->find(name);
                 if (!pup::is_empty(id) && ctx.imported_vars->contains(pup::to_underlying(id))) {
@@ -195,7 +177,6 @@ auto lookup_var_with_bank(VarContext const& ctx, std::string_view name, VarRef::
             }
             return { ctx.vars->get(name), VarBank::Regular };
         }
-        // Fall back to config (tup behavior: CONFIG_* accessible via $())
         if (ctx.config && ctx.config->contains(name)) {
             return { ctx.config->get(name), VarBank::Config };
         }
@@ -209,10 +190,6 @@ auto lookup_var(VarContext const& ctx, std::string_view name, VarRef::Kind kind)
 {
     return lookup_var_with_bank(ctx, name, kind).value;
 }
-
-// =============================================================================
-// Internal helper functions
-// =============================================================================
 
 namespace {
 
@@ -243,9 +220,6 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<StringId>
     auto name_sv = pool.get(ref.name);
     auto [value, bank] = lookup_var_with_bank(var_ctx, name_sv, ref.kind);
 
-    // Dependency tracking based on which bank was used. An @() reference is
-    // a config read even when the variable is undefined — defining it later
-    // must count as a change.
     if ((bank == VarBank::Config || ref.kind == VarRef::Kind::Config) && ctx.on_config_var_used) {
         auto config_name = name_sv;
         if (config_name.starts_with(builtin_vars::CONFIG_)) {
@@ -254,15 +228,11 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<StringId>
         ctx.on_config_var_used(config_name);
     }
 
-    // TUP_PLATFORM/TUP_ARCH fall back to compiled-in defaults when neither
-    // env nor config provides them; setting the env var later must count as
-    // a change, so the fallback still records an env read.
     if (bank == VarBank::Builtin && ctx.on_env_var_used
         && (name_sv == builtin_vars::TUP_PLATFORM || name_sv == builtin_vars::TUP_ARCH)) {
         ctx.on_env_var_used(name_sv);
     }
 
-    // Propagate transitive config var dependencies for regular variables
     if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
         && ctx.var_config_deps && ctx.on_config_var_used && ctx.string_pool) {
         auto name_id = ctx.string_pool->find(name_sv);
@@ -276,12 +246,10 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<StringId>
         }
     }
 
-    // Track imported env variable usage
     if (bank == VarBank::Env && ctx.on_env_var_used) {
         ctx.on_env_var_used(name_sv);
     }
 
-    // Propagate transitive env var dependencies for regular variables
     if (ref.kind == VarRef::Kind::Regular && bank == VarBank::Regular
         && ctx.var_env_deps && ctx.on_env_var_used && ctx.string_pool) {
         auto name_id = ctx.string_pool->find(name_sv);
@@ -298,11 +266,7 @@ auto expand_var(EvalContext& ctx, VarRef const& ref) -> Result<StringId>
     return value ? pool.intern(*value) : StringId::Empty;
 }
 
-} // namespace
-
-// =============================================================================
-// Free functions
-// =============================================================================
+}
 
 auto expand(EvalContext& ctx, Expression const& expr) -> Result<StringId>
 {
@@ -322,8 +286,6 @@ auto expand(EvalContext& ctx, Expression const& expr) -> Result<StringId>
         }
     }
 
-    // Recursively expand any variable references that were embedded in literals
-    // (e.g., from escaped quotes like \"$(VAR)\")
     return expand(ctx, buf.view());
 }
 
@@ -334,31 +296,25 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>
     auto pos = std::size_t { 0 };
 
     while (pos < text.size()) {
-        // Look for variable references
         auto dollar = text.find('$', pos);
         auto at = text.find('@', pos);
         auto amp = text.find('&', pos);
 
-        // Find the earliest variable reference
         auto next = std::min({ dollar, at, amp });
 
         if (next == std::string_view::npos) {
-            // No more variable references
             buf.append(text.substr(pos));
             break;
         }
 
-        // Add text before the variable
         buf.append(text.substr(pos, next - pos));
 
-        // Handle $$ escape -> literal $ for shell commands
         if (text[next] == '$' && next + 1 < text.size() && text[next + 1] == '$') {
             buf.append('$');
             pos = next + 2;
             continue;
         }
 
-        // Check for variable reference pattern: X(name)
         if (next + 1 < text.size() && text[next + 1] == '(') {
             auto close = text.find(')', next + 2);
             if (close != std::string_view::npos) {
@@ -382,7 +338,6 @@ auto expand(EvalContext& ctx, std::string_view text) -> Result<StringId>
             }
         }
 
-        // Not a variable reference, just add the character
         buf.append(text[next]);
         pos = next + 1;
     }
@@ -501,7 +456,7 @@ private:
     }
 };
 
-} // namespace
+}
 
 auto expand_pattern_atoms(
     EvalContext& ctx,
@@ -749,30 +704,25 @@ auto expand_path(
         return result;
     }
 
-    // Expand the path expression
     auto path_result = expand(ctx, pattern.path);
     if (!path_result) {
         return pup::unexpected<Error>(path_result.error());
     }
 
-    // Split result by whitespace - variables may contain multiple files
     auto expanded = pool.get(*path_result);
     auto start = std::size_t { 0 };
     while (start < expanded.size()) {
-        // Skip whitespace
         while (start < expanded.size() && (expanded[start] == ' ' || expanded[start] == '\t')) {
             ++start;
         }
         if (start >= expanded.size()) {
             break;
         }
-        // Find end of token
         auto end = start;
         while (end < expanded.size() && expanded[end] != ' ' && expanded[end] != '\t') {
             ++end;
         }
         if (end > start) {
-            // Normalize path to remove // and resolve . and .. components
             auto path_str = expanded.substr(start, end - start);
             result.push_back(pup::path::normalize(path_str));
         }
@@ -795,7 +745,7 @@ auto record_config_definedness_read(EvalContext& ctx, std::string_view name) -> 
     ctx.on_config_var_used(name);
 }
 
-} // namespace
+}
 
 auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
 {
@@ -843,4 +793,4 @@ auto evaluate_condition(EvalContext& ctx, Conditional const& cond) -> bool
     return false;
 }
 
-} // namespace pup::parser
+}

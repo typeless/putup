@@ -224,20 +224,17 @@ auto Index::compute_paths() -> void
         return;
     }
 
-    // File IDs are 1-based contiguous: files_[i].id == i + 1.
-    // Use direct indexing instead of a hash map.
     assert(files_[0].id == 1 && "compute_paths requires 1-based contiguous IDs");
     assert(files_[n - 1].id == static_cast<NodeId>(n) && "compute_paths requires 1-based contiguous IDs");
     auto computed = Vec<bool> {};
     computed.resize(n);
-    auto chain = Vec<std::size_t> {}; // reusable ancestor stack
+    auto chain = Vec<std::size_t> {};
 
     for (std::size_t i = 0; i < n; ++i) {
         if (computed[i]) {
             continue;
         }
 
-        // Walk the parent chain upward, collecting unresolved ancestors
         chain.clear();
         auto idx = i;
         for (;;) {
@@ -255,7 +252,6 @@ auto Index::compute_paths() -> void
                 break;
             }
 
-            // Cycle detection: check if parent_idx is already in our chain
             auto is_cycle = false;
             for (auto a : chain) {
                 if (a == parent_idx) {
@@ -269,7 +265,6 @@ auto Index::compute_paths() -> void
             idx = parent_idx;
         }
 
-        // Resolve paths top-down (chain is bottom-up, so iterate in reverse)
         auto& pool = global_pool();
         for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
             auto& file = files_[*it];
@@ -444,7 +439,7 @@ private:
     std::string_view m_source_to_root;
 };
 
-} // namespace
+}
 
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId
 {
@@ -492,4 +487,4 @@ auto files_by_path(Index const& index) -> FilesByPath
     return result;
 }
 
-} // namespace pup::index
+}

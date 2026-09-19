@@ -26,7 +26,6 @@
 
 namespace pup::graph {
 
-// Forward declarations for internal node accessors (no longer in public header)
 auto get_file_node(Graph const& graph, NodeId id) -> FileNode const*;
 auto get_file_node(Graph& graph, NodeId id) -> FileNode*;
 auto get_command_node(Graph const& graph, NodeId id) -> CommandNode const*;
@@ -38,22 +37,18 @@ auto make_graph() -> Graph
 {
     auto graph = Graph {};
 
-    // Reserve BUILD_ROOT_ID (1) for the build root node.
-    // All Generated/Ghost nodes will be parented under this node.
-    // The build root's filesystem location is determined at build time
-    // (source_root for in-tree, output_root for variant builds).
-    graph.files.resize(2); // Index 0 unused, index 1 = build root
+    graph.files.resize(2);
     graph.dir_children.resize(2);
     graph.files[1] = FileNode {
         .id = BUILD_ROOT_ID,
         .type = NodeType::Directory,
-        .name = StringId::Empty, // Name set by set_build_root_name()
+        .name = StringId::Empty,
         .parent_dir = SOURCE_ROOT_ID,
         .path_id = PathId::BuildRoot,
     };
     graph.path_to_node.insert(to_underlying(PathId::SourceRoot), SOURCE_ROOT_ID);
     graph.path_to_node.insert(to_underlying(PathId::BuildRoot), BUILD_ROOT_ID);
-    graph.next_file_id = 2; // Start regular nodes at ID 2
+    graph.next_file_id = 2;
 
     return graph;
 }
@@ -96,9 +91,6 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     auto const id = graph.next_file_id++;
     node.id = id;
 
-    // Populate path_id from parent's path_id + this node's name.
-    // Nodes under BUILD_ROOT_ID get BuildRoot-grounded PathIds.
-    // Nodes under SOURCE_ROOT_ID (0) get SourceRoot-grounded PathIds.
     if (!is_empty(node.name)) {
         auto parent_path = PathId::SourceRoot;
         if (node.parent_dir != 0) {
@@ -128,8 +120,6 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 
 auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<NodeId>
 {
-    // Recursion terminates at a root sentinel.
-    // BuildRoot/Ungrounded → BUILD_ROOT_ID, SourceRoot → SOURCE_ROOT_ID.
     if (is_root(path_id)) {
         return path_id == PathId::SourceRoot ? SOURCE_ROOT_ID : BUILD_ROOT_ID;
     }
@@ -145,9 +135,6 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         return *existing;
     }
 
-    // In-tree builds share one physical tree: a BuildRoot-grounded path may
-    // already have a SourceRoot node (consumer parsed before producer sees
-    // the on-disk output as a source file). Alias instead of splitting.
     if (graph.paths.root(path_id) == PathId::BuildRoot && get_build_root_name(graph).empty()) {
         auto& pool = global_pool();
         auto rel = pool.get(graph.paths.to_string(path_id, pool));
@@ -165,8 +152,6 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         }
     }
 
-    // Lazy resolution: ungrounded PathIds are grounded before creation.
-    // Try BuildRoot first (outputs are more common), then SourceRoot.
     if (!graph.paths.is_grounded(path_id)) {
         auto build_id = graph.paths.ground(path_id, PathId::BuildRoot);
         if (auto const* hit = graph.path_to_node.find(to_underlying(build_id))) {
@@ -192,7 +177,6 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
             return *hit;
         }
 
-        // No existing node — ground based on type and create.
         auto root = (type == NodeType::File || type == NodeType::Directory)
             ? PathId::SourceRoot
             : PathId::BuildRoot;
@@ -368,7 +352,7 @@ auto read_command_field(Graph const& g, NodeId id, T CommandNode::*field, T def)
     auto const* node = get_command_node(g, id);
     return node ? node->*field : def;
 }
-} // namespace
+}
 
 template<>
 auto get<NodeType>(Graph const& graph, NodeId id) -> NodeType
@@ -636,7 +620,6 @@ auto node_count(Graph const& graph) -> std::size_t
     return file_count + cmd_count;
 }
 
-// Includes all edge types: Normal, Sticky, OrderOnly.
 auto edge_count(Graph const& graph) -> std::size_t
 {
     return graph.edges.size();
@@ -794,8 +777,6 @@ auto set_build_root_name(Graph& graph, std::string_view name) -> void
     if (!is_empty(name_id)) {
         graph.dir_children[0].insert(to_underlying(name_id), BUILD_ROOT_ID);
     }
-    // path_id stays PathId::BuildRoot (set in make_graph).
-    // The name is for display only (get_full_path), not for PathId identity.
 }
 
 auto get_build_root_name(Graph const& graph) -> std::string_view
@@ -810,7 +791,7 @@ auto path_extension(std::string_view name) -> std::string_view
     return pup::path::bare_extension(name);
 }
 
-} // namespace
+}
 
 /// Core expansion logic parameterized on the path resolver.
 template<typename PathResolver>
@@ -1082,14 +1063,9 @@ auto compute_command_key(Graph const& graph, NodeId cmd_id, PathCache& cache) ->
 
     state = sha256_update(state, pool.get(expand_instruction(graph, cmd_id, cache)));
 
-    // Command text is Tupfile-relative, so the same rule in sibling directories renders
-    // identically; without the directory those distinct rules share one key.
     state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
-    // A dep-scan command is output-less and drops its parent's -o, so two compiles of one
-    // source with equal flags render byte-identical scans; whose deps they inject is the
-    // only thing that tells them apart. One level: a parent is rule-authored, so has none.
     if (auto parent = get_parent_command(graph, cmd_id); parent != INVALID_NODE_ID) {
         auto parent_key = compute_command_key(graph, parent, cache);
         state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
@@ -1105,15 +1081,11 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
     auto state = sha256_init();
     auto constexpr SEP = std::byte { 0 };
 
-    // Base: the fully-expanded command text (instruction + operand paths + in-text vars).
     state = sha256_update(state, pool.get(expand_instruction(graph, cmd_id, cache)));
 
     state = sha256_update(state, std::span<std::byte const> { &SEP, 1 });
     state = sha256_update(state, pool.get(get<SourceDir>(graph, cmd_id)));
 
-    // An output the text never names -- every extra output, a %o-less primary -- would otherwise
-    // leave identity unchanged when the declaration changes; sorted for insertion independence.
-    // A dep-scan command's data-flow edge to its parent shares this walk and names no file.
     auto output_paths = Vec<std::string_view> {};
     for (auto out_id : get_outputs(graph, cmd_id)) {
         auto path = get_full_path(graph, out_id, cache);
@@ -1128,11 +1100,6 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
         state = sha256_update(state, path);
     }
 
-    // Fold in (name, value-hash) of each Variable node reached via a Sticky edge.
-    // This captures vars that affect output without appearing in the rendered text —
-    // exported env vars the subprocess reads as $VAR, config vars gating an export, etc.
-    // Sorted and deduped by name so identity is independent of edge insertion order and
-    // tolerant of duplicate sticky edges (the graph permits them).
     auto vars = Vec<std::pair<std::string_view, Hash256>> {};
     for (auto var_id : edges_where(graph, cmd_id, EdgeDirection::Backward, edge_mask::sticky)) {
         if (get<NodeType>(graph, var_id) != NodeType::Variable) {
@@ -1155,10 +1122,6 @@ auto compute_command_signature(Graph const& graph, NodeId cmd_id, PathCache& cac
     return sha256_finalize(state);
 }
 
-// =============================================================================
-// BuildGraph free functions
-// =============================================================================
-
 auto make_build_graph() -> BuildGraph
 {
     return BuildGraph { .graph = make_graph(), .path_cache = {} };
@@ -1169,10 +1132,6 @@ auto set_build_root_name(BuildGraph& state, std::string_view name) -> void
     graph::set_build_root_name(state.graph, name);
     graph::clear_path_cache(state.path_cache);
 }
-
-// =============================================================================
-// Graph algorithms (moved from scheduler — these operate on Graph, not Scheduler)
-// =============================================================================
 
 auto collect_required_commands(Graph const& graph, Vec<NodeId> const& target_ids) -> NodeIdMap32
 {
@@ -1268,7 +1227,6 @@ auto collect_affected_commands(
             }
         });
 
-        // A contradictory pair only adds a command here: the set only grows, so no cycle check.
         for (auto const *hop = std::lower_bound(discovered_consumers.begin(), discovered_consumers.end(), id, [](auto const& h, NodeId k) { return h.first < k; });
              hop != discovered_consumers.end() && hop->first == id;
              ++hop) {
@@ -1279,18 +1237,10 @@ auto collect_affected_commands(
         }
     }
 
-    // Joined after the cascade, not before: a forced command runs, but nothing about it
-    // says its consumers must, and seeding it upstream would say exactly that.
     for (auto id : forced) {
         affected.set(id, 1);
     }
 
-    // InjectImplicitDeps siblings (dep-scan commands) have no graph outputs,
-    // so the cascade above can't reach them. They must run whenever their
-    // parent compile runs — otherwise newly-introduced transitive includes
-    // are never re-discovered, and the parent's run drops the recorded ones
-    // with nothing to re-report them (#228). Walk all commands and attach any
-    // whose parent_command was just marked affected.
     for (auto cmd_id : nodes_of_type(graph, NodeType::Command)) {
         auto parent = get_parent_command(graph, cmd_id);
         if (parent != INVALID_NODE_ID && affected.contains(parent)) {
@@ -1364,7 +1314,7 @@ auto walk_upstream_from_scope(
     return result;
 }
 
-} // anonymous namespace
+}
 
 auto collect_scope_with_upstream_commands(
     Graph const& graph,
@@ -1404,4 +1354,4 @@ auto collect_upstream_files(
     return upstream;
 }
 
-} // namespace pup::graph
+}

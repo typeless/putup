@@ -30,15 +30,14 @@
 
 namespace {
 auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
-} // namespace
+}
 
 using namespace pup;
 using namespace pup::index;
 
 namespace pup::graph {
-// Graph-module-internal (defined in dag.cpp, not in public header)
 auto add_condition_node(Graph& graph, ConditionNode node) -> Result<NodeId>;
-} // namespace pup::graph
+}
 
 namespace {
 
@@ -72,7 +71,7 @@ auto find_file_by_path(Index const& index, std::string_view path) -> FileEntry c
     return nullptr;
 }
 
-} // namespace
+}
 
 TEST_CASE("Index format struct sizes", "[index]")
 {
@@ -154,7 +153,6 @@ TEST_CASE("FileEntry conversion", "[index]")
     REQUIRE(raw.content_hash[0] == std::byte { 0xAB });
     REQUIRE(raw.content_hash[31] == std::byte { 0xCD });
 
-    // ID is computed from array index (41 + 1 = 42)
     auto restored = FileEntry::from_raw(raw, "main.cpp", 41);
     REQUIRE(restored.has_value());
 
@@ -169,7 +167,6 @@ TEST_CASE("FileEntry conversion", "[index]")
 
 TEST_CASE("CommandEntry conversion", "[index]")
 {
-    // Distinct values: a roundtrip that swapped the two fields must fail.
     auto key = pup::Hash256 {};
     key[0] = std::byte { 0xAB };
     key[31] = std::byte { 0xCD };
@@ -201,7 +198,6 @@ TEST_CASE("CommandEntry conversion", "[index]")
     REQUIRE(raw.signature == signature);
     REQUIRE(raw.flags == pup::index::to_underlying(pup::index::CommandFlag::MustRerun));
 
-    // ID is computed from array index (4 + 1 = 5, then node_id::make_command)
     auto& pool = global_pool();
     auto restored = CommandEntry::from_raw(
         raw, pool.get(cmd.instruction_pattern), pool.get(cmd.display), pool.get(cmd.env),
@@ -389,8 +385,6 @@ TEST_CASE("Serialized edge section is independent of edge insertion order", "[in
         return std::vector<std::byte> { begin, begin + hdr.edge_count * sizeof(RawEdge) };
     };
 
-    // Ties on from (edges 4->cmd1 / 4->cmd2) and on (from, to) (Implicit vs
-    // Sticky 4->cmd1) exercise every leg of the canonical-order comparator.
     auto edges = std::vector<EdgeEntry> {
         EdgeEntry { .from = 2, .to = cmd1, .type = LinkType::Normal },
         EdgeEntry { .from = cmd1, .to = 3, .type = LinkType::Normal },
@@ -412,15 +406,10 @@ TEST_CASE("Serialized edge section is independent of edge insertion order", "[in
 
 TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 {
-    // IDs must be consecutive and match array position (id = array_index + 1)
-    // Files: 1, 2, 3, 4, 5 in insertion order
-    // Commands: node_id::make_command(1)
     auto const cmd_id = node_id::make_command(1);
 
     auto index = Index {};
 
-    // Add directories first (for parent chain)
-    // File 1: src directory
     index.add_file(FileEntry {
         .id = 1,
         .parent_id = 0,
@@ -428,7 +417,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .name = intern("src"),
     });
 
-    // File 2: build directory
     index.add_file(FileEntry {
         .id = 2,
         .parent_id = 0,
@@ -436,7 +424,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .name = intern("build"),
     });
 
-    // File 3: main.cpp (parent is src, id=1)
     index.add_file(FileEntry {
         .id = 3,
         .parent_id = 1,
@@ -445,7 +432,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .size = 1024,
     });
 
-    // File 4: main.o (parent is build, id=2)
     index.add_file(FileEntry {
         .id = 4,
         .parent_id = 2,
@@ -454,7 +440,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .size = 4096,
     });
 
-    // File 5: header file (implicit dependency)
     index.add_file(FileEntry {
         .id = 5,
         .parent_id = 0,
@@ -463,7 +448,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .size = 8192,
     });
 
-    // Command 1 (v8: template + operands; v19: + key and signature hashes)
     auto cmd_key = pup::Hash256 {};
     cmd_key[0] = std::byte { 0x11 };
     cmd_key[31] = std::byte { 0x99 };
@@ -474,37 +458,31 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
         .display = intern("CXX main.cpp"),
         .env = {},
         .key = cmd_key,
-        .inputs = { 3 },   // main.cpp
-        .outputs = { 4 },  // main.o
+        .inputs = { 3 },
+        .outputs = { 4 },
     });
 
-    // Add edges (file 3 -> cmd, cmd -> file 4, file 5 -> cmd implicit)
     index.add_edge(EdgeEntry { .from = 3, .to = cmd_id, .type = LinkType::Normal });
     index.add_edge(EdgeEntry { .from = cmd_id, .to = 4, .type = LinkType::Normal });
     index.add_edge(EdgeEntry { .from = 5, .to = cmd_id, .type = LinkType::Implicit });
 
-    // Serialize
         auto data = serialize_index(index);
     REQUIRE(data.has_value());
     REQUIRE(data->size() > sizeof(RawHeader) + sizeof(RawFooter));
 
-    // Write to temp file and read back
     auto temp_path = pup::test::temp_path("pup_test_index").string();
 
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
 
-    // Verify file exists
     REQUIRE(std::filesystem::exists(temp_path));
 
-    // Read back
     auto reader_result = open_index(temp_path);
     REQUIRE(reader_result.has_value());
 
     auto& idx_file = *reader_result;
     REQUIRE(index_is_open(idx_file));
 
-    // Check header
     auto const* hdr = index_header(idx_file);
     REQUIRE(hdr != nullptr);
     REQUIRE(std::memcmp(hdr->magic.data(), INDEX_MAGIC.data(), 4) == 0);
@@ -513,10 +491,8 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(hdr->command_count == 1);
     REQUIRE(hdr->edge_count == 3);
 
-    // Verify checksum
     REQUIRE(index_verify_checksum(idx_file));
 
-    // Read full index
     auto read_result = read_index(idx_file);
     REQUIRE(read_result.has_value());
 
@@ -525,7 +501,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(restored.command_count() == 1);
     REQUIRE(restored.edge_count() == 3);
 
-    // Verify file content (paths are computed from parent chain)
     auto* file1 = find_file_by_path(restored, "src/main.cpp");
     REQUIRE(file1 != nullptr);
     REQUIRE(file1->id == 3);
@@ -536,7 +511,6 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(file2->id == 4);
     REQUIRE(file2->type == NodeType::Generated);
 
-    // Verify command (ID computed from position: node_id::make_command(0 + 1))
     auto* cmd = restored.find_command_by_id(cmd_id);
     REQUIRE(cmd != nullptr);
     REQUIRE(cmd->instruction_pattern == intern("g++ -c %f -o %o"));
@@ -545,17 +519,14 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
     REQUIRE(cmd->inputs == pup::Vec<NodeId> { 3 });
     REQUIRE(cmd->outputs == pup::Vec<NodeId> { 4 });
 
-    // v8: Verify command reconstruction from template + operands
     auto reconstructed = get_command_string(restored, *cmd);
     REQUIRE(sv(reconstructed) =="g++ -c src/main.cpp -o build/main.o");
 
-    // Verify header file (implicit dependency)
     auto* header = find_file_by_path(restored, "/usr/include/stdio.h");
     REQUIRE(header != nullptr);
     REQUIRE(header->id == 5);
     REQUIRE(header->size == 8192);
 
-    // Verify implicit edge
     auto edges_to_cmd = restored.edges_to(cmd_id);
     REQUIRE(edges_to_cmd.size() == 2);
     auto found_implicit = false;
@@ -573,18 +544,8 @@ TEST_CASE("Index serialization roundtrip", "[e2e][index]")
 
 TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
 {
-    // This test documents a design constraint: IDs must be contiguous when
-    // stored in the index. The index format assigns IDs from array position
-    // on load (id = array_index + 1), so if there are gaps in stored IDs,
-    // parent_id references will be broken after round-trip.
-    //
-    // The build system ensures ID contiguity by storing ALL node types
-    // (including Ghost, Variable, Group) rather than skipping them.
-    // This test verifies the consequence of violating this constraint.
-
     auto index = Index {};
 
-    // Create entries with consecutive IDs (no gaps)
     index.add_file(FileEntry {
         .id = 1,
         .parent_id = 0,
@@ -599,7 +560,6 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .name = intern("build"),
     });
 
-    // ID 3: placeholder (like a Ghost node would be stored)
     index.add_file(FileEntry {
         .id = 3,
         .parent_id = 0,
@@ -607,7 +567,6 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .name = intern("placeholder"),
     });
 
-    // ID 4: subdirectory under src (parent=1)
     index.add_file(FileEntry {
         .id = 4,
         .parent_id = 1,
@@ -615,7 +574,6 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .name = intern("lib"),
     });
 
-    // ID 5: file under lib (parent=4)
     index.add_file(FileEntry {
         .id = 5,
         .parent_id = 4,
@@ -624,7 +582,6 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
         .size = 100,
     });
 
-    // Serialize and read back
     auto temp_path = pup::test::temp_path("pup_test_contiguous").string();
         auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
@@ -637,7 +594,6 @@ TEST_CASE("Index ID contiguity requirement", "[e2e][index]")
 
     auto& restored = *read_result;
 
-    // With consecutive IDs, path reconstruction works correctly
     auto* foo = find_file_by_path(restored, "src/lib/foo.c");
     REQUIRE(foo != nullptr);
     REQUIRE(foo->size == 100);
@@ -662,10 +618,6 @@ TEST_CASE("Index reader validation", "[e2e][index]")
 
 TEST_CASE("A record whose declared layout does not fit the file is refused", "[e2e][index]")
 {
-    // Reading it as empty was the old behaviour: an out-of-bounds section became a zero-length
-    // span, so a damaged record loaded as the record of a project that had produced nothing --
-    // and the source-file guard, which reads exactly that, went quiet and let a rule overwrite
-    // a checked-in file (#293).
     auto const cmd_id = node_id::make_command(1);
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .name = intern("test.c") });
@@ -728,7 +680,6 @@ TEST_CASE("StringTable overflow handling", "[index]")
     {
         auto index = Index {};
 
-        // Create a string larger than 64KB (0xFFFF = 65535 bytes max)
         auto huge_name = Buf {};
         huge_name.resize(65536);
         std::memset(huge_name.data(), 'x', 65536);
@@ -745,7 +696,6 @@ TEST_CASE("StringTable overflow handling", "[index]")
     {
         auto index = Index {};
 
-        // Create a string exactly at the 64KB limit (65535 bytes)
         auto max_name = Buf {};
         max_name.resize(65535);
         std::memset(max_name.data(), 'y', 65535);
@@ -959,7 +909,6 @@ TEST_CASE("StringTable deduplication", "[index]")
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        // v6 length-prefixed: 2 (empty) + 2 (length) + 8 (main.cpp) = 12
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
         REQUIRE(hdr->string_table_size == 12);
     }
@@ -974,7 +923,6 @@ TEST_CASE("StringTable deduplication", "[index]")
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        // v6 length-prefixed: 2 (empty) + 2 (length) + 20 (path) = 24
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
         REQUIRE(hdr->string_table_size == 24);
     }
@@ -989,7 +937,6 @@ TEST_CASE("StringTable deduplication", "[index]")
                 auto data = serialize_index(index);
         REQUIRE(data.has_value());
 
-        // v8 length-prefixed: 2 (empty) + 2 (length) + 3 (gcc) = 7
         auto const* hdr = reinterpret_cast<RawHeader const*>(data->data());
         REQUIRE(hdr->string_table_size == 7);
     }
@@ -999,13 +946,11 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
 {
     auto index = Index {};
 
-    // Create directory structure for path reconstruction
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
     index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
     index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
     index.add_file(FileEntry { .id = 4, .parent_id = 2, .type = NodeType::Generated, .name = intern("main.o") });
 
-    // Compute paths from parent chain
     index.compute_paths();
 
     SECTION("get_command_string with %f and %o")
@@ -1013,8 +958,8 @@ TEST_CASE("v8 template reconstruction", "[index][v8]")
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
             .instruction_pattern = intern("g++ -c %f -o %o"),
-            .inputs = { 3 },   // main.cpp
-            .outputs = { 4 },  // main.o
+            .inputs = { 3 },
+            .outputs = { 4 },
         };
         index.add_command(cmd);
 
@@ -1179,10 +1124,6 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
 {
     auto index = Index {};
 
-    // Create directory structure:
-    //   lib/foo.c, lib/foo.o
-    //   app/main.c, app/app
-    // Command runs from "app" directory, referencing "../lib/foo.o"
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("lib"), .path = intern("lib") });
     index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("app"), .path = intern("app") });
     index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("foo.c"), .path = intern("lib/foo.c") });
@@ -1192,27 +1133,9 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
 
     SECTION("command in subdirectory referencing sibling directory")
     {
-        // Command runs from "app" directory, links with ../lib/foo.o
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .dir_id = 2,  // app directory
-            .instruction_pattern = intern("gcc %f -o %o"),
-            .inputs = { 5, 4 },   // main.c, foo.o (from lib)
-            .outputs = { 6 },      // app
-        };
-        index.add_command(cmd);
-
-        auto result = get_command_string(index, cmd);
-        // Paths should be relative to "app" directory
-        REQUIRE(sv(result) =="gcc main.c ../lib/foo.o -o app");
-    }
-
-    SECTION("command in root referencing subdirectory files")
-    {
-        // Command runs from root, uses full paths
-        auto cmd = CommandEntry {
-            .id = node_id::make_command(1),
-            .dir_id = 0,  // root directory (no relativization)
+            .dir_id = 2,
             .instruction_pattern = intern("gcc %f -o %o"),
             .inputs = { 5, 4 },
             .outputs = { 6 },
@@ -1220,24 +1143,36 @@ TEST_CASE("v8 cross-directory path relativization", "[index][v8]")
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        // Paths should be full since dir_id is 0
+        REQUIRE(sv(result) =="gcc main.c ../lib/foo.o -o app");
+    }
+
+    SECTION("command in root referencing subdirectory files")
+    {
+        auto cmd = CommandEntry {
+            .id = node_id::make_command(1),
+            .dir_id = 0,
+            .instruction_pattern = intern("gcc %f -o %o"),
+            .inputs = { 5, 4 },
+            .outputs = { 6 },
+        };
+        index.add_command(cmd);
+
+        auto result = get_command_string(index, cmd);
         REQUIRE(sv(result) =="gcc app/main.c lib/foo.o -o app/app");
     }
 
     SECTION("command in subdirectory with same-directory files")
     {
-        // Command runs from "lib" directory, all files are local
         auto cmd = CommandEntry {
             .id = node_id::make_command(1),
-            .dir_id = 1,  // lib directory
+            .dir_id = 1,
             .instruction_pattern = intern("gcc -c %f -o %o"),
-            .inputs = { 3 },   // foo.c
-            .outputs = { 4 },  // foo.o
+            .inputs = { 3 },
+            .outputs = { 4 },
         };
         index.add_command(cmd);
 
         auto result = get_command_string(index, cmd);
-        // Paths should be relative to "lib" directory
         REQUIRE(sv(result) =="gcc -c foo.c -o foo.o");
     }
 }
@@ -1246,14 +1181,12 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
 {
     auto index = Index {};
 
-    // Create file entries
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::File, .name = intern("foo.c") });
     index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Generated, .name = intern("foo.o") });
     index.add_file(FileEntry { .id = 3, .parent_id = 0, .type = NodeType::File, .name = intern("bar.c") });
     index.add_file(FileEntry { .id = 4, .parent_id = 0, .type = NodeType::Generated, .name = intern("bar.o") });
     index.compute_paths();
 
-    // Add commands with template + operands
     index.add_command(CommandEntry {
         .id = node_id::make_command(1),
         .instruction_pattern = intern("gcc -c %f -o %o"),
@@ -1288,8 +1221,6 @@ TEST_CASE("v8 build_command_lookup", "[index][v8]")
     {
         auto lookup = build_command_lookup(index);
 
-        // Both commands have same template but different operands
-        // So they should be distinct in the lookup
         REQUIRE(lookup.size() == 2);
 
         auto const* cmd1 = lookup.at("gcc -c foo.c -o foo.o");
@@ -1304,7 +1235,6 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 {
     auto index = Index {};
 
-    // Create file structure
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .type = NodeType::Directory, .name = intern("src") });
     index.add_file(FileEntry { .id = 2, .parent_id = 0, .type = NodeType::Directory, .name = intern("build") });
     index.add_file(FileEntry { .id = 3, .parent_id = 1, .type = NodeType::File, .name = intern("main.cpp") });
@@ -1317,7 +1247,6 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     auto cmd2_id = node_id::make_command(2);
     auto cmd3_id = node_id::make_command(3);
 
-    // Commands with templates + operands
     index.add_command(CommandEntry {
         .id = cmd1_id,
         .instruction_pattern = intern("g++ -c %f -o %o"),
@@ -1340,11 +1269,9 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
         .outputs = { 7 },
     });
 
-    // Serialize
     auto data = serialize_index(index);
     REQUIRE(data.has_value());
 
-    // Write and read back
     auto temp_path = pup::test::temp_path("pup_v8_roundtrip_test").string();
     auto write_result = write_index(temp_path, index);
     REQUIRE(write_result.has_value());
@@ -1357,11 +1284,9 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
 
     auto& restored = *read_result;
 
-    // Verify structure
     REQUIRE(restored.file_count() == 7);
     REQUIRE(restored.command_count() == 3);
 
-    // Verify commands retain template + operands
     auto* cmd1 = restored.find_command_by_id(cmd1_id);
     REQUIRE(cmd1 != nullptr);
     REQUIRE(cmd1->instruction_pattern == intern("g++ -c %f -o %o"));
@@ -1380,7 +1305,6 @@ TEST_CASE("v8 roundtrip with operand sections", "[e2e][index][v8]")
     REQUIRE(cmd3->inputs == pup::Vec<NodeId> { 5, 6 });
     REQUIRE(cmd3->outputs == pup::Vec<NodeId> { 7 });
 
-    // Verify command reconstruction
     auto cmd1_str = get_command_string(restored, *cmd1);
     REQUIRE(sv(cmd1_str) =="g++ -c src/main.cpp -o build/main.o");
 
@@ -1482,7 +1406,7 @@ auto require_graph_index_roundtrip(pup::graph::BuildGraph const& bs, std::string
     REQUIRE(sorted_edge_labels_of_index(*loaded) == sorted_edge_labels_of_graph(bs.graph));
 }
 
-} // namespace
+}
 
 TEST_CASE("serialize_index rejects a non-dense file id sequence", "[index]")
 {
@@ -1695,7 +1619,7 @@ auto sorted_paths_of_type(Index const& index, NodeType type) -> Vec<StringId>
     return out;
 }
 
-} // namespace
+}
 
 TEST_CASE("A record too short to hold a header is damage rather than a format this reader skips", "[index]")
 {
@@ -1727,7 +1651,6 @@ TEST_CASE("A file that does not carry the index magic is damage", "[index]")
     REQUIRE(data.has_value());
 
     auto bytes = *data;
-    // No re-signing: the magic check runs before the checksum, so this is the arm under test.
     for (auto i = std::size_t { 0 }; i < INDEX_MAGIC.size(); ++i) {
         bytes[i] = std::byte { 'X' };
     }
@@ -1830,8 +1753,6 @@ TEST_CASE("An operand boundary that does not span its operands makes the record 
     std::filesystem::remove(path);
 }
 
-// Both wrap tests discriminate only because the position they wrap onto holds something: a wrap
-// landing on zeroes would be rejected for the wrong reason, not for the wrap the test is about.
 static_assert(offsetof(RawHeader, file_count) == 8, "the operand wrap test lands on this field");
 static_assert(offsetof(RawFileEntry, name_offset) == 8, "the name wrap test patches this field");
 static_assert(offsetof(RawFileEntry, size) == 16, "the name wrap test plants its string here");
@@ -1883,7 +1804,6 @@ TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
     auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     REQUIRE(hdr->file_count > 0);
 
-    // Planted in this entry's `size`, which nothing reads back, so the wrapped read finds a name.
     auto const planted = hdr->file_offset + offsetof(RawFileEntry, size);
     REQUIRE(planted < hdr->string_offset);
     auto constexpr PLANTED_NAME = std::string_view { "ghost!" };
@@ -1906,7 +1826,6 @@ TEST_CASE("A name offset that wraps makes the record unreadable", "[index]")
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
 
-    // The record that names it is unreadable, so the recovery read must not answer for it either.
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
 
@@ -1938,7 +1857,6 @@ TEST_CASE("A record whose entry carries a type this putup cannot name is unreada
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
 
-    // The recovery read builds the same entries, so it must not answer for this record either.
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Lost);
 
@@ -1972,7 +1890,6 @@ TEST_CASE("A record whose edge carries a link type this putup cannot name is unr
     REQUIRE_FALSE(restored.has_value());
     REQUIRE(restored.error().code == ErrorCode::IndexDamaged);
 
-    // Damage in a section the recovery read never looks at leaves the recorded paths readable.
     opened->file.close();
     REQUIRE(read_prior_paths(path).kind == PriorPaths::Kind::Known);
 
@@ -1993,7 +1910,6 @@ TEST_CASE("A record whose edge carries link type zero is unreadable", "[index]")
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto const* hdr = reinterpret_cast<RawHeader const*>(bytes.data());
     REQUIRE(hdr->edge_count > 0);
-    // LinkType starts at 1, so zero is as unnameable as anything past the last enumerator.
     bytes[hdr->edge_offset + offsetof(RawEdge, type)] = std::byte { 0 };
     stamp_version(bytes, INDEX_VERSION);
 
@@ -2136,7 +2052,6 @@ TEST_CASE("An empty recorded string is a value rather than a failure", "[index]"
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .parent_id = 0, .name = intern("main.c") });
     auto cmd_id = node_id::make_command(1);
-    // env is semantics-bearing and empty here, which is exactly the value a failure must not mimic.
     index.add_command(CommandEntry { .id = cmd_id, .instruction_pattern = intern("cc %f"), .display = StringId::Empty, .env = StringId::Empty, .inputs = { 1 } });
 
     auto data = serialize_index(index);
@@ -2169,7 +2084,6 @@ TEST_CASE("A record names the paths it recorded even at a version too old to tru
     REQUIRE(data.has_value());
     auto const path = temp_index_path("pup_prior_window");
 
-    // The window is a handful of integers, so it is enumerated rather than sampled.
     for (auto version = INDEX_LAYOUT_FLOOR - 1; version <= INDEX_VERSION + 1; ++version) {
         INFO("version=" << version);
         auto bytes = *data;
@@ -2195,8 +2109,6 @@ TEST_CASE("A record names the paths it recorded even at a version too old to tru
 
 TEST_CASE("A record that classifies one path two ways is unreadable", "[index]")
 {
-    // The three lists partition the file table, so one path in two of them proves the record
-    // holds two entries for it -- a state its own writer forbids (#382).
     auto const pairs = std::array {
         std::pair { NodeType::File, NodeType::Generated },
         std::pair { NodeType::File, NodeType::Ghost },
@@ -2226,8 +2138,6 @@ TEST_CASE("A record that classifies one path two ways is unreadable", "[index]")
 
 TEST_CASE("A record that names one path twice with one type is unreadable", "[index]")
 {
-    // The same rule from inside a single list: two entries for one path, whichever list they
-    // land in. Crafted bytes are not bound by the writer's funnel (#382).
     for (auto const type : { NodeType::File, NodeType::Generated, NodeType::Ghost }) {
         INFO("type=" << static_cast<int>(type));
         auto index = Index {};
@@ -2251,8 +2161,6 @@ TEST_CASE("A record that names one path twice with one type is unreadable", "[in
 
 TEST_CASE("A record that names one path once in each of two directories is readable", "[index]")
 {
-    // The positive control for the rejection above: same basename, different paths, which is
-    // what an out-of-tree build records for a source and the output that shadows it.
     auto index = Index {};
     index.add_file(FileEntry { .id = 1, .type = NodeType::Directory, .name = intern("a") });
     index.add_file(FileEntry { .id = 2, .type = NodeType::Directory, .name = intern("build") });
@@ -2330,8 +2238,6 @@ TEST_CASE("One flipped bit anywhere in a record makes it unrecoverable, never pa
     std::filesystem::remove(path);
 }
 
-// The mirror of the recovery-path property above, for the path every build takes: a record that
-// is not the one putup wrote is not evidence, whichever door it is read through (#294).
 TEST_CASE("One flipped bit anywhere in a record makes it unreadable", "[index]")
 {
     auto const index = index_with_every_node_type();
@@ -2375,8 +2281,6 @@ TEST_CASE("Keying a record's file table by path keeps every addressable entry an
             keyed.push_back(entry);
         }
 
-        // Same entries, each once: an index may record two nodes at one path, and dropping
-        // either would make the map disagree with the table it is derived from.
         std::sort(expected.begin(), expected.end());
         std::sort(keyed.begin(), keyed.end());
         REQUIRE(keyed == expected);
@@ -2411,8 +2315,6 @@ TEST_CASE("Keying the index under construction by path answers the same however 
             map.insert(paths[i], NodeId { static_cast<std::uint32_t>(i + 1) });
         }
 
-        // The walks that build this map also query it, so what it answers cannot depend on how
-        // far along the filling was — the insertion order is the graph's, not the caller's choice.
         for (auto i = std::size_t { 0 }; i < paths.size(); ++i) {
             auto found = map.find(paths[i]);
             REQUIRE(found.has_value());

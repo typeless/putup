@@ -163,4 +163,4 @@ auto fold_instruction(Instruction const& atoms, Site const& site) -> StringId
     return buf.intern(global_pool());
 }
 
-} // namespace pup
+}

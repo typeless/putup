@@ -222,12 +222,10 @@ private:
     Vec<CommandEntry> commands_ = {};
     Vec<EdgeEntry> edges_ = {};
 
-    // Edge indices (indices into edges_ vector)
     Arena32 edge_arena_;
     NodeIdArenaIndex edges_from_index_;
     NodeIdArenaIndex edges_to_index_;
 
-    // Index save time (nanoseconds since epoch) for racy-clean detection
     std::int64_t save_time_ns_ = 0;
 
     [[nodiscard]]
@@ -263,4 +261,4 @@ auto files_by_path(Index const& index) -> FilesByPath;
 [[nodiscard]]
 auto get_command_string(Index const& index, CommandEntry const& cmd) -> StringId;
 
-} // namespace pup::index
+}

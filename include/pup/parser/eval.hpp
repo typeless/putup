@@ -268,7 +268,7 @@ constexpr auto TUP_VARIANTDIR = "TUP_VARIANTDIR";
 constexpr auto TUP_VARIANT_OUTPUTDIR = "TUP_VARIANT_OUTPUTDIR";
 constexpr auto TUP_SRCDIR = "TUP_SRCDIR";
 constexpr auto TUP_OUTDIR = "TUP_OUTDIR";
-constexpr auto CONFIG_ = "CONFIG_"; // Prefix for @() variables
-} // namespace builtin_vars
+constexpr auto CONFIG_ = "CONFIG_";
+}
 
-} // namespace pup::parser
+}

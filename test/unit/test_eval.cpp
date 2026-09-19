@@ -16,7 +16,7 @@ using pup::test::EnvGuard;
 namespace {
 auto intern(std::string_view s) -> StringId { return global_pool().intern(s); }
 auto sv(StringId id) -> std::string_view { return global_pool().get(id); }
-} // namespace
+}
 
 TEST_CASE("VarDb basic operations", "[eval]")
 {
@@ -233,7 +233,7 @@ TEST_CASE("@(TUP_PLATFORM) respects CONFIG_TUP_PLATFORM in tup.config", "[eval][
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
-        .tup_platform = intern(pup::PLATFORM), // compile-time default
+        .tup_platform = intern(pup::PLATFORM),
     };
 
 
@@ -280,7 +280,7 @@ TEST_CASE("@(TUP_ARCH) respects CONFIG_TUP_ARCH in tup.config", "[eval][arch]")
     auto ctx = EvalContext {
         .vars = &vars,
         .config_vars = &config_vars,
-        .tup_arch = intern(pup::ARCH), // compile-time default
+        .tup_arch = intern(pup::ARCH),
     };
 
 
@@ -326,7 +326,6 @@ TEST_CASE("Evaluator pattern expansion", "[eval]")
     auto ctx = EvalContext { .vars = &vars };
 
 
-    // For foreach rules, all_inputs has just one element (the current input)
     auto flags = PatternFlags {
         .input_ext = "c",
         .input_dir = "src",
@@ -519,7 +518,6 @@ TEST_CASE("Evaluator pattern expansion - multiple inputs", "[eval]")
     auto ctx = EvalContext { .vars = &vars };
 
 
-    // For non-foreach rules, all_inputs has all input files
     auto flags = PatternFlags {
         .input_dir = "",
         .all_inputs = { "a.c", "b.c", "c.c" },
@@ -737,7 +735,6 @@ TEST_CASE("Evaluator pattern expansion - glob match", "[eval]")
 
     SECTION("%g - suffix pattern match")
     {
-        // Pattern: *_test.c, Input: foo_test.c, Match: foo
         auto flags = PatternFlags {
             .glob_match = "foo",
             .all_inputs = { "foo_test.c" },
@@ -966,16 +963,8 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
     }
 }
 
-// =============================================================================
-// TUP_VARIANT_OUTPUTDIR tests
-// Based on tup test t8108-variant-outputdir.sh
-// =============================================================================
-
 TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
 {
-    // Without variant, TUP_VARIANT_OUTPUTDIR should be "."
-    // This matches tup behavior where outputs go to current directory
-
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = intern(".");
@@ -989,10 +978,6 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - no variant", "[eval][variant]")
 
 TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]")
 {
-    // For in-tree variant build (e.g., build/ directory):
-    // From sub/dir Tupfile, TUP_VARIANT_OUTPUTDIR = ../../build/sub/dir
-    // This is the relative path from source sub/dir to output build/sub/dir
-
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = intern("../../build/sub/dir");
@@ -1006,9 +991,6 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR expansion - in-tree variant", "[eval][variant]"
 
 TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
 {
-    // Test that TUP_VARIANT_OUTPUTDIR expands correctly in commands
-    // This simulates: echo -o $(TUP_VARIANT_OUTPUTDIR)/out.txt
-
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_variant_outputdir = intern("../../build/sub/dir");
@@ -1022,14 +1004,6 @@ TEST_CASE("TUP_VARIANT_OUTPUTDIR in command expansion", "[eval][variant]")
 
 TEST_CASE("TUP_VARIANTDIR vs TUP_VARIANT_OUTPUTDIR", "[eval][variant]")
 {
-    // TUP_VARIANTDIR: relative path to variant's version of *included file's* directory
-    // TUP_VARIANT_OUTPUTDIR: relative path to variant's version of *current Tupfile's* directory
-    //
-    // From tup test t8108:
-    // - TUP_CWD = ../../rules (relative to included file)
-    // - TUP_VARIANTDIR = ../../build/rules (variant's rules directory)
-    // - TUP_VARIANT_OUTPUTDIR = ../../build/sub/dir (variant's output for this Tupfile)
-
     auto vars = VarDb {};
     auto ctx = EvalContext { .vars = &vars };
     ctx.tup_cwd = intern("../../rules");

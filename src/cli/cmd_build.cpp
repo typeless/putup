@@ -197,7 +197,6 @@ auto collect_scope_crossing_inputs(
     auto& pool = pup::global_pool();
     auto result = Vec<StringId> {};
 
-    // Find commands whose directory is in scope
     auto in_scope_cmds = pup::NodeIdMap32 {};
     for (auto const& cmd : index.commands()) {
         auto const* dir_file = index.find_file_by_id(cmd.dir_id);
@@ -210,10 +209,6 @@ auto collect_scope_crossing_inputs(
         }
     }
 
-    // Derived from link_role rather than enumerated here, so a new link type joins this
-    // bypass by being classified once instead of by every walk remembering it — the omission
-    // that made a declared source input invisible to a scoped build (#200, #189). Ordering
-    // is excluded by the role, not by hand: order-only means existence, not content.
     for (auto const& edge : index.edges()) {
         if (!pup::graph::in_mask(edge.type, pup::graph::edge_mask::inputs)) {
             continue;
@@ -294,13 +289,10 @@ auto find_changed_files_with_implicit(
     auto& changed = scan.changed;
     auto& metrics = pup::thread_metrics();
 
-    // Racy-clean threshold: files modified within 1 second of index save
     auto const save_time_ns = old_index.save_time_ns();
     auto constexpr RACY_CLEAN_THRESHOLD_NS = std::int64_t { 1'000'000'000 };
 
     for (auto const& file : old_index.files()) {
-        // A ghost recorded with no content is one whose file was absent when the record was
-        // written, not one nothing watches: its appearance is a change like any other (#386).
         auto const is_ghost = file.type == pup::NodeType::Ghost && !pup::is_empty(file.path);
         auto const was_absent = is_ghost && file.content_hash == pup::ZERO_HASH;
         if (file.type != pup::NodeType::File && file.type != pup::NodeType::Generated && !is_ghost) {
@@ -310,13 +302,10 @@ auto find_changed_files_with_implicit(
         auto& pool = pup::global_pool();
         auto file_path_sv = pool.get(file.path);
 
-        // Generated paths carry the build-root prefix; scopes are source-relative
         auto scope_path_sv = file.type == pup::NodeType::Generated
             ? pool.get(pup::strip_path_prefix(file_path_sv, build_root))
             : file_path_sv;
 
-        // Skip files outside scopes (but always check Tupfiles, upstream deps,
-        // and implicit dependencies like headers from .d files)
         if (!scopes.empty() && !is_tupfile(file_path_sv)
             && !pup::is_path_in_any_scope(scope_path_sv, scopes)
             && !std::binary_search(upstream_files.begin(), upstream_files.end(), file_path_sv)
@@ -324,25 +313,18 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
-        // Excluded dirs are not parsed this run, so nothing can consume their
-        // changes; observing them would record state we have no authority over.
         if (excludes.is_ignored_dir(pup::path::parent(file_path_sv))) {
             continue;
         }
 
         ++metrics.files_checked;
-        // Past every skip above: this is the one place that decides the walk looked at a file,
-        // so it is the one place that can say so (#288).
         scan.examined.push_back(file.path);
 
-        // File resolution:
-        // All paths are now source-relative (generated files include build root, e.g., "build/program").
         auto file_path = file_path_sv;
         auto path = pup::path::is_absolute(file_path) ? file_path : pool.get(pup::path::join(source_root, file_path));
         ++metrics.stat_calls;
         auto stat_result = pup::platform::stat_file(path);
 
-        // Overlay: parse-time inputs live under config_root but are indexed source-relative.
         if (!stat_result && file.type == pup::NodeType::File
             && !config_root.empty() && config_root != source_root
             && !pup::path::is_absolute(file_path)) {
@@ -355,16 +337,12 @@ auto find_changed_files_with_implicit(
         }
 
         if (!stat_result) {
-            // Absent then, absent now: nothing happened to report.
             if (was_absent) {
                 continue;
             }
-            // No active rule produces this, so its *absence* is not a change; an appearance is,
-            // which is why this skip is reached only once the file is known to be gone.
             if (std::binary_search(inactive_outputs.begin(), inactive_outputs.end(), file.path, pup::handle_less)) {
                 continue;
             }
-            // Accounted for already: deleted and routed (#213), or read absent by its reader (#281).
             if (pup::has_flag(file.flags, pup::NodeFlags::AbsenceRouted)) {
                 continue;
             }
@@ -376,7 +354,6 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
-        // Size check (fast path)
         auto current_size = stat_result->size;
         if (current_size != file.size) {
             if (verbose) {
@@ -387,19 +364,16 @@ auto find_changed_files_with_implicit(
             continue;
         }
 
-        // Stat cache: skip hash if size + mtime match and not racy-clean
         auto const current_mtime_ns = stat_result->mtime_ns;
         auto const cached_mtime_ns = file.mtime_ns;
         auto const is_racy_clean = save_time_ns > 0
             && cached_mtime_ns >= save_time_ns - RACY_CLEAN_THRESHOLD_NS;
 
         if (!no_stat_cache && cached_mtime_ns != 0 && current_mtime_ns == cached_mtime_ns && !is_racy_clean) {
-            // Stat cache hit: size + mtime match, trust cached hash
             ++metrics.hashes_skipped;
             continue;
         }
 
-        // Content hash check (authoritative)
         if (file.content_hash != pup::ZERO_HASH) {
             auto hash_result = pup::sha256_file(path);
             if (!hash_result || *hash_result != file.content_hash) {
@@ -410,7 +384,6 @@ auto find_changed_files_with_implicit(
                 changed.push_back(pool.intern(file_path_sv));
             }
         } else {
-            // ZERO_HASH indicates hash wasn't computed - treat as changed to be safe
             if (verbose) {
                 print("  Changed (no hash): {}\n", file_path_sv);
             }
@@ -556,7 +529,6 @@ auto create_implicit_file(
         .parent_id = parent_id,
         .src_id = 0,
         .type = type,
-        // The run that reported this dep already saw it absent, so only its return is news (#281).
         .flags = present ? pup::NodeFlags::None : pup::NodeFlags::AbsenceRouted,
         .name = pool.intern(pup::path::filename(rel_sv)),
         .path = rel_path,
@@ -569,7 +541,7 @@ auto create_implicit_file(
     return file_id;
 }
 
-} // namespace
+}
 
 auto CarriedState::carry_for(StringId path) const -> pup::index::FileEntry const*
 {
@@ -609,7 +581,6 @@ auto serialize_graph_nodes(
         case pup::NodeType::Generated: {
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
             if (node_path.empty()) {
-                // Dropping a slot would shift every later load-derived id (id == position + 1).
                 index.add_file(pup::index::FileEntry {
                     .id = id,
                     .parent_id = pup::graph::get_parent_dir(g, id),
@@ -632,7 +603,6 @@ auto serialize_graph_nodes(
 
             auto file_path = pup::global_pool().get((type == pup::NodeType::Generated) ? pup::path::join(output_root, fs_path) : pup::path::join(source_root, node_path));
 
-            // Overlay: parse-time inputs live under config_root but are indexed source-relative.
             if (type == pup::NodeType::File && !config_root.empty()
                 && config_root != source_root && !pup::platform::exists(file_path)) {
                 auto config_path = pup::global_pool().get(pup::path::join(config_root, node_path));
@@ -667,8 +637,6 @@ auto serialize_graph_nodes(
             }
 
             auto& pool = pup::global_pool();
-            // Records that this build already routed the file's absence, so the next one does
-            // not read the same stat failure as news. The slot has to stay: id == position + 1.
             auto entry_flags = std::binary_search(deleted_stale.begin(), deleted_stale.end(), pool.intern(node_path), pup::handle_less)
                 ? node_flags | pup::NodeFlags::AbsenceRouted
                 : node_flags;
@@ -712,13 +680,9 @@ auto serialize_graph_nodes(
             break;
         }
         case pup::NodeType::Ghost: {
-            // A ghost that exists on disk but is produced by no rule is a
-            // foreign input (e.g. the variant's tup.config): record its content
-            // so change detection can see it.
             auto& pool = pup::global_pool();
             auto node_path = pup::graph::get_full_path(g, id, state.path_cache);
 
-            // An out-of-authority output arrives here as a ghost; the record keeps its owner (#369).
             auto recorded_type = type;
             auto path_id = pup::StringId::Empty;
             auto content_hash = pup::Hash256 {};
@@ -755,8 +719,6 @@ auto serialize_graph_nodes(
                 .mtime_ns = mtime_ns,
                 .content_hash = content_hash,
             });
-            // Like every other file-shaped arm: one path, one entry -- a discovered dependency
-            // naming this path must join this entry rather than mint a second one.
             if (!node_path.empty()) {
                 path_to_id.insert(pool.intern(node_path), id);
             }
@@ -765,7 +727,6 @@ auto serialize_graph_nodes(
         case pup::NodeType::Variable:
         case pup::NodeType::Group:
         case pup::NodeType::Root: {
-            // These node types must be in index to maintain consecutive ID sequence
             auto entry = pup::index::FileEntry {
                 .id = id,
                 .parent_id = pup::graph::get_parent_dir(g, id),
@@ -783,7 +744,6 @@ auto serialize_graph_nodes(
         case pup::NodeType::Command:
         case pup::NodeType::Condition:
         case pup::NodeType::Phi:
-            // Unreachable: all_nodes yields only file-space ids past the is_command filter.
             break;
         }
     }
@@ -973,10 +933,6 @@ auto process_implicit_deps(
                       was_generated(ctx.prior_generated, rel_path) ? pup::NodeType::Generated : pup::NodeType::File
                   );
 
-            // Only when nothing orders this command after the file. Ordering is transitive —
-            // a codegen emitting one declared and one discovered output orders its consumer
-            // through the declared one — so this asks reachability, not adjacency: enumerating
-            // path shapes is how the two previous attempts at this taxed correct builds.
             auto ordered_after_dep = [&](pup::NodeId file_id, pup::NodeId consumer) -> bool {
                 for (auto i = std::size_t { 0 }; i < ctx.ordered_memo_deps.size(); ++i) {
                     if (ctx.ordered_memo_deps[i] == file_id) {
@@ -1194,10 +1150,6 @@ auto preserve_old_implicit_edges(
         }
     }
 
-    // Command ids are positional and shift across builds (e.g. when an earlier-created
-    // command is removed), so the old edge's `to` id cannot be trusted to mean the same
-    // command; re-resolve each carried edge's command through the same join every other
-    // consumer uses.
     auto const new_lookup = index_command_lookup(ctx.index);
 
     for (auto const& edge : old_index.edges()) {
@@ -1205,8 +1157,6 @@ auto preserve_old_implicit_edges(
             continue;
         }
 
-        // If the command is gone, drop the edge. If it survived and ran, the branch below
-        // drops it too: whatever that run reported is now the whole truth, empty included.
         auto const* old_cmd = old_index.find_command_by_id(edge.to);
         if (!old_cmd) {
             continue;
@@ -1272,8 +1222,6 @@ auto is_dir_authoritative(
     if (contains_id(parsed_dirs, dir_str_id)) {
         return true;
     }
-    // A dir under a pruned nested-project root has a Tupfile this run never
-    // saw; its absence from available_dirs does not mean it was deleted.
     if (pup::is_path_in_any_scope(dir_path, pruned_dirs)) {
         return false;
     }
@@ -1344,7 +1292,6 @@ auto merge_out_of_scope_commands(
         return new_id;
     };
 
-    // Content that moved, not content that vanished (#247): the record stops claiming currency, not ownership.
     auto dep_state_changed = [&](pup::NodeId old_id) -> bool {
         auto const* old_file = old_index.find_file_by_id(old_id);
         if (!old_file || pup::is_empty(old_file->path)) {
@@ -1368,13 +1315,11 @@ auto merge_out_of_scope_commands(
                 return true;
             }
         }
-        // Sole witness for non-operand inputs (order-only, group, implicit, sticky).
         for (auto const* edge : old_index.edges_to(cmd.id)) {
             if (dep_state_changed(edge->from)) {
                 return true;
             }
         }
-        // An extra output is owned by its edge alone, so the operand loop above cannot see it (#370).
         for (auto const* edge : old_index.edges_from(cmd.id)) {
             auto const* file = old_index.find_file_by_id(edge->to);
             if (file && file->type == pup::NodeType::Generated && dep_state_changed(edge->to)) {
@@ -1392,12 +1337,8 @@ auto merge_out_of_scope_commands(
         if (find_joined(new_lookup, index_command_address(old_index, cmd))) {
             continue;
         }
-        // Marked, not dropped: dropping retracts which outputs this command owns along with the
-        // claim that they are current, and only the second is in doubt (#241).
         auto must_rerun = cmd.must_rerun || any_dep_changed(cmd);
 
-        // Omitted, not dropped (#243): an unresolvable operand is one this record cannot
-        // describe, but the outputs that did resolve are still owned by nothing else.
         auto unresolved = false;
         auto new_dir_id = pup::NodeId { 0 };
         if (cmd.dir_id != pup::NodeId { 0 }) {
@@ -1431,8 +1372,6 @@ auto merge_out_of_scope_commands(
         auto new_inputs = resolve_operands(cmd.inputs);
         auto new_order_only_inputs = resolve_operands(cmd.order_only_inputs);
         auto new_outputs = resolve_operands(cmd.outputs);
-        // An operand it could not carry means the record no longer describes what ran, so it
-        // keeps its outputs but stops claiming they are current.
         must_rerun = must_rerun || unresolved;
 
         auto new_cmd_id = pup::node_id::make_command(static_cast<std::uint32_t>(ctx.index.commands().size()) + 1);
@@ -1453,7 +1392,6 @@ auto merge_out_of_scope_commands(
     }
 
     for (auto const& edge : old_index.edges()) {
-        // Implicit edges are carried by preserve_old_implicit_edges instead.
         if (edge.type == pup::LinkType::Implicit) {
             continue;
         }
@@ -1543,8 +1481,6 @@ auto propagate_command_effect(
         if (output_path_sv.empty()) {
             continue;
         }
-        // Set before push_path decides: a caller that dedups an already-changed path has still
-        // found an output, and forcing the command as well would be wrong.
         has_output_path = true;
         push_path(pup::global_pool().intern(output_path_sv));
     }
@@ -1636,7 +1572,6 @@ auto build_index(
     }
     std::sort(carried.refreshed.begin(), carried.refreshed.end(), pup::handle_less);
 
-    // Serialize file/directory nodes from the build graph
     auto [index, path_to_id] = serialize_graph_nodes(state, source_root, config_root, output_root, deleted_stale, carried, prior_generated);
 
     auto cmd_remap = serialize_command_nodes(state, index, path_to_id, must_rerun_cmds);
@@ -1687,19 +1622,12 @@ auto build_index(
         .prior_generated = prior_generated,
     };
 
-    // Process discovered implicit dependencies from compiler output
     process_implicit_deps(discovered_deps, ctx);
 
-    // After the discovered deps, so a merge-created copy of an old entry cannot shadow the
-    // fresh one this build just stat'd — a carried NodeFlags::AbsenceRouted would then discharge a
-    // later real deletion as already routed, and the consumer would never run (#237). Still
-    // before preserve_old_implicit_edges, which re-attaches carried edges by identity and so
-    // must see the merged records; that, not the ordering against the deps, is the constraint.
     if (old_index) {
         merge_out_of_scope_commands(*old_index, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs, ctx);
     }
 
-    // Preserve implicit edges from the old index for commands that weren't rebuilt
     if (old_index) {
         preserve_old_implicit_edges(*old_index, executed_cmds, ctx);
     }
@@ -1766,29 +1694,13 @@ auto reject_shadowed_sources(
     auto& pool = pup::global_pool();
     auto build_root_name = pup::graph::get_build_root_name(g);
 
-    // Only in-tree builds can destroy anything, now that no output may leave the build
-    // hierarchy (#385): out-of-tree, %o resolves under the build root, so a rule whose output
-    // path collides with a committed file writes beside it rather than over it. The collision
-    // is still confusing there -- the source becomes unreadable through that path -- but it is
-    // not data loss, and rejecting on it fails builds that cannot hurt anyone (a second build
-    // dir sees the first one's artifacts).
     if (!build_root_name.empty()) {
         return {};
     }
 
-    // What the previous build's record settles. `Known`: a path it recorded as a source File is
-    // a source whatever is on disk now, and a path it recorded while producing nothing at it is
-    // owned by nobody (#389); absence stays undecidable -- a generated file it does not mention
-    // is what a scoped build leaves behind for out-of-scope outputs -- which is why the test
-    // below is positive. `NeverBuilt`: nothing we produced can be on disk yet, so anything
-    // sitting at an output's path is a source. `Lost`: a build happened here and putup cannot
-    // tell either way, which is the only case that says so out loud.
     auto const known = prior.kind == pup::index::PriorPaths::Kind::Known;
     auto shadowed = pup::Vec<StringId> {};
 
-    // Guard-satisfied producers only, like every other command walk here: an inactive
-    // conditional branch declares outputs it will never write, and rejecting on those
-    // fails projects that build fine.
     for (auto cmd_id : pup::graph::all_nodes(g)) {
         if (!pup::node_id::is_command(cmd_id) || !pup::graph::is_guard_satisfied(g, cmd_id)) {
             continue;
@@ -1799,15 +1711,10 @@ auto reject_shadowed_sources(
                 continue;
             }
             auto rel_sv = pool.get(pup::strip_path_prefix(full_path_sv, build_root_name));
-            // The two-stage configure design has a rule produce the tup.config that the same
-            // build then reads as configuration. Match the whole basename: a suffix test also
-            // exempts anything merely ending in those characters, e.g. mytup.config.
             if (rel_sv == "tup.config" || rel_sv.ends_with("/tup.config")) {
                 continue;
             }
 
-            // On disk in either input tree. Without this the printed remedy -- delete the file
-            // and try again -- would not clear the error, because the index still records it.
             auto abs_sv = pool.get(pup::path::join(source_root, rel_sv));
             auto on_disk = pup::platform::exists(abs_sv);
             if (!on_disk && !config_root.empty() && config_root != source_root) {
@@ -1869,7 +1776,6 @@ auto reject_unresolved_ghosts(
     auto build_root_name = pup::graph::get_build_root_name(g);
 
     for (auto id : pup::graph::nodes_of_type(g, pup::NodeType::Ghost)) {
-        // Guard-satisfied consumers only, like every other command walk here (#386).
         auto consumed = false;
         pup::graph::edges_for_each(
             g, id, pup::graph::EdgeDirection::Forward, pup::graph::edge_mask::consumers, [&](pup::NodeId consumer) { consumed = consumed || pup::graph::is_guard_satisfied(g, consumer); }
@@ -1892,8 +1798,6 @@ auto reject_unresolved_ghosts(
 
         auto err = pup::Buf {};
         err.fmt("Missing input file (unresolved ghost): {}\n", path_sv);
-        // -a only pulls in rules this build left out of scope; when nothing was left out,
-        // offering it sends the user round the same failure (#222).
         err.append(all_deps_would_help ? "  Hint: try building with -a to include upstream dependencies" : "  Hint: no rule in this build produces it — the rule that did may have been removed");
         return pup::make_error<void>(pup::ErrorCode::ParseError, err.view());
     }
@@ -1931,9 +1835,6 @@ auto detect_new_commands(
         auto const joined = find_joined(old_lookup, address);
         auto const* previous = joined ? idx.find_command_by_id(*joined) : nullptr;
 
-        // A record that is not evidence outranks the signature: the command must run again even
-        // when nothing about it changed, and its outputs must be treated as changed so consumers
-        // of whatever it half-wrote, or never wrote, are rescheduled too.
         auto signature = pup::graph::compute_command_signature(g, id, state.path_cache);
         auto must_rerun = previous != nullptr && previous->must_rerun;
         if (must_rerun) {
@@ -1975,8 +1876,6 @@ auto reconcile_input_set(
     auto const& g = state.graph;
     auto result = RoutingDelta {};
 
-    // Every typed path, so "left the graph" below means gone, not merely not-a-source:
-    // a generated file the user deleted is still a graph node and must not read as removed.
     auto graph_paths = pup::Vec<StringId> {};
     auto new_sources = pup::Vec<StringId> {};
     for (auto id : pup::graph::all_nodes(g)) {
@@ -2027,8 +1926,6 @@ auto reconcile_input_set(
             }
         );
     }
-    // Explicit comparator: libc++ extern-templates std::__sort for unsigned int*,
-    // so the default form links against a libc++ we deliberately do not have.
     std::sort(orphaned.begin(), orphaned.end(), [](pup::NodeId a, pup::NodeId b) { return a < b; });
     orphaned.erase(std::unique(orphaned.begin(), orphaned.end()), orphaned.end());
 
@@ -2070,15 +1967,10 @@ auto remove_stale_outputs(
     auto deleted = pup::Vec<pup::StringId> {};
     auto retired_commands = false;
     for (auto const& cmd : idx.commands()) {
-        // Only delete outputs of a command whose directory we have authoritative
-        // knowledge of this run; anything else is preserved.
         if (!is_dir_authoritative(idx, cmd.dir_id, parse_scopes, excludes, parsed_dirs, available_dirs, pruned_dirs)) {
             continue;
         }
 
-        // Staleness is per file, not per command: a rule that drops one of its outputs
-        // still joins through the ones it kept, so asking only "did this command survive"
-        // would leave the dropped file owned by nothing and never delete it.
         for (auto const* edge : idx.edges_from(cmd.id)) {
             auto const* file = idx.find_file_by_id(edge->to);
             if (!file || file->type != pup::NodeType::Generated) {
@@ -2088,7 +1980,6 @@ auto remove_stale_outputs(
                 continue;
             }
 
-            // Paths now include build root (e.g., "build/program")
             auto file_path_sv = pup::global_pool().get(file->path);
             auto abs_path = pup::global_pool().get(pup::path::join(source_root, file_path_sv));
             if (pup::platform::exists(abs_path)) {
@@ -2111,7 +2002,6 @@ auto remove_stale_outputs(
         if (!find_joined_command(join, idx, cmd)) {
             retired_commands = true;
             if (verbose) {
-                // Not graph::command_label: the command has left the graph, but the index keeps its operands, so a pattern shared by a foreach still names one command.
                 auto label = pup::is_empty(cmd.display) ? pup::index::get_command_string(idx, cmd) : cmd.display;
                 auto const* dir = idx.find_file_by_id(cmd.dir_id);
                 auto dir_sv = dir ? pup::global_pool().get(dir->path) : std::string_view {};
@@ -2197,11 +2087,6 @@ auto build_single_variant(
     }
     auto scopes = compute_build_scopes(opts, *layout);
 
-    // Only scope parsing when explicit targets are given.
-    // CWD-derived scoping should still parse all Tupfiles so that
-    // out-of-scope Tupfile changes are detected for incremental builds.
-    // When -a is set, always parse all Tupfiles so that cross-directory
-    // producers are discovered and ghost nodes get resolved.
     auto parse_scopes = (opts.targets.empty() || opts.include_all_deps)
         ? pup::Vec<pup::StringId> {}
         : scopes;
@@ -2220,8 +2105,6 @@ auto build_single_variant(
     };
 
     auto result = build_context(opts, ctx_opts);
-    // build_context loads the old index as part of its work; that span is timed
-    // separately, so discount it here to keep the phases disjoint.
     pup::thread_metrics().parse_time = std::chrono::duration_cast<std::chrono::microseconds>(pup::SteadyClock::now() - variant_start)
         - pup::thread_metrics().index_load_time;
     if (!result) {
@@ -2232,11 +2115,8 @@ auto build_single_variant(
     auto& ctx = *result;
     auto const refused_dir_count = std::size_t { ctx.refused_dirs().size() };
     auto& bs = ctx.graph();
-    // No early exit on an empty graph: having nothing to run is not having nothing to clean up (#231).
     auto num_commands = std::size_t { pup::graph::nodes_of_type(bs.graph, pup::NodeType::Command).size() };
 
-    // One line, not one per rule: a warning that fires on every rule of a green build teaches
-    // everyone to scroll past warnings. The per-object findings live in `parse`.
     if (auto unscanned = check_unscanned_compiles(bs.graph, bs.path_cache); !unscanned.empty()) {
         vprint(
             variant_name,
@@ -2264,9 +2144,6 @@ auto build_single_variant(
     auto index_path = pup::global_pool().get(ctx.layout().index_path());
     auto const* old_idx_ptr = ctx.old_index();
 
-    // A record too old for read_index still says which paths it recorded as sources; the version
-    // gate retracts its currency, not that (#291). Nothing recovered this way is ever loaded as
-    // `old_idx_ptr` -- it answers this one question and dies here.
     auto const prior = old_idx_ptr != nullptr
         ? pup::index::prior_paths(*old_idx_ptr)
         : pup::index::read_prior_paths(index_path);
@@ -2282,23 +2159,16 @@ auto build_single_variant(
         return EXIT_FAILURE;
     }
     auto use_incremental = false;
-    // Carries "has not succeeded since it last failed": seeded from the previous index, cleared
-    // only by a successful run. A build in which the command does not run at all -- a target or
-    // scoped build -- must not forget it.
     auto must_rerun_cmds = pup::NodeIdMap32 {};
     auto changed_files = pup::Vec<StringId> {};
-    // What the comparison below looked at, and so the only files this build may restate (#288).
     auto examined_files = pup::Vec<StringId> {};
     auto forced_cmds = pup::Vec<pup::NodeId> {};
     auto deleted_stale = pup::Vec<pup::StringId> {};
-    // Outlives the block only so the ordering can be derived after the up-to-date exit below.
     auto join = CommandLookup {};
 
     if (old_idx_ptr) {
         auto const& idx = *old_idx_ptr;
 
-        // Build the identity → NodeId map: the cross-build join key for commands.
-        // Must happen after parsing (operands set) but before incremental logic.
         auto cmd_index_start = pup::SteadyClock::now();
         join = graph_command_lookup(bs);
         auto cmd_index_elapsed = pup::SteadyClock::now() - cmd_index_start;
@@ -2309,8 +2179,6 @@ auto build_single_variant(
             upstream_files = pup::graph::collect_upstream_files(bs, scopes);
         }
 
-        // Always include implicit deps (headers from .d files) for in-scope
-        // commands, even if the headers live outside the scoped directories.
         auto scope_crossing_inputs = Vec<StringId> {};
         if (!scopes.empty()) {
             scope_crossing_inputs = collect_scope_crossing_inputs(idx, scopes);
@@ -2334,8 +2202,6 @@ auto build_single_variant(
             }
         }
 
-        // Before detection, not after: a deleted output is a change like any other, and
-        // a consumer reaching it order-only is only notified if detection sees it gone.
         auto stale_start = pup::SteadyClock::now();
         auto stale_result = remove_stale_outputs(
             idx,
@@ -2422,7 +2288,6 @@ auto build_single_variant(
             }
         }
 
-        // A retired record is not "nothing to do": only the write below persists the retirement (#245).
         if (changed_files.empty() && forced_cmds.empty() && !retired_commands) {
             if (refused_dir_count > 0) {
                 report_refused_dirs(variant_name, ctx.refused_dirs());
@@ -2482,7 +2347,6 @@ auto build_single_variant(
             if (use_tty_progress) {
                 pup::exec::finalize_progress(prev_lines);
             }
-            // The command, not the display: "CC main.o" does not say which flags broke, and this is the only line a build prints of what actually ran.
             veprint(variant_name, "FAILED: {}\n", pool.get(job.command));
             if (!pup::is_empty(job_result.output)) {
                 auto output_sv = pool.get(job_result.output);
@@ -2494,7 +2358,6 @@ auto build_single_variant(
             ? job_result.deps_for_command
             : job.id;
         if (job_result.success) {
-            // Recorded even when it discovered nothing: an empty report is a report, and treating it as silence carried dead edges forever (#224).
             executed_cmds.push_back(target_id);
         }
 
@@ -2508,7 +2371,6 @@ auto build_single_variant(
                 auto to_resolve = pup::path::is_absolute(dep_sv)
                     ? dep_sv
                     : pool.get(pup::path::join(working_dir_sv, dep_sv));
-                // Dropping a dep loses an edge no later build re-derives, so neither arm is gated on -v.
                 auto resolved_result = pup::platform::canonical(to_resolve);
                 if (!resolved_result) {
                     eprint("Warning: Skipping dependency '{}': {}\n", dep_sv, resolved_result.error().msg());
@@ -2524,7 +2386,6 @@ auto build_single_variant(
                     }
                     deps.push_back(pool.intern(rel_sv));
                 } else {
-                    // Recorded, not ignored: tup drops out-of-tree deps unless --full-deps, putup tracks them (DESIGN.md).
                     deps.push_back(*resolved_result);
                 }
             }
@@ -2537,30 +2398,23 @@ auto build_single_variant(
         }
     });
 
-    scheduler.on_progress([&](std::size_t /* done */, std::size_t total) {
+    scheduler.on_progress([&](std::size_t, std::size_t total) {
         progress.total = total;
     });
 
-    // Identify config-generating commands to exclude from regular build
-    // (config rules should only run during 'pup configure')
     auto config_cmds = find_config_commands(bs, pup::global_pool().get(ctx.layout().source_root));
     auto config_cmd_ids = NodeIdMap32 {};
     for (auto const& cfg : config_cmds) {
         config_cmd_ids.set(cfg.cmd_id, 1);
-        // Nothing here will ever run a config rule, so a needing-to-run record on one is undischargeable.
         must_rerun_cmds.remove(cfg.cmd_id);
     }
 
-    // Past the up-to-date exit, not with the rest of the incremental work: this is one pair per
-    // recorded discovery, and a build that schedules nothing would derive all of them to run none.
     auto injected_ordering = old_idx_ptr ? collect_discovered_ordering(*old_idx_ptr, join) : pup::Vec<pup::OrderingEdge> {};
 
     auto start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
 
-    // Composable filter: layer independent concerns, intersect when combined
     auto filter = BuildFilter {};
 
-    // Same pairs the scheduler gets, but kept on contradiction: over-routing costs a run, not the build.
     if (use_incremental) {
         filter.intersect_with(pup::graph::collect_affected_commands(bs.graph, changed_files, forced_cmds, injected_ordering));
     }
@@ -2577,7 +2431,6 @@ auto build_single_variant(
         filter.intersect_with(std::move(scope_cmds));
     }
 
-    // Exclude config-generating commands (they run during configure, not build)
     if (!config_cmds.empty()) {
         auto non_config = pup::NodeIdMap32 {};
         for (auto id : pup::graph::all_nodes(bs.graph)) {
@@ -2588,7 +2441,6 @@ auto build_single_variant(
         filter.intersect_with(std::move(non_config));
     }
 
-    // A command this build means to run is unverified until it succeeds: an abort strands or kills it silently (#304).
     for (auto id : pup::graph::all_nodes(bs.graph)) {
         if (!node_id::is_command(id) || !pup::graph::is_guard_satisfied(bs.graph, id)) {
             continue;
@@ -2596,7 +2448,6 @@ auto build_single_variant(
         if (auto const* intended = filter.ptr(); intended != nullptr && !intended->contains(id)) {
             continue;
         }
-        // Nothing here will ever run a config rule, so a mark on one is undischargeable (as above).
         if (config_cmd_ids.contains(id)) {
             continue;
         }
@@ -2606,7 +2457,6 @@ auto build_single_variant(
     auto build_result = scheduler.build(bs, filter.ptr(), injected_ordering);
     auto end = pup::SteadyClock::time_point { pup::SteadyClock::now() };
     auto duration = std::chrono::milliseconds { std::chrono::duration_cast<std::chrono::milliseconds>(end - start) };
-    // The scheduler times its own job-list construction; the rest of the span is execution.
     pup::thread_metrics().exec_time = std::chrono::duration_cast<std::chrono::microseconds>(end - start)
         - pup::thread_metrics().job_list_time;
 
@@ -2629,10 +2479,8 @@ auto build_single_variant(
             vprint(variant_name, "Nothing to do.\n");
         }
     } else if (stats.failed_jobs > 0) {
-        // Ahead of the dry-run branch so that a scheduler which ever fails a dry job reports it.
         vprint(variant_name, "Build completed: {} commands ({} failed) in {}ms\n", stats.completed_jobs, stats.failed_jobs, duration.count());
     } else if (opts.dry_run) {
-        // "Would run", matching clean's "Would remove": a dry run has completed nothing.
         vprint(variant_name, "Would run: {} commands\n", stats.completed_jobs);
     } else {
         vprint(variant_name, "Build completed: {} commands in {}ms\n", stats.completed_jobs, duration.count());
@@ -2645,7 +2493,6 @@ auto build_single_variant(
     auto final_index = std::optional<pup::index::Index> {};
     auto index_saved = true;
     if (!opts.dry_run) {
-        // Persisting a partial failure is safe because must_rerun records it, not because a failed command's outputs are missing.
         auto output_root_str = pup::global_pool().get(ctx.layout().output_root);
         auto index_rebuild_start = pup::SteadyClock::time_point { pup::SteadyClock::now() };
         auto index = pup::index::Index { build_index(
@@ -2692,15 +2539,14 @@ auto build_single_variant(
         }
     }
 
-    // A build owes a record of what it ran: without one the next build cannot tell it happened.
     return stats.failed_jobs > 0 || !index_saved || refused_dir_count > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-} // anonymous namespace
+}
 
 auto cmd_build(Options const& opts) -> int
 {
     return for_each_variant(opts, build_single_variant, "Building");
 }
 
-} // namespace pup::cli
+}
