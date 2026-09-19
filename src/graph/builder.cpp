@@ -717,6 +717,7 @@ struct RuleInput {
     Kind kind;
     StringId value;
     std::uint32_t token = 0;
+    StringId glob = StringId::Empty;
 };
 
 /// The only way to build a Kind::File: takes a project-relative path and puts it
@@ -762,6 +763,7 @@ auto expand_glob_pattern(
     request_demand_driven_parse(*ctx.eval, abs_pattern_dir_sv);
 
     auto pattern_path_sv = is_empty(ctx.current_dir) ? path : pool.get(pup::path::normalize(pool.get(pup::path::join(str(ctx.current_dir), path))));
+    auto pattern_id = pool.intern(pattern_path_sv);
     auto glob = parser::Glob { pattern_path_sv };
     for (auto id : nodes_of_type(ctx.state->graph, NodeType::Generated)) {
         auto node_path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
@@ -780,6 +782,10 @@ auto expand_glob_pattern(
         if (glob.matches(pool.get(seeded))) {
             matches.push_back(RuleInput { RuleInput::Kind::File, seeded });
         }
+    }
+
+    for (auto& match : matches) {
+        match.glob = pattern_id;
     }
 
     // Sorting and deduping across two path spaces would order by where the build tree lives.
@@ -1954,14 +1960,12 @@ auto expand_rule(
     ctx.used_config_vars.clear();
     ctx.used_env_vars.clear();
 
-    auto glob_pattern = StringId::Empty;
     auto operands = Vec<RuleInput> {};
     auto operand_tokens = Vec<std::uint32_t> {};
     auto file_inputs = Vec<StringId> {};
     for (auto const& inp : inputs) {
         switch (inp.kind) {
         case RuleInput::Kind::Pattern:
-            glob_pattern = inp.value;
             break;
         case RuleInput::Kind::File:
             operands.push_back(inp);
@@ -1989,8 +1993,6 @@ auto expand_rule(
     auto primary_input_sv = cmd_inputs.empty() ? std::string_view {} : str(cmd_inputs[0]);
     auto current_dir_name
         = is_empty(ctx.current_dir) ? std::string_view {} : pup::path::filename(str(ctx.current_dir));
-    auto glob_match_id = is_empty(glob_pattern) ? StringId::Empty
-                                                : parser::glob_match_extract(str(glob_pattern), primary_input_sv);
 
     auto all_inputs_sv = Vec<std::string_view> {};
     all_inputs_sv.reserve(cmd_inputs.size());
@@ -2006,7 +2008,9 @@ auto expand_rule(
             ? std::optional { parser::path_extension(primary_input_sv) }
             : std::nullopt,
         .input_dir = current_dir_name,
-        .glob_match = str(glob_match_id),
+        .glob_match = operands.empty() || is_empty(operands[0].glob)
+            ? std::nullopt
+            : std::optional { str(parser::glob_match_extract(str(operands[0].glob), primary_input_sv)) },
         .all_inputs = input_tokens,
     };
 
@@ -2405,6 +2409,11 @@ auto prune_duplicate_inputs(Vec<RuleInput>& operands) -> void
     kept.reserve(operands.size());
     for (auto const& inp : operands) {
         if (inp.kind != RuleInput::Kind::Pattern && !seen.insert(to_underlying(inp.value))) {
+            for (auto& earlier : kept) {
+                if (earlier.kind == inp.kind && earlier.value == inp.value && is_empty(earlier.glob)) {
+                    earlier.glob = inp.glob;
+                }
+            }
             continue;
         }
         kept.push_back(inp);

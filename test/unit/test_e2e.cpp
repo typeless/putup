@@ -14903,6 +14903,395 @@ SCENARIO("A percent-e in a foreach rule names each file's last extension", "[e2e
     }
 }
 
+SCENARIO("A percent-g in a rule with no inputs or several is refused", "[e2e][build]")
+{
+    GIVEN("a rule with no inputs whose command spells %g")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> echo 'g=[%g]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule with no inputs whose output spells %g")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": |> touch %o |> %g.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule whose only inputs are order-only")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": | a.c |> echo 'g=[%g]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g used in rule pattern and no input files were specified") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule over two named files")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile", ": a.c b.c |> echo 'g=[%g]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having several inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g is only valid with one file") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule that is not foreach over a glob matching two files")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile", ": *.c |> echo 'g=[%g]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having several inputs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g is only valid with one file") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-g in a rule with one input and no glob is refused", "[e2e][build]")
+{
+    GIVEN("a foreach rule over a named file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+        f.write_file("Tupfile", ": foreach a.c |> echo 'g=[%g]' > %o |> %B.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule that is not foreach over a named file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": a.c |> echo 'g=[%g]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a foreach rule over a named file whose output spells %g")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": foreach a.c |> cp %f %o |> %g.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a foreach rule over a named file whose display string spells %g")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": foreach a.c |> ^ X %g^ cp %f %o |> %B.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a rule over a named file beside a glob that matched nothing")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": *.h a.c |> echo 'g=[%g]' > %o |> out.txt\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a foreach rule over a glob and a named file, at the named file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.h", "");
+        f.write_file("Tupfile", ": foreach *.c b.h |> echo 'g=[%g]' > %o |> %B.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a foreach rule over one variable that carries a glob and a named file, at the named file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.h", "");
+        f.write_file("Tupfile", "SRCS = *.c b.h\n: foreach $(SRCS) |> echo 'g=[%g]' > %o |> %B.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+
+    GIVEN("a bang macro whose command spells %g, used by a foreach rule over a named file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", "!m = |> echo 'g=[%g]' > %o |>\n: foreach a.c |> !m |> %B.out\n");
+
+        WHEN("the project is configured")
+        {
+            auto result = f.init();
+
+            THEN("the Tupfile is rejected for having no glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                auto const combined = result.stdout_output + result.stderr_output;
+                REQUIRE(combined.find("%g flag found no globs") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-g names the text a single glob input's star matched", "[e2e][build]")
+{
+    GIVEN("a rule that is not foreach over a glob matching one file, and a foreach rule whose star matched nothing")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": *.c |> echo 'g=[%g]' > %o |> one.txt\n: foreach *a.c |> echo 'g=[%g]' > %o |> %B.out\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%g is the matched text, empty where the star matched nothing")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("one.txt") == "g=[a]\n");
+                REQUIRE(f.read_file("a.out") == "g=[]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-g names the match of the glob that produced its input", "[e2e][build]")
+{
+    GIVEN("a foreach rule over two globs, and one over a variable carrying the same two")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.h", "");
+        f.write_file("Tupfile", "SRCS = *.c *.h\n: foreach *.c *.h |> echo 'g=[%g]' > %o |> %B.out\n: foreach $(SRCS) |> echo 'g=[%g]' > %o |> %B.var\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("each file's %g comes from its own glob")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.out") == "g=[a]\n");
+                REQUIRE(f.read_file("b.out") == "g=[b]\n");
+                REQUIRE(f.read_file("a.var") == "g=[a]\n");
+                REQUIRE(f.read_file("b.var") == "g=[b]\n");
+            }
+        }
+    }
+
+    GIVEN("a rule that is not foreach over two globs of which only the first matched")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": *.c *.h |> echo 'g=[%g]' > %o |> out.txt\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("%g is the first glob's match")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "g=[a]\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A percent-g over a file a rule names both by a glob and by name is the glob's match", "[e2e][build]")
+{
+    GIVEN("four rules naming a.c by a glob and by name, in both orders, with and without foreach")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile",
+            ": *.c a.c |> echo 'g=[%g]' > %o |> glob_first.txt\n"
+            ": a.c *.c |> echo 'g=[%g]' > %o |> name_first.txt\n"
+            ": foreach *.c a.c |> echo 'g=[%g]' > %o |> %B.glob_first\n"
+            ": foreach a.c *.c |> echo 'g=[%g]' > %o |> %B.name_first\n");
+        REQUIRE(f.init().success());
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("every rule writes the glob's match")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("glob_first.txt") == "g=[a]\n");
+                REQUIRE(f.read_file("name_first.txt") == "g=[a]\n");
+                REQUIRE(f.read_file("a.glob_first") == "g=[a]\n");
+                REQUIRE(f.read_file("a.name_first") == "g=[a]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Numbered input flags name the basename and the basename without extension", "[e2e][build]")
 {
     GIVEN("a rule whose input sits in a subdirectory and whose command spells %1f, %1b and %1B")

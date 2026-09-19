@@ -1013,7 +1013,7 @@ Pattern flags are placeholders expanded at build time.
 | `%B` | Basename of every input, without extension | `src/foo.c bar.c` → `foo bar` |
 | `%e` | Extension of the current file — foreach rules only, and only for files that have one | `foo.c` → `c` |
 | `%d` | Directory name | `src/foo.c` → `src` |
-| `%g` | Glob match portion (foreach) | `*_test.c` + `foo_test.c` → `foo` |
+| `%g` | Text the glob matched — rules with exactly one input, and only when a glob produced it | `*_test.c` + `foo_test.c` → `foo` |
 
 **Numbered Inputs/Outputs:**
 | Flag | Description |
@@ -2836,7 +2836,7 @@ CONFIG_RELEASE_LDFLAGS=-Wl,--gc-sections
 | `%B` | Basename no ext, every input | `src/foo.c bar.c` | `foo bar` |
 | `%e` | Extension (foreach, file must have one) | `foo.c` | `c` |
 | `%d` | Directory | `src/foo.c` | `src` |
-| `%g` | Glob match (foreach) | `*_test.c` + `foo_test.c` | `foo` |
+| `%g` | Glob match (one glob-produced input) | `*_test.c` + `foo_test.c` | `foo` |
 
 **Output Flags:**
 

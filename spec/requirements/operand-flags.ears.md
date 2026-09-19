@@ -41,6 +41,26 @@ spaces.
 While expanding `%e` in a foreach rule, putup shall expand it to the text after the last dot in
 the current file's name.
 
+### REQ-OPERAND-GLOB-MATCH-SPELLING
+
+- conformance: tup-conformant
+- reference: upstream records, for every input a glob pattern produced, the span of the file's name each of the pattern's wildcards matched, and spells `%g` as the first wildcard's span (`build_name_list_cb`, `glob_parse`; `tup_printf`, the `%g` branch). The span can be empty. Measured against tup: `: *.c |>` over the one file `a.c` writes `g=[a]`, and `: foreach *a.c |>` over `a.c` writes `g=[]`. putup's extraction reads only the first `*` and takes what follows it as a literal suffix, so this requirement covers that shape only: `foreach ?.c`, `foreach [ab].c` and `foreach *_*.c` write `g=[]` where tup writes the first wildcard's span, a separate defect found in the #465 review (#465)
+- discharge: test "Scenario: A percent-g names the text a single glob input's star matched"
+- discharge: test "Evaluator pattern expansion - glob match"
+
+While expanding `%g` in a rule whose one input a glob produced, putup shall expand it to the
+text that glob's `*` matched in the input's name, even when that text is empty.
+
+### REQ-OPERAND-GLOB-MATCH-OWN-GLOB
+
+- conformance: tup-conformant
+- reference: upstream matches each input against the path element that produced it, not against any other glob in the rule: `nl_add_path` hands each element's own text to `build_name_list_cb`, which records that element's match on the entry (`args.globstr`, `nle->globcnt`). A variable's words are separate elements. Measured against tup: `: foreach *.c *.h |>` over `a.c` and `b.h` writes `g=[a]` and `g=[b]`, and so does the same list carried in one `$(SRCS)`; `: *.c *.h |>` over `a.c` alone writes `g=[a]`. putup kept one pattern per rule, the last written, and matched the input against it, so every input an earlier glob produced wrote nothing (#458, #465)
+- discharge: test "Scenario: A percent-g names the match of the glob that produced its input"
+
+While expanding `%g` for an input a glob produced, putup shall match the input against the
+glob that produced it, whatever other globs the rule names before or after it, and whether
+or not they arrived in one variable.
+
 ### REQ-OPERAND-NUMBER-NAMES-A-WRITTEN-TOKEN
 
 - conformance: tup-conformant
@@ -129,6 +149,26 @@ If a rule spells `%Ni`, then putup shall reject the Tupfile naming the issue tha
 
 If a rule spells `%e` in its command, display or outputs and it is not a foreach rule, or its
 current file's name has no extension, then putup shall reject the Tupfile.
+
+### REQ-OPERAND-GLOB-MATCH-SINGLE-GLOB-INPUT
+
+- conformance: tup-conformant
+- reference: upstream refuses `%g` in three orders: no inputs, then more than one input, then one input that no glob produced, each with its own message (`tup_printf`, the `%g` branch, guarded on `nl->num_entries` and `nl->globcnt`). A rule reaches the third refusal whether or not it is foreach, since a named file has no wildcard to match, and a named file beside a glob in the same rule, or in the same variable, is still one no glob produced. Order-only inputs are not counted. putup expanded `%g` to the primary input's match in any rule, or to nothing, so a rule over several files ran with the match of whichever sorted first; measured against tup for a rule with no inputs, with only order-only inputs, over two named files, over a glob matching two files, over a glob plus a named file, over one named file with and without foreach, over a named file beside a glob that matched nothing, at the named file of a foreach over a glob and a name, written out and carried in one variable, a bang macro's command, a display string, and an output name. A file the rule names twice is REQ-OPERAND-GLOB-MATCH-NAMED-TWICE (#465)
+- discharge: test "Scenario: A percent-g in a rule with no inputs or several is refused"
+- discharge: test "Scenario: A percent-g in a rule with one input and no glob is refused"
+- discharge: test "Evaluator pattern expansion - %g with no single glob input is refused"
+
+If a rule spells `%g` in its command, display or outputs and it has no inputs, or more than one,
+or its one input was not produced by a glob, then putup shall reject the Tupfile.
+
+### REQ-OPERAND-GLOB-MATCH-NAMED-TWICE
+
+- conformance: deliberate-deviation
+- reference: upstream keeps one entry for a file a rule names twice but reads the glob count of the entry it pruned: `add_name_list_entry` overwrites the list's count with each entry added and `delete_name_list_entry` never restores it, so the outcome follows token order. Measured against tup over `a.c` alone: `: *.c a.c |>` and `: foreach a.c *.c |>` are refused with `%g flag found no globs`, `: a.c *.c |>` writes `g=[]`, and `: foreach *.c a.c |>` writes `g=[a]`. No order gives the match the glob made. putup keeps the first entry and carries the glob onto it if a later duplicate had one, so every order writes `g=[a]`; the alternative was to reproduce a count that belongs to an entry no longer in the list (#465)
+- discharge: test "Scenario: A percent-g over a file a rule names both by a glob and by name is the glob's match"
+
+While expanding `%g` for an input the rule names both by a glob and by name, putup shall
+expand it to that glob's match, whichever was written first, with or without foreach.
 
 ## Group: splices
 

@@ -652,7 +652,19 @@ auto expand_pattern_atoms(
             builder.flag(AtomKind::InputDir);
             break;
         case 'g':
-            builder.literal(flags.glob_match);
+            if (flags.all_inputs.empty()) {
+                return make_error<Instruction>(
+                    ErrorCode::ParseError,
+                    "%g used in rule pattern and no input files were specified"
+                );
+            }
+            if (flags.all_inputs.size() > 1) {
+                return make_error<Instruction>(ErrorCode::ParseError, "%g is only valid with one file");
+            }
+            if (!flags.glob_match) {
+                return make_error<Instruction>(ErrorCode::ParseError, "%g flag found no globs");
+            }
+            builder.literal(*flags.glob_match);
             break;
         default:
             builder.literal('%');

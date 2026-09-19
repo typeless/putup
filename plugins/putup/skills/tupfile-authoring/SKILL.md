@@ -31,7 +31,7 @@ Guide for writing Tupfiles with putup. For the full manual, see
 | `%B` | Input basename (no ext) | `foo` |
 | `%d` | Input directory | `src` |
 | `%e` | Extension (foreach rules only, file must have one) | `c` |
-| `%g` | Glob match portion | `foo` from `*_test.c` + `foo_test.c` |
+| `%g` | Glob match portion (one input, produced by a glob) | `foo` from `*_test.c` + `foo_test.c` |
 | `%%` | Literal `%` | `%` |
 
 Numbered variants select a specific input or output:
