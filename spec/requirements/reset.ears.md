@@ -55,3 +55,17 @@ build was in tree.
 
 If a reset cannot read the build record, then putup shall keep that record and name the command
 that resets the project without it, rather than removing a record whose files it could not name.
+
+## Group: removal-reporting
+
+What a reset may claim it removed.
+
+### REQ-RESET-COUNT-REMOVED
+
+- conformance: putup-only
+- discharge: test "Scenario: clean does not count an empty directory it could not remove"
+
+If a reset cannot remove a directory its removal pass emptied, then putup shall report the
+platform's own failure message and leave that directory out of both the removed count and the
+removal announcements, rather than counting the attempt or restating the path that message
+already names.

@@ -92,6 +92,7 @@ performed.
 - conformance: tup-conformant
 - reference: tup `delete_files` (updater.c) aborts the update when `delete_file` fails, and retires the node with `tup_del_id_force` only after the unlink has succeeded
 - discharge: test "Scenario: A stale output that cannot be deleted fails the build and keeps its record"
+- discharge: test "Scenario: A stale output that cannot even be queried keeps its record"
 
 If putup cannot delete a stale output, then putup shall fail the build and keep the record
 that names that output.
@@ -234,6 +235,16 @@ commands that consume its outputs.
 
 While a build is restricted to a target or a scope, putup shall preserve the recorded
 state of every command outside that scope.
+
+### REQ-EXIT-ABORT
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read; same class as #187, stated for a build that ended before the command ran rather than for a command that ran and failed (#304)
+- discharge: test "Scenario: A build aborted before a command could run does not record it as done"
+
+If a build ends before a command it scheduled has exited zero, then putup shall keep that
+command recorded as needing to run.
 
 ---
 
@@ -401,6 +412,7 @@ scheduled.
 - reference: upstream keeps discovered dependencies in its dependency graph, so ordering by them is not a putup invention; no line citation read yet
 - discharge: test "Scenario: A discovered dependency orders its consumer on a later build"
 - discharge: test "Scenario: A recorded discovery that the rules now contradict does not stall the build"
+- discharge: test "Scenario: A discovery whose producing rule is gone orders nothing"
 
 When a build schedules both a command and one that produced a file that command was recorded as
 having read, putup shall run the producer first unless the rules order the two the other way.
@@ -428,6 +440,47 @@ whatever ordering an earlier build recorded.
 
 When a change reaches a command that produces a file another command was recorded as having
 read, putup shall schedule the reader as well.
+
+### REQ-IMPL-NORACE
+
+- leg: invariant
+- conformance: unclassified
+- reference: bounds REQ-IMPL-RACE; upstream orders by its discovered dependencies and so has no unordered pair left to mark, as REQ-IMPL-RACE records; no line citation read yet (#274)
+- discharge: test "Scenario: A consumer ordered through a sibling output is not taxed for discovering the other"
+
+If the ordering a build enforced already put a command after the command that produced a file
+it discovered, then putup shall not treat that command as having raced that discovery.
+
+### REQ-IMPL-MEMBERSHIP
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream reaches a discovered reader through its dependency graph the way it reaches a declared one, so it has no content comparison to gate that reader on; no line citation read yet (#277)
+- discharge: test "Scenario: A discovered consumer re-runs for a producer that rewrites the same bytes"
+
+When a command runs and another command was recorded as having read a file that command
+produces, putup shall schedule the reader for that build and shall not schedule it again on a
+later build in which the producer did not run.
+
+### REQ-IMPL-REAPPEAR
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream mechanism not read; putup's per-build absence mark has no upstream counterpart that has been read, and the merge copying an out-of-scope entry over this build's own is putup's own scoping machinery (#237)
+- discharge: test "Scenario: A recreated dependency does not carry its deletion mark forward"
+
+If a recorded dependency a previous build routed as absent exists again, then putup shall
+record it as present rather than carrying the earlier absence forward.
+
+### REQ-IMPL-SCANSIBLING
+
+- leg: invariant
+- conformance: putup-only
+- reference: putup's dependency scan is a second command derived from the compile, a putup construct whose upstream counterpart is the access capture in tup's server (`src/tup/server/`, not read); the scan declares no graph output, so nothing reaches it through the output cascade. This is the scheduling half of REQ-IMPL-SURVIVE, which states the recording half (#228)
+- discharge: test "Scenario: Transitive implicit-dep header tracking"
+
+When a command runs, putup shall also run the dependency scan derived from that command, so
+that a header the command newly reaches through an already-tracked header is recorded.
 
 ---
 
@@ -528,6 +581,26 @@ classification the previous record gave that file.
 Where a command sits in an inactive conditional branch, putup shall not record its declared
 outputs as generated files.
 
+### REQ-OUT-BRANCHOFF
+
+- leg: invariant
+- conformance: unclassified
+- reference: REQ-KEY-RETIRE records tup v0.8-8-g4247a523 deleting the output of a rule turned off by its `ifdef`, so the observable matches; upstream's ownership lives in its database rather than in a record the build carries forward (`tup_db_set_type` in db.c, cited by REQ-OUT-OWNERSHIP), and that path was not read for this case (#369)
+- discharge: test "Scenario: Turning a branch off keeps ownership of what it built"
+
+When a conditional branch that produced an output becomes inactive, putup shall keep the
+attribution the previous record gave that output and delete the output as stale.
+
+### REQ-OUT-PHI
+
+- leg: invariant
+- conformance: putup-only
+- reference: upstream never evaluates an unsatisfied branch, so a path declared by several branches never arises (`src/tup/parser.c` skips the block, as REQ-OUT-INACTIVE records); the phi model that registers both branches is putup's own
+- discharge: test "Scenario: An output declared by both conditional branches stays tracked"
+
+If an output declared by more than one branch of a conditional is missing from disk, then putup
+shall schedule the command that produces it rather than reporting the build up to date.
+
 ---
 
 ## Group: group-membership
@@ -563,6 +636,16 @@ from group membership.
 
 When a command stops contributing an output to a group, putup shall schedule the commands
 that consume that group.
+
+### REQ-GRP-GUARDED
+
+- leg: invariant
+- conformance: unclassified
+- reference: bounds REQ-GRP-ROUTE, which is putup's own deviation; upstream schedules no consumer for any group-member removal (measured there on tup v0.8-8-g4247a523), so the two agree on this case for unrelated reasons and no upstream mechanism was read
+- discharge: test "Scenario: Removing a group member schedules nothing when the group's only consumer is guarded off"
+
+When a command stops contributing an output to a group whose only consumer sits in an inactive
+conditional branch, putup shall schedule no command.
 
 ---
 
@@ -609,3 +692,33 @@ it.
 
 If a configuration value changes and no command read it, then putup shall leave every
 command unscheduled.
+
+### REQ-ENV-SUBPROCESS
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: tup stores each environment variable as a node whose value is the `VAR=value` string (`envdb_set` in db.c), compares that stored value against `getenv` on every update and marks the node modified on a mismatch (`env_cb`, reached from `tup_db_check_env`), and builds the command's subprocess environment from its sticky environment entries (`tup_db_get_environ`, called from `update` in updater.c), so the value rather than the rendered text is what re-runs the command
+- discharge: test "Scenario: Exported env var consumed via subprocess environment triggers rebuild"
+
+When a command reads an exported variable through its inherited environment rather than through
+its rendered text, putup shall fold that variable's value into the command's identity.
+
+### REQ-ENV-CONDITION
+
+- leg: invariant
+- conformance: unclassified
+- reference: upstream marks a changed environment node modified (`env_cb`, reached from `tup_db_check_env` in db.c) and processes those nodes ahead of parsing (`process_config_nodes` in updater.c), but whether a condition reading the variable registers it as a dependency of the Tupfile was not read
+- discharge: test "Scenario: Env var change in a conditional rebuilds the affected branch"
+
+When an environment variable a Tupfile's condition reads changes value, putup shall schedule
+the commands the newly taken branch declares rather than reporting the build up to date.
+
+### REQ-ENV-IMPORTED
+
+- leg: invariant
+- conformance: deliberate-deviation
+- reference: upstream re-reads the process environment on every update and treats an absent variable as a changed value - `env_cb` (db.c) counts `getenv` returning NULL against a stored value as a mismatch and stores NULL - so tup re-runs the commands that read it; putup keeps the value its `import` recorded, so a build is reproducible from the record rather than from whichever shell ran the first one
+- discharge: test "Scenario: Imported env vars persist across builds"
+
+While a variable a previous build imported is absent from the environment, putup shall use the
+value it recorded for that variable rather than an empty one.
