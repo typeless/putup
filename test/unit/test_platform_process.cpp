@@ -313,14 +313,26 @@ TEST_CASE("base_child_env forwards the temporary-directory variables the tools r
 TEST_CASE("base_child_env always gives the child a PATH and substitutes a default when putup has none", "[platform][process]")
 {
 #ifdef _WIN32
-    SECTION("the Windows keep list carries PATH")
+    SECTION("the Windows keep list carries PATH under the name Windows spells it")
     {
         auto path = EnvGuard { "PATH", "C:\\pup-probe\\bin" };
         auto env = base_child_env();
 
         auto has_path = false;
         for (auto var : env) {
-            has_path = has_path || sv(var).starts_with("PATH=");
+            auto entry = sv(var);
+            if (entry.find('=') != 4) {
+                continue;
+            }
+            auto name = std::string_view { "PATH" };
+            auto same = true;
+            for (std::size_t i = 0; i < name.size(); ++i) {
+                same = std::toupper(static_cast<unsigned char>(entry[i])) == name[i];
+                if (!same) {
+                    break;
+                }
+            }
+            has_path = has_path || same;
         }
         REQUIRE(has_path);
     }
