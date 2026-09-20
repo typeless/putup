@@ -1142,9 +1142,13 @@ export PKG_CONFIG_PATH
 : foo.c |> $(CC) -c %f -o %o |> foo.o
 ```
 
-Commands run with a **minimal environment**: on POSIX `PATH`, plus `TMPDIR`,
-`TMP` and `TEMP` when putup's own environment sets them to a non-empty value
-(Windows passes `PATH` plus the system set: `SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP`, `TMP`, `windir`). The
+Commands run with a **minimal environment**: on POSIX `PATH`, plus `HOME`,
+`TMPDIR`, `TMP` and `TEMP` when putup's own environment sets them to a non-empty
+value (Windows passes `PATH` plus the system set: `SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP`, `TMP`, `windir`, and
+`HOME` when set). On POSIX an unset `PATH` is replaced by `/usr/bin:/bin`, since a
+command with no `PATH` resolves no tool name at all. `HOME` is forwarded because tools
+locate their caches and configuration under it — `go build` refuses to run
+without it, and a `dash` `/bin/sh` leaves `~` unexpanded. The
 temporary-directory variables are forwarded because a command runs with its
 Tupfile's directory as cwd, and a tool that finds no writable temporary
 directory falls back to cwd, which puts its scratch files in the **source**
@@ -1154,10 +1158,11 @@ variable is simply absent from the child environment.
 Only `export`ed variables are folded into command identity, so changing an
 exported variable's **value** re-runs the affected commands even when the
 command text is unchanged. The forwarded set above is **not** recorded: a
-command whose text reads `$PATH` or `$TMPDIR` sees whatever the invoking shell
-had, and changing that value alone re-runs nothing, except that a bare name in
-`CONFIG_TRACKED_TOOLS` (§6.1) is resolved through `PATH`, so a `PATH` change
-that resolves it to a different binary re-runs every command. `export` the
+command whose text reads `$PATH`, `$HOME` or `$TMPDIR` sees whatever the
+invoking shell had, and changing that value alone re-runs nothing, except that a
+bare name in `CONFIG_TRACKED_TOOLS` (§6.1) is resolved through putup's own
+`PATH`, so a `PATH` change that resolves it to a different binary re-runs every
+command while one that does not re-runs nothing. `export` the
 variable if its value must decide whether a command is out of date.
 
 **`import`** - Import an environment variable into the Tupfile namespace:
@@ -1276,8 +1281,8 @@ paths whose binaries the build's outputs depend on:
 CONFIG_TRACKED_TOOLS=gcc ld ./scripts/codegen.sh
 ```
 
-Each entry is resolved (bare names through `PATH` — the same `PATH` build
-commands receive; entries containing `/` against the source root) and its
+Each entry is resolved (bare names through putup's own `PATH`; entries
+containing `/` against the source root) and its
 `(path, size, mtime)` is folded into every command's identity. An in-place
 toolchain upgrade — same command text, same inputs, different compiler —
 then triggers a rebuild, closing the gap that command text alone cannot see.

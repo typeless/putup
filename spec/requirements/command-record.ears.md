@@ -728,7 +728,7 @@ value it recorded for that variable rather than an empty one.
 
 - leg: invariant
 - conformance: deliberate-deviation
-- reference: upstream's per-command default environment is `default_env[]` in environ.c (`PATH` and `HOME` on every platform; under `_WIN32` also `SYSTEMROOT`, `TEMP`, `TMP` and a set of Visual Studio variables), collected into each Tupfile by `environ_add_defaults` and emitted into the subprocess block by `tup_db_get_environ` (db.c), so on POSIX tup forwards no temporary-directory variable and a child falls back to `/tmp`; putup forwards the three GCC's `choose_tmpdir` (libiberty) reads ahead of `/tmp` and cwd because a putup command's cwd is its Tupfile's source directory, so with `/tmp` unwritable the fallback writes scratch files into the source tree (issue #478); putup's Windows system set already carries `TEMP` and `TMP`, which the platform always sets ahead of any cwd fallback, so `TMPDIR` is not added there; the same upstream list carries `HOME`, which putup still does not forward, unchanged by this requirement
+- reference: upstream's per-command default environment is `default_env[]` in environ.c (`PATH` and `HOME` on every platform; under `_WIN32` also `SYSTEMROOT`, `TEMP`, `TMP` and a set of Visual Studio variables), collected into each Tupfile by `environ_add_defaults` and emitted into the subprocess block by `tup_db_get_environ` (db.c), so on POSIX tup forwards no temporary-directory variable and a child falls back to `/tmp`; putup forwards the three GCC's `choose_tmpdir` (libiberty) reads ahead of `/tmp` and cwd because a putup command's cwd is its Tupfile's source directory, so with `/tmp` unwritable the fallback writes scratch files into the source tree (issue #478); putup's Windows system set already carries `TEMP` and `TMP`, which the platform always sets ahead of any cwd fallback, so `TMPDIR` is not added there; the same upstream list carries `HOME`, which REQ-ENV-HOME forwards under the same set-non-empty rule
 - discharge: test "base_child_env forwards the temporary-directory variables the tools read"
 - discharge: test "Scenario: TMPDIR set for putup reaches every build command"
 
@@ -737,12 +737,49 @@ POSIX; `TEMP` or `TMP` on Windows) is set to a non-empty value in putup's own en
 shall give every command's subprocess that variable with that value, and shall give it no such
 variable that is unset or empty.
 
-### REQ-ENV-TEMPDIR-IDENTITY
+### REQ-ENV-PATH
+
+- leg: invariant
+- conformance: tup-conformant
+- reference: upstream's `default_env[]` (environ.c) leads with `PATH` on every platform, `environ_add_defaults` makes it a sticky env node of every Tupfile's commands and `tup_db_get_environ` (db.c) emits it into the subprocess block from the value `tup_db_findenv` read with `getenv`, so a tup command resolves tool names through the `PATH` tup itself ran under; where tup emits nothing because the variable is unset, putup substitutes the default search path, since a command with no `PATH` resolves no tool name at all
+- discharge: test "base_child_env always gives the child a PATH and substitutes a default when putup has none"
+- discharge: test "Scenario: Changing PATH alone re-runs no command"
+
+putup shall give every command's subprocess `PATH` with the value putup's own environment sets, and
+on POSIX shall give it `/usr/bin:/bin` when putup's own environment leaves `PATH` unset.
+
+### REQ-ENV-HOME
 
 - leg: invariant
 - conformance: deliberate-deviation
-- reference: upstream's `default_env[]` (environ.c) carries `TEMP` and `TMP` only under `_WIN32` and never `TMPDIR`; there `environ_add_defaults` makes each a sticky env node and `tup_db_check_env` (db.c) marks it modified when `getenv` disagrees with the stored `VAR=value`, so on Windows tup re-runs every command when `TEMP` or `TMP` changes while putup's Windows system set forwards them unrecorded, and on POSIX upstream forwards none of the three so both agree that a change re-runs nothing; putup records only exported variables (REQ-ENV-SUBPROCESS), and a temporary-directory value says where scratch files live rather than what a command produces, so a sandbox that hands each session a fresh `TMPDIR` would otherwise re-run the whole build every session
-- discharge: test "Scenario: Changing TMPDIR alone re-runs no command"
+- reference: upstream's `default_env[]` (environ.c) carries `HOME` on every platform - its `_WIN32` block appends to `PATH` and `HOME` rather than replacing them - so `environ_add_defaults` makes it a sticky env node of every Tupfile's commands, whose value `tup_db_findenv` (db.c) reads from `getenv`, `envdb_set` stores as `HOME=<value>` for any non-NULL value including an empty one, and `tup_db_get_environ` emits whenever that stored value is non-NULL; the upstream commit adding it records no reason, and the ccache motive is an inference - ccache falls back to `getpwuid` when `HOME` is unset - while what does break was measured for issue #480: `go build` refuses to run at all ("GOCACHE is not defined and neither $XDG_CACHE_HOME nor $HOME are defined"), and dash, the `/bin/sh` putup's commands run under on Debian-derived systems, leaves `~` unexpanded so a rule containing it fails under putup and succeeds in the shell that invoked it; putup forwards the value only when it is non-empty, the shape REQ-ENV-TEMPDIR established for the forwarded-when-set variables, and supplies no default because none is correct for a per-user directory
+- discharge: test "base_child_env forwards HOME when set and omits it when unset or empty"
+- discharge: test "Scenario: HOME set for putup reaches every build command"
 
-While a Tupfile neither exports nor imports a temporary-directory variable putup forwards, putup
-shall exclude that variable's value from the identity of every command it declares.
+putup shall give every command's subprocess `HOME` with the value putup's own environment sets when
+that value is non-empty, and shall give it no `HOME` when putup's own environment leaves it unset or
+empty.
+
+### REQ-ENV-FORWARDED-IDENTITY
+
+- leg: invariant
+- conformance: deliberate-deviation
+- reference: upstream forwards its default set because it records it - `environ_add_defaults` (environ.c, called per Tupfile from `parse` in parser.c) makes each `default_env[]` name a sticky env node of that Tupfile's commands, `tup_db_check_env` (db.c) marks the node modified when `getenv` disagrees with the stored `VAR=value` (`env_cb`, both-NULL matching), and `tup_db_get_environ` builds the subprocess block from those sticky entries alone plus `CCACHE_NODIRECT=1` - so tup re-runs every command when `PATH` or `HOME` changes, which tup.1's `export` entry states for `PATH` ("if PATH is changed, all commands will run again"), and on Windows also when `TEMP`, `TMP` or a Visual Studio variable changes; upstream forwards no `TMPDIR`, so on that one variable the two systems agree that a change re-runs nothing; `--no-environ-check` (updater.c) skips the comparison, but tup.1 gives the monitor's frozen environment as its purpose rather than the cost of the check; putup forwards the set unrecorded because these values say where the invoking shell put things rather than what a command produces, the axis REQ-ENV-IMPORTED already settled, and because a `PATH` that varies between one shell and the next would otherwise re-run every command in the project, putup's own test runner included; the case a recorded `PATH` exists to catch is reached instead by REQ-ENV-TRACKED-TOOLS, which re-runs on a `PATH` change that resolves a tracked name to a different binary and not on one that does not, a distinction a recorded `PATH` string cannot draw; a project that wants upstream's behaviour writes `export PATH`, which REQ-ENV-SUBPROCESS folds into identity
+- discharge: test "Scenario: Changing TMPDIR alone re-runs no command"
+- discharge: test "Scenario: Changing HOME alone re-runs no command"
+- discharge: test "Scenario: Changing PATH alone re-runs no command"
+
+While a Tupfile neither exports nor imports a variable putup forwards to every command's subprocess
+by default, and no `CONFIG_TRACKED_TOOLS` entry resolves through that variable, putup shall exclude
+its value from the identity of every command it declares.
+
+### REQ-ENV-TRACKED-TOOLS
+
+- leg: invariant
+- conformance: putup-only
+- discharge: test "Scenario: Tracked tool binaries fold into command identity"
+- discharge: test "Scenario: A PATH change that shadows a tracked tool re-runs its commands"
+
+Where `CONFIG_TRACKED_TOOLS` names a tool, putup shall fold the path, size and modification time it
+resolves that name to - a bare name through putup's own `PATH`, a name containing `/` against the
+source root - into the identity of every command the project declares.

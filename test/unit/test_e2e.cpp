@@ -9271,6 +9271,94 @@ SCENARIO("Changing TMPDIR alone re-runs no command", "[e2e][envdep]")
     }
 }
 
+SCENARIO("HOME set for putup reaches every build command", "[e2e][envdep]")
+{
+    GIVEN("a rule that prints the HOME its shell sees")
+    {
+        auto f = E2EFixture { "home_forwarded" };
+        f.mkdir("home");
+        auto home = (f.workdir() / "home").string();
+        REQUIRE(f.init().success());
+
+        WHEN("putup runs with HOME set in its own environment")
+        {
+            auto env = EnvGuard { "HOME", home };
+            auto result = f.build();
+
+            THEN("the command's environment carries the same value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "HOME=" + home + "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Changing HOME alone re-runs no command", "[e2e][envdep]")
+{
+    GIVEN("a project built with one HOME by a rule whose text reads it")
+    {
+        auto f = E2EFixture { "home_forwarded" };
+        f.mkdir("first");
+        f.mkdir("second");
+        auto first = (f.workdir() / "first").string();
+        auto second = (f.workdir() / "second").string();
+        REQUIRE(f.init().success());
+        {
+            auto env = EnvGuard { "HOME", first };
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "HOME=" + first + "\n");
+        }
+
+        WHEN("putup runs again with a different HOME and nothing else changed")
+        {
+            auto env = EnvGuard { "HOME", second };
+            auto result = f.build();
+
+            THEN("the build is a no-op and the output keeps the first value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "HOME=" + first + "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Changing PATH alone re-runs no command", "[e2e][envdep]")
+{
+    GIVEN("a project built with one PATH by a rule whose text reads it")
+    {
+        auto f = E2EFixture { "path_forwarded" };
+        auto const* inherited = std::getenv("PATH");
+        auto first = std::string { inherited != nullptr ? inherited : "/usr/bin:/bin" };
+        auto second = first + ":" + (f.workdir() / "extra").string();
+        REQUIRE(f.init().success());
+        {
+            auto env = EnvGuard { "PATH", first };
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "PATH=" + first + "\n");
+        }
+
+        WHEN("putup runs again with a different PATH and nothing else changed")
+        {
+            auto env = EnvGuard { "PATH", second };
+            auto result = f.build();
+
+            THEN("the build is a no-op and the output keeps the first value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "PATH=" + first + "\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Tracked tool binaries fold into command identity", "[e2e][incremental]")
 {
     GIVEN("a project whose config tracks a tool that is not a rule input")
@@ -9289,6 +9377,48 @@ SCENARIO("Tracked tool binaries fold into command identity", "[e2e][incremental]
             auto result = f.build({ "-B", "build" });
 
             THEN("the command re-runs and the output reflects the new tool")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("build/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A PATH change that shadows a tracked tool re-runs its commands", "[e2e][incremental][envdep]")
+{
+    GIVEN("a project whose config tracks a tool by a bare name found on PATH")
+    {
+        auto f = E2EFixture { "tracked_tool_path" };
+        f.mkdir("build");
+        f.mkdir("first");
+        f.mkdir("second");
+        f.write_file("first/mytool", "#!/bin/sh\necho v1\n");
+        f.write_file("second/mytool", "#!/bin/sh\necho v2\n");
+        REQUIRE(f.run("/bin/chmod", { "+x", "first/mytool", "second/mytool" }).exit_code == 0);
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=mytool\n");
+
+        auto const* inherited = std::getenv("PATH");
+        auto base = std::string { inherited != nullptr ? inherited : "/usr/bin:/bin" };
+        auto first = (f.workdir() / "first").string();
+        auto second = (f.workdir() / "second").string();
+        {
+            auto env = EnvGuard { "PATH", first + ":" + base };
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+            REQUIRE(f.build({ "-B", "build" }).success());
+            REQUIRE(f.read_file("build/out.txt") == "v1\n");
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+        }
+
+        WHEN("a PATH change resolves the tracked name to a different binary")
+        {
+            auto env = EnvGuard { "PATH", second + ":" + first + ":" + base };
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the command re-runs against the newly resolved tool")
             {
                 INFO("stdout: " << result.stdout_output);
                 INFO("stderr: " << result.stderr_output);
