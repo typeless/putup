@@ -9214,6 +9214,63 @@ SCENARIO("Exported env var consumed via subprocess environment triggers rebuild"
     }
 }
 
+SCENARIO("TMPDIR set for putup reaches every build command", "[e2e][envdep]")
+{
+    GIVEN("a rule that prints the TMPDIR its shell sees")
+    {
+        auto f = E2EFixture { "tmpdir_forwarded" };
+        f.mkdir("scratch");
+        auto scratch = (f.workdir() / "scratch").string();
+        REQUIRE(f.init().success());
+
+        WHEN("putup runs with TMPDIR set in its own environment")
+        {
+            auto env = EnvGuard { "TMPDIR", scratch };
+            auto result = f.build();
+
+            THEN("the command's environment carries the same value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "TMPDIR=" + scratch + "\n");
+            }
+        }
+    }
+}
+
+SCENARIO("Changing TMPDIR alone re-runs no command", "[e2e][envdep]")
+{
+    GIVEN("a project built with one TMPDIR by a rule whose text reads it")
+    {
+        auto f = E2EFixture { "tmpdir_forwarded" };
+        f.mkdir("first");
+        f.mkdir("second");
+        auto first = (f.workdir() / "first").string();
+        auto second = (f.workdir() / "second").string();
+        REQUIRE(f.init().success());
+        {
+            auto env = EnvGuard { "TMPDIR", first };
+            REQUIRE(f.build().success());
+            REQUIRE(f.read_file("out.txt") == "TMPDIR=" + first + "\n");
+        }
+
+        WHEN("putup runs again with a different TMPDIR and nothing else changed")
+        {
+            auto env = EnvGuard { "TMPDIR", second };
+            auto result = f.build();
+
+            THEN("the build is a no-op and the output keeps the first value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "TMPDIR=" + first + "\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Tracked tool binaries fold into command identity", "[e2e][incremental]")
 {
     GIVEN("a project whose config tracks a tool that is not a rule input")

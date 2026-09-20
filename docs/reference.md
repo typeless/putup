@@ -1142,14 +1142,23 @@ export PKG_CONFIG_PATH
 : foo.c |> $(CC) -c %f -o %o |> foo.o
 ```
 
-Commands run with a **minimal environment**: on POSIX only `PATH` is passed
-through (Windows adds the system set: `SystemRoot`, `ComSpec`, `PATHEXT`,
-`TEMP`, `TMP`, `windir`). Every other variable a command reads must be
-`export`ed — an unexported variable is simply absent from the child
-environment. This keeps builds hermetic: ambient shell state can't silently
-change outputs. Exported variables are folded into command identity, so
-changing an exported variable's **value** re-runs the affected commands even
-when the command text is unchanged.
+Commands run with a **minimal environment**: on POSIX `PATH`, plus `TMPDIR`,
+`TMP` and `TEMP` when putup's own environment sets them to a non-empty value
+(Windows passes `PATH` plus the system set: `SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP`, `TMP`, `windir`). The
+temporary-directory variables are forwarded because a command runs with its
+Tupfile's directory as cwd, and a tool that finds no writable temporary
+directory falls back to cwd, which puts its scratch files in the **source**
+tree. Every other variable a command reads must be `export`ed — an unexported
+variable is simply absent from the child environment.
+
+Only `export`ed variables are folded into command identity, so changing an
+exported variable's **value** re-runs the affected commands even when the
+command text is unchanged. The forwarded set above is **not** recorded: a
+command whose text reads `$PATH` or `$TMPDIR` sees whatever the invoking shell
+had, and changing that value alone re-runs nothing, except that a bare name in
+`CONFIG_TRACKED_TOOLS` (§6.1) is resolved through `PATH`, so a `PATH` change
+that resolves it to a different binary re-runs every command. `export` the
+variable if its value must decide whether a command is out of date.
 
 **`import`** - Import an environment variable into the Tupfile namespace:
 ```tup

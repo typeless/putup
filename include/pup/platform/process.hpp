@@ -60,9 +60,12 @@ auto build_env_strings(
     bool inherit_env
 ) -> Vec<StringId>;
 
-/// Minimal "VAR=value" environment for build commands: only the variables a
-/// child needs to run tools at all (POSIX: PATH; Windows adds the system set).
-/// Everything else must be passed explicitly via `export`.
+/// Minimal "VAR=value" environment for build commands: the variables a child
+/// needs to run tools at all, and the ones its toolchain searches to place
+/// temporaries (POSIX: PATH, plus TMPDIR, TMP and TEMP when set; Windows: the
+/// system set, whose TEMP and TMP serve that role). A variable here is
+/// forwarded, not recorded: its value is absent from command identity.
+/// Everything else must be passed via `export`.
 [[nodiscard]]
 auto base_child_env() -> Vec<StringId>;
 
