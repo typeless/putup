@@ -61,11 +61,12 @@ auto build_env_strings(
 ) -> Vec<StringId>;
 
 /// Minimal "VAR=value" environment for build commands: the variables a child
-/// needs to run tools at all, and the ones its toolchain searches to place
-/// temporaries (POSIX: PATH, plus TMPDIR, TMP and TEMP when set; Windows: the
-/// system set, whose TEMP and TMP serve that role). A variable here is
-/// forwarded, not recorded: its value is absent from command identity.
-/// Everything else must be passed via `export`.
+/// needs to run tools at all, the per-user directory tools locate their caches
+/// and configuration under, and the ones its toolchain searches to place
+/// temporaries (POSIX: PATH, plus HOME, TMPDIR, TMP and TEMP when set; Windows:
+/// the system set plus HOME when set, its TEMP and TMP serving that last role).
+/// A variable here is forwarded, not recorded: its value is absent from command
+/// identity. Everything else must be passed via `export`.
 [[nodiscard]]
 auto base_child_env() -> Vec<StringId>;
 

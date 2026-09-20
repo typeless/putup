@@ -309,3 +309,120 @@ TEST_CASE("base_child_env forwards the temporary-directory variables the tools r
     }
 #endif
 }
+
+TEST_CASE("base_child_env always gives the child a PATH and substitutes a default when putup has none", "[platform][process]")
+{
+#ifdef _WIN32
+    SECTION("the Windows keep list carries PATH")
+    {
+        auto path = EnvGuard { "PATH", "C:\\pup-probe\\bin" };
+        auto env = base_child_env();
+
+        auto has_path = false;
+        for (auto var : env) {
+            has_path = has_path || sv(var).starts_with("PATH=");
+        }
+        REQUIRE(has_path);
+    }
+#else
+    auto contains = [](pup::Vec<pup::StringId> const& env, std::string_view entry) {
+        for (auto var : env) {
+            if (sv(var) == entry) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    SECTION("the child gets putup's own PATH")
+    {
+        auto path = EnvGuard { "PATH", "/pup-probe/bin:/usr/bin" };
+        auto env = base_child_env();
+
+        REQUIRE(contains(env, "PATH=/pup-probe/bin:/usr/bin"));
+    }
+
+    SECTION("an unset PATH becomes the default search path rather than an empty one")
+    {
+        auto restore = EnvGuard { "PATH", "/pup-probe/bin" };
+        pup::platform::unset_env("PATH");
+        auto env = base_child_env();
+
+        REQUIRE(contains(env, "PATH=/usr/bin:/bin"));
+    }
+#endif
+}
+
+TEST_CASE("base_child_env forwards HOME when set and omits it when unset or empty", "[platform][process]")
+{
+    auto has_name = [](pup::Vec<pup::StringId> const& env, std::string_view name) {
+        for (auto var : env) {
+            auto entry = sv(var);
+            if (entry.find('=') != name.size()) {
+                continue;
+            }
+            auto same = true;
+            for (std::size_t i = 0; i < name.size(); ++i) {
+#ifdef _WIN32
+                same = std::toupper(static_cast<unsigned char>(entry[i])) == name[i];
+#else
+                same = entry[i] == name[i];
+#endif
+                if (!same) {
+                    break;
+                }
+            }
+            if (same) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+#ifdef _WIN32
+    SECTION("the Windows keep list carries HOME")
+    {
+        auto home = EnvGuard { "HOME", "C:\\pup-probe\\home" };
+        auto env = base_child_env();
+
+        REQUIRE(has_name(env, "HOME"));
+    }
+#else
+    auto contains = [](pup::Vec<pup::StringId> const& env, std::string_view entry) {
+        for (auto var : env) {
+            if (sv(var) == entry) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    SECTION("HOME reaches the child when set")
+    {
+        auto home = EnvGuard { "HOME", "/pup-probe/home" };
+        auto env = base_child_env();
+
+        REQUIRE(contains(env, "HOME=/pup-probe/home"));
+        REQUIRE(has_name(env, "PATH"));
+    }
+
+    SECTION("an unset HOME is absent rather than empty")
+    {
+        auto restore = EnvGuard { "HOME", "/pup-probe/home" };
+        pup::platform::unset_env("HOME");
+        auto env = base_child_env();
+
+        REQUIRE_FALSE(has_name(env, "HOME"));
+        REQUIRE(has_name(env, "PATH"));
+    }
+
+    SECTION("a set-but-empty HOME is absent rather than empty")
+    {
+        auto empty = EnvGuard { "HOME", "" };
+        auto env = base_child_env();
+
+        REQUIRE_FALSE(has_name(env, "HOME"));
+        REQUIRE(has_name(env, "PATH"));
+    }
+#endif
+}

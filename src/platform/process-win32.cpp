@@ -53,7 +53,7 @@ auto base_child_env() -> Vec<StringId>
 {
     // Case-insensitive names: Windows children need the system set to run at all.
     static constexpr std::wstring_view keep[] = {
-        L"SYSTEMROOT", L"COMSPEC", L"PATHEXT", L"PATH", L"TEMP", L"TMP", L"WINDIR"
+        L"SYSTEMROOT", L"COMSPEC", L"PATHEXT", L"PATH", L"HOME", L"TEMP", L"TMP", L"WINDIR"
     };
 
     auto& pool = global_pool();
