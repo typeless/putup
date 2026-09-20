@@ -478,6 +478,10 @@ auto resolve_group_operand_node(
     return get_or_create_group_node(ctx, state, str(parsed->group_dir), parsed->group_name);
 }
 
+auto ensure_env_var_node(BuilderContext& ctx, Builder& state, std::string_view var_name, std::string_view value)
+    -> std::optional<NodeId>;
+auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> void;
+
 auto create_command_node(
     BuilderContext& ctx,
     Builder& state,
@@ -505,6 +509,32 @@ auto create_command_node(
 
     for (auto src_id : ctx.sticky_sources) {
         (void)add_edge(ctx.state->graph, src_id, cmd_id, LinkType::Sticky);
+    }
+
+    auto tool_words = tokenize_command(get<InstructionPattern>(ctx.state->graph, cmd_id));
+    auto tool = std::string_view {};
+    for (auto word : tool_words.words()) {
+        if (word.find('=') != std::string_view::npos) {
+            continue;
+        }
+        tool = word;
+        break;
+    }
+    if (!tool.empty() && tool.find('/') == std::string_view::npos) {
+        auto key = Buf {};
+        key += "TUP_TOOL_";
+        key += tool;
+        auto const key_view = key.view();
+        auto const* cached = state.imported_env_var_nodes.find(to_underlying(intern(key_view)));
+        auto tool_node = (cached != nullptr) ? std::optional<NodeId> { *cached } : std::nullopt;
+        if (!tool_node) {
+            auto stat = Buf {};
+            append_tool_stat(stat, tool, str(state.options.source_root));
+            tool_node = ensure_env_var_node(ctx, state, key_view, stat.view());
+        }
+        if (tool_node) {
+            (void)add_edge(ctx.state->graph, *tool_node, cmd_id, LinkType::Sticky);
+        }
     }
 
     auto const* cv = ctx.used_config_vars.data();
