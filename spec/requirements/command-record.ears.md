@@ -764,14 +764,27 @@ empty.
 
 - leg: invariant
 - conformance: deliberate-deviation
-- reference: upstream forwards its default set because it records it - `environ_add_defaults` (environ.c, called per Tupfile from `parse` in parser.c) makes each `default_env[]` name a sticky env node of that Tupfile's commands, `tup_db_check_env` (db.c) marks the node modified when `getenv` disagrees with the stored `VAR=value` (`env_cb`, both-NULL matching), and `tup_db_get_environ` builds the subprocess block from those sticky entries alone plus `CCACHE_NODIRECT=1` - so tup re-runs every command when `PATH` or `HOME` changes, which tup.1's `export` entry states for `PATH` ("if PATH is changed, all commands will run again"), and on Windows also when `TEMP`, `TMP` or a Visual Studio variable changes; upstream forwards no `TMPDIR`, so on that one variable the two systems agree that a change re-runs nothing; `--no-environ-check` (updater.c) skips the comparison, but tup.1 gives the monitor's frozen environment as its purpose rather than the cost of the check; putup forwards the set unrecorded because these values say where the invoking shell put things rather than what a command produces, the axis REQ-ENV-IMPORTED already settled, and because a `PATH` that varies between one shell and the next would otherwise re-run every command in the project, putup's own test runner included; the case a recorded `PATH` exists to catch is reached instead by REQ-ENV-TRACKED-TOOLS, which re-runs on a `PATH` change that resolves a tracked name to a different binary and not on one that does not, a distinction a recorded `PATH` string cannot draw; a project that wants upstream's behaviour writes `export PATH`, which REQ-ENV-SUBPROCESS folds into identity
+- reference: upstream forwards its default set because it records it - `environ_add_defaults` (environ.c, called per Tupfile from `parse` in parser.c) makes each `default_env[]` name a sticky env node of that Tupfile's commands, `tup_db_check_env` (db.c) marks the node modified when `getenv` disagrees with the stored `VAR=value` (`env_cb`, both-NULL matching), and `tup_db_get_environ` builds the subprocess block from those sticky entries alone plus `CCACHE_NODIRECT=1` - so tup re-runs every command when `PATH` or `HOME` changes, which tup.1's `export` entry states for `PATH` ("if PATH is changed, all commands will run again"), and on Windows also when `TEMP`, `TMP` or a Visual Studio variable changes; upstream forwards no `TMPDIR`, so on that one variable the two systems agree that a change re-runs nothing; `--no-environ-check` (updater.c) skips the comparison, but tup.1 gives the monitor's frozen environment as its purpose rather than the cost of the check; putup forwards the set unrecorded because these values say where the invoking shell put things rather than what a command produces, the axis REQ-ENV-IMPORTED already settled, and because a `PATH` that varies between one shell and the next would otherwise re-run every command in the project, putup's own test runner included; the case a recorded `PATH` exists to catch is reached instead by REQ-ENV-COMMAND-TOOL in every project and by REQ-ENV-TRACKED-TOOLS where a project names more, each of which re-runs on a `PATH` change that resolves a name to a different binary and not on one that does not, a distinction a recorded `PATH` string cannot draw; a project that wants upstream's behaviour writes `export PATH`, which REQ-ENV-SUBPROCESS folds into identity
 - discharge: test "Scenario: Changing TMPDIR alone re-runs no command"
 - discharge: test "Scenario: Changing HOME alone re-runs no command"
 - discharge: test "Scenario: Changing PATH alone re-runs no command"
 
 While a Tupfile neither exports nor imports a variable putup forwards to every command's subprocess
-by default, and no `CONFIG_TRACKED_TOOLS` entry resolves through that variable, putup shall exclude
-its value from the identity of every command it declares.
+by default, and neither a `CONFIG_TRACKED_TOOLS` entry nor a command's own first word resolves
+through that variable, putup shall exclude its value from the identity of every command it
+declares.
+
+### REQ-ENV-COMMAND-TOOL
+
+- leg: invariant
+- conformance: deliberate-deviation
+- reference: upstream reaches this case through `PATH` itself - `environ_add_defaults` (environ.c) makes `PATH` a sticky env node of every Tupfile's commands and `env_cb` (db.c) marks it modified whenever `getenv` disagrees with the stored value - so tup re-runs every command on any `PATH` change, the cost tup.1's `export` entry states; putup resolves the one name each command actually leads with and folds that binary's stat instead, so a `PATH` change that moves the tool re-runs the commands that name it and one that does not re-runs nothing, which is what REQ-ENV-FORWARDED-IDENTITY's exclusion of `PATH`'s value leaves uncovered; the first word is taken after any leading `NAME=value` words because the shell runs those as assignments rather than as the program, and a word containing `/` is skipped because `append_tool_stat` joins such a name to the source root while a command runs in its Tupfile's directory, so the two disagree; a tool a command reaches only past a shell operator, through `sh -c`, or through a wrapper or driver is not the first word and is not covered - `CONFIG_TRACKED_TOOLS` is the route for those, and on Windows every bare name records `<missing>` because `append_tool_stat` does not consult `PATHEXT`
+- discharge: test "Scenario: A PATH change that swaps a tool no config tracks re-runs its commands"
+- discharge: test "Scenario: Changing PATH alone re-runs no command"
+
+putup shall fold the path, size and modification time it resolves each command's first word to -
+the first word that is not a `NAME=value` assignment, and only where that word contains no `/` -
+into the identity of that command.
 
 ### REQ-ENV-TRACKED-TOOLS
 

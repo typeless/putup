@@ -1159,10 +1159,16 @@ Only `export`ed variables are folded into command identity, so changing an
 exported variable's **value** re-runs the affected commands even when the
 command text is unchanged. The forwarded set above is **not** recorded: a
 command whose text reads `$PATH`, `$HOME` or `$TMPDIR` sees whatever the
-invoking shell had, and changing that value alone re-runs nothing, except that a
-bare name in `CONFIG_TRACKED_TOOLS` (§6.1) is resolved through putup's own
-`PATH`, so a `PATH` change that resolves it to a different binary re-runs every
-command while one that does not re-runs nothing. `export` the
+invoking shell had, and changing that value alone re-runs nothing. `PATH` is the
+exception, and only by resolution, never by value: putup resolves the first word
+of every command — the first that is not a `NAME=value` assignment, and only when
+it contains no `/` — and folds that binary's path, size and mtime into the
+command's identity, so a `PATH` change that resolves `gcc` to a different
+compiler re-runs the commands that name it, while one that moves nothing they
+name re-runs nothing. A tool a command reaches only past a shell operator
+(`cd build && gcc ...`), through `sh -c`, or through a wrapper script or compiler
+driver is not the first word and is not covered — name it in
+`CONFIG_TRACKED_TOOLS` (§6.1). `export` the
 variable if its value must decide whether a command is out of date.
 
 **`import`** - Import an environment variable into the Tupfile namespace:
@@ -1287,7 +1293,10 @@ containing `/` against the source root) and its
 toolchain upgrade — same command text, same inputs, different compiler —
 then triggers a rebuild, closing the gap that command text alone cannot see.
 A missing tool records `<missing>`, so it appearing later also rebuilds.
-Unset (the default) disables tracking. The fingerprint trusts size+mtime,
+Unset (the default) tracks only each command's own first word (§ `export`); name
+a tool here when a rule reaches it past a shell operator, through `sh -c`, or
+through a wrapper or driver, or to catch an in-place upgrade of a tool no command
+names directly. The fingerprint trusts size+mtime,
 the same trade-off as the stat cache (§9.1).
 
 **CLI Overrides:**
