@@ -2,18 +2,21 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "e2e_fixture.hpp"
 #include "temp_root.hpp"
 
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/platform/process.hpp"
 
+#include <cctype>
 #include <filesystem>
 #include <system_error>
 
 using namespace pup::platform;
 using pup::StringId;
 using pup::global_pool;
+using pup::test::EnvGuard;
 
 namespace {
 
@@ -225,4 +228,84 @@ TEST_CASE("build_env_strings constructs environment list", "[platform][process]"
         }
         REQUIRE(has_extra);
     }
+}
+
+TEST_CASE("base_child_env forwards the temporary-directory variables the tools read", "[platform][process]")
+{
+    auto has_name = [](pup::Vec<pup::StringId> const& env, std::string_view name) {
+        for (auto var : env) {
+            auto entry = sv(var);
+            if (entry.find('=') != name.size()) {
+                continue;
+            }
+            auto same = true;
+            for (std::size_t i = 0; i < name.size(); ++i) {
+#ifdef _WIN32
+                same = std::toupper(static_cast<unsigned char>(entry[i])) == name[i];
+#else
+                same = entry[i] == name[i];
+#endif
+                if (!same) {
+                    break;
+                }
+            }
+            if (same) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+#ifdef _WIN32
+    SECTION("the Windows keep list carries TEMP and TMP and not TMPDIR")
+    {
+        auto tmpdir = EnvGuard { "TMPDIR", "C:\\pup-probe\\tmpdir" };
+        auto env = base_child_env();
+
+        REQUIRE(has_name(env, "TEMP"));
+        REQUIRE(has_name(env, "TMP"));
+        REQUIRE_FALSE(has_name(env, "TMPDIR"));
+    }
+#else
+    auto contains = [](pup::Vec<pup::StringId> const& env, std::string_view entry) {
+        for (auto var : env) {
+            if (sv(var) == entry) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    SECTION("TMPDIR, TMP and TEMP reach the child when set")
+    {
+        auto tmpdir = EnvGuard { "TMPDIR", "/pup-probe/tmpdir" };
+        auto tmp = EnvGuard { "TMP", "/pup-probe/tmp" };
+        auto temp = EnvGuard { "TEMP", "/pup-probe/temp" };
+        auto env = base_child_env();
+
+        REQUIRE(contains(env, "TMPDIR=/pup-probe/tmpdir"));
+        REQUIRE(contains(env, "TMP=/pup-probe/tmp"));
+        REQUIRE(contains(env, "TEMP=/pup-probe/temp"));
+        REQUIRE(has_name(env, "PATH"));
+    }
+
+    SECTION("an unset TMPDIR is absent rather than empty")
+    {
+        auto restore = EnvGuard { "TMPDIR", "/pup-probe/tmpdir" };
+        pup::platform::unset_env("TMPDIR");
+        auto env = base_child_env();
+
+        REQUIRE_FALSE(has_name(env, "TMPDIR"));
+        REQUIRE(has_name(env, "PATH"));
+    }
+
+    SECTION("a set-but-empty TMPDIR is absent rather than empty")
+    {
+        auto empty = EnvGuard { "TMPDIR", "" };
+        auto env = base_child_env();
+
+        REQUIRE_FALSE(has_name(env, "TMPDIR"));
+        REQUIRE(has_name(env, "PATH"));
+    }
+#endif
 }

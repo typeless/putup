@@ -60,6 +60,18 @@ auto base_child_env() -> Vec<StringId>
         buf.append(std::string_view { "/usr/bin:/bin" });
     }
     result.push_back(buf.intern(pool));
+    static constexpr char const* forwarded_when_set[] = { "TMPDIR", "TMP", "TEMP" };
+    for (auto const* name : forwarded_when_set) {
+        auto const* value = sys::getenv(name);
+        if (value == nullptr || *value == '\0') {
+            continue;
+        }
+        auto var = Buf {};
+        var.append(std::string_view { name });
+        var.append('=');
+        var.append(std::string_view { value });
+        result.push_back(var.intern(pool));
+    }
     return result;
 }
 
