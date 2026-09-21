@@ -2267,9 +2267,15 @@ TEST_CASE("Keying a record's file table by path keeps every addressable entry an
         auto const by_path = files_by_path(index);
 
         auto expected = std::vector<FileEntry const*> {};
+        auto unaddressable = std::vector<FileEntry const*> {};
         for (auto const& file : index.files()) {
-            if (!pup::is_empty(file.path)) {
+            if (pup::is_empty(file.path)) {
+                continue;
+            }
+            if (pup::is_path_addressable(file.type)) {
                 expected.push_back(&file);
+            } else {
+                unaddressable.push_back(&file);
             }
         }
 
@@ -2291,6 +2297,11 @@ TEST_CASE("Keying a record's file table by path keeps every addressable entry an
             auto const* found = by_path.find(file->path);
             REQUIRE(found != nullptr);
             REQUIRE(found->path == file->path);
+        }
+
+        for (auto const* file : unaddressable) {
+            auto const* found = by_path.find(file->path);
+            REQUIRE((found == nullptr || pup::is_path_addressable(found->type)));
         }
 
         REQUIRE(by_path.find(intern("no entry is ever recorded at this path " + std::to_string(seed))) == nullptr);

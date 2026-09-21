@@ -478,7 +478,7 @@ auto files_by_path(Index const& index) -> FilesByPath
     result.entries.reserve(index.files().size());
 
     for (auto const& file : index.files()) {
-        if (!is_empty(file.path)) {
+        if (!is_empty(file.path) && is_path_addressable(file.type)) {
             result.entries.emplace_back(file.path, &file);
         }
     }

@@ -100,7 +100,9 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
             }
         }
         node.path_id = graph.paths.intern(parent_path, node.name);
-        graph.path_to_node.insert(to_underlying(node.path_id), id);
+        if (is_path_addressable(node.type)) {
+            graph.path_to_node.insert(to_underlying(node.path_id), id);
+        }
     }
 
     auto const idx = node_id::index(id);
@@ -110,7 +112,7 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     }
     graph.files[idx] = node;
 
-    if (!is_empty(graph.files[idx].name)) {
+    if (!is_empty(graph.files[idx].name) && is_path_addressable(graph.files[idx].type)) {
         auto const parent_idx = node_id::index(graph.files[idx].parent_dir);
         graph.dir_children[parent_idx].insert(to_underlying(graph.files[idx].name), id);
     }

@@ -9589,6 +9589,119 @@ SCENARIO("A variable named after a tool is still an ordinary exported variable",
     }
 }
 
+SCENARIO("A config variable does not hide a source file of the same name", "[e2e][incremental][config]")
+{
+    GIVEN("an in-source project whose config key matches a rule's input file")
+    {
+        auto f = E2EFixture { "config_var_shadow" };
+        REQUIRE(f.init().success());
+        f.write_file("tup.config", "CONFIG_LICENSE=y\n");
+        f.write_file("LICENSE", "MIT\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("out.txt") == "MIT\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the shadowed source file changes")
+        {
+            f.write_file("LICENSE", "BSD\n");
+            auto result = f.build();
+
+            THEN("the command re-runs against the new contents")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("out.txt") == "BSD\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A config variable does not capture a rule's input in an out-of-tree build", "[e2e][incremental][config]")
+{
+    GIVEN("an out-of-tree project whose config key matches a rule's input file")
+    {
+        auto f = E2EFixture { "config_var_shadow" };
+        f.mkdir("build");
+        f.write_file("LICENSE", "MIT\n");
+        REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+        f.write_file("build/tup.config", "CONFIG_LICENSE=y\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the input resolves to the source file rather than the config variable")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/out.txt") == "MIT\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A config variable does not hide a discovered header of the same name", "[e2e][incremental][config]")
+{
+    GIVEN("a project whose config key matches a header the compiler discovers")
+    {
+        auto f = E2EFixture { "config_var_shadow" };
+        REQUIRE(f.init().success());
+        f.write_file("tup.config", "CONFIG_dep.h=y\n");
+        f.write_file("dep.h", "#define V 1\n");
+        f.write_file("main.c", "#include \"dep.h\"\nint main() { return V; }\n");
+        f.write_file("Tupfile", ": main.c |> gcc -MD -c %f -o %o |> main.o\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the shadowed header changes")
+        {
+            f.write_file("dep.h", "#define V 2\n");
+            auto result = f.build();
+
+            THEN("the command re-runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+            }
+        }
+    }
+}
+
+SCENARIO("A config variable does not hide a source file a glob matches", "[e2e][incremental][config]")
+{
+    GIVEN("a project whose config key matches a file a glob brings into the graph")
+    {
+        auto f = E2EFixture { "config_var_shadow" };
+        f.write_file("LICENSE", "MIT\n");
+        f.write_file("Tupfile", ": foreach *E |> cp %f %o |> %b.out\n");
+        REQUIRE(f.init().success());
+        f.write_file("tup.config", "CONFIG_LICENSE=y\n");
+        REQUIRE(f.build().success());
+        REQUIRE(f.read_file("LICENSE.out") == "MIT\n");
+        REQUIRE(f.build().is_noop());
+
+        WHEN("the shadowed source file changes")
+        {
+            f.write_file("LICENSE", "BSD\n");
+            auto result = f.build();
+
+            THEN("the command re-runs against the new contents")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("LICENSE.out") == "BSD\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Content change with preserved size and mtime", "[e2e][incremental]")
 {
     GIVEN("a built project whose input has an aged mtime")
