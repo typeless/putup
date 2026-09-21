@@ -88,9 +88,7 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
 
 auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 {
-    auto const id = graph.next_file_id++;
-    node.id = id;
-
+    auto const parent_idx = node_id::index(node.parent_dir);
     if (!is_empty(node.name)) {
         auto parent_path = PathId::SourceRoot;
         if (node.parent_dir != 0) {
@@ -100,9 +98,30 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
             }
         }
         node.path_id = graph.paths.intern(parent_path, node.name);
-        if (is_path_addressable(node.type)) {
-            graph.path_to_node.insert(to_underlying(node.path_id), id);
+    }
+
+    auto const names_a_path = !is_empty(node.name) && is_path_addressable(node.type);
+    if (names_a_path) {
+        auto const* occupant = graph.path_to_node.find(to_underlying(node.path_id));
+        if (!occupant && parent_idx < graph.dir_children.size()) {
+            occupant = graph.dir_children[parent_idx].find(to_underlying(node.name));
         }
+        if (occupant) {
+            auto const* existing = get_file_node(std::as_const(graph), *occupant);
+            auto err = Buf {};
+            err.fmt(
+                "Unable to create '{}' because a {} already occupies that path",
+                global_pool().get(materialize_path(graph, node.path_id)),
+                node_type_name(existing ? existing->type : node.type)
+            );
+            return make_error<NodeId>(ErrorCode::DuplicateNode, err.view());
+        }
+    }
+
+    auto const id = graph.next_file_id++;
+    node.id = id;
+    if (names_a_path) {
+        graph.path_to_node.insert(to_underlying(node.path_id), id);
     }
 
     auto const idx = node_id::index(id);
@@ -112,8 +131,7 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
     }
     graph.files[idx] = node;
 
-    if (!is_empty(graph.files[idx].name) && is_path_addressable(graph.files[idx].type)) {
-        auto const parent_idx = node_id::index(graph.files[idx].parent_dir);
+    if (names_a_path) {
         graph.dir_children[parent_idx].insert(to_underlying(graph.files[idx].name), id);
     }
 

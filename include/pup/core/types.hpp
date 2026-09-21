@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string_view>
 
 namespace pup {
 
@@ -210,6 +211,39 @@ constexpr auto is_path_addressable(NodeType type) -> bool
         return false;
     }
     return false;
+}
+
+/// What a node of this type is, for a message that has to tell a user which of two things already
+/// occupies a path. Exhaustive so that a new node type is a build error here rather than a
+/// diagnostic that names a kind it cannot describe.
+[[nodiscard]]
+constexpr auto node_type_name(NodeType type) -> std::string_view
+{
+    switch (type) {
+    case NodeType::File:
+        return "file";
+    case NodeType::Command:
+        return "command";
+    case NodeType::Directory:
+        return "directory";
+    case NodeType::Variable:
+        return "variable";
+    case NodeType::Generated:
+        return "generated file";
+    case NodeType::Ghost:
+        return "unresolved reference";
+    case NodeType::Group:
+        return "group";
+    case NodeType::GeneratedDir:
+        return "generated directory";
+    case NodeType::Root:
+        return "root";
+    case NodeType::Condition:
+        return "condition";
+    case NodeType::Phi:
+        return "branch merge";
+    }
+    return "node";
 }
 
 [[nodiscard]]

@@ -1603,6 +1603,85 @@ TEST_CASE("A recorded discovery routes the consumer no edge points at", "[graph]
     }
 }
 
+TEST_CASE("add_file_node refuses a second node at an occupied path", "[graph][path_pool]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
+    REQUIRE(src_dir.has_value());
+    auto first = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+    REQUIRE(first.has_value());
+
+    SECTION("a second addressable node with the same parent and name is an error")
+    {
+        auto second = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+        REQUIRE_FALSE(second.has_value());
+        REQUIRE(second.error().code == pup::ErrorCode::DuplicateNode);
+    }
+
+    SECTION("the node already at the path stays reachable by both lookups")
+    {
+        auto const node_count = g.files.size();
+        auto second = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+        REQUIRE_FALSE(second.has_value());
+
+        auto const* first_node = get_file_node(g, *first);
+        REQUIRE(first_node != nullptr);
+        auto const* resolved = g.path_to_node.find(pup::to_underlying(first_node->path_id));
+        REQUIRE(resolved != nullptr);
+        REQUIRE(static_cast<pup::NodeId>(*resolved) == *first);
+        REQUIRE(find_by_dir_name(g, *src_dir, "foo.c") == *first);
+        REQUIRE(g.files.size() == node_count);
+    }
+
+    SECTION("a node of a different type at the same path is refused just the same")
+    {
+        auto second = add_file_node(g, FileNode {
+            .type = NodeType::Generated,
+            .name = intern("foo.c"),
+            .parent_dir = *src_dir,
+        });
+        REQUIRE_FALSE(second.has_value());
+        REQUIRE(second.error().code == pup::ErrorCode::DuplicateNode);
+    }
+
+    SECTION("the build root's name is occupied even though no path resolves to it")
+    {
+        set_build_root_name(bs, "out");
+        auto clash = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("out") });
+        REQUIRE_FALSE(clash.has_value());
+        REQUIRE(clash.error().code == pup::ErrorCode::DuplicateNode);
+        REQUIRE(pup::global_pool().get(clash.error().message).find("directory") != std::string_view::npos);
+    }
+
+    SECTION("the message names the kind of node already at the path")
+    {
+        auto second = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = *src_dir });
+        REQUIRE_FALSE(second.has_value());
+        auto const message = pup::global_pool().get(second.error().message);
+        REQUIRE(message.find("src/foo.c") != std::string_view::npos);
+        REQUIRE(message.find("a file already occupies") != std::string_view::npos);
+    }
+
+    SECTION("a node that names no path may share a name with one that does")
+    {
+        auto var = add_file_node(g, FileNode {
+            .type = NodeType::Variable,
+            .name = intern("foo.c"),
+            .parent_dir = *src_dir,
+        });
+        REQUIRE(var.has_value());
+        auto twin = add_file_node(g, FileNode {
+            .type = NodeType::Variable,
+            .name = intern("foo.c"),
+            .parent_dir = *src_dir,
+        });
+        REQUIRE(twin.has_value());
+        REQUIRE(find_by_dir_name(g, *src_dir, "foo.c") == *first);
+    }
+}
+
 TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
 {
     auto bs = make_build_graph();
