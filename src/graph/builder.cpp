@@ -480,6 +480,9 @@ auto resolve_group_operand_node(
 
 auto ensure_env_var_node(BuilderContext& ctx, Builder& state, std::string_view var_name, std::string_view value)
     -> std::optional<NodeId>;
+auto find_internal_var_node(Builder const& state, std::string_view name) -> std::optional<NodeId>;
+auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_view name, std::string_view value)
+    -> std::optional<NodeId>;
 auto append_tool_stat(Buf& out, std::string_view name, std::string_view source_root) -> void;
 
 auto create_command_node(
@@ -525,12 +528,11 @@ auto create_command_node(
         key += "TUP_TOOL_";
         key += tool;
         auto const key_view = key.view();
-        auto const* cached = state.imported_env_var_nodes.find(to_underlying(intern(key_view)));
-        auto tool_node = (cached != nullptr) ? std::optional<NodeId> { *cached } : std::nullopt;
+        auto tool_node = find_internal_var_node(state, key_view);
         if (!tool_node) {
             auto stat = Buf {};
             append_tool_stat(stat, tool, str(state.options.source_root));
-            tool_node = ensure_env_var_node(ctx, state, key_view, stat.view());
+            tool_node = ensure_internal_var_node(ctx, state, key_view, stat.view());
         }
         if (tool_node) {
             (void)add_edge(ctx.state->graph, *tool_node, cmd_id, LinkType::Sticky);
@@ -1329,6 +1331,30 @@ auto ensure_env_var_node(
     }
     state.imported_env_var_nodes.insert(var_name_id, *result);
     return *result;
+}
+
+constexpr auto INTERNAL_VAR_PREFIX = std::string_view { "@" };
+
+auto internal_var_key(Buf& out, std::string_view name) -> void
+{
+    out += INTERNAL_VAR_PREFIX;
+    out += name;
+}
+
+auto find_internal_var_node(Builder const& state, std::string_view name) -> std::optional<NodeId>
+{
+    auto key = Buf {};
+    internal_var_key(key, name);
+    auto const* existing = state.imported_env_var_nodes.find(to_underlying(intern(key.view())));
+    return (existing != nullptr) ? std::optional<NodeId> { *existing } : std::nullopt;
+}
+
+auto ensure_internal_var_node(BuilderContext& ctx, Builder& state, std::string_view name, std::string_view value)
+    -> std::optional<NodeId>
+{
+    auto key = Buf {};
+    internal_var_key(key, name);
+    return ensure_env_var_node(ctx, state, key.view(), value);
 }
 
 /// Append "path:size:mtime" for a tracked tool, or "<missing>" if it cannot be
@@ -2514,7 +2540,7 @@ auto add_tupfile(
                 append_tool_stat(fingerprint, name, str(state.options.source_root));
                 fingerprint += ';';
             }
-            if (auto node = ensure_env_var_node(ctx, state, "TUP_TOOLCHAIN", fingerprint.view())) {
+            if (auto node = ensure_internal_var_node(ctx, state, "TUP_TOOLCHAIN", fingerprint.view())) {
                 state.toolchain_node_id = *node;
             }
         }

@@ -179,6 +179,34 @@ TEST_CASE("Parser export/import", "[parser]")
     }
 }
 
+TEST_CASE("No export or import names a variable putup reserves for itself", "[parser]")
+{
+    for (int byte = 1; byte < 256; ++byte) {
+        auto const lead = static_cast<char>(byte);
+
+        for (auto const* keyword : { "export ", "import " }) {
+            auto source = std::string { keyword };
+            source += lead;
+            source += "NAME";
+
+            INFO("keyword: " << keyword << " leading byte: " << byte);
+            auto result = parse_tupfile(source, "test.tup");
+            if (!result.success() || result.tupfile.statements.empty()) {
+                continue;
+            }
+
+            auto const* exp = result.tupfile.statements[0]->as<Export>();
+            auto const* imp = result.tupfile.statements[0]->as<Import>();
+            if (exp == nullptr && imp == nullptr) {
+                continue;
+            }
+
+            auto const name = sv(exp != nullptr ? exp->var_name : imp->var_name);
+            REQUIRE_FALSE(name.starts_with('@'));
+        }
+    }
+}
+
 TEST_CASE("Parser error directive", "[parser]")
 {
     SECTION("error with message")
