@@ -33,6 +33,18 @@ See `README.md` for the format and the rules that apply to every area.
 
 Which node a path spelled in a Tupfile names, when more than one spelling reaches the same file.
 
+### REQ-VARIANT-NAME-IS-A-FILE
+
+- conformance: tup-conformant
+- reference: upstream parents a configuration variable's node under the `tup.config` node itself rather than under its directory - `tup_db_get_tup_config_tent` finds or creates that node, `tup_db_read_vars` passes it down, and `add_var` creates the variable under it - so under tup's `unique(dir, name)` key a configuration variable and a source file can never collide; putup reaches the same disjointness by refusing a path to any node type that names none (`is_path_addressable`), because putup's path namespace is lexical and a parent alone would leave the collision spellable
+- discharge: test "Scenario: A config variable does not hide a source file of the same name"
+- discharge: test "Scenario: A config variable does not capture a rule's input in an out-of-tree build"
+- discharge: test "Scenario: A config variable does not hide a discovered header of the same name"
+- discharge: test "Scenario: A config variable does not hide a source file a glob matches"
+
+When a rule names an input, a glob matches a name, or a dep scan discovers one, putup shall
+resolve that name to the file on disk rather than to a configuration variable that shares it.
+
 ### REQ-VARIANT-OUTPUT-NODE
 
 - conformance: tup-conformant

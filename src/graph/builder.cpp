@@ -2487,11 +2487,6 @@ auto add_tupfile(
 
             auto var_name_id = to_underlying(intern(var_name));
 
-            if (auto existing = find_by_dir_name(build_state.graph, config_dir_id, var_name)) {
-                state.config_var_nodes.insert(var_name_id, *existing);
-                continue;
-            }
-
             auto value = eval.config_vars->get(var_name);
             auto node = FileNode {
                 .type = NodeType::Variable,

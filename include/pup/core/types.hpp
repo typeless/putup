@@ -186,6 +186,32 @@ constexpr auto names_node_type(std::uint8_t value) -> bool
     return false;
 }
 
+/// Whether a node of this type names a path, and so may be reached by resolving one. A node that
+/// stands for a value rather than for something on disk must answer false: a rule input, a glob or
+/// a discovered dependency that resolved to one would bind to it and never be stat'd, which is a
+/// build that goes stale or fails against a path that does not exist (#486). Exhaustive so that a
+/// new node type is a build error here rather than a silent entry in the path namespace.
+[[nodiscard]]
+constexpr auto is_path_addressable(NodeType type) -> bool
+{
+    switch (type) {
+    case NodeType::File:
+    case NodeType::Command:
+    case NodeType::Directory:
+    case NodeType::Generated:
+    case NodeType::Ghost:
+    case NodeType::Group:
+    case NodeType::GeneratedDir:
+    case NodeType::Root:
+        return true;
+    case NodeType::Variable:
+    case NodeType::Condition:
+    case NodeType::Phi:
+        return false;
+    }
+    return false;
+}
+
 [[nodiscard]]
 constexpr auto names_link_type(std::uint8_t value) -> bool
 {
