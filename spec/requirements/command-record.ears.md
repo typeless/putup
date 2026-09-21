@@ -786,6 +786,19 @@ putup shall fold the path, size and modification time it resolves each command's
 the first word that is not a `NAME=value` assignment, and only where that word contains no `/` -
 into the identity of that command.
 
+### REQ-ENV-INTERNAL-NAMES
+
+- leg: invariant
+- conformance: putup-only
+- discharge: test "Scenario: A Tupfile exporting the name of a command's own tool keeps tool-change detection"
+- discharge: test "Scenario: A Tupfile exporting TUP_TOOLCHAIN keeps tracked-tool detection"
+- discharge: test "Scenario: A variable named after a tool is still an ordinary exported variable"
+- discharge: test "No export or import names a variable putup reserves for itself"
+
+Where a Tupfile exports or imports a variable named `TUP_TOOLCHAIN` or `TUP_TOOL_<name>`, putup
+shall track it as the ordinary environment variable it is, keeping the REQ-ENV-TRACKED-TOOLS and
+REQ-ENV-COMMAND-TOOL fingerprints under keys outside the names a Tupfile can spell.
+
 ### REQ-ENV-TRACKED-TOOLS
 
 - leg: invariant

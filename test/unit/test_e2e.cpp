@@ -9471,6 +9471,124 @@ SCENARIO("A PATH change that swaps a tool no config tracks re-runs its commands"
     }
 }
 
+SCENARIO("A Tupfile exporting the name of a command's own tool keeps tool-change detection", "[e2e][incremental][envdep]")
+{
+    GIVEN("a project that exports TUP_TOOL_<tool> for the tool its rule leads with")
+    {
+        auto f = E2EFixture { "tracked_tool_path" };
+        f.mkdir("build");
+        f.mkdir("first");
+        f.mkdir("second");
+        f.write_file("first/mytool", "#!/bin/sh\necho v1\n");
+        f.write_file("second/mytool", "#!/bin/sh\necho v2\n");
+        REQUIRE(f.run("/bin/chmod", { "+x", "first/mytool", "second/mytool" }).exit_code == 0);
+        f.write_file("Tupfile", "export TUP_TOOL_mytool\n: |> mytool > %o |> out.txt\n");
+
+        auto const* inherited = std::getenv("PATH");
+        auto base = std::string { inherited != nullptr ? inherited : "/usr/bin:/bin" };
+        auto first = (f.workdir() / "first").string();
+        auto second = (f.workdir() / "second").string();
+        {
+            auto env = EnvGuard { "PATH", first + ":" + base };
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+            REQUIRE(f.build({ "-B", "build" }).success());
+            REQUIRE(f.read_file("build/out.txt") == "v1\n");
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+        }
+
+        WHEN("a PATH change resolves the rule's tool to a different binary")
+        {
+            auto env = EnvGuard { "PATH", second + ":" + first + ":" + base };
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the exported variable does not displace the tool stat, and the command re-runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("build/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A Tupfile exporting TUP_TOOLCHAIN keeps tracked-tool detection", "[e2e][incremental][envdep]")
+{
+    GIVEN("a project that exports TUP_TOOLCHAIN and reaches its tracked tool past a shell")
+    {
+        auto f = E2EFixture { "tracked_tool_path" };
+        f.mkdir("build");
+        f.mkdir("first");
+        f.mkdir("second");
+        f.write_file("first/mytool", "#!/bin/sh\necho v1\n");
+        f.write_file("second/mytool", "#!/bin/sh\necho v2\n");
+        REQUIRE(f.run("/bin/chmod", { "+x", "first/mytool", "second/mytool" }).exit_code == 0);
+        f.write_file("Tupfile", "export TUP_TOOLCHAIN\n: |> sh -c 'mytool > %o' |> out.txt\n");
+        f.write_file("build/tup.config", "CONFIG_TRACKED_TOOLS=mytool\n");
+
+        auto const* inherited = std::getenv("PATH");
+        auto base = std::string { inherited != nullptr ? inherited : "/usr/bin:/bin" };
+        auto first = (f.workdir() / "first").string();
+        auto second = (f.workdir() / "second").string();
+        {
+            auto env = EnvGuard { "PATH", first + ":" + base };
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+            REQUIRE(f.build({ "-B", "build" }).success());
+            REQUIRE(f.read_file("build/out.txt") == "v1\n");
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+        }
+
+        WHEN("a PATH change resolves the tracked name to a different binary")
+        {
+            auto env = EnvGuard { "PATH", second + ":" + first + ":" + base };
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the exported variable does not displace the fingerprint, and the command re-runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("build/out.txt") == "v2\n");
+            }
+        }
+    }
+}
+
+SCENARIO("A variable named after a tool is still an ordinary exported variable", "[e2e][incremental][envdep]")
+{
+    GIVEN("a built project that exports TUP_TOOL_<tool> and echoes it from the command")
+    {
+        auto f = E2EFixture { "tracked_tool_path" };
+        f.mkdir("build");
+        f.write_file("Tupfile", "export TUP_TOOL_mytool\n: |> echo \"[$TUP_TOOL_mytool]\" > %o |> out.txt\n");
+
+        {
+            auto env = EnvGuard { "TUP_TOOL_mytool", "one" };
+            REQUIRE(f.pup({ "configure", "-B", "build" }).success());
+            REQUIRE(f.build({ "-B", "build" }).success());
+            REQUIRE(f.read_file("build/out.txt") == "[one]\n");
+            REQUIRE(f.build({ "-B", "build" }).is_noop());
+        }
+
+        WHEN("the exported variable's value changes")
+        {
+            auto env = EnvGuard { "TUP_TOOL_mytool", "two" };
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the command re-runs and sees the new value")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(result.is_noop());
+                REQUIRE(f.read_file("build/out.txt") == "[two]\n");
+            }
+        }
+    }
+}
+
 SCENARIO("Content change with preserved size and mtime", "[e2e][incremental]")
 {
     GIVEN("a built project whose input has an aged mtime")
