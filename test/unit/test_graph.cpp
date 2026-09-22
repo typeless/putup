@@ -1682,6 +1682,44 @@ TEST_CASE("add_file_node refuses a second node at an occupied path", "[graph][pa
     }
 }
 
+TEST_CASE("add_file_node refuses a parent id that names no file node", "[graph][path_pool]")
+{
+    auto bs = make_build_graph();
+    auto& g = bs.graph;
+
+    auto src_dir = add_file_node(g, FileNode { .type = NodeType::Directory, .name = intern("src") });
+    REQUIRE(src_dir.has_value());
+    auto root_foo = add_file_node(g, FileNode { .name = intern("foo.c") });
+    REQUIRE(root_foo.has_value());
+    auto const next_id = g.next_file_id;
+
+    SECTION("an id no node was minted under is an error")
+    {
+        auto orphan = add_file_node(g, FileNode { .name = intern("bar.c"), .parent_dir = pup::NodeId { 999 } });
+        REQUIRE_FALSE(orphan.has_value());
+        REQUIRE(orphan.error().code == pup::ErrorCode::InvalidNodeId);
+        REQUIRE(g.next_file_id == next_id);
+        REQUIRE(find_by_dir_name(g, pup::NodeId { 0 }, "bar.c") == std::nullopt);
+    }
+
+    SECTION("a command id is an error even when its index matches a directory")
+    {
+        auto const cmd = pup::node_id::make_command(pup::node_id::index(*src_dir));
+        auto orphan = add_file_node(g, FileNode { .name = intern("bar.c"), .parent_dir = cmd });
+        REQUIRE_FALSE(orphan.has_value());
+        REQUIRE(orphan.error().code == pup::ErrorCode::InvalidNodeId);
+        REQUIRE(find_by_dir_name(g, *src_dir, "bar.c") == std::nullopt);
+    }
+
+    SECTION("the refusal leaves the source root's entry of the same name alone")
+    {
+        auto orphan = add_file_node(g, FileNode { .name = intern("foo.c"), .parent_dir = pup::NodeId { 999 } });
+        REQUIRE_FALSE(orphan.has_value());
+        REQUIRE(orphan.error().code == pup::ErrorCode::InvalidNodeId);
+        REQUIRE(find_by_dir_name(g, pup::NodeId { 0 }, "foo.c") == *root_foo);
+    }
+}
+
 TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
 {
     auto bs = make_build_graph();
