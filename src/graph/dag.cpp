@@ -88,15 +88,16 @@ auto validate_node_id(Graph const& graph, NodeId id) -> bool
 
 auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
 {
+    auto parent_path = PathId::SourceRoot;
+    if (node.parent_dir != 0) {
+        auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
+        if (!parent) {
+            return make_error<NodeId>(ErrorCode::InvalidNodeId, "Invalid parent directory node ID");
+        }
+        parent_path = parent->path_id;
+    }
     auto const parent_idx = node_id::index(node.parent_dir);
     if (!is_empty(node.name)) {
-        auto parent_path = PathId::SourceRoot;
-        if (node.parent_dir != 0) {
-            auto const* parent = get_file_node(std::as_const(graph), node.parent_dir);
-            if (parent) {
-                parent_path = parent->path_id;
-            }
-        }
         node.path_id = graph.paths.intern(parent_path, node.name);
     }
 
