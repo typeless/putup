@@ -507,21 +507,6 @@ auto get_phi_node(Graph& graph, NodeId id) -> PhiNode*
     return const_cast<PhiNode*>(get_phi_node(std::as_const(graph), id));
 }
 
-auto resolve_phi_node(Graph const& graph, NodeId phi_id) -> NodeId
-{
-    auto const* phi = get_phi_node(graph, phi_id);
-    if (!phi) {
-        return INVALID_NODE_ID;
-    }
-
-    auto const* cond = get_condition_node(graph, phi->condition);
-    if (!cond) {
-        return INVALID_NODE_ID;
-    }
-
-    return cond->current_value ? phi->then_output : phi->else_output;
-}
-
 auto is_guard_satisfied(Graph const& graph, NodeId id) -> bool
 {
     auto const* cmd = get_command_node(graph, id);
