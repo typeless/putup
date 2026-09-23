@@ -387,14 +387,14 @@ auto resolve_input_node(
     auto source_path = pool.get(pup::path::join(str(ctx.options.source_root), normalized_path));
     if (pup::platform::exists(source_path)) {
         auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
-        return ensure_file_node(ctx.state->graph, path_id, NodeType::File);
+        return ensure_file_node(ctx.state->graph, path_id, pup::platform::is_directory(source_path) ? NodeType::Directory : NodeType::File);
     }
 
     if (!is_empty(ctx.options.config_root) && str(ctx.options.config_root) != str(ctx.options.source_root)) {
         auto config_path_sv = pool.get(pup::path::join(str(ctx.options.config_root), normalized_path));
         if (pup::platform::exists(config_path_sv)) {
             auto path_id = ctx.state->graph.paths.intern_path(normalized_path, pool, PathId::SourceRoot);
-            return ensure_file_node(ctx.state->graph, path_id, NodeType::File);
+            return ensure_file_node(ctx.state->graph, path_id, pup::platform::is_directory(config_path_sv) ? NodeType::Directory : NodeType::File);
         }
     }
 

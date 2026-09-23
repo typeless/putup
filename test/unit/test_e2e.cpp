@@ -15893,3 +15893,68 @@ SCENARIO("Numbered input flags name the basename and the basename without extens
         }
     }
 }
+
+SCENARIO("A rule cannot put an output or a group under a path that is not a directory", "[e2e][parse]")
+{
+    GIVEN("a project whose source tree holds a file named sub and a directory named srcdir")
+    {
+        auto f = E2EFixture { "output_under_non_directory" };
+
+        WHEN("a rule reads the source directory and others read and write paths inside it")
+        {
+            f.write_file("Tupfile", ": srcdir |> ls %f > %o |> list.txt\n: srcdir/keep.c |> cp %f %o |> keep.o\n: |> echo x > %o |> srcdir/x.o\n");
+            auto result = f.build();
+
+            THEN("the build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("srcdir/x.o") == "x\n");
+            }
+        }
+
+        WHEN("a rule reads the source file and another outputs into it as if it were a directory")
+        {
+            f.write_file("Tupfile", ": sub |> cat %f > %o |> a.txt\n: |> echo hi > %o |> sub/x.o\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused before any command runs")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("the file 'sub' is not a directory") != std::string::npos);
+                REQUIRE(result.stdout_output.find("echo hi") == std::string::npos);
+            }
+        }
+
+        WHEN("a rule outputs under another rule's output")
+        {
+            f.write_file("Tupfile", ": |> echo a > %o |> gen\n: |> echo b > %o |> gen/x\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the generated file")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("the generated file 'gen' is not a directory") != std::string::npos);
+            }
+        }
+
+        WHEN("a rule puts a group under the source file")
+        {
+            f.write_file("Tupfile", ": sub |> cat %f > %o |> a.txt sub/<g>\n: sub/<g> |> echo used > %o |> b.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused where the build used to succeed")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("the file 'sub' is not a directory") != std::string::npos);
+            }
+        }
+    }
+}
