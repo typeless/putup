@@ -232,7 +232,7 @@ auto glob_expand(
             if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                 return false;
             }
-            if (glob.matches(rel_path)) {
+            if (!entry.is_dir && glob.matches(rel_path)) {
                 auto result_id = dir_part.empty() ? pool.intern(rel_path) : pup::path::join(dir_part, rel_path);
                 results.push_back(result_id);
             }
@@ -246,7 +246,7 @@ auto glob_expand(
                 if (!options.include_hidden && !name_sv.empty() && name_sv[0] == '.') {
                     continue;
                 }
-                if (glob.matches(name_sv)) {
+                if (!entry.is_dir && glob.matches(name_sv)) {
                     auto result_id = dir_part.empty() ? pool.intern(name_sv) : pup::path::join(dir_part, name_sv);
                     results.push_back(result_id);
                 }
