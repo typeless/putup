@@ -313,3 +313,40 @@ SCENARIO("glob expansion orders matches by path, not by interning order", "[glob
         }
     }
 }
+
+SCENARIO("glob expansion matches files and never directories", "[glob]")
+{
+    GIVEN("a directory holding a file and a subdirectory that itself holds a file")
+    {
+        auto tmp = TempDir {};
+        fs::create_directory(tmp.path() / "gdir_sub");
+        tmp.create_file("gdir_top.txt");
+        tmp.create_file("gdir_sub/gdir_leaf.txt");
+
+        auto expanded = [&](std::string_view pattern) {
+            auto matches = glob_expand(pattern, tmp.path().string());
+            REQUIRE(matches.has_value());
+            auto result = std::vector<std::string_view> {};
+            for (auto id : *matches) {
+                result.push_back(sv(id));
+            }
+            return result;
+        };
+
+        WHEN("a pattern that the subdirectory's name also matches is expanded")
+        {
+            THEN("only the file is a match")
+            {
+                REQUIRE(expanded("gdir_*") == std::vector<std::string_view> { "gdir_top.txt" });
+            }
+        }
+
+        WHEN("a recursive pattern is expanded")
+        {
+            THEN("the files at every depth match and the subdirectory does not")
+            {
+                REQUIRE(expanded("**") == std::vector<std::string_view> { "gdir_sub/gdir_leaf.txt", "gdir_top.txt" });
+            }
+        }
+    }
+}

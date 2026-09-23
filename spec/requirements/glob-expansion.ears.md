@@ -90,6 +90,14 @@ Which paths a pattern names.
 putup shall expand a glob to both the source files on disk and the files produced by the
 project's rules.
 
+### REQ-GLOB-FILES-ONLY
+
+- conformance: tup-conformant
+- reference: upstream `nl_add_path` expands a rule's glob through `tup_db_select_node_dir_glob` with directories excluded, so only normal and generated files match
+- discharge: test "Scenario: glob expansion matches files and never directories"
+
+putup shall expand a glob to the files it matches and never to a directory whose name it matches.
+
 ### REQ-GLOB-DEDUP
 
 - conformance: unclassified
