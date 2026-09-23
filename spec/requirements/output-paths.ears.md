@@ -54,6 +54,16 @@ How far out of the tree a rule may write.
 If a rule declares an output whose path does not resolve to a location inside the build root, then
 putup shall reject the Tupfile and name that path, whether or not the rule's guards are satisfied.
 
+### REQ-OUTPUT-UNDER-DIRECTORY
+
+- conformance: tup-conformant
+- reference: upstream refuses the same class in `find_dir_tupid_dt_pg` (`src/tup/create_name_file.c`), which accepts only a directory or a generated directory as a path component of an output or a group and reports "Unable to output to a different directory"; upstream knows a source path's type from its scan, where putup learns it only once a rule names the path, so an output named before any rule reads the file is not refused
+- discharge: test "add_file_node refuses a parent that is not a directory node"
+- discharge: test "Scenario: A rule cannot put an output or a group under a path that is not a directory"
+
+If a rule names an output or a group under a path that the graph holds as a file, a generated file
+or a group, then putup shall reject the Tupfile and name that path and what it is.
+
 ## Group: canonicality
 
 Which of a path's spellings the record carries.

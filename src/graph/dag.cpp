@@ -94,6 +94,18 @@ auto add_file_node(Graph& graph, FileNode node) -> Result<NodeId>
         if (!parent) {
             return make_error<NodeId>(ErrorCode::InvalidNodeId, "Invalid parent directory node ID");
         }
+        if (parent->type != NodeType::Directory && parent->type != NodeType::GeneratedDir) {
+            auto const parent_spelling = global_pool().get(materialize_path(graph, parent->path_id));
+            auto err = Buf {};
+            err.fmt(
+                "Unable to create '{}/{}' because the {} '{}' is not a directory",
+                parent_spelling,
+                global_pool().get(node.name),
+                node_type_name(parent->type),
+                parent_spelling
+            );
+            return make_error<NodeId>(ErrorCode::InvalidNodeId, err.view());
+        }
         parent_path = parent->path_id;
     }
     auto const parent_idx = node_id::index(node.parent_dir);

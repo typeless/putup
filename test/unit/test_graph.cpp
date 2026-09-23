@@ -1682,7 +1682,7 @@ TEST_CASE("add_file_node refuses a second node at an occupied path", "[graph][pa
     }
 }
 
-TEST_CASE("add_file_node refuses a parent id that names no file node", "[graph][path_pool]")
+TEST_CASE("add_file_node refuses a parent that is not a directory node", "[graph][path_pool]")
 {
     auto bs = make_build_graph();
     auto& g = bs.graph;
@@ -1709,6 +1709,30 @@ TEST_CASE("add_file_node refuses a parent id that names no file node", "[graph][
         REQUIRE_FALSE(orphan.has_value());
         REQUIRE(orphan.error().code == pup::ErrorCode::InvalidNodeId);
         REQUIRE(find_by_dir_name(g, *src_dir, "bar.c") == std::nullopt);
+    }
+
+    SECTION("a parent that is a file rather than a directory is an error naming what it is")
+    {
+        auto child = add_file_node(g, FileNode { .name = intern("x.o"), .parent_dir = *root_foo });
+        REQUIRE_FALSE(child.has_value());
+        REQUIRE(child.error().code == pup::ErrorCode::InvalidNodeId);
+        REQUIRE(pup::global_pool().get(child.error().message).find("the file 'foo.c' is not a directory") != std::string_view::npos);
+        REQUIRE(g.next_file_id == next_id);
+    }
+
+    SECTION("a parent that is a group is an error")
+    {
+        auto group = add_file_node(g, FileNode { .type = NodeType::Group, .name = intern("<g>"), .parent_dir = *src_dir });
+        REQUIRE(group.has_value());
+        auto child = add_file_node(g, FileNode { .name = intern("x.o"), .parent_dir = *group });
+        REQUIRE_FALSE(child.has_value());
+        REQUIRE(child.error().code == pup::ErrorCode::InvalidNodeId);
+    }
+
+    SECTION("the build root is a directory a node may sit under")
+    {
+        auto child = add_file_node(g, FileNode { .type = NodeType::Generated, .name = intern("x.o"), .parent_dir = pup::BUILD_ROOT_ID });
+        REQUIRE(child.has_value());
     }
 
     SECTION("the refusal leaves the source root's entry of the same name alone")
