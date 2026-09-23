@@ -712,7 +712,6 @@ auto get_phi_node(Graph&, id) -> PhiNode*;             // nullptr for non-phi ID
 // Phi-node model helpers
 auto add_condition_node(Graph&, ConditionNode) -> Result<NodeId>;
 auto add_phi_node(Graph&, PhiNode) -> Result<NodeId>;
-auto resolve_phi_node(Graph const&, phi_id) -> NodeId; // Returns active output
 auto is_guard_satisfied(Graph const&, NodeId) -> bool;
 
 // String access helpers (resolve StringId -> string_view)
