@@ -173,13 +173,14 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
         auto rel = pool.get(graph.paths.to_string(path_id, pool));
         if (auto src_pid = graph.paths.find_path(rel, pool, PathId::SourceRoot)) {
             if (auto const* hit = graph.path_to_node.find(to_underlying(*src_pid))) {
-                auto* node = get_file_node(graph, *hit);
+                auto const hit_id = NodeId { *hit };
+                auto* node = get_file_node(graph, hit_id);
                 if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
-                    graph.path_to_node.insert(to_underlying(path_id), *hit);
+                    graph.path_to_node.insert(to_underlying(path_id), hit_id);
                     if (type == NodeType::Generated) {
                         node->type = NodeType::Generated;
                     }
-                    return *hit;
+                    return hit_id;
                 }
             }
         }
@@ -188,26 +189,28 @@ auto ensure_file_node(Graph& graph, PathId path_id, NodeType type) -> Result<Nod
     if (!graph.paths.is_grounded(path_id)) {
         auto build_id = graph.paths.ground(path_id, PathId::BuildRoot);
         if (auto const* hit = graph.path_to_node.find(to_underlying(build_id))) {
-            graph.path_to_node.insert(to_underlying(path_id), *hit);
+            auto const hit_id = NodeId { *hit };
+            graph.path_to_node.insert(to_underlying(path_id), hit_id);
             if (type == NodeType::Generated) {
-                auto* node = get_file_node(graph, *hit);
+                auto* node = get_file_node(graph, hit_id);
                 if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
                     node->type = NodeType::Generated;
                 }
             }
-            return *hit;
+            return hit_id;
         }
 
         auto source_id = graph.paths.ground(path_id, PathId::SourceRoot);
         if (auto const* hit = graph.path_to_node.find(to_underlying(source_id))) {
-            graph.path_to_node.insert(to_underlying(path_id), *hit);
+            auto const hit_id = NodeId { *hit };
+            graph.path_to_node.insert(to_underlying(path_id), hit_id);
             if (type == NodeType::Generated) {
-                auto* node = get_file_node(graph, *hit);
+                auto* node = get_file_node(graph, hit_id);
                 if (node && (node->type == NodeType::Ghost || node->type == NodeType::File)) {
                     node->type = NodeType::Generated;
                 }
             }
-            return *hit;
+            return hit_id;
         }
 
         auto root = (type == NodeType::File || type == NodeType::Directory)

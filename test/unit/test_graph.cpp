@@ -1793,6 +1793,24 @@ TEST_CASE("FileNode path_id populated by add_file_node", "[graph][path_pool]")
     }
 }
 
+TEST_CASE("ensure_file_node returns the source node an in-tree build path aliases", "[graph]")
+{
+    auto bs = make_build_graph();
+    auto& graph = bs.graph;
+    auto& pool = pup::global_pool();
+
+    auto build_twin = graph.paths.intern_path("d/f", pool, pup::PathId::BuildRoot);
+    auto source_file = graph.paths.intern_path("d/f", pool, pup::PathId::SourceRoot);
+    auto file_id = ensure_file_node(graph, source_file, NodeType::File);
+    REQUIRE(file_id.has_value());
+
+    auto aliased = ensure_file_node(graph, build_twin, NodeType::Directory);
+
+    REQUIRE(aliased.has_value());
+    REQUIRE(*aliased == *file_id);
+    REQUIRE(*graph.path_to_node.find(pup::to_underlying(build_twin)) == *file_id);
+}
+
 TEST_CASE("ensure_file_node creates nodes from PathId", "[graph]")
 {
     auto bs = make_build_graph();
