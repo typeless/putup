@@ -57,12 +57,24 @@ putup shall reject the Tupfile and name that path, whether or not the rule's gua
 ### REQ-OUTPUT-UNDER-DIRECTORY
 
 - conformance: tup-conformant
-- reference: upstream refuses the same class in `find_dir_tupid_dt_pg` (`src/tup/create_name_file.c`), which accepts only a directory or a generated directory as a path component of an output or a group and reports "Unable to output to a different directory"; upstream knows a source path's type from its scan, where putup learns it only once a rule names the path, so an output named before any rule reads the file is not refused
+- reference: upstream refuses the same class in `find_dir_tupid_dt_pg` (`src/tup/create_name_file.c`), which accepts only a directory or a generated directory as a path component of an output or a group and reports "Unable to output to a different directory"; upstream knows a source path's type from its scan, where putup stats each component of the output's or group's directory that no node holds yet, so in an in-tree build the refusal does not depend on whether a rule reads the file before or after; in a variant build upstream places both in the variant tree and accepts them, and so does putup; putup does not yet refuse a group under an earlier rule's generated output, because the group's directory is a source path and the output is a build path, and in-tree putup aliases a build path to its source twin but not the reverse
 - discharge: test "add_file_node refuses a parent that is not a directory node"
 - discharge: test "Scenario: A rule cannot put an output or a group under a path that is not a directory"
 
-If a rule names an output or a group under a path that the graph holds as a file, a generated file
-or a group, then putup shall reject the Tupfile and name that path and what it is.
+If a rule names an output under a path that the graph holds as a file, a generated file or a group,
+or a group under a path that the graph holds as a file or a group, or, in an in-tree build, either
+under a path that is a file in the source tree, then putup shall reject the Tupfile and name that
+path and what it is.
+
+### REQ-OUTPUT-NOT-A-DIRECTORY
+
+- conformance: deliberate-deviation
+- reference: upstream refuses the same class in `validate_output` (`src/tup/parser.c`) with "Attempting to insert '<name>' as a generated node when it already exists as a different type"; putup differs three times: it names the type "directory" where upstream says "generated directory", because putup never creates a generated-directory node; it refuses a rule under an unsatisfied guard, which upstream never evaluates, so that whether the Tupfile is accepted does not depend on the configuration, as REQ-OUTPUT-INSIDE-HIERARCHY does; and it does not refuse at parse time an output onto a directory in the source tree or onto a group's directory, which upstream refuses (in-tree putup refuses the source directory later, as a file the build does not own)
+- discharge: test "Scenario: A rule cannot output to a path another rule uses as a directory"
+
+If a rule declares an output at a path under which another rule has declared an output, then putup
+shall reject the Tupfile and name that path and what it holds, whether or not the rule's guards are
+satisfied.
 
 ## Group: canonicality
 

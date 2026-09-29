@@ -408,6 +408,37 @@ auto resolve_input_node(
     return ensure_file_node(ctx.state->graph, path_id, NodeType::Ghost);
 }
 
+auto bind_source_files_along(BuilderContext& ctx, PathId dir) -> Result<void>
+{
+    auto& graph = ctx.state->graph;
+    if (!get_build_root_name(graph).empty() || is_root(dir) || graph.path_to_node.find(to_underlying(dir))) {
+        return {};
+    }
+    auto& pool = global_pool();
+    auto rel = pool.get(graph.paths.to_string(dir, pool));
+    if (auto source_id = graph.paths.find_path(rel, pool, PathId::SourceRoot);
+        source_id && graph.path_to_node.find(to_underlying(*source_id))) {
+        return {};
+    }
+    if (auto outer = bind_source_files_along(ctx, graph.paths.parent(dir)); !outer) {
+        return outer;
+    }
+    auto source_path = pool.get(pup::path::join(str(ctx.options.source_root), rel));
+    auto is_source_file = pup::platform::is_file(source_path);
+    if (!is_source_file && !pup::platform::exists(source_path) && !is_empty(ctx.options.config_root)
+        && str(ctx.options.config_root) != str(ctx.options.source_root)) {
+        is_source_file = pup::platform::is_file(pool.get(pup::path::join(str(ctx.options.config_root), rel)));
+    }
+    if (!is_source_file) {
+        return {};
+    }
+    auto file_id = ensure_file_node(graph, graph.paths.intern_path(rel, pool, PathId::SourceRoot), NodeType::File);
+    if (!file_id) {
+        return pup::unexpected<Error>(file_id.error());
+    }
+    return {};
+}
+
 /// Get all files that are members of a group (via file → group edges)
 /// Returns file NodeIds by finding all input edges to the group node
 auto get_group_members(Graph const& graph, NodeId group_id) -> Vec<NodeId>
@@ -429,6 +460,9 @@ auto get_or_create_group_node(
     }
 
     auto dir_path_id = ctx.state->graph.paths.intern_path(directory, global_pool(), PathId::SourceRoot);
+    if (auto bound = bind_source_files_along(ctx, dir_path_id); !bound) {
+        return pup::unexpected<Error>(bound.error());
+    }
     auto parent_id_result = ensure_file_node(ctx.state->graph, dir_path_id, NodeType::Directory);
     if (!parent_id_result) {
         return parent_id_result;
@@ -2194,11 +2228,34 @@ auto expand_rule(
     for (auto i = std::size_t { 0 }; i < all_declared.size(); ++i) {
         auto output_path = all_declared[i];
         auto const is_extra = i >= primary_count;
+        if (auto bound = bind_source_files_along(ctx, ctx.state->graph.paths.parent(output_path)); !bound) {
+            return pup::unexpected<Error>(bound.error());
+        }
         auto output_id = ensure_file_node(
             ctx.state->graph, output_path, is_context_active(ctx) ? NodeType::Generated : NodeType::Ghost
         );
         if (!output_id) {
             return pup::unexpected<Error>(output_id.error());
+        }
+
+        auto const bound_type = get_file_node(ctx.state->graph, *output_id)->type;
+        switch (bound_type) {
+        case NodeType::File:
+        case NodeType::Generated:
+        case NodeType::Ghost:
+            break;
+        case NodeType::Command:
+        case NodeType::Directory:
+        case NodeType::Variable:
+        case NodeType::Group:
+        case NodeType::GeneratedDir:
+        case NodeType::Root:
+        case NodeType::Condition:
+        case NodeType::Phi: {
+            auto err = Buf {};
+            err.fmt("Attempting to insert '{}' as a generated node when it already exists as a different type ({})", get_full_path(ctx.state->graph, *output_id, ctx.state->path_cache), node_type_name(bound_type));
+            return make_error<void>(ErrorCode::DuplicateNode, err.view());
+        }
         }
 
         auto output_inputs = get_inputs(ctx.state->graph, *output_id);
@@ -2251,9 +2308,10 @@ auto expand_rule(
             }
 
             auto group_id_result = get_or_create_group_node(ctx, state, str(dir), str(*eff_output_oo_group));
-            if (group_id_result) {
-                (void)add_edge(ctx.state->graph, *output_id, *group_id_result, LinkType::Group);
+            if (!group_id_result) {
+                return pup::unexpected<Error>(group_id_result.error());
             }
+            (void)add_edge(ctx.state->graph, *output_id, *group_id_result, LinkType::Group);
         }
     }
 
