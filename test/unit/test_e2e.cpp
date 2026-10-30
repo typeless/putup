@@ -16636,3 +16636,95 @@ SCENARIO("A rule naming a bin no earlier rule declares is refused", "[e2e][parse
         }
     }
 }
+
+SCENARIO("An order-only input list expands the rule's input %-flags", "[e2e][parse][order-only]")
+{
+    GIVEN("a project with two source files and a rule generating a file per source")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.txt", "");
+        f.write_file("b.txt", "");
+        auto const generators = std::string { ": |> echo dep-a > %o |> dep_a.txt\n: |> echo dep-b > %o |> dep_b.txt\n" };
+
+        WHEN("an order-only path spells %B")
+        {
+            f.write_file("Tupfile", generators + ": a.txt | dep_%B.txt |> cat dep_a.txt > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("it names the file for the rule's input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "dep-a\n");
+            }
+        }
+
+        WHEN("a foreach rule's order-only path spells %B")
+        {
+            f.write_file("Tupfile", generators + ": foreach a.txt b.txt | dep_%B.txt |> cat dep_%B.txt > %o |> %B.out\n");
+            auto result = f.build();
+
+            THEN("each command names the file for its own input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.out") == "dep-a\n");
+                REQUIRE(f.read_file("b.out") == "dep-b\n");
+            }
+        }
+
+        WHEN("a bang macro's order-only path spells %B")
+        {
+            f.write_file("Tupfile", generators + "!dep = | dep_%B.txt |> cat dep_%B.txt > %o |>\n: foreach a.txt b.txt |> !dep |> %B.out\n");
+            auto result = f.build();
+
+            THEN("each command names the file for its own input")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.out") == "dep-a\n");
+                REQUIRE(f.read_file("b.out") == "dep-b\n");
+            }
+        }
+
+        WHEN("a regular input path spells %B")
+        {
+            f.write_file("p%Bq.txt", "literal\n");
+            f.write_file("Tupfile", ": p%Bq.txt |> cat %f > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the text names a file, as tup reads it")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "literal\n");
+            }
+        }
+
+        WHEN("an order-only path spells a flag that only a command or an outputs section takes")
+        {
+            auto const [flag, message] = GENERATE(table<char const*, char const*>({
+                { "%o", "%o can only be used in a command string or extra outputs section" },
+                { "%1o", "%o can only be used in a command string or extra outputs section" },
+                { "%O", "%O can only be used in the extra outputs section" },
+                { "%i", "%i is only valid in a command string" },
+                { "%e", "%e is only valid with a foreach rule" },
+            }));
+            f.write_file("Tupfile", std::string { ": foreach a.txt | dep_" } + flag + ".txt |> echo hi > %o |> %B.out\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused with tup's message")
+            {
+                INFO("flag: " << flag);
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find(message) != std::string::npos);
+            }
+        }
+    }
+}

@@ -456,6 +456,11 @@ private:
     }
 };
 
+auto section_names_outputs(PatternSection section) -> bool
+{
+    return section == PatternSection::Command || section == PatternSection::ExtraOutputs;
+}
+
 }
 
 auto expand_pattern_atoms(
@@ -514,7 +519,7 @@ auto expand_pattern_atoms(
             auto const letter = text[end];
 
             if (letter == 'f' || letter == 'b' || letter == 'B' || letter == 'o' || letter == 'i') {
-                if (letter == 'o' && flags.section == PatternSection::Outputs) {
+                if (letter == 'o' && !section_names_outputs(flags.section)) {
                     return make_error<Instruction>(
                         ErrorCode::ParseError,
                         "%o can only be used in a command string or extra outputs section"
@@ -538,6 +543,11 @@ auto expand_pattern_atoms(
             auto msg = Buf {};
             msg.fmt("Expected 'f', 'b', 'B', 'o', or 'i' after number in %{}-flag, but got '{}'", num, letter);
             return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+        }
+
+        if (flag == '<' && flags.section == PatternSection::OrderOnlyInputs) {
+            builder.literal("%<");
+            continue;
         }
 
         if (flag == '<') {
@@ -584,7 +594,7 @@ auto expand_pattern_atoms(
             builder.flag(AtomKind::OrderOnlyInputs);
             break;
         case 'e':
-            if (!flags.input_ext) {
+            if (!flags.input_ext || flags.section == PatternSection::OrderOnlyInputs) {
                 auto msg = Buf {};
                 if (flags.all_inputs.size() == 1) {
                     msg.fmt("%e is only valid with a foreach rule for files that have extensions\n -- Path: '{}'", flags.all_inputs[0]);
@@ -596,7 +606,7 @@ auto expand_pattern_atoms(
             builder.flag(AtomKind::InputExt);
             break;
         case 'o':
-            if (flags.section == PatternSection::Outputs) {
+            if (!section_names_outputs(flags.section)) {
                 return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%o can only be used in a command string or extra outputs section"
@@ -611,7 +621,7 @@ auto expand_pattern_atoms(
             builder.flag(AtomKind::AllOutputs);
             break;
         case 'O':
-            if (flags.section == PatternSection::Outputs) {
+            if (!section_names_outputs(flags.section)) {
                 return make_error<Instruction>(
                     ErrorCode::ParseError,
                     "%O can only be used in the extra outputs section"

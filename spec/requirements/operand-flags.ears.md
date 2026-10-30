@@ -101,6 +101,16 @@ order-only operand the rule itself wrote after `|`, spelled as `%f` spells an in
 single spaces; and `%Ni` to every operand of the N-th such token, or to nothing when the token
 does not exist.
 
+### REQ-OPERAND-ORDER-ONLY-PATH-EXPANDS-INPUT-FLAGS
+
+- conformance: deliberate-deviation
+- reference: upstream runs an order-only path list through `tup_printf` before evaluating its variables (`eval_path_list` with a live `input_nl`), passing the rule's inputs, no outputs, no order-only list and no extension, so input flags expand and `%o` and `%O` are refused with "%o can only be used in a command string or extra outputs section" and "%O can only be used in the extra outputs section", `%i` with "%i is only valid in a command string", and `%e` with "%e is only valid with a foreach rule for files that have extensions"; `%<` is copied through as text. A foreach rule passes the one input of each iteration (`parser.c`, the `path_list_to_nl` call on `tmp_oo_inputs`), any other rule its whole input list. A regular input list gets no `input_nl`, so its text is a filename there and in putup alike. Upstream expands a bang macro's own order-only paths only when the calling rule is foreach (`parse_bang_rule` gets a NULL name list otherwise); putup expands them against the calling rule's inputs either way. putup expands after evaluating variables, as it does for outputs, so a `%`-flag in a variable's value expands where upstream leaves it as text. A rule whose input glob matched nothing produces no command in putup before its order-only list is read, where upstream refuses an input flag in that list. putup took the order-only text as a filename, so `| dep_%B.txt` named a file called `dep_%B.txt` and failed as a missing input (#425)
+- discharge: test "Scenario: An order-only input list expands the rule's input %-flags"
+
+When a rule's order-only input list or its bang macro's spells a `%`-flag, putup shall expand an
+input flag against the inputs of the command being built and reject the Tupfile for `%o`, `%O`,
+`%i` or `%e`; and putup shall take a regular input list's `%` as text.
+
 ### REQ-OPERAND-DUPLICATE-INPUT-PRUNED
 
 - conformance: tup-conformant

@@ -199,9 +199,10 @@ struct EvalContext {
 
 /// Which section a pattern sits in, which decides where %o and %O are legal.
 enum class PatternSection {
-    Command,      ///< %o expands to the outputs, %O to the single one
-    Outputs,      ///< both are refused
-    ExtraOutputs, ///< %o expands to the primary outputs, %O to the single one
+    Command,         ///< %o expands to the outputs, %O to the single one
+    Outputs,         ///< both are refused
+    ExtraOutputs,    ///< %o expands to the primary outputs, %O to the single one
+    OrderOnlyInputs, ///< %o, %O, %i and %e are refused, and %< stays text
 };
 
 /// Pattern flags for command/output expansion

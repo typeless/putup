@@ -1047,7 +1047,8 @@ struct TokenizedInputs {
 
 auto expand_inputs(
     BuilderContext& ctx,
-    Vec<parser::PathPattern> const& patterns
+    Vec<parser::PathPattern> const& patterns,
+    parser::PatternFlags const* percent_flags
 ) -> Result<TokenizedInputs>
 {
     auto& pool = global_pool();
@@ -1110,7 +1111,28 @@ auto expand_inputs(
             return pup::unexpected<Error>(paths.error());
         }
 
+        auto words = Vec<StringId> {};
         for (auto path_id : *paths) {
+            if (!percent_flags) {
+                words.push_back(path_id);
+                continue;
+            }
+            auto expanded = parser::expand_pattern(*ctx.eval, pool.get(path_id), *percent_flags);
+            if (!expanded) {
+                auto msg = Buf {};
+                msg.fmt("{}:{}: {}", str(ctx.current_file), pattern.location.line, str(expanded.error().message));
+                return make_error<TokenizedInputs>(ErrorCode::ParseError, msg.view());
+            }
+            auto text = pool.get(*expanded);
+            auto start = text.find_first_not_of(" \t");
+            while (start != std::string_view::npos) {
+                auto end = text.find_first_of(" \t", start);
+                words.push_back(pup::path::normalize(text.substr(start, end == std::string_view::npos ? end : end - start)));
+                start = text.find_first_not_of(" \t", end);
+            }
+        }
+
+        for (auto path_id : words) {
             auto path_sv = pool.get(path_id);
             auto group_ref = parse_group_reference(path_sv, str(ctx.current_dir), str(ctx.options.source_root));
             if (group_ref) {
@@ -1932,19 +1954,6 @@ auto expand_rule(
         }
     }
 
-    auto rule_order_only = expand_inputs(ctx, rule.order_only_inputs);
-    if (!rule_order_only) {
-        return pup::unexpected<Error>(rule_order_only.error());
-    }
-    auto order_only_operands = Vec<RuleInput> {};
-    auto order_only_tokens = Vec<std::uint32_t> {};
-    for (auto const& inp : rule_order_only->operands) {
-        if (inp.kind != RuleInput::Kind::Pattern) {
-            order_only_operands.push_back(inp);
-            order_only_tokens.push_back(inp.token);
-        }
-    }
-
     auto tc = make_transform_context(ctx);
     auto cmd_inputs = spell_operands(ctx, tc, operands);
     auto const primary_input_sv = cmd_inputs.empty() ? std::string_view {} : cmd_inputs[0];
@@ -1960,10 +1969,25 @@ auto expand_rule(
             ? std::nullopt
             : std::optional { str(parser::glob_match_extract(str(operands[0].glob), primary_input_sv)) },
         .all_inputs = TokenList<std::string_view>::grouped(std::move(cmd_inputs), operand_tokens, token_count),
-        .order_only_inputs = TokenList<std::string_view>::grouped(
-            spell_operands(ctx, tc, order_only_operands), order_only_tokens, rule_order_only->token_count
-        ),
     };
+    auto order_only_flags = flags;
+    order_only_flags.section = parser::PatternSection::OrderOnlyInputs;
+
+    auto rule_order_only = expand_inputs(ctx, rule.order_only_inputs, &order_only_flags);
+    if (!rule_order_only) {
+        return pup::unexpected<Error>(rule_order_only.error());
+    }
+    auto order_only_operands = Vec<RuleInput> {};
+    auto order_only_tokens = Vec<std::uint32_t> {};
+    for (auto const& inp : rule_order_only->operands) {
+        if (inp.kind != RuleInput::Kind::Pattern) {
+            order_only_operands.push_back(inp);
+            order_only_tokens.push_back(inp.token);
+        }
+    }
+    flags.order_only_inputs = TokenList<std::string_view>::grouped(
+        spell_operands(ctx, tc, order_only_operands), order_only_tokens, rule_order_only->token_count
+    );
 
     auto macro_result = lookup_bang_macro(ctx, rule.command);
     if (!macro_result) {
@@ -2155,7 +2179,7 @@ auto expand_rule(
     };
     collect_order_only_paths(order_only_paths, *rule_order_only);
     if (macro_ptr && !macro_ptr->order_only_inputs.empty()) {
-        auto macro_order_only = expand_inputs(ctx, macro_ptr->order_only_inputs);
+        auto macro_order_only = expand_inputs(ctx, macro_ptr->order_only_inputs, &order_only_flags);
         if (!macro_order_only) {
             return pup::unexpected<Error>(macro_order_only.error());
         }
@@ -2394,7 +2418,7 @@ auto process_rule(
         ctx.groups.get_or_create(to_underlying(rule.output_group ? *rule.output_group : *macro->output_group));
     }
 
-    auto inputs = Result<TokenizedInputs> { expand_inputs(ctx, rule.inputs) };
+    auto inputs = Result<TokenizedInputs> { expand_inputs(ctx, rule.inputs, nullptr) };
     if (!inputs) {
         return pup::unexpected<Error>(inputs.error());
     }
