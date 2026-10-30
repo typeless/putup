@@ -509,13 +509,13 @@ gtyp_cp += cp/name-lookup.cc cp/parser.cc cp/pt.cc cp/rtti.cc
 gtyp_cp += cp/semantics.cc cp/tree.cc cp/typeck2.cc cp/vtable-class-hierarchy.cc
 
 : |> ^ GEN %o^ { \
-  for f in $(gtyp_parent); do printf '%s\n' "$(SRC)/../$f"; done; \
-  for f in $(gtyp_src); do printf '%s\n' "$(SRC)/$f"; done; \
-  printf '%s\n' $(TUP_VARIANT_OUTPUTDIR)/options.h; \
+  for f in $(gtyp_parent); do printf '%%s\n' "$(SRC)/../$f"; done; \
+  for f in $(gtyp_src); do printf '%%s\n' "$(SRC)/$f"; done; \
+  printf '%%s\n' $(TUP_VARIANT_OUTPUTDIR)/options.h; \
   echo '[c]'; \
-  for f in $(gtyp_c); do printf '%s\n' "$(SRC)/$f"; done; \
+  for f in $(gtyp_c); do printf '%%s\n' "$(SRC)/$f"; done; \
   echo '[cp]'; \
-  for f in $(gtyp_cp); do printf '%s\n' "$(SRC)/$f"; done; \
+  for f in $(gtyp_cp); do printf '%%s\n' "$(SRC)/$f"; done; \
   } > %o |> gtyp-input.list
 
 # gengtype outputs: gtype-desc.cc/h, gtype-c.h, gt-*.h

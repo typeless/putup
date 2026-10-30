@@ -16344,3 +16344,27 @@ SCENARIO("A compile's dependency scan is ordered after a glob-matched order-only
         }
     }
 }
+
+SCENARIO("A rule spelling an unknown percent flag is refused", "[e2e][parse]")
+{
+    GIVEN("a rule whose command spells %z")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": a.c |> echo %z > %o |> out.txt\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the Tupfile is refused before the command runs and names the flag")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unknown %-flag: 'z'") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+    }
+}

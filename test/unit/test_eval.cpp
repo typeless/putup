@@ -422,6 +422,44 @@ TEST_CASE("A numbered flag with an unknown letter is refused", "[eval]")
     REQUIRE_FALSE(expand_pattern(ctx, "%1t", flags).has_value());
 }
 
+TEST_CASE("A flag letter upstream does not recognise is refused", "[eval]")
+{
+    auto vars = VarDb {};
+    auto ctx = EvalContext { .vars = &vars };
+    auto flags = PatternFlags { .all_inputs = { "a.c" }, .all_outputs = { "a.o" } };
+
+    SECTION("an unknown letter is refused and named")
+    {
+        auto const refused = expand_pattern(ctx, "echo %z > %o", flags);
+        REQUIRE_FALSE(refused.has_value());
+        REQUIRE(sv(refused.error().message).find("Unknown %-flag: 'z'") != std::string_view::npos);
+    }
+
+    SECTION("a percent that ends the text is refused")
+    {
+        auto const refused = expand_pattern(ctx, "echo 100%", flags);
+        REQUIRE_FALSE(refused.has_value());
+        REQUIRE(sv(refused.error().message).find("Unknown %-flag") != std::string_view::npos);
+    }
+
+    SECTION("a quoted flag, which putup does not implement, is refused as unsupported")
+    {
+        auto const refused = expand_pattern(ctx, "cat %\"f", flags);
+        REQUIRE_FALSE(refused.has_value());
+        REQUIRE(sv(refused.error().message).find("not supported") != std::string_view::npos);
+        REQUIRE_FALSE(expand_pattern(ctx, "cat %'o", flags).has_value());
+    }
+
+    SECTION("an escaped percent is still a literal percent")
+    {
+        auto const result = expand_pattern(ctx, "echo 100%% %z%%", flags);
+        REQUIRE_FALSE(result.has_value());
+        auto const literal = expand_pattern(ctx, "echo 100%%", flags);
+        REQUIRE(literal.has_value());
+        REQUIRE(sv(*literal) == "echo 100%");
+    }
+}
+
 TEST_CASE("Evaluator pattern expansion - %i spells the order-only inputs", "[eval]")
 {
     auto vars = VarDb {};

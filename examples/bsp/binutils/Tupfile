@@ -39,10 +39,10 @@ OUT = $(B)/$(BINUTILS_DIR)
   $(BFD)/bfd-in2.h > %o |> bfd.h <gen-headers>
 
 # bfd_stdint.h — trivial wrapper (modern systems have stdint.h)
-: |> ^ GEN %o^ printf '%s\n' '#include <stdint.h>' > %o |> bfd_stdint.h <gen-headers>
+: |> ^ GEN %o^ printf '%%s\n' '#include <stdint.h>' > %o |> bfd_stdint.h <gen-headers>
 
 # targmatch.h — target matching table for x86_64 ELF targets
-: |> ^ GEN %o^ printf '%s\n' \
+: |> ^ GEN %o^ printf '%%s\n' \
   '/* Generated — x86_64-pc-linux-gnu target */' \
   '{ "x86_64-*-linux*", &x86_64_elf64_vec },' \
   '{ "x86_64-*-elf*", &x86_64_elf64_vec },' \

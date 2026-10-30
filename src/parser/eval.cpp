@@ -478,9 +478,7 @@ auto expand_pattern_atoms(
         builder.literal(text.substr(pos, percent - pos));
 
         if (percent + 1 >= text.size()) {
-            builder.literal('%');
-            pos = percent + 1;
-            continue;
+            return make_error<Instruction>(ErrorCode::ParseError, "Unknown %-flag: '' (a '%' ends the text; '%%' spells a literal '%')");
         }
 
         auto flag = text[percent + 1];
@@ -644,10 +642,17 @@ auto expand_pattern_atoms(
             }
             builder.literal(*flags.glob_match);
             break;
-        default:
-            builder.literal('%');
-            builder.literal(flag);
-            break;
+        case '\'':
+        case '"': {
+            auto msg = Buf {};
+            msg.fmt("The quoted %-flag form %{} is not supported", flag);
+            return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+        }
+        default: {
+            auto msg = Buf {};
+            msg.fmt("Unknown %-flag: '{}'", flag);
+            return make_error<Instruction>(ErrorCode::ParseError, msg.view());
+        }
         }
     }
 

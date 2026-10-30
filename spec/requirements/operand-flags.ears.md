@@ -143,6 +143,25 @@ Tupfile.
 If a rule spells a `%N`-flag whose letter is not one of `f`, `b`, `B`, `o` or `i`, then putup
 shall reject the Tupfile.
 
+### REQ-OPERAND-UNKNOWN-FLAG
+
+- conformance: tup-conformant
+- reference: upstream's `tup_printf` (`src/tup/parser.c`) refuses any character after `%` that none of its branches recognises with "Unknown %-flag: '<c>'", a `%` that ends the text included, since it reads the terminating NUL as the flag; putup's message for that case names the cause instead of printing an empty character. putup emitted the `%` and the character as text, so a typo'd flag produced a command other than the one the Tupfile spells, and the bsp example's `printf '%s'` worked only because of it (#446)
+- discharge: test "A flag letter upstream does not recognise is refused"
+- discharge: test "Scenario: A rule spelling an unknown percent flag is refused"
+
+If a rule's command, inputs or outputs spell a `%` followed by a character that is not a flag,
+or a `%` that ends the text, then putup shall reject the Tupfile and name the character.
+
+### REQ-OPERAND-QUOTED-FLAG-UNSUPPORTED
+
+- conformance: deliberate-deviation
+- reference: upstream's `tup_printf` accepts `%'f`, `%"f`, `%'o` and `%"o`, spelling each operand wrapped in the quote with the quote escaped inside it; putup does not implement them and refuses them by name rather than passing the text through, which spelled `%"f` literally
+- discharge: test "A flag letter upstream does not recognise is refused"
+
+If a rule spells a quoted `%`-flag, `%'` or `%"`, then putup shall reject the Tupfile and say the
+form is not supported.
+
 ### REQ-OPERAND-ORDER-ONLY-FLAG-COMMAND-ONLY
 
 - conformance: tup-conformant
