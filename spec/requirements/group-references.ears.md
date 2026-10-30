@@ -48,3 +48,22 @@ that expanded path names rather than to the directory the referencing Tupfile si
 When a rule names a group in its inputs section rather than after the order-only separator,
 putup shall resolve the bracketed name to that group and expand `%<name>` to the group's
 members rather than read the name as a file to be found on disk.
+
+## Group: bins
+
+Which `{bin}` a rule may name in its inputs or order-only inputs.
+
+A bin is a list of the outputs of earlier rules in the same Tupfile. Upstream keeps one list per
+Tupfile, adds a bin to it when it reads a rule that names the bin after its outputs — before any
+input is matched, so a rule whose glob matched nothing still declares it — and refuses a reference
+to a name that list does not hold. putup skipped such a reference, so a typo'd bin name dropped
+every operand it was meant to supply and the rule ran without them (#472).
+
+### REQ-GROUPREF-BIN-DECLARED
+
+- conformance: deliberate-deviation
+- reference: upstream's `new_pl` (`src/tup/parser.c`, the `{` branch) calls `bin_find` on the Tupfile's bin list and fails with "Unable to find bin '<name>'"; `parse_rule` adds the rule's own bin with `bin_add` before it reads the inputs, so a bin is declared by the rule text, not by what the rule matched. putup declares a bin from a rule under an unsatisfied guard too, which upstream never reads, so a reference to a bin declared only there is accepted whatever the configuration, as REQ-OUTPUT-INSIDE-HIERARCHY keeps acceptance independent of it; upstream refuses it in a configuration that leaves the guard unsatisfied
+- discharge: test "Scenario: A rule naming a bin no earlier rule declares is refused"
+
+If a rule's inputs or order-only inputs name a bin that no earlier rule in the same Tupfile declares
+after its outputs, then putup shall reject the Tupfile and name the bin.

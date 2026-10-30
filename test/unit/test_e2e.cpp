@@ -16392,3 +16392,97 @@ SCENARIO("A rule splicing a group it does not take as an input is refused", "[e2
         }
     }
 }
+
+SCENARIO("A rule naming a bin no earlier rule declares is refused", "[e2e][parse][bin]")
+{
+    GIVEN("a project with one source file")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+
+        WHEN("an order-only list names a bin no rule declares")
+        {
+            f.write_file("Tupfile", ": a.c | {bn} |> echo hi > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the bin")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to find bin 'bn'") != std::string::npos);
+                REQUIRE_FALSE(f.exists("out.txt"));
+            }
+        }
+
+        WHEN("an input list names a bin no rule declares")
+        {
+            f.write_file("Tupfile", ": {bn} |> echo f=[%f] > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the bin")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to find bin 'bn'") != std::string::npos);
+            }
+        }
+
+        WHEN("a rule names a bin that only a later rule declares")
+        {
+            f.write_file("Tupfile", ": {objs} |> echo f=[%f] > %o |> out.txt\n: a.c |> cp %f %o |> a.o {objs}\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the bin")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to find bin 'objs'") != std::string::npos);
+            }
+        }
+
+        WHEN("a rule names a bin an earlier rule declared but filled with nothing")
+        {
+            f.write_file("Tupfile", ": foreach *.x |> cp %f %o |> %B.o {objs}\n: a.c | {objs} |> echo hi > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "hi\n");
+            }
+        }
+
+        WHEN("a bang macro declares the bin and its rule matched nothing")
+        {
+            f.write_file("Tupfile", "!cp = |> cp %f %o |> %B.o {objs}\n: foreach *.x |> !cp |>\n: a.c | {objs} |> echo hi > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the build succeeds")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "hi\n");
+            }
+        }
+
+        WHEN("the only rule declaring the bin is under an unsatisfied guard")
+        {
+            f.write_file("Tupfile", "ifeq (@(FOO),y)\n: a.c |> cp %f %o |> a.o {objs}\nendif\n: a.c | {objs} |> echo hi > %o |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the build succeeds, whatever the configuration")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "hi\n");
+            }
+        }
+    }
+}

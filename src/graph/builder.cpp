@@ -1070,12 +1070,16 @@ auto expand_inputs(
 
         if (pattern.is_group) {
             auto gkey = to_underlying(intern(str(pattern.group_name)));
-            if (auto const* members = ctx.groups.find(gkey)) {
-                for (auto id : *members) {
-                    auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
-                    if (!path_sv.empty()) {
-                        result.push_back(file_input(ctx, path_sv));
-                    }
+            auto const* members = ctx.groups.find(gkey);
+            if (!members) {
+                auto msg = Buf {};
+                msg.fmt("Unable to find bin '{}'", str(pattern.group_name));
+                return make_error<TokenizedInputs>(ErrorCode::ParseError, msg.view());
+            }
+            for (auto id : *members) {
+                auto path_sv = get_full_path(ctx.state->graph, id, ctx.state->path_cache);
+                if (!path_sv.empty()) {
+                    result.push_back(file_input(ctx, path_sv));
                 }
             }
             continue;
@@ -2381,6 +2385,14 @@ auto process_rule(
 ) -> Result<void>
 {
     apply_pending_weak_assignments(ctx, state);
+
+    auto macro_result = lookup_bang_macro(ctx, rule.command);
+    if (!macro_result) {
+        return pup::unexpected<Error>(macro_result.error());
+    }
+    if (auto const* macro = *macro_result; rule.output_group || (macro && macro->output_group)) {
+        ctx.groups.get_or_create(to_underlying(rule.output_group ? *rule.output_group : *macro->output_group));
+    }
 
     auto inputs = Result<TokenizedInputs> { expand_inputs(ctx, rule.inputs) };
     if (!inputs) {
