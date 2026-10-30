@@ -16283,3 +16283,64 @@ SCENARIO("An output list keeps every output around a group and refuses a bin tha
         }
     }
 }
+
+SCENARIO("A glob-matched order-only input whose name holds a glob metacharacter orders its consumer", "[e2e][incremental][order-only][bang]")
+{
+    GIVEN("a rule and a bang macro that both take *.h order-only, matching y.h and z[1].h")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("y.h", "");
+        f.write_file("z[1].h", "");
+        f.write_file("Tupfile", "!m = | *.h |> echo m > %o |>\n: a.c | *.h |> echo rule > %o |> rule.txt\n: a.c |> !m |> macro.txt\n");
+        REQUIRE(f.build().success());
+
+        WHEN("z[1].h changes and the project is rebuilt")
+        {
+            f.write_file("z[1].h", "changed\n");
+            auto result = f.build({ "-v" });
+
+            THEN("both the rule's command and the macro's command run again")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(result.stdout_output.find("echo rule > rule.txt") != std::string::npos);
+                REQUIRE(result.stdout_output.find("echo m > macro.txt") != std::string::npos);
+            }
+        }
+    }
+}
+
+SCENARIO("A compile's dependency scan is ordered after a glob-matched order-only input whose name holds a glob metacharacter", "[e2e][depscan][order-only]")
+{
+    GIVEN("a compile rule that takes *.h order-only, matching z[1].h")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "int x;\n");
+        f.write_file("z[1].h", "");
+        f.write_file("Tupfile", ": a.c | *.h |> gcc -c %f -o %o |> a.o\n");
+
+        WHEN("the graph is shown")
+        {
+            auto result = f.pup({ "show", "graph" });
+            auto const& dot = result.stdout_output;
+            auto node_named = [&dot](std::string const& label) {
+                auto end = dot.find(" [label=\"" + label + "\"]");
+                auto start = dot.rfind(' ', end - 1);
+                return end == std::string::npos ? std::string {} : dot.substr(start + 1, end - start - 1);
+            };
+            auto header = node_named("z[1].h");
+            auto scan = node_named("DEP a.c");
+
+            THEN("the scan command has an order-only edge from z[1].h")
+            {
+                INFO("stdout: " << dot);
+                REQUIRE(result.success());
+                REQUIRE_FALSE(header.empty());
+                REQUIRE_FALSE(scan.empty());
+                REQUIRE(dot.find(header + " -> " + scan + " [style=dotted") != std::string::npos);
+            }
+        }
+    }
+}

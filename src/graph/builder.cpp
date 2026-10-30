@@ -117,14 +117,6 @@ struct GroupReference {
     StringId group_dir;
 };
 
-/// Check if a path is an order-only group reference (ends with <name>)
-/// Examples: "<group>", "path/<group>", "../include/<gen-headers>"
-auto is_order_only_group_reference(std::string_view path) -> bool
-{
-    auto lt_pos = path.rfind('<');
-    return lt_pos != std::string_view::npos && !path.empty() && path.back() == '>';
-}
-
 /// Parse a group reference from a path expression
 /// Returns nullopt if the path doesn't contain a valid <group> suffix
 auto parse_group_reference(
@@ -1867,11 +1859,7 @@ auto process_generated_rules(
         }
 
         for (auto oi_id : gen_rule.order_only_inputs) {
-            auto oi = pool.get(oi_id);
-            if (is_order_only_group_reference(oi) || parser::has_glob_chars(oi)) {
-                continue;
-            }
-            auto oi_node = resolve_input_node(ctx, oi);
+            auto oi_node = resolve_input_node(ctx, pool.get(oi_id));
             if (oi_node) {
                 (void)add_edge(ctx.state->graph, *oi_node, *gen_cmd_id, LinkType::OrderOnly);
             }
@@ -2156,7 +2144,7 @@ auto expand_rule(
     auto macro_order_only_paths = Vec<StringId> {};
     auto collect_order_only_paths = [](Vec<StringId>& into, TokenizedInputs const& expanded) {
         for (auto const& inp : expanded.operands) {
-            if (inp.kind != RuleInput::Kind::GroupRef) {
+            if (inp.kind == RuleInput::Kind::File) {
                 into.push_back(inp.value);
             }
         }
@@ -2348,11 +2336,7 @@ auto expand_rule(
     }
 
     for (auto oi : macro_order_only_paths) {
-        auto oi_sv = str(oi);
-        if (is_order_only_group_reference(oi_sv) || parser::has_glob_chars(oi_sv)) {
-            continue;
-        }
-        auto oi_node = resolve_input_node(ctx, oi_sv);
+        auto oi_node = resolve_input_node(ctx, str(oi));
         if (oi_node) {
             (void)add_edge(ctx.state->graph, *oi_node, *cmd_id, LinkType::OrderOnly);
         }
