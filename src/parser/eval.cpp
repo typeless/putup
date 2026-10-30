@@ -543,13 +543,14 @@ auto expand_pattern_atoms(
         if (flag == '<') {
             auto end = text.find('>', pos);
             if (end == std::string_view::npos) {
-                builder.literal("%<");
-                continue;
+                return make_error<Instruction>(ErrorCode::ParseError, "Unable to find end-group marker '>' for %<group> flag");
             }
             auto const group_name = text.substr(pos, end - pos);
             pos = end + 1;
             if (!ctx.resolve_order_only_group || ctx.resolve_order_only_group(group_name).empty()) {
-                continue;
+                auto msg = Buf {};
+                msg.fmt("Unable to find group '<{}>' as an input. Make sure it is listed as an input to the command", group_name);
+                return make_error<Instruction>(ErrorCode::ParseError, msg.view());
             }
             builder.group_ref(group_name);
             continue;

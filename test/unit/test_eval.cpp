@@ -993,11 +993,18 @@ TEST_CASE("Evaluator %<group> pattern expansion", "[eval]")
         REQUIRE(sv(*result) == "echo inc/a.h inc/b.h");
     }
 
-    SECTION("%<nonexistent> expands to empty")
+    SECTION("%<nonexistent> is refused and names the group")
     {
         auto result = expand_pattern(ctx,"echo %<nonexistent>", flags);
-        REQUIRE(result.has_value());
-        REQUIRE(sv(*result) == "echo ");
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("Unable to find group '<nonexistent>'") != std::string_view::npos);
+    }
+
+    SECTION("%< with no closing > is refused")
+    {
+        auto result = expand_pattern(ctx,"echo %<headers", flags);
+        REQUIRE_FALSE(result.has_value());
+        REQUIRE(sv(result.error().message).find("Unable to find end-group marker '>'") != std::string_view::npos);
     }
 }
 

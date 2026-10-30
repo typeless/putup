@@ -16368,3 +16368,27 @@ SCENARIO("A rule spelling an unknown percent flag is refused", "[e2e][parse]")
         }
     }
 }
+
+SCENARIO("A rule splicing a group it does not take as an input is refused", "[e2e][parse][groups]")
+{
+    GIVEN("a rule whose command splices %<nosuch>, a group no rule declares")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("Tupfile", ": a.c |> echo UNKNOWN=%<nosuch> END > %o |> unknown.out\n");
+
+        WHEN("the project is built")
+        {
+            auto result = f.build();
+
+            THEN("the Tupfile is refused before the command runs and names the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to find group '<nosuch>'") != std::string::npos);
+                REQUIRE_FALSE(f.exists("unknown.out"));
+            }
+        }
+    }
+}

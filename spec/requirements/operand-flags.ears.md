@@ -246,6 +246,16 @@ When text that names a file is spliced into a recorded instruction, putup shall 
 When a rule escapes a percent that would otherwise open a group reference, putup shall pass the
 reference through as text rather than splice the group's members.
 
+### REQ-OPERAND-GROUP-SPLICE-UNRESOLVED
+
+- conformance: deliberate-deviation
+- reference: upstream keeps `%<name>` in the command and splices it when the command runs (tup `updater.c`, `expand_group`), refusing a group that is not among the command's inputs with "Unable to find group '<name>' as an input for use as a resource file. Make sure it is listed as an input to the command" and a `%<` with no `>` with "Unable to find end-group marker '>' for %<group> flag". putup reaches both verdicts while reading the Tupfile, before any command runs, and drops "for use as a resource file" from the first message, which names upstream's `.res` form putup does not implement. It also resolves a group declared in the rule's own directory that the rule does not list, which upstream refuses; the bsp example's xgcc link relies on that. putup deleted an unresolved reference and kept an unclosed `%<` as text, so a typo'd group name ran the command without its inputs (#444)
+- discharge: test "Evaluator %<group> pattern expansion"
+- discharge: test "Scenario: A rule splicing a group it does not take as an input is refused"
+
+If a rule's command splices a `%<name>` that names no group the rule can resolve, or a `%<` with
+no closing `>`, then putup shall reject the Tupfile and name the group or the missing marker.
+
 ### REQ-OPERAND-GROUP-IS-AN-OPERAND
 
 - conformance: tup-conformant
