@@ -406,7 +406,7 @@ TEST_CASE("Parser order-only output group", "[parser]")
 
 TEST_CASE("Parser rule with both group types", "[parser]")
 {
-    auto result = parse_tupfile(": foreach *.c |> gcc -c %f -o %o |> %B.o {objs} <compiled>", "test.tup");
+    auto result = parse_tupfile(": foreach *.c |> gcc -c %f -o %o |> %B.o <compiled> {objs}", "test.tup");
 
     REQUIRE(result.success());
     auto const* rule = result.tupfile.statements[0]->as<Rule>();

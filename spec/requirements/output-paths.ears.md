@@ -198,4 +198,34 @@ whole output rather than to nothing.
 - discharge: test "Scenario: A group directory prefix after an extra outputs section names the group"
 
 While reading a rule whose order-only group carries a directory prefix, putup shall take that
-prefix from the last output list the rule declared rather than always from the first.
+prefix from the output path just before the group, in whichever output list the group sits, rather
+than always from the first list.
+
+## Group: output list
+
+Where a group and a bin may sit among a rule's outputs.
+
+Upstream reads the output section word by word: a `<group>` is one more word, so it may sit anywhere
+among the outputs or the extra outputs, and a `{bin}` is split off the end of the section before the
+words are read, so nothing may follow it. putup stopped reading the section at the first `<group>` or
+`{bin}` and never checked that the line ended there, so every output after either was dropped without
+a word (issue #457).
+
+### REQ-OUTPUT-LIST-GROUP-ANYWHERE
+
+- conformance: tup-conformant
+- reference: upstream's `get_path_list` (`src/tup/parser.c`) marks any output word containing `<` as a group, and `do_rule_outputs` refuses a second one with "Multiple output groups detected"; putup's message names both groups as `<name>` where upstream names the first by its full path
+- discharge: test "Scenario: An output list keeps every output around a group and refuses a bin that is not last"
+
+When a rule's outputs or extra outputs name an order-only group between other outputs, putup shall
+keep every output on both sides of it, and when they name a second order-only group, putup shall
+reject the Tupfile and name both groups.
+
+### REQ-OUTPUT-LIST-BIN-LAST
+
+- conformance: tup-conformant
+- reference: upstream's `split_input_pattern` (`src/tup/parser.c`) refuses any text after the closing `}` of an output bin with "bin must be at the end of the output list."; putup accepted an order-only group after the bin, which upstream refuses, and now refuses it too
+- discharge: test "Scenario: An output list keeps every output around a group and refuses a bin that is not last"
+
+If anything follows a rule's output bin on the rule's line, then putup shall reject the Tupfile with
+"bin must be at the end of the output list".

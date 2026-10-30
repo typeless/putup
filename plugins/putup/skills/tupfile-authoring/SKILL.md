@@ -11,7 +11,7 @@ Guide for writing Tupfiles with putup. For the full manual, see
 ## 1. Rule Syntax
 
 ```
-: [foreach] [inputs] [| order-only] |> command |> [outputs] [| extra-outputs] [{group}] [<order-group>]
+: [foreach] [inputs] [| order-only] |> command |> [outputs] [<order-group>] [| extra-outputs] [{group}]
 ```
 
 ```tup

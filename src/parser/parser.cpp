@@ -551,23 +551,59 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         return pup::unexpected<Error>(arrow2.error());
     }
 
-    // Parse outputs (stop_at_angle=true so path/<group> splits the path from the group)
-    while (!check(s, TokenType::Pipe) && !check(s, TokenType::OpenBrace) && !check(s, TokenType::OpenAngle) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
-        auto pattern = parse_path_pattern(s, true);
-        if (!pattern) {
-            return pup::unexpected<Error>(pattern.error());
+    auto parse_output_group = [&s, &body](Vec<PathPattern>& section) -> Result<void> {
+        auto dir = std::optional<Expression> {};
+        if (!section.empty() && !section.back().path.parts.empty()) {
+            if (auto* lit = std::get_if<Expression::Literal>(&section.back().path.parts.back())) {
+                auto lit_sv = global_pool().get(lit->value);
+                if (!lit_sv.empty() && lit_sv.back() == '/') {
+                    dir = std::move(section.back().path);
+                    section.pop_back();
+                }
+            }
         }
-        body.outputs.push_back(std::move(*pattern));
-    }
+        auto name = StringId::Empty;
+        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
+            name = global_pool().intern(s.current.text);
+            advance(s);
+        }
+        auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
+        if (!close) {
+            return pup::unexpected<Error>(close.error());
+        }
+        if (body.output_order_only_group) {
+            auto err = Buf {};
+            err.fmt("Multiple output groups detected: '<{}>' and '<{}>'", global_pool().get(*body.output_order_only_group), global_pool().get(name));
+            return pup::make_error<void>(ErrorCode::ParseError, err.view());
+        }
+        body.output_order_only_group = name;
+        body.output_order_only_group_dir = std::move(dir);
+        return {};
+    };
 
-    // Parse extra outputs if present
-    if (match(s, TokenType::Pipe)) {
-        while (!check(s, TokenType::OpenBrace) && !check(s, TokenType::OpenAngle) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+    auto parse_output_section = [&s, &parse_output_group](Vec<PathPattern>& section) -> Result<void> {
+        while (!check(s, TokenType::Pipe) && !check(s, TokenType::OpenBrace) && !check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            if (match(s, TokenType::OpenAngle)) {
+                if (auto group = parse_output_group(section); !group) {
+                    return group;
+                }
+                continue;
+            }
             auto pattern = parse_path_pattern(s, true);
             if (!pattern) {
                 return pup::unexpected<Error>(pattern.error());
             }
-            body.extra_outputs.push_back(std::move(*pattern));
+            section.push_back(std::move(*pattern));
+        }
+        return {};
+    };
+
+    if (auto outputs = parse_output_section(body.outputs); !outputs) {
+        return pup::unexpected<Error>(outputs.error());
+    }
+    if (match(s, TokenType::Pipe)) {
+        if (auto extras = parse_output_section(body.extra_outputs); !extras) {
+            return pup::unexpected<Error>(extras.error());
         }
     }
 
@@ -581,35 +617,15 @@ auto parse_rule_body(ParserState& s) -> Result<RuleBody>
         if (!close) {
             return pup::unexpected<Error>(close.error());
         }
+        if (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            return pup::make_error<RuleBody>(ErrorCode::ParseError, "bin must be at the end of the output list");
+        }
     }
 
-    // Parse order-only output group <name> if present
-    // Supports path/<group> syntax where path specifies the group's directory
-    if (match(s, TokenType::OpenAngle)) {
-        // Check if last output is a directory prefix (ends with /); the group follows whichever
-        // output list the rule ended with, so an extras section owns the prefix when it has one.
-        auto& trailing = body.extra_outputs.empty() ? body.outputs : body.extra_outputs;
-        if (!trailing.empty()) {
-            auto& last = trailing.back();
-            if (!last.path.parts.empty()) {
-                if (auto* lit = std::get_if<Expression::Literal>(&last.path.parts.back())) {
-                    auto lit_sv = global_pool().get(lit->value);
-                    if (!lit_sv.empty() && lit_sv.back() == '/') {
-                        body.output_order_only_group_dir = std::move(last.path);
-                        trailing.pop_back();
-                    }
-                }
-            }
-        }
-
-        if (check(s, TokenType::Identifier) || check(s, TokenType::Text)) {
-            body.output_order_only_group = global_pool().intern(s.current.text);
-            advance(s);
-        }
-        auto close = expect(s, TokenType::CloseAngle, "Expected '>' after group name");
-        if (!close) {
-            return pup::unexpected<Error>(close.error());
-        }
+    if (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+        auto err = Buf {};
+        err.fmt("Unexpected {} in the output list", token_type_name(s.current.type));
+        return pup::make_error<RuleBody>(ErrorCode::ParseError, err.view());
     }
 
     return body;

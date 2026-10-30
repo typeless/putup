@@ -16174,3 +16174,112 @@ SCENARIO("A rule cannot output to a path another rule uses as a directory", "[e2
         }
     }
 }
+
+SCENARIO("An output list keeps every output around a group and refuses a bin that is not last", "[e2e][parse][groups]")
+{
+    GIVEN("an empty project")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+
+        WHEN("a group sits between two outputs")
+        {
+            f.write_file("Tupfile", ": |> echo 'O=[%o]' > log.txt; touch a.txt b.txt |> a.txt <g> b.txt log.txt\n");
+            auto result = f.build();
+
+            THEN("every output is an output of the rule")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("log.txt") == "O=[a.txt b.txt log.txt]\n");
+            }
+        }
+
+        WHEN("a group with a directory prefix sits between two outputs")
+        {
+            f.write_file("Tupfile", ": |> echo 'O=[%o]' > log.txt; touch a.txt |> a.txt sub/<g> log.txt\n: sub/<g> |> echo used > %o |> used.txt\n");
+            auto result = f.build();
+
+            THEN("every output is an output of the rule and the group keeps its directory")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("log.txt") == "O=[a.txt log.txt]\n");
+                REQUIRE(f.read_file("used.txt") == "used\n");
+            }
+        }
+
+        WHEN("a bang macro's output list has a group between two outputs")
+        {
+            f.write_file("Tupfile", "!m = |> echo 'O=[%o]' > log.txt; touch a.txt |> a.txt <g> log.txt\n: |> !m |>\n");
+            auto result = f.build();
+
+            THEN("every output is an output of the rule")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("log.txt") == "O=[a.txt log.txt]\n");
+            }
+        }
+
+        WHEN("a group precedes the bin")
+        {
+            f.write_file("Tupfile", ": |> echo 'O=[%o]' > log.txt; touch a.txt |> a.txt <g> log.txt {objs}\n");
+            auto result = f.build();
+
+            THEN("the rule keeps every output")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("log.txt") == "O=[a.txt log.txt]\n");
+            }
+        }
+
+        WHEN("an output list names two groups")
+        {
+            f.write_file("Tupfile", ": |> touch %o |> a.txt <g> <h>\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names both groups")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Multiple output groups detected: '<g>' and '<h>'") != std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
+            }
+        }
+
+        WHEN("an output follows the bin")
+        {
+            f.write_file("Tupfile", ": |> touch a.txt b.txt |> a.txt {bin} b.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused with upstream's message")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("bin must be at the end of the output list") != std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
+            }
+        }
+
+        WHEN("a group follows the bin")
+        {
+            f.write_file("Tupfile", ": |> touch %o |> a.txt {bin} <g>\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused with upstream's message")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("bin must be at the end of the output list") != std::string::npos);
+            }
+        }
+    }
+}
