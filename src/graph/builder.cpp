@@ -423,6 +423,9 @@ auto bind_source_files_along(BuilderContext& ctx, PathId dir) -> Result<void>
     if (auto outer = bind_source_files_along(ctx, graph.paths.parent(dir)); !outer) {
         return outer;
     }
+    if (std::ranges::binary_search(ctx.options.parsed_prior_generated, rel, {}, [&pool](StringId id) { return pool.get(id); })) {
+        return {};
+    }
     auto source_path = pool.get(pup::path::join(str(ctx.options.source_root), rel));
     auto is_source_file = pup::platform::is_file(source_path);
     if (!is_source_file && !pup::platform::exists(source_path) && !is_empty(ctx.options.config_root)

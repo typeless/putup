@@ -15925,7 +15925,7 @@ SCENARIO("A rule cannot put an output or a group under a path that is not a dire
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("the file 'sub' is not a directory") != std::string::npos);
-                REQUIRE(result.stdout_output.find("echo hi") == std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
             }
         }
 
@@ -15940,7 +15940,7 @@ SCENARIO("A rule cannot put an output or a group under a path that is not a dire
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("the file 'sub' is not a directory") != std::string::npos);
-                REQUIRE(result.stdout_output.find("echo hi") == std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
             }
         }
 
@@ -15955,7 +15955,7 @@ SCENARIO("A rule cannot put an output or a group under a path that is not a dire
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("the file 'sub' is not a directory") != std::string::npos);
-                REQUIRE(result.stdout_output.find("echo hi") == std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
             }
         }
 
@@ -16022,6 +16022,60 @@ SCENARIO("A rule cannot put an output or a group under a path that is not a dire
             }
         }
 
+        WHEN("a rule outputs under the path an earlier build generated as a file")
+        {
+            f.write_file("Tupfile", ": |> echo a > %o |> gen\n");
+            auto first = f.build();
+            f.write_file("Tupfile", ": |> echo b > %o |> gen/x\n");
+            auto result = f.build();
+
+            THEN("the build deletes the stale output and writes the new one under its path")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(first.success());
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("gen/x") == "b\n");
+            }
+        }
+
+        WHEN("a rule puts a group under the path an earlier build generated as a file")
+        {
+            f.write_file("Tupfile", ": |> echo a > %o |> gen\n");
+            auto first = f.build();
+            f.write_file("Tupfile", ": |> echo b > %o |> b.txt gen/<g>\n");
+            auto result = f.build();
+
+            THEN("the build deletes the stale output and accepts the group")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(first.success());
+                REQUIRE(result.success());
+                REQUIRE_FALSE(f.exists("gen"));
+                REQUIRE(f.read_file("b.txt") == "b\n");
+            }
+        }
+
+        WHEN("a variant build outputs under the path an earlier build generated as a file")
+        {
+            f.mkdir("build");
+            f.write_file("build/tup.config", "");
+            f.write_file("Tupfile", ": |> echo a > %o |> gen\n");
+            auto first = f.build({ "-B", "build" });
+            f.write_file("Tupfile", ": |> echo b > %o |> gen/x\n");
+            auto result = f.build({ "-B", "build" });
+
+            THEN("the build deletes the stale output and writes the new one under its path")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(first.success());
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("build/gen/x") == "b\n");
+            }
+        }
+
         WHEN("a rule puts a group under the source file")
         {
             f.write_file("Tupfile", ": sub |> cat %f > %o |> a.txt sub/<g>\n: sub/<g> |> echo used > %o |> b.txt\n");
@@ -16085,7 +16139,7 @@ SCENARIO("A rule cannot output to a path another rule uses as a directory", "[e2
                 INFO("stderr: " << result.stderr_output);
                 REQUIRE_FALSE(result.success());
                 REQUIRE(result.stderr_output.find("Attempting to insert 'gen' as a generated node when it already exists as a different type (directory)") != std::string::npos);
-                REQUIRE(result.stdout_output.find("echo b") == std::string::npos);
+                REQUIRE(result.stderr_output.find("FAILED:") == std::string::npos);
             }
         }
 

@@ -63,8 +63,18 @@ putup shall reject the Tupfile and name that path, whether or not the rule's gua
 
 If a rule names an output under a path that the graph holds as a file, a generated file or a group,
 or a group under a path that the graph holds as a file or a group, or, in an in-tree build, either
-under a path that is a file in the source tree, then putup shall reject the Tupfile and name that
-path and what it is.
+under a path that is a file in the source tree the previous build did not generate, then putup shall
+reject the Tupfile and name that path and what it is.
+
+### REQ-OUTPUT-UNDER-STALE-OUTPUT
+
+- conformance: deliberate-deviation
+- reference: upstream keeps a removed rule's output in its database as a generated node until the update after the parse deletes it, so `find_dir_tupid_dt_pg` (`src/tup/create_name_file.c`) refuses an output or a group under it during that parse, inferred from source and not run; putup retracts ownership of an output no live command produces by deleting it, in a directory this build parsed (DESIGN.md, "Ownership and currency are separate claims"), so the previous record's output is no obstacle and in-tree and variant builds agree
+- discharge: test "Scenario: A rule cannot put an output or a group under a path that is not a directory"
+
+If a rule names an output or a group under a path that the previous build generated as a file, in a
+directory this build parses, and no rule in this build declares that path as an output, then putup
+shall delete the stale output and build the rule.
 
 ### REQ-OUTPUT-NOT-A-DIRECTORY
 

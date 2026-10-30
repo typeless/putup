@@ -38,6 +38,7 @@ struct BuilderOptions {
     Vec<std::pair<StringId, StringId>> cached_env_vars = {}; ///< Cached env vars from previous build (sorted by key)
     Vec<StringId> generated_seed = {};                       ///< Paths a previous parse round generated, sorted by path text; empty on the first round
     Vec<StringId> prior_generated = {};                      ///< Paths the previous record classified as outputs, sorted by path text; answers who owns a path this build cannot attribute, never what a glob matches (#369, #213)
+    Vec<StringId> parsed_prior_generated = {};               ///< Paths the previous record classified as outputs in directories this parse covers, sorted by path text; never a source file, whatever is on disk
 };
 
 /// Bang macro definition

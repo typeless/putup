@@ -963,25 +963,24 @@ auto build_context(
     auto constexpr max_parse_rounds = 8;
     // Only what this parse will never look at: a build that parses a path's directory
     // re-derives the truth about it and is the only one entitled to (#369).
-    ctx.impl_->prior_generated = [&] {
-        auto kept = Vec<StringId> {};
-        if (ctx_opts.parse_scopes.empty()) {
-            return kept;
-        }
+    auto parsed_prior_generated = Vec<StringId> {};
+    {
         auto recorded = ctx.impl_->old_index
             ? pup::index::prior_paths(*ctx.impl_->old_index).generated
             : pup::index::read_prior_paths(pool.get(ctx.impl_->layout.index_path())).generated;
         for (auto path : recorded) {
             auto dir_sv = pup::path::parent(pool.get(path));
-            if (!pup::is_path_in_any_scope(dir_sv.empty() ? "." : dir_sv, ctx_opts.parse_scopes)) {
-                kept.push_back(path);
+            if (ctx_opts.parse_scopes.empty() || pup::is_path_in_any_scope(dir_sv.empty() ? "." : dir_sv, ctx_opts.parse_scopes)) {
+                parsed_prior_generated.push_back(path);
+            } else {
+                ctx.impl_->prior_generated.push_back(path);
             }
         }
-        return kept;
-    }();
+    }
     // prior_paths sorts by handle; the builder searches by path text.
     auto prior_generated_by_path = ctx.impl_->prior_generated;
     std::ranges::sort(prior_generated_by_path, {}, [&pool](StringId id) { return pool.get(id); });
+    std::ranges::sort(parsed_prior_generated, {}, [&pool](StringId id) { return pool.get(id); });
     auto generated_seed = Vec<StringId> {};
     auto builder_state = graph::Builder {};
 
@@ -999,6 +998,7 @@ auto build_context(
             .cached_env_vars = cached_env_vars,
             .generated_seed = generated_seed,
             .prior_generated = prior_generated_by_path,
+            .parsed_prior_generated = parsed_prior_generated,
         };
         builder_state = graph::make_builder(std::move(builder_opts));
 
