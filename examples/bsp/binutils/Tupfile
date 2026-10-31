@@ -1,9 +1,5 @@
 include_rules
-ifeq (@(HOST_OS),darwin)
-: defaults-darwin.config |> ^ INSTALL %o^ cp %f %o |> tup.config
-else
-: defaults.config |> ^ INSTALL %o^ cp %f %o |> tup.config
-endif
+: defaults.config host-@(HOST_OS).config |> ^ INSTALL %o^ cat %f > %o |> tup.config
 
 # ============================================================
 # binutils — cross-assembler (as) + cross-archiver (ar)
