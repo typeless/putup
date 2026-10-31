@@ -62,7 +62,7 @@ auto expect(ParserState& s, TokenType type, std::string_view message) -> Result<
 auto skip_to_next_statement(ParserState& s) -> void;
 auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>;
 auto parse_rule(ParserState& s) -> Result<Rule>;
-auto parse_bang_macro(ParserState& s) -> Result<BangMacro>;
+auto parse_bang_macro(ParserState& s) -> Result<std::variant<BangMacro, BangMacroAlias>>;
 auto parse_rule_body(ParserState& s) -> Result<RuleBody>;
 auto parse_assignment(ParserState& s, Expression name_expr) -> Result<Assignment>;
 auto parse_conditional(ParserState& s, Conditional::Kind kind) -> Result<Conditional>;
@@ -249,7 +249,7 @@ auto parse_line(ParserState& s) -> Result<std::unique_ptr<Statement>>
 
         auto stmt = std::make_unique<Statement>();
         stmt->location = start_loc;
-        stmt->content = std::move(*macro);
+        std::visit([&stmt](auto& parsed) { stmt->content = std::move(parsed); }, *macro);
         return stmt;
     }
 
@@ -470,14 +470,15 @@ auto parse_rule(ParserState& s) -> Result<Rule>
     return rule;
 }
 
-auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
+auto parse_bang_macro(ParserState& s) -> Result<std::variant<BangMacro, BangMacroAlias>>
 {
+    using Parsed = std::variant<BangMacro, BangMacroAlias>;
     auto macro = BangMacro {};
     macro.location = s.previous.location;
 
     // Expect macro name
     if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
-        return pup::make_error<BangMacro>(ErrorCode::ParseError, "Expected macro name after '!'");
+        return pup::make_error<Parsed>(ErrorCode::ParseError, "Expected macro name after '!'");
     }
 
     macro.name = global_pool().intern(s.current.text);
@@ -487,6 +488,21 @@ auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
     auto eq = expect(s, TokenType::Equals, "Expected '=' after macro name");
     if (!eq) {
         return pup::unexpected<Error>(eq.error());
+    }
+
+    if (match(s, TokenType::Bang)) {
+        if (!check(s, TokenType::Identifier) && !check(s, TokenType::Text)) {
+            return pup::make_error<Parsed>(ErrorCode::ParseError, "Expected macro name after '!'");
+        }
+        auto alias = BangMacroAlias {};
+        alias.location = macro.location;
+        alias.name = macro.name;
+        alias.target = global_pool().intern(s.current.text);
+        advance(s);
+        if (!check(s, TokenType::Newline) && !check(s, TokenType::Eof)) {
+            return pup::make_error<Parsed>(ErrorCode::ParseError, "Expected end of line after the aliased macro's name");
+        }
+        return Parsed { std::move(alias) };
     }
 
     if (match(s, TokenType::KwForeach)) {
@@ -521,7 +537,7 @@ auto parse_bang_macro(ParserState& s) -> Result<BangMacro>
     macro.output_order_only_group_dir = std::move(body->output_order_only_group_dir);
 
     s.lexer.set_context(Lexer::Context::LineStart);
-    return macro;
+    return Parsed { std::move(macro) };
 }
 
 auto parse_rule_body(ParserState& s) -> Result<RuleBody>

@@ -52,3 +52,17 @@ What an assignment operator does to a variable that is already defined.
 
 Where a Tupfile assigns a variable with `?=` and that variable is already defined, putup shall
 keep the defined value rather than replace it with the assignment's own value.
+
+## Group: macros
+
+What defining a bang macro in terms of another one binds.
+
+### REQ-EVAL-BANG-ALIAS-COPIES
+
+- conformance: tup-conformant
+- reference: upstream reads `!a = !b` as an alias when the value starts with `!`: it copies `!b`'s foreach, order-only inputs, command and outputs into a new `!a` at that line, replacing any earlier `!a`, and refuses with "tup error: Unable to find !-macro '%s'" when `!b` is not defined (`parse_bang_definition`, the `value[0] == '!'` branch). A later redefinition of `!b` leaves `!a` as copied. Upstream looks the whole value up, so `!a = !b extra` is refused as an unknown macro; putup refuses it as a parse error
+- discharge: test "Scenario: A bang macro defined as another macro takes a copy of its definition"
+
+When a Tupfile defines a bang macro as `!name = !target`, putup shall bind `!name` to a copy of
+`!target`'s definition as it stands at that line, and reject the Tupfile if `!target` is not
+defined.

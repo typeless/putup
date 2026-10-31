@@ -116,6 +116,12 @@ struct BangMacro final : AstNode {
     std::optional<Expression> output_order_only_group_dir; ///< path/ prefix for <group>
 };
 
+/// Bang-macro alias: !name = !target, which copies target's definition as it stands then
+struct BangMacroAlias final : AstNode {
+    StringId name = StringId::Empty;
+    StringId target = StringId::Empty;
+};
+
 /// Variable assignment: VAR = value, VAR += value, VAR := value, VAR ?= value, VAR ??= value
 struct Assignment final : AstNode {
     enum class Op {
@@ -181,7 +187,7 @@ struct ErrorDirective final : AstNode {
 
 /// Union of all statement types
 struct Statement final : AstNode {
-    std::variant<Rule, BangMacro, Assignment, Conditional, Include, Export, Import, ErrorDirective>
+    std::variant<Rule, BangMacro, BangMacroAlias, Assignment, Conditional, Include, Export, Import, ErrorDirective>
         content;
 
     template<typename T>

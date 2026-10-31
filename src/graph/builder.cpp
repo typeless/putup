@@ -633,6 +633,7 @@ auto should_process_in_inactive_context(parser::Statement const& stmt) -> bool
         || stmt.is<parser::Conditional>()
         || stmt.is<parser::Include>()
         || stmt.is<parser::BangMacro>()
+        || stmt.is<parser::BangMacroAlias>()
         || stmt.is<parser::Assignment>();
 }
 
@@ -1710,6 +1711,20 @@ auto process_assignment(
     return {};
 }
 
+auto define_bang_macro(
+    BuilderContext& ctx,
+    BangMacroDef def
+) -> void
+{
+    auto key = to_underlying(intern(str(def.name)));
+    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
+    if (it != ctx.macros.end() && it->first == key) {
+        it->second = std::move(def);
+    } else {
+        ctx.macros.insert(it, { key, std::move(def) });
+    }
+}
+
 auto process_bang_macro(
     BuilderContext& ctx,
     parser::BangMacro const& macro
@@ -1726,14 +1741,24 @@ auto process_bang_macro(
     def.output_group = macro.output_group;
     def.output_order_only_group = macro.output_order_only_group;
     def.output_order_only_group_dir = macro.output_order_only_group_dir;
-    auto key = to_underlying(intern(str(macro.name)));
-    auto it = std::lower_bound(ctx.macros.begin(), ctx.macros.end(), key, [](auto const& p, auto k) { return p.first < k; });
-    if (it != ctx.macros.end() && it->first == key) {
-        it->second = std::move(def);
-    } else {
-        ctx.macros.insert(it, { key, std::move(def) });
-    }
+    define_bang_macro(ctx, std::move(def));
+    return {};
+}
 
+auto process_bang_macro_alias(
+    BuilderContext& ctx,
+    parser::BangMacroAlias const& alias
+) -> Result<void>
+{
+    auto const* target = find_bang_macro(ctx, str(alias.target));
+    if (!target) {
+        auto err = Buf {};
+        err.fmt("Unable to find !-macro '!{}'", str(alias.target));
+        return make_error<void>(ErrorCode::UnknownMacro, err.view());
+    }
+    auto def = *target;
+    def.name = alias.name;
+    define_bang_macro(ctx, std::move(def));
     return {};
 }
 
@@ -2529,6 +2554,10 @@ auto process_statement(
 
     if (auto const* macro = stmt.as<parser::BangMacro>()) {
         return process_bang_macro(ctx, *macro);
+    }
+
+    if (auto const* alias = stmt.as<parser::BangMacroAlias>()) {
+        return process_bang_macro_alias(ctx, *alias);
     }
 
     if (auto const* assign = stmt.as<parser::Assignment>()) {

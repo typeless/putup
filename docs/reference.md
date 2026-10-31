@@ -1005,6 +1005,12 @@ Bang macros define reusable rule templates.
 : *.c |> !cc |>
 ```
 
+**Alias:** `!name = !target` copies `!target`'s definition, foreach included, as it stands at that line; redefining `!target` later leaves `!name` unchanged, and an undefined `!target` is an error.
+```tup
+!cc = foreach |> $(CC) -c %f -o %o |> %B.o
+!compile = !cc
+```
+
 **Empty-input variant:** a rule whose inputs come out empty — a glob that matched nothing, a bin no rule filled — generates no command. When it invokes `!name` and `!name.EMPTY` is defined, it runs `!name.EMPTY` over the empty list instead. Foreach rules never run the variant.
 ```tup
 !ld = |> $(CC) -Wl,-r %f -o %o |>

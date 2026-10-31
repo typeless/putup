@@ -15277,6 +15277,59 @@ SCENARIO("A bang macro declared foreach makes the rule that invokes it foreach",
     }
 }
 
+SCENARIO("A bang macro defined as another macro takes a copy of its definition", "[e2e][build][bang]")
+{
+    GIVEN("a directory holding a.c and b.c")
+    {
+        auto f = E2EFixture { "glob_mixed_space" };
+        f.write_file("a.c", "");
+        f.write_file("b.c", "");
+
+        WHEN("a rule invokes an alias of a foreach macro")
+        {
+            f.write_file("Tupfile", "!m = foreach |> echo 'e=[%e]' > %o |> %B.out\n!a = !m\n: a.c b.c |> !a |>\n");
+            auto result = f.build();
+
+            THEN("the alias runs the macro's command and outputs, foreach included")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("a.out") == "e=[c]\n");
+                REQUIRE(f.read_file("b.out") == "e=[c]\n");
+            }
+        }
+
+        WHEN("the aliased macro is redefined after the alias")
+        {
+            f.write_file("Tupfile", "!m = |> echo first > %o |>\n!a = !m\n!m = |> echo second > %o |>\n: a.c |> !a |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the alias keeps the definition it copied")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE(result.success());
+                REQUIRE(f.read_file("out.txt") == "first\n");
+            }
+        }
+
+        WHEN("a macro aliases one that is not defined")
+        {
+            f.write_file("Tupfile", "!a = !nope\n: a.c |> !a |> out.txt\n");
+            auto result = f.build();
+
+            THEN("the Tupfile is refused and names the missing macro")
+            {
+                INFO("stdout: " << result.stdout_output);
+                INFO("stderr: " << result.stderr_output);
+                REQUIRE_FALSE(result.success());
+                REQUIRE(result.stderr_output.find("Unable to find !-macro '!nope'") != std::string::npos);
+            }
+        }
+    }
+}
+
 SCENARIO("A percent-f, percent-b or percent-B in a rule with no inputs is refused", "[e2e][build]")
 {
     GIVEN("a rule with no inputs whose command spells %f")
