@@ -2,14 +2,37 @@
 // Copyright (c) 2024 Putup authors
 
 #include "catch_amalgamated.hpp"
+#include "pup/core/buf.hpp"
 #include "pup/core/global_pool.hpp"
 #include "pup/core/string_pool.hpp"
 #include "pup/core/string_utils.hpp"
+#include "pup/graph/scanners/dep_words.hpp"
+
+#include <cstdint>
+#include <string>
+#include <vector>
 
 using pup::core::tokenize_shell_command;
 
 namespace {
-auto sv(pup::StringId id) -> std::string_view { return pup::global_pool().get(id); }
+auto sv(pup::core::ShellToken const& token) -> std::string_view { return pup::global_pool().get(token.text); }
+
+class Lcg {
+public:
+    explicit Lcg(std::uint64_t seed)
+        : state_ { seed }
+    {
+    }
+
+    auto next(std::uint32_t bound) -> std::uint32_t
+    {
+        state_ = state_ * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<std::uint32_t>(state_ >> 33) % bound;
+    }
+
+private:
+    std::uint64_t state_;
+};
 } // namespace
 
 TEST_CASE("tokenize_shell_command basic", "[string_utils]")
@@ -306,6 +329,14 @@ TEST_CASE("tokenize_shell_command splits a redirection from the word it touches"
         REQUIRE(sv(result[3]) == ">&1");
     }
 
+    SECTION("a quoted number is a word and not a file descriptor")
+    {
+        auto const result = tokenize_shell_command("cmd '2'>log");
+        REQUIRE(result.size() == 3);
+        REQUIRE(sv(result[1]) == "2");
+        REQUIRE(sv(result[2]) == ">log");
+    }
+
     SECTION("a quoted angle bracket stays in its word")
     {
         auto const result = tokenize_shell_command(R"(echo 'a>b' "c<d" e\>f)");
@@ -313,5 +344,83 @@ TEST_CASE("tokenize_shell_command splits a redirection from the word it touches"
         REQUIRE(sv(result[1]) == "a>b");
         REQUIRE(sv(result[2]) == "c<d");
         REQUIRE(sv(result[3]) == "e>f");
+    }
+}
+
+TEST_CASE("tokenize_shell_command tells an operator from a word spelled the same", "[string_utils]")
+{
+    auto const result = tokenize_shell_command(R"(a ; ';' \; "&&" && 2>&1)");
+    REQUIRE(result.size() == 7);
+    REQUIRE(result[1].kind == pup::core::ShellTokenKind::Operator);
+    REQUIRE(result[2].kind == pup::core::ShellTokenKind::Word);
+    REQUIRE(result[3].kind == pup::core::ShellTokenKind::Word);
+    REQUIRE(result[4].kind == pup::core::ShellTokenKind::Word);
+    REQUIRE(result[5].kind == pup::core::ShellTokenKind::Operator);
+    REQUIRE(result[6].kind == pup::core::ShellTokenKind::Word);
+    REQUIRE(sv(result[6]) == "2>&1");
+}
+
+SCENARIO("A quoted word and a bare operator tokenize back to themselves", "[string_utils][property]")
+{
+    GIVEN("commands of quoted words and bare operators")
+    {
+        auto const seed = GENERATE(1U, 2U, 3U, 12345U, 999983U);
+        auto rng = Lcg { seed };
+        auto const alphabet = std::string_view { "ab12;&|<> '\"\\$" };
+        auto const operators = std::vector<std::string_view> { ";", "&", "&&", "|", "||" };
+
+        WHEN("each command is rendered and tokenized")
+        {
+            auto failures = 0;
+            auto first_failure = std::string {};
+
+            for (auto trial = 0; trial < 512; ++trial) {
+                auto expected = std::vector<std::pair<std::string, pup::core::ShellTokenKind>> {};
+                auto rendered = pup::Buf {};
+                auto previous_was_operator = true;
+                auto const count = 1 + rng.next(6);
+                for (auto item = 0U; item < count; ++item) {
+                    auto const is_operator = !previous_was_operator && rng.next(3) == 0;
+                    if (is_operator) {
+                        auto const op = operators[rng.next(static_cast<std::uint32_t>(operators.size()))];
+                        if (rng.next(2) == 0) {
+                            rendered += ' ';
+                        }
+                        rendered += op;
+                        expected.emplace_back(std::string { op }, pup::core::ShellTokenKind::Operator);
+                    } else {
+                        auto word = std::string {};
+                        auto const length = 1 + rng.next(4);
+                        for (auto c = 0U; c < length; ++c) {
+                            word += alphabet[rng.next(static_cast<std::uint32_t>(alphabet.size()))];
+                        }
+                        if (!rendered.empty() && (!previous_was_operator || rng.next(2) == 0)) {
+                            rendered += ' ';
+                        }
+                        pup::graph::scanners::shell_quote_into(rendered, word, pup::graph::scanners::QuoteStyle::Posix);
+                        expected.emplace_back(word, pup::core::ShellTokenKind::Word);
+                    }
+                    previous_was_operator = is_operator;
+                }
+
+                auto const result = tokenize_shell_command(rendered.view());
+                auto matches = result.size() == expected.size();
+                for (auto i = std::size_t { 0 }; matches && i < result.size(); ++i) {
+                    matches = sv(result[i]) == expected[i].first && result[i].kind == expected[i].second;
+                }
+                if (!matches) {
+                    if (failures == 0) {
+                        first_failure = std::string { rendered.view() };
+                    }
+                    ++failures;
+                }
+            }
+
+            THEN("every token comes back with its text and its kind")
+            {
+                INFO("seed " << seed << ", first failing command: " << first_failure);
+                REQUIRE(failures == 0);
+            }
+        }
     }
 }

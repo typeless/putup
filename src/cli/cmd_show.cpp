@@ -419,7 +419,7 @@ auto cmd_export_compdb(Options const& opts, std::string_view variant_name) -> in
             if (i > 0) {
                 print(", ");
             }
-            print("\"{}\"", pool.get(escape_json(pool.get(args[i]))));
+            print("\"{}\"", pool.get(escape_json(pool.get(args[i].text))));
         }
         print("],\n");
 

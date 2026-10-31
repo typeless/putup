@@ -37,14 +37,24 @@ constexpr auto stop_at = [] {
 
 } // namespace
 
-auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
+auto tokenize_shell_command(std::string_view cmd) -> Vec<ShellToken>
 {
     auto& pool = global_pool();
-    auto args = Vec<StringId> {};
+    auto args = Vec<ShellToken> {};
     auto current = Buf {};
     auto in_single_quote = false;
     auto in_double_quote = false;
     auto escaped = false;
+    auto word_quoted = false;
+    auto redirection_end = std::size_t { 0 };
+    auto flush_word = [&] {
+        if (!current.empty()) {
+            args.push_back(ShellToken { .text = current.intern(pool), .kind = ShellTokenKind::Word });
+            current.clear();
+        }
+        word_quoted = false;
+        redirection_end = 0;
+    };
 
     for (auto i = std::size_t { 0 }; i < cmd.size();) {
         if (escaped) {
@@ -79,40 +89,35 @@ auto tokenize_shell_command(std::string_view cmd) -> Vec<StringId>
             }
         } else if (c == '\\') {
             escaped = true;
+            word_quoted = true;
         } else if (c == '\'') {
             in_single_quote = true;
+            word_quoted = true;
         } else if (c == '"') {
             in_double_quote = true;
+            word_quoted = true;
         } else if (c == '<' || c == '>') {
-            auto const word = current.view();
-            auto const continues_redirection = word.empty() || word.back() == '<' || word.back() == '>'
-                || std::ranges::all_of(word, [](char d) { return d >= '0' && d <= '9'; });
-            if (!continues_redirection) {
-                args.push_back(current.intern(pool));
-                current.clear();
+            auto const ends_in_redirection = redirection_end != 0 && redirection_end == current.size();
+            auto const is_descriptor = !word_quoted
+                && std::ranges::all_of(current.view(), [](char d) { return d >= '0' && d <= '9'; });
+            if (!current.empty() && !ends_in_redirection && !is_descriptor) {
+                flush_word();
             }
             current += c;
-        } else if ((c == '&' || c == '|') && !current.empty() && (current.view().back() == '>' || current.view().back() == '<')) {
+            redirection_end = current.size();
+        } else if ((c == '&' || c == '|') && redirection_end != 0 && redirection_end == current.size()) {
             current += c;
         } else if (c == ';' || c == '&' || c == '|') {
-            if (!current.empty()) {
-                args.push_back(current.intern(pool));
-                current.clear();
-            }
+            flush_word();
             auto const doubled = c != ';' && i < cmd.size() && cmd[i] == c;
-            args.push_back(pool.intern(cmd.substr(i - 1, doubled ? 2 : 1)));
+            args.push_back(ShellToken { .text = pool.intern(cmd.substr(i - 1, doubled ? 2 : 1)), .kind = ShellTokenKind::Operator });
             i += doubled ? 1 : 0;
         } else {
             // sh's blank class, deliberately: \r\v\f stay in words so the scan carries the compile's words; unquoted \n is sh's command separator, not a word break — #347.
-            if (!current.empty()) {
-                args.push_back(current.intern(pool));
-                current.clear();
-            }
+            flush_word();
         }
     }
-    if (!current.empty()) {
-        args.push_back(current.intern(pool));
-    }
+    flush_word();
     return args;
 }
 

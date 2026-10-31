@@ -11,6 +11,7 @@
 #include "pup/core/vec.hpp"
 #include "pup/graph/rule_pattern.hpp"
 #include "pup/graph/scanners/dep_words.hpp"
+#include <cstddef>
 #include <memory>
 #include <span>
 #include <utility>
@@ -22,12 +23,26 @@ auto tokenize_command(StringId text) -> CommandTokens
     auto& pool = global_pool();
     auto tokens = CommandTokens {};
     tokens.text_ = text;
-    for (auto id : core::tokenize_shell_command(pool.get(text))) {
-        tokens.words_.push_back(pool.get(id));
+    auto operator_positions = Vec<std::size_t> {};
+    for (auto const& token : core::tokenize_shell_command(pool.get(text))) {
+        switch (token.kind) {
+        case core::ShellTokenKind::Word:
+            tokens.words_.push_back(pool.get(token.text));
+            break;
+        case core::ShellTokenKind::Operator:
+            operator_positions.push_back(tokens.words_.size());
+            break;
+        }
     }
-    tokens.invocations_ = scanners::split_invocations(
-        std::span { tokens.words_.data(), tokens.words_.size() }
-    );
+    auto const words = std::span { tokens.words_.data(), tokens.words_.size() };
+    auto start = std::size_t { 0 };
+    for (auto end : operator_positions) {
+        tokens.invocations_.push_back(words.subspan(start, end - start));
+        start = end;
+    }
+    if (start < words.size() || tokens.invocations_.empty()) {
+        tokens.invocations_.push_back(words.subspan(start));
+    }
     return tokens;
 }
 

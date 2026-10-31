@@ -1378,6 +1378,29 @@ TEST_CASE("GccScanner ends a word at an operator written against it", "[dep_scan
     }
 }
 
+TEST_CASE("A quoted operator is a word and not a separator", "[dep_scanner]")
+{
+    SECTION("a quoted terminator stays in its invocation")
+    {
+        auto const tokens = tokens_of("gcc -c a.c -o a.o ';' x");
+        REQUIRE(tokens.invocations().size() == 1);
+        REQUIRE(tokens.invocations()[0].size() == 7);
+    }
+
+    SECTION("an escaped and-list operator stays in its invocation")
+    {
+        auto const tokens = tokens_of(R"(gcc -c a.c -o a.o \&\& x)");
+        REQUIRE(tokens.invocations().size() == 1);
+        REQUIRE(tokens.invocations()[0].size() == 7);
+    }
+
+    SECTION("a quoted terminator is not a barrier to the flags after it")
+    {
+        auto scan = only_scan(scanners::GccScanner {}, gcc_compile(92, "gcc -c a.c -o a.o ';' -Iinc"));
+        REQUIRE(pup::global_pool().get(scan.command) == "gcc -M ';' -Iinc a.c");
+    }
+}
+
 TEST_CASE("A depfile flag outside the scannable prefix suppresses nothing", "[dep_scanner]")
 {
     // The suppression stands for a compile that writes its own depfile, so it may only read the
