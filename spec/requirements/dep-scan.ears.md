@@ -96,6 +96,15 @@ such invocation, each carrying that invocation's own flags and its own source-fi
 each one preprocesses a different translation unit and the object it writes is covered only by a
 scan derived from it.
 
+### REQ-SCAN-UNSPACED-OPERATOR
+
+- conformance: putup-only
+- discharge: test "tokenize_shell_command splits a control operator from the word it touches"
+- discharge: test "GccScanner ends an invocation at an operator written against a word"
+
+When an unquoted `;`, `&`, `&&`, `|` or `||` is written against a word, putup shall end the
+invocation at that operator, as the shell does.
+
 ### REQ-SCAN-CARRIES-COMPILE-WORDS
 
 - conformance: putup-only

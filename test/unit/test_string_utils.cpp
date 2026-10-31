@@ -228,3 +228,51 @@ TEST_CASE("tokenize_shell_command compiler commands", "[string_utils]")
         REQUIRE(sv(result[3]) =="x.c");
     }
 }
+
+TEST_CASE("tokenize_shell_command splits a control operator from the word it touches", "[string_utils]")
+{
+    SECTION("a terminator after a word")
+    {
+        auto const result = tokenize_shell_command("gcc -c a.c -o a.o; rm x");
+        REQUIRE(result.size() == 8);
+        REQUIRE(sv(result[4]) == "a.o");
+        REQUIRE(sv(result[5]) == ";");
+        REQUIRE(sv(result[6]) == "rm");
+    }
+
+    SECTION("two-character operators between words")
+    {
+        auto const result = tokenize_shell_command("a&&b||c");
+        REQUIRE(result.size() == 5);
+        REQUIRE(sv(result[0]) == "a");
+        REQUIRE(sv(result[1]) == "&&");
+        REQUIRE(sv(result[2]) == "b");
+        REQUIRE(sv(result[3]) == "||");
+        REQUIRE(sv(result[4]) == "c");
+    }
+
+    SECTION("a pipe and a backgrounding operator")
+    {
+        auto const result = tokenize_shell_command("a|b&");
+        REQUIRE(result.size() == 4);
+        REQUIRE(sv(result[1]) == "|");
+        REQUIRE(sv(result[3]) == "&");
+    }
+
+    SECTION("a quoted or escaped operator stays in its word")
+    {
+        auto const result = tokenize_shell_command(R"(echo 'a;b' "c&&d" e\|f)");
+        REQUIRE(result.size() == 4);
+        REQUIRE(sv(result[1]) == "a;b");
+        REQUIRE(sv(result[2]) == "c&&d");
+        REQUIRE(sv(result[3]) == "e|f");
+    }
+
+    SECTION("a redirection keeps the operator it is spelled with")
+    {
+        auto const result = tokenize_shell_command("cmd 2>&1 >|log");
+        REQUIRE(result.size() == 3);
+        REQUIRE(sv(result[1]) == "2>&1");
+        REQUIRE(sv(result[2]) == ">|log");
+    }
+}
